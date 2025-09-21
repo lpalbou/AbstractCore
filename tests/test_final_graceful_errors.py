@@ -17,8 +17,7 @@ def test_anthropic_clean_error():
     try:
         llm = create_llm("anthropic", model="claude-3.5-haiku:latest")
         response = llm.generate("Hello, who are you? identify yourself")
-        print("❌ Should have failed!")
-        return False
+        assert False, "Should have failed with ModelNotFoundError"
     except ModelNotFoundError as e:
         print("✅ SUCCESS: Clean error with helpful information")
         print("=" * 60)
@@ -31,17 +30,15 @@ def test_anthropic_clean_error():
         print("   • Direct link to official documentation")
         print("   • Helpful tips for the provider")
         print("   • NO duplicate error messages")
-        return True
     except Exception as e:
-        print(f"❌ Wrong exception: {type(e).__name__}: {e}")
-        return False
+        assert False, f"Wrong exception: {type(e).__name__}: {e}"
 
 
 def test_openai_dynamic_models():
     """Test OpenAI with dynamic model fetching"""
     if not os.getenv("OPENAI_API_KEY"):
-        print("⚠️ Skipping OpenAI test - no API key")
-        return True
+        import pytest
+        pytest.skip("OPENAI_API_KEY not set")
 
     print("🔧 Testing OpenAI with dynamic model discovery:")
     print("   Model: 'gpt-fake-model' (invalid)")
@@ -50,20 +47,18 @@ def test_openai_dynamic_models():
     try:
         llm = create_llm("openai", model="gpt-fake-model")
         response = llm.generate("Hello")
-        print("❌ Should have failed!")
-        return False
+        assert False, "Should have failed with ModelNotFoundError"
     except ModelNotFoundError as e:
         error_text = str(e)
-        has_models = "Found" in error_text and "available models" in error_text
+        has_models = "Available models" in error_text and "gpt-" in error_text
 
         print("✅ SUCCESS: Dynamic model fetching")
         print(f"   • Fetched {error_text.count('gpt-')} live models from OpenAI API")
         print("   • Up-to-date model list (not static)")
         print("   • Official documentation link")
-        return has_models
+        assert has_models, "Should show available models in error message"
     except Exception as e:
-        print(f"❌ Wrong exception: {type(e).__name__}")
-        return False
+        assert False, f"Wrong exception: {type(e).__name__}: {e}"
 
 
 def test_ollama_dynamic_models():
@@ -75,20 +70,23 @@ def test_ollama_dynamic_models():
     try:
         llm = create_llm("ollama", model="fake-local-model")
         response = llm.generate("Hello")
-        print("❌ Should have failed!")
-        return False
+        assert False, "Should have failed with ModelNotFoundError"
     except ModelNotFoundError as e:
         error_text = str(e)
-        has_models = "Found" in error_text and "available models" in error_text
+        has_models = "Available models" in error_text or "available models" in error_text
 
         print("✅ SUCCESS: Local model discovery")
         print(f"   • Fetched live models from Ollama server")
         print("   • Shows actually available local models")
         print("   • Helpful tip about 'ollama pull'")
-        return has_models
+        assert has_models, "Should show available models in error message"
     except Exception as e:
-        print(f"❌ Wrong exception: {type(e).__name__}")
-        return False
+        # Allow connection errors when Ollama isn't running
+        if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            import pytest
+            pytest.skip("Ollama not running")
+        else:
+            assert False, f"Wrong exception: {type(e).__name__}: {e}"
 
 
 def main():

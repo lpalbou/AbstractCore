@@ -3,9 +3,8 @@ Simple model discovery - minimalist approach for graceful fallback.
 """
 
 import httpx
-from typing import List, Optional
+from typing import List
 from pathlib import Path
-import os
 
 
 def get_available_models(provider: str, **kwargs) -> List[str]:
@@ -27,39 +26,35 @@ def get_available_models(provider: str, **kwargs) -> List[str]:
         return []
 
 
-def get_anthropic_models(api_key: Optional[str]) -> List[str]:
-    """Get current Anthropic models."""
-    # Updated list for 2024
-    return [
-        "claude-3-5-sonnet-20241022",
-        "claude-3-5-sonnet-20240620",
-        "claude-3-5-haiku-20241022",
-        "claude-3-opus-20240229",
-        "claude-3-sonnet-20240229",
-        "claude-3-haiku-20240307"
-    ]
+def get_anthropic_models(api_key: str) -> List[str]:
+    """Get available Anthropic models via API."""
+    try:
+        headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        response = httpx.get(
+            "https://api.anthropic.com/v1/models",
+            headers=headers,
+            timeout=10.0
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            models = [model["id"] for model in data.get("data", [])]
+            return sorted(models)
+        else:
+            # Fallback if API fails
+            return []
+    except Exception:
+        return []
 
 
-def get_openai_models(api_key: Optional[str]) -> List[str]:
+def get_openai_models(api_key: str) -> List[str]:
     """Get available OpenAI models via API."""
-    if not api_key:
-        # Return current models if no API key
-        return [
-            "gpt-4o",
-            "gpt-4o-mini",
-            "gpt-4o-mini-2024-07-18",
-            "gpt-4-turbo",
-            "gpt-4-turbo-2024-04-09",
-            "gpt-4",
-            "gpt-3.5-turbo"
-        ]
-
     try:
         headers = {"Authorization": f"Bearer {api_key}"}
         response = httpx.get(
             "https://api.openai.com/v1/models",
             headers=headers,
-            timeout=5.0
+            timeout=10.0
         )
 
         if response.status_code == 200:
@@ -68,17 +63,10 @@ def get_openai_models(api_key: Optional[str]) -> List[str]:
             # Filter to chat models only
             chat_models = [m for m in models if any(x in m for x in ["gpt-3.5", "gpt-4", "gpt-o1"])]
             return sorted(chat_models)
-    except:
-        pass
-
-    # Fallback to current models
-    return [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-4-turbo",
-        "gpt-4",
-        "gpt-3.5-turbo"
-    ]
+        else:
+            return []
+    except Exception:
+        return []
 
 
 def get_ollama_models(base_url: str) -> List[str]:
@@ -147,11 +135,24 @@ def format_model_error(provider: str, invalid_model: str, available_models: List
 
     if available_models:
         message += f"\n✅ Available models ({len(available_models)}):\n"
-        for model in available_models[:10]:  # Show max 10
+        for model in available_models[:30]:  # Show max 10
             message += f"  • {model}\n"
-        if len(available_models) > 10:
-            message += f"  ... and {len(available_models) - 10} more\n"
+        if len(available_models) > 30:
+            message += f"  ... and {len(available_models) - 30} more\n"
     else:
-        message += f"\n⚠️  Could not fetch available models for {provider}.\n"
+        # Show provider documentation when we can't fetch models
+        doc_links = {
+            "anthropic": "https://docs.anthropic.com/en/docs/about-claude/models",
+            "openai": "https://platform.openai.com/docs/models",
+            "ollama": "https://ollama.com/library",
+            "huggingface": "https://huggingface.co/models",
+            "mlx": "https://huggingface.co/mlx-community"
+        }
+
+        provider_lower = provider.lower()
+        if provider_lower in doc_links:
+            message += f"\n📚 See available models: {doc_links[provider_lower]}\n"
+        else:
+            message += f"\n⚠️  Could not fetch available models for {provider}.\n"
 
     return message.rstrip()

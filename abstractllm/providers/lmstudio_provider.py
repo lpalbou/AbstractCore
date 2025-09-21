@@ -19,13 +19,39 @@ class LMStudioProvider(BaseProvider):
         self.base_url = base_url.rstrip('/')
         self.client = httpx.Client(timeout=120.0)
 
-    def generate(self,
-                prompt: str,
-                messages: Optional[List[Dict[str, str]]] = None,
-                system_prompt: Optional[str] = None,
-                tools: Optional[List[Dict[str, Any]]] = None,
-                stream: bool = False,
-                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        # Validate model exists in LMStudio
+        self._validate_model()
+
+    def _validate_model(self):
+        """Validate that the model exists in LMStudio"""
+        try:
+            # Remove /v1 from base_url for model discovery since it adds /v1/models
+            discovery_base_url = self.base_url.replace("/v1", "")
+            available_models = get_available_models("lmstudio", base_url=discovery_base_url)
+            if available_models and self.model not in available_models:
+                error_message = format_model_error("LMStudio", self.model, available_models)
+                raise ModelNotFoundError(error_message)
+        except httpx.ConnectError:
+            # LMStudio not running - will fail later when trying to generate
+            pass
+        except ModelNotFoundError:
+            # Re-raise model not found errors
+            raise
+        except Exception:
+            # Other errors (like timeout) - continue, will fail later if needed
+            pass
+
+    def generate(self, *args, **kwargs):
+        """Public generate method that includes telemetry"""
+        return self.generate_with_telemetry(*args, **kwargs)
+
+    def _generate_internal(self,
+                          prompt: str,
+                          messages: Optional[List[Dict[str, str]]] = None,
+                          system_prompt: Optional[str] = None,
+                          tools: Optional[List[Dict[str, Any]]] = None,
+                          stream: bool = False,
+                          **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using LM Studio"""
 
         # Build messages for chat completions
@@ -100,11 +126,14 @@ class LMStudioProvider(BaseProvider):
             )
 
         except Exception as e:
-            return GenerateResponse(
-                content=f"Error: {str(e)}",
-                model=self.model,
-                finish_reason="error"
-            )
+            error_str = str(e).lower()
+            if ('404' in error_str or 'not found' in error_str or 'model' in error_str) and ('not found' in error_str):
+                # Model not found - show available models
+                available_models = get_available_models("lmstudio", base_url=self.base_url)
+                error_message = format_model_error("LMStudio", self.model, available_models)
+                raise ModelNotFoundError(error_message)
+            else:
+                raise ProviderAPIError(f"LMStudio API error: {str(e)}")
 
     def _stream_generate(self, payload: Dict[str, Any]) -> Iterator[GenerateResponse]:
         """Generate streaming response"""
@@ -119,11 +148,15 @@ class LMStudioProvider(BaseProvider):
 
                 for line in response.iter_lines():
                     if line:
+                        # Decode bytes to string if necessary
+                        if isinstance(line, bytes):
+                            line = line.decode('utf-8')
                         line = line.strip()
-                        if line.startswith(b"data: "):
+
+                        if line.startswith("data: "):
                             data = line[6:]  # Remove "data: " prefix
 
-                            if data == b"[DONE]":
+                            if data == "[DONE]":
                                 break
 
                             try:

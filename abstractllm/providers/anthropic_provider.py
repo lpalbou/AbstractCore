@@ -197,7 +197,9 @@ class AnthropicProvider(BaseProvider):
 
     def _stream_response(self, call_params: Dict[str, Any]) -> Iterator[GenerateResponse]:
         """Stream responses from Anthropic"""
-        with self.client.messages.stream(**call_params) as stream:
+        # Remove stream parameter for streaming API
+        stream_params = {k: v for k, v in call_params.items() if k != 'stream'}
+        with self.client.messages.stream(**stream_params) as stream:
             for chunk in stream:
                 # Handle different event types
                 if chunk.type == "content_block_delta":

@@ -1,23 +1,24 @@
 """
-Simple test of all local providers using correct model names.
+Test simple generation - basic "who are you" tests.
+Tests that providers can generate responses to simple prompts.
 """
 
 import pytest
 import os
 import time
-from abstractllm import create_llm, BasicSession
+from abstractllm import create_llm
 
 
-class TestProvidersSimple:
-    """Test providers with real models using correct names."""
+class TestProviderSimpleGeneration:
+    """Test basic generation capabilities for each provider."""
 
-    def test_ollama_provider(self):
-        """Test Ollama provider with qwen3:4b."""
+    def test_ollama_simple_generation(self):
+        """Test Ollama simple message generation."""
         try:
-            llm = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
 
             start = time.time()
-            response = llm.generate("Who are you in one sentence?")
+            response = provider.generate("Who are you? Answer in one sentence.")
             elapsed = time.time() - start
 
             assert response is not None
@@ -31,13 +32,13 @@ class TestProvidersSimple:
             else:
                 raise
 
-    def test_lmstudio_provider(self):
-        """Test LMStudio provider with qwen/qwen3-coder-30b."""
+    def test_lmstudio_simple_generation(self):
+        """Test LMStudio simple message generation."""
         try:
-            llm = create_llm("lmstudio", model="qwen/qwen3-coder-30b", base_url="http://localhost:1234/v1")
+            provider = create_llm("lmstudio", model="qwen/qwen3-coder-30b", base_url="http://localhost:1234/v1")
 
             start = time.time()
-            response = llm.generate("Who are you in one sentence?")
+            response = provider.generate("Who are you? Answer in one sentence.")
             elapsed = time.time() - start
 
             assert response is not None
@@ -51,13 +52,13 @@ class TestProvidersSimple:
             else:
                 raise
 
-    def test_mlx_provider(self):
-        """Test MLX provider with mlx-community/Qwen3-4B-4bit."""
+    def test_mlx_simple_generation(self):
+        """Test MLX simple message generation."""
         try:
-            llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
+            provider = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 
             start = time.time()
-            response = llm.generate("Who are you in one sentence?")
+            response = provider.generate("Who are you? Answer in one sentence.")
             elapsed = time.time() - start
 
             assert response is not None
@@ -71,13 +72,13 @@ class TestProvidersSimple:
             else:
                 raise
 
-    def test_huggingface_provider(self):
-        """Test HuggingFace provider with Qwen/Qwen3-4B."""
+    def test_huggingface_simple_generation(self):
+        """Test HuggingFace simple message generation."""
         try:
-            llm = create_llm("huggingface", model="Qwen/Qwen3-4B")
+            provider = create_llm("huggingface", model="Qwen/Qwen3-4B")
 
             start = time.time()
-            response = llm.generate("Who are you in one sentence?")
+            response = provider.generate("Who are you? Answer in one sentence.")
             elapsed = time.time() - start
 
             assert response is not None
@@ -91,22 +92,27 @@ class TestProvidersSimple:
             else:
                 raise
 
-    def test_openai_provider(self):
-        """Test OpenAI provider with gpt-4o-mini."""
+    def test_openai_simple_generation(self):
+        """Test OpenAI simple message generation."""
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            llm = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-4o-mini")
 
             start = time.time()
-            response = llm.generate("Who are you in one sentence?")
+            response = provider.generate("Who are you? Answer in one sentence.")
             elapsed = time.time() - start
 
             assert response is not None
             assert response.content is not None
             assert len(response.content) > 0
             assert elapsed < 10  # Cloud should be fast
+
+            # Check usage tracking if available
+            if response.usage:
+                assert "total_tokens" in response.usage
+                assert response.usage["total_tokens"] > 0
 
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
@@ -114,16 +120,16 @@ class TestProvidersSimple:
             else:
                 raise
 
-    def test_anthropic_provider(self):
-        """Test Anthropic provider with claude-3-5-haiku-20241022."""
+    def test_anthropic_simple_generation(self):
+        """Test Anthropic simple message generation."""
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            llm = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
 
             start = time.time()
-            response = llm.generate("Who are you in one sentence?")
+            response = provider.generate("Who are you? Answer in one sentence.")
             elapsed = time.time() - start
 
             assert response is not None
@@ -131,38 +137,28 @@ class TestProvidersSimple:
             assert len(response.content) > 0
             assert elapsed < 10  # Cloud should be fast
 
+            # Check usage tracking if available
+            if response.usage:
+                assert "total_tokens" in response.usage
+                assert response.usage["total_tokens"] > 0
+
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("Anthropic authentication failed")
             else:
                 raise
 
-    def test_basic_session_with_ollama(self):
-        """Test BasicSession maintains context with Ollama."""
-        try:
-            llm = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
-            session = BasicSession(provider=llm, system_prompt="You are a helpful AI assistant.")
+    def test_mock_simple_generation(self):
+        """Test Mock provider simple generation."""
+        provider = create_llm("mock", model="test-model")
 
-            # Test conversation
-            resp1 = session.generate("What is 2+2?")
-            assert resp1 is not None
-            assert resp1.content is not None
+        response = provider.generate("Who are you? Answer in one sentence.")
 
-            resp2 = session.generate("What was my previous question?")
-            assert resp2 is not None
-            assert resp2.content is not None
-
-            # Check if context is maintained (should mention 2+2 or math)
-            context_maintained = any(term in resp2.content.lower() for term in ["2+2", "math", "addition", "previous"])
-            assert context_maintained, "Session should maintain context about previous question"
-
-        except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
-                pytest.skip("Ollama not running")
-            else:
-                raise
+        assert response is not None
+        assert response.content is not None
+        assert len(response.content) > 0
+        # Mock provider returns predictable responses
 
 
 if __name__ == "__main__":
-    # Allow running as script for debugging
     pytest.main([__file__, "-v"])

@@ -3,8 +3,10 @@ HuggingFace provider implementation.
 """
 
 from typing import List, Dict, Any, Optional, Union, Iterator
-from ..core.interface import AbstractLLMInterface
+from .base import BaseProvider
 from ..core.types import GenerateResponse
+from ..exceptions import ModelNotFoundError
+from ..utils.simple_model_discovery import get_available_models, format_model_error
 
 try:
     from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
@@ -14,7 +16,7 @@ except ImportError:
     HUGGINGFACE_AVAILABLE = False
 
 
-class HuggingFaceProvider(AbstractLLMInterface):
+class HuggingFaceProvider(BaseProvider):
     """HuggingFace Transformers provider"""
 
     def __init__(self, model: str = "microsoft/DialoGPT-medium", device: Optional[str] = None, **kwargs):
@@ -50,15 +52,27 @@ class HuggingFaceProvider(AbstractLLMInterface):
             )
 
         except Exception as e:
-            raise RuntimeError(f"Failed to load HuggingFace model {self.model}: {str(e)}")
+            error_str = str(e).lower()
+            if ('not found' in error_str or 'does not exist' in error_str or
+                'not a valid model identifier' in error_str):
+                # Model not found - show available models from local cache
+                available_models = get_available_models("huggingface")
+                error_message = format_model_error("HuggingFace", self.model, available_models)
+                raise ModelNotFoundError(error_message)
+            else:
+                raise RuntimeError(f"Failed to load HuggingFace model {self.model}: {str(e)}")
 
-    def generate(self,
-                prompt: str,
-                messages: Optional[List[Dict[str, str]]] = None,
-                system_prompt: Optional[str] = None,
-                tools: Optional[List[Dict[str, Any]]] = None,
-                stream: bool = False,
-                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+    def generate(self, *args, **kwargs):
+        """Public generate method that includes telemetry"""
+        return self.generate_with_telemetry(*args, **kwargs)
+
+    def _generate_internal(self,
+                          prompt: str,
+                          messages: Optional[List[Dict[str, str]]] = None,
+                          system_prompt: Optional[str] = None,
+                          tools: Optional[List[Dict[str, Any]]] = None,
+                          stream: bool = False,
+                          **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using HuggingFace model"""
 
         if not self.pipeline:

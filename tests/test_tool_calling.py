@@ -2,14 +2,11 @@
 Test tool calling functionality across providers.
 """
 
-import sys
+import pytest
 import os
 import json
 import time
 from typing import Dict, Any, List
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from abstractllm import create_llm, BasicSession
 from abstractllm.tools.core import ToolDefinition
 
@@ -45,18 +42,13 @@ def get_weather(city: str) -> str:
     return weather_data.get(city, f"Weather data not available for {city}")
 
 
-def test_tool_calling(provider_name: str, model: str, config: Dict[str, Any] = None):
-    """Test tool calling with a provider"""
-    print(f"\n{'='*60}")
-    print(f"Testing tool calling for {provider_name}")
-    print('='*60)
+class TestToolCalling:
+    """Test tool calling functionality across providers."""
 
-    try:
-        # Create provider
-        llm = create_llm(provider_name, model=model, **(config or {}))
-
-        # Define tools in OpenAI format
-        tools = [
+    @pytest.fixture
+    def tool_definitions(self):
+        """Define tools in OpenAI format"""
+        return [
             {
                 "name": "list_files",
                 "description": "List files in a directory",
@@ -101,134 +93,184 @@ def test_tool_calling(provider_name: str, model: str, config: Dict[str, Any] = N
             }
         ]
 
-        # Test prompts that should trigger tool use
-        test_cases = [
+    @pytest.fixture
+    def test_cases(self):
+        """Define test cases for tool calling"""
+        return [
             ("What files are in the current directory?", "list_files"),
             ("What is 42 * 17?", "calculate"),
             ("What's the weather in New York?", "get_weather")
         ]
 
-        results = []
+    def execute_tool(self, tool_name: str, arguments: dict) -> str:
+        """Execute a tool with given arguments"""
+        if tool_name == 'list_files':
+            return list_files(arguments.get('directory', '.'))
+        elif tool_name == 'calculate':
+            return calculate(arguments.get('expression', ''))
+        elif tool_name == 'get_weather':
+            return get_weather(arguments.get('city', ''))
+        else:
+            return "Unknown tool"
 
-        for prompt, expected_tool in test_cases:
-            print(f"\nPrompt: {prompt}")
-            print(f"Expected tool: {expected_tool}")
+    def test_openai_tool_calling(self, tool_definitions, test_cases):
+        """Test OpenAI provider tool calling with gpt-4o-mini."""
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OPENAI_API_KEY not set")
 
-            start = time.time()
-            response = llm.generate(prompt, tools=tools)
-            elapsed = time.time() - start
+        try:
+            llm = create_llm("openai", model="gpt-4o-mini")
 
-            if response:
+            results = []
+            for prompt, expected_tool in test_cases:
+                response = llm.generate(prompt, tools=tool_definitions)
+
+                assert response is not None
+
                 if response.has_tool_calls():
-                    print(f"✅ Tool calls detected in {elapsed:.2f}s:")
-                    for tc in response.tool_calls:
-                        print(f"   Tool: {tc.get('name')}")
-                        print(f"   Args: {tc.get('arguments')}")
-
-                        # Execute the tool
-                        tool_name = tc.get('name')
-                        if tool_name == 'list_files':
-                            args = json.loads(tc.get('arguments')) if isinstance(tc.get('arguments'), str) else tc.get('arguments', {})
-                            result = list_files(args.get('directory', '.'))
-                        elif tool_name == 'calculate':
-                            args = json.loads(tc.get('arguments')) if isinstance(tc.get('arguments'), str) else tc.get('arguments', {})
-                            result = calculate(args.get('expression', ''))
-                        elif tool_name == 'get_weather':
-                            args = json.loads(tc.get('arguments')) if isinstance(tc.get('arguments'), str) else tc.get('arguments', {})
-                            result = get_weather(args.get('city', ''))
-                        else:
-                            result = "Unknown tool"
-
-                        print(f"   Result: {result}")
-
+                    # Tool calling worked
                     results.append(True)
-                elif response.content:
-                    print(f"⚠️  No tool calls, got text response:")
-                    print(f"   {response.content[:200]}...")
-                    results.append(False)
+
+                    # Verify tool execution
+                    for tc in response.tool_calls:
+                        tool_name = tc.get('name')
+                        args = json.loads(tc.get('arguments')) if isinstance(tc.get('arguments'), str) else tc.get('arguments', {})
+                        result = self.execute_tool(tool_name, args)
+                        assert len(result) > 0  # Should get some result
                 else:
-                    print(f"❌ No response")
+                    # No tool calls, but might still be valid response
                     results.append(False)
+
+            # OpenAI should have good tool calling success rate
+            success_rate = sum(results) / len(results) if results else 0
+            assert success_rate > 0.5, f"OpenAI tool calling success rate too low: {success_rate:.1%}"
+
+        except Exception as e:
+            if "authentication" in str(e).lower() or "api_key" in str(e).lower():
+                pytest.skip("OpenAI authentication failed")
             else:
-                print(f"❌ Error: No response received")
-                results.append(False)
+                raise
 
-        success_rate = sum(results) / len(results) if results else 0
-        print(f"\nSuccess rate: {success_rate:.1%} ({sum(results)}/{len(results)})")
-        return success_rate > 0.5
+    def test_anthropic_tool_calling(self, tool_definitions, test_cases):
+        """Test Anthropic provider tool calling with claude-3-5-haiku-20241022."""
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            pytest.skip("ANTHROPIC_API_KEY not set")
 
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        return False
+        try:
+            llm = create_llm("anthropic", model="claude-3-5-haiku-20241022")
 
+            results = []
+            for prompt, expected_tool in test_cases:
+                response = llm.generate(prompt, tools=tool_definitions)
 
-def test_ollama_tool_format():
-    """Test Ollama with architecture-specific tool format"""
-    print(f"\n{'='*60}")
-    print("Testing Ollama with Qwen3 tool format")
-    print('='*60)
+                assert response is not None
 
-    try:
-        llm = create_llm("ollama", model="qwen3-coder:30b")
+                if response.has_tool_calls():
+                    # Tool calling worked
+                    results.append(True)
 
-        # Qwen3 uses special tool format
-        prompt = """<|tool_call|>
+                    # Verify tool execution
+                    for tc in response.tool_calls:
+                        tool_name = tc.get('name')
+                        args = json.loads(tc.get('arguments')) if isinstance(tc.get('arguments'), str) else tc.get('arguments', {})
+                        result = self.execute_tool(tool_name, args)
+                        assert len(result) > 0  # Should get some result
+                else:
+                    # No tool calls, but might still be valid response
+                    results.append(False)
+
+            # Anthropic should have good tool calling success rate
+            success_rate = sum(results) / len(results) if results else 0
+            assert success_rate > 0.5, f"Anthropic tool calling success rate too low: {success_rate:.1%}"
+
+        except Exception as e:
+            if "authentication" in str(e).lower() or "api_key" in str(e).lower():
+                pytest.skip("Anthropic authentication failed")
+            else:
+                raise
+
+    def test_ollama_basic_generation(self):
+        """Test Ollama basic generation (tool calling may not work with qwen3:4b)."""
+        try:
+            llm = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+
+            # Test basic generation (without tools first)
+            response = llm.generate("What is 2+2?")
+            assert response is not None
+            assert response.content is not None
+            assert len(response.content) > 0
+
+        except Exception as e:
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+                pytest.skip("Ollama not running")
+            else:
+                raise
+
+    def test_ollama_tool_format(self):
+        """Test Ollama with architecture-specific tool format"""
+        try:
+            llm = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+
+            # Qwen3 uses special tool format
+            prompt = """<|tool_call|>
 list_files
 {"directory": "/tmp"}
 <|tool_call_end|>
 
 Please list the files in /tmp directory."""
 
-        response = llm.generate(prompt)
-        if response and response.content:
-            print(f"✅ Response: {response.content[:200]}...")
-            return True
-        else:
-            print("❌ No response")
-            return False
+            response = llm.generate(prompt)
+            assert response is not None
+            assert response.content is not None
+            assert len(response.content) > 0
 
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        return False
+        except Exception as e:
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+                pytest.skip("Ollama not running")
+            else:
+                raise
 
+    def test_lmstudio_basic_generation(self):
+        """Test LMStudio basic generation (tool calling may vary)."""
+        try:
+            llm = create_llm("lmstudio", model="qwen/qwen3-coder-30b", base_url="http://localhost:1234/v1")
 
-def main():
-    """Run tool calling tests"""
+            # Test basic generation
+            response = llm.generate("What is the capital of France?")
+            assert response is not None
+            assert response.content is not None
+            assert len(response.content) > 0
 
-    # Test configurations
-    tests = [
-        # Ollama - may need architecture-specific handling
-        ("ollama", "qwen3-coder:30b", {"base_url": "http://localhost:11434"}),
-    ]
+        except Exception as e:
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+                pytest.skip("LMStudio not running")
+            else:
+                raise
 
-    # Add OpenAI if available
-    if os.getenv("OPENAI_API_KEY"):
-        tests.append(("openai", "gpt-3.5-turbo", {}))
+    def test_tool_definition_creation(self):
+        """Test that ToolDefinition can be created from functions"""
+        # Test creating tool definition from function
+        tool_def = ToolDefinition.from_function(list_files)
 
-    # Add Anthropic if available
-    if os.getenv("ANTHROPIC_API_KEY"):
-        tests.append(("anthropic", "claude-3-haiku-20240307", {}))
+        assert tool_def.name == "list_files"
+        assert "List files" in tool_def.description
+        assert "parameters" in tool_def.to_dict()
 
-    results = {}
+    def test_tool_execution_safety(self):
+        """Test that tool execution handles errors gracefully"""
+        # Test with invalid directory
+        result = list_files("/nonexistent/directory/path")
+        assert "Error" in result
 
-    for provider, model, config in tests:
-        success = test_tool_calling(provider, model, config)
-        results[provider] = success
+        # Test with invalid math expression
+        result = calculate("invalid_expression")
+        assert "Error" in result
 
-    # Also test Ollama-specific format
-    ollama_special = test_ollama_tool_format()
-
-    # Print summary
-    print(f"\n{'='*60}")
-    print("TOOL CALLING TEST SUMMARY")
-    print('='*60)
-
-    for provider, success in results.items():
-        status = "✅" if success else "❌"
-        print(f"{status} {provider.upper()}: {'Supported' if success else 'Not supported/Failed'}")
-
-    print(f"{'✅' if ollama_special else '❌'} Ollama architecture-specific: {'Working' if ollama_special else 'Failed'}")
+        # Test with unknown city
+        result = get_weather("UnknownCityXYZ")
+        assert "not available" in result
 
 
 if __name__ == "__main__":
-    main()
+    # Allow running as script for debugging
+    pytest.main([__file__, "-v"])

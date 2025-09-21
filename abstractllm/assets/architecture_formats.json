@@ -1,0 +1,158 @@
+{
+  "architectures": {
+    "llama": {
+      "description": "Meta's LLaMA architecture family",
+      "message_format": "inst",
+      "system_prefix": "<<SYS>>\n",
+      "system_suffix": "\n<</SYS>>\n\n",
+      "user_prefix": "[INST] ",
+      "user_suffix": " [/INST]",
+      "assistant_prefix": "",
+      "assistant_suffix": "",
+      "tool_format": "pythonic",
+      "tool_prefix": "<|python_tag|>",
+      "patterns": ["llama", "codellama", "alpaca", "vicuna"]
+    },
+    "qwen": {
+      "description": "Alibaba's Qwen architecture family",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "json",
+      "patterns": ["qwen", "qwq"]
+    },
+    "mistral": {
+      "description": "Mistral AI architecture family",
+      "message_format": "inst",
+      "system_prefix": "",
+      "system_suffix": "\n\n",
+      "user_prefix": "[INST] ",
+      "user_suffix": " [/INST]",
+      "assistant_prefix": "",
+      "assistant_suffix": "",
+      "tool_format": "json",
+      "patterns": ["mistral", "mixtral", "codestral"]
+    },
+    "phi": {
+      "description": "Microsoft's Phi architecture family",
+      "message_format": "basic",
+      "system_prefix": "System: ",
+      "system_suffix": "\n\n",
+      "user_prefix": "User: ",
+      "user_suffix": "\n",
+      "assistant_prefix": "Assistant: ",
+      "assistant_suffix": "\n",
+      "tool_format": "xml",
+      "patterns": ["phi"]
+    },
+    "gemma": {
+      "description": "Google's Gemma architecture family",
+      "message_format": "basic",
+      "system_prefix": "",
+      "system_suffix": "\n\n",
+      "user_prefix": "Human: ",
+      "user_suffix": "\n",
+      "assistant_prefix": "Assistant: ",
+      "assistant_suffix": "\n",
+      "tool_format": "json",
+      "patterns": ["gemma", "codegemma"]
+    },
+    "glm": {
+      "description": "Zhipu AI's GLM architecture family",
+      "message_format": "im_start_end",
+      "system_prefix": "<|system|>\n",
+      "system_suffix": "\n",
+      "user_prefix": "<|user|>\n",
+      "user_suffix": "\n",
+      "assistant_prefix": "<|assistant|>\n",
+      "assistant_suffix": "\n",
+      "tool_format": "json",
+      "patterns": ["glm", "chatglm"]
+    },
+    "granite": {
+      "description": "IBM's Granite architecture family",
+      "message_format": "special_tokens",
+      "system_prefix": "<|system|>\n",
+      "system_suffix": "\n",
+      "user_prefix": "<|user|>\n",
+      "user_suffix": "\n",
+      "assistant_prefix": "<|assistant|>\n",
+      "assistant_suffix": "\n",
+      "tool_format": "json",
+      "tool_prefix": "<|tool_call|>",
+      "patterns": ["granite"]
+    },
+    "deepseek": {
+      "description": "DeepSeek architecture family",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "json",
+      "patterns": ["deepseek"]
+    },
+    "yi": {
+      "description": "01.AI's Yi architecture family",
+      "message_format": "basic",
+      "system_prefix": "",
+      "system_suffix": "\n\n",
+      "user_prefix": "Human: ",
+      "user_suffix": "\n",
+      "assistant_prefix": "Assistant: ",
+      "assistant_suffix": "\n",
+      "tool_format": "json",
+      "patterns": ["yi-"]
+    },
+    "claude": {
+      "description": "Anthropic's Claude (for Bedrock/vertex compatibility)",
+      "message_format": "human_assistant",
+      "system_prefix": "",
+      "system_suffix": "\n\n",
+      "user_prefix": "Human: ",
+      "user_suffix": "\n",
+      "assistant_prefix": "Assistant: ",
+      "assistant_suffix": "\n",
+      "tool_format": "xml",
+      "patterns": ["claude"]
+    },
+    "gpt": {
+      "description": "OpenAI GPT architecture (for reference)",
+      "message_format": "openai_chat",
+      "tool_format": "openai_functions",
+      "patterns": ["gpt", "chatgpt"]
+    },
+    "generic": {
+      "description": "Generic/unknown architecture fallback",
+      "message_format": "basic",
+      "system_prefix": "System: ",
+      "system_suffix": "\n\n",
+      "user_prefix": "Human: ",
+      "user_suffix": "\n",
+      "assistant_prefix": "Assistant: ",
+      "assistant_suffix": "\n",
+      "tool_format": "json",
+      "patterns": []
+    }
+  },
+  "message_formats": {
+    "inst": "Instruction format with [INST] tags",
+    "im_start_end": "ChatML format with <|im_start|> and <|im_end|>",
+    "special_tokens": "Uses role-specific special tokens",
+    "basic": "Simple role: content format",
+    "human_assistant": "Human/Assistant format",
+    "openai_chat": "OpenAI chat completion format"
+  },
+  "tool_formats": {
+    "pythonic": "Python function call syntax: [func(arg=val)]",
+    "json": "JSON object: {\"name\": \"func\", \"parameters\": {...}}",
+    "xml": "XML wrapped: <tool>...</tool>",
+    "openai_functions": "OpenAI function calling API format"
+  }
+}

@@ -28,42 +28,42 @@ def create_llm(provider: str, model: Optional[str] = None, **kwargs) -> Abstract
     elif provider.lower() == "openai":
         try:
             from ..providers.openai_provider import OpenAIProvider
-            return OpenAIProvider(model=model or "gpt-3.5-turbo", **kwargs)
+            return OpenAIProvider(model=model or "gpt-5-nano-2025-08-07", **kwargs)
         except ImportError:
             raise ImportError("OpenAI dependencies not installed. Install with: pip install abstractllm[openai]")
 
     elif provider.lower() == "anthropic":
         try:
             from ..providers.anthropic_provider import AnthropicProvider
-            return AnthropicProvider(model=model or "claude-3-haiku-20240307", **kwargs)
+            return AnthropicProvider(model=model or "claude-3-5-haiku-latest", **kwargs)
         except ImportError:
             raise ImportError("Anthropic dependencies not installed. Install with: pip install abstractllm[anthropic]")
 
     elif provider.lower() == "ollama":
         try:
             from ..providers.ollama_provider import OllamaProvider
-            return OllamaProvider(model=model or "llama2", **kwargs)
+            return OllamaProvider(model=model or "qwen3:4b", **kwargs)
         except ImportError:
             raise ImportError("Ollama dependencies not installed. Install with: pip install abstractllm[ollama]")
 
     elif provider.lower() == "huggingface":
         try:
             from ..providers.huggingface_provider import HuggingFaceProvider
-            return HuggingFaceProvider(model=model or "microsoft/DialoGPT-medium", **kwargs)
+            return HuggingFaceProvider(model=model or "Qwen/Qwen3-4B/", **kwargs)
         except ImportError:
             raise ImportError("HuggingFace dependencies not installed. Install with: pip install abstractllm[huggingface]")
 
     elif provider.lower() == "mlx":
         try:
             from ..providers.mlx_provider import MLXProvider
-            return MLXProvider(model=model or "mlx-community/Mistral-7B-Instruct-v0.1-4bit", **kwargs)
+            return MLXProvider(model=model or "mlx-community/Qwen3-4B", **kwargs)
         except ImportError:
             raise ImportError("MLX dependencies not installed. Install with: pip install abstractllm[mlx]")
 
     elif provider.lower() == "lmstudio":
         try:
             from ..providers.lmstudio_provider import LMStudioProvider
-            return LMStudioProvider(model=model or "local-model", **kwargs)
+            return LMStudioProvider(model=model or "qwen/qwen3-4b-2507", **kwargs)
         except ImportError:
             raise ImportError("LM Studio provider not available")
 

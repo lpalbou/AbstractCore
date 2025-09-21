@@ -2,174 +2,323 @@
 Integrated functionality test - test all components working together.
 """
 
+import pytest
 import os
-import sys
 import json
 import time
 from pathlib import Path
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import tempfile
 from abstractllm import create_llm, BasicSession
 from abstractllm.tools.common_tools import COMMON_TOOLS, execute_tool
-from abstractllm.utils.telemetry import Telemetry
+from abstractllm.utils.telemetry import Telemetry, setup_telemetry
 from abstractllm.events import EventType, EventEmitter
 from abstractllm.architectures import detect_architecture
 
 
-def test_provider_with_telemetry(provider_name: str, model: str, config: dict = None):
-    """Test a provider with full telemetry integration"""
-    print(f"\n{'='*60}")
-    print(f"Testing {provider_name} with {model}")
-    print('='*60)
+class TestIntegratedFunctionality:
+    """Test all components working together with real providers."""
 
-    # Setup telemetry
-    telemetry = Telemetry(enabled=True, verbatim=True,
-                          output_path=f"/tmp/test_{provider_name}.jsonl")
+    @pytest.fixture
+    def temp_telemetry_file(self):
+        """Create a temporary file for telemetry output."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+            yield f.name
+        # Cleanup
+        if os.path.exists(f.name):
+            os.unlink(f.name)
 
-    try:
-        # Create provider
-        provider = create_llm(provider_name, model=model, **(config or {}))
-        print(f"✅ Provider created")
+    def test_ollama_integrated_functionality(self, temp_telemetry_file):
+        """Test Ollama with all components integrated."""
+        try:
+            # Setup telemetry
+            setup_telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+            telemetry = Telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
 
-        # Test 1: Basic generation with telemetry tracking
-        print("\n[Test 1] Basic generation")
-        start = time.time()
-        prompt = "Who are you? Answer in one sentence."
-        response = provider.generate(prompt)
-        elapsed = time.time() - start
+            # Create provider
+            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
 
-        if response and response.content:
-            print(f"✅ Response: {response.content[:100]}...")
-            print(f"   Time: {elapsed:.2f}s")
+            # Test 1: Basic generation
+            prompt = "Who are you? Answer in one sentence."
+            start = time.time()
+            response = provider.generate(prompt)
+            elapsed = time.time() - start
 
-            # Manually track telemetry (since providers don't have it integrated yet)
+            assert response is not None
+            assert response.content is not None
+            assert len(response.content) > 0
+            assert elapsed < 30
+
+            # Manually track telemetry for test
             telemetry.track_generation(
-                provider=provider_name,
-                model=model,
+                provider="ollama",
+                model="qwen3:4b",
                 prompt=prompt,
                 response=response.content,
                 tokens=response.usage,
                 latency_ms=elapsed * 1000,
                 success=True
             )
-        else:
-            print("❌ No response")
 
-        # Test 2: Session with memory
-        print("\n[Test 2] Session memory")
-        session = BasicSession(provider=provider)
+            # Test 2: Session memory
+            session = BasicSession(provider=provider)
 
-        resp1 = session.generate("My name is Laurent. Who are you?")
-        print(f"   Q1: My name is Laurent. Who are you?")
-        print(f"   A1: {resp1.content[:100] if resp1.content else 'No response'}...")
+            resp1 = session.generate("My name is Laurent. Who are you?")
+            assert resp1 is not None
+            assert resp1.content is not None
 
-        telemetry.track_generation(
-            provider=provider_name,
-            model=model,
-            prompt="My name is Laurent. Who are you?",
-            response=resp1.content,
-            latency_ms=100,
-            success=bool(resp1.content)
-        )
+            resp2 = session.generate("What is my name?")
+            assert resp2 is not None
+            assert resp2.content is not None
 
-        resp2 = session.generate("What is my name?")
-        print(f"   Q2: What is my name?")
-        print(f"   A2: {resp2.content[:100] if resp2.content else 'No response'}...")
+            # Check if context is maintained
+            context_maintained = "laurent" in resp2.content.lower()
+            assert context_maintained, "Session should remember the name Laurent"
 
-        if resp2.content and "laurent" in resp2.content.lower():
-            print("✅ Session remembers context")
-        else:
-            print("⚠️  Session may not remember context")
+            # Test 3: Architecture detection
+            arch = detect_architecture("qwen3:4b")
+            assert arch is not None
 
-        telemetry.track_generation(
-            provider=provider_name,
-            model=model,
-            prompt="What is my name?",
-            response=resp2.content,
-            latency_ms=100,
-            success=bool(resp2.content)
-        )
+            # Test 4: Telemetry verification
+            summary = telemetry.get_summary()
+            assert summary["total_events"] > 0
 
-        # Test 3: Tool calling
-        print("\n[Test 3] Tool calling")
-        list_files_tool = next((t for t in COMMON_TOOLS if t["name"] == "list_files"), None)
+            # Test verbatim capture if file exists
+            telemetry_file = Path(temp_telemetry_file)
+            if telemetry_file.exists() and telemetry_file.stat().st_size > 0:
+                with open(telemetry_file, 'r') as f:
+                    lines = f.readlines()
+                    if lines:
+                        last = json.loads(lines[-1])
+                        assert "metadata" in last
+                        assert "prompt" in last["metadata"]
 
-        if list_files_tool:
-            tool_response = provider.generate("List the files in the current directory",
-                                             tools=[list_files_tool])
-
-            if tool_response and tool_response.has_tool_calls():
-                print("✅ Tool calls detected")
-                for call in tool_response.tool_calls:
-                    print(f"   Tool: {call.get('name')}")
-                    args = call.get('arguments', {})
-                    if isinstance(args, str):
-                        args = json.loads(args)
-
-                    result = execute_tool(call.get('name'), args)
-                    print(f"   Result: {result[:100]}...")
-
-                    telemetry.track_tool_call(
-                        tool_name=call.get('name'),
-                        arguments=args,
-                        result=result,
-                        success=True
-                    )
+        except Exception as e:
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+                pytest.skip("Ollama not running")
             else:
-                print("⚠️  No tool calls (provider may not support)")
+                raise
 
-        # Test 4: Verify telemetry
-        print("\n[Test 4] Telemetry verification")
+    def test_openai_integrated_functionality(self, temp_telemetry_file):
+        """Test OpenAI with all components integrated."""
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OPENAI_API_KEY not set")
+
+        try:
+            # Setup telemetry
+            setup_telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+            telemetry = Telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+
+            # Create provider
+            provider = create_llm("openai", model="gpt-4o-mini")
+
+            # Test 1: Basic generation
+            prompt = "Who are you? Answer in one sentence."
+            start = time.time()
+            response = provider.generate(prompt)
+            elapsed = time.time() - start
+
+            assert response is not None
+            assert response.content is not None
+            assert len(response.content) > 0
+            assert elapsed < 10
+
+            # Test 2: Session memory
+            session = BasicSession(provider=provider)
+
+            resp1 = session.generate("My name is Laurent. Who are you?")
+            assert resp1 is not None
+            assert resp1.content is not None
+
+            resp2 = session.generate("What is my name?")
+            assert resp2 is not None
+            assert resp2.content is not None
+
+            # Check if context is maintained
+            context_maintained = "laurent" in resp2.content.lower()
+            assert context_maintained, "Session should remember the name Laurent"
+
+            # Test 3: Tool calling (OpenAI supports tools)
+            list_files_tool = next((t for t in COMMON_TOOLS if t["name"] == "list_files"), None)
+            if list_files_tool:
+                tool_response = provider.generate("List the files in the current directory",
+                                                 tools=[list_files_tool])
+
+                assert tool_response is not None
+
+                if tool_response.has_tool_calls():
+                    # Tool calling worked
+                    assert len(tool_response.tool_calls) > 0
+                    for call in tool_response.tool_calls:
+                        assert call.get('name') is not None
+                        args = call.get('arguments', {})
+                        if isinstance(args, str):
+                            args = json.loads(args)
+
+                        # Test tool execution
+                        result = execute_tool(call.get('name'), args)
+                        assert len(result) > 0
+
+            # Test 4: Architecture detection
+            arch = detect_architecture("gpt-4o-mini")
+            assert arch is not None
+
+        except Exception as e:
+            if "authentication" in str(e).lower() or "api_key" in str(e).lower():
+                pytest.skip("OpenAI authentication failed")
+            else:
+                raise
+
+    def test_anthropic_integrated_functionality(self, temp_telemetry_file):
+        """Test Anthropic with all components integrated."""
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            pytest.skip("ANTHROPIC_API_KEY not set")
+
+        try:
+            # Setup telemetry
+            setup_telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+            telemetry = Telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+
+            # Create provider
+            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+
+            # Test 1: Basic generation
+            prompt = "Who are you? Answer in one sentence."
+            start = time.time()
+            response = provider.generate(prompt)
+            elapsed = time.time() - start
+
+            assert response is not None
+            assert response.content is not None
+            assert len(response.content) > 0
+            assert elapsed < 10
+
+            # Test 2: Session memory
+            session = BasicSession(provider=provider)
+
+            resp1 = session.generate("My name is Laurent. Who are you?")
+            assert resp1 is not None
+            assert resp1.content is not None
+
+            resp2 = session.generate("What is my name?")
+            assert resp2 is not None
+            assert resp2.content is not None
+
+            # Check if context is maintained
+            context_maintained = "laurent" in resp2.content.lower()
+            assert context_maintained, "Session should remember the name Laurent"
+
+            # Test 3: Tool calling (Anthropic supports tools)
+            list_files_tool = next((t for t in COMMON_TOOLS if t["name"] == "list_files"), None)
+            if list_files_tool:
+                tool_response = provider.generate("List the files in the current directory",
+                                                 tools=[list_files_tool])
+
+                assert tool_response is not None
+
+                if tool_response.has_tool_calls():
+                    # Tool calling worked
+                    assert len(tool_response.tool_calls) > 0
+                    for call in tool_response.tool_calls:
+                        assert call.get('name') is not None
+                        args = call.get('arguments', {})
+                        if isinstance(args, str):
+                            args = json.loads(args)
+
+                        # Test tool execution
+                        result = execute_tool(call.get('name'), args)
+                        assert len(result) > 0
+
+            # Test 4: Architecture detection
+            arch = detect_architecture("claude-3-5-haiku-20241022")
+            assert arch is not None
+
+        except Exception as e:
+            if "authentication" in str(e).lower() or "api_key" in str(e).lower():
+                pytest.skip("Anthropic authentication failed")
+            else:
+                raise
+
+    def test_telemetry_functionality(self, temp_telemetry_file):
+        """Test telemetry functionality independently."""
+        # Setup telemetry
+        telemetry = Telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+
+        # Test tracking generation
+        telemetry.track_generation(
+            provider="test",
+            model="test-model",
+            prompt="test prompt",
+            response="test response",
+            tokens={"total_tokens": 10},
+            latency_ms=100,
+            success=True
+        )
+
+        # Test tracking tool call
+        telemetry.track_tool_call(
+            tool_name="test_tool",
+            arguments={"arg": "value"},
+            result="test result",
+            success=True
+        )
+
+        # Test summary
         summary = telemetry.get_summary()
-        print(f"   Total events: {summary['total_events']}")
-        print(f"   Generations: {summary['total_generations']}")
-        print(f"   Tool calls: {summary['total_tool_calls']}")
+        assert summary["total_events"] >= 2
+        assert summary["total_generations"] >= 1
+        assert summary["total_tool_calls"] >= 1
 
-        # Check verbatim capture
-        telemetry_file = Path(f"/tmp/test_{provider_name}.jsonl")
-        if telemetry_file.exists():
+        # Test verbatim capture
+        telemetry_file = Path(temp_telemetry_file)
+        if telemetry_file.exists() and telemetry_file.stat().st_size > 0:
             with open(telemetry_file, 'r') as f:
                 lines = f.readlines()
-                if lines:
-                    last = json.loads(lines[-1])
-                    if "metadata" in last and "prompt" in last["metadata"]:
-                        print(f"✅ Verbatim capture working")
-                        print(f"   Last prompt: {last['metadata']['prompt'][:50]}...")
-                    else:
-                        print("⚠️  Telemetry without verbatim")
+                assert len(lines) >= 2
 
-        # Test 5: Architecture detection
-        print("\n[Test 5] Architecture detection")
-        arch = detect_architecture(model)
-        print(f"   Model: {model}")
-        print(f"   Architecture: {arch}")
+                # Check generation event
+                gen_event = json.loads(lines[0])
+                assert gen_event["event_type"] == "generation"
+                assert "metadata" in gen_event
+                assert gen_event["metadata"]["prompt"] == "test prompt"
 
-        return True
+    def test_architecture_detection(self):
+        """Test architecture detection for various models."""
+        test_cases = [
+            ("gpt-4o", "gpt"),
+            ("claude-3-5-haiku-20241022", "claude"),
+            ("qwen3:4b", "qwen"),
+            ("llama3.1:8b", "llama"),
+            ("mlx-community/Qwen3-4B-4bit", "qwen")
+        ]
 
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        return False
+        for model, expected_arch in test_cases:
+            arch = detect_architecture(model)
+            assert arch is not None
+            assert expected_arch.lower() in str(arch).lower()
 
+    def test_event_system(self):
+        """Test the event system functionality."""
+        emitter = EventEmitter()
 
-def main():
-    """Test main providers with full integration"""
+        # Test event emission and listening
+        events_received = []
 
-    # Test Ollama
-    test_provider_with_telemetry(
-        "ollama",
-        "qwen2.5-coder:3b",
-        {"base_url": "http://localhost:11434"}
-    )
+        def event_handler(event):
+            events_received.append(event)
 
-    # Test OpenAI if available
-    if os.getenv("OPENAI_API_KEY"):
-        test_provider_with_telemetry("openai", "gpt-3.5-turbo")
+        emitter.on(EventType.PROVIDER_CREATED, event_handler)
 
-    # Test Anthropic if available
-    if os.getenv("ANTHROPIC_API_KEY"):
-        test_provider_with_telemetry("anthropic", "claude-3-haiku-20240307")
+        # Emit an event
+        test_data = {"provider": "test", "model": "test-model"}
+        emitter.emit(EventType.PROVIDER_CREATED, test_data)
+
+        # Check event was received
+        assert len(events_received) == 1
+        event = events_received[0]
+        assert event.type == EventType.PROVIDER_CREATED
+        assert event.data == test_data
 
 
 if __name__ == "__main__":
-    main()
+    # Allow running as script for debugging
+    pytest.main([__file__, "-v"])

@@ -127,3 +127,12 @@ The AbstractLLM Core package successfully implements the foundational layer of t
 - ✅ **Complete Test Coverage**: All requested tests implemented
 
 The implementation follows the refactoring plan and provides a solid foundation for LLM applications with complete observability as requested.
+
+## CRITICAL WHEN TESTING
+For each providers, here are the DEFAULT models to use:
+- ollama : qwen3:4b
+- lmstudio : qwen/qwen3-coder-30b
+- mlx : mlx-community/Qwen3-4B-4bit
+- hf : Qwen/Qwen3-4B
+- openai : gpt-5-nano
+- anthropic claude-3-5-haiku-latest 
