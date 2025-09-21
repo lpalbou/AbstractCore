@@ -25,7 +25,15 @@ class HuggingFaceProvider(BaseProvider):
         if not HUGGINGFACE_AVAILABLE:
             raise ImportError("HuggingFace dependencies not installed. Install with: pip install transformers torch")
 
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        # Check for MPS (Apple Silicon GPU) support first, then CUDA, then CPU
+        if device:
+            self.device = device
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        elif torch.cuda.is_available():
+            self.device = "cuda"
+        else:
+            self.device = "cpu"
         self.tokenizer = None
         self.model_instance = None
         self.pipeline = None
@@ -39,16 +47,21 @@ class HuggingFaceProvider(BaseProvider):
             self.tokenizer = AutoTokenizer.from_pretrained(self.model)
             self.model_instance = AutoModelForCausalLM.from_pretrained(self.model)
 
-            # Move to device
-            if self.device == "cuda":
+            # Move to device (support MPS, CUDA, and CPU)
+            if self.device in ["cuda", "mps"]:
                 self.model_instance = self.model_instance.to(self.device)
 
-            # Create text generation pipeline
+            # Create text generation pipeline with proper device mapping
+            device_arg = 0 if self.device == "cuda" else -1
+            if self.device == "mps":
+                # For MPS, pass the device directly to the model, pipeline uses device=-1
+                device_arg = -1
+            
             self.pipeline = pipeline(
                 "text-generation",
                 model=self.model_instance,
                 tokenizer=self.tokenizer,
-                device=0 if self.device == "cuda" else -1
+                device=device_arg
             )
 
         except Exception as e:
@@ -85,27 +98,47 @@ class HuggingFaceProvider(BaseProvider):
         # Build input text
         input_text = self._build_input_text(prompt, messages, system_prompt)
 
-        # Generation parameters
-        max_length = kwargs.get("max_tokens", 2048) + len(self.tokenizer.encode(input_text))
+        # Generation parameters - use max_new_tokens instead of max_length
+        max_new_tokens = kwargs.get("max_tokens", 2048)
         temperature = kwargs.get("temperature", 0.7)
         top_p = kwargs.get("top_p", 0.9)
 
         try:
-            # Generate response
+            if stream:
+                return self._stream_generate(input_text, max_new_tokens, temperature, top_p)
+            else:
+                return self._single_generate(input_text, max_new_tokens, temperature, top_p)
+
+            return GenerateResponse(
+                content="Error: Generation method not implemented",
+                model=self.model,
+                finish_reason="error"
+            )
+
+        except Exception as e:
+            return GenerateResponse(
+                content=f"Error generating response: {str(e)}",
+                model=self.model,
+                finish_reason="error"
+            )
+
+    def _single_generate(self, input_text: str, max_new_tokens: int, temperature: float, top_p: float) -> GenerateResponse:
+        """Generate single response"""
+        try:
             outputs = self.pipeline(
                 input_text,
-                max_length=max_length,
+                max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 top_p=top_p,
                 num_return_sequences=1,
                 pad_token_id=self.tokenizer.eos_token_id,
-                do_sample=True
+                do_sample=True,
+                truncation=True,
+                return_full_text=False  # Only return the generated part
             )
 
             if outputs and len(outputs) > 0:
-                generated_text = outputs[0]['generated_text']
-                # Remove the input prompt from the output
-                response_text = generated_text[len(input_text):].strip()
+                response_text = outputs[0]['generated_text'].strip()
 
                 # Calculate token usage
                 input_tokens = len(self.tokenizer.encode(input_text))
@@ -130,7 +163,36 @@ class HuggingFaceProvider(BaseProvider):
 
         except Exception as e:
             return GenerateResponse(
-                content=f"Error generating response: {str(e)}",
+                content=f"Error: {str(e)}",
+                model=self.model,
+                finish_reason="error"
+            )
+
+    def _stream_generate(self, input_text: str, max_new_tokens: int, temperature: float, top_p: float) -> Iterator[GenerateResponse]:
+        """Generate streaming response (simulated for HuggingFace)"""
+        try:
+            # HuggingFace doesn't have native streaming, so we simulate it
+            full_response = self._single_generate(input_text, max_new_tokens, temperature, top_p)
+            
+            if full_response.content:
+                words = full_response.content.split()
+                for i, word in enumerate(words):
+                    content = word + (" " if i < len(words) - 1 else "")
+                    yield GenerateResponse(
+                        content=content,
+                        model=self.model,
+                        finish_reason="stop" if i == len(words) - 1 else None
+                    )
+            else:
+                yield GenerateResponse(
+                    content="",
+                    model=self.model,
+                    finish_reason="stop"
+                )
+                
+        except Exception as e:
+            yield GenerateResponse(
+                content=f"Error: {str(e)}",
                 model=self.model,
                 finish_reason="error"
             )
@@ -181,7 +243,7 @@ class HuggingFaceProvider(BaseProvider):
 
     def get_capabilities(self) -> List[str]:
         """Get list of capabilities supported by this provider"""
-        capabilities = ["chat"]
+        capabilities = ["chat", "streaming"]
 
         # Check for specific model capabilities
         model_lower = self.model.lower()

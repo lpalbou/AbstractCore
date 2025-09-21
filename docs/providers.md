@@ -126,7 +126,7 @@ llm = create_llm("mlx",
 - ✅ Optimized for Apple Silicon
 - ✅ 4-bit quantization
 - ✅ Fast inference
-- ❌ No native streaming
+- ✅ Real-time streaming (native MLX streaming)
 
 ### LM Studio
 
@@ -152,13 +152,13 @@ llm = create_llm("lmstudio",
 
 ## Provider Comparison
 
-| Provider | Speed | Cost | Privacy | Tool Support | Context |
-|----------|-------|------|---------|--------------|---------|
-| OpenAI | Fast | $$$ | Cloud | ✅ Native | 128k |
-| Anthropic | Fast | $$$ | Cloud | ✅ Native | 200k |
-| Ollama | Medium | Free | Local | ⚠️ Limited | Varies |
-| MLX | Fast | Free | Local | ❌ | Varies |
-| LM Studio | Medium | Free | Local | ⚠️ Limited | Varies |
+| Provider | Speed | Cost | Privacy | Tool Support | Streaming | Context |
+|----------|-------|------|---------|--------------|-----------|---------|
+| OpenAI | Fast | $$$ | Cloud | ✅ Native | ✅ Real-time | 128k |
+| Anthropic | Fast | $$$ | Cloud | ✅ Native | ✅ Real-time | 200k |
+| Ollama | Medium | Free | Local | ⚠️ Limited | ✅ Real-time | Varies |
+| MLX | Fast | Free | Local | ❌ | ✅ Real-time | Varies |
+| LM Studio | Medium | Free | Local | ⚠️ Limited | ✅ Real-time | Varies |
 
 ## Common Parameters
 

@@ -22,9 +22,18 @@ class MLXProvider(BaseProvider):
     def _load_model(self):
         """Load MLX model and tokenizer"""
         try:
-            from mlx_lm import load, generate
-            self.llm, self.tokenizer = load(self.model)
+            from mlx_lm import load, generate, stream_generate
+            import sys
+            import os
+            from contextlib import redirect_stdout, redirect_stderr
+            
+            # Silence the "Fetching" progress bar by redirecting stdout/stderr
+            with open(os.devnull, 'w') as devnull:
+                with redirect_stdout(devnull), redirect_stderr(devnull):
+                    self.llm, self.tokenizer = load(self.model)
+            
             self.generate_fn = generate
+            self.stream_generate_fn = stream_generate
         except ImportError:
             raise ImportError("MLX dependencies not installed. Install with: pip install mlx-lm")
         except Exception as e:
@@ -153,19 +162,29 @@ class MLXProvider(BaseProvider):
         )
 
     def _stream_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float) -> Iterator[GenerateResponse]:
-        """Generate streaming response (simulated for MLX)"""
-        # MLX doesn't have native streaming, so we simulate it
-        full_response = self._single_generate(prompt, max_tokens, temperature, top_p)
-
-        if full_response.content:
-            words = full_response.content.split()
-            for i, word in enumerate(words):
-                content = word + (" " if i < len(words) - 1 else "")
+        """Generate real streaming response using MLX stream_generate"""
+        try:
+            # Use MLX's native streaming with minimal parameters
+            for response in self.stream_generate_fn(
+                self.llm,
+                self.tokenizer,
+                prompt,
+                max_tokens=max_tokens
+            ):
+                # Each response has a .text attribute with the new token(s)
                 yield GenerateResponse(
-                    content=content,
+                    content=response.text,
                     model=self.model,
-                    finish_reason="stop" if i == len(words) - 1 else None
+                    finish_reason=None,  # MLX doesn't provide finish reason in stream
+                    raw_response=response
                 )
+                
+        except Exception as e:
+            yield GenerateResponse(
+                content=f"Error: {str(e)}",
+                model=self.model,
+                finish_reason="error"
+            )
 
     def get_capabilities(self) -> List[str]:
         """Get MLX capabilities"""

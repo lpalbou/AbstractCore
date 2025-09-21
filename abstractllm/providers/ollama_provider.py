@@ -39,7 +39,7 @@ class OllamaProvider(BaseProvider):
             "stream": stream,
             "options": {
                 "temperature": kwargs.get("temperature", 0.7),
-                "num_predict": kwargs.get("max_tokens", -1),
+                "num_predict": kwargs.get("max_tokens", 2048),
             }
         }
 
