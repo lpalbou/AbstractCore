@@ -11,6 +11,7 @@ from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..exceptions import ModelNotFoundError
 from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..utils.logging import redirect_stderr_to_logger
 
 # Try to import transformers (standard HuggingFace support)
 try:
@@ -36,12 +37,16 @@ class HuggingFaceProvider(BaseProvider):
 
     def __init__(self, model: str = "microsoft/DialoGPT-medium",
                  device: Optional[str] = None,
-                 context_size: int = 4096,
                  n_gpu_layers: Optional[int] = None,
                  **kwargs):
+
+        # Remove old context_size parameter and handle it through unified system
+        context_size = kwargs.pop("context_size", None)
+        if context_size and "max_tokens" not in kwargs:
+            kwargs["max_tokens"] = context_size
+
         super().__init__(model, **kwargs)
 
-        self.context_size = context_size
         self.n_gpu_layers = n_gpu_layers
         self.model_type = None  # Will be "transformers" or "gguf"
         self.device = device
@@ -65,6 +70,19 @@ class HuggingFaceProvider(BaseProvider):
             self.model_type = "transformers"
             self._setup_device_transformers()
             self._load_transformers_model()
+
+    def __del__(self):
+        """Properly clean up resources to minimize garbage collection issues"""
+        try:
+            if hasattr(self, 'llm') and self.llm is not None:
+                # Try to properly close the Llama object
+                if hasattr(self.llm, 'close'):
+                    self.llm.close()
+                # Clear the reference
+                self.llm = None
+        except Exception:
+            # Silently handle any cleanup errors - this is expected during shutdown
+            pass
 
     def _is_gguf_model(self, model: str) -> bool:
         """Detect if the model is a GGUF model"""
@@ -261,19 +279,24 @@ class HuggingFaceProvider(BaseProvider):
             elif 'functionary' in model_lower:
                 chat_format = "functionary-v2"
 
-            # Initialize llama-cpp-python
-            self.llm = Llama(
-                model_path=model_path,
-                n_ctx=self.context_size,
-                n_gpu_layers=self.n_gpu_layers,
-                chat_format=chat_format,
-                verbose=False,
-                n_threads=os.cpu_count() // 2 if os.cpu_count() else 4,
+            # Initialize llama-cpp-python with stderr redirected to our logger
+            llama_kwargs = {
+                "model_path": model_path,
+                "n_ctx": self.max_tokens,  # Use unified max_tokens for context window
+                "n_gpu_layers": self.n_gpu_layers,
+                "chat_format": chat_format,
+                "verbose": self.debug,  # Use debug flag for verbose output
+                "n_threads": os.cpu_count() // 2 if os.cpu_count() else 4,
                 # Additional performance settings
-                n_batch=512,
-                use_mmap=True,
-                use_mlock=False
-            )
+                "n_batch": 512,
+                "use_mmap": True,
+                "use_mlock": False
+            }
+
+            # Redirect stderr to our logger during initialization
+            # This captures ggml_metal_init warnings and controls them based on debug level
+            with redirect_stderr_to_logger(self.logger, self.debug):
+                self.llm = Llama(**llama_kwargs)
 
         except Exception as e:
             raise RuntimeError(f"Failed to load GGUF model {self.model}: {str(e)}")
@@ -390,8 +413,9 @@ class HuggingFaceProvider(BaseProvider):
         # Build input text
         input_text = self._build_input_text_transformers(prompt, messages, system_prompt)
 
-        # Generation parameters
-        max_new_tokens = kwargs.get("max_tokens", 2048)
+        # Generation parameters using unified system
+        generation_kwargs = self._prepare_generation_kwargs(**kwargs)
+        max_new_tokens = self._get_provider_max_tokens_param(generation_kwargs)
         temperature = kwargs.get("temperature", 0.7)
         top_p = kwargs.get("top_p", 0.9)
 
@@ -435,10 +459,13 @@ class HuggingFaceProvider(BaseProvider):
 
         chat_messages.append({"role": "user", "content": prompt})
 
-        # Prepare parameters
+        # Prepare parameters using unified system
+        unified_kwargs = self._prepare_generation_kwargs(**kwargs)
+        max_output_tokens = self._get_provider_max_tokens_param(unified_kwargs)
+
         generation_kwargs = {
             "messages": chat_messages,
-            "max_tokens": kwargs.get("max_tokens", 2048),
+            "max_tokens": max_output_tokens,  # This is max_output_tokens for llama-cpp
             "temperature": kwargs.get("temperature", 0.7),
             "top_p": kwargs.get("top_p", 0.9),
             "stream": stream
@@ -742,7 +769,7 @@ class HuggingFaceProvider(BaseProvider):
 
         if self.model_type == "gguf":
             # Return context size for GGUF models
-            return self.context_size
+            return self.max_tokens
 
         # Common model token limits for transformers
         token_limits = {
@@ -766,3 +793,23 @@ class HuggingFaceProvider(BaseProvider):
 
         # Default to 2048 for unknown models
         return 2048
+
+    def _get_default_context_window(self) -> int:
+        """Get default context window for HuggingFace models"""
+        if self._is_gguf_model(self.model):
+            # GGUF models typically have larger context windows
+            return 32768  # Conservative default for GGUF
+        else:
+            # Transformers models have smaller defaults
+            return 4096
+
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
+        """Get max tokens parameter appropriate for the model type"""
+        max_output_tokens = kwargs.get("max_output_tokens", self.max_output_tokens)
+
+        if self.model_type == "gguf":
+            # For GGUF models, this is the generation limit
+            return max_output_tokens
+        else:
+            # For transformers, this is max_new_tokens
+            return max_output_tokens

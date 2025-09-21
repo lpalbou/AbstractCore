@@ -69,8 +69,9 @@ class MLXProvider(BaseProvider):
         # Build full prompt
         full_prompt = self._build_prompt(prompt, messages, system_prompt)
 
-        # MLX generation parameters
-        max_tokens = kwargs.get("max_tokens", 2048)
+        # MLX generation parameters using unified system
+        generation_kwargs = self._prepare_generation_kwargs(**kwargs)
+        max_tokens = self._get_provider_max_tokens_param(generation_kwargs)
         temperature = kwargs.get("temperature", 0.7)
         top_p = kwargs.get("top_p", 0.9)
 
@@ -193,3 +194,13 @@ class MLXProvider(BaseProvider):
     def validate_config(self) -> bool:
         """Validate MLX model is loaded"""
         return self.llm is not None and self.tokenizer is not None
+
+    def _get_default_context_window(self) -> int:
+        """Get default context window for MLX models"""
+        # MLX models vary, use a reasonable default
+        return 8192
+
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
+        """Get max tokens parameter for MLX generation"""
+        # For MLX, max_tokens is the max output tokens
+        return kwargs.get("max_output_tokens", self.max_output_tokens)

@@ -74,13 +74,16 @@ class LMStudioProvider(BaseProvider):
             "content": prompt
         })
 
-        # Build request payload
+        # Build request payload using unified system
+        generation_kwargs = self._prepare_generation_kwargs(**kwargs)
+        max_output_tokens = self._get_provider_max_tokens_param(generation_kwargs)
+
         payload = {
             "model": self.model,
             "messages": chat_messages,
             "stream": stream,
             "temperature": kwargs.get("temperature", 0.7),
-            "max_tokens": kwargs.get("max_tokens", 2048),
+            "max_tokens": max_output_tokens,  # LMStudio uses max_tokens for output tokens
             "top_p": kwargs.get("top_p", 0.9),
         }
 
@@ -196,3 +199,13 @@ class LMStudioProvider(BaseProvider):
             return response.status_code == 200
         except:
             return False
+
+    def _get_default_context_window(self) -> int:
+        """Get default context window for LMStudio models"""
+        # LMStudio models vary, use a reasonable default
+        return 8192
+
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
+        """Get max tokens parameter for LMStudio API"""
+        # For LMStudio (OpenAI-compatible), max_tokens is the max output tokens
+        return kwargs.get("max_output_tokens", self.max_output_tokens)

@@ -38,14 +38,13 @@ class TestProviderConnectivity:
     def test_mlx_connectivity(self):
         """Test MLX provider can be created."""
         try:
-            provider = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
+            # Use the model from user's test specifications
+            provider = create_llm("mlx", model="mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit")
             assert provider is not None
-            assert provider.model == "mlx-community/Qwen3-4B-4bit"
+            assert provider.model == "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit"
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["mlx", "import", "not found", "failed to load"]):
-                pytest.skip("MLX not available or model not found")
-            else:
-                raise
+            # MLX should be available in this environment - don't skip, let it fail if there's an issue
+            raise RuntimeError(f"MLX provider should be available in this environment but failed: {e}")
 
     def test_huggingface_connectivity(self):
         """Test HuggingFace provider can be created."""

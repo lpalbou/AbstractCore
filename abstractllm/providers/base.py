@@ -51,6 +51,9 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         from ..events import emit_global
         emit_global(EventType.PROVIDER_CREATED, event_data, source=self.__class__.__name__)
 
+        # Set default token limits if not provided
+        self._initialize_token_limits()
+
     def _track_generation(self, prompt: str, response: Optional[GenerateResponse],
                          start_time: float, success: bool = True,
                          error: Optional[Exception] = None):
@@ -231,3 +234,53 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         This is called by generate_with_telemetry.
         """
         raise NotImplementedError("Subclasses must implement _generate_internal")
+
+    def _initialize_token_limits(self):
+        """Initialize default token limits based on model/provider"""
+        # Set default max_tokens if not provided (override in subclasses)
+        if self.max_tokens is None:
+            self.max_tokens = self._get_default_context_window()
+
+        # Validate parameters after setting defaults
+        self._validate_token_parameters()
+
+    def _get_default_context_window(self) -> int:
+        """Get default context window for this provider/model (override in subclasses)"""
+        return 8192  # Conservative default
+
+    def _prepare_generation_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """
+        Prepare generation kwargs by translating unified token parameters
+        to provider-specific ones.
+
+        Args:
+            **kwargs: Generation parameters including unified token params
+
+        Returns:
+            Dictionary with provider-specific parameters
+        """
+        # Get effective token limits
+        max_tokens, max_output_tokens, max_input_tokens = self._calculate_effective_token_limits()
+
+        # Override max_output_tokens if provided in kwargs
+        effective_max_output = kwargs.get("max_output_tokens", max_output_tokens)
+
+        # Return base kwargs with unified parameter
+        result_kwargs = kwargs.copy()
+        result_kwargs["max_output_tokens"] = effective_max_output
+
+        return result_kwargs
+
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
+        """
+        Extract the appropriate max tokens parameter for this provider.
+        This should be overridden by subclasses to return the provider-specific
+        parameter name and value.
+
+        Args:
+            kwargs: Generation parameters
+
+        Returns:
+            Max output tokens for the provider's API
+        """
+        return kwargs.get("max_output_tokens", self.max_output_tokens)

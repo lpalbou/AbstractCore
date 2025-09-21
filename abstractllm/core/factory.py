@@ -4,6 +4,7 @@ Factory for creating LLM providers.
 
 from typing import Dict, Any, Optional
 from .interface import AbstractLLMInterface
+from ..exceptions import ModelNotFoundError, AuthenticationError, ProviderAPIError
 
 
 def create_llm(provider: str, model: Optional[str] = None, **kwargs) -> AbstractLLMInterface:
@@ -31,6 +32,10 @@ def create_llm(provider: str, model: Optional[str] = None, **kwargs) -> Abstract
             return OpenAIProvider(model=model or "gpt-5-nano-2025-08-07", **kwargs)
         except ImportError:
             raise ImportError("OpenAI dependencies not installed. Install with: pip install abstractllm[openai]")
+        except (ModelNotFoundError, AuthenticationError, ProviderAPIError) as e:
+            # Re-raise provider exceptions cleanly without traceback
+            print(f"\n❌ {type(e).__name__}: {str(e)}")
+            exit(1)
 
     elif provider.lower() == "anthropic":
         try:
@@ -38,6 +43,10 @@ def create_llm(provider: str, model: Optional[str] = None, **kwargs) -> Abstract
             return AnthropicProvider(model=model or "claude-3-5-haiku-latest", **kwargs)
         except ImportError:
             raise ImportError("Anthropic dependencies not installed. Install with: pip install abstractllm[anthropic]")
+        except (ModelNotFoundError, AuthenticationError, ProviderAPIError) as e:
+            # Re-raise provider exceptions cleanly without traceback
+            print(f"\n❌ {type(e).__name__}: {str(e)}")
+            exit(1)
 
     elif provider.lower() == "ollama":
         try:

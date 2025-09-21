@@ -36,9 +36,8 @@ class AnthropicProvider(BaseProvider):
         # Initialize client
         self.client = anthropic.Anthropic(api_key=self.api_key)
 
-        # Store configuration
+        # Store configuration (remove duplicate max_tokens)
         self.temperature = kwargs.get("temperature", 0.7)
-        self.max_tokens = kwargs.get("max_tokens", 2048)
         self.top_p = kwargs.get("top_p", 1.0)
         self.top_k = kwargs.get("top_k", None)
 
@@ -80,11 +79,14 @@ class AnthropicProvider(BaseProvider):
         if prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
             api_messages.append({"role": "user", "content": prompt})
 
-        # Prepare API call parameters
+        # Prepare API call parameters using unified system
+        generation_kwargs = self._prepare_generation_kwargs(**kwargs)
+        max_output_tokens = self._get_provider_max_tokens_param(generation_kwargs)
+
         call_params = {
             "model": self.model,
             "messages": api_messages,
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "max_tokens": max_output_tokens,  # This is max_output_tokens for Anthropic
             "temperature": kwargs.get("temperature", self.temperature),
             "stream": stream
         }
@@ -300,3 +302,17 @@ class AnthropicProvider(BaseProvider):
         if not self.api_key:
             return False
         return True
+
+    def _get_default_context_window(self) -> int:
+        """Get default context window for Anthropic models"""
+        # Use the get_token_limit method for Anthropic models
+        token_limit = self.get_token_limit()
+        if token_limit:
+            return token_limit
+        # Default fallback
+        return 200000
+
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
+        """Get max tokens parameter for Anthropic API"""
+        # For Anthropic, max_tokens in the API is the max output tokens
+        return kwargs.get("max_output_tokens", self.max_output_tokens)

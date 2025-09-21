@@ -36,9 +36,11 @@ class OpenAIProvider(BaseProvider):
         # Initialize client
         self.client = openai.OpenAI(api_key=self.api_key)
 
-        # Store configuration
+        # Preflight check: validate model exists
+        self._validate_model_exists()
+
+        # Store configuration (remove duplicate max_tokens)
         self.temperature = kwargs.get("temperature", 0.7)
-        self.max_tokens = kwargs.get("max_tokens", 2048)
         self.top_p = kwargs.get("top_p", 1.0)
         self.frequency_penalty = kwargs.get("frequency_penalty", 0.0)
         self.presence_penalty = kwargs.get("presence_penalty", 0.0)
@@ -77,17 +79,29 @@ class OpenAIProvider(BaseProvider):
         if prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
             api_messages.append({"role": "user", "content": prompt})
 
-        # Prepare API call parameters
+        # Prepare API call parameters using unified system
+        generation_kwargs = self._prepare_generation_kwargs(**kwargs)
+        max_output_tokens = self._get_provider_max_tokens_param(generation_kwargs)
+
         call_params = {
             "model": self.model,
             "messages": api_messages,
-            "temperature": kwargs.get("temperature", self.temperature),
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-            "top_p": kwargs.get("top_p", self.top_p),
-            "frequency_penalty": kwargs.get("frequency_penalty", self.frequency_penalty),
-            "presence_penalty": kwargs.get("presence_penalty", self.presence_penalty),
             "stream": stream
         }
+
+        # Add parameters that are supported by this model
+        if not self._is_reasoning_model():
+            # Reasoning models (o1, gpt-5) don't support many parameters
+            call_params["temperature"] = kwargs.get("temperature", self.temperature)
+            call_params["top_p"] = kwargs.get("top_p", self.top_p)
+            call_params["frequency_penalty"] = kwargs.get("frequency_penalty", self.frequency_penalty)
+            call_params["presence_penalty"] = kwargs.get("presence_penalty", self.presence_penalty)
+
+        # Handle different token parameter names for different model families
+        if self._uses_max_completion_tokens():
+            call_params["max_completion_tokens"] = max_output_tokens
+        else:
+            call_params["max_tokens"] = max_output_tokens
 
         # Add tools if provided
         if tools:
@@ -113,18 +127,8 @@ class OpenAIProvider(BaseProvider):
 
                 return formatted
         except Exception as e:
-            # Use proper exception handling from base
-            error_str = str(e).lower()
-
-            if 'api_key' in error_str or 'authentication' in error_str:
-                raise AuthenticationError(f"OpenAI authentication failed: {str(e)}")
-            elif 'model' in error_str and ('not found' in error_str or 'does not exist' in error_str or '404' in error_str):
-                # Model not found - provide helpful error
-                available_models = get_available_models("openai", api_key=self.api_key)
-                error_message = format_model_error("OpenAI", self.model, available_models)
-                raise ModelNotFoundError(error_message)
-            else:
-                raise ProviderAPIError(f"OpenAI API error: {str(e)}")
+            # Model validation is done at initialization, so this is likely an API error
+            raise ProviderAPIError(f"OpenAI API error: {str(e)}")
 
     def _format_tools_for_openai(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Format tools for OpenAI API format"""
@@ -158,7 +162,7 @@ class OpenAIProvider(BaseProvider):
                     "arguments": tc.function.arguments
                 })
 
-        # Build usage dict
+        # Build usage dict with detailed breakdown
         usage = None
         if hasattr(response, 'usage'):
             usage = {
@@ -166,6 +170,23 @@ class OpenAIProvider(BaseProvider):
                 "completion_tokens": response.usage.completion_tokens,
                 "total_tokens": response.usage.total_tokens
             }
+
+            # Add detailed token breakdown for reasoning models
+            if hasattr(response.usage, 'completion_tokens_details'):
+                details = response.usage.completion_tokens_details
+                usage["completion_tokens_details"] = {
+                    "reasoning_tokens": getattr(details, 'reasoning_tokens', 0),
+                    "accepted_prediction_tokens": getattr(details, 'accepted_prediction_tokens', 0),
+                    "rejected_prediction_tokens": getattr(details, 'rejected_prediction_tokens', 0),
+                    "audio_tokens": getattr(details, 'audio_tokens', 0)
+                }
+
+            if hasattr(response.usage, 'prompt_tokens_details'):
+                prompt_details = response.usage.prompt_tokens_details
+                usage["prompt_tokens_details"] = {
+                    "cached_tokens": getattr(prompt_details, 'cached_tokens', 0),
+                    "audio_tokens": getattr(prompt_details, 'audio_tokens', 0)
+                }
 
         return GenerateResponse(
             content=message.content,
@@ -178,7 +199,11 @@ class OpenAIProvider(BaseProvider):
 
     def _stream_response(self, call_params: Dict[str, Any]) -> Iterator[GenerateResponse]:
         """Stream responses from OpenAI"""
-        stream = self.client.chat.completions.create(**call_params)
+        try:
+            stream = self.client.chat.completions.create(**call_params)
+        except Exception as e:
+            # Model validation is done at initialization, so this is likely an API error
+            raise ProviderAPIError(f"OpenAI API error: {str(e)}")
 
         for chunk in stream:
             choice = chunk.choices[0] if chunk.choices else None
@@ -245,3 +270,65 @@ class OpenAIProvider(BaseProvider):
         if not self.api_key:
             return False
         return True
+
+    def _validate_model_exists(self):
+        """Preflight check to validate model exists before any generation"""
+        try:
+            # Use the models.list() API to check if model exists
+            models = self.client.models.list()
+            available_model_ids = [model.id for model in models.data]
+
+            if self.model not in available_model_ids:
+                # Model not found - provide helpful error
+                error_message = format_model_error("OpenAI", self.model, available_model_ids)
+                raise ModelNotFoundError(error_message)
+
+        except Exception as e:
+            # If it's already a ModelNotFoundError, re-raise it
+            if isinstance(e, ModelNotFoundError):
+                raise
+            # For other errors (like API failures), handle gracefully
+            error_str = str(e).lower()
+            if 'api_key' in error_str or 'authentication' in error_str:
+                raise AuthenticationError(f"OpenAI authentication failed: {str(e)}")
+            # For other API errors during preflight, continue (model might work)
+            # This allows for cases where models.list() fails but generation works
+
+    def _get_default_context_window(self) -> int:
+        """Get default context window for OpenAI models"""
+        # Use the get_token_limit method for OpenAI models
+        token_limit = self.get_token_limit()
+        if token_limit:
+            return token_limit
+        # Default fallback
+        return 4096
+
+    def _get_default_max_output_tokens(self) -> int:
+        """Get appropriate default max_output_tokens for this model"""
+        # All models use 2048 as default - no special cases
+        return 2048
+
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
+        """Get max tokens parameter for OpenAI API"""
+        # For OpenAI, max_tokens in the API is the max output tokens
+        return kwargs.get("max_output_tokens", self.max_output_tokens)
+
+    def _uses_max_completion_tokens(self) -> bool:
+        """Check if this model uses max_completion_tokens instead of max_tokens"""
+        # OpenAI o1 series and newer models use max_completion_tokens
+        model_lower = self.model.lower()
+        return (
+            model_lower.startswith("o1") or
+            "gpt-5" in model_lower or
+            model_lower.startswith("gpt-o1")
+        )
+
+    def _is_reasoning_model(self) -> bool:
+        """Check if this is a reasoning model with limited parameter support"""
+        # Reasoning models (o1, gpt-5) have restricted parameter support
+        model_lower = self.model.lower()
+        return (
+            model_lower.startswith("o1") or
+            "gpt-5" in model_lower or
+            model_lower.startswith("gpt-o1")
+        )

@@ -33,13 +33,16 @@ class OllamaProvider(BaseProvider):
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with Ollama"""
 
-        # Build request payload
+        # Build request payload using unified system
+        generation_kwargs = self._prepare_generation_kwargs(**kwargs)
+        max_output_tokens = self._get_provider_max_tokens_param(generation_kwargs)
+
         payload = {
             "model": self.model,
             "stream": stream,
             "options": {
                 "temperature": kwargs.get("temperature", 0.7),
-                "num_predict": kwargs.get("max_tokens", 2048),
+                "num_predict": max_output_tokens,  # Ollama uses num_predict for max output tokens
             }
         }
 
@@ -177,3 +180,13 @@ class OllamaProvider(BaseProvider):
             return response.status_code == 200
         except:
             return False
+
+    def _get_default_context_window(self) -> int:
+        """Get default context window for Ollama models"""
+        # Ollama models vary widely, use a conservative default
+        return 4096
+
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
+        """Get max tokens parameter for Ollama API"""
+        # For Ollama, num_predict is the max output tokens
+        return kwargs.get("max_output_tokens", self.max_output_tokens)
