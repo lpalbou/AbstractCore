@@ -5,11 +5,13 @@ LM Studio provider implementation (OpenAI-compatible API).
 import httpx
 import json
 from typing import List, Dict, Any, Optional, Union, Iterator
-from ..core.interface import AbstractLLMInterface
+from .base import BaseProvider
 from ..core.types import GenerateResponse
+from ..exceptions import ProviderAPIError, ModelNotFoundError
+from ..utils.simple_model_discovery import get_available_models, format_model_error
 
 
-class LMStudioProvider(AbstractLLMInterface):
+class LMStudioProvider(BaseProvider):
     """LM Studio provider using OpenAI-compatible API"""
 
     def __init__(self, model: str = "local-model", base_url: str = "http://localhost:1234/v1", **kwargs):

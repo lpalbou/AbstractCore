@@ -2,13 +2,16 @@
 MLX provider implementation for Apple Silicon.
 """
 
+import time
 from typing import List, Dict, Any, Optional, Union, Iterator
-from ..core.interface import AbstractLLMInterface
+from .base import BaseProvider
 from ..core.types import GenerateResponse
+from ..exceptions import ProviderAPIError, ModelNotFoundError
+from ..utils.simple_model_discovery import get_available_models, format_model_error
 
 
-class MLXProvider(AbstractLLMInterface):
-    """MLX provider for Apple Silicon models"""
+class MLXProvider(BaseProvider):
+    """MLX provider for Apple Silicon models with full integration"""
 
     def __init__(self, model: str = "mlx-community/Mistral-7B-Instruct-v0.1-4bit", **kwargs):
         super().__init__(model, **kwargs)
@@ -25,16 +28,27 @@ class MLXProvider(AbstractLLMInterface):
         except ImportError:
             raise ImportError("MLX dependencies not installed. Install with: pip install mlx-lm")
         except Exception as e:
-            raise Exception(f"Failed to load MLX model {self.model}: {str(e)}")
+            # Check if it's a model not found error
+            error_str = str(e).lower()
+            if 'not found' in error_str or 'does not exist' in error_str or 'failed to load' in error_str:
+                available_models = get_available_models("mlx")
+                error_message = format_model_error("MLX", self.model, available_models)
+                raise ModelNotFoundError(error_message)
+            else:
+                raise Exception(f"Failed to load MLX model {self.model}: {str(e)}")
 
-    def generate(self,
-                prompt: str,
-                messages: Optional[List[Dict[str, str]]] = None,
-                system_prompt: Optional[str] = None,
-                tools: Optional[List[Dict[str, Any]]] = None,
-                stream: bool = False,
-                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
-        """Generate response using MLX"""
+    def generate(self, *args, **kwargs):
+        """Public generate method that includes telemetry"""
+        return self.generate_with_telemetry(*args, **kwargs)
+
+    def _generate_internal(self,
+                          prompt: str,
+                          messages: Optional[List[Dict[str, str]]] = None,
+                          system_prompt: Optional[str] = None,
+                          tools: Optional[List[Dict[str, Any]]] = None,
+                          stream: bool = False,
+                          **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        """Internal generation with MLX"""
 
         if not self.llm or not self.tokenizer:
             return GenerateResponse(

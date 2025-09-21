@@ -15,6 +15,7 @@ class MessageRole(Enum):
 
 class ModelParameter(Enum):
     """Standard model parameters"""
+    MODEL = "model"
     TEMPERATURE = "temperature"
     MAX_TOKENS = "max_tokens"
     TOP_P = "top_p"
@@ -26,6 +27,7 @@ class ModelParameter(Enum):
 
 class ModelCapability(Enum):
     """Model capabilities"""
+    CHAT = "chat"
     TOOLS = "tools"
     VISION = "vision"
     STREAMING = "streaming"

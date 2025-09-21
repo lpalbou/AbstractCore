@@ -4,27 +4,34 @@ Ollama provider implementation.
 
 import json
 import httpx
+import time
 from typing import List, Dict, Any, Optional, Union, Iterator
-from ..core.interface import AbstractLLMInterface
+from .base import BaseProvider
 from ..core.types import GenerateResponse
+from ..exceptions import ProviderAPIError, ModelNotFoundError
+from ..utils.simple_model_discovery import get_available_models, format_model_error
 
 
-class OllamaProvider(AbstractLLMInterface):
-    """Ollama provider for local models"""
+class OllamaProvider(BaseProvider):
+    """Ollama provider for local models with full integration"""
 
     def __init__(self, model: str = "llama2", base_url: str = "http://localhost:11434", **kwargs):
         super().__init__(model, **kwargs)
         self.base_url = base_url.rstrip('/')
         self.client = httpx.Client(timeout=30.0)
 
-    def generate(self,
-                prompt: str,
-                messages: Optional[List[Dict[str, str]]] = None,
-                system_prompt: Optional[str] = None,
-                tools: Optional[List[Dict[str, Any]]] = None,
-                stream: bool = False,
-                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
-        """Generate response using Ollama"""
+    def generate(self, *args, **kwargs):
+        """Public generate method that includes telemetry"""
+        return self.generate_with_telemetry(*args, **kwargs)
+
+    def _generate_internal(self,
+                          prompt: str,
+                          messages: Optional[List[Dict[str, str]]] = None,
+                          system_prompt: Optional[str] = None,
+                          tools: Optional[List[Dict[str, Any]]] = None,
+                          stream: bool = False,
+                          **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        """Internal generation with Ollama"""
 
         # Build request payload
         payload = {
@@ -101,11 +108,20 @@ class OllamaProvider(AbstractLLMInterface):
             )
 
         except Exception as e:
-            return GenerateResponse(
-                content=f"Error: {str(e)}",
-                model=self.model,
-                finish_reason="error"
-            )
+            # Check for model not found errors
+            error_str = str(e).lower()
+            if ('404' in error_str or 'not found' in error_str or 'model not found' in error_str or
+                'pull model' in error_str or 'no such model' in error_str):
+                # Model not found - provide helpful error
+                available_models = get_available_models("ollama", base_url=self.base_url)
+                error_message = format_model_error("Ollama", self.model, available_models)
+                raise ModelNotFoundError(error_message)
+            else:
+                return GenerateResponse(
+                    content=f"Error: {str(e)}",
+                    model=self.model,
+                    finish_reason="error"
+                )
 
     def _stream_generate(self, endpoint: str, payload: Dict[str, Any]) -> Iterator[GenerateResponse]:
         """Generate streaming response"""

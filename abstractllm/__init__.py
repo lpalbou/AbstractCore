@@ -6,6 +6,7 @@ from .core.factory import create_llm
 from .core.session import BasicSession
 from .core.types import GenerateResponse, Message
 from .core.enums import ModelParameter, ModelCapability, MessageRole
+from .exceptions import ModelNotFoundError, ProviderAPIError, AuthenticationError
 
 __all__ = [
     'create_llm',
@@ -14,5 +15,8 @@ __all__ = [
     'Message',
     'ModelParameter',
     'ModelCapability',
-    'MessageRole'
+    'MessageRole',
+    'ModelNotFoundError',
+    'ProviderAPIError',
+    'AuthenticationError'
 ]
