@@ -200,15 +200,59 @@ class AnthropicProvider(BaseProvider):
         # Remove stream parameter for streaming API
         stream_params = {k: v for k, v in call_params.items() if k != 'stream'}
         with self.client.messages.stream(**stream_params) as stream:
+            current_tool_call = None
+            accumulated_input = ""
+
             for chunk in stream:
                 # Handle different event types
-                if chunk.type == "content_block_delta":
+                if chunk.type == "content_block_start":
+                    # Start of a new content block (could be text or tool_use)
+                    if hasattr(chunk, 'content_block') and chunk.content_block.type == "tool_use":
+                        # Starting a tool call
+                        current_tool_call = {
+                            "id": chunk.content_block.id,
+                            "type": "tool_use",
+                            "name": chunk.content_block.name,
+                            "arguments": ""
+                        }
+                        accumulated_input = ""
+
+                elif chunk.type == "content_block_delta":
                     if hasattr(chunk.delta, 'text'):
+                        # Text content
                         yield GenerateResponse(
                             content=chunk.delta.text,
                             raw_response=chunk,
                             model=call_params.get("model")
                         )
+                    elif hasattr(chunk.delta, 'partial_json'):
+                        # Tool call arguments coming in chunks
+                        if current_tool_call:
+                            accumulated_input += chunk.delta.partial_json
+                            # Yield partial tool call
+                            tool_call_partial = current_tool_call.copy()
+                            tool_call_partial["arguments"] = accumulated_input
+                            yield GenerateResponse(
+                                content="",
+                                raw_response=chunk,
+                                model=call_params.get("model"),
+                                tool_calls=[tool_call_partial]
+                            )
+
+                elif chunk.type == "content_block_stop":
+                    # End of a content block
+                    if current_tool_call and accumulated_input:
+                        # Finalize the tool call with complete arguments
+                        current_tool_call["arguments"] = accumulated_input
+                        yield GenerateResponse(
+                            content="",
+                            raw_response=chunk,
+                            model=call_params.get("model"),
+                            tool_calls=[current_tool_call]
+                        )
+                        current_tool_call = None
+                        accumulated_input = ""
+
                 elif chunk.type == "message_stop":
                     # Final chunk with usage info
                     usage = None
