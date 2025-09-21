@@ -86,7 +86,7 @@ class HuggingFaceProvider(BaseProvider):
         input_text = self._build_input_text(prompt, messages, system_prompt)
 
         # Generation parameters
-        max_length = kwargs.get("max_tokens", 256) + len(self.tokenizer.encode(input_text))
+        max_length = kwargs.get("max_tokens", 2048) + len(self.tokenizer.encode(input_text))
         temperature = kwargs.get("temperature", 0.7)
         top_p = kwargs.get("top_p", 0.9)
 

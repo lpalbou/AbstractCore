@@ -61,7 +61,7 @@ class MLXProvider(BaseProvider):
         full_prompt = self._build_prompt(prompt, messages, system_prompt)
 
         # MLX generation parameters
-        max_tokens = kwargs.get("max_tokens", 256)
+        max_tokens = kwargs.get("max_tokens", 2048)
         temperature = kwargs.get("temperature", 0.7)
         top_p = kwargs.get("top_p", 0.9)
 
