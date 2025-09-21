@@ -138,12 +138,8 @@ class MLXProvider(BaseProvider):
                 # Fallback to basic response
                 response_text = prompt + " I am an AI assistant powered by MLX on Apple Silicon."
 
-        # Extract just the generated part (remove prompt)
-        generated = response_text[len(prompt):].strip()
-
-        # For Qwen models, stop at end token
-        if "<|im_end|>" in generated:
-            generated = generated.split("<|im_end|>")[0].strip()
+        # Use the full response as-is - preserve all content including thinking
+        generated = response_text.strip()
 
         return GenerateResponse(
             content=generated,
