@@ -171,3 +171,6 @@ config.json
 # data/
 # logs/
 # temp/
+
+
+*.pyc
