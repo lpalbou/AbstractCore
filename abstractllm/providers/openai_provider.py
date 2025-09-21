@@ -181,12 +181,35 @@ class OpenAIProvider(BaseProvider):
         stream = self.client.chat.completions.create(**call_params)
 
         for chunk in stream:
-            if chunk.choices[0].delta.content:
+            choice = chunk.choices[0] if chunk.choices else None
+            if not choice:
+                continue
+
+            delta = choice.delta
+            content = getattr(delta, 'content', None) or ""
+
+            # Handle tool calls in streaming
+            tool_calls = None
+            if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                tool_calls = []
+                for tc in delta.tool_calls:
+                    tool_call = {
+                        "id": getattr(tc, 'id', None),
+                        "type": getattr(tc, 'type', 'function'),
+                    }
+                    if hasattr(tc, 'function'):
+                        tool_call["name"] = getattr(tc.function, 'name', None)
+                        tool_call["arguments"] = getattr(tc.function, 'arguments', None)
+                    tool_calls.append(tool_call)
+
+            # Yield chunk if it has content or tool calls or finish reason
+            if content or tool_calls or choice.finish_reason:
                 yield GenerateResponse(
-                    content=chunk.choices[0].delta.content,
+                    content=content,
                     raw_response=chunk,
                     model=chunk.model,
-                    finish_reason=chunk.choices[0].finish_reason
+                    finish_reason=choice.finish_reason,
+                    tool_calls=tool_calls
                 )
 
     def get_capabilities(self) -> List[str]:
