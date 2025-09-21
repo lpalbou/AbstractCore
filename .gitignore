@@ -172,5 +172,10 @@ config.json
 # logs/
 # temp/
 
+# Claude AI and benchmarking files
+.claude/
+.benchmarks/
+*.claude
+*.benchmarks
 
 *.pyc
