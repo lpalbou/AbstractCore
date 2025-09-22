@@ -9,8 +9,7 @@ from abc import ABC
 from ..core.interface import AbstractLLMInterface
 from ..core.types import GenerateResponse
 from ..events import EventType, EventEmitter
-from ..utils.telemetry import get_telemetry
-from ..utils.logging import get_logger
+from ..utils.logging_config import get_logger
 from ..exceptions import (
     ProviderAPIError,
     AuthenticationError,
@@ -32,9 +31,8 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         AbstractLLMInterface.__init__(self, model, **kwargs)
         EventEmitter.__init__(self)
 
-        # Setup logging and telemetry
+        # Setup structured logging
         self.logger = get_logger(self.__class__.__name__)
-        self.telemetry = get_telemetry()
 
         # Detect architecture and get model capabilities
         self.architecture = detect_architecture(model)
@@ -83,29 +81,37 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         from ..events import emit_global
         emit_global(EventType.AFTER_GENERATE, event_data, source=self.__class__.__name__)
 
-        # Track telemetry
-        self.telemetry.track_generation(
-            provider=self.__class__.__name__,
-            model=self.model,
-            prompt=prompt,
-            response=response.content if response else None,
-            tokens=response.usage if response else None,
-            latency_ms=latency_ms,
-            success=success,
-            error=str(error) if error else None
-        )
+        # Track with structured logging
+        log_data = {
+            "event_type": "generation",
+            "provider": self.__class__.__name__,
+            "model": self.model,
+            "latency_ms": round(latency_ms, 2),
+            "success": success,
+            "prompt_length": len(prompt)
+        }
 
-        # Log
-        if success:
-            self.logger.debug(f"Generation completed in {latency_ms:.2f}ms")
-            if response and response.usage:
-                self.logger.debug(f"Tokens: {response.usage}")
-        else:
+        if response and response.usage:
+            log_data.update({
+                "prompt_tokens": response.usage.get("prompt_tokens", 0),
+                "completion_tokens": response.usage.get("completion_tokens", 0),
+                "total_tokens": response.usage.get("total_tokens", 0)
+            })
+
+        if response:
+            log_data["response_length"] = len(response.content) if response.content else 0
+
+        if error:
+            log_data["error"] = str(error)
+            log_data["error_type"] = error.__class__.__name__
+
             # Only log debug info for model not found errors to avoid duplication
             if isinstance(error, ModelNotFoundError):
-                self.logger.debug(f"Model not found: {self.model}")
+                self.logger.debug("Model not found", **log_data)
             else:
-                self.logger.error(f"Generation failed: {error}")
+                self.logger.error("Generation failed", **log_data)
+        else:
+            self.logger.info("Generation completed", **log_data)
 
     def _track_tool_call(self, tool_name: str, arguments: Dict[str, Any],
                         result: Optional[Any] = None, success: bool = True,
@@ -128,21 +134,23 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
             "error": str(error) if error else None
         })
 
-        # Track telemetry
-        self.telemetry.track_tool_call(
-            tool_name=tool_name,
-            arguments=arguments,
-            result=result,
-            success=success,
-            error=str(error) if error else None
-        )
+        # Track with structured logging
+        log_data = {
+            "event_type": "tool_call",
+            "tool_name": tool_name,
+            "success": success,
+            "argument_count": len(arguments) if arguments else 0
+        }
 
-        # Log
-        if success:
-            self.logger.info(f"Tool called: {tool_name}")
-            self.logger.debug(f"Arguments: {arguments}")
+        if error:
+            log_data["error"] = str(error)
+            log_data["error_type"] = error.__class__.__name__
+            self.logger.warning("Tool call failed", **log_data)
         else:
-            self.logger.error(f"Tool call failed: {tool_name} - {error}")
+            if result:
+                log_data["result_length"] = len(str(result))
+            self.logger.info("Tool call completed", **log_data)
+
 
     def _handle_api_error(self, error: Exception) -> Exception:
         """
@@ -253,26 +261,102 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         self._validate_token_parameters()
 
     def _get_default_max_output_tokens(self) -> int:
-        """Get default max_output_tokens from model capabilities"""
-        # First try to get from model capabilities
-        if hasattr(self, 'model_capabilities') and self.model_capabilities:
-            max_output_tokens = self.model_capabilities.get('max_output_tokens')
+        """Get default max_output_tokens using JSON capabilities as single source of truth"""
+        from ..architectures import get_model_capabilities
+
+        # Fallback chain: Exact model → Model family → Provider defaults → Global defaults
+        capabilities = get_model_capabilities(self.model)
+
+        if capabilities:
+            max_output_tokens = capabilities.get('max_output_tokens')
             if max_output_tokens:
+                self.logger.debug(f"Using max_output_tokens {max_output_tokens} from model capabilities for {self.model}")
                 return max_output_tokens
 
-        # Fallback to default
-        return 2048
+        # If no exact match, try model family/generation fallback
+        model_lower = self.model.lower()
+
+        # Family-based fallback patterns (same as context window)
+        family_patterns = {
+            'gpt-4': ['gpt-4', 'gpt4'],
+            'gpt-3.5': ['gpt-3.5', 'gpt3.5'],
+            'claude-3': ['claude-3'],
+            'claude-3.5': ['claude-3.5'],
+            'llama': ['llama'],
+            'qwen': ['qwen'],
+            'mistral': ['mistral']
+        }
+
+        for family, patterns in family_patterns.items():
+            if any(pattern in model_lower for pattern in patterns):
+                family_caps = get_model_capabilities(family)
+                if family_caps and family_caps.get('max_output_tokens'):
+                    max_output_tokens = family_caps['max_output_tokens']
+                    self.logger.debug(f"Using max_output_tokens {max_output_tokens} from family {family} for {self.model}")
+                    return max_output_tokens
+
+        # Provider-specific defaults as final fallback
+        provider_defaults = {
+            'OpenAIProvider': 4096,
+            'AnthropicProvider': 8192,
+            'OllamaProvider': 2048,
+            'HuggingFaceProvider': 2048,
+            'MLXProvider': 2048,
+            'LMStudioProvider': 2048
+        }
+
+        provider_default = provider_defaults.get(self.__class__.__name__, 2048)
+        self.logger.debug(f"Using provider default max_output_tokens {provider_default} for {self.model}")
+        return provider_default
 
     def _get_default_context_window(self) -> int:
-        """Get default context window for this provider/model from capabilities"""
-        # First try to get from model capabilities
-        if hasattr(self, 'model_capabilities') and self.model_capabilities:
-            context_length = self.model_capabilities.get('context_length')
+        """Get default context window using JSON capabilities as single source of truth"""
+        from ..architectures import get_model_capabilities
+
+        # Fallback chain: Exact model → Model family → Provider defaults → Global defaults
+        capabilities = get_model_capabilities(self.model)
+
+        if capabilities:
+            context_length = capabilities.get('context_length')
             if context_length:
+                self.logger.debug(f"Using context_length {context_length} from model capabilities for {self.model}")
                 return context_length
 
-        # Fallback to conservative default
-        return 8192
+        # If no exact match, try model family/generation fallback
+        model_lower = self.model.lower()
+
+        # Family-based fallback patterns
+        family_patterns = {
+            'gpt-4': ['gpt-4', 'gpt4'],
+            'gpt-3.5': ['gpt-3.5', 'gpt3.5'],
+            'claude-3': ['claude-3'],
+            'claude-3.5': ['claude-3.5'],
+            'llama': ['llama'],
+            'qwen': ['qwen'],
+            'mistral': ['mistral']
+        }
+
+        for family, patterns in family_patterns.items():
+            if any(pattern in model_lower for pattern in patterns):
+                family_caps = get_model_capabilities(family)
+                if family_caps and family_caps.get('context_length'):
+                    context_length = family_caps['context_length']
+                    self.logger.debug(f"Using context_length {context_length} from family {family} for {self.model}")
+                    return context_length
+
+        # Provider-specific defaults as final fallback
+        provider_defaults = {
+            'OpenAIProvider': 8192,
+            'AnthropicProvider': 200000,
+            'OllamaProvider': 4096,
+            'HuggingFaceProvider': 8192,
+            'MLXProvider': 8192,
+            'LMStudioProvider': 8192
+        }
+
+        provider_default = provider_defaults.get(self.__class__.__name__, 8192)
+        self.logger.warning(f"No model capabilities found for {self.model}, using provider default {provider_default}")
+        return provider_default
 
     def _prepare_generation_kwargs(self, **kwargs) -> Dict[str, Any]:
         """

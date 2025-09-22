@@ -283,10 +283,7 @@ class OllamaProvider(BaseProvider):
         except:
             return False
 
-    def _get_default_context_window(self) -> int:
-        """Get default context window for Ollama models"""
-        # Ollama models vary widely, use a conservative default
-        return 4096
+    # Removed override - using BaseProvider method with JSON capabilities
 
     def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
         """Get max tokens parameter for Ollama API"""

@@ -833,14 +833,7 @@ class HuggingFaceProvider(BaseProvider):
         # Default to 2048 for unknown models
         return 2048
 
-    def _get_default_context_window(self) -> int:
-        """Get default context window for HuggingFace models"""
-        if self._is_gguf_model(self.model):
-            # GGUF models typically have larger context windows
-            return 32768  # Conservative default for GGUF
-        else:
-            # Transformers models have smaller defaults
-            return 4096
+    # Removed override - using BaseProvider method with JSON capabilities
 
     def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
         """Get max tokens parameter appropriate for the model type"""

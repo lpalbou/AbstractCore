@@ -352,19 +352,7 @@ class OpenAIProvider(BaseProvider):
             # For other API errors during preflight, continue (model might work)
             # This allows for cases where models.list() fails but generation works
 
-    def _get_default_context_window(self) -> int:
-        """Get default context window for OpenAI models"""
-        # Use the get_token_limit method for OpenAI models
-        token_limit = self.get_token_limit()
-        if token_limit:
-            return token_limit
-        # Default fallback
-        return 4096
-
-    def _get_default_max_output_tokens(self) -> int:
-        """Get appropriate default max_output_tokens for this model"""
-        # All models use 2048 as default - no special cases
-        return 2048
+    # Removed overrides - using BaseProvider methods with JSON capabilities
 
     def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
         """Get max tokens parameter for OpenAI API"""

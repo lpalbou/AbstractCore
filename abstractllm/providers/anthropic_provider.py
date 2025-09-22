@@ -363,14 +363,7 @@ class AnthropicProvider(BaseProvider):
             return False
         return True
 
-    def _get_default_context_window(self) -> int:
-        """Get default context window for Anthropic models"""
-        # Use the get_token_limit method for Anthropic models
-        token_limit = self.get_token_limit()
-        if token_limit:
-            return token_limit
-        # Default fallback
-        return 200000
+    # Removed override - using BaseProvider method with JSON capabilities
 
     def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
         """Get max tokens parameter for Anthropic API"""

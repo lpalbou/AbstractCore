@@ -221,10 +221,7 @@ class LMStudioProvider(BaseProvider):
         except:
             return False
 
-    def _get_default_context_window(self) -> int:
-        """Get default context window for LMStudio models"""
-        # LMStudio models vary, use a reasonable default
-        return 8192
+    # Removed override - using BaseProvider method with JSON capabilities
 
     def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
         """Get max tokens parameter for LMStudio API"""
