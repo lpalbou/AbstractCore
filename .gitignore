@@ -180,3 +180,5 @@ config.json
 
 *.pyc
 logs/
+
+*.egg-info/
