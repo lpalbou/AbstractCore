@@ -470,12 +470,19 @@ def _format_qwen_style(tools: List[ToolDefinition]) -> str:
             prompt += f"Parameters: {json.dumps(tool.parameters, indent=2)}\n"
         prompt += "\n"
 
-    prompt += """To use a tool, respond with:
+    prompt += """To use a tool, respond with this EXACT format:
 <|tool_call|>
 {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
 </|tool_call|>
 
-Important: Use the exact format shown above. The arguments must be a valid JSON object."""
+CRITICAL RULES:
+1. The "name" field must be at the TOP LEVEL, NOT inside "arguments"
+2. Do NOT put "name" inside the "arguments" object
+3. Use the exact JSON structure shown above
+4. Example for list_files tool:
+<|tool_call|>
+{"name": "list_files", "arguments": {"directory": ".", "pattern": "*"}}
+</|tool_call|>"""
 
     return prompt
 

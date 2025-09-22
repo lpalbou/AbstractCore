@@ -224,7 +224,7 @@ class OpenAIProvider(BaseProvider):
 
         # For streaming with tools, we need to collect the complete response
         collected_content = ""
-        collected_tool_calls = []
+        collected_tool_calls = {}  # Use dict to merge streaming chunks by tool call ID
         final_response = None
 
         for chunk in stream:
@@ -236,23 +236,26 @@ class OpenAIProvider(BaseProvider):
             content = getattr(delta, 'content', None) or ""
             collected_content += content
 
-            # Handle tool calls in streaming
-            tool_calls = None
+            # Handle tool calls in streaming - merge incomplete chunks
             if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                tool_calls = []
                 for tc in delta.tool_calls:
-                    tool_call = {
-                        "id": getattr(tc, 'id', None),
-                        "type": getattr(tc, 'type', 'function'),
-                    }
-                    if hasattr(tc, 'function'):
-                        tool_call["name"] = getattr(tc.function, 'name', None)
-                        tool_call["arguments"] = getattr(tc.function, 'arguments', None)
-                    tool_calls.append(tool_call)
+                    tc_id = getattr(tc, 'id', None) or getattr(tc, 'index', 0)
 
-                # Collect tool calls for final processing
-                if tool_calls:
-                    collected_tool_calls.extend(tool_calls)
+                    # Initialize or get existing tool call
+                    if tc_id not in collected_tool_calls:
+                        collected_tool_calls[tc_id] = {
+                            "id": getattr(tc, 'id', None),
+                            "type": getattr(tc, 'type', 'function'),
+                            "name": None,
+                            "arguments": ""
+                        }
+
+                    # Update with new data from this chunk
+                    if hasattr(tc, 'function'):
+                        if hasattr(tc.function, 'name') and tc.function.name:
+                            collected_tool_calls[tc_id]["name"] = tc.function.name
+                        if hasattr(tc.function, 'arguments') and tc.function.arguments:
+                            collected_tool_calls[tc_id]["arguments"] += tc.function.arguments
 
             # Create chunk response
             chunk_response = GenerateResponse(
@@ -260,18 +263,24 @@ class OpenAIProvider(BaseProvider):
                 raw_response=chunk,
                 model=chunk.model,
                 finish_reason=choice.finish_reason,
-                tool_calls=tool_calls
+                tool_calls=None  # Don't include incomplete tool calls in chunks
             )
 
             # If this is the final chunk and we have tools, handle tool execution
             if choice.finish_reason and tools and collected_tool_calls:
+                # Convert dict to list and filter out incomplete tool calls
+                complete_tool_calls = []
+                for tc in collected_tool_calls.values():
+                    if tc["name"] and tc["arguments"] is not None:  # Include tool calls with empty args
+                        complete_tool_calls.append(tc)
+
                 # Create complete response for tool processing
                 complete_response = GenerateResponse(
                     content=collected_content,
                     raw_response=chunk,
                     model=chunk.model,
                     finish_reason=choice.finish_reason,
-                    tool_calls=collected_tool_calls
+                    tool_calls=complete_tool_calls if complete_tool_calls else None
                 )
 
                 # Handle tool execution
@@ -288,7 +297,14 @@ class OpenAIProvider(BaseProvider):
                         tool_calls=None
                     )
                 else:
-                    yield chunk_response
+                    # No tools executed but response was processed - yield final response content
+                    yield GenerateResponse(
+                        content=final_response.content,
+                        raw_response=chunk,
+                        model=chunk.model,
+                        finish_reason=choice.finish_reason,
+                        tool_calls=complete_tool_calls if complete_tool_calls else None
+                    )
             else:
                 yield chunk_response
 

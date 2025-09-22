@@ -154,7 +154,7 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
                                prompt: str,
                                messages: Optional[List[Dict[str, str]]] = None,
                                system_prompt: Optional[str] = None,
-                               tools: Optional[List[Dict[str, Any]]] = None,
+                               tools: Optional[List] = None,  # Accept both ToolDefinition and Dict
                                stream: bool = False,
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
@@ -175,12 +175,25 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         emit_global(EventType.BEFORE_GENERATE, event_data, source=self.__class__.__name__)
 
         try:
+            # Convert ToolDefinition objects to dicts if needed
+            converted_tools = None
+            if tools:
+                converted_tools = []
+                for tool in tools:
+                    if hasattr(tool, 'to_dict'):  # ToolDefinition object
+                        converted_tools.append(tool.to_dict())
+                    elif isinstance(tool, dict):  # Already a dict
+                        converted_tools.append(tool)
+                    else:
+                        # Handle other types gracefully
+                        self.logger.warning(f"Unknown tool type: {type(tool)}, skipping")
+
             # Call the actual generation (implemented by subclass)
             response = self._generate_internal(
                 prompt=prompt,
                 messages=messages,
                 system_prompt=system_prompt,
-                tools=tools,
+                tools=converted_tools,
                 stream=stream,
                 **kwargs
             )

@@ -497,12 +497,20 @@ class HuggingFaceProvider(BaseProvider):
                 # Convert tools to OpenAI format for native support
                 openai_tools = []
                 for tool in tools:
+                    # Format parameters as proper JSON Schema
+                    params = tool.get("parameters", {})
+                    json_schema_params = {
+                        "type": "object",
+                        "properties": params,
+                        "required": [name for name, param in params.items() if "default" not in param]
+                    }
+
                     openai_tools.append({
                         "type": "function",
                         "function": {
                             "name": tool.get("name"),
                             "description": tool.get("description", ""),
-                            "parameters": tool.get("parameters", {})
+                            "parameters": json_schema_params
                         }
                     })
                 generation_kwargs["tools"] = openai_tools
@@ -579,8 +587,14 @@ class HuggingFaceProvider(BaseProvider):
                 "total_tokens": response['usage'].get('total_tokens', 0)
             }
 
+        # Fix HTML escaping in llama-cpp-python responses
+        content = message.get('content', '')
+        if content:
+            import html
+            content = html.unescape(content)
+
         return GenerateResponse(
-            content=message.get('content', ''),
+            content=content,
             model=self.model,
             finish_reason=choice.get('finish_reason', 'stop'),
             usage=usage,
@@ -603,8 +617,14 @@ class HuggingFaceProvider(BaseProvider):
 
             # Handle text content
             if 'content' in delta and delta['content']:
+                # Fix HTML escaping in streaming content
+                content = delta['content']
+                if content:
+                    import html
+                    content = html.unescape(content)
+
                 yield GenerateResponse(
-                    content=delta['content'],
+                    content=content,
                     model=self.model,
                     finish_reason=choice.get('finish_reason')
                 )
