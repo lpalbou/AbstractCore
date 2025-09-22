@@ -22,7 +22,8 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "json",
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
       "patterns": ["qwen", "qwq"]
     },
     "mistral": {
@@ -153,6 +154,8 @@
     "pythonic": "Python function call syntax: [func(arg=val)]",
     "json": "JSON object: {\"name\": \"func\", \"parameters\": {...}}",
     "xml": "XML wrapped: <tool>...</tool>",
+    "special_token": "Special token format: <|tool_call|>{...}",
+    "native": "Native API support (OpenAI/Anthropic)",
     "openai_functions": "OpenAI function calling API format"
   }
 }

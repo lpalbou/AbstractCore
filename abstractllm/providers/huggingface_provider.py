@@ -11,7 +11,8 @@ from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..exceptions import ModelNotFoundError
 from ..utils.simple_model_discovery import get_available_models, format_model_error
-from ..utils.logging import redirect_stderr_to_logger
+from ..tools import UniversalToolHandler, execute_tools
+from ..events import EventType
 
 # Try to import transformers (standard HuggingFace support)
 try:
@@ -46,6 +47,9 @@ class HuggingFaceProvider(BaseProvider):
             kwargs["max_tokens"] = context_size
 
         super().__init__(model, **kwargs)
+
+        # Initialize tool handler
+        self.tool_handler = UniversalToolHandler(model)
 
         self.n_gpu_layers = n_gpu_layers
         self.model_type = None  # Will be "transformers" or "gguf"
@@ -410,8 +414,8 @@ class HuggingFaceProvider(BaseProvider):
                 finish_reason="error"
             )
 
-        # Build input text
-        input_text = self._build_input_text_transformers(prompt, messages, system_prompt)
+        # Build input text with tool support
+        input_text = self._build_input_text_transformers(prompt, messages, system_prompt, tools)
 
         # Generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -421,9 +425,15 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             if stream:
-                return self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p)
+                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, tools)
             else:
-                return self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p)
+                response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p)
+
+                # Handle tool execution for prompted models
+                if tools and self.tool_handler.supports_prompted and response.content:
+                    response = self._handle_prompted_tool_execution(response, tools)
+
+                return response
 
         except Exception as e:
             return GenerateResponse(
@@ -471,30 +481,50 @@ class HuggingFaceProvider(BaseProvider):
             "stream": stream
         }
 
-        # Add tools if provided and model supports them
-        if tools and self.llm.chat_format in ["chatml-function-calling", "functionary-v2"]:
-            # Convert tools to OpenAI format
-            openai_tools = []
-            for tool in tools:
-                openai_tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": tool.get("name"),
-                        "description": tool.get("description", ""),
-                        "parameters": tool.get("parameters", {})
-                    }
-                })
-            generation_kwargs["tools"] = openai_tools
+        # Handle tools - both native and prompted support
+        has_native_tools = False
+        if tools:
+            # Check if model supports native tools
+            if self.llm.chat_format in ["chatml-function-calling", "functionary-v2"]:
+                # Convert tools to OpenAI format for native support
+                openai_tools = []
+                for tool in tools:
+                    openai_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": tool.get("name"),
+                            "description": tool.get("description", ""),
+                            "parameters": tool.get("parameters", {})
+                        }
+                    })
+                generation_kwargs["tools"] = openai_tools
 
-            # Don't use auto for streaming (limitation of llama-cpp-python)
-            if not stream:
-                generation_kwargs["tool_choice"] = "auto"
+                # Don't use auto for streaming (limitation of llama-cpp-python)
+                if not stream:
+                    generation_kwargs["tool_choice"] = "auto"
+                has_native_tools = True
+
+            elif self.tool_handler.supports_prompted:
+                # Add tools as system prompt for prompted models
+                tool_prompt = self.tool_handler.format_tools_prompt(tools)
+                if chat_messages and chat_messages[0]["role"] == "system":
+                    chat_messages[0]["content"] += f"\n\n{tool_prompt}"
+                else:
+                    chat_messages.insert(0, {"role": "system", "content": tool_prompt})
+                generation_kwargs["messages"] = chat_messages
 
         try:
             if stream:
-                return self._stream_generate_gguf(generation_kwargs)
+                return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools)
             else:
-                return self._single_generate_gguf(generation_kwargs)
+                response = self._single_generate_gguf(generation_kwargs)
+
+                # Handle tool execution for both native and prompted responses
+                if tools and (response.has_tool_calls() or
+                             (self.tool_handler.supports_prompted and response.content)):
+                    response = self._handle_tool_execution_gguf(response, tools, has_native_tools)
+
+                return response
 
         except Exception as e:
             if stream:
@@ -694,16 +724,25 @@ class HuggingFaceProvider(BaseProvider):
             )
 
     def _build_input_text_transformers(self, prompt: str, messages: Optional[List[Dict[str, str]]],
-                                      system_prompt: Optional[str]) -> str:
-        """Build input text for transformers model (original implementation)"""
+                                      system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]] = None) -> str:
+        """Build input text for transformers model with tool support"""
+
+        # Add tools to system prompt if provided
+        enhanced_system_prompt = system_prompt
+        if tools and self.tool_handler.supports_prompted:
+            tool_prompt = self.tool_handler.format_tools_prompt(tools)
+            if enhanced_system_prompt:
+                enhanced_system_prompt += f"\n\n{tool_prompt}"
+            else:
+                enhanced_system_prompt = tool_prompt
 
         # Check if model has chat template
         if hasattr(self.tokenizer, 'chat_template') and self.tokenizer.chat_template:
             # Use chat template if available
             chat_messages = []
 
-            if system_prompt:
-                chat_messages.append({"role": "system", "content": system_prompt})
+            if enhanced_system_prompt:
+                chat_messages.append({"role": "system", "content": enhanced_system_prompt})
 
             if messages:
                 chat_messages.extend(messages)
@@ -813,3 +852,85 @@ class HuggingFaceProvider(BaseProvider):
         else:
             # For transformers, this is max_new_tokens
             return max_output_tokens
+
+
+    def _stream_generate_transformers_with_tools(self, input_text: str, max_new_tokens: int,
+                                               temperature: float, top_p: float,
+                                               tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
+        """Stream generate with tool execution at the end"""
+        collected_content = ""
+
+        # Stream the response content
+        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p):
+            collected_content += chunk.content
+            yield chunk
+
+        # Handle tool execution if we have tools and content
+        if tools and self.tool_handler.supports_prompted and collected_content:
+            # Create complete response for tool processing
+            complete_response = GenerateResponse(
+                content=collected_content,
+                model=self.model,
+                finish_reason="stop"
+            )
+
+            # Handle tool execution using base method
+            final_response = self._handle_prompted_tool_execution(complete_response, tools)
+
+            # If tools were executed, yield the tool results as final chunk
+            if final_response.content != collected_content:
+                tool_results_content = final_response.content[len(collected_content):]
+                yield GenerateResponse(
+                    content=tool_results_content,
+                    model=self.model,
+                    finish_reason="stop"
+                )
+
+    def _handle_tool_execution_gguf(self, response: GenerateResponse, tools: List[Dict[str, Any]], has_native_tools: bool) -> GenerateResponse:
+        """Handle tool execution for GGUF responses - both native and prompted"""
+        if has_native_tools and response.has_tool_calls():
+            # Handle native tool calls using base method
+            tool_calls = self._convert_native_tool_calls_to_standard(response.tool_calls)
+            return self._execute_tools_with_events(response, tool_calls)
+        elif self.tool_handler.supports_prompted and response.content:
+            # Handle prompted tool calls using base method
+            return self._handle_prompted_tool_execution(response, tools)
+
+        return response
+
+    def _stream_generate_gguf_with_tools(self, generation_kwargs: Dict[str, Any],
+                                       tools: Optional[List[Dict[str, Any]]] = None,
+                                       has_native_tools: bool = False) -> Iterator[GenerateResponse]:
+        """Stream generate GGUF with tool execution at the end"""
+        collected_content = ""
+        collected_tool_calls = []
+
+        # Stream the response content
+        for chunk in self._stream_generate_gguf(generation_kwargs):
+            collected_content += chunk.content
+            if chunk.tool_calls:
+                collected_tool_calls.extend(chunk.tool_calls)
+            yield chunk
+
+        # Handle tool execution if we have tools and content/calls
+        if tools and (collected_tool_calls or
+                     (self.tool_handler.supports_prompted and collected_content)):
+            # Create complete response for tool processing
+            complete_response = GenerateResponse(
+                content=collected_content,
+                model=self.model,
+                finish_reason="stop",
+                tool_calls=collected_tool_calls
+            )
+
+            # Handle tool execution using simplified method
+            final_response = self._handle_tool_execution_gguf(complete_response, tools, has_native_tools)
+
+            # If tools were executed, yield the tool results as final chunk
+            if final_response.content != collected_content:
+                tool_results_content = final_response.content[len(collected_content):]
+                yield GenerateResponse(
+                    content=tool_results_content,
+                    model=self.model,
+                    finish_reason="stop"
+                )

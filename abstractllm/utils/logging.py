@@ -1,24 +1,45 @@
 """
 Logging utilities for AbstractLLM.
+
+This module provides both legacy compatibility and modern structured logging.
+For new code, prefer the structured logging from .structured_logging module.
 """
 
 import logging
 import sys
+import warnings
 from typing import Optional
 from pathlib import Path
+
+# Import new structured logging system
+from .structured_logging import (
+    get_logger as get_structured_logger,
+    configure_logging as configure_structured_logging,
+    capture_session,
+    suppress_stdout_stderr,
+    STRUCTLOG_AVAILABLE
+)
 
 
 def setup_logging(level: str = "INFO",
                   log_file: Optional[Path] = None,
                   format_string: Optional[str] = None):
     """
-    Setup logging configuration.
+    Setup logging configuration (legacy).
+
+    DEPRECATED: Use configure_structured_logging() instead.
 
     Args:
         level: Logging level (DEBUG, INFO, WARNING, ERROR)
         log_file: Optional file to write logs
         format_string: Custom format string
     """
+    warnings.warn(
+        "setup_logging() is deprecated. Use configure_structured_logging() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     # Default format
     if format_string is None:
         format_string = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -43,134 +64,113 @@ def setup_logging(level: str = "INFO",
         logging.getLogger().addHandler(file_handler)
 
 
-def get_logger(name: str) -> logging.Logger:
+def get_logger(name: str):
     """
     Get a logger instance.
+
+    This function now returns a StructuredLogger if available,
+    otherwise falls back to standard logging.
 
     Args:
         name: Logger name (usually __name__)
 
     Returns:
-        Logger instance
+        Logger instance (StructuredLogger if available, else standard Logger)
     """
-    return logging.getLogger(name)
+    if STRUCTLOG_AVAILABLE:
+        return get_structured_logger(name)
+    else:
+        return logging.getLogger(name)
 
 
-# Convenience functions for logging API calls
-def log_request(logger: logging.Logger, provider: str, prompt: str,
-               params: Optional[dict] = None):
-    """Log an API request"""
-    logger.debug(f"[{provider}] Request - Prompt: {prompt[:100]}...")
-    if params:
-        logger.debug(f"[{provider}] Parameters: {params}")
-
-
-def log_response(logger: logging.Logger, provider: str,
-                response: str, tokens: Optional[dict] = None):
-    """Log an API response"""
-    logger.debug(f"[{provider}] Response: {response[:100]}...")
-    if tokens:
-        logger.debug(f"[{provider}] Tokens: {tokens}")
-
-
-def log_error(logger: logging.Logger, provider: str, error: Exception):
-    """Log an error"""
-    logger.error(f"[{provider}] Error: {type(error).__name__}: {str(error)}")
-
-
-def log_tool_call(logger: logging.Logger, tool_name: str,
-                 arguments: Optional[dict] = None):
-    """Log a tool call"""
-    logger.info(f"Tool called: {tool_name}")
-    if arguments:
-        logger.debug(f"Tool arguments: {arguments}")
-
-
-# Context managers for suppressing output
-import os
-import sys
-from contextlib import contextmanager
-
-
-@contextmanager
-def suppress_stdout_stderr():
+# Legacy convenience functions (deprecated)
+def log_request(logger, provider: str, prompt: str, params: Optional[dict] = None):
     """
-    Context manager to suppress stdout and stderr output.
-    Useful for silencing verbose library initialization messages.
+    Log an API request (legacy).
+
+    DEPRECATED: Use logger.log_generation() instead.
     """
-    with open(os.devnull, 'w') as devnull:
-        old_stdout = sys.stdout
-        old_stderr = sys.stderr
-        sys.stdout = devnull
-        sys.stderr = devnull
-        try:
-            yield
-        finally:
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
+    warnings.warn(
+        "log_request() is deprecated. Use logger.log_generation() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    if hasattr(logger, 'debug'):
+        logger.debug(f"[{provider}] Request - Prompt: {prompt[:100]}...")
+        if params:
+            logger.debug(f"[{provider}] Parameters: {params}")
 
 
-@contextmanager
-def suppress_stderr():
+def log_response(logger, provider: str, response: str, tokens: Optional[dict] = None):
     """
-    Context manager to suppress stderr output only.
-    Useful for silencing warnings while keeping stdout intact.
+    Log an API response (legacy).
+
+    DEPRECATED: Use logger.log_generation() instead.
     """
-    with open(os.devnull, 'w') as devnull:
-        old_stderr = sys.stderr
-        sys.stderr = devnull
-        try:
-            yield
-        finally:
-            sys.stderr = old_stderr
+    warnings.warn(
+        "log_response() is deprecated. Use logger.log_generation() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    if hasattr(logger, 'debug'):
+        logger.debug(f"[{provider}] Response: {response[:100]}...")
+        if tokens:
+            logger.debug(f"[{provider}] Tokens: {tokens}")
 
 
-class StderrToLogger:
+def log_error(logger, provider: str, error: Exception):
     """
-    Context manager to redirect stderr to a logger.
-    This allows us to capture and control library warnings/errors through our logging system.
+    Log an error (legacy).
+
+    DEPRECATED: Use logger.error() with structured data instead.
     """
-
-    def __init__(self, logger: logging.Logger, debug: bool = False):
-        self.logger = logger
-        self.debug = debug
-        self.old_stderr = None
-        self.buffer = []
-
-    def write(self, msg):
-        """Write method for file-like interface"""
-        if msg and msg.strip():
-            # Choose log level based on debug setting
-            if self.debug:
-                # In debug mode, show all stderr output at INFO level
-                self.logger.info(f"[stderr] {msg.strip()}")
-            else:
-                # In non-debug mode, log at DEBUG level (won't show unless logger debug is enabled)
-                self.logger.debug(f"[stderr] {msg.strip()}")
-
-    def flush(self):
-        """Flush method for file-like interface"""
-        pass
-
-    def __enter__(self):
-        """Enter context manager"""
-        self.old_stderr = sys.stderr
-        sys.stderr = self
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit context manager"""
-        sys.stderr = self.old_stderr
+    warnings.warn(
+        "log_error() is deprecated. Use logger.error() with structured data instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    if hasattr(logger, 'error'):
+        logger.error(f"[{provider}] Error: {type(error).__name__}: {str(error)}")
 
 
-@contextmanager
-def redirect_stderr_to_logger(logger: logging.Logger, debug: bool = False):
+def log_tool_call(logger, tool_name: str, arguments: Optional[dict] = None):
     """
-    Context manager to redirect stderr to a logger.
+    Log a tool call (legacy).
 
-    Args:
-        logger: Logger instance to receive stderr output
-        debug: If True, logs at INFO level; if False, logs at DEBUG level
+    DEPRECATED: Use logger.log_tool_call() instead.
     """
-    with StderrToLogger(logger, debug) as stderr_logger:
-        yield stderr_logger
+    warnings.warn(
+        "log_tool_call() is deprecated. Use logger.log_tool_call() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    if hasattr(logger, 'info'):
+        logger.info(f"Tool called: {tool_name}")
+        if arguments and hasattr(logger, 'debug'):
+            logger.debug(f"Tool arguments: {arguments}")
+
+
+# Re-export key functions for convenience
+configure_logging = configure_structured_logging
+
+
+# Legacy alias
+def get_telemetry():
+    """
+    Legacy telemetry function.
+
+    DEPRECATED: Use structured logging instead.
+    """
+    warnings.warn(
+        "get_telemetry() is deprecated. Use structured logging instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
+    class LegacyTelemetry:
+        def track_generation(self, **kwargs):
+            pass
+        def track_tool_call(self, **kwargs):
+            pass
+
+    return LegacyTelemetry()

@@ -14,6 +14,8 @@ class EventType(Enum):
     AFTER_GENERATE = "after_generate"
     TOOL_CALLED = "tool_called"
     TOOL_COMPLETED = "tool_completed"
+    BEFORE_TOOL_EXECUTION = "before_tool_execution"
+    AFTER_TOOL_EXECUTION = "after_tool_execution"
     ERROR_OCCURRED = "error_occurred"
     SESSION_CREATED = "session_created"
     SESSION_CLEARED = "session_cleared"
@@ -32,6 +34,11 @@ class Event:
     data: Dict[str, Any]
     source: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    prevented: bool = False
+
+    def prevent(self):
+        """Prevent the event's default behavior"""
+        self.prevented = True
 
 
 class EventEmitter:
@@ -63,7 +70,7 @@ class EventEmitter:
         if event_type in self._listeners:
             self._listeners[event_type].remove(handler)
 
-    def emit(self, event_type: EventType, data: Dict[str, Any], source: Optional[str] = None):
+    def emit(self, event_type: EventType, data: Dict[str, Any], source: Optional[str] = None) -> Event:
         """
         Emit an event to all registered handlers.
 
@@ -71,6 +78,9 @@ class EventEmitter:
             event_type: Type of event
             data: Event data
             source: Source of the event
+
+        Returns:
+            The event object (which may have been prevented by handlers)
         """
         event = Event(
             type=event_type,
@@ -86,6 +96,8 @@ class EventEmitter:
                 except Exception as e:
                     # Log error but don't stop event propagation
                     print(f"Error in event handler: {e}")
+
+        return event
 
     def emit_error(self, error: Exception, context: Optional[Dict[str, Any]] = None):
         """

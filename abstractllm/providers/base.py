@@ -18,7 +18,8 @@ from ..exceptions import (
     InvalidRequestError,
     ModelNotFoundError
 )
-from ..architectures import detect_architecture, get_architecture_config
+from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
+from ..tools import execute_tools
 
 
 class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
@@ -35,15 +36,16 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         self.logger = get_logger(self.__class__.__name__)
         self.telemetry = get_telemetry()
 
-        # Detect architecture
+        # Detect architecture and get model capabilities
         self.architecture = detect_architecture(model)
-        self.architecture_config = get_architecture_config(self.architecture)
+        self.architecture_config = get_architecture_format(self.architecture)
+        self.model_capabilities = get_model_capabilities(model)
 
         # Emit provider created event to both local and global bus
         event_data = {
             "provider": self.__class__.__name__,
             "model": model,
-            "architecture": self.architecture.value
+            "architecture": self.architecture
         }
         self.emit(EventType.PROVIDER_CREATED, event_data)
 
@@ -236,17 +238,41 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         raise NotImplementedError("Subclasses must implement _generate_internal")
 
     def _initialize_token_limits(self):
-        """Initialize default token limits based on model/provider"""
-        # Set default max_tokens if not provided (override in subclasses)
+        """Initialize default token limits based on model capabilities"""
+        # Set default max_tokens if not provided
         if self.max_tokens is None:
             self.max_tokens = self._get_default_context_window()
+
+        # Set default max_output_tokens if not provided
+        if self.max_output_tokens == 2048:  # Only if still default value
+            default_max_output = self._get_default_max_output_tokens()
+            if default_max_output != 2048:  # If we found a different default
+                self.max_output_tokens = default_max_output
 
         # Validate parameters after setting defaults
         self._validate_token_parameters()
 
+    def _get_default_max_output_tokens(self) -> int:
+        """Get default max_output_tokens from model capabilities"""
+        # First try to get from model capabilities
+        if hasattr(self, 'model_capabilities') and self.model_capabilities:
+            max_output_tokens = self.model_capabilities.get('max_output_tokens')
+            if max_output_tokens:
+                return max_output_tokens
+
+        # Fallback to default
+        return 2048
+
     def _get_default_context_window(self) -> int:
-        """Get default context window for this provider/model (override in subclasses)"""
-        return 8192  # Conservative default
+        """Get default context window for this provider/model from capabilities"""
+        # First try to get from model capabilities
+        if hasattr(self, 'model_capabilities') and self.model_capabilities:
+            context_length = self.model_capabilities.get('context_length')
+            if context_length:
+                return context_length
+
+        # Fallback to conservative default
+        return 8192
 
     def _prepare_generation_kwargs(self, **kwargs) -> Dict[str, Any]:
         """
@@ -284,3 +310,95 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
             Max output tokens for the provider's API
         """
         return kwargs.get("max_output_tokens", self.max_output_tokens)
+
+    def _handle_prompted_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]]) -> GenerateResponse:
+        """Handle tool execution for prompted responses (shared implementation)"""
+        if not response.content:
+            return response
+
+        # Parse tool calls from response content using UniversalToolHandler
+        tool_call_response = self.tool_handler.parse_response(response.content, mode="prompted")
+        tool_calls = tool_call_response.tool_calls
+
+        if not tool_calls:
+            return response
+
+        # Execute with events and return result
+        return self._execute_tools_with_events(response, tool_calls)
+
+    def _execute_tools_with_events(self, response: GenerateResponse, tool_calls: List) -> GenerateResponse:
+        """Core tool execution with event emission (shared implementation)"""
+        # Emit before tool execution event with prevention capability
+        event_data = {
+            "tool_calls": tool_calls,
+            "model": self.model,
+            "can_prevent": True
+        }
+        event = self.emit(EventType.BEFORE_TOOL_EXECUTION, event_data)
+
+        # Check if execution was prevented
+        if event.prevented:
+            return response  # Return original response without tool execution
+
+        # Execute tools
+        tool_results = execute_tools(tool_calls)
+
+        # Emit after tool execution event
+        self.emit(EventType.AFTER_TOOL_EXECUTION, {
+            "tool_calls": tool_calls,
+            "results": tool_results,
+            "model": self.model
+        })
+
+        # Track tool calls
+        for call, result in zip(tool_calls, tool_results):
+            self._track_tool_call(
+                tool_name=call.name,
+                arguments=call.arguments,
+                success=result.success,
+                error=result.error if not result.success else None
+            )
+
+        # Format tool results and append to response
+        results_text = self._format_tool_results(tool_results)
+
+        # Return updated response with tool results
+        return GenerateResponse(
+            content=response.content + results_text,
+            model=response.model,
+            finish_reason=response.finish_reason,
+            raw_response=response.raw_response,
+            usage=response.usage,
+            tool_calls=response.tool_calls  # Keep original format
+        )
+
+    def _format_tool_results(self, tool_results: List) -> str:
+        """Format tool results as text (shared implementation)"""
+        results_text = "\n\nTool Results:\n"
+        for result in tool_results:
+            if result.success:
+                results_text += f"- {result.output}\n"
+            else:
+                results_text += f"- Error: {result.error}\n"
+        return results_text
+
+    def _convert_native_tool_calls_to_standard(self, native_tool_calls: List[Dict[str, Any]]) -> List:
+        """Convert native API tool calls to standard ToolCall objects (shared implementation)"""
+        from ..tools.core import ToolCall
+        import json
+
+        tool_calls = []
+        for call in native_tool_calls:
+            arguments = call.get('arguments', {})
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+            tool_calls.append(ToolCall(
+                name=call.get('name', ''),
+                arguments=arguments,
+                call_id=call.get('id')
+            ))
+        return tool_calls

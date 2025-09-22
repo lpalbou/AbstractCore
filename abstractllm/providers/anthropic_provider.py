@@ -11,6 +11,8 @@ from ..core.types import GenerateResponse
 from ..media import MediaHandler
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError
 from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..tools import UniversalToolHandler, execute_tools
+from ..events import EventType
 
 try:
     import anthropic
@@ -35,6 +37,9 @@ class AnthropicProvider(BaseProvider):
 
         # Initialize client
         self.client = anthropic.Anthropic(api_key=self.api_key)
+
+        # Initialize tool handler
+        self.tool_handler = UniversalToolHandler(model)
 
         # Store configuration (remove duplicate max_tokens)
         self.temperature = kwargs.get("temperature", 0.7)
@@ -103,29 +108,33 @@ class AnthropicProvider(BaseProvider):
         if kwargs.get("top_k") or self.top_k:
             call_params["top_k"] = kwargs.get("top_k", self.top_k)
 
-        # Add tools if provided
+        # Add tools if provided (convert to native format)
         if tools:
-            call_params["tools"] = self._format_tools_for_anthropic(tools)
-            # Anthropic uses tool_choice differently than OpenAI
-            if kwargs.get("tool_choice"):
-                call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
+            if self.tool_handler.supports_native:
+                call_params["tools"] = self.tool_handler.prepare_tools_for_native(tools)
+                # Anthropic uses tool_choice differently than OpenAI
+                if kwargs.get("tool_choice"):
+                    call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
+            else:
+                # Add tools as system prompt for prompted models
+                tool_prompt = self.tool_handler.format_tools_prompt(tools)
+                if call_params.get("system"):
+                    call_params["system"] += f"\n\n{tool_prompt}"
+                else:
+                    call_params["system"] = tool_prompt
 
         # Make API call with proper exception handling
         try:
             if stream:
-                return self._stream_response(call_params)
+                return self._stream_response(call_params, tools)
             else:
                 response = self.client.messages.create(**call_params)
                 formatted = self._format_response(response)
 
-                # Track tool calls if present
-                if formatted.has_tool_calls():
-                    for call in formatted.tool_calls:
-                        self._track_tool_call(
-                            tool_name=call.get('name'),
-                            arguments=json.loads(call.get('arguments')) if isinstance(call.get('arguments'), str) else call.get('arguments', {}),
-                            success=True
-                        )
+                # Handle tool execution for Anthropic responses
+                if tools and (formatted.has_tool_calls() or
+                             (self.tool_handler.supports_prompted and formatted.content)):
+                    formatted = self._handle_tool_execution(formatted, tools)
 
                 return formatted
         except Exception as e:
@@ -197,13 +206,31 @@ class AnthropicProvider(BaseProvider):
             tool_calls=tool_calls
         )
 
-    def _stream_response(self, call_params: Dict[str, Any]) -> Iterator[GenerateResponse]:
+    def _handle_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]]) -> GenerateResponse:
+        """Handle tool execution for Anthropic responses"""
+        # Check for native tool calls first
+        if response.has_tool_calls():
+            # Convert Anthropic tool calls to standard format using base method
+            tool_calls = self._convert_native_tool_calls_to_standard(response.tool_calls)
+            # Execute with events using base method
+            return self._execute_tools_with_events(response, tool_calls)
+        elif self.tool_handler.supports_prompted and response.content:
+            # Handle prompted tool calls using base method
+            return self._handle_prompted_tool_execution(response, tools)
+
+        return response
+
+    def _stream_response(self, call_params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
         """Stream responses from Anthropic"""
         # Remove stream parameter for streaming API
         stream_params = {k: v for k, v in call_params.items() if k != 'stream'}
         with self.client.messages.stream(**stream_params) as stream:
             current_tool_call = None
             accumulated_input = ""
+
+            # For tool execution, collect complete response
+            collected_content = ""
+            collected_tool_calls = []
 
             for chunk in stream:
                 # Handle different event types
@@ -222,8 +249,10 @@ class AnthropicProvider(BaseProvider):
                 elif chunk.type == "content_block_delta":
                     if hasattr(chunk.delta, 'text'):
                         # Text content
+                        text_content = chunk.delta.text
+                        collected_content += text_content
                         yield GenerateResponse(
-                            content=chunk.delta.text,
+                            content=text_content,
                             raw_response=chunk,
                             model=call_params.get("model")
                         )
@@ -246,6 +275,7 @@ class AnthropicProvider(BaseProvider):
                     if current_tool_call and accumulated_input:
                         # Finalize the tool call with complete arguments
                         current_tool_call["arguments"] = accumulated_input
+                        collected_tool_calls.append(current_tool_call)
                         yield GenerateResponse(
                             content="",
                             raw_response=chunk,
@@ -256,7 +286,7 @@ class AnthropicProvider(BaseProvider):
                         accumulated_input = ""
 
                 elif chunk.type == "message_stop":
-                    # Final chunk with usage info
+                    # Final chunk with usage info and tool execution
                     usage = None
                     if hasattr(stream, 'response') and hasattr(stream.response, 'usage'):
                         usage = {
@@ -264,6 +294,36 @@ class AnthropicProvider(BaseProvider):
                             "completion_tokens": stream.response.usage.output_tokens,
                             "total_tokens": stream.response.usage.input_tokens + stream.response.usage.output_tokens
                         }
+
+                    # Handle tool execution if we have tools and collected calls
+                    if tools and (collected_tool_calls or
+                                 (self.tool_handler.supports_prompted and collected_content)):
+                        # Create complete response for tool processing
+                        complete_response = GenerateResponse(
+                            content=collected_content,
+                            raw_response=chunk,
+                            model=call_params.get("model"),
+                            finish_reason="stop",
+                            usage=usage,
+                            tool_calls=collected_tool_calls
+                        )
+
+                        # Handle tool execution
+                        final_response = self._handle_tool_execution(complete_response, tools)
+
+                        # If tools were executed, yield the tool results as final chunk
+                        if final_response.content != collected_content:
+                            tool_results_content = final_response.content[len(collected_content):]
+                            yield GenerateResponse(
+                                content=tool_results_content,
+                                raw_response=chunk,
+                                model=call_params.get("model"),
+                                finish_reason="stop",
+                                usage=usage,
+                                tool_calls=None
+                            )
+
+                    # Always yield final chunk
                     yield GenerateResponse(
                         content="",
                         raw_response=chunk,

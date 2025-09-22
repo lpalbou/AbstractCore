@@ -78,20 +78,22 @@ class ToolResult:
     success: bool = True
 
 
-class ToolHandler(ABC):
-    """Abstract base for tool handlers"""
+@dataclass
+class ToolCallResponse:
+    """Response containing content and tool calls"""
+    content: str
+    tool_calls: List[ToolCall]
+    raw_response: Any = None
 
-    @abstractmethod
-    def format_tools_for_provider(self, tools: List[ToolDefinition], provider: str) -> Any:
-        """Format tools for specific provider"""
-        pass
+    def has_tool_calls(self) -> bool:
+        """Check if response contains tool calls"""
+        return bool(self.tool_calls)
 
-    @abstractmethod
-    def parse_tool_calls(self, response: Any, provider: str) -> List[ToolCall]:
-        """Parse tool calls from provider response"""
-        pass
 
-    @abstractmethod
-    def execute_tool(self, tool_call: ToolCall, available_tools: Dict[str, ToolDefinition]) -> ToolResult:
-        """Execute a tool call"""
-        pass
+def function_to_tool_definition(func: Callable) -> ToolDefinition:
+    """
+    Convert a function to a ToolDefinition.
+
+    This is a convenience function that wraps ToolDefinition.from_function()
+    """
+    return ToolDefinition.from_function(func)

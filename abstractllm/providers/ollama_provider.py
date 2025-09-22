@@ -10,6 +10,8 @@ from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError
 from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..tools import UniversalToolHandler, ToolDefinition, execute_tools
+from ..events import EventType
 
 
 class OllamaProvider(BaseProvider):
@@ -19,6 +21,9 @@ class OllamaProvider(BaseProvider):
         super().__init__(model, **kwargs)
         self.base_url = base_url.rstrip('/')
         self.client = httpx.Client(timeout=30.0)
+
+        # Initialize tool handler
+        self.tool_handler = UniversalToolHandler(model)
 
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""
@@ -32,6 +37,15 @@ class OllamaProvider(BaseProvider):
                           stream: bool = False,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with Ollama"""
+
+        # Handle tools for prompted models
+        effective_system_prompt = system_prompt
+        if tools and self.tool_handler.supports_prompted:
+            tool_prompt = self.tool_handler.format_tools_prompt(tools)
+            if effective_system_prompt:
+                effective_system_prompt = f"{effective_system_prompt}\n\n{tool_prompt}"
+            else:
+                effective_system_prompt = tool_prompt
 
         # Build request payload using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -51,10 +65,10 @@ class OllamaProvider(BaseProvider):
             payload["messages"] = []
 
             # Add system message if provided
-            if system_prompt:
+            if effective_system_prompt:
                 payload["messages"].append({
                     "role": "system",
-                    "content": system_prompt
+                    "content": effective_system_prompt
                 })
 
             # Add conversation history
@@ -70,18 +84,18 @@ class OllamaProvider(BaseProvider):
         else:
             # Use generate format for single prompt
             full_prompt = prompt
-            if system_prompt:
-                full_prompt = f"{system_prompt}\n\n{prompt}"
+            if effective_system_prompt:
+                full_prompt = f"{effective_system_prompt}\n\n{prompt}"
 
             payload["prompt"] = full_prompt
             endpoint = "/api/generate"
 
         if stream:
-            return self._stream_generate(endpoint, payload)
+            return self._stream_generate(endpoint, payload, tools)
         else:
-            return self._single_generate(endpoint, payload)
+            return self._single_generate(endpoint, payload, tools)
 
-    def _single_generate(self, endpoint: str, payload: Dict[str, Any]) -> GenerateResponse:
+    def _single_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> GenerateResponse:
         """Generate single response"""
         try:
             response = self.client.post(
@@ -98,7 +112,8 @@ class OllamaProvider(BaseProvider):
             else:
                 content = result.get("response", "")
 
-            return GenerateResponse(
+            # Create initial response
+            generate_response = GenerateResponse(
                 content=content,
                 model=self.model,
                 finish_reason="stop",
@@ -109,6 +124,12 @@ class OllamaProvider(BaseProvider):
                     "total_tokens": result.get("prompt_eval_count", 0) + result.get("eval_count", 0)
                 }
             )
+
+            # Handle tool execution for prompted models
+            if tools and self.tool_handler.supports_prompted and content:
+                generate_response = self._handle_tool_execution(generate_response, tools)
+
+            return generate_response
 
         except Exception as e:
             # Check for model not found errors
@@ -126,7 +147,7 @@ class OllamaProvider(BaseProvider):
                     finish_reason="error"
                 )
 
-    def _stream_generate(self, endpoint: str, payload: Dict[str, Any]) -> Iterator[GenerateResponse]:
+    def _stream_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
         """Generate streaming response"""
         try:
             with self.client.stream(
@@ -135,6 +156,9 @@ class OllamaProvider(BaseProvider):
                 json=payload
             ) as response:
                 response.raise_for_status()
+
+                # Collect full response for tool processing
+                full_content = ""
 
                 for line in response.iter_lines():
                     if line:
@@ -148,13 +172,40 @@ class OllamaProvider(BaseProvider):
                                 content = chunk.get("response", "")
 
                             done = chunk.get("done", False)
+                            full_content += content
 
-                            yield GenerateResponse(
+                            chunk_response = GenerateResponse(
                                 content=content,
                                 model=self.model,
                                 finish_reason="stop" if done else None,
                                 raw_response=chunk
                             )
+
+                            # For streaming, only handle tools on the final chunk
+                            if done and tools and self.tool_handler.supports_prompted and full_content:
+                                # Create a complete response for tool processing
+                                complete_response = GenerateResponse(
+                                    content=full_content,
+                                    model=self.model,
+                                    finish_reason="stop",
+                                    raw_response=chunk
+                                )
+
+                                # Handle tool execution and yield tool results as additional chunks
+                                final_response = self._handle_tool_execution(complete_response, tools)
+
+                                # If tools were executed, yield the tool results as final chunk
+                                if final_response.content != full_content:
+                                    yield GenerateResponse(
+                                        content=final_response.content[len(full_content):],
+                                        model=self.model,
+                                        finish_reason="stop",
+                                        raw_response=chunk
+                                    )
+                                else:
+                                    yield chunk_response
+                            else:
+                                yield chunk_response
 
                             if done:
                                 break
@@ -169,9 +220,60 @@ class OllamaProvider(BaseProvider):
                 finish_reason="error"
             )
 
+    def _handle_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]]) -> GenerateResponse:
+        """Handle tool execution for prompted models"""
+        # Parse tool calls from response
+        tool_call_response = self.tool_handler.parse_response(response.content, mode="prompted")
+
+        if not tool_call_response.has_tool_calls():
+            return response
+
+        # Emit before tool execution event with prevention capability
+        event_data = {
+            "tool_calls": tool_call_response.tool_calls,
+            "model": self.model,
+            "can_prevent": True
+        }
+        event = self.emit(EventType.BEFORE_TOOL_EXECUTION, event_data)
+
+        # Check if execution was prevented
+        if event.prevented:
+            return response  # Return original response without tool execution
+
+        # Execute tools
+        tool_results = execute_tools(tool_call_response.tool_calls)
+
+        # Emit after tool execution event
+        self.emit(EventType.AFTER_TOOL_EXECUTION, {
+            "tool_calls": tool_call_response.tool_calls,
+            "results": tool_results,
+            "model": self.model
+        })
+
+        # Format tool results and append to response
+        results_text = "\n\nTool Results:\n"
+        for result in tool_results:
+            if result.success:
+                results_text += f"- {result.output}\n"
+            else:
+                results_text += f"- Error: {result.error}\n"
+
+        # Return updated response with tool results
+        return GenerateResponse(
+            content=response.content + results_text,
+            model=response.model,
+            finish_reason=response.finish_reason,
+            raw_response=response.raw_response,
+            usage=response.usage,
+            tool_calls=tool_call_response.tool_calls
+        )
+
     def get_capabilities(self) -> List[str]:
         """Get Ollama capabilities"""
-        return ["streaming", "chat"]
+        capabilities = ["streaming", "chat"]
+        if self.tool_handler.supports_prompted:
+            capabilities.append("tools")
+        return capabilities
 
     def validate_config(self) -> bool:
         """Validate Ollama connection"""

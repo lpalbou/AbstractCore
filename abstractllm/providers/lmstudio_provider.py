@@ -8,6 +8,8 @@ from typing import List, Dict, Any, Optional, Union, Iterator
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError
+from ..tools import UniversalToolHandler, execute_tools
+from ..events import EventType
 from ..utils.simple_model_discovery import get_available_models, format_model_error
 
 
@@ -16,6 +18,10 @@ class LMStudioProvider(BaseProvider):
 
     def __init__(self, model: str = "local-model", base_url: str = "http://localhost:1234/v1", **kwargs):
         super().__init__(model, **kwargs)
+
+        # Initialize tool handler
+        self.tool_handler = UniversalToolHandler(model)
+
         self.base_url = base_url.rstrip('/')
         self.client = httpx.Client(timeout=120.0)
 
@@ -54,14 +60,23 @@ class LMStudioProvider(BaseProvider):
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using LM Studio"""
 
-        # Build messages for chat completions
+        # Build messages for chat completions with tool support
         chat_messages = []
 
+        # Add tools to system prompt if provided
+        enhanced_system_prompt = system_prompt
+        if tools and self.tool_handler.supports_prompted:
+            tool_prompt = self.tool_handler.format_tools_prompt(tools)
+            if enhanced_system_prompt:
+                enhanced_system_prompt += f"\n\n{tool_prompt}"
+            else:
+                enhanced_system_prompt = tool_prompt
+
         # Add system message if provided
-        if system_prompt:
+        if enhanced_system_prompt:
             chat_messages.append({
                 "role": "system",
-                "content": system_prompt
+                "content": enhanced_system_prompt
             })
 
         # Add conversation history
@@ -88,9 +103,15 @@ class LMStudioProvider(BaseProvider):
         }
 
         if stream:
-            return self._stream_generate(payload)
+            return self._stream_generate_with_tools(payload, tools)
         else:
-            return self._single_generate(payload)
+            response = self._single_generate(payload)
+
+            # Handle tool execution for prompted models
+            if tools and self.tool_handler.supports_prompted and response.content:
+                response = self._handle_prompted_tool_execution(response, tools)
+
+            return response
 
     def _single_generate(self, payload: Dict[str, Any]) -> GenerateResponse:
         """Generate single response"""
@@ -209,3 +230,35 @@ class LMStudioProvider(BaseProvider):
         """Get max tokens parameter for LMStudio API"""
         # For LMStudio (OpenAI-compatible), max_tokens is the max output tokens
         return kwargs.get("max_output_tokens", self.max_output_tokens)
+
+
+    def _stream_generate_with_tools(self, payload: Dict[str, Any],
+                                   tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
+        """Stream generate with tool execution at the end"""
+        collected_content = ""
+
+        # Stream the response content
+        for chunk in self._stream_generate(payload):
+            collected_content += chunk.content
+            yield chunk
+
+        # Handle tool execution if we have tools and content
+        if tools and self.tool_handler.supports_prompted and collected_content:
+            # Create complete response for tool processing
+            complete_response = GenerateResponse(
+                content=collected_content,
+                model=self.model,
+                finish_reason="stop"
+            )
+
+            # Handle tool execution using base method
+            final_response = self._handle_prompted_tool_execution(complete_response, tools)
+
+            # If tools were executed, yield the tool results as final chunk
+            if final_response.content != collected_content:
+                tool_results_content = final_response.content[len(collected_content):]
+                yield GenerateResponse(
+                    content=tool_results_content,
+                    model=self.model,
+                    finish_reason="stop"
+                )

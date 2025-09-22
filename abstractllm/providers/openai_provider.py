@@ -11,6 +11,8 @@ from ..core.types import GenerateResponse
 from ..media import MediaHandler
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError
 from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..tools import UniversalToolHandler, execute_tools
+from ..events import EventType
 
 try:
     import openai
@@ -35,6 +37,9 @@ class OpenAIProvider(BaseProvider):
 
         # Initialize client
         self.client = openai.OpenAI(api_key=self.api_key)
+
+        # Initialize tool handler
+        self.tool_handler = UniversalToolHandler(model)
 
         # Preflight check: validate model exists
         self._validate_model_exists()
@@ -103,27 +108,28 @@ class OpenAIProvider(BaseProvider):
         else:
             call_params["max_tokens"] = max_output_tokens
 
-        # Add tools if provided
+        # Add tools if provided (convert to native format)
         if tools:
-            call_params["tools"] = self._format_tools_for_openai(tools)
-            call_params["tool_choice"] = kwargs.get("tool_choice", "auto")
+            # Convert tools to native format for OpenAI API
+            if self.tool_handler.supports_native:
+                call_params["tools"] = self.tool_handler.prepare_tools_for_native(tools)
+                call_params["tool_choice"] = kwargs.get("tool_choice", "auto")
+            else:
+                # Fallback to manual formatting
+                call_params["tools"] = self._format_tools_for_openai(tools)
+                call_params["tool_choice"] = kwargs.get("tool_choice", "auto")
 
         # Make API call with proper exception handling
         try:
             if stream:
-                return self._stream_response(call_params)
+                return self._stream_response(call_params, tools)
             else:
                 response = self.client.chat.completions.create(**call_params)
                 formatted = self._format_response(response)
 
-                # Track tool calls if present
-                if formatted.has_tool_calls():
-                    for call in formatted.tool_calls:
-                        self._track_tool_call(
-                            tool_name=call.get('name'),
-                            arguments=json.loads(call.get('arguments')) if isinstance(call.get('arguments'), str) else call.get('arguments', {}),
-                            success=True
-                        )
+                # Handle tool execution for OpenAI native responses
+                if tools and formatted.has_tool_calls():
+                    formatted = self._handle_tool_execution(formatted, tools)
 
                 return formatted
         except Exception as e:
@@ -197,13 +203,29 @@ class OpenAIProvider(BaseProvider):
             tool_calls=tool_calls
         )
 
-    def _stream_response(self, call_params: Dict[str, Any]) -> Iterator[GenerateResponse]:
+    def _handle_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]]) -> GenerateResponse:
+        """Handle tool execution for OpenAI native responses"""
+        if not response.has_tool_calls():
+            return response
+
+        # Convert OpenAI tool calls to standard format using base method
+        tool_calls = self._convert_native_tool_calls_to_standard(response.tool_calls)
+
+        # Execute with events using base method
+        return self._execute_tools_with_events(response, tool_calls)
+
+    def _stream_response(self, call_params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
         """Stream responses from OpenAI"""
         try:
             stream = self.client.chat.completions.create(**call_params)
         except Exception as e:
             # Model validation is done at initialization, so this is likely an API error
             raise ProviderAPIError(f"OpenAI API error: {str(e)}")
+
+        # For streaming with tools, we need to collect the complete response
+        collected_content = ""
+        collected_tool_calls = []
+        final_response = None
 
         for chunk in stream:
             choice = chunk.choices[0] if chunk.choices else None
@@ -212,6 +234,7 @@ class OpenAIProvider(BaseProvider):
 
             delta = choice.delta
             content = getattr(delta, 'content', None) or ""
+            collected_content += content
 
             # Handle tool calls in streaming
             tool_calls = None
@@ -227,24 +250,59 @@ class OpenAIProvider(BaseProvider):
                         tool_call["arguments"] = getattr(tc.function, 'arguments', None)
                     tool_calls.append(tool_call)
 
-            # Yield chunk if it has content or tool calls or finish reason
-            if content or tool_calls or choice.finish_reason:
-                yield GenerateResponse(
-                    content=content,
+                # Collect tool calls for final processing
+                if tool_calls:
+                    collected_tool_calls.extend(tool_calls)
+
+            # Create chunk response
+            chunk_response = GenerateResponse(
+                content=content,
+                raw_response=chunk,
+                model=chunk.model,
+                finish_reason=choice.finish_reason,
+                tool_calls=tool_calls
+            )
+
+            # If this is the final chunk and we have tools, handle tool execution
+            if choice.finish_reason and tools and collected_tool_calls:
+                # Create complete response for tool processing
+                complete_response = GenerateResponse(
+                    content=collected_content,
                     raw_response=chunk,
                     model=chunk.model,
                     finish_reason=choice.finish_reason,
-                    tool_calls=tool_calls
+                    tool_calls=collected_tool_calls
                 )
+
+                # Handle tool execution
+                final_response = self._handle_tool_execution(complete_response, tools)
+
+                # If tools were executed, yield the tool results as final chunk
+                if final_response.content != collected_content:
+                    tool_results_content = final_response.content[len(collected_content):]
+                    yield GenerateResponse(
+                        content=tool_results_content,
+                        raw_response=chunk,
+                        model=chunk.model,
+                        finish_reason=choice.finish_reason,
+                        tool_calls=None
+                    )
+                else:
+                    yield chunk_response
+            else:
+                yield chunk_response
 
     def get_capabilities(self) -> List[str]:
         """Get list of capabilities supported by this provider"""
         capabilities = [
             "chat",
             "streaming",
-            "system_prompt",
-            "tools"
+            "system_prompt"
         ]
+
+        # Add tools if supported
+        if self.tool_handler.supports_native or self.tool_handler.supports_prompted:
+            capabilities.append("tools")
 
         # Add vision for capable models
         if "gpt-4o" in self.model or "gpt-4-turbo" in self.model:
