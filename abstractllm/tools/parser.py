@@ -458,16 +458,26 @@ def _parse_python_code_blocks(response: str) -> List[ToolCall]:
 # Formatting functions
 
 def _format_qwen_style(tools: List[ToolDefinition]) -> str:
-    """Format tools for Qwen models using <|tool_call|> format."""
+    """Format tools for Qwen models using <|tool_call|> format with enhanced metadata."""
     if not tools:
         return ""
 
     prompt = "You are a helpful AI assistant with access to the following tools:\n\n"
 
+    # Tool descriptions with enhanced metadata
     for tool in tools:
         prompt += f"**{tool.name}**: {tool.description}\n"
+
+        # Add when_to_use guidance if available
+        if tool.when_to_use:
+            prompt += f"  • **When to use**: {tool.when_to_use}\n"
+
+        # Add tags if available
+        if tool.tags:
+            prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
+
         if tool.parameters:
-            prompt += f"Parameters: {json.dumps(tool.parameters, indent=2)}\n"
+            prompt += f"  • **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
         prompt += "\n"
 
     prompt += """To use a tool, respond with this EXACT format:
@@ -479,31 +489,65 @@ CRITICAL RULES:
 1. The "name" field must be at the TOP LEVEL, NOT inside "arguments"
 2. Do NOT put "name" inside the "arguments" object
 3. Use the exact JSON structure shown above
-4. Example for list_files tool:
-<|tool_call|>
-{"name": "list_files", "arguments": {"directory": ".", "pattern": "*"}}
-</|tool_call|>"""
+
+"""
+
+    # Add examples from tool metadata
+    if any(tool.examples for tool in tools):
+        prompt += "**EXAMPLES:**\n\n"
+        for tool in tools:
+            if tool.examples:
+                prompt += f"**{tool.name} Examples:**\n"
+                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
+                    desc = example.get("description", f"Example {i}")
+                    args = example.get("arguments", {})
+                    prompt += f"{i}. {desc}:\n"
+                    prompt += f'<|tool_call|>\n{{"name": "{tool.name}", "arguments": {json.dumps(args)}}}\n</|tool_call|>\n\n'
 
     return prompt
 
 
 def _format_llama_style(tools: List[ToolDefinition]) -> str:
-    """Format tools for LLaMA models using <function_call> format."""
+    """Format tools for LLaMA models using <function_call> format with enhanced metadata."""
     if not tools:
         return ""
 
     prompt = "You have access to the following functions. Use them when needed:\n\n"
 
+    # Tool descriptions with enhanced metadata
     for tool in tools:
         prompt += f"**{tool.name}**: {tool.description}\n"
+
+        # Add when_to_use guidance if available
+        if tool.when_to_use:
+            prompt += f"  • **When to use**: {tool.when_to_use}\n"
+
+        # Add tags if available
+        if tool.tags:
+            prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
+
         if tool.parameters:
-            prompt += f"Parameters: {json.dumps(tool.parameters, indent=2)}\n"
+            prompt += f"  • **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
         prompt += "\n"
 
     prompt += """To call a function, use this format:
 <function_call>
 {"name": "function_name", "arguments": {"param1": "value1", "param2": "value2"}}
-</function_call>"""
+</function_call>
+
+"""
+
+    # Add examples from tool metadata
+    if any(tool.examples for tool in tools):
+        prompt += "**EXAMPLES:**\n\n"
+        for tool in tools:
+            if tool.examples:
+                prompt += f"**{tool.name} Examples:**\n"
+                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
+                    desc = example.get("description", f"Example {i}")
+                    args = example.get("arguments", {})
+                    prompt += f"{i}. {desc}:\n"
+                    prompt += f'<function_call>\n{{"name": "{tool.name}", "arguments": {json.dumps(args)}}}\n</function_call>\n\n'
 
     return prompt
 
@@ -553,7 +597,7 @@ def _format_gemma_style(tools: List[ToolDefinition]) -> str:
 
 
 def _format_generic_style(tools: List[ToolDefinition]) -> str:
-    """Generic tool formatting for unknown architectures."""
+    """Generic tool formatting for unknown architectures with enhanced metadata."""
     if not tools:
         return ""
 
@@ -561,10 +605,34 @@ def _format_generic_style(tools: List[ToolDefinition]) -> str:
 
     for tool in tools:
         prompt += f"- **{tool.name}**: {tool.description}\n"
-        if tool.parameters:
-            prompt += f"  Parameters: {json.dumps(tool.parameters, indent=2)}\n"
 
-    prompt += """\nTo use a tool, respond with a JSON object in this format:
-{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}"""
+        # Add when_to_use guidance if available
+        if tool.when_to_use:
+            prompt += f"  **When to use**: {tool.when_to_use}\n"
+
+        # Add tags if available
+        if tool.tags:
+            prompt += f"  **Tags**: {', '.join(tool.tags)}\n"
+
+        if tool.parameters:
+            prompt += f"  **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
+        prompt += "\n"
+
+    prompt += """To use a tool, respond with a JSON object in this format:
+{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
+
+"""
+
+    # Add examples from tool metadata
+    if any(tool.examples for tool in tools):
+        prompt += "**EXAMPLES:**\n\n"
+        for tool in tools:
+            if tool.examples:
+                prompt += f"**{tool.name} Examples:**\n"
+                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
+                    desc = example.get("description", f"Example {i}")
+                    args = example.get("arguments", {})
+                    prompt += f"{i}. {desc}:\n"
+                    prompt += f'{{"name": "{tool.name}", "arguments": {json.dumps(args)}}}\n\n'
 
     return prompt

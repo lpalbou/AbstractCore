@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from abstractllm import create_llm, BasicSession
-from abstractllm.tools.common_tools import COMMON_TOOLS, execute_tool
+from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
 from abstractllm.utils import configure_logging, get_logger
 from abstractllm.events import EventType, GlobalEventBus
 
@@ -134,14 +134,14 @@ class ProviderTestSuite:
         try:
             provider = create_llm(self.provider_name, model=self.model, **self.config)
 
-            # Get list_files tool definition
-            list_files_tool = next(t for t in COMMON_TOOLS if t["name"] == "list_files")
+            # Use enhanced list_files tool
+            tools = [list_files]
 
             prompt = "Please list the files in the current directory"
             print(f"   Prompt: {prompt}")
             print(f"   Available tool: list_files")
 
-            response = provider.generate(prompt, tools=[list_files_tool])
+            response = provider.generate(prompt, tools=tools)
 
             if response and response.has_tool_calls():
                 print(f"✅ Tool calls detected")
@@ -156,7 +156,14 @@ class ProviderTestSuite:
                     print(f"   Arguments: {arguments}")
 
                     # Execute the tool
-                    result = execute_tool(tool_name, arguments)
+                    # Execute tool directly
+                    available_tools = {"list_files": list_files, "search_files": search_files, "read_file": read_file, "write_file": write_file, "web_search": web_search}
+                    tool_name = tool_name
+                    args = arguments
+                    if tool_name in available_tools:
+                        result = available_tools[tool_name](**args)
+                    else:
+                        result = f"Error: Tool '{tool_name}' not found"
                     print(f"   Result: {result[:200]}...")
 
                 self.results.append(("tool_calling", True, "Tool executed"))

@@ -7,7 +7,7 @@ import pytest
 import os
 import json
 from abstractllm import create_llm
-from abstractllm.tools.common_tools import COMMON_TOOLS
+from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
 
 
 class TestProviderToolDetection:
@@ -21,12 +21,12 @@ class TestProviderToolDetection:
         try:
             provider = create_llm("openai", model="gpt-4o-mini")
 
-            # Get list_files tool
-            list_files_tool = next(t for t in COMMON_TOOLS if t["name"] == "list_files")
+            # Use enhanced list_files tool
+            tools = [list_files]
 
             response = provider.generate(
                 "Please list the files in the current directory",
-                tools=[list_files_tool]
+                tools=tools
             )
 
             assert response is not None
@@ -63,12 +63,12 @@ class TestProviderToolDetection:
         try:
             provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
 
-            # Get list_files tool
-            list_files_tool = next(t for t in COMMON_TOOLS if t["name"] == "list_files")
+            # Use enhanced list_files tool
+            tools = [list_files]
 
             response = provider.generate(
                 "Please list the files in the current directory",
-                tools=[list_files_tool]
+                tools=tools
             )
 
             assert response is not None

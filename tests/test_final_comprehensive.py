@@ -13,7 +13,7 @@ from typing import Dict, Any, List
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from abstractllm import create_llm, BasicSession
-from abstractllm.tools.common_tools import COMMON_TOOLS, execute_tool
+from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
 from abstractllm.utils import configure_logging, get_logger
 from abstractllm.architectures import detect_architecture
 from abstractllm.events import EventType, EventEmitter
@@ -171,15 +171,15 @@ class ComprehensiveProviderTest:
         try:
             provider = create_llm(self.provider_name, model=self.model, **self.config)
 
-            # Get list_files tool
-            list_files_tool = next(t for t in COMMON_TOOLS if t["name"] == "list_files")
+            # Use enhanced list_files tool
+            tools = [list_files]
 
             prompt = "List the local files"
             print(f"   Prompt: {prompt}")
             print(f"   Available tool: list_files")
 
             start = time.time()
-            response = provider.generate(prompt, tools=[list_files_tool])
+            response = provider.generate(prompt, tools=tools)
             latency = (time.time() - start) * 1000
 
             # Track the request
@@ -204,8 +204,19 @@ class ComprehensiveProviderTest:
                     print(f"   Tool: {tool_name}")
                     print(f"   Arguments: {args}")
 
-                    # Execute the tool
-                    result = execute_tool(tool_name, args)
+                    # Execute the tool directly
+                    available_tools = {
+                        "list_files": list_files,
+                        "search_files": search_files,
+                        "read_file": read_file,
+                        "write_file": write_file,
+                        "web_search": web_search
+                    }
+
+                    if tool_name in available_tools:
+                        result = available_tools[tool_name](**args)
+                    else:
+                        result = f"Error: Tool '{tool_name}' not found"
                     print(f"   Result: {result[:150]}...")
 
                     # Track tool call with full observability

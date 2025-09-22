@@ -207,13 +207,22 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         emit_global(EventType.BEFORE_GENERATE, event_data, source=self.__class__.__name__)
 
         try:
-            # Convert ToolDefinition objects to dicts if needed
+            # Convert tools to ToolDefinition objects, preserving enhanced metadata
             converted_tools = None
             if tools:
                 converted_tools = []
                 for tool in tools:
                     if hasattr(tool, 'to_dict'):  # ToolDefinition object
                         converted_tools.append(tool.to_dict())
+                    elif callable(tool):  # Function - check for enhanced metadata
+                        if hasattr(tool, '_tool_definition'):
+                            # Use the enhanced tool definition from @tool decorator
+                            converted_tools.append(tool._tool_definition.to_dict())
+                        else:
+                            # Fall back to basic conversion
+                            from ..tools.core import ToolDefinition
+                            tool_def = ToolDefinition.from_function(tool)
+                            converted_tools.append(tool_def.to_dict())
                     elif isinstance(tool, dict):  # Already a dict
                         converted_tools.append(tool)
                     else:

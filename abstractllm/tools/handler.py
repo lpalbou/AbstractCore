@@ -168,7 +168,11 @@ class UniversalToolHandler:
                 if isinstance(tool, ToolDefinition):
                     tool_defs.append(tool)
                 elif callable(tool):
-                    tool_defs.append(ToolDefinition.from_function(tool))
+                    # Check if tool has enhanced metadata from @tool decorator
+                    if hasattr(tool, '_tool_definition'):
+                        tool_defs.append(tool._tool_definition)
+                    else:
+                        tool_defs.append(ToolDefinition.from_function(tool))
                 elif isinstance(tool, dict):
                     if "name" in tool and "description" in tool:
                         # Direct dict format - extract properties from full schema
@@ -182,7 +186,10 @@ class UniversalToolHandler:
                         tool_defs.append(ToolDefinition(
                             name=tool["name"],
                             description=tool["description"],
-                            parameters=properties
+                            parameters=properties,
+                            tags=tool.get("tags", []),
+                            when_to_use=tool.get("when_to_use"),
+                            examples=tool.get("examples", [])
                         ))
                     elif "function" in tool:
                         # OpenAI native format

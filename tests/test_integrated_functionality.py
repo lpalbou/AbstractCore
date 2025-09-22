@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 import tempfile
 from abstractllm import create_llm, BasicSession
-from abstractllm.tools.common_tools import COMMON_TOOLS, execute_tool
+from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
 from abstractllm.utils import configure_logging, get_logger
 from abstractllm.events import EventType, EventEmitter
 from abstractllm.architectures import detect_architecture
@@ -139,10 +139,10 @@ class TestIntegratedFunctionality:
             assert context_maintained, "Session should remember the name Laurent"
 
             # Test 3: Tool calling (OpenAI supports tools)
-            list_files_tool = next((t for t in COMMON_TOOLS if t["name"] == "list_files"), None)
-            if list_files_tool:
+            tools = [list_files]  # Use enhanced list_files tool
+            if tools:
                 tool_response = provider.generate("List the files in the current directory",
-                                                 tools=[list_files_tool])
+                                                 tools=tools)
 
                 assert tool_response is not None
 
@@ -156,7 +156,14 @@ class TestIntegratedFunctionality:
                             args = json.loads(args)
 
                         # Test tool execution
-                        result = execute_tool(call.get('name'), args)
+                        # Execute tool directly
+                    available_tools = {"list_files": list_files, "search_files": search_files, "read_file": read_file, "write_file": write_file, "web_search": web_search}
+                    tool_name = call.get('name')
+                    args = args
+                    if tool_name in available_tools:
+                        result = available_tools[tool_name](**args)
+                    else:
+                        result = f"Error: Tool '{tool_name}' not found"
                         assert len(result) > 0
 
             # Test 4: Architecture detection
@@ -214,10 +221,10 @@ class TestIntegratedFunctionality:
             assert context_maintained, "Session should remember the name Laurent"
 
             # Test 3: Tool calling (Anthropic supports tools)
-            list_files_tool = next((t for t in COMMON_TOOLS if t["name"] == "list_files"), None)
-            if list_files_tool:
+            tools = [list_files]  # Use enhanced list_files tool
+            if tools:
                 tool_response = provider.generate("List the files in the current directory",
-                                                 tools=[list_files_tool])
+                                                 tools=tools)
 
                 assert tool_response is not None
 
@@ -231,7 +238,14 @@ class TestIntegratedFunctionality:
                             args = json.loads(args)
 
                         # Test tool execution
-                        result = execute_tool(call.get('name'), args)
+                        # Execute tool directly
+                    available_tools = {"list_files": list_files, "search_files": search_files, "read_file": read_file, "write_file": write_file, "web_search": web_search}
+                    tool_name = call.get('name')
+                    args = args
+                    if tool_name in available_tools:
+                        result = available_tools[tool_name](**args)
+                    else:
+                        result = f"Error: Tool '{tool_name}' not found"
                         assert len(result) > 0
 
             # Test 4: Architecture detection

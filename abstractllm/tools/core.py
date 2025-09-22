@@ -3,7 +3,7 @@ Core tool definitions and abstractions.
 """
 
 from typing import Dict, Any, List, Optional, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 
 
@@ -14,6 +14,11 @@ class ToolDefinition:
     description: str
     parameters: Dict[str, Any]
     function: Optional[Callable] = None
+
+    # Enhanced metadata for better LLM guidance
+    tags: List[str] = field(default_factory=list)
+    when_to_use: Optional[str] = None
+    examples: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_function(cls, func: Callable) -> 'ToolDefinition':
@@ -54,11 +59,21 @@ class ToolDefinition:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format"""
-        return {
+        result = {
             "name": self.name,
             "description": self.description,
             "parameters": self.parameters
         }
+
+        # Include enhanced metadata if available
+        if self.tags:
+            result["tags"] = self.tags
+        if self.when_to_use:
+            result["when_to_use"] = self.when_to_use
+        if self.examples:
+            result["examples"] = self.examples
+
+        return result
 
 
 @dataclass
@@ -90,9 +105,17 @@ class ToolCallResponse:
         return bool(self.tool_calls)
 
 
-def tool(func=None, *, name: Optional[str] = None, description: Optional[str] = None):
+def tool(
+    func=None,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    when_to_use: Optional[str] = None,
+    examples: Optional[List[Dict[str, Any]]] = None
+):
     """
-    Simple decorator to convert a function into a tool.
+    Enhanced decorator to convert a function into a tool with rich metadata.
 
     Usage:
         @tool
@@ -100,8 +123,19 @@ def tool(func=None, *, name: Optional[str] = None, description: Optional[str] = 
             "Does something"
             return result
 
-        # Or with custom name/description
-        @tool(name="custom", description="Custom tool")
+        # Or with enhanced metadata
+        @tool(
+            name="custom",
+            description="Custom tool",
+            tags=["utility", "helper"],
+            when_to_use="When you need to perform X operation",
+            examples=[
+                {
+                    "description": "Basic usage",
+                    "arguments": {"param": "value"}
+                }
+            ]
+        )
         def my_function(param: str) -> str:
             return result
 
@@ -116,6 +150,11 @@ def tool(func=None, *, name: Optional[str] = None, description: Optional[str] = 
         tool_def = ToolDefinition.from_function(f)
         tool_def.name = tool_name
         tool_def.description = tool_description
+
+        # Add enhanced metadata
+        tool_def.tags = tags or []
+        tool_def.when_to_use = when_to_use
+        tool_def.examples = examples or []
 
         # Attach tool definition to function for easy access
         f._tool_definition = tool_def
