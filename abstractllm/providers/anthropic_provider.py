@@ -348,19 +348,6 @@ class AnthropicProvider(BaseProvider):
         ]
         return capabilities
 
-    def get_token_limit(self) -> Optional[int]:
-        """Get maximum token limit for this model"""
-        token_limits = {
-            "claude-3-opus-20240229": 200000,
-            "claude-3-sonnet-20240229": 200000,
-            "claude-3-haiku-20240307": 200000,
-            "claude-3-5-sonnet-20240620": 200000,
-            "claude-3-5-sonnet-20241022": 200000,
-            "claude-2.1": 200000,
-            "claude-2.0": 100000,
-            "claude-instant-1.2": 100000
-        }
-        return token_limits.get(self.model, 200000)  # Default to 200k for newer models
 
     def validate_config(self) -> bool:
         """Validate provider configuration"""

@@ -326,18 +326,6 @@ class OpenAIProvider(BaseProvider):
 
         return capabilities
 
-    def get_token_limit(self) -> Optional[int]:
-        """Get maximum token limit for this model"""
-        token_limits = {
-            "gpt-3.5-turbo": 4096,
-            "gpt-3.5-turbo-16k": 16384,
-            "gpt-4": 8192,
-            "gpt-4-32k": 32768,
-            "gpt-4-turbo": 128000,
-            "gpt-4o": 128000,
-            "gpt-4o-mini": 128000
-        }
-        return token_limits.get(self.model)
 
     def validate_config(self) -> bool:
         """Validate provider configuration"""

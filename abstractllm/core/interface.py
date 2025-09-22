@@ -70,9 +70,6 @@ class AbstractLLMInterface(ABC):
         """Validate provider configuration"""
         return True
 
-    def get_token_limit(self) -> Optional[int]:
-        """Get maximum token limit for this model"""
-        return None
 
     def _validate_token_parameters(self):
         """Validate token parameter constraints"""
@@ -117,7 +114,7 @@ class AbstractLLMInterface(ABC):
         Raises:
             ValueError: If token limits would be exceeded
         """
-        _, max_out, max_in = self._calculate_effective_token_limits()
+        _, _, max_in = self._calculate_effective_token_limits()
 
         # Check input token limit
         if max_in is not None and input_tokens > max_in:

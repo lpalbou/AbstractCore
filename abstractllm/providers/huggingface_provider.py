@@ -820,35 +820,6 @@ class HuggingFaceProvider(BaseProvider):
         else:
             return self.pipeline is not None
 
-    def get_token_limit(self) -> Optional[int]:
-        """Get maximum token limit for this model"""
-
-        if self.model_type == "gguf":
-            # Return context size for GGUF models
-            return self.max_tokens
-
-        # Common model token limits for transformers
-        token_limits = {
-            "gpt2": 1024,
-            "gpt2-medium": 1024,
-            "gpt2-large": 1024,
-            "gpt2-xl": 1024,
-            "microsoft/DialoGPT-small": 1024,
-            "microsoft/DialoGPT-medium": 1024,
-            "microsoft/DialoGPT-large": 1024,
-            "bigscience/bloom-560m": 2048,
-            "bigscience/bloom-1b7": 2048,
-            "bigscience/bloom-3b": 2048,
-            "bigscience/bloom-7b1": 2048,
-        }
-
-        # Check if model matches known limits
-        for model_pattern, limit in token_limits.items():
-            if model_pattern in self.model.lower():
-                return limit
-
-        # Default to 2048 for unknown models
-        return 2048
 
     # Removed override - using BaseProvider method with JSON capabilities
 
