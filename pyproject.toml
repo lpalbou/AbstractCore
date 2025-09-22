@@ -1,0 +1,268 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "abstractllm"
+version = "0.5.0"
+description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "AbstractLLM Contributors"}
+]
+maintainers = [
+    {name = "AbstractLLM Contributors"}
+]
+keywords = [
+    "llm",
+    "openai",
+    "anthropic",
+    "ollama",
+    "huggingface",
+    "mlx",
+    "ai",
+    "machine-learning",
+    "natural-language-processing",
+    "tool-calling",
+    "streaming"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+]
+requires-python = ">=3.9"
+
+# Core dependencies - minimal set for basic functionality
+dependencies = [
+    "pydantic>=2.0.0,<3.0.0",
+    "httpx>=0.24.0,<1.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/abstractllm"
+Documentation = "https://abstractllm.readthedocs.io"
+Repository = "https://github.com/your-org/abstractllm"
+"Bug Tracker" = "https://github.com/your-org/abstractllm/issues"
+Changelog = "https://github.com/your-org/abstractllm/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+# Individual providers
+openai = [
+    "openai>=1.0.0,<2.0.0",
+]
+
+anthropic = [
+    "anthropic>=0.25.0,<1.0.0",
+]
+
+ollama = [
+    # No additional dependencies - uses core httpx
+]
+
+lmstudio = [
+    # No additional dependencies - uses core httpx
+]
+
+huggingface = [
+    "transformers>=4.30.0,<5.0.0",
+    "torch>=1.12.0,<3.0.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+]
+
+mlx = [
+    "mlx>=0.15.0,<1.0.0",
+    "mlx-lm>=0.15.0,<1.0.0",
+]
+
+# Provider groups for convenience
+api-providers = [
+    "abstractllm[openai,anthropic]",
+]
+
+local-providers = [
+    "abstractllm[ollama,lmstudio,mlx]",
+]
+
+heavy-providers = [
+    "abstractllm[huggingface]",
+]
+
+# Comprehensive installations
+all-providers = [
+    "abstractllm[openai,anthropic,ollama,lmstudio,huggingface,mlx]",
+]
+
+lightweight = [
+    "abstractllm[openai,anthropic,ollama,lmstudio]",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.5.0",
+    "ruff>=0.1.0",
+    "pre-commit>=3.0.0",
+]
+
+# Testing dependencies
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+    "pytest-cov>=4.0.0",
+    "responses>=0.23.0",
+    "httpx>=0.24.0",
+]
+
+# Documentation dependencies
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.22.0",
+    "mkdocs-autorefs>=0.4.0",
+]
+
+# Complete development environment
+full-dev = [
+    "abstractllm[all-providers,dev,test,docs]",
+]
+
+[tool.setuptools]
+packages = ["abstractllm"]
+
+[tool.setuptools.package-data]
+abstractllm = [
+    "assets/*.json",
+    "py.typed",
+]
+
+# Black configuration
+[tool.black]
+line-length = 100
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+# isort configuration
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+known_first_party = ["abstractllm"]
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "openai.*",
+    "anthropic.*",
+    "transformers.*",
+    "torch.*",
+    "mlx.*",
+    "mlx_lm.*",
+    "llama_cpp.*",
+]
+ignore_missing_imports = true
+
+# Ruff configuration
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "B904",  # Within an except clause, raise exceptions with raise ... from err
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*" = ["B011"]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "provider: marks tests that require specific providers",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["abstractllm"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

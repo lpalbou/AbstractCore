@@ -16,7 +16,7 @@ setup(
         "openai": ["openai>=1.0.0"],
         "anthropic": ["anthropic>=0.5.0"],
         "ollama": ["ollama>=0.1.0"],
-        "huggingface": ["transformers>=4.0.0", "torch>=1.12.0"],
+        "huggingface": ["transformers>=4.0.0", "torch>=1.12.0", "llama-cpp-python>=0.2.0"],
         "mlx": ["mlx>=0.1.0", "mlx-lm>=0.1.0"],
         "lmstudio": [],  # Uses OpenAI compatible API
         "all": [
@@ -25,6 +25,9 @@ setup(
             "ollama>=0.1.0",
             "transformers>=4.0.0",
             "torch>=1.12.0",
+            "llama-cpp-python>=0.2.0",
+            "mlx>=0.1.0",
+            "mlx-lm>=0.1.0",
         ],
         "dev": ["pytest", "black", "mypy"],
     }
