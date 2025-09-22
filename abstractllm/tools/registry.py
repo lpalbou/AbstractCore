@@ -222,6 +222,15 @@ def execute_tools(tool_calls: List[ToolCall]) -> List[ToolResult]:
     return _global_registry.execute_tools(tool_calls)
 
 
+def clear_registry():
+    """
+    Clear all tools from the global registry.
+
+    Useful for testing and resetting tool state.
+    """
+    return _global_registry.clear()
+
+
 def tool(func: Callable) -> Callable:
     """
     Decorator to register a function as a tool.

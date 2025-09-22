@@ -32,11 +32,14 @@ class MLXProvider(BaseProvider):
             import sys
             import os
             from contextlib import redirect_stdout, redirect_stderr
-            
+
+            # Clean model name - remove trailing slashes that cause HuggingFace validation errors
+            clean_model_name = self.model.rstrip('/')
+
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, 'w') as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
-                    self.llm, self.tokenizer = load(self.model)
+                    self.llm, self.tokenizer = load(clean_model_name)
             
             self.generate_fn = generate
             self.stream_generate_fn = stream_generate

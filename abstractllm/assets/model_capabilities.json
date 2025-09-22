@@ -110,7 +110,9 @@
       "parallel_tools": true,
       "max_tools": -1,
       "vision_support": true,
-      "image_resolutions": ["up to 1568x1568"],
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
       "audio_support": false,
       "notes": "disable_parallel_tool_use option available",
       "source": "Anthropic official docs"
@@ -123,7 +125,9 @@
       "parallel_tools": true,
       "max_tools": -1,
       "vision_support": true,
-      "image_resolutions": ["up to 1568x1568"],
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
       "audio_support": false,
       "notes": "Extended output with beta header",
       "source": "Anthropic official docs"
@@ -136,7 +140,9 @@
       "parallel_tools": true,
       "max_tools": -1,
       "vision_support": true,
-      "image_resolutions": ["up to 1568x1568"],
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
       "audio_support": false,
       "notes": "More likely to call unnecessary tools",
       "source": "Anthropic official docs"
@@ -149,7 +155,9 @@
       "parallel_tools": false,
       "max_tools": 1,
       "vision_support": true,
-      "image_resolutions": ["up to 1568x1568"],
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
       "audio_support": false,
       "source": "Anthropic official docs"
     },
@@ -161,7 +169,9 @@
       "parallel_tools": false,
       "max_tools": 1,
       "vision_support": true,
-      "image_resolutions": ["up to 1568x1568"],
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
       "audio_support": false,
       "source": "Anthropic official docs"
     },
@@ -173,7 +183,9 @@
       "parallel_tools": false,
       "max_tools": 1,
       "vision_support": true,
-      "image_resolutions": ["up to 1568x1568"],
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
       "audio_support": false,
       "source": "Anthropic official docs"
     },
@@ -206,7 +218,9 @@
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": true,
-      "image_resolutions": ["variable"],
+      "image_resolutions": [
+        "variable"
+      ],
       "audio_support": false,
       "notes": "Vision model, may be limited by deployment platform",
       "source": "Meta official docs"
@@ -421,7 +435,9 @@
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": true,
-      "image_resolutions": ["variable"],
+      "image_resolutions": [
+        "variable"
+      ],
       "audio_support": false,
       "source": "Alibaba official docs"
     },
@@ -432,7 +448,9 @@
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": true,
-      "image_resolutions": ["variable"],
+      "image_resolutions": [
+        "variable"
+      ],
       "audio_support": false,
       "source": "Alibaba official docs"
     },
@@ -505,7 +523,9 @@
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": true,
-      "image_resolutions": ["variable"],
+      "image_resolutions": [
+        "variable"
+      ],
       "audio_support": false,
       "source": "Microsoft official docs"
     },
@@ -661,7 +681,11 @@
       "structured_output": "none",
       "parallel_tools": false,
       "vision_support": true,
-      "image_resolutions": ["224x224", "448x448", "896x896"],
+      "image_resolutions": [
+        "224x224",
+        "448x448",
+        "896x896"
+      ],
       "audio_support": false,
       "notes": "Vision-language model",
       "source": "Google docs"
@@ -742,6 +766,30 @@
       "audio_support": false,
       "notes": "Hybrid attention (Gated DeltaNet + Gated Attention), High-sparsity MoE with 512 experts/10 activated, Multi-Token Prediction, extensible to 1M tokens with YaRN scaling",
       "source": "Hugging Face model card"
+    },
+    "gpt-5": {
+      "context_length": 200000,
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": true,
+      "notes": "Next generation model with improved capabilities",
+      "source": "Expected specifications"
+    },
+    "gpt-5-turbo": {
+      "context_length": 200000,
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": true,
+      "notes": "Faster variant of GPT-5",
+      "source": "Expected specifications"
     }
   },
   "tool_support_levels": {

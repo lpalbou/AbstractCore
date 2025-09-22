@@ -255,6 +255,7 @@ class HuggingFaceProvider(BaseProvider):
 
     def _load_gguf_model(self):
         """Load GGUF model using llama-cpp-python (cache-only, no downloading)"""
+        import os
         try:
             model_path = None
 
@@ -297,10 +298,17 @@ class HuggingFaceProvider(BaseProvider):
                 "use_mlock": False
             }
 
-            # Redirect stderr to our logger during initialization
-            # This captures ggml_metal_init warnings and controls them based on debug level
-            with redirect_stderr_to_logger(self.logger, self.debug):
+            # Redirect stderr during initialization to avoid GGUF loading noise
+            from contextlib import redirect_stderr
+
+            if self.debug:
+                # In debug mode, keep stderr visible
                 self.llm = Llama(**llama_kwargs)
+            else:
+                # In non-debug mode, silence stderr during model loading
+                with open(os.devnull, 'w') as devnull:
+                    with redirect_stderr(devnull):
+                        self.llm = Llama(**llama_kwargs)
 
         except Exception as e:
             raise RuntimeError(f"Failed to load GGUF model {self.model}: {str(e)}")

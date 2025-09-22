@@ -111,7 +111,8 @@ class AnthropicProvider(BaseProvider):
         # Add tools if provided (convert to native format)
         if tools:
             if self.tool_handler.supports_native:
-                call_params["tools"] = self.tool_handler.prepare_tools_for_native(tools)
+                # Use Anthropic-specific tool formatting instead of universal handler
+                call_params["tools"] = self._format_tools_for_anthropic(tools)
                 # Anthropic uses tool_choice differently than OpenAI
                 if kwargs.get("tool_choice"):
                     call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
@@ -155,14 +156,18 @@ class AnthropicProvider(BaseProvider):
         """Format tools for Anthropic API format"""
         formatted_tools = []
         for tool in tools:
+            # Get parameters and ensure proper JSON schema format
+            params = tool.get("parameters", {})
+            input_schema = {
+                "type": "object",
+                "properties": params.get("properties", params),  # Handle both formats
+                "required": params.get("required", list(params.keys()) if "properties" not in params else [])
+            }
+
             formatted_tool = {
                 "name": tool.get("name"),
                 "description": tool.get("description", ""),
-                "input_schema": tool.get("parameters", {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                })
+                "input_schema": input_schema
             }
             formatted_tools.append(formatted_tool)
         return formatted_tools

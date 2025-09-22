@@ -81,37 +81,19 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         from ..events import emit_global
         emit_global(EventType.AFTER_GENERATE, event_data, source=self.__class__.__name__)
 
-        # Track with structured logging
-        log_data = {
-            "event_type": "generation",
-            "provider": self.__class__.__name__,
-            "model": self.model,
-            "latency_ms": round(latency_ms, 2),
-            "success": success,
-            "prompt_length": len(prompt)
-        }
-
-        if response and response.usage:
-            log_data.update({
-                "prompt_tokens": response.usage.get("prompt_tokens", 0),
-                "completion_tokens": response.usage.get("completion_tokens", 0),
-                "total_tokens": response.usage.get("total_tokens", 0)
-            })
-
-        if response:
-            log_data["response_length"] = len(response.content) if response.content else 0
-
+        # Track with structured logging (using formatted strings)
         if error:
-            log_data["error"] = str(error)
-            log_data["error_type"] = error.__class__.__name__
-
             # Only log debug info for model not found errors to avoid duplication
             if isinstance(error, ModelNotFoundError):
-                self.logger.debug("Model not found", **log_data)
+                self.logger.debug(f"Model not found: {self.model}")
             else:
-                self.logger.error("Generation failed", **log_data)
+                self.logger.error(f"Generation failed for {self.model}: {error} (latency: {latency_ms:.2f}ms)")
         else:
-            self.logger.info("Generation completed", **log_data)
+            tokens_info = ""
+            if response and response.usage:
+                tokens_info = f" (tokens: {response.usage.get('total_tokens', 0)})"
+
+            self.logger.info(f"Generation completed for {self.model}: {latency_ms:.2f}ms{tokens_info}")
 
     def _track_tool_call(self, tool_name: str, arguments: Dict[str, Any],
                         result: Optional[Any] = None, success: bool = True,
@@ -134,22 +116,12 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
             "error": str(error) if error else None
         })
 
-        # Track with structured logging
-        log_data = {
-            "event_type": "tool_call",
-            "tool_name": tool_name,
-            "success": success,
-            "argument_count": len(arguments) if arguments else 0
-        }
-
+        # Track with structured logging (using formatted strings)
         if error:
-            log_data["error"] = str(error)
-            log_data["error_type"] = error.__class__.__name__
-            self.logger.warning("Tool call failed", **log_data)
+            self.logger.warning(f"Tool call failed: {tool_name} - {error}")
         else:
-            if result:
-                log_data["result_length"] = len(str(result))
-            self.logger.info("Tool call completed", **log_data)
+            result_info = f" (result length: {len(str(result))})" if result else ""
+            self.logger.info(f"Tool call completed: {tool_name}{result_info}")
 
 
     def _handle_api_error(self, error: Exception) -> Exception:
@@ -447,8 +419,10 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         results_text = self._format_tool_results(tool_results)
 
         # Return updated response with tool results
+        # Handle case where original content might be None (e.g., OpenAI tool calls)
+        original_content = response.content or ""
         return GenerateResponse(
-            content=response.content + results_text,
+            content=original_content + results_text,
             model=response.model,
             finish_reason=response.finish_reason,
             raw_response=response.raw_response,

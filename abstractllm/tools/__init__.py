@@ -71,6 +71,7 @@ from .registry import (
     get_registry,
     execute_tool,
     execute_tools,
+    clear_registry,
     tool,
     register  # Alias for tool decorator
 )
@@ -98,6 +99,7 @@ __all__ = [
     "get_registry",
     "execute_tool",
     "execute_tools",
+    "clear_registry",
     "tool",
     "register",
 ]

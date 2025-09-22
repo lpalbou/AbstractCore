@@ -154,23 +154,3 @@ def log_tool_call(logger, tool_name: str, arguments: Optional[dict] = None):
 configure_logging = configure_structured_logging
 
 
-# Legacy alias
-def get_telemetry():
-    """
-    Legacy telemetry function.
-
-    DEPRECATED: Use structured logging instead.
-    """
-    warnings.warn(
-        "get_telemetry() is deprecated. Use structured logging instead.",
-        DeprecationWarning,
-        stacklevel=2
-    )
-
-    class LegacyTelemetry:
-        def track_generation(self, **kwargs):
-            pass
-        def track_tool_call(self, **kwargs):
-            pass
-
-    return LegacyTelemetry()
