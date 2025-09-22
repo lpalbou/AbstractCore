@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 from abstractllm import create_llm, BasicSession
 from abstractllm.tools.common_tools import COMMON_TOOLS, execute_tool
-from abstractllm.utils.telemetry import Telemetry, setup_telemetry
+from abstractllm.utils.structured_logging import configure_logging, get_logger
 from abstractllm.events import EventType, EventEmitter
 from abstractllm.architectures import detect_architecture
 
@@ -31,8 +31,13 @@ class TestIntegratedFunctionality:
         """Test Ollama with all components integrated."""
         try:
             # Setup telemetry
-            setup_telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
-            telemetry = Telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+            configure_logging(
+                console_level=30,  # WARNING
+                file_level=10,     # DEBUG
+                log_dir="/tmp",
+                verbatim_enabled=True
+            )
+            logger = get_logger("test.provider")
 
             # Create provider
             provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
@@ -105,8 +110,13 @@ class TestIntegratedFunctionality:
 
         try:
             # Setup telemetry
-            setup_telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
-            telemetry = Telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+            configure_logging(
+                console_level=30,  # WARNING
+                file_level=10,     # DEBUG
+                log_dir="/tmp",
+                verbatim_enabled=True
+            )
+            logger = get_logger("test.provider")
 
             # Create provider
             provider = create_llm("openai", model="gpt-4o-mini")
@@ -175,8 +185,13 @@ class TestIntegratedFunctionality:
 
         try:
             # Setup telemetry
-            setup_telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
-            telemetry = Telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+            configure_logging(
+                console_level=30,  # WARNING
+                file_level=10,     # DEBUG
+                log_dir="/tmp",
+                verbatim_enabled=True
+            )
+            logger = get_logger("test.provider")
 
             # Create provider
             provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
@@ -241,7 +256,13 @@ class TestIntegratedFunctionality:
     def test_telemetry_functionality(self, temp_telemetry_file):
         """Test telemetry functionality independently."""
         # Setup telemetry
-        telemetry = Telemetry(enabled=True, verbatim=True, output_path=temp_telemetry_file)
+        configure_logging(
+            console_level=30,  # WARNING
+            file_level=10,     # DEBUG
+            log_dir="/tmp",
+            verbatim_enabled=True
+        )
+        logger = get_logger("test.multimodel")
 
         # Test tracking generation
         telemetry.track_generation(

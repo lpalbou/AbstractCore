@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from abstractllm import create_llm, BasicSession
 from abstractllm.tools.common_tools import COMMON_TOOLS, execute_tool
-from abstractllm.utils.telemetry import setup_telemetry, get_telemetry
+from abstractllm.utils.structured_logging import configure_logging, get_logger
 from abstractllm.events import EventType, GlobalEventBus
 
 
@@ -27,9 +27,14 @@ class ProviderTestSuite:
         self.config = config or {}
         self.results = []
 
-        # Setup telemetry with verbatim capture
-        self.telemetry_file = Path(f"/tmp/abstractllm_test_{provider_name}.jsonl")
-        setup_telemetry(enabled=True, verbatim=True, output_path=self.telemetry_file)
+        # Setup logging with verbatim capture
+        configure_logging(
+            console_level=30,  # WARNING
+            file_level=10,     # DEBUG
+            log_dir="/tmp",
+            verbatim_enabled=True
+        )
+        self.logger = get_logger(f"test.{provider_name}")
 
         # Setup event listener
         self.events = []
@@ -326,7 +331,7 @@ def main():
     print(f"\nOverall: {total_passed}/{total_tests} tests passed")
 
     # Verify telemetry is working
-    telemetry = get_telemetry()
+    # Using structured logging instead of telemetry
     summary = telemetry.get_summary()
     print(f"\nTelemetry Summary:")
     print(f"  Total events: {summary['total_events']}")

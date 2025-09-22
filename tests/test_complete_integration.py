@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from abstractllm import create_llm
 from abstractllm.events import EventType, GlobalEventBus
 from abstractllm.exceptions import AuthenticationError, ProviderAPIError
-from abstractllm.utils.telemetry import setup_telemetry, get_telemetry
+from abstractllm.utils.structured_logging import configure_logging, get_logger
 from abstractllm.media import MediaHandler
 
 
@@ -28,12 +28,14 @@ class IntegrationVerifier:
         self.setup_events()
 
     def setup_telemetry(self):
-        """Setup telemetry with verbatim capture"""
-        setup_telemetry(
-            enabled=True,
-            verbatim=True,
-            output_path="/tmp/integration_test.jsonl"
+        """Setup logging with verbatim capture"""
+        configure_logging(
+            console_level=30,  # WARNING
+            file_level=10,     # DEBUG
+            log_dir="/tmp",
+            verbatim_enabled=True
         )
+        self.logger = get_logger("integration_test")
 
     def setup_events(self):
         """Setup event listeners to verify events are emitted"""
@@ -124,7 +126,7 @@ class IntegrationVerifier:
         print(f"\n[TEST] Telemetry Integration for {provider_name}")
 
         # Clear telemetry
-        telemetry = get_telemetry()
+        # Using structured logging instead of telemetry
         telemetry.clear()
 
         # Create provider and generate

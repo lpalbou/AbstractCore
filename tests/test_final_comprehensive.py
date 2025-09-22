@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from abstractllm import create_llm, BasicSession
 from abstractllm.tools.common_tools import COMMON_TOOLS, execute_tool
-from abstractllm.utils.telemetry import Telemetry
+from abstractllm.utils.structured_logging import configure_logging, get_logger
 from abstractllm.architectures import detect_architecture
 from abstractllm.events import EventType, EventEmitter
 
@@ -28,12 +28,14 @@ class ComprehensiveProviderTest:
         self.config = config or {}
         self.results = []
 
-        # Setup telemetry with verbatim for complete observability
-        self.telemetry = Telemetry(
-            enabled=True,
-            verbatim=True,  # CRITICAL: Capture full requests/responses
-            output_path=f"/tmp/abstractllm_{provider_name}_final.jsonl"
+        # Setup logging with verbatim for complete observability
+        configure_logging(
+            console_level=30,  # WARNING
+            file_level=10,     # DEBUG
+            log_dir="/tmp",
+            verbatim_enabled=True  # CRITICAL: Capture full requests/responses
         )
+        self.logger = get_logger(f"test.{provider_name}")
 
     def test_1_connectivity(self) -> bool:
         """Test 1: Provider connectivity"""
@@ -64,7 +66,7 @@ class ComprehensiveProviderTest:
                 print(f"   Response: {response.content[:150]}...")
 
                 # Track with telemetry for observability
-                self.telemetry.track_generation(
+                self.logger.log_generation(
                     provider=self.provider_name,
                     model=self.model,
                     prompt=prompt,  # Full prompt captured
@@ -83,7 +85,7 @@ class ComprehensiveProviderTest:
 
         except Exception as e:
             print(f"❌ Error: {e}")
-            self.telemetry.track_generation(
+            self.logger.log_generation(
                 provider=self.provider_name,
                 model=self.model,
                 prompt="Who are you?",
@@ -113,7 +115,7 @@ class ComprehensiveProviderTest:
                 print(f"   Response 1: {response1.content[:100]}...")
 
                 # Track with full observability
-                self.telemetry.track_generation(
+                self.logger.log_generation(
                     provider=self.provider_name,
                     model=self.model,
                     prompt=prompt1,
@@ -134,7 +136,7 @@ class ComprehensiveProviderTest:
                 print(f"   Response 2: {response2.content[:100]}...")
 
                 # Track with full observability
-                self.telemetry.track_generation(
+                self.logger.log_generation(
                     provider=self.provider_name,
                     model=self.model,
                     prompt=prompt2,
@@ -181,7 +183,7 @@ class ComprehensiveProviderTest:
             latency = (time.time() - start) * 1000
 
             # Track the request
-            self.telemetry.track_generation(
+            self.logger.log_generation(
                 provider=self.provider_name,
                 model=self.model,
                 prompt=prompt,
@@ -207,7 +209,7 @@ class ComprehensiveProviderTest:
                     print(f"   Result: {result[:150]}...")
 
                     # Track tool call with full observability
-                    self.telemetry.track_tool_call(
+                    self.logger.log_tool_call(
                         tool_name=tool_name,
                         arguments=args,
                         result=result,
@@ -272,7 +274,7 @@ class ComprehensiveProviderTest:
                 print(f"   Sample response: {sample_response[:50] if sample_response else 'None'}...")
 
                 # Show summary
-                summary = self.telemetry.get_summary()
+                # Logging summary not needed for structured logging
                 print(f"\n   Telemetry Summary:")
                 print(f"   - Total events: {summary['total_events']}")
                 print(f"   - Generations: {summary['total_generations']}")
