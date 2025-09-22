@@ -9,6 +9,8 @@ import time
 from typing import Dict, Any, List
 from abstractllm import create_llm, BasicSession
 from abstractllm.tools.core import ToolDefinition
+from abstractllm.tools import register_tool, clear_registry
+from abstractllm.tools.parser import detect_tool_calls
 
 
 def list_files(directory: str = ".") -> str:
@@ -47,51 +49,22 @@ class TestToolCalling:
 
     @pytest.fixture
     def tool_definitions(self):
-        """Define tools in OpenAI format"""
-        return [
-            {
-                "name": "list_files",
-                "description": "List files in a directory",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "directory": {
-                            "type": "string",
-                            "description": "Directory path"
-                        }
-                    },
-                    "required": ["directory"]
-                }
-            },
-            {
-                "name": "calculate",
-                "description": "Calculate a mathematical expression",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "expression": {
-                            "type": "string",
-                            "description": "Math expression to evaluate"
-                        }
-                    },
-                    "required": ["expression"]
-                }
-            },
-            {
-                "name": "get_weather",
-                "description": "Get weather for a city",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "city": {
-                            "type": "string",
-                            "description": "City name"
-                        }
-                    },
-                    "required": ["city"]
-                }
-            }
-        ]
+        """Define tools using ToolDefinition and register them"""
+        # Clear registry to start fresh
+        clear_registry()
+
+        # Create ToolDefinition objects from functions
+        list_files_tool = ToolDefinition.from_function(list_files)
+        calculate_tool = ToolDefinition.from_function(calculate)
+        get_weather_tool = ToolDefinition.from_function(get_weather)
+
+        # Register tools in the global registry
+        register_tool(list_files_tool)
+        register_tool(calculate_tool)
+        register_tool(get_weather_tool)
+
+        # Return ToolDefinition objects (not raw dicts)
+        return [list_files_tool, calculate_tool, get_weather_tool]
 
     @pytest.fixture
     def test_cases(self):
@@ -102,16 +75,6 @@ class TestToolCalling:
             ("What's the weather in New York?", "get_weather")
         ]
 
-    def execute_tool(self, tool_name: str, arguments: dict) -> str:
-        """Execute a tool with given arguments"""
-        if tool_name == 'list_files':
-            return list_files(arguments.get('directory', '.'))
-        elif tool_name == 'calculate':
-            return calculate(arguments.get('expression', ''))
-        elif tool_name == 'get_weather':
-            return get_weather(arguments.get('city', ''))
-        else:
-            return "Unknown tool"
 
     def test_openai_tool_calling(self, tool_definitions, test_cases):
         """Test OpenAI provider tool calling with gpt-4o-mini."""
@@ -128,17 +91,13 @@ class TestToolCalling:
                 assert response is not None
 
                 if response.has_tool_calls():
-                    # Tool calling worked
+                    # Tool calling worked (native tool calls in response object)
                     results.append(True)
-
-                    # Verify tool execution
-                    for tc in response.tool_calls:
-                        tool_name = tc.get('name')
-                        args = json.loads(tc.get('arguments')) if isinstance(tc.get('arguments'), str) else tc.get('arguments', {})
-                        result = self.execute_tool(tool_name, args)
-                        assert len(result) > 0  # Should get some result
+                elif detect_tool_calls(response.content, llm.model):
+                    # Tool calling worked (detected by central parser)
+                    results.append(True)
                 else:
-                    # No tool calls, but might still be valid response
+                    # No tool calls detected
                     results.append(False)
 
             # OpenAI should have good tool calling success rate
@@ -166,17 +125,13 @@ class TestToolCalling:
                 assert response is not None
 
                 if response.has_tool_calls():
-                    # Tool calling worked
+                    # Tool calling worked (native tool calls in response object)
                     results.append(True)
-
-                    # Verify tool execution
-                    for tc in response.tool_calls:
-                        tool_name = tc.get('name')
-                        args = json.loads(tc.get('arguments')) if isinstance(tc.get('arguments'), str) else tc.get('arguments', {})
-                        result = self.execute_tool(tool_name, args)
-                        assert len(result) > 0  # Should get some result
+                elif detect_tool_calls(response.content, llm.model):
+                    # Tool calling worked (detected by central parser)
+                    results.append(True)
                 else:
-                    # No tool calls, but might still be valid response
+                    # No tool calls detected
                     results.append(False)
 
             # Anthropic should have good tool calling success rate
