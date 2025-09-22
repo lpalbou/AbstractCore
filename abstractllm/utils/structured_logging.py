@@ -87,6 +87,9 @@ class LogConfig:
         if not STRUCTLOG_AVAILABLE:
             return
 
+        # Setup standard logging handlers first
+        self._setup_logging_handlers()
+
         processors = [
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_logger_name,
@@ -110,6 +113,54 @@ class LogConfig:
             wrapper_class=structlog.stdlib.BoundLogger,
             cache_logger_on_first_use=True,
         )
+
+    def _setup_logging_handlers(self):
+        """Setup standard logging handlers for file and console output."""
+        # Get root logger
+        root_logger = logging.getLogger()
+
+        # Clear existing handlers
+        root_logger.handlers.clear()
+
+        # Console handler
+        if self.console_level is not None:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setLevel(self.console_level)
+
+            if self.console_json:
+                console_formatter = logging.Formatter('%(message)s')
+            else:
+                console_formatter = logging.Formatter(
+                    '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+                    datefmt='%H:%M:%S'
+                )
+            console_handler.setFormatter(console_formatter)
+            root_logger.addHandler(console_handler)
+
+        # File handler
+        if self.log_dir and self.file_level is not None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_file = Path(self.log_dir) / f"abstractllm_{timestamp}.log"
+
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setLevel(self.file_level)
+
+            if self.file_json:
+                file_formatter = logging.Formatter('%(message)s')
+            else:
+                file_formatter = logging.Formatter(
+                    '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+                )
+            file_handler.setFormatter(file_formatter)
+            root_logger.addHandler(file_handler)
+
+        # Set root logger level to the most verbose level
+        if self.console_level is not None and self.file_level is not None:
+            root_logger.setLevel(min(self.console_level, self.file_level))
+        elif self.console_level is not None:
+            root_logger.setLevel(self.console_level)
+        elif self.file_level is not None:
+            root_logger.setLevel(self.file_level)
 
 
 # Global config instance

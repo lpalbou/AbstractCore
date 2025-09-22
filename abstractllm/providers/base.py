@@ -3,8 +3,15 @@ Base provider with integrated telemetry, events, and exception handling.
 """
 
 import time
-from typing import List, Dict, Any, Optional, Union, Iterator
+from typing import List, Dict, Any, Optional, Union, Iterator, Type
 from abc import ABC
+
+try:
+    from pydantic import BaseModel
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    BaseModel = None
 
 from ..core.interface import AbstractLLMInterface
 from ..core.types import GenerateResponse
@@ -156,11 +163,36 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
                                system_prompt: Optional[str] = None,
                                tools: Optional[List] = None,  # Accept both ToolDefinition and Dict
                                stream: bool = False,
-                               **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+                               response_model: Optional[Type[BaseModel]] = None,
+                               **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate with integrated telemetry and error handling.
         Providers should override _generate_internal instead of generate.
+
+        Args:
+            response_model: Optional Pydantic model for structured output
         """
+        # Handle structured output request
+        if response_model is not None:
+            if not PYDANTIC_AVAILABLE:
+                raise ImportError(
+                    "Pydantic is required for structured outputs. "
+                    "Install with: pip install pydantic>=2.0.0"
+                )
+
+            from ..structured import StructuredOutputHandler
+            handler = StructuredOutputHandler()
+            return handler.generate_structured(
+                provider=self,
+                prompt=prompt,
+                response_model=response_model,
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                stream=stream,
+                **kwargs
+            )
+
         start_time = time.time()
 
         # Emit before event to both local and global bus
@@ -223,10 +255,14 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
                           stream: bool = False,
+                          response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
         Internal generation method to be implemented by subclasses.
         This is called by generate_with_telemetry.
+
+        Args:
+            response_model: Optional Pydantic model for structured output
         """
         raise NotImplementedError("Subclasses must implement _generate_internal")
 

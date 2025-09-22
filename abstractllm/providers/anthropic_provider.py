@@ -5,7 +5,14 @@ Anthropic provider implementation.
 import os
 import json
 import time
-from typing import List, Dict, Any, Optional, Union, Iterator
+from typing import List, Dict, Any, Optional, Union, Iterator, Type
+
+try:
+    from pydantic import BaseModel
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..media import MediaHandler
@@ -56,6 +63,7 @@ class AnthropicProvider(BaseProvider):
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
                           stream: bool = False,
+                          response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with Anthropic API"""
 
@@ -108,13 +116,34 @@ class AnthropicProvider(BaseProvider):
         if kwargs.get("top_k") or self.top_k:
             call_params["top_k"] = kwargs.get("top_k", self.top_k)
 
+        # Handle structured output using the "tool trick"
+        structured_tool_name = None
+        if response_model and PYDANTIC_AVAILABLE:
+            # Create a synthetic tool for structured output
+            structured_tool = self._create_structured_output_tool(response_model)
+
+            # Add to existing tools or create new tools list
+            if tools:
+                tools = list(tools) + [structured_tool]
+            else:
+                tools = [structured_tool]
+
+            structured_tool_name = structured_tool["name"]
+
+            # Modify the prompt to instruct the model to use the structured tool
+            if api_messages and api_messages[-1]["role"] == "user":
+                api_messages[-1]["content"] += f"\n\nPlease use the {structured_tool_name} tool to provide your response."
+
         # Add tools if provided (convert to native format)
         if tools:
             if self.tool_handler.supports_native:
                 # Use Anthropic-specific tool formatting instead of universal handler
                 call_params["tools"] = self._format_tools_for_anthropic(tools)
-                # Anthropic uses tool_choice differently than OpenAI
-                if kwargs.get("tool_choice"):
+
+                # Force tool use for structured output
+                if structured_tool_name:
+                    call_params["tool_choice"] = {"type": "tool", "name": structured_tool_name}
+                elif kwargs.get("tool_choice"):
                     call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
             else:
                 # Add tools as system prompt for prompted models
@@ -361,3 +390,27 @@ class AnthropicProvider(BaseProvider):
         """Get max tokens parameter for Anthropic API"""
         # For Anthropic, max_tokens in the API is the max output tokens
         return kwargs.get("max_output_tokens", self.max_output_tokens)
+
+    def _create_structured_output_tool(self, response_model: Type[BaseModel]) -> Dict[str, Any]:
+        """
+        Create a synthetic tool for structured output using Anthropic's tool calling.
+
+        Args:
+            response_model: Pydantic model to create tool for
+
+        Returns:
+            Tool definition dict for Anthropic API
+        """
+        schema = response_model.model_json_schema()
+        tool_name = f"extract_{response_model.__name__.lower()}"
+
+        return {
+            "name": tool_name,
+            "description": f"Extract structured data in {response_model.__name__} format",
+            "input_schema": {
+                "type": "object",
+                "properties": schema.get("properties", {}),
+                "required": schema.get("required", []),
+                "additionalProperties": False
+            }
+        }

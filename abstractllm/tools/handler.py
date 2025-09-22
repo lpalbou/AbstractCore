@@ -97,6 +97,22 @@ class UniversalToolHandler:
         # Return as dictionaries for native API
         native_tools = []
         for tool_def in tool_defs:
+            # Clean parameters by removing 'default' properties for OpenAI compatibility
+            cleaned_properties = {}
+            for name, param in tool_def.parameters.items():
+                if isinstance(param, dict):
+                    # Remove 'default' key from parameter definition
+                    cleaned_param = {k: v for k, v in param.items() if k != "default"}
+                    cleaned_properties[name] = cleaned_param
+                else:
+                    cleaned_properties[name] = param
+
+            # Extract required fields (fields without default values)
+            required_fields = []
+            for name, param in tool_def.parameters.items():
+                if isinstance(param, dict) and "default" not in param:
+                    required_fields.append(name)
+
             # Convert to OpenAI-style function format (most common)
             native_tool = {
                 "type": "function",
@@ -105,11 +121,8 @@ class UniversalToolHandler:
                     "description": tool_def.description,
                     "parameters": {
                         "type": "object",
-                        "properties": tool_def.parameters,
-                        "required": [
-                            name for name, param in tool_def.parameters.items()
-                            if "default" not in param
-                        ]
+                        "properties": cleaned_properties,
+                        "required": required_fields
                     }
                 }
             }
@@ -158,11 +171,18 @@ class UniversalToolHandler:
                     tool_defs.append(ToolDefinition.from_function(tool))
                 elif isinstance(tool, dict):
                     if "name" in tool and "description" in tool:
-                        # Direct dict format
+                        # Direct dict format - extract properties from full schema
+                        parameters = tool.get("parameters", {})
+                        # If parameters is a full JSON schema, extract just the properties
+                        if isinstance(parameters, dict) and "properties" in parameters:
+                            properties = parameters["properties"]
+                        else:
+                            properties = parameters
+
                         tool_defs.append(ToolDefinition(
                             name=tool["name"],
                             description=tool["description"],
-                            parameters=tool.get("parameters", {})
+                            parameters=properties
                         ))
                     elif "function" in tool:
                         # OpenAI native format

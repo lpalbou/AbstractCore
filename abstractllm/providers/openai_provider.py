@@ -5,7 +5,14 @@ OpenAI provider implementation.
 import os
 import json
 import time
-from typing import List, Dict, Any, Optional, Union, Iterator
+from typing import List, Dict, Any, Optional, Union, Iterator, Type
+
+try:
+    from pydantic import BaseModel
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..media import MediaHandler
@@ -60,6 +67,7 @@ class OpenAIProvider(BaseProvider):
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
                           stream: bool = False,
+                          response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with OpenAI API"""
 
@@ -119,6 +127,23 @@ class OpenAIProvider(BaseProvider):
                 call_params["tools"] = self._format_tools_for_openai(tools)
                 call_params["tool_choice"] = kwargs.get("tool_choice", "auto")
 
+        # Add structured output support (OpenAI native)
+        if response_model and PYDANTIC_AVAILABLE:
+            if self._supports_structured_output():
+                json_schema = response_model.model_json_schema()
+
+                # OpenAI requires additionalProperties: false for strict mode
+                self._ensure_strict_schema(json_schema)
+
+                call_params["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": response_model.__name__,
+                        "strict": True,
+                        "schema": json_schema
+                    }
+                }
+
         # Make API call with proper exception handling
         try:
             if stream:
@@ -140,12 +165,15 @@ class OpenAIProvider(BaseProvider):
         """Format tools for OpenAI API format"""
         formatted_tools = []
         for tool in tools:
+            # Clean parameters for OpenAI compatibility
+            parameters = self._clean_parameters_for_openai(tool.get("parameters", {}))
+
             formatted_tool = {
                 "type": "function",
                 "function": {
                     "name": tool.get("name"),
                     "description": tool.get("description", ""),
-                    "parameters": tool.get("parameters", {})
+                    "parameters": parameters
                 }
             }
             formatted_tools.append(formatted_tool)
@@ -382,3 +410,66 @@ class OpenAIProvider(BaseProvider):
             "gpt-5" in model_lower or
             model_lower.startswith("gpt-o1")
         )
+
+    def _supports_structured_output(self) -> bool:
+        """Check if this model supports native structured output"""
+        # Only specific OpenAI models support structured outputs
+        model_lower = self.model.lower()
+        return (
+            "gpt-4o-2024-08-06" in model_lower or
+            "gpt-4o-mini-2024-07-18" in model_lower or
+            "gpt-4o-mini" in model_lower or
+            "gpt-4o" in model_lower
+        )
+
+    def _ensure_strict_schema(self, schema: Dict[str, Any]) -> None:
+        """
+        Ensure schema is compatible with OpenAI strict mode.
+
+        OpenAI requires:
+        - additionalProperties: false for all objects
+        - required array must include all properties
+        """
+        def make_strict(obj):
+            if isinstance(obj, dict):
+                # Add additionalProperties: false to all objects
+                if "type" in obj and obj["type"] == "object":
+                    obj["additionalProperties"] = False
+
+                    # Ensure all properties are in required array for strict mode
+                    if "properties" in obj:
+                        all_props = list(obj["properties"].keys())
+                        obj["required"] = all_props
+
+                # Recursively process nested objects
+                for value in obj.values():
+                    make_strict(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    make_strict(item)
+
+        make_strict(schema)
+
+    def _clean_parameters_for_openai(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Clean tool parameters for OpenAI compatibility.
+
+        OpenAI doesn't accept 'default' properties in function parameters.
+        """
+        if not parameters:
+            return parameters
+
+        def remove_defaults(obj):
+            if isinstance(obj, dict):
+                # Remove 'default' keys and process nested objects
+                cleaned = {}
+                for key, value in obj.items():
+                    if key != "default":
+                        cleaned[key] = remove_defaults(value)
+                return cleaned
+            elif isinstance(obj, list):
+                return [remove_defaults(item) for item in obj]
+            else:
+                return obj
+
+        return remove_defaults(parameters)

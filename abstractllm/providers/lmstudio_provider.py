@@ -4,7 +4,14 @@ LM Studio provider implementation (OpenAI-compatible API).
 
 import httpx
 import json
-from typing import List, Dict, Any, Optional, Union, Iterator
+from typing import List, Dict, Any, Optional, Union, Iterator, Type
+
+try:
+    from pydantic import BaseModel
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError
@@ -57,6 +64,7 @@ class LMStudioProvider(BaseProvider):
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
                           stream: bool = False,
+                          response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using LM Studio"""
 
