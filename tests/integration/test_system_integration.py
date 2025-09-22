@@ -10,6 +10,7 @@ Tests the entire system including:
 
 import pytest
 import os
+import logging
 import tempfile
 from pathlib import Path
 
@@ -161,10 +162,14 @@ class TestLoggingTelemetrySystem:
         with tempfile.TemporaryDirectory() as temp_dir:
             log_dir = Path(temp_dir)
 
+            # Clear any existing handlers to avoid interference from other tests
+            root_logger = logging.getLogger()
+            root_logger.handlers.clear()
+
             # Configure dual logging
             configure_logging(
-                console_level='INFO',
-                file_level='DEBUG',
+                console_level=logging.INFO,
+                file_level=logging.DEBUG,
                 log_dir=str(log_dir)
             )
 
@@ -173,6 +178,10 @@ class TestLoggingTelemetrySystem:
             logger.debug('Debug message')
             logger.info('Info message')
             logger.warning('Warning message')
+
+            # Flush all handlers to ensure logs are written
+            for handler in logging.getLogger().handlers:
+                handler.flush()
 
             # Check log file was created (should be timestamped)
             log_files = list(log_dir.glob('abstractllm_*.log'))
@@ -188,9 +197,13 @@ class TestLoggingTelemetrySystem:
     def test_provider_logging_integration(self):
         """Test that providers integrate with logging system."""
         with tempfile.TemporaryDirectory() as temp_dir:
+            # Clear any existing handlers to avoid interference from other tests
+            root_logger = logging.getLogger()
+            root_logger.handlers.clear()
+
             configure_logging(
-                console_level='INFO',
-                file_level='DEBUG',
+                console_level=logging.INFO,
+                file_level=logging.DEBUG,
                 log_dir=str(temp_dir)
             )
 
