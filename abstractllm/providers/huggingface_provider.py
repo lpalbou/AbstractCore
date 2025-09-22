@@ -492,28 +492,17 @@ class HuggingFaceProvider(BaseProvider):
         # Handle tools - both native and prompted support
         has_native_tools = False
         if tools:
-            # Check if model supports native tools
-            if self.llm.chat_format in ["chatml-function-calling", "functionary-v2"]:
-                # Convert tools to OpenAI format for native support
-                openai_tools = []
-                for tool in tools:
-                    # Format parameters as proper JSON Schema
-                    params = tool.get("parameters", {})
-                    json_schema_params = {
-                        "type": "object",
-                        "properties": params,
-                        "required": [name for name, param in params.items() if "default" not in param]
-                    }
-
-                    openai_tools.append({
-                        "type": "function",
-                        "function": {
-                            "name": tool.get("name"),
-                            "description": tool.get("description", ""),
-                            "parameters": json_schema_params
-                        }
-                    })
+            # Check if model supports native tools - but fall back to prompted for now
+            # TODO: Re-enable native tools once parameter default handling is fixed
+            if False and self.llm.chat_format in ["chatml-function-calling", "functionary-v2"]:
+                # Use unified tool handler for consistent formatting
+                openai_tools = self.tool_handler.prepare_tools_for_native(tools)
                 generation_kwargs["tools"] = openai_tools
+
+                # Debug: Print what we're sending to the model
+                print(f"DEBUG: Sending tools to HuggingFace model (unified handler):")
+                import json
+                print(json.dumps(openai_tools, indent=2))
 
                 # Don't use auto for streaming (limitation of llama-cpp-python)
                 if not stream:

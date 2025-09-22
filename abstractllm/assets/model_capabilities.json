@@ -420,12 +420,12 @@
     "qwen3-coder-30b": {
       "context_length": 32768,
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": true,
       "vision_support": false,
       "audio_support": false,
-      "notes": "Code-focused model with prompted tool support for Ollama compatibility",
+      "notes": "Code-focused model with native tool support via chatml-function-calling format",
       "source": "Alibaba official docs"
     },
     "qwen2-vl": {
