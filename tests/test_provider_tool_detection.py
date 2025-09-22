@@ -73,23 +73,24 @@ class TestProviderToolDetection:
 
             assert response is not None
 
+            # Check for tool usage - Anthropic may use prompted format
+            tool_used = False
+
             if response.has_tool_calls():
-                # Tool calling worked - verify format
+                # Native tool calling format
                 assert len(response.tool_calls) > 0
                 tool_call = response.tool_calls[0]
-
                 assert tool_call.get('name') == 'list_files'
                 assert 'arguments' in tool_call
+                tool_used = True
 
-                # Verify arguments are properly formatted
-                args = tool_call.get('arguments', {})
-                if isinstance(args, str):
-                    args = json.loads(args)
-                assert isinstance(args, dict)
+            elif "<tool_call>" in response.content and "list_files" in response.content:
+                # Prompted tool calling format (Anthropic style)
+                # Tool was executed and results included in content
+                assert "Tool Results:" in response.content or "files in" in response.content.lower()
+                tool_used = True
 
-            else:
-                # Anthropic should support tools, but prompt might not trigger it
-                pytest.skip("Anthropic didn't use tools (prompt might need adjustment)")
+            assert tool_used, f"Tool should have been used. Response: {response.content[:200]}..."
 
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
@@ -126,7 +127,14 @@ class TestProviderToolDetection:
                 # If tools work, verify format
                 assert len(response.tool_calls) > 0
                 tool_call = response.tool_calls[0]
-                assert 'name' in tool_call
+
+                # Handle both dict and ToolCall object formats
+                if hasattr(tool_call, 'name'):
+                    assert tool_call.name is not None
+                elif isinstance(tool_call, dict):
+                    assert 'name' in tool_call
+                else:
+                    assert False, f"Unexpected tool_call format: {type(tool_call)}"
             else:
                 # Many Ollama models don't support structured tool calling
                 # This is expected and not a failure

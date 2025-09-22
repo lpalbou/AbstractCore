@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from abstractllm import create_llm, BasicSession
 from abstractllm.tools.common_tools import COMMON_TOOLS, execute_tool
-from abstractllm.utils.structured_logging import configure_logging, get_logger
+from abstractllm.utils import configure_logging, get_logger
 from abstractllm.events import EventType, GlobalEventBus
 
 

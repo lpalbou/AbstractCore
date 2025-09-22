@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from pydantic import BaseModel, field_validator
 from abstractllm import create_llm
-from abstractllm.utils.structured_logging import configure_logging, get_logger, capture_session
+from abstractllm.utils import configure_logging, get_logger, capture_session
 from abstractllm.structured import StructuredOutputHandler, FeedbackRetry
 
 # Clean up any existing logs for clean test

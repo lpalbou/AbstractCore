@@ -90,10 +90,42 @@ class ToolCallResponse:
         return bool(self.tool_calls)
 
 
-def function_to_tool_definition(func: Callable) -> ToolDefinition:
+def tool(func=None, *, name: Optional[str] = None, description: Optional[str] = None):
     """
-    Convert a function to a ToolDefinition.
+    Simple decorator to convert a function into a tool.
 
-    This is a convenience function that wraps ToolDefinition.from_function()
+    Usage:
+        @tool
+        def my_function(param: str) -> str:
+            "Does something"
+            return result
+
+        # Or with custom name/description
+        @tool(name="custom", description="Custom tool")
+        def my_function(param: str) -> str:
+            return result
+
+        # Pass to generate like this:
+        llm.generate("Do something", tools=[my_function])
     """
-    return ToolDefinition.from_function(func)
+    def decorator(f):
+        tool_name = name or f.__name__
+        tool_description = description or f.__doc__ or f"Execute {tool_name}"
+
+        # Create tool definition from function and customize
+        tool_def = ToolDefinition.from_function(f)
+        tool_def.name = tool_name
+        tool_def.description = tool_description
+
+        # Attach tool definition to function for easy access
+        f._tool_definition = tool_def
+        f.tool_name = tool_name
+
+        return f
+
+    if func is None:
+        # Called with arguments: @tool(name="custom")
+        return decorator
+    else:
+        # Called without arguments: @tool
+        return decorator(func)

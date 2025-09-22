@@ -48,7 +48,7 @@ from .core import (
     ToolCall,
     ToolResult,
     ToolCallResponse,
-    function_to_tool_definition
+    tool
 )
 
 # Handler
@@ -71,9 +71,7 @@ from .registry import (
     get_registry,
     execute_tool,
     execute_tools,
-    clear_registry,
-    tool,
-    register  # Alias for tool decorator
+    clear_registry
 )
 
 __all__ = [
@@ -82,7 +80,7 @@ __all__ = [
     "ToolCall",
     "ToolResult",
     "ToolCallResponse",
-    "function_to_tool_definition",
+    "tool",
 
     # Handler
     "UniversalToolHandler",
@@ -100,6 +98,4 @@ __all__ = [
     "execute_tool",
     "execute_tools",
     "clear_registry",
-    "tool",
-    "register",
 ]

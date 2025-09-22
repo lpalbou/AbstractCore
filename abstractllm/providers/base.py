@@ -16,7 +16,7 @@ except ImportError:
 from ..core.interface import AbstractLLMInterface
 from ..core.types import GenerateResponse
 from ..events import EventType, EventEmitter
-from ..utils.logging_config import get_logger
+from ..utils.structured_logging import get_logger
 from ..exceptions import (
     ProviderAPIError,
     AuthenticationError,

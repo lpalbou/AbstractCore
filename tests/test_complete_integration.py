@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from abstractllm import create_llm
 from abstractllm.events import EventType, GlobalEventBus
 from abstractllm.exceptions import AuthenticationError, ProviderAPIError
-from abstractllm.utils.structured_logging import configure_logging, get_logger
+from abstractllm.utils import configure_logging, get_logger
 from abstractllm.media import MediaHandler
 
 

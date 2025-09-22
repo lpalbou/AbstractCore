@@ -231,15 +231,24 @@ class TestProviders:
 
             assert response is not None
 
+            # Check for tool usage - Anthropic may use prompted format
+            tool_used = False
+
             if response.has_tool_calls():
-                # Tool calling worked
+                # Native tool calling format
                 assert len(response.tool_calls) > 0
                 tool_call = response.tool_calls[0]
                 assert tool_call.get('name') == 'list_files'
                 assert 'arguments' in tool_call
-            else:
-                # Anthropic should support tools, but test might fail due to prompt
-                pytest.skip("Anthropic didn't use tools (prompt might need adjustment)")
+                tool_used = True
+
+            elif "<tool_call>" in response.content and "list_files" in response.content:
+                # Prompted tool calling format (Anthropic style)
+                # Tool was executed and results included in content
+                assert "Tool Results:" in response.content or "files in" in response.content.lower()
+                tool_used = True
+
+            assert tool_used, f"Tool should have been used. Response: {response.content[:200]}..."
 
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():

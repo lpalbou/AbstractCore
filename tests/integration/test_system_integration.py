@@ -16,7 +16,7 @@ from pathlib import Path
 from abstractllm.providers.ollama_provider import OllamaProvider
 from abstractllm.providers.openai_provider import OpenAIProvider
 from abstractllm.tools import register_tool, get_registry, ToolDefinition, clear_registry
-from abstractllm.utils.logging_config import configure_logging, get_logger
+from abstractllm.utils.structured_logging import configure_logging, get_logger
 from abstractllm.architectures import get_model_capabilities, detect_architecture
 
 
@@ -174,9 +174,10 @@ class TestLoggingTelemetrySystem:
             logger.info('Info message')
             logger.warning('Warning message')
 
-            # Check log file was created
-            log_file = log_dir / 'abstractllm.log'
-            assert log_file.exists()
+            # Check log file was created (should be timestamped)
+            log_files = list(log_dir.glob('abstractllm_*.log'))
+            assert len(log_files) == 1, f"Expected 1 log file, found {len(log_files)}: {log_files}"
+            log_file = log_files[0]
 
             # Check log file contains messages
             log_content = log_file.read_text()

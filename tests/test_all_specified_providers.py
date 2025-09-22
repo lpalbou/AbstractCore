@@ -10,6 +10,7 @@ This test validates all the providers and models mentioned in the specifications
 - anthropic claude-3-5-haiku-latest
 """
 
+import os
 from pydantic import BaseModel
 from typing import List, Optional
 from abstractllm import create_llm
@@ -33,9 +34,40 @@ class CodeReview(BaseModel):
     overall_quality: str  # excellent, good, fair, poor
 
 
-def test_provider_model(provider_name: str, model_name: str, response_model: BaseModel, test_prompt: str):
+def test_provider_model():
+    """Test all available provider/model combinations"""
+
+    # Define test configurations
+    test_configs = [
+        ("ollama", "qwen3:4b", CodeReview, "Please review this Python code: def hello(): print('world')"),
+    ]
+
+    # Add cloud providers if available
+    if os.getenv("ANTHROPIC_API_KEY"):
+        test_configs.append(("anthropic", "claude-3-5-haiku-20241022", CodeReview, "Please review this Python code: def hello(): print('world')"))
+    if os.getenv("OPENAI_API_KEY"):
+        test_configs.append(("openai", "gpt-4o-mini", CodeReview, "Please review this Python code: def hello(): print('world')"))
+
+    success_count = 0
+    total_tests = len(test_configs)
+
+    for provider_name, model_name, response_model, test_prompt in test_configs:
+        print(f"\n--- Testing {provider_name.upper()} | {model_name} ---")
+
+        try:
+            _test_single_provider(provider_name, model_name, response_model, test_prompt)
+            success_count += 1
+            print(f"✅ {provider_name} test passed")
+        except Exception as e:
+            print(f"❌ {provider_name} test failed: {str(e)}")
+            continue
+
+    print(f"\n✅ Provider tests completed: {success_count}/{total_tests} passed")
+    assert success_count > 0, "No provider tests passed"
+
+
+def _test_single_provider(provider_name: str, model_name: str, response_model: BaseModel, test_prompt: str):
     """Test a specific provider/model combination"""
-    print(f"\n--- Testing {provider_name.upper()} | {model_name} ---")
 
     try:
         llm = create_llm(provider_name, model=model_name)

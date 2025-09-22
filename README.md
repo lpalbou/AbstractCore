@@ -593,7 +593,12 @@ AbstractLLM provides comprehensive logging and observability features to monitor
 ### Basic Logging Configuration
 
 ```python
-from abstractllm.utils.structured_logging import configure_logging
+# Option 1: Direct import from structured_logging
+from abstractllm.utils.structured_logging import configure_logging, get_logger
+
+# Option 2: Simplified import from utils (recommended)
+from abstractllm.utils import configure_logging, get_logger
+
 from abstractllm import create_llm
 import logging
 
@@ -621,7 +626,7 @@ configure_logging(
 ### Structured Logging with Context
 
 ```python
-from abstractllm.utils.structured_logging import get_logger
+from abstractllm.utils import get_logger  # Simplified import
 from abstractllm import create_llm
 from pydantic import BaseModel
 
@@ -1142,6 +1147,25 @@ export ANTHROPIC_API_KEY="your-anthropic-key"
 # Custom endpoints
 export OLLAMA_BASE_URL="http://localhost:11434"
 export LMSTUDIO_BASE_URL="http://localhost:1234"
+```
+
+### Testing Configuration
+
+AbstractLLM includes comprehensive test coverage with verbose output:
+
+```bash
+# Run tests with detailed output (shows filenames and test names)
+python -m pytest
+
+# Run specific test file
+python -m pytest tests/test_structured_output.py
+
+# Run specific test
+python -m pytest tests/test_factory.py::TestFactory::test_create_mock_provider
+
+# Run with additional options
+python -m pytest -x  # Stop on first failure
+python -m pytest -k "structured"  # Run tests matching pattern
 ```
 
 ### Advanced Configuration
