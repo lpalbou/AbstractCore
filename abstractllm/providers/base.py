@@ -27,6 +27,7 @@ from ..exceptions import (
 )
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
 from ..tools import execute_tools
+from ..core.retry import RetryManager, RetryConfig
 
 
 class BaseProvider(AbstractLLMInterface, ABC):
@@ -45,6 +46,16 @@ class BaseProvider(AbstractLLMInterface, ABC):
         self.architecture = detect_architecture(model)
         self.architecture_config = get_architecture_format(self.architecture)
         self.model_capabilities = get_model_capabilities(model)
+
+        # Setup retry manager with optional configuration
+        retry_config = kwargs.get('retry_config', None)
+        if retry_config is None:
+            # Use default retry configuration
+            retry_config = RetryConfig()
+        self.retry_manager = RetryManager(retry_config)
+
+        # Create provider key for circuit breaker tracking
+        self.provider_key = f"{self.__class__.__name__}:{self.model}"
 
         # Provider created successfully - no event emission needed
         # (The simplified event system focuses on generation and tool events only)
@@ -185,6 +196,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
                                tools: Optional[List] = None,  # Accept both ToolDefinition and Dict
                                stream: bool = False,
                                response_model: Optional[Type[BaseModel]] = None,
+                               retry_strategy=None,  # Custom retry strategy for structured output
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate with integrated telemetry and error handling.
@@ -192,6 +204,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
 
         Args:
             response_model: Optional Pydantic model for structured output
+            retry_strategy: Optional retry strategy for structured output validation
         """
         # Handle structured output request
         if response_model is not None:
@@ -202,7 +215,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 )
 
             from ..structured import StructuredOutputHandler
-            handler = StructuredOutputHandler()
+            handler = StructuredOutputHandler(retry_strategy=retry_strategy)
             return handler.generate_structured(
                 provider=self,
                 prompt=prompt,
@@ -214,77 +227,81 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 **kwargs
             )
 
-        start_time = time.time()
-
-        # Emit generation started event (covers request received)
-        event_data = {
-            "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
-            "has_tools": bool(tools),
-            "stream": stream,
-            "model": self.model,
-            "provider": self.__class__.__name__
-        }
-        from ..events import emit_global
-        emit_global(EventType.GENERATION_STARTED, event_data, source=self.__class__.__name__)
-
-        try:
-            # Convert tools to ToolDefinition objects, preserving enhanced metadata
-            converted_tools = None
-            if tools:
-                converted_tools = []
-                for tool in tools:
-                    if hasattr(tool, 'to_dict'):  # ToolDefinition object
-                        converted_tools.append(tool.to_dict())
-                    elif callable(tool):  # Function - check for enhanced metadata
-                        if hasattr(tool, '_tool_definition'):
-                            # Use the enhanced tool definition from @tool decorator
-                            converted_tools.append(tool._tool_definition.to_dict())
-                        else:
-                            # Fall back to basic conversion
-                            from ..tools.core import ToolDefinition
-                            tool_def = ToolDefinition.from_function(tool)
-                            converted_tools.append(tool_def.to_dict())
-                    elif isinstance(tool, dict):  # Already a dict
-                        converted_tools.append(tool)
+        # Convert tools to ToolDefinition objects first (outside retry loop)
+        converted_tools = None
+        if tools:
+            converted_tools = []
+            for tool in tools:
+                if hasattr(tool, 'to_dict'):  # ToolDefinition object
+                    converted_tools.append(tool.to_dict())
+                elif callable(tool):  # Function - check for enhanced metadata
+                    if hasattr(tool, '_tool_definition'):
+                        # Use the enhanced tool definition from @tool decorator
+                        converted_tools.append(tool._tool_definition.to_dict())
                     else:
-                        # Handle other types gracefully
-                        self.logger.warning(f"Unknown tool type: {type(tool)}, skipping")
+                        # Fall back to basic conversion
+                        from ..tools.core import ToolDefinition
+                        tool_def = ToolDefinition.from_function(tool)
+                        converted_tools.append(tool_def.to_dict())
+                elif isinstance(tool, dict):  # Already a dict
+                    converted_tools.append(tool)
+                else:
+                    # Handle other types gracefully
+                    self.logger.warning(f"Unknown tool type: {type(tool)}, skipping")
 
-            # Call the actual generation (implemented by subclass)
-            response = self._generate_internal(
-                prompt=prompt,
-                messages=messages,
-                system_prompt=system_prompt,
-                tools=converted_tools,
-                stream=stream,
-                **kwargs
+        # Define generation function for retry wrapper
+        def _execute_generation():
+            start_time = time.time()
+
+            # Emit generation started event (covers request received)
+            event_data = {
+                "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                "has_tools": bool(tools),
+                "stream": stream,
+                "model": self.model,
+                "provider": self.__class__.__name__
+            }
+            from ..events import emit_global
+            emit_global(EventType.GENERATION_STARTED, event_data, source=self.__class__.__name__)
+
+            try:
+                # Call the actual generation (implemented by subclass)
+                response = self._generate_internal(
+                    prompt=prompt,
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    tools=converted_tools,
+                    stream=stream,
+                    **kwargs
+                )
+
+                return response, start_time
+
+            except Exception as e:
+                # Convert to custom exception and re-raise for retry handling
+                custom_error = self._handle_api_error(e)
+                raise custom_error
+
+        # Execute with retry
+        try:
+            response, start_time = self.retry_manager.execute_with_retry(
+                _execute_generation,
+                provider_key=self.provider_key
             )
 
             # Handle streaming vs non-streaming differently
             if stream:
                 # Wrap the stream to emit events
                 def stream_with_events():
-                    # Emit stream started event
-                    stream_data = {
-                        "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
-                        "model": self.model
-                    }
-                    # Note: Stream started event already emitted above in GENERATION_STARTED
-                    # No need to emit again here
-
                     try:
                         # Yield all chunks from the original stream
                         for chunk in response:
                             yield chunk
 
-                        # Track generation after streaming completes (will emit GENERATION_COMPLETED)
-
                         # Track generation after streaming completes
                         self._track_generation(prompt, None, start_time, success=True, stream=True)
 
                     except Exception as e:
-                        # Error will be tracked and emitted by _track_generation
-
                         # Track error
                         self._track_generation(prompt, None, start_time, success=False, error=e, stream=True)
                         raise
@@ -296,24 +313,23 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 return response
 
         except Exception as e:
-            # Convert to custom exception
-            custom_error = self._handle_api_error(e)
-
-            # Track error
-            self._track_generation(prompt, None, start_time, success=False, error=custom_error, stream=stream)
+            # This exception comes from the retry manager after all attempts failed
+            # Track final error (start_time may not be available, use current time)
+            current_time = time.time()
+            self._track_generation(prompt, None, current_time, success=False, error=e, stream=stream)
 
             # Emit error event
             from ..events import emit_global
             emit_global(EventType.ERROR, {
-                "error": str(custom_error),
-                "error_type": type(custom_error).__name__,
+                "error": str(e),
+                "error_type": type(e).__name__,
                 "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
                 "model": self.model,
                 "provider": self.__class__.__name__
             }, source=self.__class__.__name__)
 
-            # Re-raise custom exception
-            raise custom_error
+            # Re-raise the exception
+            raise e
 
     def _generate_internal(self,
                           prompt: str,

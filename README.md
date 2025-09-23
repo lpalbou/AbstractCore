@@ -8,7 +8,9 @@ A unified interface to all LLM providers with essential infrastructure for tool 
 - **🛠️ Tool Calling**: Native tool calling with automatic execution
 - **📊 Structured Output**: Type-safe JSON responses using Pydantic models
 - **⚡ Streaming**: Real-time response streaming across all providers
+- **🔔 Event System**: Comprehensive events for monitoring, debugging, and UI integration
 - **🔄 Session Management**: Conversation memory and context management
+- **🔄 Retry & Resilience**: Production-grade retry with exponential backoff and circuit breakers
 - **🎯 Zero Configuration**: Works out of the box with sensible defaults
 - **🏗️ Production Ready**: Comprehensive error handling and telemetry
 
@@ -159,6 +161,84 @@ user = llm.generate(
 print(f"Name: {user.name}")        # Name: John Doe
 print(f"Age: {user.age}")          # Age: 28
 print(f"Email: {user.email}")      # Email: john@example.com
+```
+
+### Automatic Retry on Validation Errors
+
+AbstractLLM automatically retries with detailed error feedback when structured output validation fails:
+
+```python
+from pydantic import BaseModel, field_validator
+from abstractllm import create_llm
+
+class Product(BaseModel):
+    name: str
+    price: float
+    category: str
+
+    @field_validator('price')
+    @classmethod
+    def validate_price(cls, v):
+        if v <= 0:
+            raise ValueError('Price must be positive')
+        return v
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# This will automatically retry if the LLM returns invalid data
+# For example, if LLM returns: {"name": "Laptop", "price": -100, "category": "Electronics"}
+# The system will retry with error feedback:
+# "IMPORTANT: Your previous response had validation errors:
+#  • Field 'price': Price must be positive
+#  Please correct these errors and provide a valid JSON response..."
+
+product = llm.generate(
+    "Extract product info: Gaming Laptop for $1200 in Electronics category",
+    response_model=Product
+)
+
+print(f"Product: {product.name} - ${product.price}")
+```
+
+### Custom Retry Configuration
+
+Control retry behavior for structured output validation with a simple parameter:
+
+```python
+from abstractllm.structured import FeedbackRetry
+from pydantic import BaseModel, field_validator
+from typing import List
+
+# For complex validation that might need multiple attempts
+class StrictValidation(BaseModel):
+    items: List[str]
+    count: int
+    total_value: float
+
+    @field_validator('count')
+    @classmethod
+    def validate_count(cls, v, info):
+        items = info.data.get('items', [])
+        if v != len(items):
+            raise ValueError(f'Count {v} does not match items length {len(items)}')
+        return v
+
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+
+# Custom retry strategy with more attempts
+custom_retry = FeedbackRetry(max_attempts=5)  # Try up to 5 times
+
+result = llm.generate(
+    "Create a list of 3 programming languages with their count and total rating",
+    response_model=StrictValidation,
+    retry_strategy=custom_retry  # Pass retry strategy directly!
+)
+
+# Or use default behavior (3 attempts)
+result = llm.generate(
+    "Create a list of 3 programming languages with their count and total rating",
+    response_model=StrictValidation  # Uses default 3 attempts
+)
 ```
 
 ### Complex Nested Structures
@@ -448,6 +528,310 @@ result = llm.generate("Extract data...", response_model=MyModel)
 # MLX - Prompted with validation retry
 llm = create_llm("mlx", model="mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit")
 result = llm.generate("Extract data...", response_model=MyModel)
+```
+
+## 🔄 Retry & Resilience
+
+AbstractLLM provides **two types of production-ready retry mechanisms** to handle different failure scenarios:
+
+### 🔧 **Two-Layer Retry Strategy**
+
+**1. Provider-Level Retry** (Network/API failures)
+- **When**: Rate limits, timeouts, network errors, API failures
+- **Configuration**: `RetryConfig` passed to `create_llm()`
+- **Scope**: Applies to all LLM calls from that provider instance
+
+**2. Validation-Level Retry** (Structured output failures)
+- **When**: Pydantic validation errors, JSON parsing failures
+- **Configuration**: `FeedbackRetry` passed to individual `generate()` calls
+- **Scope**: Applies only to structured output generation with `response_model`
+
+### 🚀 **Provider-Level Retry** (Network/API Failures)
+
+Configure retry behavior for network issues, rate limits, and API failures:
+
+```python
+from abstractllm import create_llm
+from abstractllm.core.retry import RetryConfig
+
+# Default behavior (automatic for all calls)
+llm = create_llm("openai", model="gpt-4o-mini")
+# ✅ Automatically retries rate limits, timeouts, network errors
+
+response = llm.generate("Explain machine learning")
+print(response.content)
+
+# Custom provider-level retry configuration
+retry_config = RetryConfig(
+    max_attempts=5,           # Try up to 5 times
+    initial_delay=2.0,        # Start with 2 second delay
+    max_delay=120.0,          # Cap delay at 2 minutes
+    exponential_base=2.0,     # Double delay each retry
+    use_jitter=True,          # Add randomness to prevent thundering herd
+    failure_threshold=3,      # Open circuit breaker after 3 failures
+    recovery_timeout=60.0     # Try half-open after 60 seconds
+)
+
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest",
+                 retry_config=retry_config)
+# ✅ All calls from this LLM instance use custom retry settings
+
+response = llm.generate("Complex analysis task")
+```
+
+### 🎯 **Validation-Level Retry** (Structured Output Failures)
+
+Configure retry behavior for structured output validation failures:
+
+```python
+from abstractllm import create_llm
+from abstractllm.structured import FeedbackRetry
+from pydantic import BaseModel
+
+class Product(BaseModel):
+    name: str
+    price: float
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Default validation retry (3 attempts with error feedback)
+product = llm.generate(
+    "Extract product info: Gaming Laptop for $1200",
+    response_model=Product
+    # ✅ Automatically retries validation errors with detailed feedback
+)
+
+# Custom validation retry strategy
+custom_validation_retry = FeedbackRetry(max_attempts=5)
+
+product = llm.generate(
+    "Extract product info: Gaming Laptop for $1200",
+    response_model=Product,
+    retry_strategy=custom_validation_retry
+    # ✅ Uses custom validation retry (5 attempts)
+)
+```
+
+### 🔧 **Using Both Together**
+
+You can configure both types of retry for maximum resilience:
+
+```python
+from abstractllm import create_llm
+from abstractllm.core.retry import RetryConfig
+from abstractllm.structured import FeedbackRetry
+
+# Provider-level retry for network/API issues
+provider_retry = RetryConfig(max_attempts=3, initial_delay=1.0)
+llm = create_llm("openai", model="gpt-4o-mini", retry_config=provider_retry)
+
+# Validation-level retry for structured output
+validation_retry = FeedbackRetry(max_attempts=5)
+
+# Both retry strategies active
+result = llm.generate(
+    "Extract complex data",
+    response_model=MyModel,
+    retry_strategy=validation_retry
+)
+# ✅ Retries network issues (up to 3x) AND validation errors (up to 5x)
+```
+
+### 💬 **Session Support**
+
+Both retry strategies work seamlessly with BasicSession:
+
+```python
+from abstractllm import create_llm
+from abstractllm.core.session import BasicSession
+from abstractllm.structured import FeedbackRetry
+
+# Provider with custom retry config
+llm = create_llm("openai", model="gpt-4o-mini",
+                 retry_config=RetryConfig(max_attempts=5))
+
+# Session inherits provider-level retry
+session = BasicSession(provider=llm)
+
+# Validation retry works in sessions too
+validation_retry = FeedbackRetry(max_attempts=7)
+
+response = session.generate(
+    "Extract user info from conversation",
+    response_model=UserInfo,
+    retry_strategy=validation_retry
+)
+# ✅ Provider retry (5x) + Validation retry (7x) + Session memory
+```
+
+### Circuit Breaker Protection
+
+Circuit breakers prevent cascade failures when providers are experiencing issues:
+
+```python
+from abstractllm import create_llm
+from abstractllm.core.retry import RetryConfig
+
+# Circuit breaker opens after repeated failures
+config = RetryConfig(
+    failure_threshold=3,      # Open after 3 consecutive failures
+    recovery_timeout=30.0,    # Wait 30s before testing recovery
+    half_open_max_calls=2     # Test with 2 calls in half-open state
+)
+
+llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
+
+try:
+    response = llm.generate("Test request")
+except Exception as e:
+    if "Circuit breaker open" in str(e):
+        print("Provider is down, circuit breaker is protecting the system")
+```
+
+### Retry Event Monitoring
+
+Monitor retry behavior with comprehensive events:
+
+```python
+from abstractllm import create_llm
+from abstractllm.events import EventType, on_global
+
+# Track retry attempts
+def monitor_retries(event):
+    if event.type == EventType.RETRY_ATTEMPT:
+        data = event.data
+        print(f"🔄 Retry attempt {data['attempt']}/{data['max_attempts']} "
+              f"for {data['provider_key']} - {data['error_type']}")
+        print(f"⏱️ Waiting {data['delay_seconds']:.2f}s before retry...")
+
+    elif event.type == EventType.RETRY_FAILURE:
+        data = event.data
+        print(f"❌ Attempt {data['attempt']} failed: {data['error_type']}")
+        print(f"🔧 Circuit breaker state: {data['circuit_breaker_state']['state']}")
+
+    elif event.type == EventType.RETRY_SUCCESS:
+        data = event.data
+        print(f"✅ Retry succeeded after {data['total_attempts']} attempts")
+
+    elif event.type == EventType.RETRY_EXHAUSTED:
+        data = event.data
+        print(f"💥 All retries exhausted: {data['reason']}")
+
+on_global(EventType.RETRY_ATTEMPT, monitor_retries)
+on_global(EventType.RETRY_FAILURE, monitor_retries)  # New event!
+on_global(EventType.RETRY_SUCCESS, monitor_retries)
+on_global(EventType.RETRY_EXHAUSTED, monitor_retries)
+
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate("Test with monitoring")
+```
+
+### Smart Error Classification
+
+AbstractLLM automatically classifies errors and applies appropriate retry logic:
+
+```python
+# Automatically retried with exponential backoff:
+# - Rate limits (429 errors) -> Retry up to max_attempts
+# - Timeouts -> Retry up to max_attempts
+# - Network errors -> Retry up to max_attempts
+# - Validation errors (Pydantic/JSON) -> Retry up to max_attempts with feedback
+# - Transient API errors -> Retry once
+
+# Never retried:
+# - Authentication errors (401)
+# - Invalid requests (400)
+# - Model not found (404)
+# - Token limit exceeded
+
+# This request will retry on rate limits but fail immediately on auth errors
+try:
+    llm = create_llm("openai", model="gpt-4o-mini", api_key="invalid-key")
+    response = llm.generate("Test")
+except AuthenticationError:
+    print("Authentication failed - no retry attempted")
+
+# Validation errors are automatically retried with error feedback
+from pydantic import BaseModel
+class Product(BaseModel):
+    name: str
+    price: float
+
+# If LLM returns invalid JSON or fails validation, it will automatically
+# retry with detailed error feedback to help the LLM self-correct
+product = llm.generate("Extract product info", response_model=Product)
+```
+
+### Production Best Practices
+
+Recommended configuration for production environments:
+
+```python
+from abstractllm import create_llm
+from abstractllm.core.retry import RetryConfig
+from abstractllm.events import EventType, on_global
+
+# Production-grade retry configuration
+production_config = RetryConfig(
+    max_attempts=3,           # Balance reliability vs latency
+    initial_delay=1.0,        # Start with 1 second
+    max_delay=60.0,           # Cap at 1 minute
+    use_jitter=True,          # Essential for distributed systems
+    failure_threshold=5,      # Circuit breaker threshold
+    recovery_timeout=60.0     # Recovery window
+)
+
+# Monitor retry metrics for alerting
+retry_metrics = {"attempts": 0, "successes": 0, "failures": 0}
+
+def track_retry_metrics(event):
+    if event.type == EventType.RETRY_ATTEMPT:
+        retry_metrics["attempts"] += 1
+    elif event.type == EventType.RETRY_SUCCESS:
+        retry_metrics["successes"] += 1
+    elif event.type == EventType.RETRY_EXHAUSTED:
+        retry_metrics["failures"] += 1
+
+        # Alert if failure rate exceeds threshold
+        total = retry_metrics["successes"] + retry_metrics["failures"]
+        if total > 10 and retry_metrics["failures"] / total > 0.2:
+            print("🚨 ALERT: High retry failure rate detected!")
+
+on_global(EventType.RETRY_ATTEMPT, track_retry_metrics)
+on_global(EventType.RETRY_SUCCESS, track_retry_metrics)
+on_global(EventType.RETRY_EXHAUSTED, track_retry_metrics)
+
+# Create provider with production settings
+llm = create_llm("openai", model="gpt-4o-mini", retry_config=production_config)
+```
+
+### Multi-Provider Resilience
+
+Use multiple providers with independent circuit breakers:
+
+```python
+from abstractllm import create_llm
+from abstractllm.core.retry import RetryConfig
+
+# Each provider has its own circuit breaker
+providers = {
+    "primary": create_llm("openai", model="gpt-4o-mini",
+                         retry_config=RetryConfig(failure_threshold=3)),
+    "backup": create_llm("anthropic", model="claude-3-5-haiku-latest",
+                        retry_config=RetryConfig(failure_threshold=3))
+}
+
+def resilient_generate(prompt: str):
+    """Try primary provider, fallback to backup if circuit is open."""
+    try:
+        return providers["primary"].generate(prompt)
+    except Exception as e:
+        if "Circuit breaker open" in str(e):
+            print("Primary provider down, using backup...")
+            return providers["backup"].generate(prompt)
+        raise
+
+response = resilient_generate("Explain quantum computing")
 ```
 
 ## 🛠️ Tool Calling
@@ -943,6 +1327,280 @@ service_logger.info("Service health check",
                    status="healthy",
                    response_time_ms=150)
 ```
+
+## 🔔 Event System & Real-time Monitoring
+
+AbstractLLM provides a comprehensive event system aligned with OpenTelemetry semantic conventions for real-time monitoring, debugging, and building responsive UIs.
+
+### Event Types
+
+**Streamlined for performance** following SOTA practices (LangChain-style start/end pairs):
+
+- **Generation Lifecycle**: `BEFORE_GENERATE`, `AFTER_GENERATE` (includes `stream` parameter to indicate mode)
+- **Streaming Lifecycle**: `STREAM_STARTED`, `STREAM_COMPLETED` (separate events for streaming operations)
+- **Tool Execution**: `BEFORE_TOOL_EXECUTION`, `AFTER_TOOL_EXECUTION` (covers called/completed/results)
+- **Structured Output**: `STRUCTURED_OUTPUT_REQUESTED`, `VALIDATION_FAILED`, `VALIDATION_SUCCEEDED`, `RETRY_ATTEMPTED`
+- **Session Lifecycle**: `SESSION_CREATED`, `SESSION_CLEARED`, `SESSION_SAVED`, `SESSION_LOADED`, `MESSAGE_ADDED`
+- **System**: `PROVIDER_CREATED`, `ERROR_OCCURRED`
+
+### Basic Event Monitoring
+
+```python
+from abstractllm import create_llm
+from abstractllm.events import EventType, on_global, EventLogger, PerformanceTracker
+
+# Setup event logging
+logger = EventLogger()
+tracker = PerformanceTracker()
+
+# Register global event handlers
+on_global(EventType.AFTER_GENERATE, logger.log_event)
+on_global(EventType.AFTER_GENERATE, tracker.track_generation)
+on_global(EventType.AFTER_TOOL_EXECUTION, tracker.track_tool_call)
+on_global(EventType.ERROR_OCCURRED, tracker.track_error)
+
+# Create LLM and generate
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate("What is machine learning?")
+
+# Check performance metrics
+metrics = tracker.get_metrics()
+print(f"Total requests: {metrics['total_requests']}")
+print(f"Average latency: {metrics['total_latency_ms'] / metrics['total_requests']:.2f}ms")
+print(f"Total cost: ${metrics['total_cost_usd']:.4f}")
+```
+
+### Real-time UI Integration
+
+Perfect for building responsive UIs that react to LLM operations:
+
+```python
+from abstractllm.events import EventType, on_global
+
+class LLMStatusWidget:
+    def __init__(self):
+        self.status = "idle"
+        self.progress = 0
+
+        # Register for real-time updates (generation and streaming separate)
+        on_global(EventType.BEFORE_GENERATE, self.on_generation_start)
+        on_global(EventType.AFTER_GENERATE, self.on_generation_complete)
+        on_global(EventType.STREAM_STARTED, self.on_stream_start)
+        on_global(EventType.STREAM_COMPLETED, self.on_stream_complete)
+        on_global(EventType.BEFORE_TOOL_EXECUTION, self.on_tool_start)
+        on_global(EventType.AFTER_TOOL_EXECUTION, self.on_tool_complete)
+        on_global(EventType.ERROR_OCCURRED, self.on_error)
+
+    def on_generation_start(self, event):
+        self.status = "Generating response..."
+        self.progress = 10
+        self.update_ui()
+
+    def on_stream_start(self, event):
+        self.status = "Streaming response..."
+        self.progress = 30
+        self.update_ui()
+
+    def on_stream_complete(self, event):
+        self.progress = 90
+        self.update_ui()
+
+    def on_tool_start(self, event):
+        tool_calls = event.data.get('tool_calls', [])
+        if tool_calls:
+            self.status = f"Executing {len(tool_calls)} tool(s)..."
+        else:
+            self.status = "Executing tools..."
+        self.progress = 50
+        self.update_ui()
+
+    def on_tool_complete(self, event):
+        if event.data.get('success'):
+            self.status = "Tool completed successfully"
+        else:
+            self.status = f"Tool failed: {event.data.get('error', 'Unknown error')}"
+        self.update_ui()
+
+    def on_generation_complete(self, event):
+        if event.data.get('success'):
+            self.status = "Response generated successfully"
+            tokens = f"({event.tokens_input or 0} → {event.tokens_output or 0} tokens)"
+            if event.duration_ms:
+                self.status += f" in {event.duration_ms:.0f}ms {tokens}"
+        else:
+            self.status = f"Generation failed: {event.data.get('error', 'Unknown error')}"
+        self.progress = 100
+        self.update_ui()
+
+    def on_error(self, event):
+        self.status = f"Error: {event.data.get('error', 'Unknown error')}"
+        self.progress = 0
+        self.update_ui()
+
+    def update_ui(self):
+        # Update your UI framework here (tkinter, PyQt, web interface, etc.)
+        print(f"Status: {self.status} ({self.progress}%)")
+
+# Usage with any LLM operation
+widget = LLMStatusWidget()
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+
+# The widget will automatically show real-time status updates
+response = llm.generate("Explain quantum computing", stream=True)
+```
+
+### Advanced Event Handling
+
+```python
+from abstractllm.events import EventType, on_global, Event
+
+def security_monitor(event: Event):
+    """Monitor for suspicious activity"""
+    if event.type == EventType.BEFORE_TOOL_EXECUTION:
+        tool_calls = event.data.get('tool_calls', [])
+        for call in tool_calls:
+            tool_name = call.get('name')
+            if tool_name in ['execute_command', 'file_delete']:
+                print(f"⚠️  Security Alert: Dangerous tool '{tool_name}' about to execute")
+                # Could prevent execution here
+
+def cost_monitor(event: Event):
+    """Monitor and alert on costs"""
+    if event.type == EventType.AFTER_GENERATE and event.cost_usd:
+        if event.cost_usd > 0.10:  # Alert if single request costs > $0.10
+            print(f"💰 High Cost Alert: ${event.cost_usd:.4f} for {event.model_name}")
+
+def performance_monitor(event: Event):
+    """Monitor performance and alert on slow requests"""
+    if event.type == EventType.AFTER_GENERATE and event.duration_ms:
+        if event.duration_ms > 10000:  # Alert if request takes > 10 seconds
+            print(f"🐌 Slow Request Alert: {event.duration_ms:.0f}ms for {event.model_name}")
+
+# Register monitoring handlers
+on_global(EventType.BEFORE_TOOL_EXECUTION, security_monitor)
+on_global(EventType.AFTER_GENERATE, cost_monitor)
+on_global(EventType.AFTER_GENERATE, performance_monitor)
+```
+
+### Tool Execution Prevention
+
+Events allow you to prevent tool execution based on conditions:
+
+```python
+from abstractllm.events import EventType, on_global
+
+def prevent_dangerous_tools(event: Event):
+    """Prevent execution of dangerous tools"""
+    if event.type == EventType.BEFORE_TOOL_EXECUTION:
+        dangerous_tools = ['rm', 'delete_file', 'execute_command']
+        tool_calls = event.data.get('tool_calls', [])
+
+        for call in tool_calls:
+            if call.get('name') in dangerous_tools:
+                print(f"🚫 Preventing execution of dangerous tool: {call['name']}")
+                event.prevent()  # This will stop tool execution
+                break
+
+on_global(EventType.BEFORE_TOOL_EXECUTION, prevent_dangerous_tools)
+
+# Now any dangerous tool calls will be prevented automatically
+```
+
+### Structured Output Monitoring
+
+Monitor validation and retry attempts for structured outputs:
+
+```python
+from abstractllm.events import EventType, on_global
+
+def validation_monitor(event: Event):
+    """Monitor structured output validation"""
+    if event.type == EventType.VALIDATION_FAILED:
+        model = event.data.get('response_model')
+        attempt = event.data.get('validation_attempt')
+        error = event.data.get('validation_error')
+        print(f"❌ Validation failed for {model} (attempt {attempt}): {error}")
+
+    elif event.type == EventType.RETRY_ATTEMPTED:
+        model = event.data.get('response_model')
+        retry_count = event.data.get('retry_count')
+        print(f"🔄 Retrying {model} (attempt {retry_count + 1})")
+
+    elif event.type == EventType.VALIDATION_SUCCEEDED:
+        model = event.data.get('response_model')
+        attempt = event.data.get('validation_attempt')
+        print(f"✅ Validation succeeded for {model} (attempt {attempt})")
+
+on_global(EventType.VALIDATION_FAILED, validation_monitor)
+on_global(EventType.RETRY_ATTEMPTED, validation_monitor)
+on_global(EventType.VALIDATION_SUCCEEDED, validation_monitor)
+```
+
+### Session Lifecycle Monitoring
+
+Monitor session creation, saving, loading, and clearing:
+
+```python
+from abstractllm.events import EventType, on_global
+
+def session_monitor(event: Event):
+    """Monitor session lifecycle"""
+    if event.type == EventType.SESSION_CREATED:
+        session_id = event.data.get('session_id', 'unknown')
+        print(f"📝 Session created: {session_id}")
+
+    elif event.type == EventType.SESSION_SAVED:
+        session_id = event.data.get('session_id', 'unknown')
+        print(f"💾 Session saved: {session_id}")
+
+    elif event.type == EventType.SESSION_LOADED:
+        session_id = event.data.get('session_id', 'unknown')
+        message_count = event.data.get('message_count', 0)
+        print(f"📂 Session loaded: {session_id} ({message_count} messages)")
+
+    elif event.type == EventType.SESSION_CLEARED:
+        session_id = event.data.get('session_id', 'unknown')
+        print(f"🗑️ Session cleared: {session_id}")
+
+# Register for all session events
+on_global(EventType.SESSION_CREATED, session_monitor)
+on_global(EventType.SESSION_SAVED, session_monitor)
+on_global(EventType.SESSION_LOADED, session_monitor)
+on_global(EventType.SESSION_CLEARED, session_monitor)
+```
+
+### OpenTelemetry Integration
+
+Events are designed to be compatible with OpenTelemetry for enterprise monitoring:
+
+```python
+from abstractllm.events import EventType, on_global
+
+def export_to_otel(event: Event):
+    """Export events to OpenTelemetry"""
+    otel_data = event.to_otel_dict()
+
+    # Send to your OpenTelemetry collector
+    # This integrates with monitoring systems like:
+    # - Datadog, New Relic, Honeycomb
+    # - Prometheus + Grafana
+    # - AWS CloudWatch, Azure Monitor, Google Cloud Monitoring
+    print(f"📊 OTEL Export: {otel_data}")
+
+# Export all generation events to monitoring system
+on_global(EventType.AFTER_GENERATE, export_to_otel)
+on_global(EventType.ERROR_OCCURRED, export_to_otel)
+```
+
+### Event System Features
+
+- **🔄 Real-time**: Events are emitted immediately as operations occur
+- **🌐 Global & Local**: Support both global event bus and local emitters
+- **📊 OpenTelemetry Compatible**: Designed for enterprise monitoring systems
+- **🛡️ Prevention Capable**: Some events allow preventing default behavior
+- **📈 Performance Tracking**: Built-in performance and cost tracking
+- **🎯 Filtered Listening**: Listen to specific event types you care about
+- **🔍 Rich Metadata**: Events include detailed context and timing information
 
 ## 💬 Session Management
 
