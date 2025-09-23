@@ -145,9 +145,9 @@ class TestToolCalling:
                 raise
 
     def test_ollama_basic_generation(self):
-        """Test Ollama basic generation (tool calling may not work with qwen3:4b)."""
+        """Test Ollama basic generation (tool calling may not work with qwen3-coder:30b)."""
         try:
-            llm = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            llm = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             # Test basic generation (without tools first)
             response = llm.generate("What is 2+2?")
@@ -164,7 +164,7 @@ class TestToolCalling:
     def test_ollama_tool_format(self):
         """Test Ollama with architecture-specific tool format"""
         try:
-            llm = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            llm = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             # Qwen3 uses special tool format
             prompt = """<|tool_call|>

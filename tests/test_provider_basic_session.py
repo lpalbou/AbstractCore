@@ -14,7 +14,7 @@ class TestProviderBasicSession:
     def test_ollama_session_memory(self):
         """Test Ollama session maintains context."""
         try:
-            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
             session = BasicSession(provider=provider, system_prompt="You are a helpful assistant.")
 
             # First message

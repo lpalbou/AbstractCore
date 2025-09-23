@@ -15,7 +15,8 @@ except ImportError:
 
 from ..core.interface import AbstractLLMInterface
 from ..core.types import GenerateResponse
-from ..events import EventType, EventEmitter
+from ..events import EventType, Event
+from datetime import datetime
 from ..utils.structured_logging import get_logger
 from ..exceptions import (
     ProviderAPIError,
@@ -28,7 +29,7 @@ from ..architectures import detect_architecture, get_architecture_format, get_mo
 from ..tools import execute_tools
 
 
-class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
+class BaseProvider(AbstractLLMInterface, ABC):
     """
     Base provider class with integrated telemetry and events.
     All providers should inherit from this class.
@@ -36,7 +37,6 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
 
     def __init__(self, model: str, **kwargs):
         AbstractLLMInterface.__init__(self, model, **kwargs)
-        EventEmitter.__init__(self)
 
         # Setup structured logging
         self.logger = get_logger(self.__class__.__name__)
@@ -46,24 +46,15 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
         self.architecture_config = get_architecture_format(self.architecture)
         self.model_capabilities = get_model_capabilities(model)
 
-        # Emit provider created event to both local and global bus
-        event_data = {
-            "provider": self.__class__.__name__,
-            "model": model,
-            "architecture": self.architecture
-        }
-        self.emit(EventType.PROVIDER_CREATED, event_data)
-
-        # Also emit to global bus for system-wide listeners
-        from ..events import emit_global
-        emit_global(EventType.PROVIDER_CREATED, event_data, source=self.__class__.__name__)
+        # Provider created successfully - no event emission needed
+        # (The simplified event system focuses on generation and tool events only)
 
         # Set default token limits if not provided
         self._initialize_token_limits()
 
     def _track_generation(self, prompt: str, response: Optional[GenerateResponse],
                          start_time: float, success: bool = True,
-                         error: Optional[Exception] = None):
+                         error: Optional[Exception] = None, stream: bool = False):
         """
         Track generation with telemetry and events.
 
@@ -73,20 +64,41 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
             start_time: Generation start time
             success: Whether generation succeeded
             error: Error if failed
+            stream: Whether this was a streaming generation
         """
         latency_ms = (time.time() - start_time) * 1000
 
-        # Emit event to both local and global bus
+        # Extract token and cost information from response
+        tokens_input = None
+        tokens_output = None
+        cost_usd = None
+
+        if response and response.usage:
+            tokens_input = response.usage.get('prompt_tokens') or response.usage.get('input_tokens')
+            tokens_output = response.usage.get('completion_tokens') or response.usage.get('output_tokens')
+            # Calculate cost if possible (simplified - could be enhanced)
+            total_tokens = response.usage.get('total_tokens', 0)
+            if total_tokens > 0:
+                # Very rough cost estimation - should be provider-specific
+                cost_usd = total_tokens * 0.00002  # ~$0.02 per 1K tokens average
+
+        # Emit comprehensive event with all data in one dict
         event_data = {
             "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
             "success": success,
-            "latency_ms": latency_ms,
-            "error": str(error) if error else None
+            "error": str(error) if error else None,
+            "response_length": len(response.content) if response and response.content else 0,
+            "stream": stream,
+            "model": self.model,
+            "provider": self.__class__.__name__,
+            "duration_ms": latency_ms,
+            "tokens_input": tokens_input,
+            "tokens_output": tokens_output,
+            "cost_usd": cost_usd
         }
-        self.emit(EventType.AFTER_GENERATE, event_data)
 
         from ..events import emit_global
-        emit_global(EventType.AFTER_GENERATE, event_data, source=self.__class__.__name__)
+        emit_global(EventType.GENERATION_COMPLETED, event_data, source=self.__class__.__name__)
 
         # Track with structured logging (using formatted strings)
         if error:
@@ -115,13 +127,22 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
             success: Whether call succeeded
             error: Error if failed
         """
-        # Emit event
-        self.emit(EventType.TOOL_CALLED if success else EventType.ERROR_OCCURRED, {
-            "tool": tool_name,
+        # Emit comprehensive tool event
+        event_type = EventType.TOOL_COMPLETED if success else EventType.ERROR
+        event_data = {
+            "tool_name": tool_name,
             "arguments": arguments,
             "result": str(result)[:100] if result else None,
-            "error": str(error) if error else None
-        })
+            "error": str(error) if error else None,
+            "success": success
+        }
+
+        # Add model and provider to event data
+        event_data["model"] = self.model
+        event_data["provider"] = self.__class__.__name__
+
+        from ..events import emit_global
+        emit_global(event_type, event_data, source=self.__class__.__name__)
 
         # Track with structured logging (using formatted strings)
         if error:
@@ -195,16 +216,16 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
 
         start_time = time.time()
 
-        # Emit before event to both local and global bus
+        # Emit generation started event (covers request received)
         event_data = {
             "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
             "has_tools": bool(tools),
-            "stream": stream
+            "stream": stream,
+            "model": self.model,
+            "provider": self.__class__.__name__
         }
-        self.emit(EventType.BEFORE_GENERATE, event_data)
-
         from ..events import emit_global
-        emit_global(EventType.BEFORE_GENERATE, event_data, source=self.__class__.__name__)
+        emit_global(EventType.GENERATION_STARTED, event_data, source=self.__class__.__name__)
 
         try:
             # Convert tools to ToolDefinition objects, preserving enhanced metadata
@@ -239,21 +260,57 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
                 **kwargs
             )
 
-            # Track if not streaming (streaming tracked separately)
-            if not stream:
-                self._track_generation(prompt, response, start_time, success=True)
+            # Handle streaming vs non-streaming differently
+            if stream:
+                # Wrap the stream to emit events
+                def stream_with_events():
+                    # Emit stream started event
+                    stream_data = {
+                        "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                        "model": self.model
+                    }
+                    # Note: Stream started event already emitted above in GENERATION_STARTED
+                    # No need to emit again here
 
-            return response
+                    try:
+                        # Yield all chunks from the original stream
+                        for chunk in response:
+                            yield chunk
+
+                        # Track generation after streaming completes (will emit GENERATION_COMPLETED)
+
+                        # Track generation after streaming completes
+                        self._track_generation(prompt, None, start_time, success=True, stream=True)
+
+                    except Exception as e:
+                        # Error will be tracked and emitted by _track_generation
+
+                        # Track error
+                        self._track_generation(prompt, None, start_time, success=False, error=e, stream=True)
+                        raise
+
+                return stream_with_events()
+            else:
+                # Non-streaming: track after completion
+                self._track_generation(prompt, response, start_time, success=True, stream=False)
+                return response
 
         except Exception as e:
             # Convert to custom exception
             custom_error = self._handle_api_error(e)
 
             # Track error
-            self._track_generation(prompt, None, start_time, success=False, error=custom_error)
+            self._track_generation(prompt, None, start_time, success=False, error=custom_error, stream=stream)
 
             # Emit error event
-            self.emit_error(custom_error, {"prompt": prompt})
+            from ..events import emit_global
+            emit_global(EventType.ERROR, {
+                "error": str(custom_error),
+                "error_type": type(custom_error).__name__,
+                "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                "model": self.model,
+                "provider": self.__class__.__name__
+            }, source=self.__class__.__name__)
 
             # Re-raise custom exception
             raise custom_error
@@ -442,27 +499,37 @@ class BaseProvider(AbstractLLMInterface, EventEmitter, ABC):
 
     def _execute_tools_with_events(self, response: GenerateResponse, tool_calls: List) -> GenerateResponse:
         """Core tool execution with event emission (shared implementation)"""
-        # Emit before tool execution event with prevention capability
+        # Emit tool started event
         event_data = {
-            "tool_calls": tool_calls,
+            "tool_calls": [{
+                "name": call.name,
+                "arguments": call.arguments
+            } for call in tool_calls],
+            "tool_count": len(tool_calls),
             "model": self.model,
-            "can_prevent": True
+            "provider": self.__class__.__name__
         }
-        event = self.emit(EventType.BEFORE_TOOL_EXECUTION, event_data)
 
-        # Check if execution was prevented
-        if event.prevented:
-            return response  # Return original response without tool execution
+        from ..events import emit_global
+        emit_global(EventType.TOOL_STARTED, event_data, source=self.__class__.__name__)
 
         # Execute tools
         tool_results = execute_tools(tool_calls)
 
-        # Emit after tool execution event
-        self.emit(EventType.AFTER_TOOL_EXECUTION, {
-            "tool_calls": tool_calls,
-            "results": tool_results,
-            "model": self.model
-        })
+        # Emit tool completed event
+        after_event_data = {
+            "tool_results": [{
+                "name": call.name,
+                "success": result.success,
+                "error": str(result.error) if result.error else None
+            } for call, result in zip(tool_calls, tool_results)],
+            "successful_count": sum(1 for r in tool_results if r.success),
+            "failed_count": sum(1 for r in tool_results if not r.success),
+            "model": self.model,
+            "provider": self.__class__.__name__
+        }
+
+        emit_global(EventType.TOOL_COMPLETED, after_event_data, source=self.__class__.__name__)
 
         # Track tool calls
         for call, result in zip(tool_calls, tool_results):

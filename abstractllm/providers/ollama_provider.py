@@ -241,27 +241,25 @@ class OllamaProvider(BaseProvider):
         if not tool_call_response.has_tool_calls():
             return response
 
-        # Emit before tool execution event with prevention capability
+        # Emit tool started event
+        from ..events import emit_global
         event_data = {
-            "tool_calls": tool_call_response.tool_calls,
+            "tool_calls": [{"name": call.name, "arguments": call.arguments} for call in tool_call_response.tool_calls],
             "model": self.model,
-            "can_prevent": True
+            "provider": self.__class__.__name__
         }
-        event = self.emit(EventType.BEFORE_TOOL_EXECUTION, event_data)
-
-        # Check if execution was prevented
-        if event.prevented:
-            return response  # Return original response without tool execution
+        emit_global(EventType.TOOL_STARTED, event_data, source=self.__class__.__name__)
 
         # Execute tools
         tool_results = execute_tools(tool_call_response.tool_calls)
 
-        # Emit after tool execution event
-        self.emit(EventType.AFTER_TOOL_EXECUTION, {
-            "tool_calls": tool_call_response.tool_calls,
-            "results": tool_results,
-            "model": self.model
-        })
+        # Emit tool completed event
+        emit_global(EventType.TOOL_COMPLETED, {
+            "tool_results": [{"name": call.name, "success": result.success, "error": str(result.error) if result.error else None}
+                           for call, result in zip(tool_call_response.tool_calls, tool_results)],
+            "model": self.model,
+            "provider": self.__class__.__name__
+        }, source=self.__class__.__name__)
 
         # Format tool results and append to response
         results_text = "\n\nTool Results:\n"

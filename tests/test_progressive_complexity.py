@@ -86,7 +86,7 @@ def test_provider_complexity():
 
     # Define test configurations
     providers_to_test = [
-        ("ollama", "qwen3:4b"),
+        ("ollama", "qwen3-coder:30b"),
     ]
 
     # Add cloud providers if available

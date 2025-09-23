@@ -84,11 +84,11 @@ class LogConfig:
 
     def _setup_structlog(self):
         """Setup structlog with current configuration."""
+        # Setup standard logging handlers first (always, regardless of structlog availability)
+        self._setup_logging_handlers()
+
         if not STRUCTLOG_AVAILABLE:
             return
-
-        # Setup standard logging handlers first
-        self._setup_logging_handlers()
 
         processors = [
             structlog.stdlib.filter_by_level,
@@ -234,16 +234,10 @@ class StructuredLogger:
         if STRUCTLOG_AVAILABLE:
             self.logger = structlog.get_logger(self.name)
         else:
-            # Fallback to standard logging
+            # Fallback to standard logging - use the configured root logger system
             self.logger = logging.getLogger(self.name)
-            if not self.logger.handlers:
-                handler = logging.StreamHandler()
-                formatter = logging.Formatter(
-                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-                )
-                handler.setFormatter(formatter)
-                self.logger.addHandler(handler)
-                self.logger.setLevel(_config.console_level)
+            # Don't add handlers or set level - let it inherit from root logger
+            # which was properly configured by _setup_logging_handlers()
 
     def bind(self, **kwargs) -> 'StructuredLogger':
         """

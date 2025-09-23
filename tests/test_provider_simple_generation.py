@@ -15,7 +15,7 @@ class TestProviderSimpleGeneration:
     def test_ollama_simple_generation(self):
         """Test Ollama simple message generation."""
         try:
-            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             start = time.time()
             response = provider.generate("Who are you? Answer in one sentence.")

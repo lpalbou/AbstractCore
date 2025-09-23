@@ -39,7 +39,7 @@ def test_provider_model():
 
     # Define test configurations
     test_configs = [
-        ("ollama", "qwen3:4b", CodeReview, "Please review this Python code: def hello(): print('world')"),
+        ("ollama", "qwen3-coder:30b", CodeReview, "Please review this Python code: def hello(): print('world')"),
     ]
 
     # Add cloud providers if available

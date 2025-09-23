@@ -49,7 +49,7 @@ def create_llm(provider: str, model: Optional[str] = None, **kwargs) -> Abstract
     elif provider.lower() == "ollama":
         try:
             from ..providers.ollama_provider import OllamaProvider
-            return OllamaProvider(model=model or "qwen3:4b", **kwargs)
+            return OllamaProvider(model=model or "qwen3-coder:30b", **kwargs)
         except ImportError:
             raise ImportError("Ollama dependencies not installed. Install with: pip install abstractllm[ollama]")
 

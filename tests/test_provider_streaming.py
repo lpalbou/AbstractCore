@@ -98,7 +98,7 @@ class TestProviderStreaming:
     def test_ollama_streaming_basic(self):
         """Test Ollama basic streaming functionality."""
         try:
-            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             # Test streaming
             stream = provider.generate(

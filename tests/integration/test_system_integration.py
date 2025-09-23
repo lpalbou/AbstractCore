@@ -143,7 +143,7 @@ class TestUnifiedToolingSystem:
         tools = [tool.to_dict() for tool in registry.list_tools()]
 
         # Test with Ollama provider (if available)
-        provider = OllamaProvider('qwen3:4b')
+        provider = OllamaProvider('qwen3-coder:30b')
 
         # Verify provider can handle tools
         capabilities = provider.get_capabilities()
@@ -208,7 +208,7 @@ class TestLoggingTelemetrySystem:
             )
 
             # Create provider (this should log initialization)
-            provider = OllamaProvider('qwen3:4b')
+            provider = OllamaProvider('qwen3-coder:30b')
 
             # Check that provider has logger
             assert hasattr(provider, 'logger')
@@ -227,10 +227,10 @@ class TestRealProviderIntegration:
 
     def test_ollama_connection(self):
         """Test Ollama provider connection."""
-        provider = OllamaProvider('qwen3:4b')
+        provider = OllamaProvider('qwen3-coder:30b')
 
         # Test basic properties
-        assert provider.model == 'qwen3:4b'
+        assert provider.model == 'qwen3-coder:30b'
         assert provider.architecture == 'qwen'
 
         # Test capabilities
@@ -252,7 +252,7 @@ class TestRealProviderIntegration:
     def test_ollama_tool_execution(self):
         """Test actual tool execution with Ollama (requires running service)."""
         # This test requires Ollama to be running
-        provider = OllamaProvider('qwen3:4b')
+        provider = OllamaProvider('qwen3-coder:30b')
 
         if not provider.validate_config():
             pytest.skip("Ollama service not available")
@@ -301,7 +301,7 @@ class TestSystemEndToEnd:
     def test_complete_workflow(self):
         """Test complete workflow from capabilities to tool execution."""
         # 1. Test model capabilities
-        model = 'qwen3:4b'
+        model = 'qwen3-coder:30b'
         capabilities = get_model_capabilities(model)
         assert capabilities is not None
         assert 'architecture' in capabilities

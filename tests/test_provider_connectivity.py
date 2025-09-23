@@ -14,9 +14,9 @@ class TestProviderConnectivity:
     def test_ollama_connectivity(self):
         """Test Ollama provider can be created."""
         try:
-            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
             assert provider is not None
-            assert provider.model == "qwen3:4b"
+            assert provider.model == "qwen3-coder:30b"
         except Exception as e:
             if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
                 pytest.skip("Ollama not running")

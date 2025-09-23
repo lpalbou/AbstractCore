@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 from typing import Type, Optional
 from pydantic import BaseModel, ValidationError
 
+from ..events import EventType, emit_global, create_structured_output_event
+
 
 class Retry(ABC):
     """Abstract base class for retry strategies."""

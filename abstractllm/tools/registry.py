@@ -6,10 +6,12 @@ and executing them safely.
 """
 
 import logging
+import time
 from typing import Dict, List, Any, Callable, Optional, Union
 from functools import wraps
 
 from .core import ToolDefinition, ToolCall, ToolResult
+from ..events import EventType, emit_global, create_tool_event
 
 logger = logging.getLogger(__name__)
 
@@ -97,51 +99,126 @@ class ToolRegistry:
         Returns:
             ToolResult with execution result
         """
+        start_time = time.time()
+
+        # Note: Removing TOOL_CALLED event - redundant with BEFORE_TOOL_EXECUTION
+        # BEFORE_TOOL_EXECUTION is emitted by the provider and covers this
+
         tool_def = self.get_tool(tool_call.name)
         if not tool_def:
-            return ToolResult(
+            duration_ms = (time.time() - start_time) * 1000
+            error_result = ToolResult(
                 call_id=tool_call.call_id or "",
                 output="",
                 error=f"Tool '{tool_call.name}' not found",
                 success=False
             )
 
+            # Emit tool result event
+            result_data = create_tool_event(
+                tool_name=tool_call.name,
+                arguments=tool_call.arguments,
+                success=False,
+                error=error_result.error
+            )
+            emit_global(EventType.TOOL_COMPLETED, result_data,
+                       source="ToolRegistry", duration_ms=duration_ms)
+
+            return error_result
+
         if not tool_def.function:
-            return ToolResult(
+            duration_ms = (time.time() - start_time) * 1000
+            error_result = ToolResult(
                 call_id=tool_call.call_id or "",
                 output="",
                 error=f"Tool '{tool_call.name}' has no executable function",
                 success=False
             )
 
+            # Emit tool result event
+            result_data = create_tool_event(
+                tool_name=tool_call.name,
+                arguments=tool_call.arguments,
+                success=False,
+                error=error_result.error
+            )
+            emit_global(EventType.TOOL_COMPLETED, result_data,
+                       source="ToolRegistry", duration_ms=duration_ms)
+
+            return error_result
+
         try:
             # Execute the function with the provided arguments
             result = tool_def.function(**tool_call.arguments)
-            return ToolResult(
+            duration_ms = (time.time() - start_time) * 1000
+
+            success_result = ToolResult(
                 call_id=tool_call.call_id or "",
                 output=result,
                 success=True
             )
 
+            # Emit successful tool result event
+            result_data = create_tool_event(
+                tool_name=tool_call.name,
+                arguments=tool_call.arguments,
+                result=result,
+                success=True
+            )
+            emit_global(EventType.TOOL_COMPLETED, result_data,
+                       source="ToolRegistry", duration_ms=duration_ms)
+
+            return success_result
+
         except TypeError as e:
+            duration_ms = (time.time() - start_time) * 1000
             error_msg = f"Invalid arguments for tool '{tool_call.name}': {e}"
             logger.warning(error_msg)
-            return ToolResult(
+
+            error_result = ToolResult(
                 call_id=tool_call.call_id or "",
                 output="",
                 error=error_msg,
                 success=False
             )
 
+            # Emit tool error event
+            result_data = create_tool_event(
+                tool_name=tool_call.name,
+                arguments=tool_call.arguments,
+                success=False,
+                error=error_msg,
+                error_type="TypeError"
+            )
+            emit_global(EventType.TOOL_COMPLETED, result_data,
+                       source="ToolRegistry", duration_ms=duration_ms)
+
+            return error_result
+
         except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
             error_msg = f"Error executing tool '{tool_call.name}': {e}"
             logger.error(error_msg)
-            return ToolResult(
+
+            error_result = ToolResult(
                 call_id=tool_call.call_id or "",
                 output="",
                 error=error_msg,
                 success=False
             )
+
+            # Emit tool error event
+            result_data = create_tool_event(
+                tool_name=tool_call.name,
+                arguments=tool_call.arguments,
+                success=False,
+                error=error_msg,
+                error_type=type(e).__name__
+            )
+            emit_global(EventType.TOOL_COMPLETED, result_data,
+                       source="ToolRegistry", duration_ms=duration_ms)
+
+            return error_result
 
     def execute_tools(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
         """

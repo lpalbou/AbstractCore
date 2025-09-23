@@ -101,7 +101,7 @@ class TestProviderToolDetection:
     def test_ollama_tool_detection(self):
         """Test Ollama tool call detection (limited by model capabilities)."""
         try:
-            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             # Get a simple tool
             tools = [{

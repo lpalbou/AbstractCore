@@ -360,7 +360,7 @@ def main():
         # Ollama with available model
         {
             "provider": "ollama",
-            "model": "qwen3:8b",  # Using actual available model
+            "model": "qwen3-coder:30b",  # Using actual available model
             "config": {"base_url": "http://localhost:11434"}
         },
         # MLX

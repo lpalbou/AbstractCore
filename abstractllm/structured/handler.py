@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from .retry import FeedbackRetry
 from ..utils.structured_logging import get_logger
+from ..events import EventType, emit_global, create_structured_output_event
 
 
 class StructuredOutputHandler:
@@ -55,6 +56,9 @@ class StructuredOutputHandler:
         provider_name = getattr(provider, '__class__', {}).__name__ or 'unknown'
         model_name = getattr(provider, 'model', 'unknown')
 
+        # Note: STRUCTURED_OUTPUT_REQUESTED event removed in simplification
+        # Structured output is just a special type of generation
+
         # Log structured output request
         self.logger.info("Starting structured output generation",
                         provider=provider_name,
@@ -76,8 +80,10 @@ class StructuredOutputHandler:
                 result = self._generate_prompted(provider, prompt, response_model, **kwargs)
                 strategy = "prompted"
 
-            # Log successful completion
+            # Note: Removed STRUCTURED_OUTPUT_GENERATED - using VALIDATION_SUCCEEDED instead
             duration_ms = (time.time() - start_time) * 1000
+
+            # Log successful completion
             self.logger.info("Structured output generation completed",
                            provider=provider_name,
                            model=model_name,
@@ -89,8 +95,21 @@ class StructuredOutputHandler:
             return result
 
         except Exception as e:
-            # Log failure
+            # Emit failure event
             duration_ms = (time.time() - start_time) * 1000
+            error_data = {
+                "response_model": response_model.__name__,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "success": False
+            }
+            emit_global(EventType.ERROR, error_data,
+                       source="StructuredOutputHandler",
+                       model_name=model_name,
+                       provider_name=provider_name,
+                       duration_ms=duration_ms)
+
+            # Log failure
             self.logger.error("Structured output generation failed",
                             provider=provider_name,
                             model=model_name,
@@ -178,12 +197,15 @@ class StructuredOutputHandler:
         # Create schema-enhanced prompt
         enhanced_prompt = self._create_schema_prompt(prompt, response_model)
         provider_name = getattr(provider, '__class__', {}).__name__ or 'unknown'
+        model_name = getattr(provider, 'model', 'unknown')
 
         last_error = None
         current_prompt = enhanced_prompt
 
         for attempt in range(1, self.retry_strategy.max_attempts + 1):
             attempt_start_time = time.time()
+
+            # Note: Removed VALIDATION_STARTED - redundant, only tracking results
 
             self.logger.debug("Starting validation attempt",
                             provider=provider_name,
@@ -203,8 +225,12 @@ class StructuredOutputHandler:
                 data = json.loads(json_content)
                 result = response_model.model_validate(data)
 
-                # Log successful validation
+                # Emit validation success event
                 attempt_duration_ms = (time.time() - attempt_start_time) * 1000
+                # Note: VALIDATION_SUCCEEDED event removed in simplification
+                # Success is indicated by successfully parsing the response
+
+                # Log successful validation
                 self.logger.info("Validation attempt succeeded",
                                provider=provider_name,
                                attempt=attempt,
@@ -220,6 +246,20 @@ class StructuredOutputHandler:
                 last_error = e
                 attempt_duration_ms = (time.time() - attempt_start_time) * 1000
 
+                # Emit validation failure event
+                failure_data = create_structured_output_event(
+                    response_model=response_model.__name__,
+                    validation_attempt=attempt,
+                    validation_error=str(e),
+                    error_type=type(e).__name__,
+                    response_length=len(getattr(response, 'content', ''))
+                )
+                emit_global(EventType.VALIDATION_FAILED, failure_data,
+                           source="StructuredOutputHandler",
+                           model_name=model_name,
+                           provider_name=provider_name,
+                           duration_ms=attempt_duration_ms)
+
                 # Log validation failure
                 self.logger.warning("Validation attempt failed",
                                   provider=provider_name,
@@ -234,6 +274,9 @@ class StructuredOutputHandler:
 
                 # Check if we should retry
                 if self.retry_strategy.should_retry(attempt, e):
+                    # Note: RETRY_ATTEMPTED event removed in simplification
+                    # Retry logic tracked through VALIDATION_FAILED event with attempt number
+
                     self.logger.info("Preparing retry with validation feedback",
                                    provider=provider_name,
                                    attempt=attempt + 1,

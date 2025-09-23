@@ -14,7 +14,7 @@ Features:
 - Token limit configuration
 
 Usage:
-    python cli_repl.py --provider ollama --model qwen3:4b
+    python cli_repl.py --provider ollama --model qwen3-coder:30b
     python cli_repl.py --provider openai --model gpt-4o-mini --stream
 """
 
@@ -41,13 +41,15 @@ class CLIRepl:
     
     def __init__(self, provider: str, model: str, stream: bool = False,
                  max_tokens: int = 32000, max_input_tokens: int = 28000,
-                 max_output_tokens: int = 4000, debug: bool = False, **kwargs):
+                 max_output_tokens: int = 4000, debug: bool = False, 
+                 prompt_mode: bool = False, **kwargs):
         """Initialize the REPL with provider and model configuration"""
 
         self.provider_name = provider
         self.model_name = model
         self.stream_mode = stream
         self.debug_mode = debug
+        self.prompt_mode = prompt_mode
         self.provider_kwargs = kwargs
 
         # Token configuration
@@ -55,11 +57,20 @@ class CLIRepl:
         self.max_input_tokens = max_input_tokens
         self.max_output_tokens = max_output_tokens
 
-        # Configure logging based on debug mode
-        self._setup_logging()
-
-        # Get logger instance
-        self.logger = get_logger("cli_repl")
+        # Configure logging based on debug mode (minimize for prompt mode)
+        if not self.prompt_mode:
+            self._setup_logging()
+            # Get logger instance
+            self.logger = get_logger("cli_repl")
+        else:
+            # Minimal logging for prompt mode to maximize speed
+            configure_logging(
+                console_level=logging.CRITICAL,  # Suppress all console output
+                file_level=logging.CRITICAL,    # Suppress file logging too
+                log_dir=os.path.expanduser("~/.abstractllm/logs"),
+                verbatim_enabled=False
+            )
+            self.logger = get_logger("cli_repl")
 
         # Register tools properly
         self._register_tools()
@@ -71,17 +82,19 @@ class CLIRepl:
         # Initialize connection
         self._initialize_provider()
 
-        print(f"🚀 AbstractLLM CLI REPL")
-        print(f"Provider: {self.provider_name}")
-        print(f"Model: {self.model_name}")
-        print(f"Stream mode: {'ON' if self.stream_mode else 'OFF'}")
-        print(f"Debug mode: {'ON' if self.debug_mode else 'OFF'}")
-        print(f"Token limits: {self.max_tokens} total, {self.max_input_tokens} input, {self.max_output_tokens} output")
-        print(f"Available commands: /stream, /model, /clear, /help, /quit, /debug, /history, /logs")
-        print(f"Available tools: list_files, read_file")
-        if self.debug_mode:
-            print(f"📝 Logging enabled: ~/.abstractllm/logs/")
-        print("=" * 60)
+        # Only show UI for interactive mode
+        if not self.prompt_mode:
+            print(f"🚀 AbstractLLM CLI REPL")
+            print(f"Provider: {self.provider_name}")
+            print(f"Model: {self.model_name}")
+            print(f"Stream mode: {'ON' if self.stream_mode else 'OFF'}")
+            print(f"Debug mode: {'ON' if self.debug_mode else 'OFF'}")
+            print(f"Token limits: {self.max_tokens} total, {self.max_input_tokens} input, {self.max_output_tokens} output")
+            print(f"Available commands: /stream, /model, /clear, /help, /quit, /debug, /history, /logs")
+            print(f"Available tools: list_files, read_file")
+            if self.debug_mode:
+                print(f"📝 Logging enabled: ~/.abstractllm/logs/")
+            print("=" * 60)
 
     def _register_tools(self):
         """Register the available tools"""
@@ -141,7 +154,8 @@ class CLIRepl:
                 session_id=self.session.id
             )
 
-            print(f"✅ Connected to {self.provider_name} with model {self.model_name}")
+            if not self.prompt_mode:
+                print(f"✅ Connected to {self.provider_name} with model {self.model_name}")
 
         except Exception as e:
             self.logger.error(
@@ -150,8 +164,12 @@ class CLIRepl:
                 model=self.model_name,
                 error=str(e)
             )
-            print(f"❌ Failed to initialize provider: {str(e)}")
-            print(f"Make sure {self.provider_name} is running and accessible")
+            if not self.prompt_mode:
+                print(f"❌ Failed to initialize provider: {str(e)}")
+                print(f"Make sure {self.provider_name} is running and accessible")
+            else:
+                # For prompt mode, print error to stderr
+                print(f"Error: Failed to initialize provider: {str(e)}", file=sys.stderr)
             sys.exit(1)
 
     def _handle_command(self, user_input: str) -> str:
@@ -231,7 +249,7 @@ class CLIRepl:
         print("  /debug         - Toggle debug/logging mode")
         print("  /history       - Show conversation history")
         print("  /logs          - Show recent log files location")
-        print("  /model <spec>  - Change model (e.g., /model ollama:qwen3:4b)")
+        print("  /model <spec>  - Change model (e.g., /model ollama:qwen3-coder:30b)")
         print("\n🛠️  Available Tools:")
         print("  list_files - List files in a directory with pattern matching")
         print("  read_file - Read contents of a file")
@@ -405,6 +423,25 @@ class CLIRepl:
                 print("📝 Debug info:")
                 traceback.print_exc()
 
+    def execute_single_prompt(self, prompt: str):
+        """Execute a single prompt and return response without UI"""
+        try:
+            # Generate response directly without any UI elements
+            response = self.session.generate(
+                prompt,
+                stream=False,  # Force non-streaming for single prompt mode
+                tools=[self._list_files_tool, self._read_file_tool]
+            )
+            
+            # Print only the response content
+            print(response.content)
+            
+        except Exception as e:
+            # Print error to stderr to avoid contaminating stdout
+            import sys
+            print(f"Error: {str(e)}", file=sys.stderr)
+            sys.exit(1)
+
     def run(self):
         """Run the REPL loop"""
         try:
@@ -445,10 +482,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python cli_repl.py --provider ollama --model qwen3:4b
+  python cli_repl.py --provider ollama --model qwen3-coder:30b
   python cli_repl.py --provider openai --model gpt-4o-mini --stream
   python cli_repl.py --provider anthropic --model claude-3-5-haiku-20241022
   python cli_repl.py --provider lmstudio --model qwen/qwen3-coder-30b --base-url http://localhost:1234/v1
+
+  # Execute a single prompt (no REPL, optimized for speed):
+  python cli_repl.py --provider ollama --model qwen3-coder:30b --prompt "What is Python?"
 
   # Enable detailed logging for debugging session issues:
   python cli_repl.py --provider ollama --model qwen3-coder:30b --debug
@@ -461,7 +501,7 @@ Interactive Commands:
   /debug         - Toggle debug/logging mode
   /history       - Show conversation history
   /logs          - Show log files location
-  /model <spec>  - Change model (e.g., /model ollama:qwen3:4b)
+  /model <spec>  - Change model (e.g., /model ollama:qwen3-coder:30b)
 
 Debugging Session Issues:
   1. Use --debug flag to enable detailed logging
@@ -498,6 +538,8 @@ Debugging Session Issues:
                        help='Temperature for generation (default: 0.7)')
     parser.add_argument('--debug', action='store_true',
                        help='Enable debug mode')
+    parser.add_argument('--prompt', 
+                       help='Execute a single prompt and exit (no REPL UI)')
     
     args = parser.parse_args()
     
@@ -511,19 +553,38 @@ Debugging Session Issues:
     if args.api_key:
         provider_kwargs['api_key'] = args.api_key
     
-    # Create and run REPL
-    repl = CLIRepl(
-        provider=args.provider,
-        model=args.model,
-        stream=args.stream,
-        debug=args.debug,
-        max_tokens=args.max_tokens,
-        max_input_tokens=args.max_input_tokens,
-        max_output_tokens=args.max_output_tokens,
-        **provider_kwargs
-    )
+    # Check if prompt mode
+    if args.prompt:
+        # Create REPL in prompt mode (optimized for speed)
+        repl = CLIRepl(
+            provider=args.provider,
+            model=args.model,
+            stream=False,  # Force non-streaming for prompt mode
+            debug=False,   # Force no debug for speed
+            prompt_mode=True,
+            max_tokens=args.max_tokens,
+            max_input_tokens=args.max_input_tokens,
+            max_output_tokens=args.max_output_tokens,
+            **provider_kwargs
+        )
+        
+        # Execute the prompt and exit
+        repl.execute_single_prompt(args.prompt)
+    else:
+        # Create and run interactive REPL
+        repl = CLIRepl(
+            provider=args.provider,
+            model=args.model,
+            stream=args.stream,
+            debug=args.debug,
+            prompt_mode=False,
+            max_tokens=args.max_tokens,
+            max_input_tokens=args.max_input_tokens,
+            max_output_tokens=args.max_output_tokens,
+            **provider_kwargs
+        )
 
-    repl.run()
+        repl.run()
 
 
 if __name__ == "__main__":

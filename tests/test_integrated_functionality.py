@@ -11,7 +11,7 @@ import tempfile
 from abstractllm import create_llm, BasicSession
 from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
 from abstractllm.utils import configure_logging, get_logger
-from abstractllm.events import EventType, EventEmitter
+from abstractllm.events import EventType
 from abstractllm.architectures import detect_architecture
 
 
@@ -40,7 +40,7 @@ class TestIntegratedFunctionality:
             logger = get_logger("test.provider")
 
             # Create provider
-            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             # Test 1: Basic generation
             prompt = "Who are you? Answer in one sentence."
@@ -71,7 +71,7 @@ class TestIntegratedFunctionality:
             assert context_maintained, "Session should remember the name Laurent"
 
             # Test 3: Architecture detection
-            arch = detect_architecture("qwen3:4b")
+            arch = detect_architecture("qwen3-coder:30b")
             assert arch is not None
 
             # Test 4: Telemetry verification
@@ -295,7 +295,7 @@ class TestIntegratedFunctionality:
         test_cases = [
             ("gpt-4o", "gpt"),
             ("claude-3-5-haiku-20241022", "claude"),
-            ("qwen3:4b", "qwen"),
+            ("qwen3-coder:30b", "qwen"),
             ("llama3.1:8b", "llama"),
             ("mlx-community/Qwen3-4B-4bit", "qwen")
         ]
@@ -307,7 +307,10 @@ class TestIntegratedFunctionality:
 
     def test_event_system(self):
         """Test the event system functionality."""
-        emitter = EventEmitter()
+        from abstractllm.events import on_global, emit_global, GlobalEventBus
+
+        # Clear any previous handlers
+        GlobalEventBus.clear()
 
         # Test event emission and listening
         events_received = []
@@ -315,16 +318,16 @@ class TestIntegratedFunctionality:
         def event_handler(event):
             events_received.append(event)
 
-        emitter.on(EventType.PROVIDER_CREATED, event_handler)
+        on_global(EventType.GENERATION_STARTED, event_handler)
 
         # Emit an event
         test_data = {"provider": "test", "model": "test-model"}
-        emitter.emit(EventType.PROVIDER_CREATED, test_data)
+        emit_global(EventType.GENERATION_STARTED, test_data)
 
         # Check event was received
         assert len(events_received) == 1
         event = events_received[0]
-        assert event.type == EventType.PROVIDER_CREATED
+        assert event.type == EventType.GENERATION_STARTED
         assert event.data == test_data
 
 

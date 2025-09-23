@@ -103,7 +103,8 @@ with capture_session("complex_validation_test") as session_logger:
 print("\n⚙️  Test 3: Custom Retry Strategy")
 print("-" * 32)
 
-class TestRetry(FeedbackRetry):
+class CustomRetryStrategy(FeedbackRetry):
+    """Custom retry strategy for testing - not a test class"""
     def __init__(self):
         super().__init__(max_attempts=2)  # Only 2 attempts for faster testing
         self.logger = get_logger(__name__)
@@ -115,7 +116,7 @@ class TestRetry(FeedbackRetry):
         return super().prepare_retry_prompt(original_prompt, error, attempt)
 
 # Use custom retry strategy
-handler = StructuredOutputHandler(retry_strategy=TestRetry())
+handler = StructuredOutputHandler(retry_strategy=CustomRetryStrategy())
 
 try:
     # Manually use handler to test custom retry

@@ -418,7 +418,7 @@ class TestStreamToolCalling:
 
         # Always try local providers
         providers_to_test.extend([
-            ("ollama", "qwen3:4b", {"base_url": "http://localhost:11434"}),  # Use smaller model for speed
+            ("ollama", "qwen3-coder:30b", {"base_url": "http://localhost:11434"}),  # Use standardized model
             ("mock", "test-model", {})
         ])
 

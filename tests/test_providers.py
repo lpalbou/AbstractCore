@@ -16,9 +16,9 @@ class TestProviders:
     """Test all providers with real implementations - no mocking."""
 
     def test_ollama_simple_message(self):
-        """Test Ollama simple message generation with qwen3:4b."""
+        """Test Ollama simple message generation with qwen3-coder:30b."""
         try:
-            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             prompt = "Who are you? Please respond in one sentence."
             start_time = time.time()
@@ -259,7 +259,7 @@ class TestProviders:
     def test_ollama_session(self):
         """Test BasicSession with Ollama provider."""
         try:
-            provider = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             # Create session
             session = BasicSession(

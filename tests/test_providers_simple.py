@@ -12,9 +12,9 @@ class TestProvidersSimple:
     """Test providers with real models using correct names."""
 
     def test_ollama_provider(self):
-        """Test Ollama provider with qwen3:4b."""
+        """Test Ollama provider with qwen3-coder:30b."""
         try:
-            llm = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            llm = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
             start = time.time()
             response = llm.generate("Who are you in one sentence?")
@@ -140,7 +140,7 @@ class TestProvidersSimple:
     def test_basic_session_with_ollama(self):
         """Test BasicSession maintains context with Ollama."""
         try:
-            llm = create_llm("ollama", model="qwen3:4b", base_url="http://localhost:11434")
+            llm = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
             session = BasicSession(provider=llm, system_prompt="You are a helpful AI assistant.")
 
             # Test conversation
