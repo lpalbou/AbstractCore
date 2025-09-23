@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="abstractllm",
+    name="abstractcore",
     version="2.0.0",
-    author="AbstractLLM Team",
+    author="AbstractCore Team",
     description="Unified interface to all LLM providers with essential infrastructure",
     packages=find_packages(),
     python_requires=">=3.8",

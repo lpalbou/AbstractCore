@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "abstractllm"
-version = "0.5.0"
+name = "abstractcore"
+version = "2.0.0"
 description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
 readme = "README.md"
 license = {text = "MIT"}
@@ -51,11 +51,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/abstractllm"
-Documentation = "https://abstractllm.readthedocs.io"
-Repository = "https://github.com/your-org/abstractllm"
-"Bug Tracker" = "https://github.com/your-org/abstractllm/issues"
-Changelog = "https://github.com/your-org/abstractllm/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/lpalbou/AbstractCore"
+Documentation = "https://github.com/lpalbou/AbstractCore#readme"
+Repository = "https://github.com/lpalbou/AbstractCore"
+"Bug Tracker" = "https://github.com/lpalbou/AbstractCore/issues"
+Changelog = "https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # Individual providers

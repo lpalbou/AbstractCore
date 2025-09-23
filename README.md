@@ -1,6 +1,8 @@
-# AbstractLLM
+# AbstractCore
 
-A unified interface to all LLM providers with essential infrastructure for tool calling, streaming, structured output, and model management.
+**Preview of AbstractLLM v2** - A unified interface to all LLM providers with essential infrastructure for tool calling, streaming, structured output, and model management.
+
+> **Note**: This is a preview release published as `abstractcore`. The final version will be published as `abstractllm` v2.0. All import statements remain the same for seamless migration.
 
 ## ✨ Features
 
@@ -19,15 +21,17 @@ A unified interface to all LLM providers with essential infrastructure for tool 
 ### Installation
 
 ```bash
-# Install core package
-pip install abstractllm
+# Install core package (preview release)
+pip install abstractcore
 
 # Install with specific providers
-pip install abstractllm[openai,anthropic]  # API providers
-pip install abstractllm[ollama,lmstudio]   # Local providers
-pip install abstractllm[mlx]               # Apple Silicon
-pip install abstractllm[all]               # Everything
+pip install abstractcore[openai,anthropic]  # API providers
+pip install abstractcore[ollama,lmstudio]   # Local providers
+pip install abstractcore[mlx]               # Apple Silicon
+pip install abstractcore[all]               # Everything
 ```
+
+> **Migration Note**: When AbstractLLM v2.0 is released, simply replace `abstractcore` with `abstractllm` in your installation commands. No code changes required!
 
 ### Basic Usage
 
