@@ -184,3 +184,5 @@ logs/
 *.egg-info/
 untracked
 test_logs/
+
+*CLAUDE.md
