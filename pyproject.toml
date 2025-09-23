@@ -9,10 +9,10 @@ description = "Unified interface to all LLM providers with essential infrastruct
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "AbstractLLM Contributors"}
+    {name = "Laurent-Philippe Albou"}
 ]
 maintainers = [
-    {name = "AbstractLLM Contributors"}
+    {name = "Laurent-Philippe Albou"}
 ]
 keywords = [
     "llm",
