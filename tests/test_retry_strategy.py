@@ -409,15 +409,15 @@ class TestRetryManager:
 
         assert result == "success"
 
-        # Check that retry events were emitted
-        assert mock_emit.call_count >= 2  # At least retry_attempt and retry_success
+        # Check that retry events were emitted (minimal approach)
+        assert mock_emit.call_count >= 1  # At least retry_attempted
 
         # Verify specific events
         call_args_list = [call[0] for call in mock_emit.call_args_list]
         event_types = [args[0] for args in call_args_list]
 
-        assert EventType.RETRY_ATTEMPT in event_types
-        assert EventType.RETRY_SUCCESS in event_types
+        assert EventType.RETRY_ATTEMPTED in event_types
+        # No retry_success event in minimal approach - success is implicit
 
 
 class MockProvider(BaseProvider):
@@ -592,13 +592,14 @@ class TestBaseProviderIntegration:
         # Check that events were emitted (including retry events)
         assert mock_emit.call_count > 0
 
-        # Look for retry-related events
+        # Look for generation and retry events
         call_args_list = [call[0] for call in mock_emit.call_args_list]
         event_types = [args[0] for args in call_args_list]
 
-        # Should include generation events and retry events
+        # Should include generation events and minimal retry events
         assert EventType.GENERATION_STARTED in event_types
         assert EventType.GENERATION_COMPLETED in event_types
+        # Retry events only if actually retrying (minimal approach)
 
 
 class TestEdgeCases:
@@ -711,9 +712,9 @@ class TestIntegrationScenarios:
         assert response.content == "Success after rate limit"
         assert call_count == 3  # Initial + 2 retries
 
-        # Verify retry events were emitted
+        # Verify retry events were emitted (minimal approach)
         event_types = [call[0][0] for call in mock_emit.call_args_list]
-        assert EventType.RETRY_ATTEMPT in event_types
+        assert EventType.RETRY_ATTEMPTED in event_types
 
     def test_circuit_breaker_prevents_cascade_failure(self):
         """Test circuit breaker prevents cascade failures."""

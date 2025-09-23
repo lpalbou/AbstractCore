@@ -696,31 +696,26 @@ Monitor retry behavior with comprehensive events:
 from abstractllm import create_llm
 from abstractllm.events import EventType, on_global
 
-# Track retry attempts
+# Minimal retry monitoring (SOTA approach - avoid event flooding)
 def monitor_retries(event):
-    if event.type == EventType.RETRY_ATTEMPT:
+    if event.type == EventType.RETRY_ATTEMPTED:
         data = event.data
-        print(f"🔄 Retry attempt {data['attempt']}/{data['max_attempts']} "
-              f"for {data['provider_key']} - {data['error_type']}")
-        print(f"⏱️ Waiting {data['delay_seconds']:.2f}s before retry...")
+        print(f"🔄 Retrying {data['provider_key']} (attempt {data['current_attempt']}/{data['max_attempts']}) "
+              f"after {data['error_type']} - waiting {data['delay_seconds']:.2f}s")
 
-    elif event.type == EventType.RETRY_FAILURE:
-        data = event.data
-        print(f"❌ Attempt {data['attempt']} failed: {data['error_type']}")
-        print(f"🔧 Circuit breaker state: {data['circuit_breaker_state']['state']}")
-
-    elif event.type == EventType.RETRY_SUCCESS:
-        data = event.data
-        print(f"✅ Retry succeeded after {data['total_attempts']} attempts")
+        # Check circuit breaker state for health monitoring
+        cb_state = data['circuit_breaker_state']['state']
+        if cb_state != 'closed':
+            print(f"⚠️ Circuit breaker state: {cb_state}")
 
     elif event.type == EventType.RETRY_EXHAUSTED:
         data = event.data
-        print(f"💥 All retries exhausted: {data['reason']}")
+        print(f"🚨 ALERT: All retries exhausted for {data['provider_key']} - {data['reason']}")
+        print(f"   Last error: {data['error_type']} - {data['error']}")
 
-on_global(EventType.RETRY_ATTEMPT, monitor_retries)
-on_global(EventType.RETRY_FAILURE, monitor_retries)  # New event!
-on_global(EventType.RETRY_SUCCESS, monitor_retries)
-on_global(EventType.RETRY_EXHAUSTED, monitor_retries)
+# Only monitor critical events (minimal overhead)
+on_global(EventType.RETRY_ATTEMPTED, monitor_retries)   # When actually retrying
+on_global(EventType.RETRY_EXHAUSTED, monitor_retries)   # Critical for alerting
 
 llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("Test with monitoring")

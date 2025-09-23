@@ -290,13 +290,8 @@ class RetryManager:
                 # Record success in circuit breaker
                 circuit_breaker.record_success()
 
-                # Emit retry success event if this was a retry
-                if attempt > 1:
-                    self._emit_retry_event("RETRY_SUCCESS", {
-                        "provider_key": provider_key,
-                        "attempt": attempt,
-                        "total_attempts": attempt
-                    })
+                # Success after retry - no event needed (success is implicit)
+                # SOTA approach: Only emit critical events (exhausted) and retry attempts
 
                 return result
 
@@ -307,27 +302,18 @@ class RetryManager:
                 # Record failure in circuit breaker
                 circuit_breaker.record_failure()
 
-                # Emit retry failure event for observability (SOTA best practice)
-                self._emit_retry_event("RETRY_FAILURE", {
-                    "provider_key": provider_key,
-                    "attempt": attempt,
-                    "max_attempts": self.config.max_attempts,
-                    "error_type": error_type.value,
-                    "error": str(e),
-                    "circuit_breaker_state": circuit_breaker.get_state_info()
-                })
-
                 # Check if we should retry
                 if not self.should_retry(e, attempt):
                     logger.debug(f"Not retrying {error_type.value} error after attempt {attempt}: {e}")
 
-                    # Emit retry exhausted event
+                    # Emit retry exhausted event (critical for alerting)
                     self._emit_retry_event("RETRY_EXHAUSTED", {
                         "provider_key": provider_key,
                         "attempt": attempt,
                         "error_type": error_type.value,
                         "error": str(e),
-                        "reason": "non_retryable_error"
+                        "reason": "non_retryable_error",
+                        "circuit_breaker_state": circuit_breaker.get_state_info()
                     })
                     break
 
@@ -335,29 +321,29 @@ class RetryManager:
                 if attempt >= self.config.max_attempts:
                     logger.warning(f"All {self.config.max_attempts} attempts failed for {provider_key}")
 
-                    # Emit retry exhausted event
+                    # Emit retry exhausted event (critical for alerting)
                     self._emit_retry_event("RETRY_EXHAUSTED", {
                         "provider_key": provider_key,
                         "attempt": attempt,
                         "error_type": error_type.value,
                         "error": str(e),
-                        "reason": "max_attempts_reached"
+                        "reason": "max_attempts_reached",
+                        "circuit_breaker_state": circuit_breaker.get_state_info()
                     })
                     break
 
-                # Calculate delay and emit retry event
+                # Calculate delay and emit retry event (minimal - only when we're actually retrying)
                 delay = self.config.get_delay(attempt)
 
                 logger.info(f"Retrying {provider_key} after {error_type.value} error (attempt {attempt}/{self.config.max_attempts}). "
                            f"Waiting {delay:.2f}s...")
 
-                # Emit retry attempt event
-                self._emit_retry_event("RETRY_ATTEMPT", {
+                # Emit retry attempted event (minimal approach - includes all needed context)
+                self._emit_retry_event("RETRY_ATTEMPTED", {
                     "provider_key": provider_key,
-                    "attempt": attempt,
+                    "current_attempt": attempt,
                     "max_attempts": self.config.max_attempts,
                     "error_type": error_type.value,
-                    "error": str(e),
                     "delay_seconds": delay,
                     "circuit_breaker_state": circuit_breaker.get_state_info()
                 })
@@ -373,13 +359,9 @@ class RetryManager:
         try:
             from ..events import emit_global, EventType
 
-            # Map our retry events to the dedicated retry event types
-            if event_type == "RETRY_ATTEMPT":
-                emit_global(EventType.RETRY_ATTEMPT, data, source="RetryManager")
-            elif event_type == "RETRY_FAILURE":
-                emit_global(EventType.RETRY_FAILURE, data, source="RetryManager")
-            elif event_type == "RETRY_SUCCESS":
-                emit_global(EventType.RETRY_SUCCESS, data, source="RetryManager")
+            # Map our retry events to the minimal event types (SOTA approach)
+            if event_type == "RETRY_ATTEMPTED":
+                emit_global(EventType.RETRY_ATTEMPTED, data, source="RetryManager")
             elif event_type == "RETRY_EXHAUSTED":
                 emit_global(EventType.RETRY_EXHAUSTED, data, source="RetryManager")
         except Exception as e:

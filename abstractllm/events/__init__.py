@@ -34,11 +34,9 @@ class EventType(Enum):
     # Error handling (1)
     ERROR = "error"                                # Any error
 
-    # Retry and resilience events (4)
-    RETRY_ATTEMPT = "retry_attempt"                # When a retry is attempted
-    RETRY_FAILURE = "retry_failure"                # When an individual attempt fails
-    RETRY_SUCCESS = "retry_success"                # When retry succeeds
-    RETRY_EXHAUSTED = "retry_exhausted"            # When all retries fail
+    # Retry and resilience events (2) - SOTA minimal approach
+    RETRY_ATTEMPTED = "retry_attempted"            # When retry process starts (includes attempt count)
+    RETRY_EXHAUSTED = "retry_exhausted"            # When all retries fail (critical for alerting)
 
     # Useful but minimal (3)
     VALIDATION_FAILED = "validation_failed"        # For retry logic only
