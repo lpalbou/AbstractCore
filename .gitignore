@@ -182,3 +182,5 @@ config.json
 logs/
 
 *.egg-info/
+untracked
+test_logs/
