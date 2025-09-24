@@ -55,7 +55,7 @@ class TestEmbeddingsLLMIntegration:
             assert hasattr(llm_response, 'content')
 
             print("✅ Embeddings and LLM coexist successfully")
-            return True
+            pass  # Test completed successfully
 
         except ImportError:
             pytest.skip("sentence-transformers not available")
@@ -151,7 +151,7 @@ Based on the provided context, please answer the question:"""
                 assert best_score > 0.3
 
             print("✅ Batch RAG processing successful")
-            return True
+            pass  # Test completed successfully
 
         except ImportError:
             pytest.skip("sentence-transformers not available")
@@ -195,12 +195,12 @@ Based on the provided context, please answer the question:"""
             print(f"✅ Events captured: {events_captured}")
 
             print("✅ Event system integration working")
-            return True
+            pass  # Test completed successfully
 
         except ImportError as e:
             if "abstractllm.events" in str(e):
                 print("⚠️  Event system not available, skipping event tests")
-                return True
+                pass  # Test completed successfully
             elif "sentence-transformers" in str(e):
                 pytest.skip("sentence-transformers not available")
             else:
@@ -244,7 +244,7 @@ Based on the provided context, please answer the question:"""
             assert len(embedding) == 384
 
             print("✅ Session integration successful")
-            return True
+            pass  # Test completed successfully
 
         except ImportError:
             pytest.skip("Required dependencies not available")
@@ -305,7 +305,7 @@ Based on the provided context, please answer the question:"""
             assert query_time/len(queries) < 1.0  # Each query should be sub-second
 
             print("✅ Performance suitable for real-time RAG workflows")
-            return True
+            pass  # Test completed successfully
 
         except ImportError:
             pytest.skip("sentence-transformers not available")

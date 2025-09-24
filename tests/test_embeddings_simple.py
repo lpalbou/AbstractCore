@@ -19,7 +19,7 @@ class TestEmbeddingModels:
         """Test getting valid model configurations."""
         config = get_model_config("embeddinggemma")
         assert config.name == "embeddinggemma"
-        assert config.model_id == "google/embeddinggemma-1.1"
+        assert config.model_id == "google/embeddinggemma-300m"
         assert config.dimension == 768
         assert config.supports_matryoshka is True
         assert 256 in config.matryoshka_dims
@@ -56,7 +56,7 @@ class TestEmbeddingManagerBasic:
 
     def test_init_fails_without_sentence_transformers(self):
         """Test that initialization fails when sentence-transformers is not available."""
-        with patch.dict('sys.modules', {'sentence_transformers': None}):
+        with patch('abstractllm.embeddings.manager.sentence_transformers', None):
             with pytest.raises(ImportError, match="sentence-transformers is required"):
                 EmbeddingManager(cache_dir=self.cache_dir)
 

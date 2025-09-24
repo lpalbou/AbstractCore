@@ -20,7 +20,7 @@ class TestEmbeddingModels:
         """Test getting valid model configurations."""
         config = get_model_config("embeddinggemma")
         assert config.name == "embeddinggemma"
-        assert config.model_id == "google/embeddinggemma-1.1"
+        assert config.model_id == "google/embeddinggemma-300m"
         assert config.dimension == 768
         assert config.supports_matryoshka is True
         assert 256 in config.matryoshka_dims
@@ -61,7 +61,7 @@ class TestEmbeddingManagerInit:
 
         manager = EmbeddingManager(cache_dir=self.cache_dir)
 
-        assert manager.model_id == "google/embeddinggemma-1.1"
+        assert manager.model_id == "google/embeddinggemma-300m"
         assert manager.cache_dir == self.cache_dir
         assert manager.cache_size == 1000
         assert manager.output_dims is None
@@ -104,9 +104,10 @@ class TestEmbeddingManagerInit:
         mock_st_class.return_value = mock_model
 
         # Test auto backend selection
-        with patch('onnxruntime'):
+        with patch('importlib.util.find_spec') as mock_find_spec:
+            mock_find_spec.return_value = None  # Simulate onnxruntime not available
             manager = EmbeddingManager(cache_dir=self.cache_dir, backend="auto")
-            # Should try ONNX first
+            # Should fall back to PyTorch
 
         # Test explicit backend
         manager = EmbeddingManager(cache_dir=self.cache_dir, backend="pytorch")
@@ -381,7 +382,7 @@ class TestErrorHandling:
 
     def test_missing_sentence_transformers(self):
         """Test error when sentence-transformers is not available."""
-        with patch.dict('sys.modules', {'sentence_transformers': None}):
+        with patch('abstractllm.embeddings.manager.sentence_transformers', None):
             with pytest.raises(ImportError, match="sentence-transformers is required"):
                 EmbeddingManager(cache_dir=self.cache_dir)
 
