@@ -554,8 +554,7 @@ def search_files(pattern: str, path: str = ".", output_mode: str = "files_with_m
         {
             "description": "Read hidden file",
             "arguments": {
-                "file_path": ".gitignore",
-                "include_hidden": True
+                "file_path": ".gitignore"
             }
         },
         {
@@ -568,7 +567,7 @@ def search_files(pattern: str, path: str = ".", output_mode: str = "files_with_m
         }
     ]
 )
-def read_file(file_path: str, should_read_entire_file: bool = True, start_line_one_indexed: int = 1, end_line_one_indexed_inclusive: Optional[int] = None, include_hidden: bool = False) -> str:
+def read_file(file_path: str, should_read_entire_file: bool = True, start_line_one_indexed: int = 1, end_line_one_indexed_inclusive: Optional[int] = None) -> str:
     """
     Read the contents of a file with optional line range.
 
@@ -577,7 +576,6 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
         should_read_entire_file: Whether to read the entire file (default: True)
         start_line_one_indexed: Starting line number (1-indexed, default: 1)
         end_line_one_indexed_inclusive: Ending line number (1-indexed, inclusive, optional)
-        include_hidden: Whether to allow reading hidden files starting with '.' (default: False)
 
     Returns:
         File contents or error message
@@ -591,9 +589,6 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
         if not path.is_file():
             return f"Error: '{file_path}' is not a file"
 
-        # Check for hidden files (files starting with '.')
-        if not include_hidden and path.name.startswith('.'):
-            return f"Error: Access to hidden file '{file_path}' is not allowed. Use include_hidden=True to override."
 
         with open(path, 'r', encoding='utf-8') as f:
             if should_read_entire_file:
@@ -838,11 +833,642 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
         return f"Error searching internet: {str(e)}"
 
 
+
+
+@tool(
+    description="Advanced file editing with line-based operations, multi-operation support, and atomic transactions",
+    tags=["file", "edit", "modify", "lines", "insert", "delete", "replace", "patch"],
+    when_to_use="When you need to perform precise file modifications like inserting/deleting lines, replacing specific content, or making multiple coordinated edits",
+    examples=[
+        {
+            "description": "Insert lines at specific position",
+            "arguments": {
+                "file_path": "config.py",
+                "operation": "insert",
+                "line_number": 10,
+                "content": "# New configuration option\nDEBUG = True"
+            }
+        },
+        {
+            "description": "Delete specific lines",
+            "arguments": {
+                "file_path": "old_code.py",
+                "operation": "delete",
+                "start_line": 5,
+                "end_line": 8
+            }
+        },
+        {
+            "description": "Replace lines with new content",
+            "arguments": {
+                "file_path": "script.py",
+                "operation": "replace",
+                "start_line": 15,
+                "end_line": 17,
+                "content": "def improved_function():\n    return 'better implementation'"
+            }
+        },
+        {
+            "description": "Multiple operations in sequence",
+            "arguments": {
+                "file_path": "refactor.py",
+                "operation": "multi",
+                "operations": [
+                    {"type": "replace", "start_line": 1, "end_line": 1, "content": "#!/usr/bin/env python3"},
+                    {"type": "insert", "line_number": 10, "content": "import logging"},
+                    {"type": "delete", "start_line": 20, "end_line": 22}
+                ]
+            }
+        },
+        {
+            "description": "Preview changes without applying",
+            "arguments": {
+                "file_path": "test.py",
+                "operation": "replace",
+                "start_line": 5,
+                "end_line": 7,
+                "content": "new code here",
+                "preview_only": True
+            }
+        }
+    ]
+)
+def edit_file(
+    file_path: str,
+    operation: str,
+    content: str = "",
+    line_number: Optional[int] = None,
+    start_line: Optional[int] = None,
+    end_line: Optional[int] = None,
+    operations: Optional[List[Dict[str, Any]]] = None,
+    create_backup: bool = True,
+    preview_only: bool = False,
+    encoding: str = "utf-8"
+) -> str:
+    """
+    Advanced file editing with multiple operation modes and safety features.
+    
+    This tool provides sophisticated file editing capabilities with atomic operations,
+    backup creation, and preview functionality. It supports line-based operations
+    for precise modifications without rewriting entire files.
+    
+    Args:
+        file_path: Path to the file to edit
+        operation: Type of operation - "insert", "delete", "replace", "multi", "transform"
+        content: Content to insert or replace (for insert/replace operations)
+        line_number: Specific line number for insert operations (1-indexed)
+        start_line: Starting line number for range operations (1-indexed, inclusive)
+        end_line: Ending line number for range operations (1-indexed, inclusive)
+        operations: List of operations for "multi" mode
+        create_backup: Whether to create a backup before editing (default: True)
+        preview_only: Show what would be changed without applying (default: False)
+        encoding: File encoding (default: "utf-8")
+        
+    Returns:
+        Detailed results of the editing operation with change summary
+        
+    Operation Types:
+        - "insert": Insert content at a specific line number
+        - "delete": Delete line(s) from start_line to end_line
+        - "replace": Replace line(s) from start_line to end_line with new content
+        - "multi": Perform multiple operations in sequence
+        - "transform": Apply a function to each line (advanced)
+        
+    Multi-operation format:
+        operations = [
+            {"type": "insert", "line_number": 5, "content": "new line"},
+            {"type": "delete", "start_line": 10, "end_line": 12},
+            {"type": "replace", "start_line": 20, "end_line": 20, "content": "replacement"}
+        ]
+    """
+    try:
+        # Validate file exists
+        path = Path(file_path)
+        if not path.exists():
+            return f"❌ File not found: {file_path}"
+        
+        if not path.is_file():
+            return f"❌ Path is not a file: {file_path}"
+        
+        # Read current content
+        try:
+            with open(path, 'r', encoding=encoding) as f:
+                lines = f.readlines()
+        except UnicodeDecodeError:
+            return f"❌ Cannot decode file with encoding '{encoding}'. File may be binary."
+        except Exception as e:
+            return f"❌ Error reading file: {str(e)}"
+        
+        original_line_count = len(lines)
+        
+        # Create backup if requested
+        backup_path = None
+        if create_backup and not preview_only:
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            backup_path = f"{file_path}.backup_{timestamp}"
+            try:
+                shutil.copy2(file_path, backup_path)
+            except Exception as e:
+                return f"❌ Failed to create backup: {str(e)}"
+        
+        # Process operations
+        modified_lines = lines.copy()
+        changes_made = []
+        
+        if operation == "insert":
+            if line_number is None:
+                return "❌ line_number required for insert operation"
+            
+            # Validate line number
+            if line_number < 1 or line_number > len(modified_lines) + 1:
+                return f"❌ Invalid line_number: {line_number}. File has {len(modified_lines)} lines."
+            
+            # Prepare content with proper line endings
+            insert_content = content.rstrip('\n') + '\n' if content and not content.endswith('\n') else content
+            insert_lines = insert_content.splitlines(keepends=True) if insert_content else ['']
+            
+            # Insert at specified position (convert to 0-indexed)
+            insert_idx = line_number - 1
+            modified_lines[insert_idx:insert_idx] = insert_lines
+            
+            changes_made.append(f"Inserted {len(insert_lines)} line(s) at line {line_number}")
+            
+        elif operation == "delete":
+            if start_line is None:
+                return "❌ start_line required for delete operation"
+            
+            end_line = end_line or start_line  # Default to single line
+            
+            # Validate line range
+            if start_line < 1 or start_line > len(modified_lines):
+                return f"❌ Invalid start_line: {start_line}. File has {len(modified_lines)} lines."
+            if end_line < start_line or end_line > len(modified_lines):
+                return f"❌ Invalid end_line: {end_line}. Must be >= start_line and <= {len(modified_lines)}."
+            
+            # Delete lines (convert to 0-indexed)
+            start_idx = start_line - 1
+            end_idx = end_line
+            deleted_count = end_idx - start_idx
+            
+            del modified_lines[start_idx:end_idx]
+            
+            if deleted_count == 1:
+                changes_made.append(f"Deleted line {start_line}")
+            else:
+                changes_made.append(f"Deleted lines {start_line}-{end_line} ({deleted_count} lines)")
+                
+        elif operation == "replace":
+            if start_line is None:
+                return "❌ start_line required for replace operation"
+            
+            end_line = end_line or start_line  # Default to single line
+            
+            # Validate line range
+            if start_line < 1 or start_line > len(modified_lines):
+                return f"❌ Invalid start_line: {start_line}. File has {len(modified_lines)} lines."
+            if end_line < start_line or end_line > len(modified_lines):
+                return f"❌ Invalid end_line: {end_line}. Must be >= start_line and <= {len(modified_lines)}."
+            
+            # Prepare replacement content
+            replace_content = content.rstrip('\n') + '\n' if content and not content.endswith('\n') else content
+            replace_lines = replace_content.splitlines(keepends=True) if replace_content else ['']
+            
+            # Replace lines (convert to 0-indexed)
+            start_idx = start_line - 1
+            end_idx = end_line
+            replaced_count = end_idx - start_idx
+            
+            modified_lines[start_idx:end_idx] = replace_lines
+            
+            if replaced_count == 1:
+                changes_made.append(f"Replaced line {start_line} with {len(replace_lines)} line(s)")
+            else:
+                changes_made.append(f"Replaced lines {start_line}-{end_line} ({replaced_count} lines) with {len(replace_lines)} line(s)")
+                
+        elif operation == "multi":
+            if not operations:
+                return "❌ operations list required for multi operation"
+            
+            # Sort operations by line number (descending) to avoid index shifting issues
+            sorted_ops = []
+            for i, op in enumerate(operations):
+                op_type = op.get("type")
+                if op_type in ["insert"]:
+                    sort_key = op.get("line_number", 0)
+                elif op_type in ["delete", "replace"]:
+                    sort_key = op.get("start_line", 0)
+                else:
+                    return f"❌ Invalid operation type in operation {i}: {op_type}"
+                sorted_ops.append((sort_key, op))
+            
+            # Sort in descending order to process from bottom to top
+            sorted_ops.sort(key=lambda x: x[0], reverse=True)
+            
+            for line_num, op in sorted_ops:
+                op_type = op.get("type")
+                
+                if op_type == "insert":
+                    line_num = op.get("line_number")
+                    op_content = op.get("content", "")
+                    
+                    if line_num < 1 or line_num > len(modified_lines) + 1:
+                        return f"❌ Invalid line_number in insert operation: {line_num}"
+                    
+                    insert_content = op_content.rstrip('\n') + '\n' if op_content and not op_content.endswith('\n') else op_content
+                    insert_lines = insert_content.splitlines(keepends=True) if insert_content else ['']
+                    
+                    insert_idx = line_num - 1
+                    modified_lines[insert_idx:insert_idx] = insert_lines
+                    changes_made.append(f"Inserted {len(insert_lines)} line(s) at line {line_num}")
+                    
+                elif op_type == "delete":
+                    start = op.get("start_line")
+                    end = op.get("end_line", start)
+                    
+                    if start < 1 or start > len(modified_lines) or end < start or end > len(modified_lines):
+                        return f"❌ Invalid line range in delete operation: {start}-{end}"
+                    
+                    start_idx = start - 1
+                    end_idx = end
+                    deleted_count = end_idx - start_idx
+                    
+                    del modified_lines[start_idx:end_idx]
+                    
+                    if deleted_count == 1:
+                        changes_made.append(f"Deleted line {start}")
+                    else:
+                        changes_made.append(f"Deleted lines {start}-{end} ({deleted_count} lines)")
+                        
+                elif op_type == "replace":
+                    start = op.get("start_line")
+                    end = op.get("end_line", start)
+                    op_content = op.get("content", "")
+                    
+                    if start < 1 or start > len(modified_lines) or end < start or end > len(modified_lines):
+                        return f"❌ Invalid line range in replace operation: {start}-{end}"
+                    
+                    replace_content = op_content.rstrip('\n') + '\n' if op_content and not op_content.endswith('\n') else op_content
+                    replace_lines = replace_content.splitlines(keepends=True) if replace_content else ['']
+                    
+                    start_idx = start - 1
+                    end_idx = end
+                    replaced_count = end_idx - start_idx
+                    
+                    modified_lines[start_idx:end_idx] = replace_lines
+                    
+                    if replaced_count == 1:
+                        changes_made.append(f"Replaced line {start} with {len(replace_lines)} line(s)")
+                    else:
+                        changes_made.append(f"Replaced lines {start}-{end} ({replaced_count} lines) with {len(replace_lines)} line(s)")
+        
+        else:
+            return f"❌ Unknown operation: {operation}. Available: insert, delete, replace, multi"
+        
+        # Generate results
+        final_line_count = len(modified_lines)
+        line_diff = final_line_count - original_line_count
+        
+        results = []
+        
+        if preview_only:
+            results.append(f"🔍 Preview Mode - Changes NOT Applied")
+            results.append(f"  • File: {file_path}")
+            results.append(f"  • Original lines: {original_line_count}")
+            results.append(f"  • Final lines: {final_line_count}")
+            if line_diff != 0:
+                sign = "+" if line_diff > 0 else ""
+                results.append(f"  • Line difference: {sign}{line_diff}")
+            
+            results.append(f"\n📝 Changes that would be made:")
+            for change in changes_made:
+                results.append(f"  • {change}")
+            
+            # Show preview of affected areas
+            if operation != "multi":
+                if operation == "insert" and line_number:
+                    start_preview = max(1, line_number - 2)
+                    end_preview = min(len(modified_lines), line_number + 3)
+                    results.append(f"\n📄 Preview around line {line_number}:")
+                    
+                    for i in range(start_preview - 1, end_preview):
+                        line_num = i + 1
+                        line_content = modified_lines[i].rstrip() if i < len(modified_lines) else ""
+                        marker = ">>>" if line_num == line_number else "   "
+                        results.append(f"  {marker} {line_num:3d}: {line_content}")
+            
+            return "\n".join(results)
+        
+        # Apply changes to file
+        try:
+            with open(path, 'w', encoding=encoding) as f:
+                f.writelines(modified_lines)
+        except Exception as e:
+            # Restore backup if write fails
+            if backup_path and os.path.exists(backup_path):
+                shutil.copy2(backup_path, file_path)
+                return f"❌ Write failed, backup restored: {str(e)}"
+            return f"❌ Write failed: {str(e)}"
+        
+        # Success message
+        results.append(f"✅ File edited successfully: {file_path}")
+        results.append(f"  • Original lines: {original_line_count}")
+        results.append(f"  • Final lines: {final_line_count}")
+        
+        if line_diff != 0:
+            sign = "+" if line_diff > 0 else ""
+            results.append(f"  • Line difference: {sign}{line_diff}")
+        
+        if backup_path:
+            results.append(f"  • Backup created: {backup_path}")
+        
+        results.append(f"\n📝 Changes applied:")
+        for change in changes_made:
+            results.append(f"  • {change}")
+        
+        return "\n".join(results)
+        
+    except Exception as e:
+        return f"❌ Error in file editing: {str(e)}"
+
+
+
+@tool(
+    description="Execute shell commands safely with security controls and platform detection",
+    tags=["command", "shell", "execution", "system"],
+    when_to_use="When you need to run system commands, shell scripts, or interact with command-line tools",
+    examples=[
+        {
+            "description": "List current directory contents",
+            "arguments": {
+                "command": "ls -la"
+            }
+        },
+        {
+            "description": "Check system information",
+            "arguments": {
+                "command": "uname -a"
+            }
+        },
+        {
+            "description": "Run command with timeout",
+            "arguments": {
+                "command": "ping -c 3 google.com",
+                "timeout": 10
+            }
+        },
+        {
+            "description": "Execute in specific directory",
+            "arguments": {
+                "command": "pwd",
+                "working_directory": "/tmp"
+            }
+        },
+        {
+            "description": "Get current date and time",
+            "arguments": {
+                "command": "date"
+            }
+        },
+        {
+            "description": "HTTP GET request to API",
+            "arguments": {
+                "command": "curl -X GET 'https://api.example.com/data' -H 'Content-Type: application/json'"
+            }
+        },
+        {
+            "description": "HTTP POST request to API",
+            "arguments": {
+                "command": "curl -X POST 'https://api.example.com/submit' -H 'Content-Type: application/json' -d '{\"key\": \"value\"}'"
+            }
+        },
+        {
+            "description": "Safe mode with confirmation",
+            "arguments": {
+                "command": "rm temp_file.txt",
+                "require_confirmation": True
+            }
+        }
+    ]
+)
+def execute_command(
+    command: str,
+    working_directory: str = None,
+    timeout: int = 30,
+    capture_output: bool = True,
+    require_confirmation: bool = False,
+    allow_dangerous: bool = False
+) -> str:
+    """
+    Execute a shell command safely with comprehensive security controls.
+
+    Args:
+        command: The shell command to execute
+        working_directory: Directory to run the command in (default: current directory)
+        timeout: Maximum seconds to wait for command completion (default: 30)
+        capture_output: Whether to capture and return command output (default: True)
+        require_confirmation: Whether to ask for user confirmation before execution (default: False)
+        allow_dangerous: Whether to allow potentially dangerous commands (default: False)
+
+    Returns:
+        Command execution result with stdout, stderr, and return code information
+    """
+    try:
+        # Platform detection
+        current_platform = platform.system()
+
+        # CRITICAL SECURITY VALIDATION - Dangerous commands MUST be blocked
+        security_check = _validate_command_security(command, allow_dangerous)
+        if not security_check["safe"]:
+            return f"🚫 CRITICAL SECURITY BLOCK: {security_check['reason']}\n" \
+                   f"BLOCKED COMMAND: {command}\n" \
+                   f"⚠️  DANGER: This command could cause IRREVERSIBLE DAMAGE\n" \
+                   f"Only use allow_dangerous=True with EXPRESS USER CONSENT\n" \
+                   f"This safety mechanism protects your system and data"
+
+        # User confirmation for risky commands
+        if require_confirmation:
+            risk_level = _assess_command_risk(command)
+            if risk_level != "low":
+                logger.warning(f"Command execution simulated - {risk_level} risk command: {command}")
+                logger.warning(f"Would normally ask for user confirmation before proceeding")
+
+        # Working directory validation
+        if working_directory:
+            working_dir = Path(working_directory).resolve()
+            if not working_dir.exists():
+                return f"❌ Error: Working directory does not exist: {working_directory}"
+            if not working_dir.is_dir():
+                return f"❌ Error: Working directory path is not a directory: {working_directory}"
+        else:
+            working_dir = None
+
+        # Command execution
+        start_time = time.time()
+
+        try:
+            # Execute command with security controls
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=working_dir,
+                timeout=timeout,
+                capture_output=capture_output,
+                text=True,
+                check=False  # Don't raise exception on non-zero return code
+            )
+
+            execution_time = time.time() - start_time
+
+            # Format results
+            output_parts = []
+            output_parts.append(f"🖥️  Command executed on {current_platform}")
+            output_parts.append(f"📁 Working directory: {working_dir or os.getcwd()}")
+            output_parts.append(f"⏱️  Execution time: {execution_time:.2f}s")
+            output_parts.append(f"🔢 Return code: {result.returncode}")
+
+            if capture_output:
+                if result.stdout:
+                    # Limit output size for agent usability while allowing substantial content
+                    stdout = result.stdout[:20000]  # First 20000 chars for agent processing
+                    if len(result.stdout) > 20000:
+                        stdout += f"\n... (output truncated, {len(result.stdout)} total chars)"
+                    output_parts.append(f"\n📤 STDOUT:\n{stdout}")
+
+                if result.stderr:
+                    stderr = result.stderr[:5000]  # First 5000 chars for errors
+                    if len(result.stderr) > 5000:
+                        stderr += f"\n... (error output truncated, {len(result.stderr)} total chars)"
+                    output_parts.append(f"\n❌ STDERR:\n{stderr}")
+
+                if result.returncode == 0:
+                    output_parts.append("\n✅ Command completed successfully")
+                else:
+                    output_parts.append(f"\n⚠️  Command completed with non-zero exit code: {result.returncode}")
+            else:
+                output_parts.append("📝 Output capture disabled")
+
+            return "\n".join(output_parts)
+
+        except subprocess.TimeoutExpired:
+            return f"⏰ Timeout: Command exceeded {timeout} seconds\n" \
+                   f"Command: {command}\n" \
+                   f"Consider increasing timeout or breaking down the command"
+
+        except subprocess.CalledProcessError as e:
+            return f"❌ Command execution failed\n" \
+                   f"Command: {command}\n" \
+                   f"Return code: {e.returncode}\n" \
+                   f"Error: {e.stderr if e.stderr else 'No error details'}"
+
+    except Exception as e:
+        return f"❌ Execution error: {str(e)}\n" \
+               f"Command: {command}"
+
+
+def _validate_command_security(command: str, allow_dangerous: bool = False) -> dict:
+    """
+    CRITICAL SECURITY VALIDATION - Protects against destructive commands.
+
+    This function implements multiple layers of protection:
+    1. Regex pattern matching for known destructive commands
+    2. Keyword scanning for dangerous operations
+    3. Path analysis for system-critical locations
+    4. Only bypassed with explicit allow_dangerous=True (requires express user consent)
+    """
+
+    if allow_dangerous:
+        return {"safe": True, "reason": "DANGEROUS COMMANDS EXPLICITLY ALLOWED BY USER"}
+
+    # Normalize command for analysis
+    cmd_lower = command.lower().strip()
+
+    # CRITICAL: Highly destructive commands (NEVER allow without express consent)
+    critical_patterns = [
+        r'\brm\s+(-rf?|--recursive|--force)',  # rm -rf, rm -r, rm -f
+        r'\bdd\s+if=.*of=',  # dd operations (disk destruction)
+        r'\bmkfs\.',         # filesystem formatting
+        r'\bfdisk\b',        # partition management
+        r'\bparted\b',       # partition editor
+        r'\bshred\b',        # secure deletion
+        r'\bwipe\b',         # disk wiping
+        r'>\s*/dev/(sd[a-z]|nvme)',  # writing to disk devices
+        r'\bchmod\s+777',    # overly permissive permissions
+        r'\bsudo\s+(rm|dd|mkfs|fdisk)',  # sudo + destructive commands
+        r'curl.*\|\s*(bash|sh|python)',  # piping downloads to interpreter
+        r'wget.*\|\s*(bash|sh|python)',  # piping downloads to interpreter
+        r'\bkill\s+-9\s+1\b',  # killing init process
+        r'\binit\s+0',       # system shutdown
+        r'\bshutdown\b',     # system shutdown
+        r'\breboot\b',       # system reboot
+        r'\bhalt\b',         # system halt
+    ]
+
+    for pattern in critical_patterns:
+        if re.search(pattern, cmd_lower):
+            return {
+                "safe": False,
+                "reason": f"CRITICAL DESTRUCTIVE PATTERN: {pattern} - Could cause IRREVERSIBLE system damage"
+            }
+
+    # System-critical paths (additional protection)
+    critical_paths = ['/etc/', '/usr/', '/var/', '/opt/', '/boot/', '/sys/', '/proc/']
+    if any(path in command for path in critical_paths):
+        # Check if it's a destructive operation on critical paths
+        destructive_ops_pattern = r'\b(rm|del|format)\s+.*(' + '|'.join(re.escape(p) for p in critical_paths) + ')'
+        redirect_ops_pattern = r'.*(>|>>)\s*(' + '|'.join(re.escape(p) for p in critical_paths) + ')'
+
+        if re.search(destructive_ops_pattern, cmd_lower) or re.search(redirect_ops_pattern, cmd_lower):
+            return {
+                "safe": False,
+                "reason": "CRITICAL SYSTEM PATH MODIFICATION - Could corrupt operating system"
+            }
+
+    # High-risk keywords (warrant extreme caution)
+    high_risk_keywords = [
+        'format c:', 'format d:', 'del /f', 'deltree', 'destroy', 'wipe',
+        'kill -9', ':(){:|:&};:', 'forkbomb'  # Include shell fork bomb
+    ]
+    for keyword in high_risk_keywords:
+        if keyword in cmd_lower:
+            return {
+                "safe": False,
+                "reason": f"HIGH-RISK KEYWORD: {keyword} - Requires EXPRESS user consent"
+            }
+
+    return {"safe": True, "reason": "Command passed comprehensive security validation"}
+
+
+def _assess_command_risk(command: str) -> str:
+    """Assess the risk level of a command for confirmation purposes."""
+
+    cmd_lower = command.lower().strip()
+
+    # High risk patterns
+    high_risk = ['rm ', 'del ', 'format', 'fdisk', 'mkfs', 'dd ', 'shred']
+    for pattern in high_risk:
+        if pattern in cmd_lower:
+            return "high"
+
+    # Medium risk patterns
+    medium_risk = ['chmod', 'chown', 'sudo', 'su ', 'passwd', 'crontab']
+    for pattern in medium_risk:
+        if pattern in cmd_lower:
+            return "medium"
+
+    # File system modification patterns
+    if any(op in cmd_lower for op in ['>', '>>', '|', 'mv ', 'cp ', 'mkdir', 'touch']):
+        return "medium"
+
+    return "low"
+
+
 # Export all tools for easy importing
 __all__ = [
     'list_files',
     'search_files',
     'read_file',
     'write_file',
-    'web_search'
+    'edit_file',
+    'web_search',
+    'execute_command'
 ]

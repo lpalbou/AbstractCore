@@ -7,9 +7,9 @@ Turn AbstractCore into a **universal API server** that works with ANY LLM provid
 ## Quick Start
 
 ```bash
-# Install and start (uses simplified server by default)
+# Install and start
 pip install abstractcore[server]
-abstractcore-server
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
 
 # Now ANY OpenAI client can use ANY provider!
 ```
@@ -119,7 +119,7 @@ curl "http://localhost:8000/chat?message=Tell%20a%20story&temperature=0.9"
 
 ```bash
 # Start the server
-abstractcore-server
+uvicorn abstractllm.server.app:app
 ```
 
 **What you get:**
@@ -133,13 +133,13 @@ abstractcore-server
 
 ```bash
 # Different provider
-abstractcore-server --provider anthropic --model claude-3-5-haiku-latest
+uvicorn abstractllm.server.app:app --provider anthropic --model claude-3-5-haiku-latest
 
 # Development mode
-abstractcore-server --reload --log-level debug
+uvicorn abstractllm.server.app:app --reload --log-level debug
 
 # Custom port
-abstractcore-server --port 3000
+uvicorn abstractllm.server.app:app --port 3000
 ```
 
 ## Environment Variables
@@ -220,15 +220,15 @@ All endpoints return consistent, simple responses:
 FROM python:3.9-slim
 RUN pip install abstractcore[server]
 EXPOSE 8000
-CMD ["abstractcore-server"]
+CMD ["uvicorn abstractllm.server.app:app"]
 ```
 
 ### Railway/Vercel/Fly.io
-Just deploy with `pip install abstractcore[server]` and `abstractcore-server`
+Just deploy with `pip install abstractcore[server]` and `uvicorn abstractllm.server.app:app`
 
 ### Local Development
 ```bash
-abstractcore-server --reload --log-level debug
+uvicorn abstractllm.server.app:app --reload --log-level debug
 ```
 
 ## Why Choose AbstractCore Server?
@@ -243,7 +243,7 @@ abstractcore-server --reload --log-level debug
 ## Getting Started
 
 1. **Install**: `pip install abstractcore[server]`
-2. **Start**: `abstractcore-server`
+2. **Start**: `uvicorn abstractllm.server.app:app`
 3. **Test**: Visit `http://localhost:8000`
 4. **Use**: Point any OpenAI client to your server
 

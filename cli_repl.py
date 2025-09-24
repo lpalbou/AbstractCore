@@ -30,7 +30,7 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from abstractllm import create_llm, BasicSession
-from abstractllm.tools.common_tools import list_files, read_file
+from abstractllm.tools.common_tools import list_files, read_file, execute_command
 from abstractllm.tools import ToolDefinition, register_tool
 from abstractllm.core.types import GenerateResponse
 from abstractllm.utils.structured_logging import configure_logging, get_logger
@@ -98,6 +98,10 @@ class CLIRepl:
 
     def _register_tools(self):
         """Register the available tools"""
+        # Register list_files tool
+        self._execute_command = ToolDefinition.from_function(execute_command)
+        register_tool(self._execute_command)
+
         # Register list_files tool
         self._list_files_tool = ToolDefinition.from_function(list_files)
         register_tool(self._list_files_tool)
@@ -350,7 +354,7 @@ class CLIRepl:
             response = self.session.generate(
                 user_input,
                 stream=self.stream_mode,
-                tools=[self._list_files_tool, self._read_file_tool]
+                tools=[self._list_files_tool, self._read_file_tool, self._execute_command]
             )
 
             if self.stream_mode:
