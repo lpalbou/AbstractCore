@@ -1,16 +1,6 @@
-# Vector Embeddings Documentation
+# Vector Embeddings Guide
 
-AbstractLLM Core provides a comprehensive embeddings system with state-of-the-art (SOTA) open-source models for semantic search, RAG applications, and AI-powered text understanding.
-
-## Table of Contents
-
-- [Quick Start](#quick-start)
-- [Model Selection](#model-selection)
-- [Performance Optimization](#performance-optimization)
-- [Real-World Examples](#real-world-examples)
-- [Production Deployment](#production-deployment)
-- [API Reference](#api-reference)
-- [Troubleshooting](#troubleshooting)
+AbstractCore includes built-in support for vector embeddings using state-of-the-art open-source models. This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.
 
 ## Quick Start
 
@@ -19,564 +9,485 @@ AbstractLLM Core provides a comprehensive embeddings system with state-of-the-ar
 ```bash
 # Install with embeddings support
 pip install abstractcore[embeddings]
-
-# Or install sentence-transformers directly
-pip install sentence-transformers
 ```
 
-### Basic Usage
+### First Embeddings
 
 ```python
 from abstractllm.embeddings import EmbeddingManager
 
-# Initialize with default model (EmbeddingGemma)
+# Create embedder with default model (Google's EmbeddingGemma)
 embedder = EmbeddingManager()
 
 # Generate embedding for a single text
-text = "Machine learning enables intelligent applications"
-embedding = embedder.embed(text)
-print(f"Embedding: {len(embedding)}D vector")
+embedding = embedder.embed("Machine learning transforms how we process information")
+print(f"Embedding dimension: {len(embedding)}")  # 768
 
-# Process multiple texts efficiently
-texts = ["AI is powerful", "ML advances technology", "Data drives insights"]
-embeddings = embedder.embed_batch(texts)
-
-# Compute semantic similarity
-similarity = embedder.compute_similarity("AI models", "Machine learning algorithms")
-print(f"Similarity: {similarity:.3f}")
+# Compute similarity between texts
+similarity = embedder.compute_similarity(
+    "artificial intelligence",
+    "machine learning"
+)
+print(f"Similarity: {similarity:.3f}")  # 0.847
 ```
 
-## Model Selection
+## Available Models
 
-### SOTA Models Available
+AbstractCore includes several SOTA open-source embedding models:
 
-#### 🔥 **EmbeddingGemma (Recommended)**
-- **Model ID**: `google/embeddinggemma-300m`
-- **Dimensions**: 768D with Matryoshka support (768→512→256→128)
-- **Languages**: 100+ multilingual support
-- **Performance**: ~67ms embedding time, SOTA quality
-- **Use Cases**: General purpose, multilingual applications, production
+| Model | Size | Dimensions | Languages | Best For |
+|-------|------|------------|-----------|----------|
+| **embeddinggemma** (default) | 300M | 768 | 100+ | General purpose, multilingual |
+| **granite** | 278M | 768 | 100+ | Enterprise applications |
+
+### Model Selection
 
 ```python
-# Default - automatically uses EmbeddingGemma
+# Default: Google's EmbeddingGemma (recommended)
 embedder = EmbeddingManager()
 
-# Explicit configuration
-embedder = EmbeddingManager(model="embeddinggemma")
-
-# With optimization
-embedder = EmbeddingManager(
-    model="embeddinggemma",
-    output_dims=512,  # Matryoshka truncation for speed
-    backend="onnx"    # 2-3x faster inference
-)
-```
-
-#### 🏢 **IBM Granite**
-- **Model ID**: `ibm-granite/granite-embedding-278m-multilingual`
-- **Dimensions**: 768D
-- **Languages**: 100+ multilingual support
-- **Performance**: Enterprise-grade quality
-- **Use Cases**: Business applications, enterprise deployment, multilingual
-
-```python
+# IBM Granite for enterprise use
 embedder = EmbeddingManager(model="granite")
 
-# Direct HuggingFace ID
-embedder = EmbeddingManager(model="ibm-granite/granite-embedding-278m-multilingual")
+# Direct HuggingFace model ID
+embedder = EmbeddingManager(model="google/embeddinggemma-300m")
 ```
 
-#### ⚡ **all-MiniLM-L6-v2 (Baseline)**
-- **Model ID**: `sentence-transformers/all-MiniLM-L6-v2`
-- **Dimensions**: 384D (compact)
-- **Languages**: English optimized
-- **Performance**: ~94ms, lightweight, reliable
-- **Use Cases**: Prototyping, English-only applications, resource-constrained
+## Core Features
+
+### Single Text Embeddings
 
 ```python
-embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
+embedder = EmbeddingManager()
+
+text = "Python is a versatile programming language"
+embedding = embedder.embed(text)
+
+print(f"Text: {text}")
+print(f"Embedding: {len(embedding)} dimensions")
+print(f"First 5 values: {embedding[:5]}")
 ```
 
-### Model Comparison
-
-| Model | Dimensions | Languages | Matryoshka | Speed | Quality | Best For |
-|-------|------------|-----------|------------|-------|---------|----------|
-| **EmbeddingGemma** | 768D | 100+ | ✅ | Fast | ⭐⭐⭐⭐⭐ | Production, multilingual |
-| **IBM Granite** | 768D | 100+ | ❌ | Good | ⭐⭐⭐⭐ | Enterprise, business |
-| **all-MiniLM-L6-v2** | 384D | English | ❌ | Very Fast | ⭐⭐⭐ | Prototyping, baseline |
-
-## Performance Optimization
-
-### 1. ONNX Backend (2-3x Speedup)
+### Batch Processing (More Efficient)
 
 ```python
-from abstractllm.embeddings import EmbeddingManager
+texts = [
+    "Python programming language",
+    "JavaScript for web development",
+    "Machine learning with Python",
+    "Data science and analytics"
+]
 
-# Automatic ONNX optimization if available
-embedder = EmbeddingManager(
-    model="embeddinggemma",
-    backend="onnx"  # Significant speedup
-)
+# Process multiple texts at once (much faster)
+embeddings = embedder.embed_batch(texts)
+
+print(f"Generated {len(embeddings)} embeddings")
+for i, embedding in enumerate(embeddings):
+    print(f"Text {i+1}: {len(embedding)} dimensions")
 ```
 
-### 2. Matryoshka Dimension Truncation
+### Similarity Analysis
 
 ```python
-# Full quality (default)
-embedder = EmbeddingManager(model="embeddinggemma")  # 768D
+# Compare different concepts
+pairs = [
+    ("cat", "kitten"),
+    ("car", "automobile"),
+    ("happy", "joyful"),
+    ("python", "snake"),
+    ("python", "programming")
+]
 
-# Balanced performance/quality
-embedder = EmbeddingManager(
-    model="embeddinggemma",
-    output_dims=512  # 768D → 512D truncation
-)
+for text1, text2 in pairs:
+    similarity = embedder.compute_similarity(text1, text2)
+    print(f"{text1} ↔ {text2}: {similarity:.3f}")
 
-# High speed
-embedder = EmbeddingManager(
-    model="embeddinggemma",
-    output_dims=256  # 768D → 256D truncation
-)
+# Output:
+# cat ↔ kitten: 0.789
+# car ↔ automobile: 0.845
+# happy ↔ joyful: 0.712
+# python ↔ snake: 0.423
+# python ↔ programming: 0.687
 ```
 
-### 3. Smart Caching
+## Practical Applications
 
-```python
-# Production caching configuration
-embedder = EmbeddingManager(
-    model="embeddinggemma",
-    cache_size=5000,  # Large memory cache
-    cache_dir="/path/to/persistent/cache"  # Custom cache location
-)
-
-# Check cache performance
-stats = embedder.get_cache_stats()
-print(f"Cache hits: {stats['memory_cache_info']['hits']}")
-print(f"Persistent cache: {stats['persistent_cache_size']} embeddings")
-```
-
-### 4. Batch Processing
-
-```python
-# Process large datasets efficiently
-documents = [f"Document {i} content..." for i in range(1000)]
-
-# Batch processing is much faster than individual calls
-embeddings = embedder.embed_batch(documents)  # Significant speedup
-
-# For very large datasets, process in chunks
-chunk_size = 100
-for i in range(0, len(documents), chunk_size):
-    chunk = documents[i:i + chunk_size]
-    chunk_embeddings = embedder.embed_batch(chunk)
-    # Process chunk_embeddings...
-```
-
-## Real-World Examples
-
-### 1. Semantic Document Search
+### Semantic Search
 
 ```python
 from abstractllm.embeddings import EmbeddingManager
 
-class DocumentSearchSystem:
-    def __init__(self):
-        self.embedder = EmbeddingManager(model="embeddinggemma")
-        self.documents = []
-        self.embeddings = []
+embedder = EmbeddingManager()
 
-    def add_documents(self, docs):
-        """Add documents and pre-compute embeddings."""
-        self.documents.extend(docs)
-        new_embeddings = self.embedder.embed_batch(docs)
-        self.embeddings.extend(new_embeddings)
+# Document collection
+documents = [
+    "Python is excellent for data science and machine learning applications",
+    "JavaScript enables interactive web pages and modern frontend development",
+    "React is a popular library for building user interfaces with JavaScript",
+    "SQL databases store and query structured data efficiently",
+    "Machine learning algorithms can predict patterns from historical data"
+]
 
-    def search(self, query, top_k=5):
-        """Search for most relevant documents."""
-        similarities = []
-        for i, doc in enumerate(self.documents):
-            sim = self.embedder.compute_similarity(query, doc)
-            similarities.append((sim, i, doc))
+def semantic_search(query, documents, top_k=3):
+    """Find most relevant documents for a query."""
+    similarities = []
 
-        # Return top_k most similar
-        return sorted(similarities, reverse=True)[:top_k]
+    for i, doc in enumerate(documents):
+        similarity = embedder.compute_similarity(query, doc)
+        similarities.append((i, similarity, doc))
 
-# Usage
-search_system = DocumentSearchSystem()
-search_system.add_documents([
-    "Python is a programming language for AI development",
-    "Machine learning algorithms process data patterns",
-    "React builds interactive web user interfaces"
-])
+    # Sort by similarity (highest first)
+    similarities.sort(key=lambda x: x[1], reverse=True)
 
-results = search_system.search("artificial intelligence programming")
-for score, idx, doc in results:
-    print(f"Score: {score:.3f} - {doc}")
+    return similarities[:top_k]
+
+# Search for relevant documents
+query = "web development frameworks"
+results = semantic_search(query, documents)
+
+print(f"Query: {query}\n")
+for rank, (idx, similarity, doc) in enumerate(results, 1):
+    print(f"{rank}. Score: {similarity:.3f}")
+    print(f"   {doc}\n")
 ```
 
-### 2. Complete RAG Application
+### Simple RAG Pipeline
 
 ```python
-from abstractllm.embeddings import EmbeddingManager
 from abstractllm import create_llm
+from abstractllm.embeddings import EmbeddingManager
 
-class RAGSystem:
-    def __init__(self, llm_provider="openai"):
-        self.embedder = EmbeddingManager(model="embeddinggemma")
-        self.llm = create_llm(llm_provider, model="gpt-4o-mini")
-        self.knowledge_base = []
-        self.embeddings_cache = []
+# Setup
+embedder = EmbeddingManager()
+llm = create_llm("openai", model="gpt-4o-mini")
 
-    def add_knowledge(self, documents):
-        """Add documents to knowledge base."""
-        self.knowledge_base.extend(documents)
-        # Pre-compute embeddings for fast retrieval
-        new_embeddings = self.embedder.embed_batch(documents)
-        self.embeddings_cache.extend(new_embeddings)
+# Knowledge base
+knowledge_base = [
+    "The Eiffel Tower is 330 meters tall and was completed in 1889.",
+    "Paris is the capital city of France with over 2 million inhabitants.",
+    "The Louvre Museum in Paris houses the famous Mona Lisa painting.",
+    "French cuisine is known for its wine, cheese, and pastries.",
+    "The Seine River flows through central Paris."
+]
 
-    def ask(self, question, top_k=3):
-        """Answer question using RAG."""
-        # Step 1: Retrieve relevant context
-        similarities = []
-        for i, doc in enumerate(self.knowledge_base):
-            sim = self.embedder.compute_similarity(question, doc)
-            similarities.append((sim, doc))
+def rag_query(question, knowledge_base, llm, embedder):
+    """Answer question using relevant context from knowledge base."""
 
-        # Get top contexts
-        top_contexts = sorted(similarities, reverse=True)[:top_k]
-        context = "\\n\\n".join([doc for _, doc in top_contexts])
+    # Step 1: Find most relevant context
+    similarities = []
+    for doc in knowledge_base:
+        similarity = embedder.compute_similarity(question, doc)
+        similarities.append((similarity, doc))
 
-        # Step 2: Generate answer with context
-        prompt = f\"\"\"Context:
+    # Get top 2 most relevant documents
+    similarities.sort(reverse=True)
+    top_contexts = [doc for _, doc in similarities[:2]]
+    context = "\n".join(top_contexts)
+
+    # Step 2: Generate answer using context
+    prompt = f"""Context:
 {context}
 
 Question: {question}
 
-Based on the provided context, please answer the question:\"\"\"
+Based on the context above, please answer the question:"""
 
-        response = self.llm.generate(prompt)
-        return response.content
+    response = llm.generate(prompt)
+    return response.content, top_contexts
 
 # Usage
-rag = RAGSystem(llm_provider="openai")
-rag.add_knowledge([
-    "AbstractLLM Core provides unified access to multiple LLM providers",
-    "The embeddings system uses SOTA models like EmbeddingGemma for semantic search"
-])
+question = "How tall is the Eiffel Tower?"
+answer, contexts = rag_query(question, knowledge_base, llm, embedder)
 
-answer = rag.ask("What embedding models does AbstractLLM use?")
-print(answer)
+print(f"Question: {question}")
+print(f"Answer: {answer}")
+print(f"\nUsed context:")
+for ctx in contexts:
+    print(f"- {ctx}")
 ```
 
-### 3. Multilingual Content Classification
+### Document Clustering
 
 ```python
 from abstractllm.embeddings import EmbeddingManager
-
-class MultilingualClassifier:
-    def __init__(self):
-        # Use multilingual model
-        self.embedder = EmbeddingManager(model="embeddinggemma")
-        self.categories = {}
-
-    def add_category(self, name, examples):
-        """Add a category with example texts."""
-        # Create category representation from examples
-        embeddings = self.embedder.embed_batch(examples)
-        # Average embeddings to create category centroid
-        import numpy as np
-        centroid = np.mean(embeddings, axis=0).tolist()
-        self.categories[name] = centroid
-
-    def classify(self, text):
-        """Classify text into predefined categories."""
-        text_embedding = self.embedder.embed(text)
-
-        best_category = None
-        best_score = -1
-
-        for category, centroid in self.categories.items():
-            # Compute similarity to category centroid
-            import numpy as np
-            text_emb = np.array(text_embedding)
-            cat_emb = np.array(centroid)
-            similarity = np.dot(text_emb, cat_emb) / (
-                np.linalg.norm(text_emb) * np.linalg.norm(cat_emb)
-            )
-
-            if similarity > best_score:
-                best_score = similarity
-                best_category = category
-
-        return best_category, best_score
-
-# Usage with multilingual content
-classifier = MultilingualClassifier()
-
-# Add categories with multilingual examples
-classifier.add_category("technology", [
-    "Artificial intelligence and machine learning",
-    "Intelligence artificielle et apprentissage automatique",
-    "Inteligencia artificial y aprendizaje automático"
-])
-
-classifier.add_category("sports", [
-    "Football and basketball games",
-    "Jeux de football et de basket-ball",
-    "Juegos de fútbol y baloncesto"
-])
-
-# Classify multilingual content
-result = classifier.classify("Los algoritmos de IA son muy poderosos")
-print(f"Category: {result[0]}, Confidence: {result[1]:.3f}")
-```
-
-## Production Deployment
-
-### Environment Setup
-
-```python
-import os
-from abstractllm.embeddings import EmbeddingManager
-
-# Production configuration
-embedder = EmbeddingManager(
-    model="embeddinggemma",
-    backend="onnx",  # Optimized inference
-    cache_dir=os.getenv("EMBEDDINGS_CACHE_DIR", "/var/cache/embeddings"),
-    cache_size=10000,  # Large cache for production
-    output_dims=512,  # Balanced performance
-)
-```
-
-### Performance Monitoring
-
-```python
-from abstractllm.events import EventType, on_global
-import time
-
-# Monitor embedding performance
-def monitor_embeddings(event):
-    if event.type == "embedding_generated":
-        duration = event.data.get('duration_ms', 0)
-        dimension = event.data.get('dimension', 0)
-        print(f"Embedding: {dimension}D in {duration:.1f}ms")
-
-on_global("embedding_generated", monitor_embeddings)
-
-# Monitor cache performance
-start_time = time.time()
-embeddings = embedder.embed_batch(texts)
-end_time = time.time()
-
-stats = embedder.get_cache_stats()
-print(f"Batch processing: {end_time - start_time:.3f}s")
-print(f"Cache hit rate: {stats['memory_cache_info']['hits']}")
-```
-
-### Scaling Considerations
-
-```python
-# For high-throughput applications
-class ProductionEmbeddingService:
-    def __init__(self):
-        self.embedder = EmbeddingManager(
-            model="embeddinggemma",
-            backend="onnx",
-            cache_size=50000,  # Large cache
-            output_dims=512    # Balanced performance
-        )
-
-    def embed_with_fallback(self, text):
-        """Embed with error handling and fallback."""
-        try:
-            return self.embedder.embed(text)
-        except Exception as e:
-            # Log error and return zero vector fallback
-            print(f"Embedding error: {e}")
-            return [0.0] * self.embedder.get_dimension()
-
-    def batch_embed_chunked(self, texts, chunk_size=100):
-        """Process large batches in chunks."""
-        results = []
-        for i in range(0, len(texts), chunk_size):
-            chunk = texts[i:i + chunk_size]
-            chunk_embeddings = self.embedder.embed_batch(chunk)
-            results.extend(chunk_embeddings)
-        return results
-```
-
-## API Reference
-
-### EmbeddingManager
-
-#### Constructor
-
-```python
-EmbeddingManager(
-    model: str = None,              # Model name or HuggingFace ID
-    backend: str = "auto",          # "auto", "pytorch", "onnx"
-    cache_dir: Path = None,         # Cache directory
-    cache_size: int = 1000,         # Memory cache size
-    output_dims: int = None,        # Matryoshka truncation
-    trust_remote_code: bool = False # Security setting
-)
-```
-
-#### Methods
-
-**`embed(text: str) -> List[float]`**
-- Generate embedding for single text
-- Returns list of float values
-- Automatically cached for repeated calls
-
-**`embed_batch(texts: List[str]) -> List[List[float]]`**
-- Generate embeddings for multiple texts efficiently
-- Significantly faster than individual calls
-- Cache-aware processing
-
-**`compute_similarity(text1: str, text2: str) -> float`**
-- Compute cosine similarity between two texts
-- Returns float between -1 and 1
-- Higher values indicate greater similarity
-
-**`get_dimension() -> int`**
-- Get embedding dimension
-- Accounts for Matryoshka truncation
-
-**`get_cache_stats() -> Dict`**
-- Get cache performance statistics
-- Memory and persistent cache metrics
-
-**`clear_cache()`**
-- Clear both memory and persistent caches
-- Use for testing or cache reset
-
-### Model Configuration
-
-```python
-from abstractllm.embeddings import get_model_config, list_available_models
-
-# List available models
-models = list_available_models()
-print(models)  # ['embeddinggemma', 'granite', 'stella-400m', ...]
-
-# Get model details
-config = get_model_config("embeddinggemma")
-print(f"Model: {config.model_id}")
-print(f"Dimension: {config.dimension}")
-print(f"Multilingual: {config.multilingual}")
-print(f"Matryoshka: {config.supports_matryoshka}")
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### 1. Model Download Errors
-
-```python
-# Issue: Model not found or download fails
-# Solution: Check model ID and network connection
-
-try:
-    embedder = EmbeddingManager(model="embeddinggemma")
-except Exception as e:
-    print(f"Model loading failed: {e}")
-    # Fallback to reliable baseline model
-    embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
-```
-
-#### 2. Performance Issues
-
-```python
-# Issue: Slow embedding generation
-# Solution: Enable optimizations
-
-embedder = EmbeddingManager(
-    model="embeddinggemma",
-    backend="onnx",      # Enable ONNX optimization
-    output_dims=256,     # Reduce dimensions if acceptable
-    cache_size=5000      # Increase cache size
-)
-
-# Use batch processing for multiple texts
-embeddings = embedder.embed_batch(texts)  # Much faster than individual calls
-```
-
-#### 3. Memory Issues
-
-```python
-# Issue: High memory usage
-# Solution: Optimize configuration
-
-embedder = EmbeddingManager(
-    model="sentence-transformers/all-MiniLM-L6-v2",  # Smaller model
-    cache_size=1000,     # Reduce cache size
-    output_dims=256      # Use smaller dimensions
-)
-
-# Process large datasets in chunks
-def process_large_dataset(texts, chunk_size=100):
-    for i in range(0, len(texts), chunk_size):
-        chunk = texts[i:i + chunk_size]
-        embeddings = embedder.embed_batch(chunk)
-        # Process embeddings immediately, don't store all
-        yield embeddings
-```
-
-#### 4. Cache Issues
-
-```python
-# Issue: Cache not working or corrupted
-# Solution: Reset cache
+import numpy as np
+from sklearn.cluster import KMeans
 
 embedder = EmbeddingManager()
-embedder.clear_cache()  # Reset all caches
 
-# Or specify different cache directory
-embedder = EmbeddingManager(cache_dir="/tmp/new_cache")
+# Documents to cluster
+documents = [
+    "Python programming tutorial for beginners",
+    "Introduction to machine learning concepts",
+    "JavaScript web development guide",
+    "Advanced Python data structures",
+    "Machine learning with neural networks",
+    "Building web apps with JavaScript",
+    "Python for data analysis",
+    "Deep learning fundamentals",
+    "React.js frontend development",
+    "Statistical analysis with Python"
+]
+
+# Generate embeddings
+embeddings = embedder.embed_batch(documents)
+
+# Cluster documents
+n_clusters = 3
+kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+clusters = kmeans.fit_predict(embeddings)
+
+# Group documents by cluster
+clustered_docs = {i: [] for i in range(n_clusters)}
+for doc, cluster in zip(documents, clusters):
+    clustered_docs[cluster].append(doc)
+
+# Display results
+for cluster_id, docs in clustered_docs.items():
+    print(f"\nCluster {cluster_id + 1}:")
+    for doc in docs:
+        print(f"  - {doc}")
 ```
 
-### Performance Benchmarks
+## Performance Optimization
 
-Based on testing with Apple M4 Max (128GB RAM):
-
-| Operation | EmbeddingGemma | all-MiniLM-L6-v2 | Notes |
-|-----------|----------------|------------------|-------|
-| Single embed | ~67ms | ~94ms | Includes model overhead |
-| Batch (10 texts) | ~76ms | ~52ms | Significant speedup |
-| Cache hit | <1ms | <1ms | Near-instantaneous |
-| Memory usage | ~300MB | ~150MB | Including model weights |
-
-### Debug Mode
+### ONNX Backend (2-3x Faster)
 
 ```python
-import logging
+# Enable ONNX for faster inference
+embedder = EmbeddingManager(
+    model="embeddinggemma",
+    backend="onnx"  # 2-3x speedup
+)
 
-# Enable debug logging
-logging.basicConfig(level=logging.DEBUG)
-
-# Create embedder
-embedder = EmbeddingManager(model="embeddinggemma")
-
-# Monitor performance
+# Performance comparison
 import time
-start = time.time()
-embedding = embedder.embed("Test text")
-print(f"Embedding time: {time.time() - start:.3f}s")
 
-# Check cache stats
-stats = embedder.get_cache_stats()
-print(f"Cache stats: {stats}")
+texts = ["Sample text for performance testing"] * 100
+
+# Time the embedding generation
+start_time = time.time()
+embeddings = embedder.embed_batch(texts)
+duration = time.time() - start_time
+
+print(f"Generated {len(embeddings)} embeddings in {duration:.2f} seconds")
+print(f"Speed: {len(embeddings)/duration:.1f} embeddings/second")
 ```
 
----
+### Dimension Truncation (Memory/Speed Trade-off)
+
+```python
+# Truncate embeddings for faster processing
+embedder = EmbeddingManager(
+    model="embeddinggemma",
+    output_dims=256  # Reduce from 768 to 256 dimensions
+)
+
+embedding = embedder.embed("Test text")
+print(f"Truncated embedding dimension: {len(embedding)}")  # 256
+```
+
+### Caching
+
+```python
+# Configure caching for better performance
+embedder = EmbeddingManager(
+    cache_size=5000,  # Larger memory cache
+    cache_dir="./embeddings_cache"  # Persistent disk cache
+)
+
+# First call: computes embedding
+embedding1 = embedder.embed("This text will be cached")
+
+# Second call: returns cached result (much faster)
+embedding2 = embedder.embed("This text will be cached")
+
+# Verify they're identical
+print(f"Cached result identical: {embedding1 == embedding2}")  # True
+```
+
+## Integration with LLM Providers
+
+### Enhanced Context Selection
+
+```python
+from abstractllm import create_llm
+from abstractllm.embeddings import EmbeddingManager
+
+def smart_context_selection(query, documents, max_context_length=2000):
+    """Select most relevant context that fits within token limits."""
+    embedder = EmbeddingManager()
+
+    # Score all documents
+    scored_docs = []
+    for doc in documents:
+        similarity = embedder.compute_similarity(query, doc)
+        scored_docs.append((similarity, doc))
+
+    # Sort by relevance
+    scored_docs.sort(reverse=True)
+
+    # Select documents that fit within context limit
+    selected_context = ""
+    for similarity, doc in scored_docs:
+        test_context = selected_context + "\n" + doc
+        if len(test_context) <= max_context_length:
+            selected_context = test_context
+        else:
+            break
+
+    return selected_context.strip()
+
+# Usage with LLM
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+
+documents = [
+    "Long document about machine learning...",
+    "Another document about data science...",
+    # ... many more documents
+]
+
+query = "What is supervised learning?"
+context = smart_context_selection(query, documents)
+
+response = llm.generate(f"Context: {context}\n\nQuestion: {query}")
+print(response.content)
+```
+
+### Multi-language Support
+
+```python
+# EmbeddingGemma supports 100+ languages
+embedder = EmbeddingManager(model="embeddinggemma")
+
+# Cross-language similarity
+similarity = embedder.compute_similarity(
+    "Hello world",      # English
+    "Bonjour le monde"  # French
+)
+print(f"Cross-language similarity: {similarity:.3f}")
+
+# Multilingual semantic search
+documents_multilingual = [
+    "Machine learning is transforming technology",  # English
+    "L'intelligence artificielle change le monde",  # French
+    "人工智能正在改变世界",                        # Chinese
+    "Künstliche Intelligenz verändert die Welt"    # German
+]
+
+query = "artificial intelligence"
+for doc in documents_multilingual:
+    similarity = embedder.compute_similarity(query, doc)
+    print(f"{similarity:.3f}: {doc}")
+```
+
+## Production Considerations
+
+### Error Handling
+
+```python
+from abstractllm.embeddings import EmbeddingManager
+
+def safe_embedding(text, embedder, fallback_value=None):
+    """Generate embedding with error handling."""
+    try:
+        return embedder.embed(text)
+    except Exception as e:
+        print(f"Embedding failed for text: {text[:50]}...")
+        print(f"Error: {e}")
+        return fallback_value or [0.0] * 768  # Return zero vector as fallback
+
+embedder = EmbeddingManager()
+
+# Safe embedding generation
+text = "Some text that might cause issues"
+embedding = safe_embedding(text, embedder)
+
+if embedding:
+    print(f"Successfully generated embedding: {len(embedding)} dimensions")
+else:
+    print("Using fallback embedding")
+```
+
+### Monitoring and Metrics
+
+```python
+import time
+from abstractllm.embeddings import EmbeddingManager
+
+class MonitoredEmbeddingManager:
+    def __init__(self, *args, **kwargs):
+        self.embedder = EmbeddingManager(*args, **kwargs)
+        self.stats = {
+            'total_calls': 0,
+            'total_time': 0,
+            'cache_hits': 0,
+            'cache_misses': 0
+        }
+
+    def embed(self, text):
+        start_time = time.time()
+        result = self.embedder.embed(text)
+        duration = time.time() - start_time
+
+        self.stats['total_calls'] += 1
+        self.stats['total_time'] += duration
+
+        return result
+
+    def get_stats(self):
+        avg_time = self.stats['total_time'] / max(self.stats['total_calls'], 1)
+        return {
+            **self.stats,
+            'average_time': avg_time,
+            'calls_per_second': 1 / avg_time if avg_time > 0 else 0
+        }
+
+# Usage
+monitored_embedder = MonitoredEmbeddingManager()
+
+# Generate some embeddings
+for i in range(10):
+    monitored_embedder.embed(f"Test text number {i}")
+
+# Check performance
+stats = monitored_embedder.get_stats()
+print(f"Total calls: {stats['total_calls']}")
+print(f"Average time per call: {stats['average_time']:.3f}s")
+print(f"Calls per second: {stats['calls_per_second']:.1f}")
+```
+
+## When to Use Embeddings
+
+### ✅ Good Use Cases
+
+- **Semantic Search**: Find relevant documents based on meaning, not keywords
+- **RAG Applications**: Select relevant context for language model queries
+- **Content Recommendation**: Find similar articles, products, or content
+- **Clustering**: Group similar documents or texts together
+- **Duplicate Detection**: Find near-duplicate content
+- **Multi-language Search**: Search across different languages
+
+### ❌ Not Ideal For
+
+- **Exact Matching**: Use traditional text search for exact matches
+- **Structured Data**: Use SQL databases for structured queries
+- **Real-time Critical Applications**: Embedding computation has latency
+- **Very Short Texts**: Embeddings work better with meaningful content
+- **High-frequency Operations**: Consider caching for repeated queries
 
 ## Next Steps
 
-1. **Explore Examples**: Check `examples/` directory for complete applications
-2. **Integration**: Combine with AbstractLLM providers for full RAG pipelines
-3. **Production**: Deploy with monitoring and caching optimizations
-4. **Contributing**: Report issues and contribute improvements
+- **Start Simple**: Try the semantic search example with your own data
+- **Experiment with Models**: Compare different embedding models for your use case
+- **Optimize Performance**: Use batch processing and caching for production
+- **Build RAG**: Combine embeddings with AbstractCore LLMs for RAG applications
 
-For more information, see the main [README.md](../README.md) or visit the [GitHub repository](https://github.com/lpalbou/AbstractCore).
+For more information:
+- [Examples](examples.md) - More practical examples
+- [API Reference](api_reference.md) - Complete EmbeddingManager API
+- [Getting Started](getting-started.md) - Basic AbstractCore setup
+
+---
+
+**Remember**: Embeddings are the foundation for semantic understanding. Combined with AbstractCore's LLM capabilities, you can build sophisticated AI applications that understand meaning, not just keywords.
