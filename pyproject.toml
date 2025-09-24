@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "abstractcore"
-version = "2.0.0"
+version = "2.1.0"
 description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
 readme = "README.md"
 license = {text = "MIT"}
@@ -86,6 +86,11 @@ mlx = [
     "mlx-lm>=0.15.0,<1.0.0",
 ]
 
+embeddings = [
+    "sentence-transformers>=2.7.0,<4.0.0",
+    "numpy>=1.20.0,<2.0.0",
+]
+
 # Provider groups for convenience
 api-providers = [
     "abstractllm[openai,anthropic]",
@@ -101,11 +106,15 @@ heavy-providers = [
 
 # Comprehensive installations
 all-providers = [
-    "abstractllm[openai,anthropic,ollama,lmstudio,huggingface,mlx]",
+    "abstractllm[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
+]
+
+all = [
+    "abstractllm[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
 ]
 
 lightweight = [
-    "abstractllm[openai,anthropic,ollama,lmstudio]",
+    "abstractllm[openai,anthropic,ollama,lmstudio,embeddings]",
 ]
 
 # Development dependencies
@@ -144,7 +153,7 @@ full-dev = [
 ]
 
 [tool.setuptools]
-packages = ["abstractllm"]
+packages = ["abstractllm", "abstractllm.core", "abstractllm.providers", "abstractllm.tools", "abstractllm.structured", "abstractllm.events", "abstractllm.embeddings", "abstractllm.architectures", "abstractllm.utils", "abstractllm.assets"]
 
 [tool.setuptools.package-data]
 abstractllm = [
