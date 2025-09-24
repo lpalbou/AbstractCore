@@ -134,7 +134,6 @@ server = [
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "click>=8.1.0,<9.0.0",
 ]
 
 # Testing dependencies
@@ -160,8 +159,6 @@ full-dev = [
     "abstractllm[all-providers,dev,test,docs]",
 ]
 
-[project.scripts]
-abstractcore-server = "abstractllm.server.cli:serve"
 
 [tool.setuptools]
 packages = ["abstractllm", "abstractllm.core", "abstractllm.providers", "abstractllm.tools", "abstractllm.structured", "abstractllm.events", "abstractllm.embeddings", "abstractllm.architectures", "abstractllm.utils", "abstractllm.assets", "abstractllm.server"]

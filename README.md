@@ -9,7 +9,7 @@ AbstractCore provides a unified interface to all LLM providers (OpenAI, Anthropi
 ```bash
 # Start the universal server
 pip install abstractcore[server]
-abstractcore-server
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
 
 # Use ANY provider through simple URLs or OpenAI clients!
 ```
@@ -284,10 +284,10 @@ Turn AbstractCore into a universal API gateway that makes ANY LLM provider OpenA
 
 ```bash
 # Start the server
-abstractcore-server
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
 
-# Custom provider and model
-abstractcore-server --provider anthropic --model claude-3-5-haiku-latest
+# With reload for development
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 **Two ways to use:**
