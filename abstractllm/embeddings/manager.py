@@ -13,11 +13,23 @@ from pathlib import Path
 from typing import List, Optional, Union, Any, Dict
 import time
 
+try:
+    import sentence_transformers
+except ImportError:
+    sentence_transformers = None
+
+try:
+    from ..events import EventType, emit_global
+except ImportError:
+    EventType = None
+    emit_global = None
+
 from .models import (
     EmbeddingModelConfig,
     EmbeddingBackend,
     get_model_config,
-    get_default_model
+    get_default_model,
+    list_available_models
 )
 
 logger = logging.getLogger(__name__)
@@ -60,7 +72,7 @@ class EmbeddingManager:
             model = get_default_model()
 
         # Handle both model names and direct HuggingFace IDs
-        if model in ["embeddinggemma", "stella-400m", "nomic-embed", "mxbai-large"]:
+        if model in list_available_models():
             self.model_config = get_model_config(model)
             self.model_id = self.model_config.model_id
         else:
@@ -69,7 +81,7 @@ class EmbeddingManager:
             self.model_config = None
 
         self.backend = EmbeddingBackend(backend) if backend != "auto" else None
-        self.cache_dir = cache_dir or Path.home() / ".abstractllm" / "embeddings"
+        self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".abstractllm" / "embeddings"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_size = cache_size
         self.output_dims = output_dims
@@ -94,9 +106,8 @@ class EmbeddingManager:
         self.cache_file = self.cache_dir / f"{cache_name}_cache.pkl"
         self._persistent_cache = self._load_persistent_cache()
 
-        # Import events if available
-        try:
-            from ..events import EventType, emit_global
+        # Configure events if available
+        if EventType is not None and emit_global is not None:
             self.has_events = True
             self.EventType = EventType
             self.emit_global = emit_global
@@ -106,14 +117,16 @@ class EmbeddingManager:
                 EventType.EMBEDDING_GENERATED = "embedding_generated"
             if not hasattr(EventType, 'EMBEDDING_CACHED'):
                 EventType.EMBEDDING_CACHED = "embedding_cached"
-
-        except ImportError:
+            if not hasattr(EventType, 'EMBEDDING_BATCH_GENERATED'):
+                EventType.EMBEDDING_BATCH_GENERATED = "embedding_batch_generated"
+        else:
             self.has_events = False
 
     def _load_model(self):
         """Load the embedding model with optimal backend."""
         try:
-            import sentence_transformers
+            if sentence_transformers is None:
+                raise ImportError("sentence-transformers is required but not installed")
 
             # Determine best backend
             backend = self._select_backend()
@@ -165,7 +178,8 @@ class EmbeddingManager:
         """Load persistent cache from disk."""
         try:
             if self.cache_file.exists():
-                with open(self.cache_file, 'rb') as f:
+                import builtins
+                with builtins.open(self.cache_file, 'rb') as f:
                     cache = pickle.load(f)
                 logger.debug(f"Loaded {len(cache)} embeddings from persistent cache")
                 return cache
@@ -178,7 +192,8 @@ class EmbeddingManager:
         try:
             # Ensure directory exists
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.cache_file, 'wb') as f:
+            import builtins
+            with builtins.open(self.cache_file, 'wb') as f:
                 pickle.dump(self._persistent_cache, f)
             logger.debug(f"Saved {len(self._persistent_cache)} embeddings to persistent cache")
         except Exception as e:

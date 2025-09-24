@@ -122,7 +122,7 @@ class TestCompletelyRealEmbeddings:
             assert stats["memory_cache_info"]["hits"] > 0
             print(f"✅ Caching: {cache_time:.4f}s for cached retrieval")
 
-            return True
+            pass  # Test completed successfully
 
         except ImportError:
             pytest.skip("sentence-transformers not available")
@@ -190,7 +190,7 @@ class TestCompletelyRealEmbeddings:
 
                 print(f"✅ Query '{query}' correctly matched relevant content")
 
-            return True
+            pass  # Test completed successfully
 
         except ImportError:
             pytest.skip("sentence-transformers not available")
@@ -258,7 +258,7 @@ Based on the provided context, please answer the question:"""
 
                 print(f"✅ RAG pipeline successfully found relevant context for: '{question}'")
 
-            return True
+            pass  # Test completed successfully
 
         except ImportError:
             pytest.skip("sentence-transformers not available")
@@ -341,7 +341,7 @@ Based on the provided context, please answer the question:"""
                 print(f"   Cache speedup: >1000x (too fast to measure)")
             print(f"   Cache stats: {stats['memory_cache_info']['hits']} hits")
 
-            return True
+            pass  # Test completed successfully
 
         except ImportError:
             pytest.skip("sentence-transformers not available")
