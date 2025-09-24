@@ -764,10 +764,31 @@ def write_file(file_path: str, content: str = "", mode: str = "w", create_dirs: 
                 "query": "data protection regulations",
                 "region": "uk-en"
             }
+        },
+        {
+            "description": "Search for recent news (past 24 hours)",
+            "arguments": {
+                "query": "AI developments news",
+                "time_range": "h"
+            }
+        },
+        {
+            "description": "Find articles from the past week",
+            "arguments": {
+                "query": "Python programming tutorials",
+                "time_range": "w"
+            }
+        },
+        {
+            "description": "Get recent research (past month)",
+            "arguments": {
+                "query": "machine learning research papers",
+                "time_range": "m"
+            }
         }
     ]
 )
-def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", region: str = "us-en") -> str:
+def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", region: str = "us-en", time_range: Optional[str] = None) -> str:
     """
     Search the internet using DuckDuckGo (no API key required).
 
@@ -776,56 +797,120 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
         num_results: Number of results to return (default: 5)
         safe_search: Content filtering level - "strict", "moderate", or "off" (default: "moderate")
         region: Regional results preference - "us-en", "uk-en", "ca-en", "au-en", etc. (default: "us-en")
+        time_range: Time range filter for results (optional):
+            - "h" or "24h": Past 24 hours
+            - "d": Past day
+            - "w" or "7d": Past week
+            - "m" or "30d": Past month
+            - "y" or "1y": Past year
+            - None: All time (default)
 
     Returns:
         Search results or error message
 
     Note:
-        DuckDuckGo Instant Answer API does not support time range filtering.
-        For time-specific searches, include date terms in your query (e.g., "python best practices 2025").
+        Time range filtering requires the ddgs library (pip install ddgs).
+        For best results with current news, use time_range="d" or "h".
     """
     try:
-        # Simple DuckDuckGo instant answer API
-        url = "https://api.duckduckgo.com/"
+        # Try using duckduckgo-search library first (best approach)
+        try:
+            from ddgs import DDGS
+
+            time_info = f" (past {time_range})" if time_range else ""
+            results = [f"🔍 Search results for: '{query}'{time_info}"]
+
+            with DDGS() as ddgs:
+                # Prepare search parameters
+                search_params = {
+                    'query': query,
+                    'max_results': num_results,
+                    'region': region,
+                    'safesearch': safe_search
+                }
+
+                # Add time range filter if specified
+                if time_range:
+                    search_params['timelimit'] = time_range
+
+                # Get text search results
+                search_results = list(ddgs.text(**search_params))
+
+                if search_results:
+                    results.append(f"\n🌐 Web Results:")
+
+                    for i, result in enumerate(search_results, 1):
+                        title = result.get('title', 'No title')
+                        url = result.get('href', '')
+                        body = result.get('body', '')
+
+                        # Clean and format
+                        title = title[:100] + "..." if len(title) > 100 else title
+                        body = body[:150] + "..." if len(body) > 150 else body
+
+                        results.append(f"\n{i}. {title}")
+                        results.append(f"   🔗 {url}")
+                        if body:
+                            results.append(f"   📄 {body}")
+
+                    return "\n".join(results)
+
+        except ImportError:
+            # Fallback if duckduckgo-search is not installed
+            pass
+        except Exception as e:
+            # If duckduckgo-search fails, continue with fallback
+            pass
+
+        # Fallback: Use instant answer API for basic queries
+        api_url = "https://api.duckduckgo.com/"
         params = {
             'q': query,
             'format': 'json',
             'no_html': '1',
             'skip_disambig': '1',
-            'no_redirect': '1',  # Faster responses
-            'safe_search': safe_search,
-            'region': region
+            'no_redirect': '1'
         }
 
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(api_url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
 
-        results = []
-        results.append(f"Search results for: '{query}'")
+        results = [f"🔍 Search results for: '{query}'"]
+        found_content = False
 
         # Abstract (main result)
-        if data.get('Abstract'):
+        if data.get('Abstract') and data['Abstract'].strip():
             results.append(f"\n📝 Summary: {data['Abstract']}")
             if data.get('AbstractURL'):
-                results.append(f"Source: {data['AbstractURL']}")
+                results.append(f"📎 Source: {data['AbstractURL']}")
+            found_content = True
 
-        # Related topics
-        if data.get('RelatedTopics'):
-            results.append(f"\n🔗 Related Topics:")
-            for i, topic in enumerate(data['RelatedTopics'][:num_results], 1):
-                if isinstance(topic, dict) and 'Text' in topic:
-                    text = topic['Text'][:200] + "..." if len(topic['Text']) > 200 else topic['Text']
+        # Direct Answer
+        if data.get('Answer') and data['Answer'].strip():
+            results.append(f"\n💡 Answer: {data['Answer']}")
+            found_content = True
+
+        # Related Topics
+        if data.get('RelatedTopics') and isinstance(data['RelatedTopics'], list):
+            valid_topics = [t for t in data['RelatedTopics'] if isinstance(t, dict) and t.get('Text')]
+            if valid_topics:
+                results.append(f"\n🔗 Related Information:")
+                for i, topic in enumerate(valid_topics[:num_results], 1):
+                    text = topic['Text'].replace('<b>', '').replace('</b>', '')
+                    text = text[:200] + "..." if len(text) > 200 else text
                     results.append(f"{i}. {text}")
-                    if 'FirstURL' in topic:
-                        results.append(f"   URL: {topic['FirstURL']}")
+                    if topic.get('FirstURL'):
+                        results.append(f"   🔗 {topic['FirstURL']}")
+                    results.append("")
+                found_content = True
 
-        # Answer (if available)
-        if data.get('Answer'):
-            results.append(f"\n💡 Direct Answer: {data['Answer']}")
-
-        if len(results) == 1:  # Only the header
-            results.append("\nNo detailed results found. Try a more specific query.")
+        if not found_content:
+            results.append(f"\n⚠️ Limited results for '{query}'")
+            results.append(f"\n💡 For better web search results:")
+            results.append(f"• Install ddgs: pip install ddgs")
+            results.append(f"• This provides real web search results, not just instant answers")
+            results.append(f"• Manual search: https://duckduckgo.com/?q={query.replace(' ', '+')}")
 
         return "\n".join(results)
 

@@ -343,6 +343,38 @@ class User(BaseModel):
         return v
 ```
 
+## Interactive CLI Tool
+
+For quick testing and exploration, AbstractCore includes a basic CLI tool:
+
+```bash
+# Interactive chat with any provider
+python -m abstractllm.utils.cli --provider ollama --model qwen2.5-coder:7b
+
+# Quick one-off questions
+python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --prompt "What is Python?"
+
+# With web search capabilities
+# Try: "search for today's AI news" or "find recent Python tutorials"
+```
+
+**Available Commands:**
+- `/help` - Show available commands
+- `/quit` - Exit the CLI
+- `/clear` - Clear conversation history
+- `/stream` - Toggle streaming mode
+- `/debug` - Toggle debug output
+- `/history` - Show conversation history
+- `/model <provider:model>` - Switch providers/models
+
+**Built-in Tools:**
+- `list_files` - List files in directories
+- `read_file` - Read file contents
+- `execute_command` - Run shell commands
+- `web_search` - Search the web with DuckDuckGo (supports time filtering!)
+
+> **Note**: This CLI is a basic demonstrator. For production applications requiring complex reasoning or advanced agent behaviors, build custom solutions using the AbstractCore framework directly.
+
 ## What's Next?
 
 Now that you have the basics:

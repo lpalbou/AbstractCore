@@ -58,12 +58,14 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 - **🌐 Universal API Server**: OpenAI-compatible endpoints for ALL providers
 - **🔌 Universal Provider Support**: Same API for OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - **🛠️ Tool Calling**: Native support across all providers with automatic execution
+- **🔍 Web Search**: Real-time DuckDuckGo search with time filtering and regional results
 - **📊 Structured Output**: Type-safe JSON responses with Pydantic validation
 - **⚡ Streaming**: Real-time responses with proper tool handling
 - **🔄 Retry & Circuit Breakers**: Production-grade error handling and recovery
 - **🔔 Event System**: Comprehensive observability and monitoring hooks
 - **🔢 Vector Embeddings**: SOTA open-source embeddings for RAG applications
 - **💬 Simple Sessions**: Conversation memory without complexity
+- **⌨️ Basic CLI**: Interactive command-line tool for testing and demonstration
 
 ### ❌ What AbstractCore Doesn't Do
 
@@ -119,6 +121,35 @@ person = llm.generate(
 )
 print(f"{person.name} is {person.age}")  # John Doe is 25
 ```
+
+### Basic CLI Tool
+
+AbstractCore includes a simple CLI tool for quick testing and demonstration:
+
+```bash
+# Interactive chat with any provider
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+
+# Single prompt execution
+python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --prompt "What is Python?"
+
+# With streaming
+python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-20241022 --stream
+
+# Commands: /help /quit /clear /stream /debug /history /model <spec>
+# Built-in tools: list_files, read_file, execute_command, web_search
+```
+
+**Capabilities & Limitations:**
+- ✅ Basic chat interactions with conversation history
+- ✅ Built-in tools for file operations and web search
+- ✅ All AbstractCore providers supported
+- ✅ Streaming mode and debug output
+- ❌ No ReAct patterns or complex reasoning chains
+- ❌ No adaptive actions or advanced agent behaviors
+- ❌ Limited to basic demonstration purposes
+
+**Note**: This CLI is a basic demonstrator. For production applications requiring advanced reasoning, multi-step tool chains, or complex agent behaviors, build custom solutions using the AbstractCore framework directly.
 
 ## Provider Support
 
@@ -218,6 +249,37 @@ for chunk in llm.generate("Write a haiku about coding", stream=True):
     print(chunk.content, end="", flush=True)
 print()  # Code flows like rain / Logic blooms in endless loops / Beauty in the bugs
 ```
+
+### Built-in Web Search
+
+AbstractCore includes a powerful web search tool with DuckDuckGo integration:
+
+```python
+from abstractllm.tools.common_tools import web_search
+
+# Recent news (past 24 hours)
+results = web_search("AI developments news", time_range="h")
+
+# Research from past week
+results = web_search("Python tutorials", time_range="w", region="us-en")
+
+# Academic papers from past month
+results = web_search("machine learning research", time_range="m", safe_search="strict")
+```
+
+**Time Range Options:**
+- `"h"` - Past 24 hours
+- `"d"` - Past day
+- `"w"` - Past week
+- `"m"` - Past month
+- `"y"` - Past year
+
+**Features:**
+- Real web results with titles, URLs, and descriptions
+- Time range filtering for current content
+- Regional results (us-en, uk-en, etc.)
+- Safe search controls
+- No API key required
 
 ### Production Reliability
 
