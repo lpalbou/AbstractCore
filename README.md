@@ -1,13 +1,45 @@
 # AbstractCore
 
-**A unified Python interface to all LLM providers with production-grade reliability**
+**Universal LLM Infrastructure: One API for All Models** 🚀
 
-AbstractCore (preview of AbstractLLM v2) provides a clean, consistent API for OpenAI, Anthropic, Ollama, MLX, and more - with built-in retry logic, streaming, tool calling, and structured output.
+AbstractCore provides a unified interface to all LLM providers (OpenAI, Anthropic, Ollama, MLX, and more) with production-grade reliability AND a universal API server that makes any model OpenAI-compatible.
+
+## 🎯 New: AbstractCore Server - Use Any LLM with OpenAI Clients
+
+```bash
+# Start the universal API server
+pip install abstractcore[server]
+abstractcore-server
+
+# Now use ANY provider with OpenAI's client!
+```
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+
+# Use Claude with OpenAI's client! 🤯
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{"role": "user", "content": "Hello Claude!"}]
+)
+
+# Or local Ollama models!
+response = client.chat.completions.create(
+    model="ollama/llama3:8b",
+    messages=[{"role": "user", "content": "Hello Llama!"}]
+)
+```
+
+**[Learn more about the server →](docs/server.md)**
+
+## Python Library Usage
 
 ```python
 from abstractllm import create_llm
 
-# Works with any provider - same simple interface
+# Direct Python interface - same code for any provider
 llm = create_llm("openai", model="gpt-4o-mini")  # or "anthropic", "ollama"...
 response = llm.generate("What is the capital of France?")
 print(response.content)  # "The capital of France is Paris."
@@ -21,6 +53,7 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 
 ### ✅ What AbstractCore Does Well
 
+- **🌐 Universal API Server**: OpenAI-compatible endpoints for ALL providers
 - **🔌 Universal Provider Support**: Same API for OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - **🛠️ Tool Calling**: Native support across all providers with automatic execution
 - **📊 Structured Output**: Type-safe JSON responses with Pydantic validation
@@ -45,13 +78,18 @@ AbstractCore is **infrastructure, not application logic**. For more advanced cap
 ### Installation
 
 ```bash
-# Core package
-pip install abstractcore
+# Quick start with server and common providers
+pip install abstractcore[server,openai,anthropic]
 
-# With providers you need
+# Or install everything
+pip install abstractcore[all]
+
+# Minimal installation options
+pip install abstractcore                     # Core only
 pip install abstractcore[openai,anthropic]  # API providers
 pip install abstractcore[ollama,mlx]        # Local providers
 pip install abstractcore[embeddings]        # Vector embeddings
+pip install abstractcore[server]            # API server
 ```
 
 ### 30-Second Example
@@ -95,16 +133,17 @@ print(f"{person.name} is {person.age}")  # John Doe is 25
 
 | Feature | AbstractCore | LiteLLM | LangChain | LangGraph |
 |---------|-------------|----------|-----------|-----------|
-| **Focus** | Clean LLM interface | API compatibility | Full framework | Agent workflows |
-| **Size** | Lightweight (~8k LOC) | Lightweight | Heavy (100k+ LOC) | Medium |
+| **Focus** | Clean LLM interface + API server | API compatibility | Full framework | Agent workflows |
+| **API Server** | ✅ Built-in OpenAI-compatible | ✅ Proxy server | ❌ None | ❌ None |
+| **Size** | Lightweight (~10k LOC) | Lightweight | Heavy (100k+ LOC) | Medium |
 | **Tool Calling** | ✅ Universal execution | ⚠️ Pass-through only | ✅ Via integrations | ✅ Native |
 | **Streaming** | ✅ With tool support | ✅ Basic | ✅ Basic | ❌ Limited |
 | **Structured Output** | ✅ With retry logic | ❌ None | ⚠️ Via parsers | ⚠️ Basic |
 | **Production Ready** | ✅ Retry + circuit breakers | ⚠️ Basic | ✅ Via LangSmith | ✅ Via LangSmith |
 
-**Choose AbstractCore if**: You want clean LLM infrastructure without framework lock-in.
+**Choose AbstractCore if**: You want clean LLM infrastructure with a universal API server.
 **Choose LangChain if**: You need pre-built RAG/agent components and don't mind complexity.
-**Choose LiteLLM if**: You only need API compatibility without advanced features.
+**Choose LiteLLM if**: You only need basic API compatibility without advanced features.
 
 ## Core Features
 
@@ -226,6 +265,52 @@ similarity = embedder.compute_similarity(
 print(f"Similarity: {similarity:.3f}")  # 0.847
 ```
 
+## AbstractCore Server
+
+Turn AbstractCore into a universal API gateway that makes ANY LLM provider OpenAI-compatible:
+
+### Key Server Features
+
+- **🔄 Universal Compatibility**: Use OpenAI clients with Claude, Llama, or any model
+- **📊 Dynamic Discovery**: Auto-detects available models without hardcoding
+- **🛠️ Tool Management**: Register and execute tools via API
+- **💾 Session Management**: Maintain conversation context across requests
+- **📡 Real-time Events**: Stream events via SSE for monitoring
+- **🔌 Drop-in Replacement**: Works with any OpenAI-compatible application
+
+### Server Quick Start
+
+```bash
+# Start server with default settings
+abstractcore-server
+
+# Custom provider and model
+abstractcore-server --provider anthropic --model claude-3-5-haiku-latest
+
+# View all options
+abstractcore-server --help
+```
+
+Then use with any OpenAI client:
+
+```javascript
+// Works with JavaScript/TypeScript too!
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:8000/v1',
+  apiKey: 'not-needed'
+});
+
+// Use ANY provider through OpenAI SDK
+const response = await client.chat.completions.create({
+  model: 'ollama/qwen3-coder:30b',
+  messages: [{ role: 'user', content: 'Hello!' }]
+});
+```
+
+**[Full server documentation →](docs/server.md)**
+
 ## Advanced Capabilities
 
 AbstractCore is designed as infrastructure. For advanced AI applications, combine with:
@@ -238,6 +323,7 @@ Autonomous agents with planning, tool execution, and self-improvement capabiliti
 
 ## Documentation
 
+- **[🌐 Server Guide](docs/server.md)** - Universal API server documentation
 - **[Getting Started](docs/getting-started.md)** - Your first AbstractCore program
 - **[Capabilities](docs/capabilities.md)** - What AbstractCore can and cannot do
 - **[Providers](docs/providers.md)** - Complete provider guide
