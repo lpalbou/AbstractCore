@@ -4,14 +4,22 @@
 
 AbstractCore provides a unified interface to all LLM providers (OpenAI, Anthropic, Ollama, MLX, and more) with production-grade reliability AND a universal API server that makes any model OpenAI-compatible.
 
-## 🎯 New: AbstractCore Server - Use Any LLM with OpenAI Clients
+## 🎯 New: AbstractCore Server - Universal LLM Gateway
 
 ```bash
-# Start the universal API server
+# Start the universal server
 pip install abstractcore[server]
 abstractcore-server
 
-# Now use ANY provider with OpenAI's client!
+# Use ANY provider through simple URLs or OpenAI clients!
+```
+
+### Super Simple Usage
+```bash
+# Just URL parameters - no JSON needed!
+curl "http://localhost:8000/chat?message=Hello&provider=anthropic"
+
+# Or use any OpenAI client
 ```
 
 ```python
@@ -24,15 +32,9 @@ response = client.chat.completions.create(
     model="anthropic/claude-3-5-haiku-latest",
     messages=[{"role": "user", "content": "Hello Claude!"}]
 )
-
-# Or local Ollama models!
-response = client.chat.completions.create(
-    model="ollama/llama3:8b",
-    messages=[{"role": "user", "content": "Hello Llama!"}]
-)
 ```
 
-**[Learn more about the server →](docs/server.md)**
+**[Server documentation →](docs/server.md)**
 
 ## Python Library Usage
 
@@ -281,20 +283,22 @@ Turn AbstractCore into a universal API gateway that makes ANY LLM provider OpenA
 ### Server Quick Start
 
 ```bash
-# Start server with default settings
+# Start the server
 abstractcore-server
 
 # Custom provider and model
 abstractcore-server --provider anthropic --model claude-3-5-haiku-latest
-
-# View all options
-abstractcore-server --help
 ```
 
-Then use with any OpenAI client:
+**Two ways to use:**
 
+1. **Super Simple** (URL parameters)
+```bash
+curl "http://localhost:8000/chat?message=Hello&provider=anthropic"
+```
+
+2. **OpenAI Compatible** (any programming language)
 ```javascript
-// Works with JavaScript/TypeScript too!
 import OpenAI from 'openai';
 
 const client = new OpenAI({
@@ -302,14 +306,13 @@ const client = new OpenAI({
   apiKey: 'not-needed'
 });
 
-// Use ANY provider through OpenAI SDK
 const response = await client.chat.completions.create({
   model: 'ollama/qwen3-coder:30b',
   messages: [{ role: 'user', content: 'Hello!' }]
 });
 ```
 
-**[Full server documentation →](docs/server.md)**
+**[Server documentation →](docs/server.md)**
 
 ## Advanced Capabilities
 

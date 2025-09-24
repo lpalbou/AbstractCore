@@ -51,13 +51,13 @@ def serve(host: str, port: int, reload: bool, log_level: str, provider: str, mod
     Run the AbstractCore server.
 
     Examples:
-        # Run with defaults
+        # Start the server
         abstractcore-server
 
-        # Run with custom provider
+        # Custom provider and model
         abstractcore-server --provider anthropic --model claude-3-5-haiku-latest
 
-        # Development mode with reload
+        # Development mode
         abstractcore-server --reload --log-level debug
 
         # Custom host and port
@@ -70,7 +70,7 @@ def serve(host: str, port: int, reload: bool, log_level: str, provider: str, mod
 
     # Print startup banner
     click.echo("=" * 60)
-    click.echo("🚀 AbstractCore Server - Universal LLM API Gateway")
+    click.echo("🚀 AbstractCore Server - Universal LLM Gateway")
     click.echo("=" * 60)
     click.echo(f"📍 Host: {host}:{port}")
     click.echo(f"📦 Default Provider: {provider}")
@@ -81,10 +81,16 @@ def serve(host: str, port: int, reload: bool, log_level: str, provider: str, mod
         click.echo("🔄 Auto-reload: Enabled")
     click.echo("=" * 60)
     click.echo("")
+    click.echo("✨ Quick Start Examples:")
+    click.echo(f"   • Simple Chat: http://{'localhost' if host == '0.0.0.0' else host}:{port}/chat?message=Hello")
+    click.echo(f"   • Streaming: http://{'localhost' if host == '0.0.0.0' else host}:{port}/chat?message=Tell%20a%20story&stream=true")
+    click.echo(f"   • List Models: http://{'localhost' if host == '0.0.0.0' else host}:{port}/models")
+    click.echo(f"   • Test Providers: http://{'localhost' if host == '0.0.0.0' else host}:{port}/test")
+    click.echo("")
     click.echo("📚 API Documentation: http://{}:{}/docs".format(
         'localhost' if host == '0.0.0.0' else host, port
     ))
-    click.echo("🔌 OpenAI Endpoint: http://{}:{}/v1".format(
+    click.echo("🔌 OpenAI Endpoint: http://{}:{}/v1/chat/completions".format(
         'localhost' if host == '0.0.0.0' else host, port
     ))
     click.echo("")
@@ -92,10 +98,11 @@ def serve(host: str, port: int, reload: bool, log_level: str, provider: str, mod
     click.echo("=" * 60)
 
     # Import and run server
-    from .app import run_server
+    import uvicorn
 
     try:
-        run_server(
+        uvicorn.run(
+            "abstractllm.server.app:app",
             host=host,
             port=port,
             reload=reload,
