@@ -352,7 +352,7 @@ class OpenAIEmbeddingRequest(BaseModel):
 app = FastAPI(
     title="AbstractCore Server",
     description="Universal LLM Gateway - OpenAI-Compatible API for ALL Providers",
-    version="1.0.0"
+    version="2.1.2"
 )
 
 app.add_middleware(

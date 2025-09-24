@@ -3,7 +3,7 @@ BasicSession for conversation tracking.
 Target: <500 lines maximum.
 """
 
-from typing import List, Optional, Dict, Any, Union, Iterator
+from typing import List, Optional, Dict, Any, Union, Iterator, Callable
 from datetime import datetime
 from pathlib import Path
 import json
@@ -26,7 +26,8 @@ class BasicSession:
 
     def __init__(self,
                  provider: Optional[AbstractLLMInterface] = None,
-                 system_prompt: Optional[str] = None):
+                 system_prompt: Optional[str] = None,
+                 tools: Optional[List[Callable]] = None):
         """Initialize basic session"""
 
         self.provider = provider
@@ -34,6 +35,7 @@ class BasicSession:
         self.created_at = datetime.now()
         self.messages: List[Message] = []
         self.system_prompt = system_prompt
+        self.tools = self._register_tools(tools) if tools else []
 
         # Add system message if provided
         if system_prompt:
@@ -72,6 +74,10 @@ class BasicSession:
 
         # Format messages for provider (exclude the current user message since provider will add it)
         messages = self._format_messages_for_provider_excluding_current()
+
+        # Use session tools if not provided in kwargs
+        if 'tools' not in kwargs and self.tools:
+            kwargs['tools'] = self.tools
 
         # Call provider
         response = self.provider.generate(
@@ -149,3 +155,14 @@ class BasicSession:
         session.messages = [Message.from_dict(m) for m in data["messages"]]
 
         return session
+
+    def _register_tools(self, tools: List[Callable]) -> List:
+        """Register tools and return tool definitions"""
+        from ..tools import ToolDefinition, register_tool
+
+        registered_tools = []
+        for func in tools:
+            tool_def = ToolDefinition.from_function(func)
+            register_tool(tool_def)
+            registered_tools.append(tool_def)
+        return registered_tools

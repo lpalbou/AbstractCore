@@ -5,6 +5,62 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2025-09-25
+
+### Added
+- **Enhanced Web Search Tool**: Complete web search functionality using DuckDuckGo with real web results
+  - Added time range filtering (`h`, `d`, `w`, `m`, `y`) for recent content discovery
+  - Improved result formatting with titles, URLs, and descriptions
+  - Better error handling and fallback to instant answer API
+  - Added comprehensive examples for news, research, and time-filtered searches
+
+- **Basic CLI Tool**: Simple command-line interface for AbstractCore demonstration
+  - Interactive REPL with conversation history and streaming support
+  - Built-in tools: list_files, read_file, execute_command, web_search
+  - Session management with provider/model switching
+  - Commands: /help, /quit, /clear, /stream, /debug, /history, /model
+  - Single prompt execution mode for scripting
+  - Clear documentation of limitations and intended use as basic demonstrator
+
+### Enhanced
+- **BasicSession Tool Support**: Added native tools parameter to session constructor
+  - Simplified tool registration: `BasicSession(provider, tools=[func1, func2])`
+  - Automatic tool definition creation and registration
+  - Eliminated complex tool registration ceremony
+  - Improved developer experience with cleaner API
+
+- **Web Search Improvements**: Upgraded from limited instant answers to full web search
+  - Real search results using `ddgs` library instead of instant answer API only
+  - Regional filtering working correctly (us-en, uk-en, etc.)
+  - Safe search controls (strict, moderate, off)
+  - Comprehensive time range filtering for current events and news
+  - Better result quality with actual web page content
+
+### Fixed
+- **Server CLI Removal**: Eliminated over-engineered and non-functional server CLI
+  - Removed `abstractcore-server` command and related dependencies
+  - Updated documentation to use direct uvicorn commands
+  - Removed click dependency from server requirements
+  - Simplified server deployment instructions
+
+- **Tool Registration**: Fixed web_search tool not being properly registered in CLI
+  - Added web_search to CLI tools array
+  - Updated help text and documentation
+  - Fixed import issues and ensured proper tool availability
+
+### Technical
+- Added `ddgs` library dependency for proper web search functionality
+- Enhanced tool decorator examples with time-filtering use cases
+- Improved CLI architecture with clean tool integration
+- Streamlined server deployment without unnecessary CLI wrapper
+
+### Documentation
+- Updated README.md with accurate CLI usage examples and capabilities
+- Enhanced tool documentation with time range filtering examples
+- Clarified CLI limitations and intended use as basic demonstrator
+- Corrected server deployment instructions
+- Added comprehensive web search usage examples
+
 ## [2.1.1] - 2025-09-24
 
 ### Fixed
