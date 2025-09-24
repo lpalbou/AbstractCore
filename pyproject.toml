@@ -93,28 +93,28 @@ embeddings = [
 
 # Provider groups for convenience
 api-providers = [
-    "abstractllm[openai,anthropic]",
+    "abstractcore[openai,anthropic]",
 ]
 
 local-providers = [
-    "abstractllm[ollama,lmstudio,mlx]",
+    "abstractcore[ollama,lmstudio,mlx]",
 ]
 
 heavy-providers = [
-    "abstractllm[huggingface]",
+    "abstractcore[huggingface]",
 ]
 
 # Comprehensive installations
 all-providers = [
-    "abstractllm[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
 ]
 
 all = [
-    "abstractllm[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
 ]
 
 lightweight = [
-    "abstractllm[openai,anthropic,ollama,lmstudio,embeddings]",
+    "abstractcore[openai,anthropic,ollama,lmstudio,embeddings]",
 ]
 
 # Development dependencies
