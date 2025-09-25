@@ -5,6 +5,103 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.4] - 2025-09-26
+
+### Added
+- **CLI System Prompt Management**: New `/system [prompt]` command for controlling AI behavior
+  - `/system` - Shows current system prompt and full LLM context
+  - `/system <prompt>` - Changes system prompt while preserving tools and conversation
+  - Full visibility into system messages including compaction summaries
+  - Enables fine-grained control over AI behavior and tool usage
+
+### Fixed
+- **Critical Chat Compaction Bugs**: Resolved multiple issues in conversation summarization
+  - Fixed duplicate system messages after compaction (was creating 2-3 identical system prompts)
+  - Fixed recent messages incorrectly included in conversation summaries
+  - Summary now contains only older message context, recent messages preserved separately
+  - Clean session structure: 1 system prompt + 1 summary + N recent messages
+- **CLI History Display**: Enhanced `/history` command to show conversation summaries
+  - Displays compacted conversation summaries with clear section separation
+  - Shows both historical context and recent preserved messages
+  - Users can now see compaction actually worked (not just message deletion)
+- **Compaction Consistency**: Standardized CLI to match documentation defaults
+  - Consistent `preserve_recent=4` messages (2 interactions) across CLI and docs
+  - Updated all usage examples and documentation
+
+### Improved
+- **Session Copying**: Eliminated duplicate system messages in session copy operations
+- **BasicSummarizer**: Chat history summarization no longer duplicates recent exchanges
+- **CLI Documentation**: Updated `docs/cli-usage.md` with complete `/system` and `/history` examples
+- **Code Cleanliness**: Simplified session creation logic to prevent message duplication
+
+### Added
+- **BasicSummarizer**: Production-ready text summarization capability built on AbstractCore infrastructure
+  - Zero-shot structured prompting with sophisticated parameter control
+  - Multiple summary styles: Structured, Narrative, Objective, Analytical, Executive
+  - Configurable length levels: Brief, Standard, Detailed, Comprehensive
+  - Focus parameter for domain-specific summarization (e.g., "business implications", "technical details")
+  - Automatic document chunking with map-reduce approach for unlimited length documents
+  - Rich structured output with confidence scoring and focus alignment metrics
+  - Word count tracking and compression ratio reporting
+
+- **Processing Module**: New `abstractllm.processing` module demonstrating advanced AbstractCore usage
+  - Clean API design showcasing structured output, retry mechanisms, and provider abstraction
+  - Comprehensive documentation with real-world examples and best practices
+  - Integration with AbstractCore's event system for full observability
+
+- **Local Model Evaluation**: Comprehensive benchmarking of BasicSummarizer with local Ollama models
+  - Performance evaluation of gemma3:1b, qwen3-coder:30b, granite3.3:2b, cogito:3b
+  - Quality assessment including confidence scoring, focus alignment, and structure compliance
+  - Speed benchmarking and cost analysis for production deployment decisions
+  - Detailed reports saved in `untracked/summaries/` with model-specific performance data
+
+### Enhanced
+- **Documentation Updates**: Enhanced README.md and created comprehensive BasicSummarizer documentation
+  - Added BasicSummarizer to feature list and 30-second example
+  - Created `docs/basic-summarizer.md` with complete usage guide, examples, and best practices
+  - Updated provider selection guidance with benchmarked local model recommendations
+  - Added installation instructions for Ollama and recommended model setup
+
+- **Model Recommendations**: Evidence-based recommendations for optimal BasicSummarizer performance
+  - **Primary recommendation**: `gemma3:1b` for fast, cost-effective processing (29s, 95% confidence)
+  - **Premium option**: `qwen3-coder:30b` for highest quality (119s, 98% confidence)
+  - Clear guidance on speed vs quality trade-offs with benchmarked performance data
+  - Updated all documentation examples to showcase recommended local model setup
+
+### Technical
+- **Structured Output Integration**: BasicSummarizer demonstrates advanced AbstractCore features
+  - Seamless integration with Pydantic validation and automatic retry mechanisms
+  - Provider-agnostic implementation working identically across OpenAI, Anthropic, and Ollama
+  - Event emission for comprehensive monitoring and debugging capabilities
+  - Production-grade error handling with graceful fallbacks and detailed diagnostics
+
+- **Test Infrastructure**: Comprehensive test suite following AbstractCore's no-mocking philosophy
+  - Real-world testing with actual README.md content (15,333 characters)
+  - Integration tests with live local and cloud models
+  - Performance benchmarking and quality assessment validation
+  - Edge case handling including chunking behavior and error scenarios
+
+### Documentation
+- **Local Model Setup**: Clear instructions for cost-effective local processing
+  - Ollama installation and model download instructions (`ollama pull gemma3:1b`)
+  - Performance comparison tables with speed, quality, and cost metrics
+  - Provider selection guidance based on empirical evaluation results
+  - Cost optimization examples using free local models vs paid cloud APIs
+
+- **Usage Examples**: Comprehensive examples covering all major use cases
+  - Executive summaries for business applications
+  - Technical documentation summarization
+  - Research paper analysis with focus parameters
+  - Batch processing patterns and error handling strategies
+
+### Fixed
+- **read_file Tool Logic**: Fixed inconsistent behavior in common_tools.py read_file function
+  - Added automatic override of `should_read_entire_file` when line range parameters are provided
+  - When `start_line_one_indexed != 1` or `end_line_one_indexed_inclusive` is specified, automatically sets `should_read_entire_file = False`
+  - Prevents unexpected full-file reads when partial reads were explicitly requested
+  - Updated documentation to explain the automatic override behavior
+  - Ensures intuitive tool behavior for LLMs and users specifying line ranges
+
 ## [2.1.3] - 2025-09-25
 
 ### Added

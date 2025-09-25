@@ -2,7 +2,7 @@
 AbstractLLM - Unified interface to all LLM providers with essential infrastructure.
 """
 
-__version__ = "2.1.2"
+__version__ = "2.1.4"
 
 from .core.factory import create_llm
 from .core.session import BasicSession
@@ -16,6 +16,13 @@ try:
     _has_embeddings = True
 except ImportError:
     _has_embeddings = False
+
+# Processing module (built-in)
+try:
+    from .processing import BasicSummarizer, SummaryStyle, SummaryLength
+    _has_processing = True
+except ImportError:
+    _has_processing = False
 
 __all__ = [
     'create_llm',
@@ -32,3 +39,6 @@ __all__ = [
 
 if _has_embeddings:
     __all__.append('EmbeddingManager')
+
+if _has_processing:
+    __all__.extend(['BasicSummarizer', 'SummaryStyle', 'SummaryLength'])
