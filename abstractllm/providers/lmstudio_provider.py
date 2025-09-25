@@ -30,7 +30,7 @@ class LMStudioProvider(BaseProvider):
         self.tool_handler = UniversalToolHandler(model)
 
         self.base_url = base_url.rstrip('/')
-        self.client = httpx.Client(timeout=120.0)
+        self.client = httpx.Client(timeout=self._timeout)
 
         # Validate model exists in LMStudio
         self._validate_model()
@@ -235,6 +235,13 @@ class LMStudioProvider(BaseProvider):
         """Get max tokens parameter for LMStudio API"""
         # For LMStudio (OpenAI-compatible), max_tokens is the max output tokens
         return kwargs.get("max_output_tokens", self.max_output_tokens)
+
+    def _update_http_client_timeout(self) -> None:
+        """Update HTTP client timeout when timeout is changed."""
+        if hasattr(self, 'client'):
+            # Create new client with updated timeout
+            self.client.close()
+            self.client = httpx.Client(timeout=self._timeout)
 
 
     def _stream_generate_with_tools(self, payload: Dict[str, Any],

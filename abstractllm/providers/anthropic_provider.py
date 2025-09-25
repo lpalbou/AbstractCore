@@ -42,8 +42,8 @@ class AnthropicProvider(BaseProvider):
         if not self.api_key:
             raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY environment variable.")
 
-        # Initialize client
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        # Initialize client with timeout
+        self.client = anthropic.Anthropic(api_key=self.api_key, timeout=self._timeout)
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
@@ -414,3 +414,8 @@ class AnthropicProvider(BaseProvider):
                 "additionalProperties": False
             }
         }
+
+    def _update_http_client_timeout(self) -> None:
+        """Update Anthropic client timeout when timeout is changed."""
+        # Create new client with updated timeout
+        self.client = anthropic.Anthropic(api_key=self.api_key, timeout=self._timeout)

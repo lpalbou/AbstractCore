@@ -281,6 +281,44 @@ results = web_search("machine learning research", time_range="m", safe_search="s
 - Safe search controls
 - No API key required
 
+### Timeout Configuration
+
+Configure timeouts for HTTP requests, tools, and circuit breaker recovery:
+
+```python
+# Basic timeout configuration
+llm = create_llm(
+    "openai",
+    model="gpt-4o-mini",
+    timeout=180,            # HTTP request timeout (default: 180s)
+    tool_timeout=300,       # Tool execution timeout (default: 300s)
+)
+
+# Runtime timeout adjustments
+llm.set_timeout(120)              # Change HTTP timeout
+llm.set_tool_timeout(600)         # Change tool timeout  
+llm.set_recovery_timeout(30)      # Change circuit breaker recovery (default: 60s)
+
+# Get current timeouts
+print(f"HTTP timeout: {llm.get_timeout()}s")
+print(f"Tool timeout: {llm.get_tool_timeout()}s")
+print(f"Recovery timeout: {llm.get_recovery_timeout()}s")
+
+# Session-level timeout configuration
+from abstractllm.core.session import BasicSession
+
+session = BasicSession(
+    provider=llm,
+    timeout=60,              # Override provider HTTP timeout
+    tool_timeout=120,        # Override provider tool timeout
+    recovery_timeout=30      # Override provider recovery timeout
+)
+
+# Session timeout management
+session.set_timeout(90)
+print(f"Session timeout: {session.get_timeout()}s")
+```
+
 ### Production Reliability
 
 Built-in retry logic and circuit breakers handle provider issues automatically:

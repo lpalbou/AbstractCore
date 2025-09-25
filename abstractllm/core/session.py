@@ -27,7 +27,10 @@ class BasicSession:
     def __init__(self,
                  provider: Optional[AbstractLLMInterface] = None,
                  system_prompt: Optional[str] = None,
-                 tools: Optional[List[Callable]] = None):
+                 tools: Optional[List[Callable]] = None,
+                 timeout: Optional[float] = None,
+                 tool_timeout: Optional[float] = None,
+                 recovery_timeout: Optional[float] = None):
         """Initialize basic session"""
 
         self.provider = provider
@@ -36,6 +39,15 @@ class BasicSession:
         self.messages: List[Message] = []
         self.system_prompt = system_prompt
         self.tools = self._register_tools(tools) if tools else []
+
+        # Apply timeout configurations to provider if specified and provider exists
+        if self.provider and hasattr(self.provider, 'set_timeout'):
+            if timeout is not None:
+                self.provider.set_timeout(timeout)
+            if tool_timeout is not None:
+                self.provider.set_tool_timeout(tool_timeout)
+            if recovery_timeout is not None:
+                self.provider.set_recovery_timeout(recovery_timeout)
 
         # Add system message if provided
         if system_prompt:
@@ -166,3 +178,37 @@ class BasicSession:
             register_tool(tool_def)
             registered_tools.append(tool_def)
         return registered_tools
+
+    # Timeout management methods
+    def get_timeout(self) -> Optional[float]:
+        """Get the current HTTP request timeout in seconds."""
+        if self.provider and hasattr(self.provider, 'get_timeout'):
+            return self.provider.get_timeout()
+        return None
+
+    def set_timeout(self, timeout: float) -> None:
+        """Set the HTTP request timeout in seconds."""
+        if self.provider and hasattr(self.provider, 'set_timeout'):
+            self.provider.set_timeout(timeout)
+
+    def get_recovery_timeout(self) -> Optional[float]:
+        """Get the current circuit breaker recovery timeout in seconds."""
+        if self.provider and hasattr(self.provider, 'get_recovery_timeout'):
+            return self.provider.get_recovery_timeout()
+        return None
+
+    def set_recovery_timeout(self, timeout: float) -> None:
+        """Set the circuit breaker recovery timeout in seconds."""
+        if self.provider and hasattr(self.provider, 'set_recovery_timeout'):
+            self.provider.set_recovery_timeout(timeout)
+
+    def get_tool_timeout(self) -> Optional[float]:
+        """Get the current tool execution timeout in seconds."""
+        if self.provider and hasattr(self.provider, 'get_tool_timeout'):
+            return self.provider.get_tool_timeout()
+        return None
+
+    def set_tool_timeout(self, timeout: float) -> None:
+        """Set the tool execution timeout in seconds."""
+        if self.provider and hasattr(self.provider, 'set_tool_timeout'):
+            self.provider.set_tool_timeout(timeout)

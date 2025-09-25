@@ -1,4 +1,3 @@
-- FastAPI to access AbstractLLM as a server ?
 
 - async ? (huge dev I fear)
 
@@ -15,3 +14,4 @@ SHOULD IT BE IN ABSTRACT MEMORY OR ABSTRACT CORE ?
     - file currently attached to the context
 
 
+- timeout vs RetryConfig ?

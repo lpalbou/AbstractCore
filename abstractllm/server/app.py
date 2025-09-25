@@ -947,7 +947,7 @@ async def create_embeddings(provider: str, request: OpenAIEmbeddingRequest):
                 for i, text in enumerate(texts):
                     try:
                         # Call Ollama's embeddings API directly
-                        with httpx.Client(timeout=30.0) as client:
+                        with httpx.Client(timeout=180.0) as client:
                             response = client.post(
                                 "http://localhost:11434/api/embeddings",
                                 json={"model": embedding_model, "prompt": text},
