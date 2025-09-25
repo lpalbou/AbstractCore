@@ -1298,7 +1298,7 @@ def edit_file(
             "description": "Run command with timeout",
             "arguments": {
                 "command": "ping -c 3 google.com",
-                "timeout": 10
+                "timeout": 30
             }
         },
         {
@@ -1338,7 +1338,7 @@ def edit_file(
 def execute_command(
     command: str,
     working_directory: str = None,
-    timeout: int = 30,
+    timeout: int = 300,
     capture_output: bool = True,
     require_confirmation: bool = False,
     allow_dangerous: bool = False
@@ -1349,7 +1349,7 @@ def execute_command(
     Args:
         command: The shell command to execute
         working_directory: Directory to run the command in (default: current directory)
-        timeout: Maximum seconds to wait for command completion (default: 30)
+        timeout: Maximum seconds to wait for command completion (default: 300)
         capture_output: Whether to capture and return command output (default: True)
         require_confirmation: Whether to ask for user confirmation before execution (default: False)
         allow_dangerous: Whether to allow potentially dangerous commands (default: False)

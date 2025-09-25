@@ -42,8 +42,8 @@ class OpenAIProvider(BaseProvider):
         if not self.api_key:
             raise ValueError("OpenAI API key required. Set OPENAI_API_KEY environment variable.")
 
-        # Initialize client
-        self.client = openai.OpenAI(api_key=self.api_key)
+        # Initialize client with timeout
+        self.client = openai.OpenAI(api_key=self.api_key, timeout=self._timeout)
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
@@ -449,6 +449,11 @@ class OpenAIProvider(BaseProvider):
                     make_strict(item)
 
         make_strict(schema)
+
+    def _update_http_client_timeout(self) -> None:
+        """Update OpenAI client timeout when timeout is changed."""
+        # Create new client with updated timeout
+        self.client = openai.OpenAI(api_key=self.api_key, timeout=self._timeout)
 
     def _clean_parameters_for_openai(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """

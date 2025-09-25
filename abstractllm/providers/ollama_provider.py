@@ -27,7 +27,7 @@ class OllamaProvider(BaseProvider):
     def __init__(self, model: str = "llama2", base_url: str = "http://localhost:11434", **kwargs):
         super().__init__(model, **kwargs)
         self.base_url = base_url.rstrip('/')
-        self.client = httpx.Client(timeout=30.0)
+        self.client = httpx.Client(timeout=self._timeout)
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
@@ -300,3 +300,10 @@ class OllamaProvider(BaseProvider):
         """Get max tokens parameter for Ollama API"""
         # For Ollama, num_predict is the max output tokens
         return kwargs.get("max_output_tokens", self.max_output_tokens)
+
+    def _update_http_client_timeout(self) -> None:
+        """Update HTTP client timeout when timeout is changed."""
+        if hasattr(self, 'client'):
+            # Create new client with updated timeout
+            self.client.close()
+            self.client = httpx.Client(timeout=self._timeout)

@@ -47,6 +47,10 @@ class BaseProvider(AbstractLLMInterface, ABC):
         self.architecture_config = get_architecture_format(self.architecture)
         self.model_capabilities = get_model_capabilities(model)
 
+        # Setup timeout configuration
+        self._timeout = kwargs.get('timeout', 180.0)  # Default 180 seconds for HTTP requests
+        self._tool_timeout = kwargs.get('tool_timeout', 300.0)  # Default 300 seconds for tool execution
+
         # Setup retry manager with optional configuration
         retry_config = kwargs.get('retry_config', None)
         if retry_config is None:
@@ -601,3 +605,34 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 call_id=call.get('id')
             ))
         return tool_calls
+
+    # Timeout management methods
+    def get_timeout(self) -> float:
+        """Get the current HTTP request timeout in seconds."""
+        return self._timeout
+
+    def set_timeout(self, timeout: float) -> None:
+        """Set the HTTP request timeout in seconds."""
+        self._timeout = timeout
+        # Update HTTP clients if they exist
+        self._update_http_client_timeout()
+
+    def get_recovery_timeout(self) -> float:
+        """Get the current circuit breaker recovery timeout in seconds."""
+        return self.retry_manager.config.recovery_timeout
+
+    def set_recovery_timeout(self, timeout: float) -> None:
+        """Set the circuit breaker recovery timeout in seconds."""
+        self.retry_manager.config.recovery_timeout = timeout
+
+    def get_tool_timeout(self) -> float:
+        """Get the current tool execution timeout in seconds."""
+        return self._tool_timeout
+
+    def set_tool_timeout(self, timeout: float) -> None:
+        """Set the tool execution timeout in seconds."""
+        self._tool_timeout = timeout
+
+    def _update_http_client_timeout(self) -> None:
+        """Update HTTP client timeout if the provider has one. Override in subclasses."""
+        pass

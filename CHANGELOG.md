@@ -5,6 +5,46 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.3] - 2025-09-25
+
+### Added
+- **Comprehensive Timeout Configuration**: Full timeout management system across all components
+  - Added configurable HTTP request timeouts for all providers (default: 180 seconds)
+  - Added configurable tool execution timeouts (default: 300 seconds)
+  - Added timeout parameter support in `create_llm()` and `BasicSession()`
+  - Added runtime timeout management with get/set methods on providers and sessions
+  - Circuit breaker recovery timeout remains configurable (default: 60 seconds)
+
+### Enhanced
+- **Provider Timeout Support**: All providers now support configurable timeouts
+  - OpenAI Provider: Configurable timeout via OpenAI client
+  - Anthropic Provider: Configurable timeout via Anthropic client
+  - Ollama Provider: Configurable timeout via httpx.Client
+  - LM Studio Provider: Configurable timeout via httpx.Client
+  - Server endpoints: Updated default timeout from 30s to 180s
+
+- **Session Timeout Management**: BasicSession now supports timeout configuration
+  - Session-level timeout overrides for provider timeouts
+  - Runtime timeout adjustment methods: `get_timeout()`, `set_timeout()`, etc.
+  - Support for all three timeout types: HTTP, tool execution, and recovery
+
+### Changed
+- **Default Timeout Values**: Updated default timeouts for better production use
+  - HTTP request timeout: 30s → 180s (6x increase for better reliability)
+  - Tool execution timeout: 30s → 300s (10x increase for complex operations)
+  - Circuit breaker recovery timeout: remains 60s (unchanged)
+
+### Technical
+- Added `_update_http_client_timeout()` method to BaseProvider for dynamic timeout updates
+- Implemented timeout parameter propagation through the factory pattern
+- Enhanced BaseProvider with comprehensive timeout management methods
+- Updated all HTTP clients to use configurable timeouts instead of hardcoded values
+
+### Documentation
+- Added comprehensive timeout configuration examples to README.md
+- Updated API documentation with timeout parameter descriptions
+- Added session-level timeout configuration examples
+
 ## [2.1.2] - 2025-09-25
 
 ### Added
