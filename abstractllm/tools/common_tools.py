@@ -574,6 +574,7 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
     Args:
         file_path: Path to the file to read
         should_read_entire_file: Whether to read the entire file (default: True)
+            Note: Automatically set to False if start_line_one_indexed != 1 or end_line_one_indexed_inclusive is provided
         start_line_one_indexed: Starting line number (1-indexed, default: 1)
         end_line_one_indexed_inclusive: Ending line number (1-indexed, inclusive, optional)
 
@@ -589,6 +590,10 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
         if not path.is_file():
             return f"Error: '{file_path}' is not a file"
 
+
+        # Auto-override should_read_entire_file if line range parameters are provided
+        if start_line_one_indexed != 1 or end_line_one_indexed_inclusive is not None:
+            should_read_entire_file = False
 
         with open(path, 'r', encoding='utf-8') as f:
             if should_read_entire_file:

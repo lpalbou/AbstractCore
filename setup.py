@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="abstractcore",
-    version="2.1.3",
+    version="2.1.4",
     author="AbstractCore Team",
     description="Unified interface to all LLM providers with essential infrastructure",
     packages=find_packages(),

@@ -64,7 +64,9 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 - **🔄 Retry & Circuit Breakers**: Production-grade error handling and recovery
 - **🔔 Event System**: Comprehensive observability and monitoring hooks
 - **🔢 Vector Embeddings**: SOTA open-source embeddings for RAG applications
+- **📝 Basic Processing**: Built-in text summarization demonstrating SOTA prompt engineering
 - **💬 Simple Sessions**: Conversation memory without complexity
+- **🗜️ Chat Compaction**: SOTA conversation summarization for unlimited chat length
 - **⌨️ Basic CLI**: Interactive command-line tool for testing and demonstration
 
 ### ❌ What AbstractCore Doesn't Do
@@ -120,6 +122,27 @@ person = llm.generate(
     response_model=Person
 )
 print(f"{person.name} is {person.age}")  # John Doe is 25
+
+# Text processing with built-in summarizer (recommended: fast local model)
+local_llm = create_llm("ollama", model="gemma3:1b")  # Fast, free, 95% quality
+summarizer = BasicSummarizer(local_llm)
+result = summarizer.summarize(
+    long_text,
+    focus="business implications",
+    style=SummaryStyle.EXECUTIVE
+)
+print(result.summary)
+print(f"Confidence: {result.confidence:.2f}")
+
+# Chat history compaction for unlimited conversation length
+session = BasicSession(
+    local_llm,
+    system_prompt="You are helpful",
+    auto_compact=True,           # Enable automatic compaction
+    auto_compact_threshold=6000  # Compact when >6000 tokens
+)
+# Conversation continues indefinitely with automatic compaction
+# Or manually: session.force_compact(preserve_recent=6, focus="key decisions")
 ```
 
 ### Basic CLI Tool
@@ -431,6 +454,8 @@ Autonomous agents with planning, tool execution, and self-improvement capabiliti
 - **[Capabilities](docs/capabilities.md)** - What AbstractCore can and cannot do
 - **[Providers](docs/providers.md)** - Complete provider guide
 - **[Examples](docs/examples.md)** - Real-world use cases
+- **[Basic Summarizer](docs/basic-summarizer.md)** - Built-in text processing capabilities
+- **[Chat Compaction](docs/chat-compaction.md)** - SOTA conversation history summarization
 - **[API Reference](docs/api_reference.md)** - Complete API documentation
 - **[Architecture](docs/architecture.md)** - How it works internally
 - **[Framework Comparison](docs/comparison.md)** - Detailed comparison with alternatives

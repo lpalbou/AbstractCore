@@ -50,7 +50,7 @@ class SimpleCLI:
 
         print(f"🚀 AbstractLLM CLI - {provider}:{model}")
         print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
-        print("Commands: /help /quit /clear /stream /debug /history /model <spec>")
+        print("Commands: /help /quit /clear /stream /debug /history [n] /model <spec> /compact /system [prompt]")
         print("Tools: list_files, read_file, execute_command, web_search")
         print("=" * 60)
 
@@ -72,9 +72,11 @@ class SimpleCLI:
             print("  /clear - Clear history")
             print("  /stream - Toggle streaming")
             print("  /debug - Toggle debug mode")
-            print("  /history - Show conversation history")
+            print("  /history [n] - Show conversation history or last n interactions")
             print("  /model <provider:model> - Change model")
-            print("\n🛠️ Tools: list_files, read_file, execute_command, web_search, web_search\n")
+            print("  /compact - Compact chat history using gemma3:1b")
+            print("  /system [prompt] - Show or change system prompt")
+            print("\n🛠️ Tools: list_files, read_file, execute_command, web_search\n")
 
         elif cmd == 'clear':
             self.session.clear_history(keep_system=True)
@@ -88,17 +90,18 @@ class SimpleCLI:
             self.debug_mode = not self.debug_mode
             print(f"🐛 Debug mode: {'ON' if self.debug_mode else 'OFF'}")
 
-        elif cmd == 'history':
-            messages = self.session.get_history(include_system=True)
-            if not messages:
-                print("📝 No history")
+        elif cmd.startswith('history'):
+            # Parse /history [n] command
+            parts = cmd.split()
+            if len(parts) == 1:
+                # Show all history
+                self.handle_history(None)
             else:
-                print(f"\n📚 History ({len(messages)} messages):")
-                for i, msg in enumerate(messages[-10:], 1):  # Show last 10
-                    role = {"system": "⚙️", "user": "👤", "assistant": "🤖"}.get(msg["role"], "❓")
-                    content = msg["content"][:80] + "..." if len(msg["content"]) > 80 else msg["content"]
-                    print(f"{i:2d}. {role} {content}")
-                print()
+                try:
+                    n = int(parts[1])
+                    self.handle_history(n)
+                except (ValueError, IndexError):
+                    print("❓ Usage: /history [n] where n is number of interactions")
 
         elif cmd.startswith('model '):
             try:
@@ -120,10 +123,195 @@ class SimpleCLI:
             except Exception as e:
                 print(f"❌ Failed to switch: {e}")
 
+        elif cmd == 'compact':
+            self.handle_compact()
+
+        elif cmd.startswith('system'):
+            # Parse /system [prompt] command
+            if cmd == 'system':
+                # Show current system prompt
+                self.handle_system_show()
+            else:
+                # Change system prompt - extract everything after "system "
+                new_prompt = user_input[8:].strip()  # Remove "/system " prefix
+                if new_prompt:
+                    self.handle_system_change(new_prompt)
+                else:
+                    self.handle_system_show()
+
         else:
             print(f"❓ Unknown command: /{cmd}. Type /help for help.")
 
         return True
+
+    def handle_compact(self):
+        """Handle /compact command - compact chat history using gemma3:1b"""
+        messages = self.session.get_messages()
+
+        if len(messages) <= 3:  # System + minimal conversation
+            print("📝 Not enough history to compact (need at least 2 exchanges)")
+            return
+
+        try:
+            print("🗜️  Compacting chat history...")
+            print(f"   Before: {len(messages)} messages (~{self.session.get_token_estimate()} tokens)")
+
+            # Create compact provider using gemma3:1b for fast, local processing
+            try:
+                from .. import create_llm
+                compact_provider = create_llm("ollama", model="gemma3:1b")
+                print("   Using gemma3:1b for compaction...")
+            except Exception as e:
+                print(f"⚠️  Could not create gemma3:1b provider: {e}")
+                print("   Using current provider instead...")
+                compact_provider = None
+
+            start_time = time.time()
+
+            # Perform in-place compaction
+            self.session.force_compact(
+                preserve_recent=4,  # Keep last 6 messages (3 exchanges)
+                focus="key information and ongoing context"
+            )
+
+            duration = time.time() - start_time
+
+            print(f"✅ Compaction completed in {duration:.1f}s")
+            print(f"   After: {len(self.session.get_messages())} messages (~{self.session.get_token_estimate()} tokens)")
+
+            # Show compacted structure
+            messages_after = self.session.get_messages()
+            print("   Structure:")
+            for i, msg in enumerate(messages_after):
+                if msg.role == 'system':
+                    if '[CONVERSATION HISTORY]' in msg.content:
+                        print(f"   {i+1}. 📚 Conversation summary ({len(msg.content)} chars)")
+                    else:
+                        print(f"   {i+1}. ⚙️  System prompt")
+                elif msg.role == 'user':
+                    preview = msg.content[:50] + "..." if len(msg.content) > 50 else msg.content
+                    print(f"   {i+1}. 👤 {preview}")
+                elif msg.role == 'assistant':
+                    preview = msg.content[:50] + "..." if len(msg.content) > 50 else msg.content
+                    print(f"   {i+1}. 🤖 {preview}")
+
+            print("   💡 Note: Token count may increase initially due to detailed summary")
+            print("       but will decrease significantly as conversation continues")
+
+        except Exception as e:
+            print(f"❌ Compaction failed: {e}")
+
+    def handle_history(self, n_interactions: int = None):
+        """Handle /history [n] command - show conversation history verbatim"""
+        messages = self.session.get_messages()
+
+        if not messages:
+            print("📝 No conversation history")
+            return
+
+        # Check for conversation summary (from compaction)
+        summary_message = None
+        for msg in messages:
+            if msg.role == 'system' and '[CONVERSATION HISTORY]' in msg.content:
+                summary_message = msg
+                break
+
+        # Filter out system messages for interaction counting
+        conversation_messages = [msg for msg in messages if msg.role != 'system']
+
+        if not conversation_messages and not summary_message:
+            print("📝 No conversation history")
+            return
+
+        if n_interactions is None:
+            # Show all conversation
+            print("📜 Conversation History:\n")
+            display_messages = conversation_messages
+        else:
+            # Show last n interactions (each interaction = user + assistant)
+            # Calculate how many messages that represents
+            messages_needed = n_interactions * 2  # user + assistant per interaction
+            display_messages = conversation_messages[-messages_needed:] if messages_needed <= len(conversation_messages) else conversation_messages
+            print(f"📜 Last {n_interactions} interactions:\n")
+
+        # Show conversation summary if it exists (from compaction)
+        if summary_message:
+            summary_content = summary_message.content.replace('[CONVERSATION HISTORY]: ', '')
+            print("📚 Earlier Conversation Summary:")
+            print("─" * 50)
+            print(summary_content)
+            print("─" * 50)
+            print()
+
+        # Display the recent messages verbatim without numbers
+        if display_messages:
+            if summary_message:
+                print("💬 Recent Conversation:")
+                print()
+
+            for msg in display_messages:
+                if msg.role == 'user':
+                    print("👤 You:")
+                    print(msg.content)
+                    print()  # Empty line after user message
+                elif msg.role == 'assistant':
+                    print("🤖 Assistant:")
+                    print(msg.content)
+                    print()  # Empty line after assistant message
+        elif summary_message:
+            print("💡 Only summary available - recent messages were preserved but may have been cleared")
+
+        print(f"📊 Total tokens estimate: ~{self.session.get_token_estimate()}")
+
+    def handle_system_show(self):
+        """Show current system prompt - both fixed part and full prompt with tools"""
+        # Get the original system prompt (fixed part)
+        fixed_prompt = self.session.system_prompt or "No system prompt set"
+
+        print("⚙️  Current System Prompt:")
+        print("=" * 50)
+        print(f"📝 Fixed Part:\n{fixed_prompt}\n")
+
+        # Show full prompt as it appears to the LLM (including tool descriptions)
+        messages = self.session.get_messages()
+        system_messages = [msg for msg in messages if msg.role == 'system']
+
+        if system_messages:
+            print("🔧 Full Prompt (as seen by LLM):")
+            for i, sys_msg in enumerate(system_messages, 1):
+                if i == 1:
+                    print(f"System Message {i} (Base):")
+                else:
+                    print(f"System Message {i}:")
+                print(f"{sys_msg.content}")
+                if i < len(system_messages):
+                    print()  # Separator between system messages
+        else:
+            print("⚠️  No system messages found in session")
+
+        print("=" * 50)
+
+    def handle_system_change(self, new_prompt: str):
+        """Change the system prompt (fixed part only, preserves tools)"""
+        old_prompt = self.session.system_prompt or "No previous prompt"
+
+        # Update the session's system prompt
+        self.session.system_prompt = new_prompt
+
+        # Update the first system message in the session if it exists
+        messages = self.session.get_messages()
+        for msg in messages:
+            if msg.role == 'system' and not msg.content.startswith('[CONVERSATION HISTORY]'):
+                # This is the original system message, update it
+                msg.content = new_prompt
+                break
+        else:
+            # No existing system message, add one at the beginning
+            self.session.messages.insert(0, self.session.add_message('system', new_prompt))
+
+        print("✅ System prompt updated!")
+        print(f"📝 Old: {old_prompt[:100]}{'...' if len(old_prompt) > 100 else ''}")
+        print(f"📝 New: {new_prompt[:100]}{'...' if len(new_prompt) > 100 else ''}")
 
     def generate_response(self, user_input: str):
         """Generate and display response."""
@@ -209,8 +397,10 @@ Commands:
   /clear - Clear history
   /stream - Toggle streaming
   /debug - Toggle debug mode
-  /history - Show conversation history
+  /history [n] - Show conversation history or last n interactions
   /model <provider:model> - Change model
+  /compact - Compact chat history using gemma3:1b
+  /system [prompt] - Show or change system prompt
 
 Tools: list_files, read_file, execute_command, web_search
 

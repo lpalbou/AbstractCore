@@ -38,10 +38,12 @@ class EventType(Enum):
     RETRY_ATTEMPTED = "retry_attempted"            # When retry process starts (includes attempt count)
     RETRY_EXHAUSTED = "retry_exhausted"            # When all retries fail (critical for alerting)
 
-    # Useful but minimal (3)
+    # Useful but minimal (5)
     VALIDATION_FAILED = "validation_failed"        # For retry logic only
     SESSION_CREATED = "session_created"            # Track new sessions
     SESSION_CLEARED = "session_cleared"            # Track cleanup
+    COMPACTION_STARTED = "compaction_started"      # When chat history compaction begins
+    COMPACTION_COMPLETED = "compaction_completed"  # When compaction finishes
 
 
 @dataclass
