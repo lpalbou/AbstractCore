@@ -294,7 +294,7 @@ class BasicSession:
         try:
             from ..processing import BasicSummarizer
         except ImportError:
-            raise ImportError("BasicSummarizer not available. Install with processing capabilities.")
+            raise ImportError("BasicSummarizer not available. This suggests a packaging issue - processing module should be included with AbstractCore.")
 
         # Separate system messages from conversation messages
         system_messages = [msg for msg in self.messages if msg.role == 'system']

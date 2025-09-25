@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "abstractcore"
-version = "2.1.4"
+version = "2.1.5"
 description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
 readme = "README.md"
 license = {text = "MIT"}
@@ -91,6 +91,10 @@ embeddings = [
     "numpy>=1.20.0,<2.0.0",
 ]
 
+processing = [
+    # No additional dependencies - built on core AbstractCore
+]
+
 # Provider groups for convenience
 api-providers = [
     "abstractcore[openai,anthropic]",
@@ -110,11 +114,11 @@ all-providers = [
 ]
 
 all = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,server]",
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,processing,server]",
 ]
 
 lightweight = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,embeddings,server]",
+    "abstractcore[openai,anthropic,ollama,lmstudio,embeddings,processing,server]",
 ]
 
 # Development dependencies
