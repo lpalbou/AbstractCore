@@ -60,6 +60,8 @@ Changelog = "https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md"
 [project.scripts]
 summarizer = "abstractllm.apps.summarizer:main"
 abstractllm-summarizer = "abstractllm.apps.summarizer:main"
+extractor = "abstractllm.apps.extractor:main"
+abstractllm-extractor = "abstractllm.apps.extractor:main"
 
 [project.optional-dependencies]
 # Individual providers
