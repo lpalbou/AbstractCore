@@ -10,6 +10,8 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from ..core.interface import AbstractLLMInterface
+from ..core.factory import create_llm
+from ..structured.retry import FeedbackRetry
 
 
 class SummaryStyle(Enum):
@@ -30,14 +32,22 @@ class SummaryLength(Enum):
     COMPREHENSIVE = "comprehensive"  # Full analysis with context
 
 
-class SummaryOutput(BaseModel):
-    """Structured summary output"""
+class LLMSummaryOutput(BaseModel):
+    """LLM-generated summary output (without word counts)"""
     summary: str = Field(description="The main summary text")
     key_points: List[str] = Field(description="3-5 most important points", max_length=8)
     confidence: float = Field(description="Confidence in summary accuracy (0-1)", ge=0, le=1)
     focus_alignment: float = Field(description="How well the summary addresses the specified focus (0-1)", ge=0, le=1)
-    word_count_original: int = Field(description="Approximate word count of original text")
-    word_count_summary: int = Field(description="Word count of generated summary")
+
+
+class SummaryOutput(BaseModel):
+    """Complete summary output with computed word counts"""
+    summary: str = Field(description="The main summary text")
+    key_points: List[str] = Field(description="3-5 most important points", max_length=8)
+    confidence: float = Field(description="Confidence in summary accuracy (0-1)", ge=0, le=1)
+    focus_alignment: float = Field(description="How well the summary addresses the specified focus (0-1)", ge=0, le=1)
+    word_count_original: int = Field(description="Word count of original text (computed client-side)")
+    word_count_summary: int = Field(description="Word count of generated summary (computed client-side)")
 
 
 class BasicSummarizer:
@@ -51,32 +61,67 @@ class BasicSummarizer:
     - Provider-agnostic implementation
     - Built-in retry and error handling (inherited from AbstractCore)
 
-    Recommended setup for optimal performance:
-        llm = create_llm("ollama", model="gemma3:1b")  # Fast, free, high quality
-        summarizer = BasicSummarizer(llm)
+    Optimized defaults (no setup required):
+        summarizer = BasicSummarizer()  # Uses gemma3:1b-it-qat, 16k context, 8k chunks
+
+    Custom setup for different needs:
+        llm = create_llm("openai", model="gpt-4o-mini", max_tokens=32000)
+        summarizer = BasicSummarizer(llm, max_chunk_size=15000)
 
     Performance benchmarks:
-    - gemma3:1b: 29s, 95% confidence, cost-effective
+    - gemma3:1b-it-qat: 29s, 95% confidence, cost-effective (instruction-tuned & quantized)
     - qwen3-coder:30b: 119s, 98% confidence, premium quality
     - GPT-4o-mini: Variable, high cost per request
     """
 
-    def __init__(self, llm: AbstractLLMInterface, max_chunk_size: int = 8000):
+    def __init__(self, llm: Optional[AbstractLLMInterface] = None, max_chunk_size: int = 8000):
         """
         Initialize the summarizer
 
         Args:
-            llm: AbstractLLM instance (any provider)
-            max_chunk_size: Maximum characters per chunk for long documents
+            llm: AbstractLLM instance (any provider). If None, attempts to create ollama gemma3:1b-it-qat with 16k context
+            max_chunk_size: Maximum characters per chunk for long documents (default 8k)
         """
-        self.llm = llm
+        if llm is None:
+            try:
+                # Default to gemma3:1b-it-qat with 16k context window
+                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=16000)
+            except Exception as e:
+                error_msg = (
+                    f"❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}\n\n"
+                    "💡 To use the default model, please:\n"
+                    "   1. Install Ollama from: https://ollama.com/\n"
+                    "   2. Download the model: ollama pull gemma3:1b-it-qat\n"
+                    "   3. Start Ollama service\n\n"
+                    "🔧 Alternatively, provide a custom LLM instance:\n"
+                    "   from abstractllm import create_llm\n"
+                    "   from abstractllm.processing import BasicSummarizer\n"
+                    "   \n"
+                    "   # Using OpenAI\n"
+                    "   llm = create_llm('openai', model='gpt-4o-mini')\n"
+                    "   summarizer = BasicSummarizer(llm)\n"
+                    "   \n"
+                    "   # Using Anthropic\n"
+                    "   llm = create_llm('anthropic', model='claude-3-5-haiku-latest')\n"
+                    "   summarizer = BasicSummarizer(llm)\n"
+                    "   \n"
+                    "   # Using different Ollama model\n"
+                    "   llm = create_llm('ollama', model='llama3.2:3b')\n"
+                    "   summarizer = BasicSummarizer(llm)"
+                )
+                raise RuntimeError(error_msg) from e
+        else:
+            self.llm = llm
         self.max_chunk_size = max_chunk_size
+
+        # Default retry strategy with 3 attempts
+        self.retry_strategy = FeedbackRetry(max_attempts=3)
 
     def summarize(
         self,
         text: str,
         focus: Optional[str] = None,
-        style: SummaryStyle = SummaryStyle.OBJECTIVE,
+        style: SummaryStyle = SummaryStyle.STRUCTURED,
         length: SummaryLength = SummaryLength.STANDARD,
     ) -> SummaryOutput:
         """
@@ -125,16 +170,17 @@ class BasicSummarizer:
         # Build the prompt based on parameters
         prompt = self._build_prompt(text, focus, style, length)
 
-        # Use AbstractCore's structured output - automatic retry and validation
-        response = self.llm.generate(prompt, response_model=SummaryOutput)
+        # Use AbstractCore's structured output with retry strategy (no word counts in LLM response)
+        response = self.llm.generate(prompt, response_model=LLMSummaryOutput, retry_strategy=self.retry_strategy)
 
         # Extract the structured output
-        if isinstance(response, SummaryOutput):
-            # When structured output succeeds, response is the SummaryOutput object directly
-            return response
+        llm_result = None
+        if isinstance(response, LLMSummaryOutput):
+            # When structured output succeeds, response is the LLMSummaryOutput object directly
+            llm_result = response
         elif hasattr(response, 'structured_output') and response.structured_output:
             # Fallback: check for structured_output attribute
-            return response.structured_output
+            llm_result = response.structured_output
         else:
             # Debug information for troubleshooting
             error_msg = f"Failed to generate structured summary output. Response type: {type(response)}"
@@ -143,6 +189,20 @@ class BasicSummarizer:
             if hasattr(response, 'structured_output'):
                 error_msg += f", Structured output: {response.structured_output}"
             raise ValueError(error_msg)
+
+        # Compute word counts ourselves (reliable, client-side calculation)
+        actual_original_words = len(text.split())
+        actual_summary_words = len(llm_result.summary.split())
+
+        # Create complete result with computed word counts
+        return SummaryOutput(
+            summary=llm_result.summary,
+            key_points=llm_result.key_points,
+            confidence=llm_result.confidence,
+            focus_alignment=llm_result.focus_alignment,
+            word_count_original=actual_original_words,
+            word_count_summary=actual_summary_words
+        )
 
     def _summarize_long_document(
         self,
@@ -175,7 +235,7 @@ class BasicSummarizer:
                 summary: str
                 key_points: List[str] = Field(max_length=5)
 
-            response = self.llm.generate(chunk_prompt, response_model=ChunkSummary)
+            response = self.llm.generate(chunk_prompt, response_model=ChunkSummary, retry_strategy=self.retry_strategy)
             if isinstance(response, ChunkSummary):
                 # When structured output succeeds, response is the ChunkSummary object directly
                 chunk_summaries.append(response)
@@ -199,14 +259,16 @@ class BasicSummarizer:
         # Generate final summary from combined summaries
         final_prompt = self._build_final_combination_prompt(combined_text, focus, style, length, len(text))
 
-        response = self.llm.generate(final_prompt, response_model=SummaryOutput)
+        response = self.llm.generate(final_prompt, response_model=LLMSummaryOutput, retry_strategy=self.retry_strategy)
 
-        if isinstance(response, SummaryOutput):
-            # When structured output succeeds, response is the SummaryOutput object directly
-            return response
+        # Extract the structured output
+        llm_result = None
+        if isinstance(response, LLMSummaryOutput):
+            # When structured output succeeds, response is the LLMSummaryOutput object directly
+            llm_result = response
         elif hasattr(response, 'structured_output') and response.structured_output:
             # Fallback: check for structured_output attribute
-            return response.structured_output
+            llm_result = response.structured_output
         else:
             # Debug information for troubleshooting
             error_msg = f"Failed to generate final structured summary output. Response type: {type(response)}"
@@ -215,6 +277,20 @@ class BasicSummarizer:
             if hasattr(response, 'structured_output'):
                 error_msg += f", Structured output: {response.structured_output}"
             raise ValueError(error_msg)
+
+        # Compute word counts ourselves (reliable, client-side calculation)
+        actual_original_words = len(text.split())
+        actual_summary_words = len(llm_result.summary.split())
+
+        # Create complete result with computed word counts
+        return SummaryOutput(
+            summary=llm_result.summary,
+            key_points=llm_result.key_points,
+            confidence=llm_result.confidence,
+            focus_alignment=llm_result.focus_alignment,
+            word_count_original=actual_original_words,
+            word_count_summary=actual_summary_words
+        )
 
     def _split_text_into_chunks(self, text: str, overlap: int = 200) -> List[str]:
         """Split text into overlapping chunks"""
@@ -285,7 +361,6 @@ Requirements:
 - Extract 3-5 key points that capture the most important information
 - Provide a confidence score (0-1) for the accuracy of your summary
 - Estimate the focus alignment (0-1) - how well the summary addresses any specified focus
-- Count words in both original and summary text
 - Be precise, factual, and avoid hallucination
 
 Generate a comprehensive structured summary following the specified style and length guidelines."""
@@ -355,7 +430,6 @@ Requirements:
 - Extract the most significant key points across all sections
 - The original document had approximately {original_length} characters
 - Provide confidence and focus alignment scores
-- Count words in your final summary
 
 Create a unified summary that represents the entire document effectively."""
 
@@ -409,16 +483,18 @@ Create a unified summary that represents the entire document effectively."""
         # Recent messages will be preserved as separate messages in the session
         summary_only = older_summary.summary
 
-        # Calculate metrics
+        # Calculate metrics using accurate word counts
         original_text = self._format_chat_messages_to_text(messages)
+        actual_original_words = len(original_text.split())
+        actual_summary_words = len(summary_only.split())
 
         return SummaryOutput(
             summary=summary_only,
             key_points=older_summary.key_points,
             confidence=older_summary.confidence,
             focus_alignment=older_summary.focus_alignment,
-            word_count_original=len(original_text.split()),
-            word_count_summary=len(summary_only.split())
+            word_count_original=actual_original_words,
+            word_count_summary=actual_summary_words
         )
 
     def _format_chat_messages_to_text(self, messages: List[dict]) -> str:

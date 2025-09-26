@@ -32,7 +32,7 @@ class TestEmbeddingModels:
 
     def test_all_model_configs(self):
         """Test all predefined model configurations."""
-        models = ["embeddinggemma", "stella-400m", "nomic-embed", "mxbai-large"]
+        models = ["embeddinggemma", "granite-278m", "nomic-embed-v1.5", "qwen3-embedding"]
         for model_name in models:
             config = get_model_config(model_name)
             assert isinstance(config, EmbeddingModelConfig)
@@ -61,7 +61,7 @@ class TestEmbeddingManagerInit:
 
         manager = EmbeddingManager(cache_dir=self.cache_dir)
 
-        assert manager.model_id == "google/embeddinggemma-300m"
+        assert manager.model_id == "sentence-transformers/all-MiniLM-L6-v2"
         assert manager.cache_dir == self.cache_dir
         assert manager.cache_size == 1000
         assert manager.output_dims is None
@@ -70,16 +70,16 @@ class TestEmbeddingManagerInit:
     def test_init_custom_model(self, mock_st_class):
         """Test initialization with custom model."""
         mock_model = MagicMock()
-        mock_model.get_sentence_embedding_dimension.return_value = 1024
+        mock_model.get_sentence_embedding_dimension.return_value = 768  # granite-278m has 768 dimensions
         mock_st_class.return_value = mock_model
 
         manager = EmbeddingManager(
-            model="stella-400m",
+            model="embeddinggemma",
             cache_dir=self.cache_dir,
             output_dims=512
         )
 
-        assert manager.model_id == "dunzhang/stella_en_400M_v5"
+        assert manager.model_id == "google/embeddinggemma-300m"
         assert manager.output_dims == 512
 
     @patch('sentence_transformers.SentenceTransformer')

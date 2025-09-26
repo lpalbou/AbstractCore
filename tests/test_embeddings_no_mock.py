@@ -33,8 +33,8 @@ class TestCompletelyRealEmbeddings:
         """Test that all model configurations are valid and accessible."""
         models = list_available_models()
 
-        # Verify we have the expected models
-        expected_models = ["embeddinggemma", "stella-400m", "nomic-embed", "mxbai-large"]
+        # Verify we have the expected models (updated to match new favored models)
+        expected_models = ["embeddinggemma", "granite-278m", "nomic-embed-v1.5", "qwen3-embedding"]
         for model in expected_models:
             assert model in models
 

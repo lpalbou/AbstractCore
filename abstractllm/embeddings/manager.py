@@ -10,8 +10,11 @@ import pickle
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional, Union, Any, Dict
+from typing import List, Optional, Union, Any, Dict, TYPE_CHECKING
 import time
+
+if TYPE_CHECKING:
+    import numpy as np
 
 try:
     import sentence_transformers
@@ -24,13 +27,7 @@ except ImportError:
     EventType = None
     emit_global = None
 
-from .models import (
-    EmbeddingModelConfig,
-    EmbeddingBackend,
-    get_model_config,
-    get_default_model,
-    list_available_models
-)
+from .models import EmbeddingBackend, get_model_config, list_available_models, get_default_model
 
 logger = logging.getLogger(__name__)
 
@@ -60,18 +57,18 @@ class EmbeddingManager:
         """Initialize the embedding manager.
 
         Args:
-            model: Model name or HuggingFace model ID. Defaults to EmbeddingGemma.
+            model: HuggingFace model ID. Defaults to sentence-transformers/all-MiniLM-L6-v2.
             backend: Inference backend ('auto', 'pytorch', 'onnx', 'openvino')
             cache_dir: Directory for persistent cache. Defaults to ~/.abstractllm/embeddings
             cache_size: Maximum number of embeddings to cache in memory
             output_dims: Output dimensions for Matryoshka truncation (if supported)
             trust_remote_code: Whether to trust remote code (for some models)
         """
-        # Model configuration
+        # Model configuration - HuggingFace only
         if model is None:
-            model = get_default_model()
+            model = get_default_model()  # Returns alias "all-minilm-l6-v2"
 
-        # Handle both model names and direct HuggingFace IDs
+        # Handle model aliases from our favored models config
         if model in list_available_models():
             self.model_config = get_model_config(model)
             self.model_id = self.model_config.model_id
@@ -106,6 +103,10 @@ class EmbeddingManager:
         self.cache_file = self.cache_dir / f"{cache_name}_cache.pkl"
         self._persistent_cache = self._load_persistent_cache()
 
+        # Normalized embeddings cache for performance optimization
+        self.normalized_cache_file = self.cache_dir / f"{cache_name}_normalized_cache.pkl"
+        self._normalized_cache = self._load_normalized_cache()
+
         # Configure events if available
         if EventType is not None and emit_global is not None:
             self.has_events = True
@@ -123,15 +124,22 @@ class EmbeddingManager:
             self.has_events = False
 
     def _load_model(self):
-        """Load the embedding model with optimal backend."""
+        """Load the HuggingFace embedding model with optimal backend."""
         try:
             if sentence_transformers is None:
                 raise ImportError("sentence-transformers is required but not installed")
 
+            # Set HuggingFace cache directory (sentence-transformers uses this automatically)
+            import os
+            hf_cache_dir = os.path.expanduser("~/.cache/huggingface/")
+            os.environ.setdefault("HF_HOME", hf_cache_dir)
+            os.environ.setdefault("TRANSFORMERS_CACHE", hf_cache_dir)
+            os.environ.setdefault("HF_DATASETS_CACHE", hf_cache_dir)
+
             # Determine best backend
             backend = self._select_backend()
 
-            # Load model with backend
+            # Load model with backend (will use HuggingFace cache automatically)
             if backend == EmbeddingBackend.ONNX:
                 try:
                     self.model = sentence_transformers.SentenceTransformer(
@@ -139,19 +147,20 @@ class EmbeddingManager:
                         backend="onnx",
                         trust_remote_code=self.trust_remote_code
                     )
-                    logger.info(f"Loaded {self.model_id} with ONNX backend (optimized)")
+                    logger.info(f"Loaded {self.model_id} with ONNX backend (cached in ~/.cache/huggingface/)")
                 except Exception as e:
                     logger.warning(f"ONNX backend failed: {e}. Falling back to PyTorch.")
                     self.model = sentence_transformers.SentenceTransformer(
                         self.model_id,
                         trust_remote_code=self.trust_remote_code
                     )
+                    logger.info(f"Loaded {self.model_id} with PyTorch backend (cached in ~/.cache/huggingface/)")
             else:
                 self.model = sentence_transformers.SentenceTransformer(
                     self.model_id,
                     trust_remote_code=self.trust_remote_code
                 )
-                logger.info(f"Loaded {self.model_id} with PyTorch backend")
+                logger.info(f"Loaded {self.model_id} with PyTorch backend (cached in ~/.cache/huggingface/)")
 
         except ImportError:
             raise ImportError(
@@ -169,10 +178,13 @@ class EmbeddingManager:
 
         # Auto-select: prefer ONNX if available
         try:
-            import onnxruntime
+            import onnxruntime  # type: ignore
+            # Check if onnxruntime is available
+            _ = onnxruntime.__version__
             return EmbeddingBackend.ONNX
         except ImportError:
             return EmbeddingBackend.PYTORCH
+
 
     def _load_persistent_cache(self) -> Dict[str, List[float]]:
         """Load persistent cache from disk."""
@@ -187,9 +199,26 @@ class EmbeddingManager:
             logger.warning(f"Failed to load persistent cache: {e}")
         return {}
 
+    def _load_normalized_cache(self) -> Dict[str, List[float]]:
+        """Load normalized embeddings cache from disk."""
+        try:
+            if self.normalized_cache_file.exists():
+                import builtins
+                with builtins.open(self.normalized_cache_file, 'rb') as f:
+                    cache = pickle.load(f)
+                logger.debug(f"Loaded {len(cache)} normalized embeddings from cache")
+                return cache
+        except Exception as e:
+            logger.warning(f"Failed to load normalized cache: {e}")
+        return {}
+
     def _save_persistent_cache(self):
         """Save persistent cache to disk."""
         try:
+            # Check if cache file attributes exist (may not if initialization failed)
+            if not hasattr(self, 'cache_file') or not hasattr(self, '_persistent_cache'):
+                return
+
             # Ensure directory exists
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
             import builtins
@@ -198,6 +227,22 @@ class EmbeddingManager:
             logger.debug(f"Saved {len(self._persistent_cache)} embeddings to persistent cache")
         except Exception as e:
             logger.warning(f"Failed to save persistent cache: {e}")
+
+    def _save_normalized_cache(self):
+        """Save normalized embeddings cache to disk."""
+        try:
+            # Check if cache file attributes exist (may not if initialization failed)
+            if not hasattr(self, 'normalized_cache_file') or not hasattr(self, '_normalized_cache'):
+                return
+
+            # Ensure directory exists
+            self.normalized_cache_file.parent.mkdir(parents=True, exist_ok=True)
+            import builtins
+            with builtins.open(self.normalized_cache_file, 'wb') as f:
+                pickle.dump(self._normalized_cache, f)
+            logger.debug(f"Saved {len(self._normalized_cache)} normalized embeddings to cache")
+        except Exception as e:
+            logger.warning(f"Failed to save normalized cache: {e}")
 
     def _text_hash(self, text: str) -> str:
         """Generate hash for text caching."""
@@ -211,6 +256,56 @@ class EmbeddingManager:
                 self.emit_global(event_type, data)
             except Exception as e:
                 logger.debug(f"Event emission failed: {e}")
+
+    def embed_normalized(self, text: str) -> List[float]:
+        """Get normalized embedding for text with dedicated caching.
+
+        Normalized embeddings enable faster similarity calculations using simple
+        dot products instead of full cosine similarity computation.
+
+        Args:
+            text: Text to embed and normalize
+
+        Returns:
+            Normalized embedding vector (unit length)
+        """
+        if not text or not text.strip():
+            # Return zero vector for empty text
+            dim = self.output_dims or self.get_dimension()
+            return [0.0] * dim
+
+        text_hash = self._text_hash(text + "_normalized")
+
+        # Check normalized cache first
+        if text_hash in self._normalized_cache:
+            return self._normalized_cache[text_hash]
+
+        try:
+            import numpy as np
+
+            # Get regular embedding
+            embedding = np.array(self.embed(text))
+
+            # Normalize to unit length
+            norm = np.linalg.norm(embedding)
+            if norm == 0:
+                normalized_embedding = embedding.tolist()
+            else:
+                normalized_embedding = (embedding / norm).tolist()
+
+            # Store in normalized cache
+            self._normalized_cache[text_hash] = normalized_embedding
+
+            # Periodically save normalized cache
+            if len(self._normalized_cache) % 10 == 0:
+                self._save_normalized_cache()
+
+            return normalized_embedding
+
+        except Exception as e:
+            logger.error(f"Failed to compute normalized embedding: {e}")
+            # Fallback to regular embedding
+            return self.embed(text)
 
     @lru_cache(maxsize=1000)
     def embed(self, text: str) -> List[float]:
@@ -243,7 +338,7 @@ class EmbeddingManager:
             return embedding
 
         try:
-            # Generate embedding
+            # Generate embedding using HuggingFace model
             embedding = self.model.encode(
                 text,
                 show_progress_bar=False,
@@ -315,6 +410,7 @@ class EmbeddingManager:
         # Process uncached texts in batch
         if uncached_texts:
             try:
+                # Generate batch embeddings using HuggingFace model
                 batch_embeddings = self.model.encode(
                     uncached_texts,
                     show_progress_bar=False,
@@ -323,7 +419,7 @@ class EmbeddingManager:
 
                 # Convert to list and apply Matryoshka truncation
                 for i, (text, embedding, idx) in enumerate(zip(uncached_texts, batch_embeddings, uncached_indices)):
-                    embedding_list = embedding.tolist()
+                    embedding_list = embedding.tolist()  # Convert numpy to list
 
                     # Apply Matryoshka truncation if specified
                     if self.output_dims and len(embedding_list) > self.output_dims:
@@ -397,15 +493,375 @@ class EmbeddingManager:
             logger.error(f"Failed to compute similarity: {e}")
             return 0.0
 
+    def compute_similarities(self, text: str, texts: List[str]) -> List[float]:
+        """Compute cosine similarities between one text and a list of texts.
+
+        Args:
+            text: Reference text to compare against
+            texts: List of texts to compare with the reference text
+
+        Returns:
+            List of cosine similarity scores between -1 and 1, one for each input text
+        """
+        if not texts:
+            return []
+
+        try:
+            import numpy as np
+
+            # Get embedding for reference text
+            ref_embedding = np.array(self.embed(text))
+
+            # Get embeddings for all comparison texts (using batch processing for efficiency)
+            comparison_embeddings = self.embed_batch(texts)
+            comparison_embeddings = np.array(comparison_embeddings)
+
+            # Compute cosine similarities using vectorized operations
+            similarities = []
+            for comp_embedding in comparison_embeddings:
+                comp_embedding = np.array(comp_embedding)
+
+                # Compute cosine similarity
+                dot_product = np.dot(ref_embedding, comp_embedding)
+                norm_product = np.linalg.norm(ref_embedding) * np.linalg.norm(comp_embedding)
+
+                if norm_product == 0:
+                    similarities.append(0.0)
+                else:
+                    similarity = dot_product / norm_product
+                    similarities.append(float(similarity))
+
+            return similarities
+
+        except Exception as e:
+            logger.error(f"Failed to compute batch similarities: {e}")
+            # Return zero similarities as fallback
+            return [0.0] * len(texts)
+
+    def compute_similarities_matrix(
+        self,
+        texts_left: List[str],
+        texts_right: Optional[List[str]] = None,
+        chunk_size: int = 500,
+        normalized: bool = True,
+        dtype: str = "float32",
+        max_memory_gb: float = 4.0
+    ) -> "np.ndarray":
+        """Compute similarity matrix between two sets of texts using SOTA efficient methods.
+
+        Creates an L×C matrix where L=len(texts_left) and C=len(texts_right or texts_left).
+        Uses vectorized operations, chunking, and optional pre-normalization for efficiency.
+
+        Args:
+            texts_left: Left set of texts (rows in matrix)
+            texts_right: Right set of texts (columns in matrix). If None, uses texts_left (L×L matrix)
+            chunk_size: Process matrix in chunks of this many rows to manage memory
+            normalized: If True, pre-normalize embeddings for 2x speedup
+            dtype: Data type for computations ('float32' or 'float64')
+            max_memory_gb: Maximum memory to use before switching to chunked processing
+
+        Returns:
+            NumPy array of shape (len(texts_left), len(texts_right or texts_left))
+            with cosine similarity values between -1 and 1
+
+        Examples:
+            >>> embedder = EmbeddingManager()
+            >>>
+            >>> # Symmetric matrix (5x5)
+            >>> texts = ["AI is amazing", "Machine learning rocks", "Python is great", "Data science", "Deep learning"]
+            >>> matrix = embedder.compute_similarities_matrix(texts)
+            >>>
+            >>> # Asymmetric matrix (3x2)
+            >>> queries = ["What is AI?", "How does ML work?", "Python tutorial"]
+            >>> docs = ["Artificial intelligence guide", "Machine learning basics"]
+            >>> matrix = embedder.compute_similarities_matrix(queries, docs)
+        """
+        if not texts_left:
+            import numpy as np
+            return np.array([], dtype=dtype).reshape(0, len(texts_right or []))
+
+        # Use texts_left for both sides if texts_right not provided (symmetric matrix)
+        if texts_right is None:
+            texts_right = texts_left
+            symmetric = True
+        else:
+            symmetric = False
+
+        if not texts_right:
+            import numpy as np
+            return np.array([], dtype=dtype).reshape(len(texts_left), 0)
+
+        try:
+            import numpy as np
+
+            start_time = time.time()
+
+            # Get embeddings efficiently using batch processing
+            logger.debug(f"Computing embeddings for {len(texts_left)}×{len(texts_right)} similarity matrix")
+
+            embeddings_left = self.embed_batch(texts_left)
+            if symmetric:
+                embeddings_right = embeddings_left
+            else:
+                embeddings_right = self.embed_batch(texts_right)
+
+            # Convert to numpy arrays with specified dtype
+            embeddings_left = np.array(embeddings_left, dtype=dtype)
+            embeddings_right = np.array(embeddings_right, dtype=dtype)
+
+            L, C = len(texts_left), len(texts_right)
+            D = embeddings_left.shape[1]  # Embedding dimension
+
+            # Estimate memory requirements
+            matrix_memory_gb = (L * C * 4) / (1024**3)  # float32 bytes to GB
+            embedding_memory_gb = ((L + C) * D * 4) / (1024**3)
+            total_memory_gb = matrix_memory_gb + embedding_memory_gb
+
+            logger.debug(f"Estimated memory usage: {total_memory_gb:.2f}GB (matrix: {matrix_memory_gb:.2f}GB)")
+
+            # Pre-normalize embeddings for efficiency (2x speedup)
+            if normalized:
+                # Compute norms
+                norms_left = np.linalg.norm(embeddings_left, axis=1, keepdims=True)
+                norms_right = np.linalg.norm(embeddings_right, axis=1, keepdims=True)
+
+                # Avoid division by zero
+                norms_left = np.where(norms_left == 0, 1, norms_left)
+                norms_right = np.where(norms_right == 0, 1, norms_right)
+
+                # Normalize embeddings
+                embeddings_left = embeddings_left / norms_left
+                embeddings_right = embeddings_right / norms_right
+
+                logger.debug("Pre-normalized embeddings for efficiency")
+
+            # Choose processing strategy based on memory requirements
+            if total_memory_gb <= max_memory_gb and chunk_size >= L:
+                # Direct computation - all fits in memory
+                if normalized:
+                    # Simple dot product after normalization
+                    similarities = embeddings_left @ embeddings_right.T
+                    # Clamp to valid range to handle floating point precision
+                    import numpy as np
+                    similarities = np.clip(similarities, -1.0, 1.0)
+                else:
+                    # Full cosine similarity computation
+                    similarities = self._compute_cosine_similarity_matrix(embeddings_left, embeddings_right)
+
+                logger.debug(f"Used direct computation ({total_memory_gb:.2f}GB)")
+
+            else:
+                # Chunked computation for memory efficiency
+                logger.debug(f"Using chunked processing (chunks of {chunk_size} rows)")
+                similarities = self._compute_chunked_similarity_matrix(
+                    embeddings_left, embeddings_right, chunk_size, normalized, dtype
+                )
+
+            # Emit performance event
+            duration_ms = (time.time() - start_time) * 1000
+            self._emit_event("similarity_matrix_computed", {
+                "matrix_shape": (L, C),
+                "symmetric": symmetric,
+                "normalized": normalized,
+                "chunked": total_memory_gb > max_memory_gb,
+                "memory_gb": total_memory_gb,
+                "duration_ms": duration_ms,
+                "model": self.model_id
+            })
+
+            logger.debug(f"Computed {L}×{C} similarity matrix in {duration_ms:.1f}ms")
+            return similarities
+
+        except Exception as e:
+            logger.error(f"Failed to compute similarity matrix: {e}")
+            # Return zero matrix as fallback
+            import numpy as np
+            return np.zeros((len(texts_left), len(texts_right)), dtype=dtype)
+
+    def _compute_cosine_similarity_matrix(self, embeddings_left: "np.ndarray", embeddings_right: "np.ndarray") -> "np.ndarray":
+        """Compute cosine similarity matrix using vectorized operations."""
+        import numpy as np
+
+        # Compute dot products (numerator)
+        dot_products = embeddings_left @ embeddings_right.T
+
+        # Compute norms
+        norms_left = np.linalg.norm(embeddings_left, axis=1, keepdims=True)
+        norms_right = np.linalg.norm(embeddings_right, axis=1, keepdims=True)
+
+        # Compute norm products (denominator)
+        norm_products = norms_left @ norms_right.T
+
+        # Avoid division by zero
+        norm_products = np.where(norm_products == 0, 1, norm_products)
+
+        # Compute cosine similarities
+        similarities = dot_products / norm_products
+
+        # Clamp to valid cosine similarity range [-1, 1] to handle floating point precision
+        similarities = np.clip(similarities, -1.0, 1.0)
+
+        return similarities
+
+    def _compute_chunked_similarity_matrix(
+        self,
+        embeddings_left: "np.ndarray",
+        embeddings_right: "np.ndarray",
+        chunk_size: int,
+        normalized: bool,
+        dtype: str
+    ) -> "np.ndarray":
+        """Compute similarity matrix in chunks to manage memory."""
+        import numpy as np
+
+        L, C = embeddings_left.shape[0], embeddings_right.shape[0]
+        similarities = np.zeros((L, C), dtype=dtype)
+
+        # Process in chunks
+        for i in range(0, L, chunk_size):
+            end_i = min(i + chunk_size, L)
+            chunk_left = embeddings_left[i:end_i]
+
+            if normalized:
+                # Simple dot product for normalized embeddings
+                chunk_similarities = chunk_left @ embeddings_right.T
+                # Clamp to valid range to handle floating point precision
+                chunk_similarities = np.clip(chunk_similarities, -1.0, 1.0)
+            else:
+                # Full cosine similarity computation for chunk
+                chunk_similarities = self._compute_cosine_similarity_matrix(chunk_left, embeddings_right)
+
+            similarities[i:end_i] = chunk_similarities
+
+            # Log progress for large matrices
+            if L > 1000:
+                progress = (end_i / L) * 100
+                logger.debug(f"Similarity matrix progress: {progress:.1f}%")
+
+        return similarities
+
+    def find_similar_clusters(
+        self,
+        texts: List[str],
+        threshold: float = 0.8,
+        min_cluster_size: int = 2,
+        max_memory_gb: float = 4.0
+    ) -> List[List[int]]:
+        """Find clusters of similar texts using similarity matrix analysis.
+
+        Groups texts that have similarity above the threshold into clusters.
+        Useful for identifying duplicate or near-duplicate content, grouping similar
+        documents, or finding semantic clusters for organization.
+
+        Args:
+            texts: List of texts to cluster
+            threshold: Minimum similarity score for texts to be in same cluster (0.0 to 1.0)
+            min_cluster_size: Minimum number of texts required to form a cluster
+            max_memory_gb: Maximum memory for similarity matrix computation
+
+        Returns:
+            List of clusters, where each cluster is a list of text indices
+
+        Examples:
+            >>> embedder = EmbeddingManager()
+            >>> texts = [
+            ...     "Python is great for data science",
+            ...     "Machine learning with Python",
+            ...     "JavaScript for web development",
+            ...     "Data science using Python",
+            ...     "Web apps with JavaScript"
+            ... ]
+            >>> clusters = embedder.find_similar_clusters(texts, threshold=0.7)
+            >>> # Result: [[0, 1, 3], [2, 4]] (Python cluster and JavaScript cluster)
+        """
+        if not texts or len(texts) < min_cluster_size:
+            return []
+
+        try:
+            import numpy as np
+
+            start_time = time.time()
+            logger.debug(f"Finding clusters in {len(texts)} texts with threshold {threshold}")
+
+            # Compute similarity matrix
+            similarity_matrix = self.compute_similarities_matrix(
+                texts,
+                max_memory_gb=max_memory_gb
+            )
+
+            # Create adjacency matrix based on threshold
+            # Set diagonal to False to avoid self-clustering
+            adjacency = similarity_matrix >= threshold
+            np.fill_diagonal(adjacency, False)
+
+            # Find connected components (clusters) using simple graph traversal
+            visited = set()
+            clusters = []
+
+            for i in range(len(texts)):
+                if i in visited:
+                    continue
+
+                # Start new cluster
+                cluster = []
+                stack = [i]
+
+                while stack:
+                    node = stack.pop()
+                    if node in visited:
+                        continue
+
+                    visited.add(node)
+                    cluster.append(node)
+
+                    # Find all neighbors (similar texts)
+                    neighbors = np.where(adjacency[node])[0]
+                    for neighbor in neighbors:
+                        if neighbor not in visited:
+                            stack.append(neighbor)
+
+                # Only keep clusters that meet minimum size
+                if len(cluster) >= min_cluster_size:
+                    # Sort indices for consistent output
+                    cluster.sort()
+                    clusters.append(cluster)
+
+            # Sort clusters by size (largest first)
+            clusters.sort(key=len, reverse=True)
+
+            # Emit clustering event
+            duration_ms = (time.time() - start_time) * 1000
+            clustered_texts = sum(len(cluster) for cluster in clusters)
+
+            self._emit_event("clustering_completed", {
+                "total_texts": len(texts),
+                "clusters_found": len(clusters),
+                "clustered_texts": clustered_texts,
+                "unclustered_texts": len(texts) - clustered_texts,
+                "threshold": threshold,
+                "min_cluster_size": min_cluster_size,
+                "duration_ms": duration_ms,
+                "model": self.model_id
+            })
+
+            logger.debug(f"Found {len(clusters)} clusters ({clustered_texts}/{len(texts)} texts clustered) in {duration_ms:.1f}ms")
+            return clusters
+
+        except Exception as e:
+            logger.error(f"Failed to find clusters: {e}")
+            return []
+
     def get_cache_stats(self) -> Dict[str, Any]:
-        """Get statistics about the embedding cache."""
+        """Get statistics about the embedding caches."""
         return {
             "persistent_cache_size": len(self._persistent_cache),
+            "normalized_cache_size": len(self._normalized_cache),
             "memory_cache_info": self.embed.cache_info()._asdict(),
             "embedding_dimension": self.get_dimension(),
             "model_id": self.model_id,
             "backend": self.backend.value if self.backend else "auto",
             "cache_file": str(self.cache_file),
+            "normalized_cache_file": str(self.normalized_cache_file),
             "output_dims": self.output_dims
         }
 
@@ -413,13 +869,17 @@ class EmbeddingManager:
         """Clear both memory and persistent caches."""
         self.embed.cache_clear()
         self._persistent_cache.clear()
+        self._normalized_cache.clear()
         if self.cache_file.exists():
             self.cache_file.unlink()
+        if self.normalized_cache_file.exists():
+            self.normalized_cache_file.unlink()
         logger.info("Cleared all embedding caches")
 
     def __del__(self):
-        """Ensure persistent cache is saved when object is destroyed."""
+        """Ensure persistent caches are saved when object is destroyed."""
         try:
             self._save_persistent_cache()
+            self._save_normalized_cache()
         except:
             pass  # Ignore errors during cleanup

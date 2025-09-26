@@ -31,8 +31,19 @@ class EmbeddingModelConfig:
     size_mb: Optional[float] = None
 
 
-# SOTA 2025 embedding models
+# Favored HuggingFace Embedding Models
 EMBEDDING_MODELS: Dict[str, EmbeddingModelConfig] = {
+    "all-minilm-l6-v2": EmbeddingModelConfig(
+        name="all-minilm-l6-v2",
+        model_id="sentence-transformers/all-MiniLM-L6-v2",
+        dimension=384,
+        max_sequence_length=256,
+        supports_matryoshka=False,
+        matryoshka_dims=None,
+        description="Lightweight, fast embedding model - perfect for local development and testing (default)",
+        multilingual=False,
+        size_mb=90
+    ),
     "embeddinggemma": EmbeddingModelConfig(
         name="embeddinggemma",
         model_id="google/embeddinggemma-300m",
@@ -44,49 +55,71 @@ EMBEDDING_MODELS: Dict[str, EmbeddingModelConfig] = {
         multilingual=True,
         size_mb=300
     ),
-    "granite": EmbeddingModelConfig(
-        name="granite",
+    "qwen3-embedding": EmbeddingModelConfig(
+        name="qwen3-embedding",
+        model_id="Qwen/Qwen3-Embedding-0.6B",
+        dimension=1024,
+        max_sequence_length=8192,
+        supports_matryoshka=False,
+        matryoshka_dims=None,
+        description="Qwen 0.6B embedding model - efficient multilingual support",
+        multilingual=True,
+        size_mb=600
+    ),
+    "granite-30m": EmbeddingModelConfig(
+        name="granite-30m",
+        model_id="ibm-granite/granite-embedding-30m-english",
+        dimension=384,
+        max_sequence_length=512,
+        supports_matryoshka=False,
+        matryoshka_dims=None,
+        description="IBM Granite 30M embedding model - English only, ultra-lightweight",
+        multilingual=False,
+        size_mb=30
+    ),
+    "granite-107m": EmbeddingModelConfig(
+        name="granite-107m",
+        model_id="ibm-granite/granite-embedding-107m-multilingual",
+        dimension=768,
+        max_sequence_length=512,
+        supports_matryoshka=False,
+        matryoshka_dims=None,
+        description="IBM Granite 107M embedding model - multilingual, balanced size",
+        multilingual=True,
+        size_mb=107
+    ),
+    "granite-278m": EmbeddingModelConfig(
+        name="granite-278m",
         model_id="ibm-granite/granite-embedding-278m-multilingual",
         dimension=768,
         max_sequence_length=512,
         supports_matryoshka=False,
         matryoshka_dims=None,
-        description="IBM's enterprise-grade multilingual embedding model (278M params)",
+        description="IBM Granite 278M embedding model - multilingual, high quality",
         multilingual=True,
         size_mb=278
     ),
-    "stella-400m": EmbeddingModelConfig(
-        name="stella-400m",
-        model_id="dunzhang/stella_en_400M_v5",
-        dimension=1024,
-        max_sequence_length=512,
-        supports_matryoshka=True,
-        matryoshka_dims=[1024, 768, 512, 256],
-        description="Excellent accuracy-to-size ratio, fine-tunable",
-        multilingual=False,
-        size_mb=400
-    ),
-    "nomic-embed": EmbeddingModelConfig(
-        name="nomic-embed",
+    "nomic-embed-v1.5": EmbeddingModelConfig(
+        name="nomic-embed-v1.5",
         model_id="nomic-ai/nomic-embed-text-v1.5",
         dimension=768,
         max_sequence_length=8192,
         supports_matryoshka=True,
         matryoshka_dims=[768, 512, 256, 128],
-        description="High-quality English embeddings, outperforms text-embedding-ada-002",
+        description="Nomic Embed v1.5 - high-quality English embeddings with Matryoshka",
         multilingual=False,
         size_mb=550
     ),
-    "mxbai-large": EmbeddingModelConfig(
-        name="mxbai-large",
-        model_id="mixedbread-ai/mxbai-embed-large-v1",
-        dimension=1024,
-        max_sequence_length=512,
+    "nomic-embed-v2-moe": EmbeddingModelConfig(
+        name="nomic-embed-v2-moe",
+        model_id="nomic-ai/nomic-embed-text-v2-moe",
+        dimension=768,
+        max_sequence_length=8192,
         supports_matryoshka=True,
-        matryoshka_dims=[1024, 768, 512, 256],
-        description="Outperforms text-embedding-3-large while being smaller",
+        matryoshka_dims=[768, 512, 256, 128],
+        description="Nomic Embed v2 MoE - mixture of experts for enhanced performance",
         multilingual=False,
-        size_mb=650
+        size_mb=800
     )
 }
 
@@ -116,5 +149,5 @@ def list_available_models() -> List[str]:
 
 
 def get_default_model() -> str:
-    """Get the default embedding model (EmbeddingGemma)."""
-    return "embeddinggemma"
+    """Get the default embedding model (all-MiniLM L6-v2) - optimized for speed with perfect clustering."""
+    return "all-minilm-l6-v2"

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "abstractcore"
-version = "2.1.5"
+version = "2.1.6"
 description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
 readme = "README.md"
 license = {text = "MIT"}
@@ -56,6 +56,10 @@ Documentation = "https://github.com/lpalbou/AbstractCore#readme"
 Repository = "https://github.com/lpalbou/AbstractCore"
 "Bug Tracker" = "https://github.com/lpalbou/AbstractCore/issues"
 Changelog = "https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md"
+
+[project.scripts]
+summarizer = "abstractllm.apps.summarizer:main"
+abstractllm-summarizer = "abstractllm.apps.summarizer:main"
 
 [project.optional-dependencies]
 # Individual providers
@@ -165,7 +169,7 @@ full-dev = [
 
 
 [tool.setuptools]
-packages = ["abstractllm", "abstractllm.core", "abstractllm.providers", "abstractllm.tools", "abstractllm.structured", "abstractllm.events", "abstractllm.embeddings", "abstractllm.architectures", "abstractllm.utils", "abstractllm.assets", "abstractllm.server"]
+packages = ["abstractllm", "abstractllm.core", "abstractllm.providers", "abstractllm.tools", "abstractllm.structured", "abstractllm.events", "abstractllm.embeddings", "abstractllm.architectures", "abstractllm.utils", "abstractllm.assets", "abstractllm.server", "abstractllm.apps", "abstractllm.processing"]
 
 [tool.setuptools.package-data]
 abstractllm = [

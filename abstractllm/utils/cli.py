@@ -74,7 +74,7 @@ class SimpleCLI:
             print("  /debug - Toggle debug mode")
             print("  /history [n] - Show conversation history or last n interactions")
             print("  /model <provider:model> - Change model")
-            print("  /compact - Compact chat history using gemma3:1b")
+            print("  /compact - Compact chat history using gemma3:1b-it-qat-it-qat")
             print("  /system [prompt] - Show or change system prompt")
             print("\n🛠️ Tools: list_files, read_file, execute_command, web_search\n")
 
@@ -156,13 +156,13 @@ class SimpleCLI:
             print("🗜️  Compacting chat history...")
             print(f"   Before: {len(messages)} messages (~{self.session.get_token_estimate()} tokens)")
 
-            # Create compact provider using gemma3:1b for fast, local processing
+            # Create compact provider using gemma3:1b-it-qat for fast, local processing
             try:
                 from .. import create_llm
-                compact_provider = create_llm("ollama", model="gemma3:1b")
-                print("   Using gemma3:1b for compaction...")
+                compact_provider = create_llm("ollama", model="gemma3:1b-it-qat")
+                print("   Using gemma3:1b-it-qat for compaction...")
             except Exception as e:
-                print(f"⚠️  Could not create gemma3:1b provider: {e}")
+                print(f"⚠️  Could not create gemma3:1b-it-qat provider: {e}")
                 print("   Using current provider instead...")
                 compact_provider = None
 
@@ -399,7 +399,7 @@ Commands:
   /debug - Toggle debug mode
   /history [n] - Show conversation history or last n interactions
   /model <provider:model> - Change model
-  /compact - Compact chat history using gemma3:1b
+  /compact - Compact chat history using gemma3:1b-it-qat
   /system [prompt] - Show or change system prompt
 
 Tools: list_files, read_file, execute_command, web_search
