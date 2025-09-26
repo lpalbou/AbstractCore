@@ -493,6 +493,37 @@ class EmbeddingManager:
             logger.error(f"Failed to compute similarity: {e}")
             return 0.0
 
+    def compute_similarity_direct(self, embedding1: List[float], embedding2: List[float]) -> float:
+        """Compute cosine similarity between two embeddings directly.
+
+        Args:
+            embedding1: First embedding vector
+            embedding2: Second embedding vector
+
+        Returns:
+            Cosine similarity score between -1 and 1
+        """
+        try:
+            import numpy as np
+
+            # Convert to numpy arrays
+            emb1 = np.array(embedding1)
+            emb2 = np.array(embedding2)
+
+            # Compute cosine similarity
+            dot_product = np.dot(emb1, emb2)
+            norm_product = np.linalg.norm(emb1) * np.linalg.norm(emb2)
+
+            if norm_product == 0:
+                return 0.0
+
+            similarity = dot_product / norm_product
+            return float(similarity)
+
+        except Exception as e:
+            logger.error(f"Failed to compute direct similarity: {e}")
+            return 0.0
+
     def compute_similarities(self, text: str, texts: List[str]) -> List[float]:
         """Compute cosine similarities between one text and a list of texts.
 

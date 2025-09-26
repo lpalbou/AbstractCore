@@ -18,7 +18,7 @@ except ImportError:
     _has_embeddings = False
 
 # Processing module (core functionality - always available)
-from .processing import BasicSummarizer, SummaryStyle, SummaryLength
+from .processing import BasicSummarizer, SummaryStyle, SummaryLength, BasicExtractor, EntityType, RelationType
 _has_processing = True
 
 __all__ = [
@@ -38,4 +38,4 @@ if _has_embeddings:
     __all__.append('EmbeddingManager')
 
 # Processing is always available now
-__all__.extend(['BasicSummarizer', 'SummaryStyle', 'SummaryLength'])
+__all__.extend(['BasicSummarizer', 'SummaryStyle', 'SummaryLength', 'BasicExtractor', 'EntityType', 'RelationType'])
