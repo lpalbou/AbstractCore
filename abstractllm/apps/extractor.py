@@ -151,50 +151,85 @@ def parse_extraction_length(length_str: Optional[str]) -> str:
     return length_lower
 
 
-def entity_type_to_schema_type(entity_type: EntityType) -> str:
-    """Map EntityType to schema.org type"""
-    schema_map = {
-        EntityType.PERSON: "schema:Person",
-        EntityType.ORGANIZATION: "schema:Organization",
-        EntityType.LOCATION: "schema:Place",
-        EntityType.CONCEPT: "schema:Thing",
-        EntityType.EVENT: "schema:Event",
-        EntityType.TECHNOLOGY: "schema:SoftwareApplication",
-        EntityType.PRODUCT: "schema:Product",
-        EntityType.DATE: "schema:Date",
-        EntityType.OTHER: "schema:Thing"
+def entity_type_to_semantic_type(entity_type: EntityType) -> str:
+    """Map EntityType to appropriate ontology class following semantic recommendations"""
+    # Following semantic expert recommendations for maximum interoperability
+    type_map = {
+        EntityType.PERSON: "schema:Person",  # 40-45% adoption
+        EntityType.ORGANIZATION: "schema:Organization",  # Standard for organizational entities
+        EntityType.LOCATION: "schema:Place",  # Geographic locations
+        EntityType.CONCEPT: "skos:Concept",  # Specifically designed for concept representation
+        EntityType.EVENT: "schema:Event",  # Standard for events
+        EntityType.TECHNOLOGY: "schema:SoftwareApplication",  # Digital/software entities
+        EntityType.PRODUCT: "schema:Product",  # Commercial products
+        EntityType.DATE: "schema:Date",  # Temporal information
+        EntityType.OTHER: "schema:Thing"  # Fallback for general entities
     }
-    return schema_map.get(entity_type, "schema:Thing")
+    return type_map.get(entity_type, "schema:Thing")
 
 
-def relation_type_to_schema_property(relation_type: RelationType) -> str:
-    """Map RelationType to schema.org property"""
+def _get_entity_uri_prefix(entity_type: EntityType) -> str:
+    """Get URI prefix for entity type following semantic recommendations"""
+    prefix_map = {
+        EntityType.PERSON: "person",
+        EntityType.ORGANIZATION: "org",
+        EntityType.LOCATION: "place",
+        EntityType.CONCEPT: "concept",
+        EntityType.EVENT: "event",
+        EntityType.TECHNOLOGY: "tech",
+        EntityType.PRODUCT: "product",
+        EntityType.DATE: "date",
+        EntityType.OTHER: "entity"
+    }
+    return prefix_map.get(entity_type, "entity")
+
+
+def _clean_uri_component(name: str) -> str:
+    """Clean name for URI component following best practices"""
+    import re
+    # Convert to lowercase, replace spaces with hyphens, remove special chars
+    cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', name.lower())
+    cleaned = re.sub(r'\s+', '-', cleaned.strip())
+    cleaned = re.sub(r'-+', '-', cleaned)  # Remove multiple consecutive hyphens
+    return cleaned[:50]  # Limit length for practical URIs
+
+
+def relation_type_to_semantic_property(relation_type: RelationType) -> str:
+    """Map RelationType to appropriate ontology property following semantic recommendations"""
+    # Following semantic expert recommendations with precise, directional relationships
     property_map = {
-        RelationType.WORKS_FOR: "schema:worksFor",
-        RelationType.LOCATED_IN: "schema:location",
-        RelationType.CREATED_BY: "schema:creator",
-        RelationType.RELATED_TO: "schema:relatedTo",
-        RelationType.CAUSES: "schema:result",
-        RelationType.USES: "schema:instrument",
-        RelationType.PARTICIPATES_IN: "schema:participant",
-        RelationType.OCCURRED_ON: "schema:startDate",
-        RelationType.SIMILAR_TO: "schema:sameAs",
-        RelationType.OTHER: "schema:relatedTo"
+        RelationType.WORKS_FOR: "schema:worksFor",  # Employment relationship
+        RelationType.LOCATED_IN: "schema:location",  # Spatial relationship
+        RelationType.CREATED_BY: "dcterms:creator",  # Dublin Core - higher adoption (60-70%)
+        RelationType.RELATED_TO: "dcterms:relation",  # Dublin Core generic relation
+        RelationType.CAUSES: "schema:result",  # Causal relationship
+        RelationType.USES: "schema:instrument",  # Instrumental relationship
+        RelationType.PARTICIPATES_IN: "schema:participant",  # Participation
+        RelationType.OCCURRED_ON: "schema:startDate",  # Temporal relationship
+        RelationType.SIMILAR_TO: "skos:closeMatch",  # SKOS for concept similarity
+        RelationType.OTHER: "dcterms:relation"  # Dublin Core fallback
     }
-    return property_map.get(relation_type, "schema:relatedTo")
+    return property_map.get(relation_type, "dcterms:relation")
 
 
 def format_jsonld_output(result, source_file: str) -> Dict[str, Any]:
-    """Format extraction result as JSON-LD for Knowledge Graph compatibility"""
+    """Format extraction result as JSON-LD following semantic best practices"""
 
-    # JSON-LD context
+    # Enhanced JSON-LD context following semantic expert recommendations
     context = {
-        "@vocab": "https://schema.org/",
-        "schema": "https://schema.org/",
-        "kg": "https://abstractllm.com/kg/",
+        # Multiple ontology support for maximum interoperability
+        "dcterms": "http://purl.org/dc/terms/",  # 60-70% adoption
+        "schema": "https://schema.org/",  # 35-45% adoption
+        "skos": "http://www.w3.org/2004/02/skos/core#",  # 15-20% adoption
+        "cito": "http://purl.org/spar/cito/",  # 15-20% adoption
+        "kg": "https://abstractllm.com/kg/",  # Custom namespace
+
+        # Semantic properties
         "confidence": "kg:confidence",
         "aliases": "kg:aliases",
-        "extractionMetadata": "kg:extractionMetadata"
+        "extractionMetadata": "kg:extractionMetadata",
+        "verificationConfidence": "kg:verificationConfidence",
+        "deduplicationSummary": "kg:deduplicationSummary"
     }
 
     # Convert entities to JSON-LD format
@@ -202,24 +237,26 @@ def format_jsonld_output(result, source_file: str) -> Dict[str, Any]:
     entity_id_map = {}  # canonical_id -> @id
 
     for canonical_id, entity in result.entities.items():
-        # Create unique IRI for entity
-        entity_iri = f"kg:entity/{canonical_id}"
+        # Create semantic IRI following URI pattern recommendations
+        entity_type_prefix = _get_entity_uri_prefix(entity.type)
+        clean_name = _clean_uri_component(entity.name)
+        entity_iri = f"kg:{entity_type_prefix}-{clean_name}"
         entity_id_map[canonical_id] = entity_iri
 
         entity_jsonld = {
             "@id": entity_iri,
-            "@type": entity_type_to_schema_type(entity.type),
-            "name": entity.name,
+            "@type": entity_type_to_semantic_type(entity.type),
+            "schema:name": entity.name,  # Use schema:name for compatibility
             "confidence": entity.confidence
         }
 
-        # Add aliases if present
+        # Add aliases using SKOS vocabulary
         if entity.aliases:
-            entity_jsonld["aliases"] = entity.aliases
+            entity_jsonld["skos:altLabel"] = entity.aliases
 
-        # Add context as description
+        # Add context as description using Dublin Core
         if entity.context:
-            entity_jsonld["description"] = entity.context
+            entity_jsonld["dcterms:description"] = entity.context
 
         entities_jsonld.append(entity_jsonld)
 
@@ -241,26 +278,41 @@ def format_jsonld_output(result, source_file: str) -> Dict[str, Any]:
                 "@id": f"kg:relation/{i}",
                 "@type": "kg:Relationship",
                 "subject": {"@id": source_iri},
-                "predicate": relation_type_to_schema_property(rel.relation),
+                "predicate": relation_type_to_semantic_property(rel.relation),
                 "object": {"@id": target_iri},
                 "confidence": rel.confidence,
-                "context": rel.context
+                "dcterms:description": rel.context  # Use Dublin Core for context
             }
             relationships_jsonld.append(relationship_jsonld)
 
-    # Create complete JSON-LD document
+    # Create complete JSON-LD document following semantic best practices
+    extraction_id = f"kg:extraction/{int(time.time())}"
+
     jsonld_doc = {
         "@context": context,
         "@type": "kg:KnowledgeGraph",
-        "@id": f"kg:extraction/{int(time.time())}",
-        "source": source_file,
-        "extractionDate": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "@id": extraction_id,
+
+        # Dublin Core metadata (60-70% adoption)
+        "dcterms:source": source_file,
+        "dcterms:created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "dcterms:creator": "AbstractLLM Basic Extractor",
+        "dcterms:description": f"Knowledge graph extracted from {source_file}",
+
+        # Schema.org compatibility
+        "schema:name": f"Knowledge Graph from {source_file}",
+        "schema:dateCreated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+
+        # Extraction-specific metadata
         "extractionMetadata": {
             "verificationConfidence": result.verification_confidence,
             "deduplicationSummary": result.deduplication_summary,
             "entitiesCount": len(result.entities),
-            "relationshipsCount": len(result.relationships)
+            "relationshipsCount": len(result.relationships),
+            "extractorVersion": "BasicExtractor-2.0"
         },
+
+        # Entity and relationship collections
         "entities": entities_jsonld,
         "relationships": relationships_jsonld
     }

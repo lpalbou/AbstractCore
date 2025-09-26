@@ -500,16 +500,16 @@ class BasicExtractor:
             type_names = [t.value for t in entity_types]
             type_instruction = f"\nFocus on these entity types: {', '.join(type_names)}"
 
-        # Style instructions
+        # Style instructions based on knowledge graph best practices
         style_instruction = ""
         if style == "structured":
-            style_instruction = "\nExtraction approach: Organize entities and relationships in a clear, systematic manner. Present information in a well-structured format."
+            style_instruction = "\n🎯 STRUCTURED EXTRACTION:\n- Differentiate core entities (subjects) from attributes (properties)\n- Create clear hierarchies using part-of relationships\n- Group related information under parent entities\n- Use precise, directional relationship types"
         elif style == "focused":
-            style_instruction = "\nExtraction approach: Focus on the most important and clearly stated entities and relationships. Prioritize quality over quantity."
+            style_instruction = "\n🎯 FOCUSED EXTRACTION:\n- Extract only the most important core entities (avoid extracting attributes as entities)\n- Prioritize entities central to the domain focus\n- Use specific relationship types instead of generic ones\n- Focus on entities that are primary subjects, not descriptive details"
         elif style == "minimal":
-            style_instruction = "\nExtraction approach: Extract only the most essential entities and relationships. Be very selective and focus on core information only."
+            style_instruction = "\n🎯 MINIMAL EXTRACTION:\n- Extract only essential entities that cannot be attributes of other entities\n- Consolidate related information under fewer core entities\n- Use the most important, specific relationships only\n- Avoid redundancy and over-extraction"
         elif style == "comprehensive":
-            style_instruction = "\nExtraction approach: Extract all relevant entities and relationships thoroughly. Include both obvious and implied connections."
+            style_instruction = "\n🎯 COMPREHENSIVE EXTRACTION:\n- Extract all significant entities while maintaining proper hierarchy\n- Distinguish between core entities and their attributes\n- Include both obvious and implied relationships with precise types\n- Build a complete but well-structured knowledge graph"
 
         # Length instructions
         length_instruction = ""
@@ -522,34 +522,54 @@ class BasicExtractor:
         else:  # standard
             length_instruction = "\nExtraction depth: Extract 10-15 key entities and 5-10 important relationships."
 
-        prompt = f"""Extract entities and relationships from the following text.
+        prompt = f"""Extract entities and relationships to build a well-structured knowledge graph.
 
-For each entity:
-- Identify the name/mention as it appears in text
-- Classify the type (person, organization, location, concept, event, technology, product, date, other)
-- Note any alternative names or aliases mentioned
-- Include relevant context where the entity appears
-- Provide confidence score (0-1) for the extraction
+🔬 **KNOWLEDGE GRAPH BEST PRACTICES:**
 
-For each relationship:
-- Identify source and target entities by their exact names
-- Classify the relationship type (works_for, located_in, created_by, related_to, causes, uses, participates_in, occurred_on, similar_to, other)
-- Include context where the relationship is mentioned
-- Provide confidence score (0-1) for the relationship
+1. **DIFFERENTIATE ENTITIES FROM ATTRIBUTES** 🎯
+   - ENTITIES: Primary subjects (Person, Organization, Place, Concept, Product)
+   - ATTRIBUTES: Descriptive properties (titles, dates, addresses, specifications)
+   - Ask: "Is this a primary subject or a property describing a subject?"
+   - Example: "John Smith" = Entity, "CEO" = attribute, "2023" = attribute
+
+2. **BUILD HIERARCHY & CONSOLIDATE** 📂
+   - Use part-of relationships for logical structure
+   - Group related information under parent entities
+   - Avoid flat structures where every item is equal
+   - Example: Document → has sections (not separate section entities unless complex)
+
+3. **PRECISE RELATIONSHIPS** 🔗
+   - Replace generic terms with specific, directional verbs
+   - "created_by" not "related_to", "manages" not "works_with"
+   - Use domain-appropriate relationship types
+   - Make relationships meaningful and queryable
+
+FOR ENTITIES:
+- Name/mention as it appears in text
+- Type: person, organization, location, concept, event, technology, product, date, other
+- Aliases (alternative names mentioned)
+- Context (where/how it appears)
+- Confidence (0-1) based on clarity in text
+
+FOR RELATIONSHIPS:
+- Source entity name → Target entity name
+- Specific relationship type (be precise, avoid generic types)
+- Context where the relationship is stated
+- Confidence (0-1) based on how clearly stated
 
 {domain_instruction}{type_instruction}{style_instruction}{length_instruction}
 
-Text to analyze:
+📄 TEXT TO ANALYZE:
 {text}
 
-Requirements:
-- Be precise and factual - avoid hallucinating entities or relationships not clearly stated
-- Focus on the most important and clearly mentioned entities
-- Relationships should connect entities that actually appear in the text
-- Provide high confidence scores only for clearly stated facts
-- Give an overall verification confidence for the entire extraction
+🎯 EXTRACTION REQUIREMENTS:
+- Be factual - only extract what's clearly stated or strongly implied
+- Focus on core entities that are primary subjects, not attributes
+- Use specific relationship types that add semantic meaning
+- Build a hierarchical, well-structured knowledge graph
+- Provide verification confidence for the entire extraction
 
-Extract the entities and relationships following these guidelines."""
+Extract entities and relationships following these knowledge graph principles."""
 
         return prompt
 

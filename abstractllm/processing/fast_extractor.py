@@ -182,23 +182,32 @@ class FastExtractor(BasicExtractor):
         elif length == "comprehensive":
             length_instruction = "\nExtract all relevant entities and relationships."
 
-        # Simplified prompt for speed - less verbose instructions
-        prompt = f"""Extract entities and relationships from the text below.
+        # Fast extraction prompt with knowledge graph principles
+        prompt = f"""Extract entities and relationships for a well-structured knowledge graph.
 
-For entities: identify name, type, any aliases, context, confidence (0-1)
-For relationships: identify source, target, relation type, context, confidence (0-1)
+🎯 **FAST EXTRACTION PRINCIPLES:**
+
+1. **CORE ENTITIES ONLY** - Extract primary subjects (Person, Organization, Place, Concept)
+   - Skip attributes that describe entities (titles, dates, specifications)
+   - Focus on entities that are subjects, not properties
+
+2. **PRECISE RELATIONSHIPS** - Use specific relationship types
+   - "created_by" not "related_to"
+   - "manages" not "works_with"
+   - Be directional and meaningful
+
+3. **CONSOLIDATE** - Group related information under core entities
+   - Avoid flat structures with many small entities
+   - Use hierarchical relationships when appropriate
+
+FOR ENTITIES: name, type, aliases, context, confidence (0-1)
+FOR RELATIONSHIPS: source → target, specific relation type, context, confidence (0-1)
 
 {domain_instruction}{type_instruction}{style_instruction}{length_instruction}
 
-Text:
+📄 TEXT:
 {text}
 
-Requirements:
-- Be accurate and factual
-- Focus on clearly stated entities and relationships
-- Provide confidence scores
-- Extract the most important entities and relationships
-
-Extract entities and relationships following these guidelines."""
+🚀 FAST EXTRACTION - Focus on core entities and meaningful relationships only."""
 
         return prompt
