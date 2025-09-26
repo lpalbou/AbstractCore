@@ -317,7 +317,9 @@ class BasicExtractor:
         self,
         text: str,
         domain_focus: Optional[str] = None,
-        entity_types: Optional[List[EntityType]] = None
+        entity_types: Optional[List[EntityType]] = None,
+        style: Optional[str] = None,
+        length: Optional[str] = None
     ) -> ExtractionOutput:
         """
         Extract entities and relationships from text using Chain of Verification
@@ -326,6 +328,8 @@ class BasicExtractor:
             text: Text to analyze
             domain_focus: Optional domain focus (e.g., "business", "technology", "medical")
             entity_types: Optional list of entity types to focus on
+            style: Extraction style ("comprehensive", "focused", "minimal")
+            length: Extraction depth ("brief", "standard", "detailed", "comprehensive")
 
         Returns:
             ExtractionOutput: Extracted and deduplicated entities with relationships
@@ -341,20 +345,22 @@ class BasicExtractor:
         """
         # Handle long documents through chunking
         if len(text) > self.max_chunk_size:
-            return self._extract_long_document(text, domain_focus, entity_types)
+            return self._extract_long_document(text, domain_focus, entity_types, style, length)
         else:
-            return self._extract_single_chunk(text, domain_focus, entity_types)
+            return self._extract_single_chunk(text, domain_focus, entity_types, style, length)
 
     def _extract_single_chunk(
         self,
         text: str,
         domain_focus: Optional[str],
-        entity_types: Optional[List[EntityType]]
+        entity_types: Optional[List[EntityType]],
+        style: Optional[str] = None,
+        length: Optional[str] = None
     ) -> ExtractionOutput:
         """Extract from a single chunk using Chain of Verification"""
 
         # Step 1: Initial extraction
-        initial_prompt = self._build_extraction_prompt(text, domain_focus, entity_types)
+        initial_prompt = self._build_extraction_prompt(text, domain_focus, entity_types, style, length)
 
         # Use AbstractCore's structured output with retry
         response = self.llm.generate(
@@ -430,7 +436,9 @@ class BasicExtractor:
         self,
         text: str,
         domain_focus: Optional[str],
-        entity_types: Optional[List[EntityType]]
+        entity_types: Optional[List[EntityType]],
+        style: Optional[str] = None,
+        length: Optional[str] = None
     ) -> ExtractionOutput:
         """Handle long documents using incremental extraction with entity registry"""
 
@@ -438,7 +446,7 @@ class BasicExtractor:
         all_relationships = []
 
         for chunk in chunks:
-            chunk_result = self._extract_single_chunk(chunk, domain_focus, entity_types)
+            chunk_result = self._extract_single_chunk(chunk, domain_focus, entity_types, style, length)
             all_relationships.extend(chunk_result.relationships)
 
         # Final output uses accumulated entities and relationships
@@ -475,7 +483,9 @@ class BasicExtractor:
         self,
         text: str,
         domain_focus: Optional[str],
-        entity_types: Optional[List[EntityType]]
+        entity_types: Optional[List[EntityType]],
+        style: Optional[str] = None,
+        length: Optional[str] = None
     ) -> str:
         """Build the initial extraction prompt"""
 
@@ -489,6 +499,28 @@ class BasicExtractor:
         if entity_types:
             type_names = [t.value for t in entity_types]
             type_instruction = f"\nFocus on these entity types: {', '.join(type_names)}"
+
+        # Style instructions
+        style_instruction = ""
+        if style == "structured":
+            style_instruction = "\nExtraction approach: Organize entities and relationships in a clear, systematic manner. Present information in a well-structured format."
+        elif style == "focused":
+            style_instruction = "\nExtraction approach: Focus on the most important and clearly stated entities and relationships. Prioritize quality over quantity."
+        elif style == "minimal":
+            style_instruction = "\nExtraction approach: Extract only the most essential entities and relationships. Be very selective and focus on core information only."
+        elif style == "comprehensive":
+            style_instruction = "\nExtraction approach: Extract all relevant entities and relationships thoroughly. Include both obvious and implied connections."
+
+        # Length instructions
+        length_instruction = ""
+        if length == "brief":
+            length_instruction = "\nExtraction depth: Limit to 5-10 key entities and 3-5 main relationships."
+        elif length == "detailed":
+            length_instruction = "\nExtraction depth: Extract comprehensive details including 15-25 entities and 10-15 relationships."
+        elif length == "comprehensive":
+            length_instruction = "\nExtraction depth: Perform exhaustive extraction including all entities and relationships, aliases, and detailed context."
+        else:  # standard
+            length_instruction = "\nExtraction depth: Extract 10-15 key entities and 5-10 important relationships."
 
         prompt = f"""Extract entities and relationships from the following text.
 
@@ -505,7 +537,7 @@ For each relationship:
 - Include context where the relationship is mentioned
 - Provide confidence score (0-1) for the relationship
 
-{domain_instruction}{type_instruction}
+{domain_instruction}{type_instruction}{style_instruction}{length_instruction}
 
 Text to analyze:
 {text}

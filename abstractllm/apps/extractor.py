@@ -6,7 +6,9 @@ Usage:
     python -m abstractllm.apps.extractor <file_path> [options]
 
 Options:
-    --domain-focus=<focus>      Domain focus for extraction (e.g., "technology", "business", "medical")
+    --focus=<focus>             Specific focus area for extraction (e.g., "technology", "business", "medical")
+    --style=<style>             Extraction style (structured, focused, minimal, comprehensive, default: structured)
+    --length=<length>           Extraction depth (brief, standard, detailed, comprehensive, default: standard)
     --entity-types=<types>      Comma-separated entity types to focus on (person,organization,location,etc.)
     --similarity-threshold=<t>  Similarity threshold for entity deduplication (0.0-1.0, default: 0.85)
     --format=<format>          Output format (json-ld, json, yaml, default: json-ld)
@@ -15,14 +17,17 @@ Options:
     --provider=<provider>      LLM provider (requires --model)
     --model=<model>            LLM model (requires --provider)
     --no-embeddings           Disable semantic entity deduplication
+    --fast                    Use fast extraction (skip verification, larger chunks, no embeddings)
+    --minified                Output minified JSON-LD (compact, no indentation)
     --verbose                 Show detailed progress information
     --help                    Show this help message
 
 Examples:
     python -m abstractllm.apps.extractor document.pdf
-    python -m abstractllm.apps.extractor report.txt --domain-focus=technology --verbose
+    python -m abstractllm.apps.extractor report.txt --focus=technology --style=structured --verbose
     python -m abstractllm.apps.extractor data.md --entity-types=person,organization --output=kg.jsonld
-    python -m abstractllm.apps.extractor large.txt --chunk-size=15000 --provider=openai --model=gpt-4o-mini
+    python -m abstractllm.apps.extractor large.txt --fast --minified --verbose  # Fast, compact output
+    python -m abstractllm.apps.extractor report.txt --length=detailed --provider=openai --model=gpt-4o-mini
 """
 
 import argparse
@@ -38,7 +43,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-from ..processing import BasicExtractor, EntityType, RelationType
+from ..processing import BasicExtractor, FastExtractor, EntityType, RelationType
 from ..core.factory import create_llm
 
 
@@ -114,6 +119,36 @@ def parse_entity_types(types_str: Optional[str]) -> Optional[List[EntityType]]:
         types_list.append(type_map[type_str])
 
     return types_list
+
+
+def parse_extraction_style(style_str: Optional[str]) -> str:
+    """Parse extraction style string"""
+    if not style_str:
+        return 'structured'
+
+    valid_styles = ['structured', 'focused', 'minimal', 'comprehensive']
+    style_lower = style_str.lower()
+
+    if style_lower not in valid_styles:
+        available_styles = ', '.join(valid_styles)
+        raise ValueError(f"Invalid extraction style '{style_str}'. Available styles: {available_styles}")
+
+    return style_lower
+
+
+def parse_extraction_length(length_str: Optional[str]) -> str:
+    """Parse extraction length string"""
+    if not length_str:
+        return 'standard'
+
+    valid_lengths = ['brief', 'standard', 'detailed', 'comprehensive']
+    length_lower = length_str.lower()
+
+    if length_lower not in valid_lengths:
+        available_lengths = ', '.join(valid_lengths)
+        raise ValueError(f"Invalid extraction length '{length_str}'. Available lengths: {available_lengths}")
+
+    return length_lower
 
 
 def entity_type_to_schema_type(entity_type: EntityType) -> str:
@@ -285,9 +320,9 @@ def main():
         epilog="""
 Examples:
   python -m abstractllm.apps.extractor document.pdf
-  python -m abstractllm.apps.extractor report.txt --domain-focus=technology --verbose
+  python -m abstractllm.apps.extractor report.txt --focus=technology --style=structured --verbose
   python -m abstractllm.apps.extractor data.md --entity-types=person,organization --output=kg.jsonld
-  python -m abstractllm.apps.extractor large.txt --chunk-size=15000 --provider=openai --model=gpt-4o-mini
+  python -m abstractllm.apps.extractor large.txt --length=detailed --fast --minified --verbose
 
 Supported file types: .txt, .md, .py, .js, .html, .json, .csv, and most text-based files
 
@@ -295,6 +330,15 @@ Output formats:
   - json-ld: Knowledge Graph format using schema.org vocabulary (default)
   - json: Simple JSON format
   - yaml: YAML format
+
+Output options:
+  - Default: Pretty-printed JSON with indentation
+  - --minified: Compact JSON without indentation (smaller file size)
+
+Performance options:
+  - Default: High accuracy with Chain of Verification (slower, 2x LLM calls per chunk)
+  - --fast: Optimized speed (skip verification, larger chunks, no embeddings)
+  - For large files: Use --fast flag for significant speedup (2-4x faster)
 
 Default model setup:
   - Requires Ollama: https://ollama.com/
@@ -309,8 +353,22 @@ Default model setup:
     )
 
     parser.add_argument(
-        '--domain-focus',
-        help='Domain focus for extraction (e.g., "technology", "business", "medical")'
+        '--focus',
+        help='Specific focus area for extraction (e.g., "technology", "business", "medical")'
+    )
+
+    parser.add_argument(
+        '--style',
+        choices=['structured', 'focused', 'minimal', 'comprehensive'],
+        default='structured',
+        help='Extraction style (default: structured)'
+    )
+
+    parser.add_argument(
+        '--length',
+        choices=['brief', 'standard', 'detailed', 'comprehensive'],
+        default='standard',
+        help='Extraction depth (default: standard)'
     )
 
     parser.add_argument(
@@ -366,6 +424,18 @@ Default model setup:
     )
 
     parser.add_argument(
+        '--fast',
+        action='store_true',
+        help='Use fast extraction (skip verification, larger chunks, no embeddings)'
+    )
+
+    parser.add_argument(
+        '--minified',
+        action='store_true',
+        help='Output minified JSON-LD (compact, no indentation)'
+    )
+
+    parser.add_argument(
         '--verbose',
         action='store_true',
         help='Show detailed progress information'
@@ -411,43 +481,73 @@ Default model setup:
         if args.verbose:
             print(f"File loaded ({len(content):,} characters)")
 
-        # Parse entity types
+        # Parse options
         entity_types = parse_entity_types(args.entity_types)
+        extraction_style = parse_extraction_style(args.style)
+        extraction_length = parse_extraction_length(args.length)
 
         # Initialize LLM and extractor
         use_embeddings = not args.no_embeddings
+
+        # Override settings for fast mode
+        if args.fast:
+            use_embeddings = False  # Disable embeddings for speed
+            if args.chunk_size == 6000:  # If using default chunk size
+                args.chunk_size = 15000  # Use larger chunks for speed
 
         if args.provider and args.model:
             # Custom provider/model with max_tokens adjusted for chunk size
             max_tokens = max(16000, args.chunk_size)
             if args.verbose:
-                print(f"Initializing extractor ({args.provider}, {args.model}, {max_tokens} token context)...")
+                extractor_type = "FastExtractor" if args.fast else "BasicExtractor"
+                print(f"Initializing {extractor_type} ({args.provider}, {args.model}, {max_tokens} token context)...")
 
             llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens)
-            extractor = BasicExtractor(
-                llm=llm,
-                use_embeddings=use_embeddings,
-                similarity_threshold=args.similarity_threshold,
-                max_chunk_size=args.chunk_size
-            )
-        else:
-            # Default configuration
-            if args.verbose:
-                embeddings_status = "enabled" if use_embeddings else "disabled"
-                print(f"Initializing extractor (ollama, gemma3:1b-it-qat, embeddings: {embeddings_status}, threshold: {args.similarity_threshold})...")
 
-            try:
+            if args.fast:
+                extractor = FastExtractor(
+                    llm=llm,
+                    use_embeddings=use_embeddings,
+                    similarity_threshold=args.similarity_threshold,
+                    max_chunk_size=args.chunk_size,
+                    use_verification=False  # Skip verification for speed
+                )
+            else:
                 extractor = BasicExtractor(
+                    llm=llm,
                     use_embeddings=use_embeddings,
                     similarity_threshold=args.similarity_threshold,
                     max_chunk_size=args.chunk_size
                 )
+        else:
+            # Default configuration
+            if args.verbose:
+                extractor_type = "FastExtractor" if args.fast else "BasicExtractor"
+                embeddings_status = "enabled" if use_embeddings else "disabled"
+                verification_status = "disabled" if args.fast else "enabled"
+                print(f"Initializing {extractor_type} (ollama, gemma3:1b-it-qat, embeddings: {embeddings_status}, verification: {verification_status}, threshold: {args.similarity_threshold})...")
+
+            try:
+                if args.fast:
+                    extractor = FastExtractor(
+                        use_embeddings=use_embeddings,
+                        similarity_threshold=args.similarity_threshold,
+                        max_chunk_size=args.chunk_size,
+                        use_verification=False  # Skip verification for speed
+                    )
+                else:
+                    extractor = BasicExtractor(
+                        use_embeddings=use_embeddings,
+                        similarity_threshold=args.similarity_threshold,
+                        max_chunk_size=args.chunk_size
+                    )
             except RuntimeError as e:
                 # Handle default model not available
                 print(f"\n{e}")
                 print("\n🚀 Quick alternatives to get started:")
                 print("   - Use --provider and --model to specify an available provider")
                 print("   - Example: extractor document.txt --provider openai --model gpt-4o-mini")
+                print("   - For speed: extractor document.txt --fast")
                 sys.exit(1)
 
         # Extract entities and relationships
@@ -457,8 +557,10 @@ Default model setup:
         start_time = time.time()
         result = extractor.extract(
             text=content,
-            domain_focus=args.domain_focus,
-            entity_types=entity_types
+            domain_focus=args.focus,
+            entity_types=entity_types,
+            style=extraction_style,
+            length=extraction_length
         )
         end_time = time.time()
 
@@ -470,17 +572,22 @@ Default model setup:
                 print(f"Merged {result.deduplication_summary['merged']} duplicate entities")
 
         # Format output
+        # Determine JSON indentation (minified or pretty-printed)
+        json_indent = None if args.minified else 2
+
         if args.format == 'json-ld':
             formatted_output = json.dumps(
                 format_jsonld_output(result, args.file_path),
-                indent=2,
-                ensure_ascii=False
+                indent=json_indent,
+                ensure_ascii=False,
+                separators=(',', ':') if args.minified else None
             )
         elif args.format == 'json':
             formatted_output = json.dumps(
                 format_json_output(result, args.file_path),
-                indent=2,
-                ensure_ascii=False
+                indent=json_indent,
+                ensure_ascii=False,
+                separators=(',', ':') if args.minified else None
             )
         else:  # yaml
             formatted_output = format_yaml_output(result, args.file_path)
