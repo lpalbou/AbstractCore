@@ -16,12 +16,12 @@ pip install abstractcore[embeddings]
 ```python
 from abstractllm.embeddings import EmbeddingManager
 
-# Create embedder with default model (Google's EmbeddingGemma)
+# Create embedder with default model (all-MiniLM-L6-v2)
 embedder = EmbeddingManager()
 
 # Generate embedding for a single text
 embedding = embedder.embed("Machine learning transforms how we process information")
-print(f"Embedding dimension: {len(embedding)}")  # 768
+print(f"Embedding dimension: {len(embedding)}")  # 384
 
 # Compute similarity between texts
 similarity = embedder.compute_similarity(
@@ -37,20 +37,28 @@ AbstractCore includes several SOTA open-source embedding models:
 
 | Model | Size | Dimensions | Languages | Best For |
 |-------|------|------------|-----------|----------|
-| **embeddinggemma** (default) | 300M | 768 | 100+ | General purpose, multilingual |
+| **all-minilm** (default) | 90M | 384 | English | Fast local development, testing |
+| **qwen3-embedding** | 1.5B | 1536 | 100+ | Qwen-based multilingual, instruction-tuned |
+| **embeddinggemma** | 300M | 768 | 100+ | General purpose, multilingual |
 | **granite** | 278M | 768 | 100+ | Enterprise applications |
 
 ### Model Selection
 
 ```python
-# Default: Google's EmbeddingGemma (recommended)
+# Default: all-MiniLM-L6-v2 (fast and lightweight)
 embedder = EmbeddingManager()
+
+# Qwen-based embedding model for multilingual support
+embedder = EmbeddingManager(model="qwen3-embedding")
+
+# Google's EmbeddingGemma for multilingual support
+embedder = EmbeddingManager(model="embeddinggemma")
 
 # IBM Granite for enterprise use
 embedder = EmbeddingManager(model="granite")
 
 # Direct HuggingFace model ID
-embedder = EmbeddingManager(model="google/embeddinggemma-300m")
+embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 ```
 
 ## Core Features
@@ -89,25 +97,27 @@ for i, embedding in enumerate(embeddings):
 ### Similarity Analysis
 
 ```python
-# Compare different concepts
-pairs = [
-    ("cat", "kitten"),
-    ("car", "automobile"),
-    ("happy", "joyful"),
-    ("python", "snake"),
-    ("python", "programming")
-]
+# Basic similarity between two texts
+similarity = embedder.compute_similarity("cat", "kitten")
+print(f"Similarity: {similarity:.3f}")  # 0.804
 
-for text1, text2 in pairs:
-    similarity = embedder.compute_similarity(text1, text2)
-    print(f"{text1} ↔ {text2}: {similarity:.3f}")
+# NEW: Batch similarity - compare one text against many
+query = "Python programming"
+docs = ["Learn Python basics", "JavaScript guide", "Cooking recipes", "Data science with Python"]
+similarities = embedder.compute_similarities(query, docs)
+print(f"Batch similarities: {[f'{s:.3f}' for s in similarities]}")
+# Output: ['0.785', '0.155', '0.145', '0.580']
 
-# Output:
-# cat ↔ kitten: 0.789
-# car ↔ automobile: 0.845
-# happy ↔ joyful: 0.712
-# python ↔ snake: 0.423
-# python ↔ programming: 0.687
+# NEW: Similarity matrix - compare all texts against all texts
+texts = ["Python programming", "JavaScript development", "Python data science", "Web frameworks"]
+matrix = embedder.compute_similarities_matrix(texts)
+print(f"Matrix shape: {matrix.shape}")  # (4, 4) symmetric matrix
+
+# NEW: Asymmetric matrix for query-document matching
+queries = ["Learn Python", "Web development guide"]
+knowledge_base = ["Python tutorial", "JavaScript guide", "React framework", "Python for beginners"]
+search_matrix = embedder.compute_similarities_matrix(queries, knowledge_base)
+print(f"Search matrix: {search_matrix.shape}")  # (2, 4) - 2 queries × 4 documents
 ```
 
 ## Practical Applications
@@ -206,12 +216,10 @@ for ctx in contexts:
     print(f"- {ctx}")
 ```
 
-### Document Clustering
+### Document Clustering (NEW)
 
 ```python
 from abstractllm.embeddings import EmbeddingManager
-import numpy as np
-from sklearn.cluster import KMeans
 
 embedder = EmbeddingManager()
 
@@ -229,24 +237,23 @@ documents = [
     "Statistical analysis with Python"
 ]
 
-# Generate embeddings
-embeddings = embedder.embed_batch(documents)
+# NEW: Automatic semantic clustering
+clusters = embedder.find_similar_clusters(
+    documents,
+    threshold=0.6,      # 60% similarity required
+    min_cluster_size=2  # At least 2 documents per cluster
+)
 
-# Cluster documents
-n_clusters = 3
-kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-clusters = kmeans.fit_predict(embeddings)
+print(f"Found {len(clusters)} clusters:")
+for i, cluster in enumerate(clusters):
+    print(f"\nCluster {i+1} ({len(cluster)} documents):")
+    for idx in cluster:
+        print(f"  - {documents[idx]}")
 
-# Group documents by cluster
-clustered_docs = {i: [] for i in range(n_clusters)}
-for doc, cluster in zip(documents, clusters):
-    clustered_docs[cluster].append(doc)
-
-# Display results
-for cluster_id, docs in clustered_docs.items():
-    print(f"\nCluster {cluster_id + 1}:")
-    for doc in docs:
-        print(f"  - {doc}")
+# Example output:
+# Cluster 1 (4 documents): Python-related content
+# Cluster 2 (2 documents): JavaScript-related content
+# Cluster 3 (2 documents): Machine learning content
 ```
 
 ## Performance Optimization
@@ -287,23 +294,27 @@ embedding = embedder.embed("Test text")
 print(f"Truncated embedding dimension: {len(embedding)}")  # 256
 ```
 
-### Caching
+### Advanced Caching (NEW)
 
 ```python
-# Configure caching for better performance
+# Configure dual-layer caching system
 embedder = EmbeddingManager(
     cache_size=5000,  # Larger memory cache
     cache_dir="./embeddings_cache"  # Persistent disk cache
 )
 
-# First call: computes embedding
-embedding1 = embedder.embed("This text will be cached")
+# Regular embedding with standard caching
+embedding1 = embedder.embed("Machine learning text")
 
-# Second call: returns cached result (much faster)
-embedding2 = embedder.embed("This text will be cached")
+# NEW: Normalized embedding with dedicated cache (2x faster for similarity)
+normalized = embedder.embed_normalized("Machine learning text")
+print(f"Normalized embedding length: {sum(x*x for x in normalized)**0.5:.3f}")  # 1.0 (unit length)
 
-# Verify they're identical
-print(f"Cached result identical: {embedding1 == embedding2}")  # True
+# Check comprehensive cache stats
+stats = embedder.get_cache_stats()
+print(f"Regular cache: {stats['persistent_cache_size']} embeddings")
+print(f"Normalized cache: {stats['normalized_cache_size']} embeddings")
+print(f"Memory cache hits: {stats['memory_cache_info']['hits']}")
 ```
 
 ## Integration with LLM Providers

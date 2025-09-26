@@ -32,14 +32,15 @@ class TestEmbeddingModels:
     def test_get_default_model(self):
         """Test getting default model."""
         default = get_default_model()
-        assert default == "embeddinggemma"
+        assert default == "all-minilm-l6-v2"
 
     def test_list_available_models(self):
         """Test listing available models."""
         models = list_available_models()
         assert "embeddinggemma" in models
-        assert "stella-400m" in models
-        assert len(models) >= 4
+        assert "all-minilm-l6-v2" in models
+        assert "granite-30m" in models
+        assert len(models) >= 6  # We now have 8 models
 
 
 class TestEmbeddingManagerBasic:
