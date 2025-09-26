@@ -8,6 +8,9 @@ Production-ready embedding generation with SOTA models and efficient serving.
 import hashlib
 import pickle
 import logging
+import atexit
+import sys
+import builtins
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Union, Any, Dict, TYPE_CHECKING
@@ -107,6 +110,11 @@ class EmbeddingManager:
         self.normalized_cache_file = self.cache_dir / f"{cache_name}_normalized_cache.pkl"
         self._normalized_cache = self._load_normalized_cache()
 
+        # Register cleanup functions to save cache before Python shutdown
+        # Use atexit instead of __del__ for reliable cleanup
+        atexit.register(self._safe_save_persistent_cache)
+        atexit.register(self._safe_save_normalized_cache)
+
         # Configure events if available
         if EventType is not None and emit_global is not None:
             self.has_events = True
@@ -190,7 +198,6 @@ class EmbeddingManager:
         """Load persistent cache from disk."""
         try:
             if self.cache_file.exists():
-                import builtins
                 with builtins.open(self.cache_file, 'rb') as f:
                     cache = pickle.load(f)
                 logger.debug(f"Loaded {len(cache)} embeddings from persistent cache")
@@ -203,7 +210,6 @@ class EmbeddingManager:
         """Load normalized embeddings cache from disk."""
         try:
             if self.normalized_cache_file.exists():
-                import builtins
                 with builtins.open(self.normalized_cache_file, 'rb') as f:
                     cache = pickle.load(f)
                 logger.debug(f"Loaded {len(cache)} normalized embeddings from cache")
@@ -221,12 +227,23 @@ class EmbeddingManager:
 
             # Ensure directory exists
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-            import builtins
             with builtins.open(self.cache_file, 'wb') as f:
                 pickle.dump(self._persistent_cache, f)
             logger.debug(f"Saved {len(self._persistent_cache)} embeddings to persistent cache")
         except Exception as e:
             logger.warning(f"Failed to save persistent cache: {e}")
+
+    def _safe_save_persistent_cache(self):
+        """Safely save persistent cache, handling shutdown scenarios."""
+        try:
+            # Check if Python is shutting down
+            if sys.meta_path is None:
+                return  # Skip saving during shutdown
+
+            self._save_persistent_cache()
+        except Exception:
+            # Silently ignore errors during shutdown
+            pass
 
     def _save_normalized_cache(self):
         """Save normalized embeddings cache to disk."""
@@ -237,12 +254,23 @@ class EmbeddingManager:
 
             # Ensure directory exists
             self.normalized_cache_file.parent.mkdir(parents=True, exist_ok=True)
-            import builtins
             with builtins.open(self.normalized_cache_file, 'wb') as f:
                 pickle.dump(self._normalized_cache, f)
             logger.debug(f"Saved {len(self._normalized_cache)} normalized embeddings to cache")
         except Exception as e:
             logger.warning(f"Failed to save normalized cache: {e}")
+
+    def _safe_save_normalized_cache(self):
+        """Safely save normalized cache, handling shutdown scenarios."""
+        try:
+            # Check if Python is shutting down
+            if sys.meta_path is None:
+                return  # Skip saving during shutdown
+
+            self._save_normalized_cache()
+        except Exception:
+            # Silently ignore errors during shutdown
+            pass
 
     def _text_hash(self, text: str) -> str:
         """Generate hash for text caching."""
@@ -907,10 +935,7 @@ class EmbeddingManager:
             self.normalized_cache_file.unlink()
         logger.info("Cleared all embedding caches")
 
-    def __del__(self):
-        """Ensure persistent caches are saved when object is destroyed."""
-        try:
-            self._save_persistent_cache()
-            self._save_normalized_cache()
-        except:
-            pass  # Ignore errors during cleanup
+    def save_caches(self):
+        """Explicitly save both caches to disk."""
+        self._save_persistent_cache()
+        self._save_normalized_cache()
