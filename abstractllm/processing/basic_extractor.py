@@ -377,22 +377,22 @@ class BasicExtractor:
         else:
             raise ValueError(f"Failed to generate structured extraction output. Response type: {type(response)}")
 
-        # Step 2: Chain of Verification - verify extracted facts
-        verification_prompt = self._build_verification_prompt(text, extraction_result)
+        # Step 2: Semantic Refinement - improve semantic accuracy and completeness
+        refinement_prompt = self._build_semantic_refinement_prompt(text, extraction_result)
 
-        verified_response = self.llm.generate(
-            verification_prompt,
+        refined_response = self.llm.generate(
+            refinement_prompt,
             response_model=LLMExtractionOutput,
             retry_strategy=self.retry_strategy
         )
 
-        # Extract verified results
-        if isinstance(verified_response, LLMExtractionOutput):
-            final_result = verified_response
-        elif hasattr(verified_response, 'structured_output') and verified_response.structured_output:
-            final_result = verified_response.structured_output
+        # Extract refined results
+        if isinstance(refined_response, LLMExtractionOutput):
+            final_result = refined_response
+        elif hasattr(refined_response, 'structured_output') and refined_response.structured_output:
+            final_result = refined_response.structured_output
         else:
-            # Fall back to initial results if verification fails
+            # Fall back to initial results if refinement fails
             final_result = extraction_result
 
         # Step 3: Register entities and deduplicate
@@ -522,40 +522,81 @@ class BasicExtractor:
         else:  # standard
             length_instruction = "\nExtraction depth: Extract 10-15 key entities and 5-10 important relationships."
 
-        prompt = f"""Extract entities and relationships to build a well-structured knowledge graph.
+        prompt = f"""You are a specialized knowledge graph extraction system with deep expertise in semantic web technologies, ontologies, and knowledge representation. Extract both explicit and implicit knowledge while maintaining semantic accuracy.
 
-🔬 **KNOWLEDGE GRAPH BEST PRACTICES:**
+🔬 **SEMANTIC ENTITY TYPES** - Choose the most specific type possible:
 
-1. **DIFFERENTIATE ENTITIES FROM ATTRIBUTES** 🎯
-   - ENTITIES: Primary subjects (Person, Organization, Place, Concept, Product)
-   - ATTRIBUTES: Descriptive properties (titles, dates, addresses, specifications)
-   - Ask: "Is this a primary subject or a property describing a subject?"
-   - Example: "John Smith" = Entity, "CEO" = attribute, "2023" = attribute
+**Core Entities:**
+- schema:Person (individual people)
+- schema:Organization (companies, institutions, groups)
+- schema:Place (geographic locations)
+- schema:Event (events, milestones, occurrences)
 
-2. **BUILD HIERARCHY & CONSOLIDATE** 📂
-   - Use part-of relationships for logical structure
-   - Group related information under parent entities
-   - Avoid flat structures where every item is equal
-   - Example: Document → has sections (not separate section entities unless complex)
+**Knowledge & Concepts:**
+- skos:Concept (abstract ideas, theories, principles)
+- schema:ScholarlyField (academic disciplines)
+- schema:Theory (scientific/academic theories)
+- schema:Method (methodologies, approaches)
 
-3. **PRECISE RELATIONSHIPS** 🔗
-   - Replace generic terms with specific, directional verbs
-   - "created_by" not "related_to", "manages" not "works_with"
-   - Use domain-appropriate relationship types
-   - Make relationships meaningful and queryable
+**Systems & Technology:**
+- schema:SoftwareApplication (software systems, platforms)
+- schema:Product (products, offerings, creations)
+- schema:Algorithm (computational methods)
+- schema:Dataset (collections of data)
 
-FOR ENTITIES:
-- Name/mention as it appears in text
-- Type: person, organization, location, concept, event, technology, product, date, other
-- Aliases (alternative names mentioned)
-- Context (where/how it appears)
-- Confidence (0-1) based on clarity in text
+**Information Artifacts:**
+- dcterms:Text (documents, publications, works)
+- schema:Model (representational models)
+- schema:CreativeWork (creative works, content)
 
-FOR RELATIONSHIPS:
-- Source entity name → Target entity name
-- Specific relationship type (be precise, avoid generic types)
-- Context where the relationship is stated
-- Confidence (0-1) based on how clearly stated
+**Processes:**
+- schema:Process (sequences of actions)
+- schema:Analysis (analytical processes)
+- schema:Investigation (research activities)
+
+🔗 **SEMANTIC RELATIONSHIPS** - Use precise semantic connections:
+
+**Knowledge Relationships:**
+- dcterms:creator (creator/author relationship)
+- schema:about (subject/topic relationship)
+- schema:describes (descriptive relationship)
+- schema:explains (explanatory relationship)
+
+**Structural Relationships:**
+- schema:isPartOf (component relationship)
+- schema:hasPart (containment relationship)
+- schema:memberOf (membership)
+
+**Conceptual Relationships:**
+- skos:broader (more general concept)
+- skos:narrower (more specific concept)
+- skos:related (conceptually related)
+
+**Functional Relationships:**
+- schema:implements (implementation)
+- schema:utilizes (utilization)
+- schema:produces (production)
+- schema:enables (enablement)
+
+**Temporal Relationships:**
+- schema:precedes (temporal precedence)
+- schema:follows (temporal succession)
+- schema:during (temporal containment)
+
+**Only use generic relationships (schema:relatedTo) if NO specific semantic relationship applies.**
+
+FOR ENTITIES - Extract semantic details:
+- Name (as mentioned in text)
+- Semantic type (from vocabulary above)
+- Aliases (alternative names)
+- Semantic context and properties
+- Confidence (0-1) based on clarity
+
+FOR RELATIONSHIPS - Focus on semantic meaning:
+- Source entity → Target entity
+- Precise semantic relationship type
+- Context describing the relationship
+- Confidence (0-1) based on clarity
 
 {domain_instruction}{type_instruction}{style_instruction}{length_instruction}
 
@@ -573,14 +614,14 @@ Extract entities and relationships following these knowledge graph principles.""
 
         return prompt
 
-    def _build_verification_prompt(
+    def _build_semantic_refinement_prompt(
         self,
         original_text: str,
         extraction: LLMExtractionOutput
     ) -> str:
-        """Build Chain of Verification prompt to validate extractions"""
+        """Build semantic refinement prompt to enhance extraction quality"""
 
-        # Format the extracted entities and relationships for verification
+        # Format the extracted entities and relationships for refinement
         entity_list = []
         for entity in extraction.entities:
             entity_list.append(f"- {entity.name} ({entity.type.value}): {entity.context[:100]}")
@@ -592,25 +633,36 @@ Extract entities and relationships following these knowledge graph principles.""
         entities_text = "\n".join(entity_list) if entity_list else "None extracted"
         relationships_text = "\n".join(relationship_list) if relationship_list else "None extracted"
 
-        prompt = f"""Verify the following extracted entities and relationships against the original text.
+        prompt = f"""Refine this knowledge graph extraction to improve semantic accuracy and completeness.
 
 ORIGINAL TEXT:
 {original_text}
 
-EXTRACTED ENTITIES:
+CURRENT EXTRACTION:
+
+ENTITIES:
 {entities_text}
 
-EXTRACTED RELATIONSHIPS:
+RELATIONSHIPS:
 {relationships_text}
 
-Verification Task:
-1. Check each entity - is it actually mentioned in the original text?
-2. Check each relationship - is it actually stated or clearly implied?
-3. Remove any hallucinated entities or relationships
-4. Add any clearly stated entities or relationships that were missed
-5. Adjust confidence scores based on how clearly each item is supported by the text
-6. Provide an overall verification confidence score
+🔬 **SEMANTIC REFINEMENT AREAS:**
 
-Return the corrected and verified entities and relationships. Only include items that are clearly supported by the original text."""
+1. **Completeness**: Look for ADDITIONAL entities referenced indirectly or implicitly
+2. **Semantic Precision**: Improve entity types - use most specific semantic type possible
+3. **Relationship Quality**: Find NEW semantic relationships not captured initially
+4. **Hidden Connections**: Search for implicit semantic patterns or hierarchies
+
+🎯 **REFINEMENT TASKS:**
+- Identify any missed entities that are semantically important
+- Upgrade generic entity types to more specific semantic types
+- Replace vague relationships with precise semantic connections
+- Add implicit relationships that provide semantic context
+- Improve confidence scores based on semantic clarity
+- Remove any semantically inconsistent extractions
+
+**Focus on finding NEW semantic elements while maintaining accuracy. Each addition should provide unique semantic value to the knowledge graph.**
+
+Return the enhanced entities and relationships with improved semantic precision."""
 
         return prompt

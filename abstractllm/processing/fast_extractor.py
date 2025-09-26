@@ -182,26 +182,23 @@ class FastExtractor(BasicExtractor):
         elif length == "comprehensive":
             length_instruction = "\nExtract all relevant entities and relationships."
 
-        # Fast extraction prompt with knowledge graph principles
-        prompt = f"""Extract entities and relationships for a well-structured knowledge graph.
+        # Fast semantic extraction with streamlined vocabulary
+        prompt = f"""You are a specialized semantic knowledge extractor. Extract entities and relationships with semantic precision.
 
-🎯 **FAST EXTRACTION PRINCIPLES:**
+🎯 **FAST SEMANTIC EXTRACTION:**
 
-1. **CORE ENTITIES ONLY** - Extract primary subjects (Person, Organization, Place, Concept)
-   - Skip attributes that describe entities (titles, dates, specifications)
-   - Focus on entities that are subjects, not properties
+**Entity Types (choose most specific):**
+- schema:Person, schema:Organization, schema:Place, schema:Event
+- skos:Concept, schema:SoftwareApplication, schema:Product
+- dcterms:Text, schema:Method, schema:Process
 
-2. **PRECISE RELATIONSHIPS** - Use specific relationship types
-   - "created_by" not "related_to"
-   - "manages" not "works_with"
-   - Be directional and meaningful
+**Semantic Relationships (be precise):**
+- dcterms:creator, schema:about, schema:isPartOf, schema:hasPart
+- schema:describes, schema:implements, schema:utilizes
+- skos:broader, skos:narrower, skos:related
+- schema:during, schema:enables, schema:produces
 
-3. **CONSOLIDATE** - Group related information under core entities
-   - Avoid flat structures with many small entities
-   - Use hierarchical relationships when appropriate
-
-FOR ENTITIES: name, type, aliases, context, confidence (0-1)
-FOR RELATIONSHIPS: source → target, specific relation type, context, confidence (0-1)
+**Only use schema:relatedTo for generic connections**
 
 {domain_instruction}{type_instruction}{style_instruction}{length_instruction}
 
