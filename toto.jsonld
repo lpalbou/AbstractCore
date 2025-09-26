@@ -1,0 +1,448 @@
+{
+  "@context": {
+    "dcterms": "http://purl.org/dc/terms/",
+    "schema": "https://schema.org/",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "cito": "http://purl.org/spar/cito/",
+    "kg": "https://abstractllm.com/kg/",
+    "confidence": "kg:confidence",
+    "aliases": "kg:aliases",
+    "extractionMetadata": "kg:extractionMetadata",
+    "verificationConfidence": "kg:verificationConfidence",
+    "deduplicationSummary": "kg:deduplicationSummary"
+  },
+  "@type": "kg:KnowledgeGraph",
+  "@id": "kg:extraction/1758900777",
+  "dcterms:source": "README.md",
+  "dcterms:created": "2025-09-26T15:32:57Z",
+  "dcterms:creator": "AbstractLLM Basic Extractor",
+  "dcterms:description": "Knowledge graph extracted from README.md",
+  "schema:name": "Knowledge Graph from README.md",
+  "schema:dateCreated": "2025-09-26T15:32:57Z",
+  "extractionMetadata": {
+    "verificationConfidence": 0.8,
+    "deduplicationSummary": {
+      "merged": 8,
+      "created": 28,
+      "total_processed": 36
+    },
+    "entitiesCount": 28,
+    "relationshipsCount": 14,
+    "extractorVersion": "BasicExtractor-2.0"
+  },
+  "entities": [
+    {
+      "@id": "kg:tech-abstractcore",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "AbstractCore",
+      "confidence": 0.965,
+      "dcterms:description": "The infrastructure for LLM applications, focused on universality and reliability."
+    },
+    {
+      "@id": "kg:tech-openai",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "OpenAI",
+      "confidence": 0.935,
+      "dcterms:description": "Leading LLM provider, offering API access to models like GPT-4 and Claude."
+    },
+    {
+      "@id": "kg:tech-anthropic",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "Anthropic",
+      "confidence": 0.9,
+      "dcterms:description": "Competitor to OpenAI, known for its Claude model."
+    },
+    {
+      "@id": "kg:tech-ollama",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "Ollama",
+      "confidence": 0.905,
+      "dcterms:description": "Local LLM provider, offering a free and open-source alternative to cloud-based models."
+    },
+    {
+      "@id": "kg:tech-gpt-4o-mini",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "GPT-4o-mini",
+      "confidence": 0.93,
+      "dcterms:description": "Latest version of GPT-4, optimized for use with AbstractCore."
+    },
+    {
+      "@id": "kg:tech-claude",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "Claude",
+      "confidence": 0.91,
+      "dcterms:description": "Claude, a powerful language model from Anthropic."
+    },
+    {
+      "@id": "kg:tech-gemma3",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "gemma3",
+      "confidence": 0.88,
+      "dcterms:description": "Gemma 3, a family of open-source language models."
+    },
+    {
+      "@id": "kg:tech-gemma31b",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "gemma3:1b",
+      "confidence": 0.9,
+      "dcterms:description": "Gemma 3, 1B parameter model."
+    },
+    {
+      "@id": "kg:tech-abstractagent",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "AbstractAgent",
+      "confidence": 0.87,
+      "dcterms:description": "Framework for autonomous agents."
+    },
+    {
+      "@id": "kg:tech-basicsession",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "BasicSession",
+      "confidence": 0.85,
+      "dcterms:description": "Provides a simple interface for interactive chat."
+    },
+    {
+      "@id": "kg:tech-basicsummarizer",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "BasicSummarizer",
+      "confidence": 0.77,
+      "skos:altLabel": [
+        "BasicProcessing"
+      ],
+      "dcterms:description": "Built-in text summarization demonstrating SOTA prompt engineering."
+    },
+    {
+      "@id": "kg:tech-vectorembeddings",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "VectorEmbeddings",
+      "confidence": 0.77,
+      "dcterms:description": "SOTA embeddings with similarity matrices, clustering, and performance optimization."
+    },
+    {
+      "@id": "kg:tech-prompttemplates",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "PromptTemplates",
+      "confidence": 0.82,
+      "dcterms:description": "Built-in tools for creating and managing prompts."
+    },
+    {
+      "@id": "kg:tech-websearch",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "WebSearch",
+      "confidence": 0.81,
+      "dcterms:description": "Real-time DuckDuckGo search with time filtering and regional results."
+    },
+    {
+      "@id": "kg:tech-structuredoutput",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "StructuredOutput",
+      "confidence": 0.8,
+      "dcterms:description": "Type-safe JSON responses with Pydantic validation."
+    },
+    {
+      "@id": "kg:tech-streaming",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "Streaming",
+      "confidence": 0.78,
+      "dcterms:description": "Real-time responses with proper tool handling."
+    },
+    {
+      "@id": "kg:tech-retryandcircuitbreakers",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "RetryAndCircuitBreakers",
+      "confidence": 0.75,
+      "dcterms:description": "Production-grade error handling and recovery."
+    },
+    {
+      "@id": "kg:tech-eventsystem",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "EventSystem",
+      "confidence": 0.72,
+      "dcterms:description": "Comprehensive observability and monitoring hooks."
+    },
+    {
+      "@id": "kg:tech-mlx",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "MLX",
+      "confidence": 0.75,
+      "skos:altLabel": [
+        "MLX"
+      ],
+      "dcterms:description": "Apple Silicon optimization"
+    },
+    {
+      "@id": "kg:tech-lmstudio",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "LMStudio",
+      "confidence": 0.8,
+      "skos:altLabel": [
+        "LMStudio"
+      ],
+      "dcterms:description": "Local LLM interface and tool environment"
+    },
+    {
+      "@id": "kg:tech-huggingface",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "HuggingFace",
+      "confidence": 0.7,
+      "skos:altLabel": [
+        "HuggingFace"
+      ],
+      "dcterms:description": "Open source model repository"
+    },
+    {
+      "@id": "kg:tech-llm",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "LLM",
+      "confidence": 0.95,
+      "skos:altLabel": [
+        "Large Language Model"
+      ],
+      "dcterms:description": "Large Language Model"
+    },
+    {
+      "@id": "kg:tech-api",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "API",
+      "confidence": 0.9,
+      "skos:altLabel": [
+        "Interface"
+      ],
+      "dcterms:description": "Interface for interacting with LLMs"
+    },
+    {
+      "@id": "kg:event-chat",
+      "@type": "schema:Event",
+      "schema:name": "Chat",
+      "confidence": 0.85,
+      "skos:altLabel": [
+        "Interaction"
+      ],
+      "dcterms:description": "Conversation between user and LLM"
+    },
+    {
+      "@id": "kg:event-input",
+      "@type": "schema:Event",
+      "schema:name": "Input",
+      "confidence": 0.92,
+      "skos:altLabel": [
+        "Prompt"
+      ],
+      "dcterms:description": "User provides text to LLM"
+    },
+    {
+      "@id": "kg:tech-completion",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "Completion",
+      "confidence": 0.97,
+      "skos:altLabel": [
+        "Completion"
+      ],
+      "dcterms:description": "Service for running LLMs"
+    },
+    {
+      "@id": "kg:tech-qwen3-coder",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "qwen3-coder",
+      "confidence": 0.94,
+      "skos:altLabel": [
+        "qwen3-coder"
+      ],
+      "dcterms:description": "Model for code generation"
+    },
+    {
+      "@id": "kg:tech-qwen3",
+      "@type": "schema:SoftwareApplication",
+      "schema:name": "qwen3",
+      "confidence": 0.93,
+      "skos:altLabel": [
+        "qwen3"
+      ],
+      "dcterms:description": "Open Source LLM"
+    }
+  ],
+  "relationships": [
+    {
+      "@id": "kg:relation/0",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-openai"
+      },
+      "confidence": 0.95,
+      "dcterms:description": "AbstractCore provides a unified interface to OpenAI models."
+    },
+    {
+      "@id": "kg:relation/1",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-anthropic"
+      },
+      "confidence": 0.95,
+      "dcterms:description": "AbstractCore provides a unified interface to Anthropic models."
+    },
+    {
+      "@id": "kg:relation/2",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-ollama"
+      },
+      "confidence": 0.9,
+      "dcterms:description": "AbstractCore provides a unified interface to local LLM providers."
+    },
+    {
+      "@id": "kg:relation/3",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:participant",
+      "object": {
+        "@id": "kg:tech-abstractagent"
+      },
+      "confidence": 0.88,
+      "dcterms:description": "AbstractCore participates in the development of AbstractAgent."
+    },
+    {
+      "@id": "kg:relation/4",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-basicsession"
+      },
+      "confidence": 0.85,
+      "dcterms:description": "AbstractCore provides a simple interface for interactive chat."
+    },
+    {
+      "@id": "kg:relation/5",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-basicsummarizer"
+      },
+      "confidence": 0.86,
+      "dcterms:description": "AbstractCore provides a simple interface for text summarization."
+    },
+    {
+      "@id": "kg:relation/6",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-vectorembeddings"
+      },
+      "confidence": 0.84,
+      "dcterms:description": "AbstractCore provides a simple interface for vector embeddings."
+    },
+    {
+      "@id": "kg:relation/7",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:event-chat"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-llm"
+      },
+      "confidence": 0.98,
+      "dcterms:description": "The Chat uses the LLM to generate responses."
+    },
+    {
+      "@id": "kg:relation/8",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:event-chat"
+      },
+      "predicate": "schema:participant",
+      "object": {
+        "@id": "kg:event-input"
+      },
+      "confidence": 0.95,
+      "dcterms:description": "The Chat receives input from the User."
+    },
+    {
+      "@id": "kg:relation/9",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-completion"
+      },
+      "confidence": 0.99,
+      "dcterms:description": "AbstractCore provides infrastructure for running LLMs, enabling Completion to operate."
+    },
+    {
+      "@id": "kg:relation/10",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-ollama"
+      },
+      "confidence": 0.98,
+      "dcterms:description": "AbstractCore utilizes the Ollama framework for LLM inference."
+    },
+    {
+      "@id": "kg:relation/11",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-completion"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-ollama"
+      },
+      "confidence": 0.97,
+      "dcterms:description": "Completion utilizes the Ollama framework for inference."
+    },
+    {
+      "@id": "kg:relation/12",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-abstractcore"
+      },
+      "predicate": "schema:instrument",
+      "object": {
+        "@id": "kg:tech-qwen3-coder"
+      },
+      "confidence": 0.96,
+      "dcterms:description": "AbstractCore utilizes qwen3-coder for code generation."
+    },
+    {
+      "@id": "kg:relation/13",
+      "@type": "kg:Relationship",
+      "subject": {
+        "@id": "kg:tech-qwen3"
+      },
+      "predicate": "dcterms:relation",
+      "object": {
+        "@id": "kg:tech-qwen3-coder"
+      },
+      "confidence": 0.95,
+      "dcterms:description": "qwen3-coder is a model for code generation."
+    }
+  ]
+}
