@@ -347,12 +347,14 @@
             const targetId = rel.object && rel.object["@id"] ? rel.object["@id"] : null;
 
             if (sourceId && targetId && entities[sourceId] && entities[targetId]) {
+              const predicate = rel.predicate || "related";
               relationships.push({
                 id: rel["@id"] || `relationship-${i}`,
                 source: sourceId,
                 target: targetId,
-                type: rel["@type"] || rel.predicate || "related",
-                label: (rel["@type"] || rel.predicate || "related").split(':').pop(),
+                type: predicate,
+                label: predicate.split(':').pop(),
+                predicate: predicate, // Store the full predicate for display
                 properties: { ...rel }
               });
             }
@@ -1043,8 +1045,9 @@
           const targetName = entities[targetId].label;
 
           // Better relationship display showing the predicate
-          const predicate = link.properties && link.properties.predicate ?
-            link.properties.predicate.split(':').pop() : link.label;
+          const predicate = link.predicate ? link.predicate.split(':').pop() :
+            (link.properties && link.properties.predicate ? link.properties.predicate.split(':').pop() :
+            (link.type && link.type !== 'kg:Relationship' ? link.type.split(':').pop() : link.label));
 
           relationshipDiv.innerHTML = `
             <strong>${sourceName}</strong> →

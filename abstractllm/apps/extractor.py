@@ -43,7 +43,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-from ..processing import BasicExtractor, FastExtractor, EntityType, RelationType
+from ..processing import BasicExtractor, EntityType, RelationType
 from ..core.factory import create_llm
 
 
@@ -198,16 +198,41 @@ def relation_type_to_semantic_property(relation_type: RelationType) -> str:
     """Map RelationType to appropriate ontology property following semantic recommendations"""
     # Following semantic expert recommendations with precise, directional relationships
     property_map = {
-        RelationType.WORKS_FOR: "schema:worksFor",  # Employment relationship
-        RelationType.LOCATED_IN: "schema:location",  # Spatial relationship
-        RelationType.CREATED_BY: "dcterms:creator",  # Dublin Core - higher adoption (60-70%)
-        RelationType.RELATED_TO: "dcterms:relation",  # Dublin Core generic relation
-        RelationType.CAUSES: "schema:result",  # Causal relationship
-        RelationType.USES: "schema:instrument",  # Instrumental relationship
-        RelationType.PARTICIPATES_IN: "schema:participant",  # Participation
-        RelationType.OCCURRED_ON: "schema:startDate",  # Temporal relationship
-        RelationType.SIMILAR_TO: "skos:closeMatch",  # SKOS for concept similarity
-        RelationType.OTHER: "dcterms:relation"  # Dublin Core fallback
+        # Core relationships from original enum
+        RelationType.WORKS_FOR: "schema:worksFor",
+        RelationType.LOCATED_IN: "schema:location",
+        RelationType.CREATED_BY: "dcterms:creator",
+        RelationType.RELATED_TO: "dcterms:relation",
+        RelationType.CAUSES: "schema:result",
+        RelationType.UTILIZES: "schema:instrument",  # Updated from USES
+        RelationType.PARTICIPATES_IN: "schema:participant",
+        RelationType.SIMILAR_TO: "skos:closeMatch",
+        RelationType.OTHER: "dcterms:relation",
+
+        # Extended relationships from new enum
+        RelationType.HAS_PART: "schema:hasPart",
+        RelationType.IS_PART_OF: "schema:isPartOf",
+        RelationType.CONTAINS: "schema:containsPlace",
+        RelationType.BELONGS_TO: "schema:memberOf",
+        RelationType.ENABLES: "schema:enables",
+        RelationType.PREVENTS: "schema:prevents",
+        RelationType.INFLUENCES: "schema:influences",
+        RelationType.BEFORE: "schema:beforeTime",
+        RelationType.AFTER: "schema:afterTime",
+        RelationType.DURING: "schema:during",
+        RelationType.IMPLEMENTS: "schema:implements",
+        RelationType.PRODUCES: "schema:produces",
+        RelationType.CONSUMES: "schema:consumes",
+        RelationType.TRANSFORMS: "schema:transforms",
+        RelationType.EXPLAINS: "schema:explains",
+        RelationType.DESCRIBES: "schema:describes",
+        RelationType.DEFINES: "schema:defines",
+        RelationType.SUPPORTS: "schema:supports",
+        RelationType.CONTRADICTS: "schema:contradicts",
+        RelationType.VALIDATES: "schema:validates",
+        RelationType.AUTHORED_BY: "dcterms:creator",
+        RelationType.DEVELOPED_BY: "dcterms:creator",
+        RelationType.INVENTED_BY: "dcterms:creator"
     }
     return property_map.get(relation_type, "dcterms:relation")
 
@@ -476,9 +501,16 @@ Default model setup:
     )
 
     parser.add_argument(
+        '--mode',
+        choices=['fast', 'balanced', 'thorough'],
+        default='balanced',
+        help='Extraction mode: fast (2-3x faster), balanced (default), thorough (highest quality)'
+    )
+
+    parser.add_argument(
         '--fast',
         action='store_true',
-        help='Use fast extraction (skip verification, larger chunks, no embeddings)'
+        help='Legacy flag: equivalent to --mode=fast (deprecated, use --mode instead)'
     )
 
     parser.add_argument(
@@ -538,68 +570,48 @@ Default model setup:
         extraction_style = parse_extraction_style(args.style)
         extraction_length = parse_extraction_length(args.length)
 
+        # Determine extraction mode (handle legacy --fast flag)
+        extraction_mode = args.mode
+        if args.fast:
+            extraction_mode = "fast"
+
         # Initialize LLM and extractor
         use_embeddings = not args.no_embeddings
-
-        # Override settings for fast mode
-        if args.fast:
-            use_embeddings = False  # Disable embeddings for speed
-            if args.chunk_size == 6000:  # If using default chunk size
-                args.chunk_size = 15000  # Use larger chunks for speed
 
         if args.provider and args.model:
             # Custom provider/model with max_tokens adjusted for chunk size
             max_tokens = max(16000, args.chunk_size)
             if args.verbose:
-                extractor_type = "FastExtractor" if args.fast else "BasicExtractor"
-                print(f"Initializing {extractor_type} ({args.provider}, {args.model}, {max_tokens} token context)...")
+                print(f"Initializing BasicExtractor (mode: {extraction_mode}, {args.provider}, {args.model}, {max_tokens} token context)...")
 
             llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens)
 
-            if args.fast:
-                extractor = FastExtractor(
-                    llm=llm,
-                    use_embeddings=use_embeddings,
-                    similarity_threshold=args.similarity_threshold,
-                    max_chunk_size=args.chunk_size,
-                    use_verification=False  # Skip verification for speed
-                )
-            else:
+            extractor = BasicExtractor(
+                llm=llm,
+                extraction_mode=extraction_mode,
+                use_embeddings=use_embeddings,
+                similarity_threshold=args.similarity_threshold,
+                max_chunk_size=args.chunk_size
+            )
+        else:
+            # Default configuration
+            if args.verbose:
+                print(f"Initializing BasicExtractor (mode: {extraction_mode}, ollama, gemma3:1b-it-qat, threshold: {args.similarity_threshold})...")
+
+            try:
                 extractor = BasicExtractor(
-                    llm=llm,
+                    extraction_mode=extraction_mode,
                     use_embeddings=use_embeddings,
                     similarity_threshold=args.similarity_threshold,
                     max_chunk_size=args.chunk_size
                 )
-        else:
-            # Default configuration
-            if args.verbose:
-                extractor_type = "FastExtractor" if args.fast else "BasicExtractor"
-                embeddings_status = "enabled" if use_embeddings else "disabled"
-                verification_status = "disabled" if args.fast else "enabled"
-                print(f"Initializing {extractor_type} (ollama, gemma3:1b-it-qat, embeddings: {embeddings_status}, verification: {verification_status}, threshold: {args.similarity_threshold})...")
-
-            try:
-                if args.fast:
-                    extractor = FastExtractor(
-                        use_embeddings=use_embeddings,
-                        similarity_threshold=args.similarity_threshold,
-                        max_chunk_size=args.chunk_size,
-                        use_verification=False  # Skip verification for speed
-                    )
-                else:
-                    extractor = BasicExtractor(
-                        use_embeddings=use_embeddings,
-                        similarity_threshold=args.similarity_threshold,
-                        max_chunk_size=args.chunk_size
-                    )
             except RuntimeError as e:
                 # Handle default model not available
                 print(f"\n{e}")
                 print("\n🚀 Quick alternatives to get started:")
                 print("   - Use --provider and --model to specify an available provider")
                 print("   - Example: extractor document.txt --provider openai --model gpt-4o-mini")
-                print("   - For speed: extractor document.txt --fast")
+                print("   - For speed: extractor document.txt --mode=fast")
                 sys.exit(1)
 
         # Extract entities and relationships

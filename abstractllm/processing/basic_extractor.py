@@ -16,29 +16,138 @@ from ..structured.retry import FeedbackRetry
 
 
 class EntityType(Enum):
-    """Common entity types for knowledge extraction"""
+    """Comprehensive entity types for semantic knowledge extraction"""
+
+    # Core Entities (First-class entities that can have relationships)
     PERSON = "person"
     ORGANIZATION = "organization"
     LOCATION = "location"
-    CONCEPT = "concept"
     EVENT = "event"
+
+    # Knowledge & Concepts
+    CONCEPT = "concept"
+    THEORY = "theory"
+    METHOD = "method"
+    HYPOTHESIS = "hypothesis"
+    FIELD = "field"
+    DOMAIN = "domain"
+    PARADIGM = "paradigm"
+
+    # Technology & Software
+    SOFTWARE_APPLICATION = "software_application"
     TECHNOLOGY = "technology"
     PRODUCT = "product"
+    ALGORITHM = "algorithm"
+    FRAMEWORK = "framework"
+    PLATFORM = "platform"
+
+    # Information Artifacts
+    DOCUMENT = "document"
+    PUBLICATION = "publication"
+    DATASET = "dataset"
+    MODEL = "model"
+    SPECIFICATION = "specification"
+
+    # Processes & Activities
+    PROCESS = "process"
+    INVESTIGATION = "investigation"
+    ANALYSIS = "analysis"
+    TRANSFORMATION = "transformation"
+    INTERACTION = "interaction"
+
+    # Temporal & Contextual
     DATE = "date"
+    TIME_FRAME = "time_frame"
+    CONTEXT = "context"
+    STATE = "state"
+    PHASE = "phase"
+
+    # Systems & Structures
+    SYSTEM = "system"
+    STRUCTURE = "structure"
+    INSTITUTION = "institution"
+    GROUP = "group"
+
+    # Generic
     OTHER = "other"
 
 
 class RelationType(Enum):
-    """Common relationship types for knowledge graphs"""
-    WORKS_FOR = "works_for"
-    LOCATED_IN = "located_in"
-    CREATED_BY = "created_by"
-    RELATED_TO = "related_to"
+    """Comprehensive relationship types for semantic knowledge graphs"""
+
+    # Structural Relationships
+    HAS_PART = "has_part"
+    IS_PART_OF = "is_part_of"
+    CONTAINS = "contains"
+    BELONGS_TO = "belongs_to"
+    MEMBER_OF = "member_of"
+
+    # Causal Relationships
     CAUSES = "causes"
-    USES = "uses"
-    PARTICIPATES_IN = "participates_in"
-    OCCURRED_ON = "occurred_on"
+    ENABLES = "enables"
+    PREVENTS = "prevents"
+    INFLUENCES = "influences"
+    TRIGGERS = "triggers"
+
+    # Temporal Relationships
+    BEFORE = "before"
+    AFTER = "after"
+    DURING = "during"
+    PRECEDES = "precedes"
+    FOLLOWS = "follows"
+    CONCURRENT = "concurrent"
+
+    # Functional Relationships
+    IMPLEMENTS = "implements"
+    UTILIZES = "utilizes"
+    PRODUCES = "produces"
+    CONSUMES = "consumes"
+    TRANSFORMS = "transforms"
+
+    # Knowledge Relationships
+    EXPLAINS = "explains"
+    DESCRIBES = "describes"
+    DEFINES = "defines"
+    EXEMPLIFIES = "exemplifies"
+    CATEGORIZES = "categorizes"
+
+    # Evidential Relationships
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+    VALIDATES = "validates"
+    QUESTIONS = "questions"
+
+    # Social/Organizational
+    WORKS_FOR = "works_for"
+    COLLABORATES_WITH = "collaborates_with"
+    REPORTS_TO = "reports_to"
+    MANAGES = "manages"
+
+    # Spatial Relationships
+    LOCATED_IN = "located_in"
+    LOCATED_AT = "located_at"
+    ADJACENT_TO = "adjacent_to"
+
+    # Comparative Relationships
     SIMILAR_TO = "similar_to"
+    DIFFERENT_FROM = "different_from"
+    ALTERNATIVE_TO = "alternative_to"
+    COMPLEMENT_TO = "complement_to"
+
+    # Creation/Attribution
+    CREATED_BY = "created_by"
+    AUTHORED_BY = "authored_by"
+    DEVELOPED_BY = "developed_by"
+    INVENTED_BY = "invented_by"
+
+    # Participation
+    PARTICIPATES_IN = "participates_in"
+    INVOLVED_IN = "involved_in"
+    CONTRIBUTES_TO = "contributes_to"
+
+    # Generic (use only when no specific relationship applies)
+    RELATED_TO = "related_to"
+    ASSOCIATED_WITH = "associated_with"
     OTHER = "other"
 
 
@@ -264,19 +373,83 @@ class BasicExtractor:
     def __init__(
         self,
         llm: Optional[AbstractLLMInterface] = None,
-        use_embeddings: bool = True,
+        # Extraction mode (presets other parameters)
+        extraction_mode: str = "balanced",  # "fast", "balanced", "thorough"
+        # Performance settings
+        use_embeddings: bool = None,
+        use_verification: bool = None,
+        use_refinement: bool = None,
+        use_consolidation: bool = None,
+        # Chunking settings
+        max_chunk_size: int = None,
+        chunk_overlap: int = 500,
+        # Quality settings
         similarity_threshold: float = 0.85,
-        max_chunk_size: int = 6000
+        min_confidence: float = 0.7
     ):
         """
-        Initialize the extractor
+        Initialize the unified semantic extractor
 
         Args:
             llm: AbstractLLM instance (any provider). If None, uses ollama gemma3:1b-it-qat
-            use_embeddings: Whether to use semantic deduplication (default True)
-            similarity_threshold: Minimum similarity for entity merging (0-1)
+            extraction_mode: Preset configuration ("fast", "balanced", "thorough")
+            use_embeddings: Whether to use semantic deduplication for entity merging
+            use_verification: Whether to use Chain of Verification (2nd LLM call for validation)
+            use_refinement: Whether to use semantic refinement (3rd LLM call for enhancement)
+            use_consolidation: Whether to consolidate isolated entities
             max_chunk_size: Maximum characters per chunk for long documents
+            chunk_overlap: Character overlap between chunks
+            similarity_threshold: Minimum similarity for entity merging (0-1)
+            min_confidence: Minimum confidence for extracted entities/relationships
+
+        Extraction Modes:
+            - "fast": 2-3x faster, skip verification/refinement, disable embeddings, large chunks
+            - "balanced": Default speed/quality tradeoff, verification enabled, embeddings enabled
+            - "thorough": Highest quality, all features enabled, smaller chunks for precision
         """
+        # Apply extraction mode presets
+        mode_presets = {
+            "fast": {
+                "use_embeddings": False,
+                "use_verification": False,
+                "use_refinement": False,
+                "use_consolidation": True,  # Keep consolidation as it's fast and useful
+                "max_chunk_size": 15000
+            },
+            "balanced": {
+                "use_embeddings": True,
+                "use_verification": True,
+                "use_refinement": True,
+                "use_consolidation": True,
+                "max_chunk_size": 6000
+            },
+            "thorough": {
+                "use_embeddings": True,
+                "use_verification": True,
+                "use_refinement": True,
+                "use_consolidation": True,
+                "max_chunk_size": 3000
+            }
+        }
+
+        if extraction_mode not in mode_presets:
+            raise ValueError(f"Invalid extraction_mode '{extraction_mode}'. Use: fast, balanced, thorough")
+
+        presets = mode_presets[extraction_mode]
+
+        # Apply presets if parameters not explicitly set
+        self.use_embeddings = use_embeddings if use_embeddings is not None else presets["use_embeddings"]
+        self.use_verification = use_verification if use_verification is not None else presets["use_verification"]
+        self.use_refinement = use_refinement if use_refinement is not None else presets["use_refinement"]
+        self.use_consolidation = use_consolidation if use_consolidation is not None else presets["use_consolidation"]
+        self.max_chunk_size = max_chunk_size if max_chunk_size is not None else presets["max_chunk_size"]
+
+        # Store other settings
+        self.extraction_mode = extraction_mode
+        self.chunk_overlap = chunk_overlap
+        self.similarity_threshold = similarity_threshold
+        self.min_confidence = min_confidence
+        # Initialize LLM
         if llm is None:
             try:
                 # Default to gemma3:1b-it-qat with 16k context window
@@ -299,19 +472,19 @@ class BasicExtractor:
         else:
             self.llm = llm
 
-        self.max_chunk_size = max_chunk_size
+        # Initialize retry strategy
         self.retry_strategy = FeedbackRetry(max_attempts=3)
 
         # Initialize entity registry with optional embeddings
         embedder = None
-        if use_embeddings:
+        if self.use_embeddings:
             try:
                 from ..embeddings import EmbeddingManager
                 embedder = EmbeddingManager()
             except ImportError:
                 pass  # Continue without embeddings
 
-        self.entity_registry = EntityRegistry(embedder, similarity_threshold)
+        self.entity_registry = EntityRegistry(embedder, self.similarity_threshold)
 
     def extract(
         self,
@@ -357,7 +530,7 @@ class BasicExtractor:
         style: Optional[str] = None,
         length: Optional[str] = None
     ) -> ExtractionOutput:
-        """Extract from a single chunk using Chain of Verification"""
+        """Extract from a single chunk with configurable verification/refinement"""
 
         # Step 1: Initial extraction
         initial_prompt = self._build_extraction_prompt(text, domain_focus, entity_types, style, length)
@@ -377,23 +550,65 @@ class BasicExtractor:
         else:
             raise ValueError(f"Failed to generate structured extraction output. Response type: {type(response)}")
 
-        # Step 2: Semantic Refinement - improve semantic accuracy and completeness
-        refinement_prompt = self._build_semantic_refinement_prompt(text, extraction_result)
+        current_result = extraction_result
 
-        refined_response = self.llm.generate(
-            refinement_prompt,
-            response_model=LLMExtractionOutput,
-            retry_strategy=self.retry_strategy
-        )
+        # Step 2: Optional Verification - validate extraction accuracy
+        if self.use_verification:
+            verification_prompt = self._build_verification_prompt(text, current_result)
 
-        # Extract refined results
-        if isinstance(refined_response, LLMExtractionOutput):
-            final_result = refined_response
-        elif hasattr(refined_response, 'structured_output') and refined_response.structured_output:
-            final_result = refined_response.structured_output
-        else:
-            # Fall back to initial results if refinement fails
-            final_result = extraction_result
+            verified_response = self.llm.generate(
+                verification_prompt,
+                response_model=LLMExtractionOutput,
+                retry_strategy=self.retry_strategy
+            )
+
+            # Extract verified results
+            if isinstance(verified_response, LLMExtractionOutput):
+                current_result = verified_response
+            elif hasattr(verified_response, 'structured_output') and verified_response.structured_output:
+                current_result = verified_response.structured_output
+            # If verification fails, continue with current results
+
+        # Step 3: Optional Semantic Refinement - enhance semantic accuracy and completeness
+        if self.use_refinement:
+            refinement_prompt = self._build_semantic_refinement_prompt(text, current_result)
+
+            refined_response = self.llm.generate(
+                refinement_prompt,
+                response_model=LLMExtractionOutput,
+                retry_strategy=self.retry_strategy
+            )
+
+            # Extract refined results
+            if isinstance(refined_response, LLMExtractionOutput):
+                current_result = refined_response
+            elif hasattr(refined_response, 'structured_output') and refined_response.structured_output:
+                current_result = refined_response.structured_output
+            # If refinement fails, continue with current results
+
+        # Step 4: Optional Graph Consolidation - clean up isolated entities
+        if self.use_consolidation:
+            # Phase 1: Remove attribute-like isolated entities
+            isolated_entity_names = self._identify_isolated_entities(current_result)
+            entities_to_keep = []
+
+            for entity in current_result.entities:
+                if entity.name in isolated_entity_names and self._is_likely_attribute(entity):
+                    # Skip this entity - it's likely an attribute, not a core entity
+                    continue
+                entities_to_keep.append(entity)
+
+            # Update the entity list
+            current_result.entities = entities_to_keep
+
+            # Phase 2: Find relationships for remaining isolated entities
+            remaining_isolated_names = self._identify_isolated_entities(current_result)
+            if remaining_isolated_names:
+                isolated_entities = [e for e in current_result.entities if e.name in remaining_isolated_names]
+                new_relationships = self._find_missing_relationships(text, isolated_entities, current_result.entities)
+                current_result.relationships.extend(new_relationships)
+
+        final_result = current_result
 
         # Step 3: Register entities and deduplicate
         canonical_entities = {}
@@ -479,6 +694,150 @@ class BasicExtractor:
 
         return chunks
 
+    def _is_likely_attribute(self, entity: Entity) -> bool:
+        """
+        Simple heuristic to detect attribute-like entities that should be properties
+
+        Args:
+            entity: Entity to check
+
+        Returns:
+            True if entity is likely an attribute rather than a core entity
+        """
+        # Generic terms that are usually attributes, not entities
+        ATTRIBUTE_PATTERNS = {
+            'api', 'input', 'output', 'process', 'system', 'data', 'information',
+            'type', 'status', 'method', 'interface', 'protocol', 'format',
+            'mode', 'version', 'level', 'state', 'config', 'setting',
+            'chat', 'interaction', 'session', 'completion', 'response'
+        }
+
+        name_lower = entity.name.lower().strip()
+
+        # Check if it's a generic single word that's an attribute pattern
+        if ' ' not in entity.name and name_lower in ATTRIBUTE_PATTERNS:
+            return True
+
+        # Check if it's a very short generic concept
+        if len(entity.name) <= 4 and entity.type == EntityType.CONCEPT:
+            return True
+
+        # Check if it's a generic plural noun (often attributes)
+        if name_lower.endswith('s') and name_lower[:-1] in ATTRIBUTE_PATTERNS:
+            return True
+
+        return False
+
+    def _identify_isolated_entities(self, extraction: LLMExtractionOutput) -> Set[str]:
+        """
+        Identify entities that have no relationships (isolated nodes)
+
+        Args:
+            extraction: The extraction result to analyze
+
+        Returns:
+            Set of entity names that are isolated
+        """
+        # Get all entities mentioned in relationships
+        connected_entities = set()
+        for rel in extraction.relationships:
+            connected_entities.add(rel.source)
+            connected_entities.add(rel.target)
+
+        # Find entities with no relationships
+        all_entities = {entity.name for entity in extraction.entities}
+        isolated_entities = all_entities - connected_entities
+
+        return isolated_entities
+
+    def _find_missing_relationships(
+        self,
+        text: str,
+        isolated_entities: List[Entity],
+        all_entities: List[Entity]
+    ) -> List[Relationship]:
+        """
+        Find relationships for isolated entities using targeted LLM prompts
+
+        Args:
+            text: Original source text
+            isolated_entities: List of entities that need connections
+            all_entities: All entities available for connections
+
+        Returns:
+            List of new relationships connecting isolated entities
+        """
+        if not isolated_entities:
+            return []
+
+        # Build entity context for the LLM
+        isolated_names = [e.name for e in isolated_entities]
+        available_targets = [e.name for e in all_entities if e.name not in isolated_names]
+
+        if not available_targets:
+            return []  # No entities to connect to
+
+        # Create a concise, focused prompt
+        prompt = f"""Find relationships for specific isolated entities based on the source text.
+
+ORIGINAL TEXT:
+{text}
+
+ISOLATED ENTITIES TO CONNECT:
+{', '.join(isolated_names)}
+
+AVAILABLE ENTITIES TO CONNECT TO:
+{', '.join(available_targets)}
+
+TASK: Find ONLY relationships that connect the isolated entities to available entities.
+Each relationship must be clearly stated or strongly implied in the source text.
+
+RULES:
+- Only return relationships for the isolated entities listed above
+- Only connect to entities in the available list
+- Use precise semantic relationship types from the vocabulary: dcterms:creator, schema:isPartOf, schema:utilizes, schema:enables, schema:describes, etc.
+- Base relationships on actual content from the text, not assumptions
+- Return empty if no clear relationships exist
+
+Return a JSON list of relationships in this exact format:
+[
+  {{
+    "source": "EntityName",
+    "target": "EntityName",
+    "relation": "relationship_type",
+    "context": "Brief context from text",
+    "confidence": 0.8
+  }}
+]
+
+Only include relationships that are grounded in the source text."""
+
+        try:
+            # Use a simpler response model for just relationships
+            from pydantic import BaseModel, Field
+            from typing import List
+
+            class RelationshipList(BaseModel):
+                relationships: List[Relationship] = Field(description="List of relationships")
+
+            response = self.llm.generate(
+                prompt,
+                response_model=RelationshipList,
+                retry_strategy=self.retry_strategy
+            )
+
+            if isinstance(response, RelationshipList):
+                return response.relationships
+            elif hasattr(response, 'structured_output') and response.structured_output:
+                return response.structured_output.relationships
+            else:
+                return []
+
+        except Exception:
+            # If relationship discovery fails, return empty list
+            # This ensures the system remains robust
+            return []
+
     def _build_extraction_prompt(
         self,
         text: str,
@@ -522,95 +881,130 @@ class BasicExtractor:
         else:  # standard
             length_instruction = "\nExtraction depth: Extract 10-15 key entities and 5-10 important relationships."
 
-        prompt = f"""You are a specialized knowledge graph extraction system with deep expertise in semantic web technologies, ontologies, and knowledge representation. Extract both explicit and implicit knowledge while maintaining semantic accuracy.
+        prompt = f"""You are a specialized semantic knowledge extractor. Your goal is to identify first-class entities and their relationships while avoiding the extraction of mere properties as entities.
 
-🔬 **SEMANTIC ENTITY TYPES** - Choose the most specific type possible:
+🎯 **ENTITY vs PROPERTY DISTINCTION** (Critical Rule):
 
-**Core Entities:**
-- schema:Person (individual people)
-- schema:Organization (companies, institutions, groups)
-- schema:Place (geographic locations)
-- schema:Event (events, milestones, occurrences)
+**EXTRACT as ENTITIES** (First-class objects):
+✓ Proper nouns: Google, TensorFlow, Python, ChatGPT
+✓ People: individuals with names (John Smith, Dr. Sarah Johnson)
+✓ Organizations: companies, institutions (Microsoft, MIT, NATO)
+✓ Technologies: specific systems/tools (Docker, React, MongoDB)
+✓ Concepts: distinct ideas (machine learning, blockchain, democracy)
+✓ Locations: places (San Francisco, Europe, Main Street)
+✓ Products: specific items (iPhone, Tesla Model 3, Windows 11)
 
-**Knowledge & Concepts:**
-- skos:Concept (abstract ideas, theories, principles)
-- schema:ScholarlyField (academic disciplines)
-- schema:Theory (scientific/academic theories)
-- schema:Method (methodologies, approaches)
+**DO NOT EXTRACT as ENTITIES** (These are properties):
+✗ Generic terms: API, system, process, data, input, output
+✗ Attributes: version, status, type, mode, format, level
+✗ Descriptors: interface, protocol, method, function, service
+✗ Common nouns without specificity: user, developer, company
 
-**Systems & Technology:**
-- schema:SoftwareApplication (software systems, platforms)
-- schema:Product (products, offerings, creations)
-- schema:Algorithm (computational methods)
-- schema:Dataset (collections of data)
+🔬 **ENTITY TYPES** - Use most specific:
 
-**Information Artifacts:**
-- dcterms:Text (documents, publications, works)
-- schema:Model (representational models)
-- schema:CreativeWork (creative works, content)
+**Core Entities:** person, organization, location, event
+**Knowledge:** concept, theory, method, field, domain, hypothesis
+**Technology:** software_application, technology, product, algorithm, framework
+**Information:** document, publication, dataset, model, specification
+**Processes:** process, investigation, analysis, transformation
 
-**Processes:**
-- schema:Process (sequences of actions)
-- schema:Analysis (analytical processes)
-- schema:Investigation (research activities)
+🔗 **RELATIONSHIP TYPES** - Be precise:
 
-🔗 **SEMANTIC RELATIONSHIPS** - Use precise semantic connections:
+**Structural:** has_part, is_part_of, contains, belongs_to
+**Causal:** causes, enables, prevents, influences, triggers
+**Temporal:** before, after, during, precedes, follows
+**Functional:** implements, utilizes, produces, consumes, transforms
+**Knowledge:** explains, describes, defines, exemplifies
+**Social:** works_for, collaborates_with, manages, reports_to
+**Creation:** created_by, authored_by, developed_by, invented_by
 
-**Knowledge Relationships:**
-- dcterms:creator (creator/author relationship)
-- schema:about (subject/topic relationship)
-- schema:describes (descriptive relationship)
-- schema:explains (explanatory relationship)
+📚 **EXAMPLES:**
 
-**Structural Relationships:**
-- schema:isPartOf (component relationship)
-- schema:hasPart (containment relationship)
-- schema:memberOf (membership)
+**Good Example:**
+Text: "Google's TensorFlow framework helps developers build AI models"
+✓ Entities: Google (organization), TensorFlow (software_application), AI (concept)
+✓ Relationships: Google created_by TensorFlow, TensorFlow enables AI
+✗ Avoid: "framework", "developers", "models" as entities
 
-**Conceptual Relationships:**
-- skos:broader (more general concept)
-- skos:narrower (more specific concept)
-- skos:related (conceptually related)
+**Bad Example:**
+✗ Extracting: framework (generic), developers (generic), models (generic)
+✗ These should be properties of the main entities
 
-**Functional Relationships:**
-- schema:implements (implementation)
-- schema:utilizes (utilization)
-- schema:produces (production)
-- schema:enables (enablement)
-
-**Temporal Relationships:**
-- schema:precedes (temporal precedence)
-- schema:follows (temporal succession)
-- schema:during (temporal containment)
-
-**Only use generic relationships (schema:relatedTo) if NO specific semantic relationship applies.**
-
-FOR ENTITIES - Extract semantic details:
-- Name (as mentioned in text)
-- Semantic type (from vocabulary above)
-- Aliases (alternative names)
-- Semantic context and properties
-- Confidence (0-1) based on clarity
-
-FOR RELATIONSHIPS - Focus on semantic meaning:
-- Source entity → Target entity
-- Precise semantic relationship type
-- Context describing the relationship
-- Confidence (0-1) based on clarity
+**Good Example:**
+Text: "The API processes user input through machine learning algorithms"
+✓ Entities: machine learning (concept)
+✓ Relationships: machine learning enables processing
+✗ Avoid: "API", "input", "algorithms" as separate entities
 
 {domain_instruction}{type_instruction}{style_instruction}{length_instruction}
 
 📄 TEXT TO ANALYZE:
 {text}
 
-🎯 EXTRACTION REQUIREMENTS:
-- Be factual - only extract what's clearly stated or strongly implied
-- Focus on core entities that are primary subjects, not attributes
-- Use specific relationship types that add semantic meaning
-- Build a hierarchical, well-structured knowledge graph
-- Provide verification confidence for the entire extraction
+🎯 EXTRACTION RULES:
+1. **First-class entities only**: Extract entities that have independent identity
+2. **Specific relationships**: Use precise relationship types, avoid "related_to"
+3. **High confidence**: Only extract what's clearly stated (confidence ≥ 0.7)
+4. **Semantic accuracy**: Choose most specific entity/relationship types
+5. **Factual grounding**: Base everything on the actual text content
 
-Extract entities and relationships following these knowledge graph principles."""
+Extract entities and relationships following these semantic principles."""
+
+        return prompt
+
+    def _build_verification_prompt(
+        self,
+        original_text: str,
+        extraction: LLMExtractionOutput
+    ) -> str:
+        """Build verification prompt to validate extraction accuracy"""
+
+        # Format the extracted entities and relationships for verification
+        entity_list = []
+        for entity in extraction.entities:
+            entity_list.append(f"- {entity.name} ({entity.type.value}): {entity.context[:100]}")
+
+        relationship_list = []
+        for rel in extraction.relationships:
+            relationship_list.append(f"- {rel.source} --{rel.relation.value}--> {rel.target}: {rel.context[:100]}")
+
+        entities_text = "\n".join(entity_list) if entity_list else "None extracted"
+        relationships_text = "\n".join(relationship_list) if relationship_list else "None extracted"
+
+        prompt = f"""Verify and validate this knowledge extraction for accuracy and completeness.
+
+ORIGINAL TEXT:
+{original_text}
+
+EXTRACTED ENTITIES:
+{entities_text}
+
+EXTRACTED RELATIONSHIPS:
+{relationships_text}
+
+🔍 **VERIFICATION TASKS:**
+
+1. **Accuracy Check**: Are all entities and relationships actually present in the text?
+   - Remove any hallucinated or incorrectly extracted items
+   - Ensure entity types are accurate
+   - Verify relationship types are correct
+
+2. **Completeness Check**: Are there obvious entities or relationships missing?
+   - Add clearly mentioned entities that were missed
+   - Add obvious relationships that were missed
+   - Don't over-extract - only add what's clearly stated
+
+3. **Quality Check**: Are entities properly categorized?
+   - Ensure first-class entities vs properties distinction
+   - Use most specific entity types possible
+   - Use most specific relationship types possible
+
+4. **Confidence Assessment**: Set realistic confidence scores
+   - High confidence (0.9+): Explicitly stated in text
+   - Medium confidence (0.7-0.9): Clearly implied
+   - Low confidence (0.5-0.7): Somewhat inferred
+
+Return the verified extraction with corrected entities, relationships, and confidence scores."""
 
         return prompt
 
