@@ -255,7 +255,17 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         }
     ]
 )
-def search_files(pattern: str, path: str = ".", output_mode: str = "files_with_matches", head_limit: Optional[int] = 20, file_pattern: str = "*", case_sensitive: bool = False, multiline: bool = False) -> str:
+def search_files(
+    pattern: str,
+    path: str = ".",
+    output_mode: str = "files_with_matches",
+    head_limit: Optional[int] = 20,
+    file_pattern: str = "*",
+    case_sensitive: bool = False,
+    multiline: bool = False,
+    include_hidden: bool = False,
+    ignore_dirs: Optional[str] = None,
+) -> str:
     """
     Enhanced search tool with regex support and flexible output modes.
 
@@ -300,18 +310,43 @@ def search_files(pattern: str, path: str = ".", output_mode: str = "files_with_m
             files_to_search = [search_path]
         elif search_path.is_dir():
             # Find files matching pattern in directory
+            # Default directories to ignore for safety/performance (user home and projects)
+            default_ignores = {
+                ".git", ".hg", ".svn", "__pycache__", "node_modules", "dist", "build",
+                ".DS_Store", ".Trash", ".cache", ".venv", "venv", "env", ".env",
+                ".cursor", "Library", "Applications", "System", "Volumes"
+            }
+            extra_ignores = set()
+            if ignore_dirs:
+                extra_ignores = {d.strip() for d in ignore_dirs.split('|') if d.strip()}
+            ignore_set = default_ignores | extra_ignores
+
             if file_pattern == "*":
                 # Search all files recursively
                 files_to_search = []
                 for root, dirs, files in os.walk(search_path):
+                    # Prune directories in-place
+                    dirs[:] = [
+                        d for d in dirs
+                        if (include_hidden or not d.startswith('.')) and d not in ignore_set
+                    ]
                     for file in files:
                         file_path = Path(root) / file
+                        # Skip hidden files unless allowed
+                        if not include_hidden and file_path.name.startswith('.'):
+                            continue
+                        # Skip non-regular files (sockets, fifos, etc.) and symlinks
+                        try:
+                            if not file_path.is_file() or file_path.is_symlink():
+                                continue
+                        except Exception:
+                            continue
                         # Skip binary files by checking if they're text files
                         try:
                             with open(file_path, 'r', encoding='utf-8') as f:
                                 f.read(1024)  # Try to read first 1KB
                             files_to_search.append(file_path)
-                        except (UnicodeDecodeError, PermissionError):
+                        except (UnicodeDecodeError, PermissionError, OSError):
                             continue  # Skip binary/inaccessible files
             else:
                 # Support multiple patterns separated by |
@@ -320,9 +355,23 @@ def search_files(pattern: str, path: str = ".", output_mode: str = "files_with_m
                 files_to_search = []
 
                 for root, dirs, files in os.walk(search_path):
+                    # Prune directories in-place
+                    dirs[:] = [
+                        d for d in dirs
+                        if (include_hidden or not d.startswith('.')) and d not in ignore_set
+                    ]
                     for file in files:
                         file_path = Path(root) / file
                         filename = file_path.name
+                        # Skip hidden files unless allowed
+                        if not include_hidden and filename.startswith('.'):
+                            continue
+                        # Skip non-regular files (sockets, fifos, etc.) and symlinks
+                        try:
+                            if not file_path.is_file() or file_path.is_symlink():
+                                continue
+                        except Exception:
+                            continue
 
                         # Check if file matches any pattern (case-insensitive)
                         matches_pattern = False
@@ -337,7 +386,7 @@ def search_files(pattern: str, path: str = ".", output_mode: str = "files_with_m
                                 with open(file_path, 'r', encoding='utf-8') as f:
                                     f.read(1024)  # Try to read first 1KB
                                 files_to_search.append(file_path)
-                            except (UnicodeDecodeError, PermissionError):
+                            except (UnicodeDecodeError, PermissionError, OSError):
                                 continue  # Skip binary/inaccessible files
         else:
             return f"Error: Path '{path}' does not exist"
