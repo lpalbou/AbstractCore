@@ -85,6 +85,7 @@ class RelationType(Enum):
     # Causal Relationships
     CAUSES = "causes"
     ENABLES = "enables"
+    ENABLED_BY = "enabled_by"
     PREVENTS = "prevents"
     INFLUENCES = "influences"
     TRIGGERS = "triggers"
@@ -99,10 +100,13 @@ class RelationType(Enum):
 
     # Functional Relationships
     IMPLEMENTS = "implements"
+    IMPLEMENTED_BY = "implemented_by"
     UTILIZES = "utilizes"
+    USES = "uses"
     PRODUCES = "produces"
     CONSUMES = "consumes"
     TRANSFORMS = "transforms"
+    CONFIGURES = "configures"
 
     # Knowledge Relationships
     EXPLAINS = "explains"
@@ -119,6 +123,7 @@ class RelationType(Enum):
 
     # Social/Organizational
     WORKS_FOR = "works_for"
+    WORKS_WITH = "works_with"
     COLLABORATES_WITH = "collaborates_with"
     REPORTS_TO = "reports_to"
     MANAGES = "manages"
@@ -131,8 +136,10 @@ class RelationType(Enum):
     # Comparative Relationships
     SIMILAR_TO = "similar_to"
     DIFFERENT_FROM = "different_from"
+    COMPARED_TO = "compared_to"
     ALTERNATIVE_TO = "alternative_to"
     COMPLEMENT_TO = "complement_to"
+    COMPLEMENTS = "complements"
 
     # Creation/Attribution
     CREATED_BY = "created_by"
@@ -171,8 +178,8 @@ class Relationship(BaseModel):
 
 class LLMExtractionOutput(BaseModel):
     """LLM-generated extraction output"""
-    entities: List[Entity] = Field(description="Extracted entities", max_length=20)
-    relationships: List[Relationship] = Field(description="Extracted relationships", max_length=15)
+    entities: List[Entity] = Field(description="Extracted entities")
+    relationships: List[Relationship] = Field(description="Extracted relationships")
     verification_confidence: float = Field(description="Overall confidence after verification (0-1)", ge=0, le=1)
 
 
