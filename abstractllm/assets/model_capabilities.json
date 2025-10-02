@@ -803,8 +803,8 @@
     "none": "Poor structured output capability"
   },
   "default_capabilities": {
-    "context_length": 4096,
-    "max_output_tokens": 2048,
+    "context_length": 16384,
+    "max_output_tokens": 4096,
     "tool_support": "none",
     "structured_output": "none",
     "parallel_tools": false,

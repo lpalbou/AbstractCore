@@ -115,8 +115,8 @@ class LMStudioProvider(BaseProvider):
         else:
             response = self._single_generate(payload)
 
-            # Handle tool execution for prompted models
-            if tools and self.tool_handler.supports_prompted and response.content:
+            # Execute tools if enabled and tools are present
+            if self.execute_tools and tools and self.tool_handler.supports_prompted and response.content:
                 response = self._handle_prompted_tool_execution(response, tools)
 
             return response
@@ -254,8 +254,8 @@ class LMStudioProvider(BaseProvider):
             collected_content += chunk.content
             yield chunk
 
-        # Handle tool execution if we have tools and content
-        if tools and self.tool_handler.supports_prompted and collected_content:
+        # Execute tools if enabled and we have collected content
+        if self.execute_tools and tools and self.tool_handler.supports_prompted and collected_content:
             # Create complete response for tool processing
             complete_response = GenerateResponse(
                 content=collected_content,
@@ -263,7 +263,7 @@ class LMStudioProvider(BaseProvider):
                 finish_reason="stop"
             )
 
-            # Handle tool execution using base method
+            # Execute tools using base method
             final_response = self._handle_prompted_tool_execution(complete_response, tools)
 
             # If tools were executed, yield the tool results as final chunk
