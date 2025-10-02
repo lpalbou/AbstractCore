@@ -56,8 +56,10 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 ### ✅ What AbstractCore Does Well
 
 - **🌐 Universal API Server**: OpenAI-compatible endpoints for ALL providers
+- **🤖 Agentic CLI Compatibility**: Full support for Codex, Gemini CLI, Crush, and more
 - **🔌 Universal Provider Support**: Same API for OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - **🛠️ Tool Calling**: Native support across all providers with automatic execution
+- **🔧 MCP Support** (Planned): Model Context Protocol endpoints (stub implementation)
 - **🔍 Web Search**: Real-time DuckDuckGo search with time filtering and regional results
 - **📊 Structured Output**: Type-safe JSON responses with Pydantic validation
 - **⚡ Streaming**: Real-time responses with proper tool handling
@@ -499,6 +501,56 @@ const response = await client.chat.completions.create({
 
 **[Server documentation →](docs/server.md)**
 
+## 🤖 Agentic CLI Compatibility
+
+**Use AbstractCore with popular agentic CLIs and powerful open-source models!**
+
+AbstractCore now provides full compatibility with leading agentic command-line interfaces:
+
+- **Codex CLI** (OpenAI) - Advanced code generation and analysis
+- **Gemini CLI** (Google) - Google's AI development tools
+- **Crush** (Charmbracelet) - Glamorous AI coding agent for terminals
+
+### Quick Setup
+
+```bash
+# 1. Start AbstractCore server
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# 2. Configure any agentic CLI
+export OPENAI_BASE_URL="http://localhost:8000/v1"        # For Codex, Gemini CLI, Crush
+export OPENAI_API_KEY="unused"
+
+# 3. Use with powerful open-source models
+crush --model "ollama/qwen3-coder:30b" "Write a FastAPI server"
+codex --model "anthropic/claude-3-5-haiku-latest" "Review this code"
+gemini-cli --model "ollama/qwen3-coder:30b" "Generate tests"
+```
+
+### Supported Features
+
+- ✅ **Full OpenAI Compatibility** - Works with any OpenAI-compatible client
+- ✅ **Tool Calling & Function Calling** - Native support across all providers
+- ✅ **Streaming Responses** - Real-time SSE streaming with tool call deltas
+- ✅ **Parallel Tool Calls** - Execute multiple tools simultaneously
+- ✅ **Structured Output** - JSON schema validation and Pydantic models
+- ⚠️ **MCP Support** - Model Context Protocol endpoints (stub implementation, full support planned)
+- ✅ **Multiple Routing Patterns** - `/v1/chat/completions` and `/{provider}/v1/chat/completions`
+
+### Recommended Models
+
+**For Coding Tasks:**
+- `ollama/qwen3-coder:30b` - Excellent code generation and analysis
+- `ollama/deepseek-coder:33b` - Strong reasoning and debugging
+- `mlx/mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit` - Apple Silicon optimized
+
+**For General Tasks:**
+- `anthropic/claude-3-5-haiku-latest` - Fast and intelligent
+- `openai/gpt-4o-mini` - Reliable and cost-effective
+- `ollama/llama3:8b` - Local and private
+
+**[🤖 Complete Agentic CLI Guide →](docs/compatibility-agentic-cli.md)**
+
 ## Advanced Capabilities
 
 AbstractCore is designed as infrastructure. For advanced AI applications, combine with:
@@ -512,6 +564,7 @@ Autonomous agents with planning, tool execution, and self-improvement capabiliti
 ## Documentation
 
 - **[🌐 Server Guide](docs/server.md)** - Universal API server documentation
+- **[🤖 Agentic CLI Compatibility](docs/compatibility-agentic-cli.md)** - Use with Codex, Gemini CLI, Crush
 - **[🔢 Vector Embeddings](docs/embeddings.md)** - Similarity matrices, clustering, and semantic search
 - **[Getting Started](docs/getting-started.md)** - Your first AbstractCore program
 - **[Capabilities](docs/capabilities.md)** - What AbstractCore can and cannot do

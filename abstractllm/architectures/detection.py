@@ -217,8 +217,8 @@ def get_context_limits(model_name: str) -> Dict[str, int]:
     """Get context and output token limits."""
     capabilities = get_model_capabilities(model_name)
     return {
-        "context_length": capabilities.get("context_length", 4096),
-        "max_output_tokens": capabilities.get("max_output_tokens", 2048)
+        "context_length": capabilities.get("context_length", 16384),  # 16K total: 12K input + 4K output
+        "max_output_tokens": capabilities.get("max_output_tokens", 4096)  # 4K output tokens
     }
 
 

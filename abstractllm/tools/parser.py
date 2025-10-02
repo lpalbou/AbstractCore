@@ -484,13 +484,8 @@ def _format_qwen_style(tools: List[ToolDefinition]) -> str:
 <|tool_call|>
 {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
 </|tool_call|>
+""" + _critical_rules()
 
-CRITICAL RULES:
-1. The "name" field must be at the TOP LEVEL, NOT inside "arguments"
-2. Do NOT put "name" inside the "arguments" object
-3. Use the exact JSON structure shown above
-
-"""
 
     # Add examples from tool metadata
     if any(tool.examples for tool in tools):
@@ -534,8 +529,7 @@ def _format_llama_style(tools: List[ToolDefinition]) -> str:
 <function_call>
 {"name": "function_name", "arguments": {"param1": "value1", "param2": "value2"}}
 </function_call>
-
-"""
+""" + _critical_rules()
 
     # Add examples from tool metadata
     if any(tool.examples for tool in tools):
@@ -569,7 +563,8 @@ def _format_xml_style(tools: List[ToolDefinition]) -> str:
     prompt += """To use a tool, format your call as:
 <tool_call>
 {"name": "tool_name", "arguments": {"param1": "value1"}}
-</tool_call>"""
+</tool_call>
+""" + _critical_rules()
 
     return prompt
 
@@ -618,10 +613,7 @@ def _format_generic_style(tools: List[ToolDefinition]) -> str:
             prompt += f"  **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
         prompt += "\n"
 
-    prompt += """To use a tool, respond with a JSON object in this format:
-{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
-
-"""
+    prompt += _critical_rules()
 
     # Add examples from tool metadata
     if any(tool.examples for tool in tools):
@@ -636,3 +628,74 @@ def _format_generic_style(tools: List[ToolDefinition]) -> str:
                     prompt += f'{{"name": "{tool.name}", "arguments": {json.dumps(args)}}}\n\n'
 
     return prompt
+
+
+def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
+    """
+    Remove all tool call syntax from content using sophisticated pattern matching.
+
+    This function uses the same patterns as the parser to ensure consistency.
+
+    Args:
+        content: Text content that may contain tool call syntax
+        tool_calls: Optional list of tool calls (if None, always clean)
+
+    Returns:
+        Content with tool call syntax removed
+    """
+    if not content:
+        return content
+
+    # Only clean if we have tool calls or if tool_calls is None (force clean)
+    if tool_calls is not None and not tool_calls:
+        return content
+
+    import re
+
+    # Use the same sophisticated patterns as the _parse_special_token function
+    patterns = [
+        # Strategy 1: Properly closed <|tool_call|> tags
+        r'<\|tool_call\|>\s*.*?\s*</\|tool_call\|>',
+
+        # Strategy 2: Opening tag with JSON, flexible ending
+        r'<\|tool_call\|>\s*\{(?:[^{}]|(?:\{[^{}]*\}))*\}\s*(?:</\|tool_call\|>|$|\n|<)',
+
+        # Strategy 3: Ultra-robust - just start tag + JSON
+        r'<\|tool_call\|>\s*\{[^<]*?\}',
+
+        # Other formats
+        r'<function_call>.*?</function_call>',
+        r'<tool_call>.*?</tool_call>',
+        r'```tool_code.*?```',
+        r'```tool_call.*?```'
+    ]
+
+    # Apply all patterns
+    for pattern in patterns:
+        content = re.sub(pattern, '', content, flags=re.DOTALL | re.IGNORECASE)
+
+    # Clean up extra whitespace and return
+    return content.strip()
+
+
+def _critical_rules():
+    """
+    Returns the critical rules for tool usage as a string.
+
+    This function is intended to provide a single source of truth for the
+    critical tool usage rules, which can be referenced elsewhere in the codebase
+    or for documentation purposes.
+
+    Returns:
+        str: The critical rules for tool usage.
+    """
+    return """
+    
+CRITICAL RULES FOR TOOL USAGE:
+1. If you can answer the question directly, do not call a tool
+2. If you can't answer the question directly, call a tool to extend your capabilities, gain further insights or perform an action
+3. DO NOT call tools to show off capabilities - when requested, just describe the tools at your disposal
+4. The "name" field must be at the TOP LEVEL, NOT inside "arguments"
+5. Use the exact JSON structure shown above
+
+"""
