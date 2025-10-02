@@ -87,11 +87,13 @@ class OllamaProvider(BaseProvider):
             # Add conversation history
             payload["messages"].extend(messages)
 
-            # Add current prompt as user message
-            payload["messages"].append({
-                "role": "user",
-                "content": prompt
-            })
+            # Add current prompt as user message (only if non-empty)
+            # When using messages array, prompt should be empty or already in messages
+            if prompt and prompt.strip():
+                payload["messages"].append({
+                    "role": "user",
+                    "content": prompt
+                })
 
             endpoint = "/api/chat"
         else:
@@ -138,9 +140,9 @@ class OllamaProvider(BaseProvider):
                 }
             )
 
-            # Handle tool execution for prompted models
-            if tools and self.tool_handler.supports_prompted and content:
-                generate_response = self._handle_tool_execution(generate_response, tools)
+            # Execute tools if enabled and tools are present
+            if self.execute_tools and tools and self.tool_handler.supports_prompted and content:
+                return self._handle_tool_execution(generate_response, tools)
 
             return generate_response
 
@@ -194,37 +196,34 @@ class OllamaProvider(BaseProvider):
                                 raw_response=chunk
                             )
 
-                            # For streaming, only handle tools on the final chunk
-                            if done and tools and self.tool_handler.supports_prompted and full_content:
-                                # Create a complete response for tool processing
-                                complete_response = GenerateResponse(
-                                    content=full_content,
-                                    model=self.model,
-                                    finish_reason="stop",
-                                    raw_response=chunk
-                                )
-
-                                # Handle tool execution and yield tool results as additional chunks
-                                final_response = self._handle_tool_execution(complete_response, tools)
-
-                                # If tools were executed, yield the tool results as final chunk
-                                if final_response.content != full_content:
-                                    yield GenerateResponse(
-                                        content=final_response.content[len(full_content):],
-                                        model=self.model,
-                                        finish_reason="stop",
-                                        raw_response=chunk
-                                    )
-                                else:
-                                    yield chunk_response
-                            else:
-                                yield chunk_response
+                            yield chunk_response
 
                             if done:
                                 break
 
                         except json.JSONDecodeError:
                             continue
+
+                # Execute tools if enabled and we have collected content
+                if self.execute_tools and tools and self.tool_handler.supports_prompted and full_content:
+                    # Create complete response for tool processing
+                    complete_response = GenerateResponse(
+                        content=full_content,
+                        model=self.model,
+                        finish_reason="stop"
+                    )
+
+                    # Execute tools and yield results
+                    final_response = self._handle_tool_execution(complete_response, tools)
+
+                    # If tools were executed, yield the tool results
+                    if final_response.content != full_content:
+                        tool_results_content = final_response.content[len(full_content):]
+                        yield GenerateResponse(
+                            content=tool_results_content,
+                            model=self.model,
+                            finish_reason="stop"
+                        )
 
         except Exception as e:
             yield GenerateResponse(
@@ -271,7 +270,7 @@ class OllamaProvider(BaseProvider):
 
         # Return updated response with tool results
         return GenerateResponse(
-            content=response.content + results_text,
+            content=tool_call_response.content + results_text,
             model=response.model,
             finish_reason=response.finish_reason,
             raw_response=response.raw_response,

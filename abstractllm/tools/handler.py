@@ -240,22 +240,9 @@ class UniversalToolHandler:
         # Use architecture-specific parsing
         tool_calls = parse_tool_calls(response, self.model_name)
 
-        # Extract content (everything that's not a tool call)
-        content = response
-        if tool_calls:
-            # Try to remove tool call syntax from content
-            # This is a simple approach - could be enhanced
-            import re
-            patterns = [
-                r'<\|tool_call\|>.*?</?\|tool_call\|>',
-                r'<function_call>.*?</function_call>',
-                r'<tool_call>.*?</tool_call>',
-                r'```tool_code.*?```',
-                r'```tool_call.*?```'
-            ]
-            for pattern in patterns:
-                content = re.sub(pattern, '', content, flags=re.DOTALL)
-            content = content.strip()
+        # Extract content (everything that's not a tool call) using shared cleaning function
+        from .parser import clean_tool_syntax
+        content = clean_tool_syntax(response, tool_calls)
 
         return ToolCallResponse(
             content=content,
