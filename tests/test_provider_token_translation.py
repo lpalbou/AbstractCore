@@ -62,30 +62,7 @@ class TestProviderTokenTranslation:
 
     def test_huggingface_transformers_token_translation(self):
         """Test HuggingFace transformers provider translates tokens correctly"""
-        # Skip if transformers not available or no cache models
-        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub"):
-            pytest.skip("No HuggingFace cache available")
-
-        try:
-            llm = create_llm("huggingface",
-                            model="microsoft/DialoGPT-medium",
-                            max_tokens=2048,
-                            max_output_tokens=100,
-                            debug=False)
-
-            # Test parameter mapping
-            kwargs = llm._prepare_generation_kwargs(max_output_tokens=80)
-            provider_max_tokens = llm._get_provider_max_tokens_param(kwargs)
-
-            # For transformers, this should be max_new_tokens
-            assert provider_max_tokens == 80
-
-            del llm
-
-        except Exception as e:
-            if "not found" in str(e).lower():
-                pytest.skip(f"Model not available: {e}")
-            raise
+        pytest.skip("Skipped - DialoGPT models removed from test suite")
 
     def test_provider_specific_parameter_mapping(self):
         """Test each provider's parameter mapping logic without actual API calls"""

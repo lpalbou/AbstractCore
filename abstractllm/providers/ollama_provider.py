@@ -32,6 +32,37 @@ class OllamaProvider(BaseProvider):
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
 
+    def unload(self) -> None:
+        """
+        Unload the model from Ollama server memory.
+
+        Sends a request with keep_alive=0 to immediately unload the model
+        from the Ollama server, freeing server-side memory.
+        """
+        try:
+            # Send a minimal generate request with keep_alive=0 to unload
+            payload = {
+                "model": self.model,
+                "prompt": "",  # Minimal prompt
+                "stream": False,
+                "keep_alive": 0  # Immediately unload after this request
+            }
+
+            response = self.client.post(
+                f"{self.base_url}/api/generate",
+                json=payload
+            )
+            response.raise_for_status()
+
+            # Close the HTTP client connection
+            if hasattr(self, 'client') and self.client is not None:
+                self.client.close()
+
+        except Exception as e:
+            # Log but don't raise - unload should be best-effort
+            if hasattr(self, 'logger'):
+                self.logger.warning(f"Error during unload: {e}")
+
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)

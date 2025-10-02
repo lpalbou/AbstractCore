@@ -6,17 +6,69 @@ These tests verify that the server properly handles:
 2. Tool messages with role: "tool" and content: null
 3. Assistant messages with tool_calls field
 4. Adaptive message conversion for local models (Ollama)
+
+The server is automatically started in a background process for testing.
 """
 
 import pytest
 import httpx
 import json
+import subprocess
+import time
+import os
 from typing import Dict, Any, List
 
 
 # Test configuration
 BASE_URL = "http://localhost:8003"
 TEST_MODEL = "ollama/qwen3-coder:30b"
+
+
+@pytest.fixture(scope="module")
+def server():
+    """Start the AbstractLLM server for testing, stop after tests complete."""
+    # Check if server is already running
+    try:
+        response = httpx.get(f"{BASE_URL}/health", timeout=2)
+        if response.status_code == 200:
+            # Server already running, use it
+            yield
+            return
+    except (httpx.ConnectError, httpx.TimeoutException):
+        pass
+
+    # Start server in background
+    env = os.environ.copy()
+    env["ABSTRACTCORE_DEBUG"] = "true"
+
+    process = subprocess.Popen(
+        ["python", "-m", "uvicorn", "abstractllm.server.app:app",
+         "--host", "0.0.0.0", "--port", "8003"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+    # Wait for server to start (max 10 seconds)
+    for _ in range(20):
+        try:
+            response = httpx.get(f"{BASE_URL}/health", timeout=2)
+            if response.status_code == 200:
+                break
+        except (httpx.ConnectError, httpx.TimeoutException):
+            time.sleep(0.5)
+    else:
+        process.kill()
+        pytest.fail("Server failed to start within 10 seconds")
+
+    yield
+
+    # Stop server after tests
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
 
 
 class TestCodexMultiTurnToolCalling:
@@ -30,7 +82,7 @@ class TestCodexMultiTurnToolCalling:
     4. Optionally more user messages
     """
 
-    def test_single_tool_call_scenario(self):
+    def test_single_tool_call_scenario(self, server):
         """
         Test: User asks → Assistant calls tool → Tool returns result → Assistant responds
         """
@@ -88,7 +140,7 @@ class TestCodexMultiTurnToolCalling:
         assert len(content) > 0, "Response content should not be empty"
         print(f"✅ Single tool call test passed. Response: {content[:100]}...")
 
-    def test_tool_message_with_null_content(self):
+    def test_tool_message_with_null_content(self, server):
         """
         Test: Tool message with content: null (e.g., tool execution failed)
         """
@@ -140,7 +192,7 @@ class TestCodexMultiTurnToolCalling:
         assert len(content) > 0
         print(f"✅ Null content test passed. Response: {content[:100]}...")
 
-    def test_multiple_tool_calls_sequential(self):
+    def test_multiple_tool_calls_sequential(self, server):
         """
         Test: Multiple tool calls in sequence
         """
@@ -211,7 +263,7 @@ class TestCodexMultiTurnToolCalling:
         assert len(content) > 0
         print(f"✅ Sequential tool calls test passed. Response: {content[:100]}...")
 
-    def test_conversation_context_preserved(self):
+    def test_conversation_context_preserved(self, server):
         """
         Test: Verify that conversation context is preserved across tool calls
         """
@@ -275,7 +327,7 @@ class TestCodexMultiTurnToolCalling:
 class TestResponsesEndpoint:
     """Test the /v1/responses endpoint (Codex preferred)"""
 
-    def test_basic_responses_call(self):
+    def test_basic_responses_call(self, server):
         """Test basic /v1/responses endpoint"""
         response = httpx.post(
             f"{BASE_URL}/v1/responses",
@@ -298,7 +350,7 @@ class TestResponsesEndpoint:
         assert "content" in data["output"][0]
         print(f"✅ Responses endpoint test passed. Output: {data['output'][0]['content'][:50]}...")
 
-    def test_responses_with_tool_history(self):
+    def test_responses_with_tool_history(self, server):
         """Test /v1/responses with tool calling history"""
         response = httpx.post(
             f"{BASE_URL}/v1/responses",
@@ -347,7 +399,7 @@ class TestResponsesEndpoint:
 class TestMessagesEndpoint:
     """Test the /v1/messages endpoint (Anthropic Messages API)"""
 
-    def test_basic_messages_call(self):
+    def test_basic_messages_call(self, server):
         """Test basic /v1/messages endpoint"""
         response = httpx.post(
             f"{BASE_URL}/v1/messages",
@@ -373,7 +425,7 @@ class TestMessagesEndpoint:
 class TestAdaptiveMessageConversion:
     """Test that messages are properly converted for Ollama (local models)"""
 
-    def test_tool_calls_removed_for_ollama(self):
+    def test_tool_calls_removed_for_ollama(self, server):
         """
         Verify that tool_calls are stripped from messages when sending to Ollama.
         This test ensures no 400 errors from Ollama due to unsupported fields.
@@ -421,7 +473,7 @@ class TestAdaptiveMessageConversion:
         assert "choices" in data
         print(f"✅ Tool calls cleaning test passed. No 400 errors from Ollama.")
 
-    def test_tool_role_converted_for_ollama(self):
+    def test_tool_role_converted_for_ollama(self, server):
         """
         Verify that role: "tool" messages are converted to role: "user"
         with [TOOL RESULT] markers for Ollama.

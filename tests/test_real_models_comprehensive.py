@@ -106,7 +106,7 @@ class TestRealSOTAModels:
             print("\n🏢 Testing IBM Granite")
 
             # Test model configuration
-            config = get_model_config("granite")
+            config = get_model_config("granite-278m")
             assert config.model_id == "ibm-granite/granite-embedding-278m-multilingual"
             assert config.dimension == 768
             assert config.multilingual is True
@@ -114,7 +114,7 @@ class TestRealSOTAModels:
 
             # Initialize with real model
             embedder = EmbeddingManager(
-                model="granite",
+                model="granite-278m",
                 cache_dir=self.cache_dir
             )
 
@@ -211,7 +211,7 @@ class TestRealSOTAModels:
             models_to_test = [
                 ("sentence-transformers/all-MiniLM-L6-v2", 384),
                 ("embeddinggemma", 768),
-                ("granite", 768)
+                ("granite-278m", 768)
             ]
 
             results = {}

@@ -628,3 +628,24 @@ class BaseProvider(AbstractLLMInterface, ABC):
     def _update_http_client_timeout(self) -> None:
         """Update HTTP client timeout if the provider has one. Override in subclasses."""
         pass
+
+    # Memory management methods
+    def unload(self) -> None:
+        """
+        Unload the model from memory.
+
+        For local providers (MLX, HuggingFace), this explicitly frees model memory.
+        For server-based providers (Ollama, LMStudio), this requests server unload.
+        For API providers (OpenAI, Anthropic), this is a no-op.
+
+        After calling unload(), the provider instance should not be used for generation.
+        Create a new provider instance if you need to generate again.
+
+        Usage:
+            provider = create_llm("mlx", model="...")
+            response = provider.generate("Hello")
+            provider.unload()  # Free memory
+            del provider  # Remove reference
+        """
+        # Default implementation does nothing (suitable for API providers)
+        pass

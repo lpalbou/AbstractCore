@@ -58,14 +58,14 @@ class TestJSONCapabilitiesIntegration:
         json_caps = get_model_capabilities(unknown_model)
 
         # Should get default capabilities
-        assert json_caps['context_length'] == 4096  # Default
-        assert json_caps['max_output_tokens'] == 2048  # Default
+        assert json_caps['context_length'] == 16384  # Default: 16K total
+        assert json_caps['max_output_tokens'] == 4096  # Default: 4K output
         assert json_caps['architecture'] == 'generic'  # Default architecture
 
         # Provider should use these defaults
         provider = OllamaProvider(unknown_model)
-        assert provider.max_tokens == 4096
-        assert provider.max_output_tokens == 2048
+        assert provider.max_tokens == 16384
+        assert provider.max_output_tokens == 4096
 
 
 class TestArchitectureDetection:

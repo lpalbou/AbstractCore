@@ -208,6 +208,10 @@ class UniversalToolHandler:
 
     def _parse_native_response(self, response: Dict[str, Any]) -> ToolCallResponse:
         """Parse native API response format."""
+        # Handle None response
+        if response is None:
+            return ToolCallResponse(content="", tool_calls=[], raw_response=None)
+
         content = response.get("content", "")
         tool_calls = []
 

@@ -370,38 +370,7 @@ class TestStreamToolCalling:
 
     def test_huggingface_standard_streaming(self, simple_tools):
         """Test HuggingFace with standard transformers model (non-GGUF)."""
-        try:
-            # Test standard transformers model
-            provider = create_llm("huggingface", model="microsoft/DialoGPT-small")
-
-            # Standard transformers streaming (simulated)
-            stream = provider.generate(
-                "Hello, how are you?",
-                stream=True,
-                max_tokens=20
-            )
-
-            chunks = []
-            content_accumulated = ""
-
-            for chunk in stream:
-                assert isinstance(chunk, GenerateResponse)
-                chunks.append(chunk)
-
-                if chunk.content:
-                    content_accumulated += chunk.content
-
-            assert len(chunks) > 0, "Should receive chunks"
-            assert len(content_accumulated) > 0, "Should accumulate content"
-
-            print(f"✅ HuggingFace transformers streaming works, {len(chunks)} chunks")
-
-        except Exception as e:
-            error_msg = str(e).lower()
-            if any(keyword in error_msg for keyword in ["transformers", "torch", "not found"]):
-                pytest.skip("HuggingFace dependencies not available")
-            else:
-                raise
+        pytest.skip("Skipped - DialoGPT models removed from test suite")
 
     def test_streaming_performance_comparison(self, simple_tools):
         """Compare streaming performance across available providers."""

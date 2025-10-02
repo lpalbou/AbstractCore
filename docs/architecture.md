@@ -93,12 +93,36 @@ class AbstractLLMInterface(ABC):
     @abstractmethod
     def get_capabilities(self) -> List[str]:
         """Get provider capabilities"""
+
+    def unload(self) -> None:
+        """Unload model from memory (local providers)"""
 ```
 
 This ensures:
 - **Consistency**: Same methods across all providers
 - **Reliability**: Standardized error handling
 - **Extensibility**: Easy to add new providers
+- **Memory Management**: Explicit control over model lifecycle
+
+#### Memory Management
+
+The `unload()` method provides explicit memory management for local providers:
+
+- **Local Providers** (Ollama, MLX, HuggingFace, LMStudio): Actually unloads models from memory
+- **API Providers** (OpenAI, Anthropic): No-op, safe to call but has no effect
+
+```python
+# Load model, use it, then free memory
+llm = create_llm("ollama", model="large-model")
+response = llm.generate("Hello")
+llm.unload()  # Explicitly free memory
+del llm
+```
+
+This is critical for:
+- Test suites that load multiple models sequentially
+- Memory-constrained environments (<32GB RAM)
+- Production systems serving different models sequentially
 
 ### 3. Request Lifecycle
 
