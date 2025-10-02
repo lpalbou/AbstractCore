@@ -171,6 +171,42 @@ capabilities = llm.get_capabilities()
 print(capabilities)  # ['text_generation', 'tool_calling', 'streaming', 'vision']
 ```
 
+#### unload()
+
+Unload the model from memory (local providers only).
+
+```python
+def unload(self) -> None
+```
+
+For local providers (Ollama, MLX, HuggingFace, LMStudio), this explicitly frees model memory. For API providers (OpenAI, Anthropic), this is a no-op but safe to call.
+
+**Provider-specific behavior:**
+- **Ollama**: Sends `keep_alive=0` to immediately unload from server
+- **MLX**: Clears model/tokenizer references and forces garbage collection
+- **HuggingFace**: Closes llama.cpp resources (GGUF) or clears model references
+- **LMStudio**: Closes HTTP connection (server auto-manages via TTL)
+- **OpenAI/Anthropic**: No-op (safe to call)
+
+**Example:**
+```python
+# Load and use a large model
+llm = create_llm("ollama", model="qwen3-coder:30b")
+response = llm.generate("Hello world")
+
+# Explicitly free memory when done
+llm.unload()
+del llm
+
+# Now safe to load another large model
+llm2 = create_llm("mlx", model="mlx-community/Qwen3-30B-4bit")
+```
+
+**Use cases:**
+- Test suites testing multiple models sequentially
+- Memory-constrained environments (<32GB RAM)
+- Sequential model loading in production systems
+
 ### GenerateResponse
 
 Response object from LLM generation.
