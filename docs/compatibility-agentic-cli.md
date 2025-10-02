@@ -1,8 +1,10 @@
-# Agentic CLI Compatibility Guide
+# Agentic CLI Compatibility Guide (Work in Progress)
 
-**Making AbstractCore work with popular agentic CLIs using powerful open-source models**
+**Experimental support for using AbstractCore with agentic CLIs and open-source models**
 
-AbstractCore provides full compatibility with leading agentic command-line interfaces, enabling you to use powerful open-source models like Qwen3-Coder 30B, Llama 3, and others with tools like Codex, Gemini CLI, Crush, and more.
+AbstractCore is actively developing compatibility with agentic command-line interfaces. The server infrastructure is in place (`/v1/responses`, `/v1/chat/completions`, `/v1/messages` endpoints) and message format conversion is working, but full integration requires additional testing and potentially more capable models.
+
+**Current Status:** Partial compatibility with Codex (tested with limited success). Gemini CLI and Crush support is experimental and untested in production scenarios.
 
 ## 🎯 Quick Start
 

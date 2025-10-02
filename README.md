@@ -56,7 +56,7 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 ### ✅ What AbstractCore Does Well
 
 - **🌐 Universal API Server**: OpenAI-compatible endpoints for ALL providers
-- **🤖 Agentic CLI Compatibility**: Full support for Codex, Gemini CLI, Crush, and more
+- **🤖 Agentic CLI Compatibility** (In Progress): Initial support for Codex, Gemini CLI, Crush
 - **🔌 Universal Provider Support**: Same API for OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - **🛠️ Tool Calling**: Native support across all providers with automatic execution
 - **🔧 MCP Support** (Planned): Model Context Protocol endpoints (stub implementation)
@@ -66,7 +66,8 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 - **🔄 Retry & Circuit Breakers**: Production-grade error handling and recovery
 - **🔔 Event System**: Comprehensive observability and monitoring hooks
 - **🔢 Vector Embeddings**: SOTA embeddings with similarity matrices, clustering, and performance optimization
-- **📝 Basic Processing**: Built-in text summarization demonstrating SOTA prompt engineering
+- **📝 Text Summarization**: Built-in `summarizer` CLI with multiple styles and configurable parameters
+- **🕸️ Knowledge Graph Extraction**: `extractor` CLI for semantic entity/relationship extraction
 - **💬 Simple Sessions**: Conversation memory without complexity
 - **🗜️ Chat Compaction**: SOTA conversation summarization for unlimited chat length
 - **⌨️ Basic CLI**: Interactive command-line tool for testing and demonstration
@@ -145,9 +146,15 @@ session = BasicSession(
 )
 # Conversation continues indefinitely with automatic compaction
 # Or manually: session.force_compact(preserve_recent=6, focus="key decisions")
+
+# Knowledge graph extraction from documents
+extractor document.pdf --focus=technology --style=structured --output=kg.jsonld
+
+# Text summarization with built-in CLI
+summarizer report.txt --style=executive --length=brief --output=summary.md
 ```
 
-### Basic CLI Tool
+### CLI Tools
 
 AbstractCore includes a simple CLI tool for quick testing and demonstration:
 
@@ -533,55 +540,50 @@ const response = await client.chat.completions.create({
 
 **[Server documentation →](docs/server.md)**
 
-## 🤖 Agentic CLI Compatibility
+## 🤖 Agentic CLI Compatibility (Work in Progress)
 
-**Use AbstractCore with popular agentic CLIs and powerful open-source models!**
+**Experimental support for using AbstractCore with agentic CLIs and open-source models**
 
-AbstractCore now provides full compatibility with leading agentic command-line interfaces:
+AbstractCore is actively developing compatibility with agentic command-line interfaces:
 
-- **Codex CLI** (OpenAI) - Advanced code generation and analysis
-- **Gemini CLI** (Google) - Google's AI development tools
-- **Crush** (Charmbracelet) - Glamorous AI coding agent for terminals
+- **Codex CLI** (OpenAI) - Partial compatibility, ongoing testing
+- **Gemini CLI** (Google) - Experimental support
+- **Crush** (Charmbracelet) - Experimental support
 
-### Quick Setup
+**Current Status:** Infrastructure is in place (`/v1/responses`, `/v1/chat/completions`, `/v1/messages` endpoints), adaptive message conversion working, but full integration with agentic CLIs requires additional testing and potentially more capable models.
+
+### Quick Setup (Experimental)
 
 ```bash
 # 1. Start AbstractCore server
 uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
 
-# 2. Configure any agentic CLI
-export OPENAI_BASE_URL="http://localhost:8000/v1"        # For Codex, Gemini CLI, Crush
+# 2. Configure your agentic CLI
+export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
-# 3. Use with powerful open-source models
-crush --model "ollama/qwen3-coder:30b" "Write a FastAPI server"
+# 3. Test with your agentic CLI (results may vary)
+# Note: May require more capable models for full functionality
 codex --model "anthropic/claude-3-5-haiku-latest" "Review this code"
-gemini-cli --model "ollama/qwen3-coder:30b" "Generate tests"
 ```
 
-### Supported Features
+### What Works
 
-- ✅ **Full OpenAI Compatibility** - Works with any OpenAI-compatible client
-- ✅ **Tool Calling & Function Calling** - Native support across all providers
-- ✅ **Streaming Responses** - Real-time SSE streaming with tool call deltas
-- ✅ **Parallel Tool Calls** - Execute multiple tools simultaneously
-- ✅ **Structured Output** - JSON schema validation and Pydantic models
-- ⚠️ **MCP Support** - Model Context Protocol endpoints (stub implementation, full support planned)
-- ✅ **Multiple Routing Patterns** - `/v1/chat/completions` and `/{provider}/v1/chat/completions`
+- ✅ **OpenAI-Compatible Server** - All endpoints functional
+- ✅ **Message Format Conversion** - Adapts messages for local vs cloud models
+- ✅ **Tool Role Support** - Handles `role: "tool"` messages correctly
+- ✅ **Multi-turn Conversations** - Maintains conversation context
+- ✅ **Streaming Responses** - Real-time SSE streaming
+- ✅ **Structured Output** - JSON schema validation with Pydantic
 
-### Recommended Models
+### Known Limitations
 
-**For Coding Tasks:**
-- `ollama/qwen3-coder:30b` - Excellent code generation and analysis
-- `ollama/deepseek-coder:33b` - Strong reasoning and debugging
-- `mlx/mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit` - Apple Silicon optimized
+- ⚠️ **Partial Codex Compatibility** - Tested with limited success, may need better models
+- ⚠️ **Gemini CLI/Crush** - Not yet tested with real-world usage
+- ⚠️ **Model Capabilities** - Some features may require GPT-4 class models
+- ⚠️ **Tool Calling** - Works but complex multi-turn tool scenarios need more testing
 
-**For General Tasks:**
-- `anthropic/claude-3-5-haiku-latest` - Fast and intelligent
-- `openai/gpt-4o-mini` - Reliable and cost-effective
-- `ollama/llama3:8b` - Local and private
-
-**[🤖 Complete Agentic CLI Guide →](docs/compatibility-agentic-cli.md)**
+**[📖 Technical Documentation →](docs/compatibility-agentic-cli.md)** (Implementation details and architecture)
 
 ## Advanced Capabilities
 

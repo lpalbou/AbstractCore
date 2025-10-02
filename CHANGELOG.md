@@ -27,6 +27,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - LMStudio: Closes HTTP connection (server auto-manages via TTL)
     - OpenAI/Anthropic: No-op (safe to call)
 
+- **BasicExtractor**: Knowledge graph entity and relationship extraction
+  - Semantic entity extraction with 30+ entity types (people, organizations, concepts, technologies, etc.)
+  - 20+ relationship types for comprehensive knowledge graph construction
+  - Chain of Verification for entity deduplication using semantic similarity
+  - Embedding-based clustering to merge similar entities (configurable threshold)
+  - JSON-LD, JSON, and YAML output formats for knowledge graphs
+  - CLI application: `extractor <file>` with focus areas, entity filters, and extraction styles
+  - Chunked processing for large documents with configurable chunk sizes
+  - Console scripts: `extractor` and `abstractllm-extractor`
+
+- **Summarizer CLI Enhancements**: Production-ready text summarization application
+  - Console script: `summarizer` for easy command-line access (no module path needed)
+  - Console alias: `abstractllm-summarizer` for explicit namespace
+  - Comprehensive parameter support: chunk size, provider/model selection, output format
+  - Multiple summary styles: structured, narrative, objective, analytical, executive
+  - Configurable extraction depth: brief, standard, detailed, comprehensive
+
 ### Fixed
 - **Server Endpoint Message Handling**: Corrected message array processing
   - `/v1/chat/completions`: Now passes messages arrays instead of converting to prompt strings
