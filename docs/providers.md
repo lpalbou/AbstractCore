@@ -553,6 +553,123 @@ def get_provider_for_task(task_type):
         return create_llm("openai", model="gpt-4o-mini")
 ```
 
+## Memory Management for Local Providers
+
+When working with multiple large models (especially in test suites or memory-constrained environments), you can explicitly unload models to free memory:
+
+### The `unload()` Method
+
+All providers implement the `unload()` method for explicit memory management:
+
+```python
+from abstractllm import create_llm
+import gc
+
+# Load a large local model
+llm = create_llm("ollama", model="qwen3-coder:30b")
+response = llm.generate("Hello world")
+
+# Explicitly unload the model from memory
+llm.unload()  # Frees memory
+del llm       # Remove Python reference
+gc.collect()  # Optional: force garbage collection
+
+# Now safe to load another large model
+llm2 = create_llm("mlx", model="mlx-community/Qwen3-30B-4bit")
+response2 = llm2.generate("Hello again")
+llm2.unload()
+del llm2
+```
+
+### Provider-Specific Behavior
+
+Each provider handles unloading differently based on its architecture:
+
+**Ollama Provider:**
+- Sends `keep_alive=0` parameter to immediately unload model from server memory
+- Closes HTTP client connection
+- Server frees GPU/CPU memory
+
+**MLX Provider:**
+- Clears model and tokenizer references from Python
+- Deletes MLX model objects
+- Forces garbage collection to free GPU/unified memory
+
+**HuggingFace Provider:**
+- GGUF models: Calls `llm.close()` to free llama.cpp resources
+- Transformers models: Clears model and tokenizer references
+- Forces garbage collection
+
+**LMStudio Provider:**
+- Closes HTTP client connection
+- Note: LMStudio manages model memory automatically via TTL
+- Models auto-unload after configured idle time
+
+**OpenAI/Anthropic Providers:**
+- No-op (does nothing)
+- Cloud providers manage memory on their servers
+- Safe to call, but has no effect
+
+### When to Use `unload()`
+
+**Test Suites:**
+```python
+# In test fixtures or teardown
+def test_multiple_providers():
+    for provider_name in ["ollama", "mlx", "huggingface"]:
+        llm = create_llm(provider_name, model="...")
+        # ... run tests ...
+        llm.unload()  # Free memory before next provider
+        del llm
+```
+
+**Sequential Model Loading:**
+```python
+# Processing pipeline with different models
+def process_data(data):
+    # Use small model for extraction
+    extractor = create_llm("mlx", model="small-model")
+    entities = extractor.generate(data, response_model=Entities)
+    extractor.unload()
+    del extractor
+
+    # Use large model for analysis
+    analyzer = create_llm("ollama", model="large-model")
+    analysis = analyzer.generate(f"Analyze: {entities}")
+    analyzer.unload()
+    del analyzer
+
+    return analysis
+```
+
+**Memory-Constrained Environments:**
+```python
+# On systems with limited RAM/VRAM
+def process_batch(items):
+    for item in items:
+        llm = create_llm("ollama", model="qwen3-coder:30b")
+        result = llm.generate(item)
+        llm.unload()  # Critical: free memory each iteration
+        del llm
+        yield result
+```
+
+### Best Practices
+
+1. **Always pair with `del`**: Call both `unload()` and `del` for complete cleanup
+2. **Use in test teardown**: Prevent OOM errors in long test suites
+3. **Sequential model switching**: Unload before loading the next model
+4. **Memory-constrained systems**: Essential for systems with <32GB RAM
+5. **Not needed for API providers**: OpenAI/Anthropic providers don't need unloading
+
+### Performance Notes
+
+- **Unloading is fast**: Typically <100ms for most operations
+- **Ollama**: Network call to server (~10-50ms)
+- **MLX**: Reference clearing + GC (~50-100ms)
+- **HuggingFace**: GGUF close + GC (~100-200ms)
+- **Re-loading is slow**: Loading models takes seconds, so don't unload unnecessarily
+
 ## Next Steps
 
 - **Start Simple**: Pick one provider and get familiar with the basics

@@ -54,6 +54,26 @@ class LMStudioProvider(BaseProvider):
             # Other errors (like timeout) - continue, will fail later if needed
             pass
 
+    def unload(self) -> None:
+        """
+        Close HTTP client connection.
+
+        Note: LMStudio manages model memory automatically using TTL (time-to-live)
+        and auto-evict features. There is no explicit API to unload models.
+        Models will be automatically unloaded after the configured TTL expires.
+
+        This method only closes the HTTP client connection for cleanup.
+        """
+        try:
+            # Close the HTTP client connection
+            if hasattr(self, 'client') and self.client is not None:
+                self.client.close()
+
+        except Exception as e:
+            # Log but don't raise - unload should be best-effort
+            if hasattr(self, 'logger'):
+                self.logger.warning(f"Error during unload: {e}")
+
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)

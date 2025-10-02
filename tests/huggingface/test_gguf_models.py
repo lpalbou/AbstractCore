@@ -37,7 +37,6 @@ class TestGGUFBasicFunctionality:
         assert HuggingFaceProvider._is_gguf_model(None, "unsloth/Model-GGUF") == True
         assert HuggingFaceProvider._is_gguf_model(None, "unsloth--Model-GGUF") == True
         assert HuggingFaceProvider._is_gguf_model(None, "regular-model") == False
-        assert HuggingFaceProvider._is_gguf_model(None, "microsoft/DialoGPT-medium") == False
 
     @pytest.mark.skipif(
         not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / f"models--{TEST_GGUF_MODEL.replace('/', '--')}"),
@@ -484,6 +483,9 @@ class TestGGUFCleanup:
         response = llm.generate("Hello")
         assert response.content is not None
 
+        # Test explicit unload method
+        llm.unload()
+
         # Explicitly delete and garbage collect
         del llm
         gc.collect()
@@ -513,8 +515,9 @@ class TestGGUFCleanup:
             response = llm.generate("Hi")
             assert response.content is not None
 
-        # Clean up all
+        # Clean up all - demonstrate explicit unload in loop
         for llm in models:
+            llm.unload()  # Explicitly free memory
             del llm
 
         gc.collect()

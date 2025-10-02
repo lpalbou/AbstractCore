@@ -62,6 +62,38 @@ class MLXProvider(BaseProvider):
             else:
                 raise Exception(f"Failed to load MLX model {self.model}: {str(e)}")
 
+    def unload(self) -> None:
+        """
+        Unload the MLX model from memory.
+
+        Clears model and tokenizer references and forces garbage collection
+        to free GPU/CPU memory immediately.
+        """
+        import gc
+        try:
+            if hasattr(self, 'llm') and self.llm is not None:
+                # Clear MLX model
+                del self.llm
+                self.llm = None
+
+            if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+                # Clear tokenizer
+                del self.tokenizer
+                self.tokenizer = None
+
+            if hasattr(self, 'generate_fn'):
+                self.generate_fn = None
+
+            if hasattr(self, 'stream_generate_fn'):
+                self.stream_generate_fn = None
+
+            # Force garbage collection to free memory immediately
+            gc.collect()
+        except Exception as e:
+            # Log but don't raise - unload should be best-effort
+            if hasattr(self, 'logger'):
+                self.logger.warning(f"Error during unload: {e}")
+
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)

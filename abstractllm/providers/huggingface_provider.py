@@ -82,15 +82,40 @@ class HuggingFaceProvider(BaseProvider):
             self._setup_device_transformers()
             self._load_transformers_model()
 
-    def __del__(self):
-        """Properly clean up resources to minimize garbage collection issues"""
+    def unload(self) -> None:
+        """
+        Unload the model from memory.
+
+        For GGUF models, calls llm.close() to free llama.cpp resources.
+        For transformers models, clears model and tokenizer references.
+        """
+        import gc
         try:
             if hasattr(self, 'llm') and self.llm is not None:
-                # Try to properly close the Llama object
+                # Try to properly close the Llama object (GGUF models)
                 if hasattr(self.llm, 'close'):
                     self.llm.close()
                 # Clear the reference
                 self.llm = None
+
+            if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+                self.tokenizer = None
+
+            if hasattr(self, 'model') and hasattr(self, 'model') and self.model is not None:
+                # For transformers models, clear the model
+                self.model = None
+
+            # Force garbage collection to free memory immediately
+            gc.collect()
+        except Exception as e:
+            # Log but don't raise - unload should be best-effort
+            if hasattr(self, 'logger'):
+                self.logger.warning(f"Error during unload: {e}")
+
+    def __del__(self):
+        """Properly clean up resources to minimize garbage collection issues"""
+        try:
+            self.unload()
         except Exception:
             # Silently handle any cleanup errors - this is expected during shutdown
             pass

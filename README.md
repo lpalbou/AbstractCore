@@ -275,6 +275,38 @@ for chunk in llm.generate("Write a haiku about coding", stream=True):
 print()  # Code flows like rain / Logic blooms in endless loops / Beauty in the bugs
 ```
 
+### Memory Management for Local Models
+
+Free memory explicitly when working with multiple large models (critical for test suites and memory-constrained environments):
+
+```python
+# Load and use a large local model
+llm = create_llm("ollama", model="qwen3-coder:30b")
+response = llm.generate("Hello world")
+
+# Explicitly free memory when done
+llm.unload()  # Unloads from Ollama server
+del llm
+
+# Load a different model without running out of memory
+llm2 = create_llm("mlx", model="mlx-community/Qwen3-30B-4bit")
+response2 = llm2.generate("Hello again")
+llm2.unload()  # Frees GPU memory
+del llm2
+```
+
+**Provider-specific behavior:**
+- **Ollama**: Sends `keep_alive=0` to immediately unload from server memory
+- **MLX**: Clears model/tokenizer and forces garbage collection
+- **HuggingFace**: Closes llama.cpp resources (GGUF) or clears model references
+- **LMStudio**: Closes HTTP connection (models auto-unload via TTL)
+- **OpenAI/Anthropic**: No-op (cloud providers manage memory)
+
+**Best practices:**
+- Call `unload()` when switching between large local models
+- Always call in test teardown to prevent OOM errors
+- Combine with `del` + `gc.collect()` for immediate cleanup
+
 ### Built-in Web Search
 
 AbstractCore includes a powerful web search tool with DuckDuckGo integration:

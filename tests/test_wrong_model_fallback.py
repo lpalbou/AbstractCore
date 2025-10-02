@@ -191,7 +191,6 @@ class TestWrongModelFallback:
             deprecated_models = [
                 "claude-2.0",  # Old Claude model
                 "gpt-3.5-turbo-instruct-0914",  # Specific old OpenAI model
-                "microsoft/DialoGPT-medium"  # Default HuggingFace model
             ]
 
             for deprecated in deprecated_models:

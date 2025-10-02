@@ -5,7 +5,6 @@ This test validates all the providers and models mentioned in the specifications
 - ollama qwen3-coder:30b
 - lmstudio qwen/qwen3-coder-30b
 - mlx mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
-- huggingface microsoft/DialoGPT-medium (accessible GGUF alternative)
 - openai gpt-4o-mini (cost-effective alternative to gpt-4-turbo)
 - anthropic claude-3-5-haiku-latest
 """
