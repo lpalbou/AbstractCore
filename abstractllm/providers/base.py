@@ -51,6 +51,11 @@ class BaseProvider(AbstractLLMInterface, ABC):
         self._timeout = kwargs.get('timeout', 180.0)  # Default 180 seconds for HTTP requests
         self._tool_timeout = kwargs.get('tool_timeout', 300.0)  # Default 300 seconds for tool execution
 
+        # Setup tool execution mode
+        # execute_tools: True = AbstractCore executes tools (default for standalone usage)
+        #                False = Pass-through mode (for API server / agentic CLI)
+        self.execute_tools = kwargs.get('execute_tools', True)
+
         # Setup retry manager with optional configuration
         retry_config = kwargs.get('retry_config', None)
         if retry_config is None:
@@ -402,19 +407,12 @@ class BaseProvider(AbstractLLMInterface, ABC):
                     self.logger.debug(f"Using max_output_tokens {max_output_tokens} from family {family} for {self.model}")
                     return max_output_tokens
 
-        # Provider-specific defaults as final fallback
-        provider_defaults = {
-            'OpenAIProvider': 4096,
-            'AnthropicProvider': 8192,
-            'OllamaProvider': 2048,
-            'HuggingFaceProvider': 2048,
-            'MLXProvider': 2048,
-            'LMStudioProvider': 2048
-        }
-
-        provider_default = provider_defaults.get(self.__class__.__name__, 2048)
-        self.logger.debug(f"Using provider default max_output_tokens {provider_default} for {self.model}")
-        return provider_default
+        # Use JSON capabilities as single source of truth for defaults
+        from ..architectures import get_context_limits
+        limits = get_context_limits(self.model)
+        max_output_tokens = limits['max_output_tokens']
+        self.logger.debug(f"Using default max_output_tokens {max_output_tokens} from model_capabilities.json for {self.model}")
+        return max_output_tokens
 
     def _get_default_context_window(self) -> int:
         """Get default context window using JSON capabilities as single source of truth"""
@@ -451,19 +449,12 @@ class BaseProvider(AbstractLLMInterface, ABC):
                     self.logger.debug(f"Using context_length {context_length} from family {family} for {self.model}")
                     return context_length
 
-        # Provider-specific defaults as final fallback
-        provider_defaults = {
-            'OpenAIProvider': 8192,
-            'AnthropicProvider': 200000,
-            'OllamaProvider': 4096,
-            'HuggingFaceProvider': 8192,
-            'MLXProvider': 8192,
-            'LMStudioProvider': 8192
-        }
-
-        provider_default = provider_defaults.get(self.__class__.__name__, 8192)
-        self.logger.warning(f"No model capabilities found for {self.model}, using provider default {provider_default}")
-        return provider_default
+        # Use JSON capabilities as single source of truth for defaults
+        from ..architectures import get_context_limits
+        limits = get_context_limits(self.model)
+        context_length = limits['context_length']
+        self.logger.debug(f"Using default context_length {context_length} from model_capabilities.json for {self.model}")
+        return context_length
 
     def _prepare_generation_kwargs(self, **kwargs) -> Dict[str, Any]:
         """
@@ -564,10 +555,11 @@ class BaseProvider(AbstractLLMInterface, ABC):
         results_text = self._format_tool_results(tool_results)
 
         # Return updated response with tool results
-        # Handle case where original content might be None (e.g., OpenAI tool calls)
-        original_content = response.content or ""
+        # Use the cleaned content from tool parsing
+        tool_call_response = self.tool_handler.parse_response(response.content, mode="prompted")
+        cleaned_content = tool_call_response.content or ""
         return GenerateResponse(
-            content=original_content + results_text,
+            content=cleaned_content + results_text,
             model=response.model,
             finish_reason=response.finish_reason,
             raw_response=response.raw_response,

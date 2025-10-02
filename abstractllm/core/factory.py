@@ -20,6 +20,15 @@ def create_llm(provider: str, model: Optional[str] = None, **kwargs) -> Abstract
         Configured LLM provider instance
     """
 
+    # Auto-detect provider from model name if needed
+    if model:
+        # MLX models should use MLX provider
+        if "mlx-community" in model.lower() and provider.lower() == "huggingface":
+            provider = "mlx"
+        # GGUF models should use HuggingFace GGUF backend
+        elif (".gguf" in model.lower() or "-gguf" in model.lower()) and provider.lower() == "mlx":
+            provider = "huggingface"
+
     # Mock provider for testing
     if provider.lower() == "mock":
         from ..providers.mock_provider import MockProvider
