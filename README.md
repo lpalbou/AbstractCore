@@ -147,10 +147,14 @@ session = BasicSession(
 # Conversation continues indefinitely with automatic compaction
 # Or manually: session.force_compact(preserve_recent=6, focus="key decisions")
 
-# Knowledge graph extraction from documents
-extractor document.pdf --focus=technology --style=structured --output=kg.jsonld
+# Knowledge graph extraction from text documents
+# Styles: structured, focused, minimal, comprehensive
+# Lengths: brief, standard, detailed, comprehensive
+extractor document.txt --focus=technology --style=structured --length=standard --output=kg.jsonld
 
 # Text summarization with built-in CLI
+# Styles: structured (bullets), narrative (flowing), objective (neutral), analytical (insights), executive (business), conversational (chat)
+# Lengths: brief (2-3 sentences), standard (1-2 paragraphs), detailed (multiple paragraphs), comprehensive (full analysis)
 summarizer report.txt --style=executive --length=brief --output=summary.md
 ```
 

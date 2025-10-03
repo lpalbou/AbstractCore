@@ -139,7 +139,7 @@ def parse_extraction_style(style_str: Optional[str]) -> str:
 def parse_extraction_length(length_str: Optional[str]) -> str:
     """Parse extraction length string"""
     if not length_str:
-        return 'standard'
+        return 'brief'
 
     valid_lengths = ['brief', 'standard', 'detailed', 'comprehensive']
     length_lower = length_str.lower()
@@ -444,8 +444,8 @@ Default model setup:
     parser.add_argument(
         '--length',
         choices=['brief', 'standard', 'detailed', 'comprehensive'],
-        default='standard',
-        help='Extraction depth (default: standard)'
+        default='brief',
+        help='Extraction depth (default: brief)'
     )
 
     parser.add_argument(
