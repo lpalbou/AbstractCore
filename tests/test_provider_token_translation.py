@@ -61,8 +61,31 @@ class TestProviderTokenTranslation:
         del llm
 
     def test_huggingface_transformers_token_translation(self):
-        """Test HuggingFace transformers provider translates tokens correctly"""
-        pytest.skip("Skipped - DialoGPT models removed from test suite")
+        """Test HuggingFace GGUF provider translates tokens correctly"""
+        # Skip if model not available
+        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+            pytest.skip("GGUF model not found in cache")
+
+        try:
+            llm = create_llm("huggingface",
+                            model="unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                            max_tokens=2048,
+                            max_output_tokens=100,
+                            debug=False)
+
+            # Test parameter mapping
+            kwargs = llm._prepare_generation_kwargs(max_output_tokens=80)
+            provider_max_tokens = llm._get_provider_max_tokens_param(kwargs)
+
+            # For GGUF models, this should be max_new_tokens
+            assert provider_max_tokens == 80
+
+            del llm
+
+        except Exception as e:
+            if "not found" in str(e).lower():
+                pytest.skip(f"Model not available: {e}")
+            raise
 
     def test_provider_specific_parameter_mapping(self):
         """Test each provider's parameter mapping logic without actual API calls"""
