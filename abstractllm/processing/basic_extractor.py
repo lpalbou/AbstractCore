@@ -1,465 +1,49 @@
 """
-Basic Extractor - Clean, powerful entity and relationship extraction built on AbstractCore
+Basic Extractor - High-quality semantic knowledge extraction with JSON-LD output
 
-Demonstrates semantic extraction with entity deduplication using Chain of Verification
-and semantic similarity clustering for Knowledge Graph construction.
+Features:
+- Clean JSON-LD output with standard schema.org vocabulary
+- Generic relationship IDs (r:1, r:2, etc.) with s:name property for type
+- Single-pass LLM generation
+- Robust post-processing validation
 """
 
-from enum import Enum
-from typing import List, Dict, Optional, Tuple, Set
+from typing import Optional, List
+import logging
 from pydantic import BaseModel, Field
-import hashlib
 
 from ..core.interface import AbstractLLMInterface
 from ..core.factory import create_llm
 from ..structured.retry import FeedbackRetry
 
-
-class EntityType(Enum):
-    """Comprehensive entity types for semantic knowledge extraction"""
-
-    # Core Entities (First-class entities that can have relationships)
-    PERSON = "person"
-    ORGANIZATION = "organization"
-    LOCATION = "location"
-    EVENT = "event"
-
-    # Knowledge & Concepts
-    CONCEPT = "concept"
-    THEORY = "theory"
-    METHOD = "method"
-    HYPOTHESIS = "hypothesis"
-    FIELD = "field"
-    DOMAIN = "domain"
-    PARADIGM = "paradigm"
-
-    # Technology & Software
-    SOFTWARE_APPLICATION = "software_application"
-    TECHNOLOGY = "technology"
-    PRODUCT = "product"
-    ALGORITHM = "algorithm"
-    FRAMEWORK = "framework"
-    PLATFORM = "platform"
-
-    # Information Artifacts
-    DOCUMENT = "document"
-    PUBLICATION = "publication"
-    DATASET = "dataset"
-    MODEL = "model"
-    SPECIFICATION = "specification"
-
-    # Processes & Activities
-    PROCESS = "process"
-    INVESTIGATION = "investigation"
-    ANALYSIS = "analysis"
-    TRANSFORMATION = "transformation"
-    INTERACTION = "interaction"
-
-    # Temporal & Contextual
-    DATE = "date"
-    TIME_FRAME = "time_frame"
-    CONTEXT = "context"
-    STATE = "state"
-    PHASE = "phase"
-
-    # Systems & Structures
-    SYSTEM = "system"
-    STRUCTURE = "structure"
-    INSTITUTION = "institution"
-    GROUP = "group"
-
-    # Generic
-    OTHER = "other"
-
-
-class RelationType(Enum):
-    """Comprehensive relationship types for semantic knowledge graphs"""
-
-    # Structural Relationships
-    HAS_PART = "has_part"
-    IS_PART_OF = "is_part_of"
-    CONTAINS = "contains"
-    BELONGS_TO = "belongs_to"
-    MEMBER_OF = "member_of"
-
-    # Causal Relationships
-    CAUSES = "causes"
-    ENABLES = "enables"
-    ENABLED_BY = "enabled_by"
-    PREVENTS = "prevents"
-    INFLUENCES = "influences"
-    TRIGGERS = "triggers"
-
-    # Temporal Relationships
-    BEFORE = "before"
-    AFTER = "after"
-    DURING = "during"
-    PRECEDES = "precedes"
-    FOLLOWS = "follows"
-    CONCURRENT = "concurrent"
-
-    # Functional Relationships
-    IMPLEMENTS = "implements"
-    IMPLEMENTED_BY = "implemented_by"
-    UTILIZES = "utilizes"
-    USES = "uses"
-    PRODUCES = "produces"
-    CONSUMES = "consumes"
-    TRANSFORMS = "transforms"
-    CONFIGURES = "configures"
-
-    # Knowledge Relationships
-    EXPLAINS = "explains"
-    DESCRIBES = "describes"
-    DEFINES = "defines"
-    EXEMPLIFIES = "exemplifies"
-    CATEGORIZES = "categorizes"
-
-    # Evidential Relationships
-    SUPPORTS = "supports"
-    CONTRADICTS = "contradicts"
-    VALIDATES = "validates"
-    QUESTIONS = "questions"
-
-    # Social/Organizational
-    WORKS_FOR = "works_for"
-    WORKS_WITH = "works_with"
-    COLLABORATES_WITH = "collaborates_with"
-    REPORTS_TO = "reports_to"
-    MANAGES = "manages"
-
-    # Spatial Relationships
-    LOCATED_IN = "located_in"
-    LOCATED_AT = "located_at"
-    ADJACENT_TO = "adjacent_to"
-
-    # Comparative Relationships
-    SIMILAR_TO = "similar_to"
-    DIFFERENT_FROM = "different_from"
-    COMPARED_TO = "compared_to"
-    ALTERNATIVE_TO = "alternative_to"
-    COMPLEMENT_TO = "complement_to"
-    COMPLEMENTS = "complements"
-
-    # Creation/Attribution
-    CREATED_BY = "created_by"
-    AUTHORED_BY = "authored_by"
-    DEVELOPED_BY = "developed_by"
-    INVENTED_BY = "invented_by"
-
-    # Participation
-    PARTICIPATES_IN = "participates_in"
-    INVOLVED_IN = "involved_in"
-    CONTRIBUTES_TO = "contributes_to"
-
-    # Generic (use only when no specific relationship applies)
-    RELATED_TO = "related_to"
-    ASSOCIATED_WITH = "associated_with"
-    OTHER = "other"
-
-
-class Entity(BaseModel):
-    """Extracted entity with metadata"""
-    name: str = Field(description="Entity name or mention")
-    type: EntityType = Field(description="Category of the entity")
-    aliases: List[str] = Field(default=[], description="Alternative names or mentions", max_length=5)
-    context: str = Field(description="Surrounding context where entity appears")
-    confidence: float = Field(description="Confidence in extraction (0-1)", ge=0, le=1)
-
-
-class Relationship(BaseModel):
-    """Extracted relationship between entities"""
-    source: str = Field(description="Source entity name")
-    target: str = Field(description="Target entity name")
-    relation: RelationType = Field(description="Type of relationship")
-    context: str = Field(description="Context where relationship appears")
-    confidence: float = Field(description="Confidence in extraction (0-1)", ge=0, le=1)
-
-
-class LLMExtractionOutput(BaseModel):
-    """LLM-generated extraction output"""
-    entities: List[Entity] = Field(description="Extracted entities")
-    relationships: List[Relationship] = Field(description="Extracted relationships")
-    verification_confidence: float = Field(description="Overall confidence after verification (0-1)", ge=0, le=1)
-
-
-class ExtractionOutput(BaseModel):
-    """Complete extraction output with deduplication"""
-    entities: Dict[str, Entity] = Field(description="Deduplicated entities (canonical_id -> Entity)")
-    relationships: List[Relationship] = Field(description="Extracted relationships with resolved entity names")
-    verification_confidence: float = Field(description="Overall confidence after verification (0-1)", ge=0, le=1)
-    deduplication_summary: Dict[str, int] = Field(description="Deduplication statistics")
-
-
-class EntityRegistry:
-    """
-    Manages entity deduplication using semantic similarity
-
-    Uses AbstractCore's EmbeddingManager for semantic comparison while maintaining
-    a lightweight, efficient registry for real-time deduplication.
-    """
-
-    def __init__(self, embedder=None, similarity_threshold: float = 0.85):
-        """
-        Initialize entity registry
-
-        Args:
-            embedder: EmbeddingManager instance (optional, created if None)
-            similarity_threshold: Minimum similarity for entity merging (0-1)
-        """
-        self.entities: Dict[str, Entity] = {}  # canonical_id -> Entity
-        self.entity_embeddings: Dict[str, List[float]] = {}  # canonical_id -> embedding
-        self.name_to_canonical: Dict[str, str] = {}  # entity_name -> canonical_id
-        self.similarity_threshold = similarity_threshold
-        self.stats = {"merged": 0, "created": 0, "total_processed": 0}
-
-        # Optional embedding support for semantic deduplication
-        self.embedder = embedder
-        if embedder is None:
-            try:
-                from ..embeddings import EmbeddingManager
-                self.embedder = EmbeddingManager()
-            except ImportError:
-                self.embedder = None
-
-    def register_entity(self, entity: Entity) -> str:
-        """
-        Register an entity, returning its canonical ID
-
-        Performs deduplication by checking:
-        1. Exact name matches
-        2. Alias matches
-        3. Semantic similarity (if embeddings available)
-
-        Args:
-            entity: Entity to register
-
-        Returns:
-            str: Canonical ID for the entity
-        """
-        self.stats["total_processed"] += 1
-
-        # Check exact name match first
-        if entity.name in self.name_to_canonical:
-            canonical_id = self.name_to_canonical[entity.name]
-            self._merge_entity_info(canonical_id, entity)
-            self.stats["merged"] += 1
-            return canonical_id
-
-        # Check alias matches
-        for canonical_id, existing_entity in self.entities.items():
-            if (entity.name.lower() in [alias.lower() for alias in existing_entity.aliases] or
-                any(alias.lower() in [existing_entity.name.lower()] + [a.lower() for a in existing_entity.aliases]
-                    for alias in entity.aliases)):
-                self._merge_entity_info(canonical_id, entity)
-                self.name_to_canonical[entity.name] = canonical_id
-                self.stats["merged"] += 1
-                return canonical_id
-
-        # Semantic similarity check (if embeddings available)
-        if self.embedder and len(self.entities) > 0:
-            similar_id = self._find_semantically_similar(entity)
-            if similar_id:
-                self._merge_entity_info(similar_id, entity)
-                self.name_to_canonical[entity.name] = similar_id
-                self.stats["merged"] += 1
-                return similar_id
-
-        # No match found - create new canonical entity
-        canonical_id = self._create_canonical_id(entity.name)
-        self.entities[canonical_id] = entity
-        self.name_to_canonical[entity.name] = canonical_id
-
-        # Store embedding for future similarity checks
-        if self.embedder:
-            try:
-                embedding = self.embedder.embed(f"{entity.name} {entity.context[:100]}")
-                self.entity_embeddings[canonical_id] = embedding
-            except Exception:
-                pass  # Continue without embedding if it fails
-
-        self.stats["created"] += 1
-        return canonical_id
-
-    def _find_semantically_similar(self, entity: Entity) -> Optional[str]:
-        """Find semantically similar entity using embeddings"""
-        if not self.embedder or not self.entity_embeddings:
-            return None
-
-        try:
-            entity_text = f"{entity.name} {entity.context[:100]}"
-            entity_embedding = self.embedder.embed(entity_text)
-
-            best_similarity = 0
-            best_canonical_id = None
-
-            for canonical_id, existing_embedding in self.entity_embeddings.items():
-                similarity = self.embedder.compute_similarity_direct(entity_embedding, existing_embedding)
-                if similarity > best_similarity and similarity >= self.similarity_threshold:
-                    # Additional type check - only merge if types are compatible
-                    existing_entity = self.entities[canonical_id]
-                    if self._types_compatible(entity.type, existing_entity.type):
-                        best_similarity = similarity
-                        best_canonical_id = canonical_id
-
-            return best_canonical_id
-
-        except Exception:
-            return None  # Fall back to no similarity matching if embeddings fail
-
-    def _types_compatible(self, type1: EntityType, type2: EntityType) -> bool:
-        """Check if two entity types are compatible for merging"""
-        if type1 == type2:
-            return True
-        # Allow OTHER to merge with any type
-        if type1 == EntityType.OTHER or type2 == EntityType.OTHER:
-            return True
-        return False
-
-    def _merge_entity_info(self, canonical_id: str, new_entity: Entity):
-        """Merge information from new entity into existing canonical entity"""
-        existing = self.entities[canonical_id]
-
-        # Add new aliases
-        new_aliases = set(existing.aliases + [new_entity.name] + new_entity.aliases)
-        new_aliases.discard(existing.name)  # Don't include canonical name as alias
-        existing.aliases = list(new_aliases)[:5]  # Limit aliases
-
-        # Update context if new one is more detailed
-        if len(new_entity.context) > len(existing.context):
-            existing.context = new_entity.context
-
-        # Update confidence to average
-        existing.confidence = (existing.confidence + new_entity.confidence) / 2
-
-    def _create_canonical_id(self, name: str) -> str:
-        """Create a canonical ID for an entity"""
-        # Create a clean, consistent ID
-        clean_name = name.lower().replace(" ", "_").replace("-", "_")
-        base_id = f"entity_{clean_name}"
-
-        # Handle duplicates by adding suffix
-        counter = 1
-        canonical_id = base_id
-        while canonical_id in self.entities:
-            canonical_id = f"{base_id}_{counter}"
-            counter += 1
-
-        return canonical_id
-
-    def get_stats(self) -> Dict[str, int]:
-        """Get deduplication statistics"""
-        return self.stats.copy()
+logger = logging.getLogger(__name__)
 
 
 class BasicExtractor:
     """
-    Basic Entity and Relationship Extractor using Chain of Verification
+    Basic Extractor for semantic knowledge extraction with clean JSON-LD output
 
-    Demonstrates AbstractCore best practices:
-    - Structured output with Pydantic validation
-    - Semantic entity deduplication using embeddings
-    - Chain of Verification for reduced hallucinations
-    - Provider-agnostic implementation
-    - Built-in retry and error handling (inherited from AbstractCore)
+    Key features:
+    - Generic relationship IDs (r:1, r:2, etc.) with s:name for relationship type
+    - No orphaned entity references
+    - Schema.org vocabulary
+    - Production-ready output
 
-    Optimized for Knowledge Graph construction:
-    - Produces clean entities with canonical IDs
-    - Resolves entity mentions across text chunks
-    - Creates relationships using canonical entity names
-    - Suitable for feeding into AbstractMemory package
-
-    Optimized defaults (no setup required):
-        extractor = BasicExtractor()  # Uses gemma3:1b-it-qat, semantic deduplication
-
-    Custom setup for different needs:
-        llm = create_llm("openai", model="gpt-4o-mini")
-        extractor = BasicExtractor(llm)
+    Example:
+        >>> extractor = BasicExtractor()
+        >>> result = extractor.extract("Google created TensorFlow")
+        >>> # Relationships have s:name property for the type:
+        >>> # {"@id": "r:1", "s:name": "creates", "s:about": {...}, "s:object": {...}}
     """
 
     def __init__(
         self,
         llm: Optional[AbstractLLMInterface] = None,
-        # Extraction mode (presets other parameters)
-        extraction_mode: str = "balanced",  # "fast", "balanced", "thorough"
-        # Performance settings
-        use_embeddings: bool = None,
-        use_verification: bool = None,
-        use_refinement: bool = None,
-        use_consolidation: bool = None,
-        # Chunking settings
-        max_chunk_size: int = None,
-        chunk_overlap: int = 500,
-        # Quality settings
-        similarity_threshold: float = 0.85,
-        min_confidence: float = 0.7
+        max_chunk_size: int = 8000
     ):
-        """
-        Initialize the unified semantic extractor
-
-        Args:
-            llm: AbstractLLM instance (any provider). If None, uses ollama gemma3:1b-it-qat
-            extraction_mode: Preset configuration ("fast", "balanced", "thorough")
-            use_embeddings: Whether to use semantic deduplication for entity merging
-            use_verification: Whether to use Chain of Verification (2nd LLM call for validation)
-            use_refinement: Whether to use semantic refinement (3rd LLM call for enhancement)
-            use_consolidation: Whether to consolidate isolated entities
-            max_chunk_size: Maximum characters per chunk for long documents
-            chunk_overlap: Character overlap between chunks
-            similarity_threshold: Minimum similarity for entity merging (0-1)
-            min_confidence: Minimum confidence for extracted entities/relationships
-
-        Extraction Modes:
-            - "fast": 2-3x faster, skip verification/refinement, disable embeddings, large chunks
-            - "balanced": Default speed/quality tradeoff, verification enabled, embeddings enabled
-            - "thorough": Highest quality, all features enabled, smaller chunks for precision
-        """
-        # Apply extraction mode presets
-        mode_presets = {
-            "fast": {
-                "use_embeddings": False,
-                "use_verification": False,
-                "use_refinement": False,
-                "use_consolidation": True,  # Keep consolidation as it's fast and useful
-                "max_chunk_size": 15000
-            },
-            "balanced": {
-                "use_embeddings": True,
-                "use_verification": True,
-                "use_refinement": True,
-                "use_consolidation": True,
-                "max_chunk_size": 6000
-            },
-            "thorough": {
-                "use_embeddings": True,
-                "use_verification": True,
-                "use_refinement": True,
-                "use_consolidation": True,
-                "max_chunk_size": 3000
-            }
-        }
-
-        if extraction_mode not in mode_presets:
-            raise ValueError(f"Invalid extraction_mode '{extraction_mode}'. Use: fast, balanced, thorough")
-
-        presets = mode_presets[extraction_mode]
-
-        # Apply presets if parameters not explicitly set
-        self.use_embeddings = use_embeddings if use_embeddings is not None else presets["use_embeddings"]
-        self.use_verification = use_verification if use_verification is not None else presets["use_verification"]
-        self.use_refinement = use_refinement if use_refinement is not None else presets["use_refinement"]
-        self.use_consolidation = use_consolidation if use_consolidation is not None else presets["use_consolidation"]
-        self.max_chunk_size = max_chunk_size if max_chunk_size is not None else presets["max_chunk_size"]
-
-        # Store other settings
-        self.extraction_mode = extraction_mode
-        self.chunk_overlap = chunk_overlap
-        self.similarity_threshold = similarity_threshold
-        self.min_confidence = min_confidence
-        # Initialize LLM
+        """Initialize the extractor"""
         if llm is None:
             try:
-                # Default to gemma3:1b-it-qat with 16k context window
                 self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=16000)
             except Exception as e:
                 error_msg = (
@@ -479,208 +63,279 @@ class BasicExtractor:
         else:
             self.llm = llm
 
-        # Initialize retry strategy
+        self.max_chunk_size = max_chunk_size
         self.retry_strategy = FeedbackRetry(max_attempts=3)
-
-        # Initialize entity registry with optional embeddings
-        embedder = None
-        if self.use_embeddings:
-            try:
-                from ..embeddings import EmbeddingManager
-                embedder = EmbeddingManager()
-            except ImportError:
-                pass  # Continue without embeddings
-
-        self.entity_registry = EntityRegistry(embedder, self.similarity_threshold)
 
     def extract(
         self,
         text: str,
         domain_focus: Optional[str] = None,
-        entity_types: Optional[List[EntityType]] = None,
+        entity_types: Optional[List[str]] = None,
         style: Optional[str] = None,
         length: Optional[str] = None
-    ) -> ExtractionOutput:
-        """
-        Extract entities and relationships from text using Chain of Verification
-
-        Args:
-            text: Text to analyze
-            domain_focus: Optional domain focus (e.g., "business", "technology", "medical")
-            entity_types: Optional list of entity types to focus on
-            style: Extraction style ("comprehensive", "focused", "minimal")
-            length: Extraction depth ("brief", "standard", "detailed", "comprehensive")
-
-        Returns:
-            ExtractionOutput: Extracted and deduplicated entities with relationships
-
-        Example:
-            >>> extractor = BasicExtractor()
-            >>> result = extractor.extract(
-            ...     "Apple Inc. was founded by Steve Jobs in Cupertino. "
-            ...     "The iPhone was launched in 2007 by Apple."
-            ... )
-            >>> print(f"Found {len(result.entities)} unique entities")
-            >>> print(f"Found {len(result.relationships)} relationships")
-        """
-        # Handle long documents through chunking
+    ) -> dict:
+        """Extract entities and relationships from text"""
         if len(text) > self.max_chunk_size:
-            return self._extract_long_document(text, domain_focus, entity_types, style, length)
+            return self._extract_long_document(text, domain_focus, length)
         else:
-            return self._extract_single_chunk(text, domain_focus, entity_types, style, length)
+            return self._extract_single_chunk(text, domain_focus, length)
 
     def _extract_single_chunk(
         self,
         text: str,
         domain_focus: Optional[str],
-        entity_types: Optional[List[EntityType]],
-        style: Optional[str] = None,
-        length: Optional[str] = None
-    ) -> ExtractionOutput:
-        """Extract from a single chunk with configurable verification/refinement"""
+        length: Optional[str]
+    ) -> dict:
+        """Extract from a single chunk using single-pass LLM generation"""
 
-        # Step 1: Initial extraction
-        initial_prompt = self._build_extraction_prompt(text, domain_focus, entity_types, style, length)
+        logger.info("Starting JSON-LD extraction with descriptive IDs")
 
-        # Use AbstractCore's structured output with retry
-        response = self.llm.generate(
-            initial_prompt,
-            response_model=LLMExtractionOutput,
-            retry_strategy=self.retry_strategy
-        )
+        entity_limit = self._get_entity_limit(length)
+        domain_note = f" Focus on {domain_focus} domain." if domain_focus else ""
 
-        # Extract the structured output
-        if isinstance(response, LLMExtractionOutput):
-            extraction_result = response
-        elif hasattr(response, 'structured_output') and response.structured_output:
-            extraction_result = response.structured_output
+        # Knowledge extraction prompt with JSON-LD output
+        prompt = f"""You are extracting a knowledge graph from text. Output valid JSON-LD.
+
+TEXT TO ANALYZE:
+{text}
+
+TASK: Create a JSON-LD knowledge graph with entities and relationships.{domain_note}
+
+ENTITY TYPES (with s: prefix):
+- s:Person - People by name
+- s:Organization - Companies, institutions
+- s:SoftwareApplication - Software, libraries, frameworks, tools
+- s:Place - Locations
+- s:Product - Products, services
+- sk:Concept - Abstract concepts, technologies
+
+RELATIONSHIP TYPES:
+- provides, supports, uses, creates, partOf, integrates, compatible_with
+
+COMPLETE EXAMPLE:
+
+Input: "OpenAI created GPT-4. Microsoft Copilot uses GPT-4 for code generation."
+
+Output:
+{{
+  "@context": {{
+    "s": "https://schema.org/",
+    "e": "http://example.org/entity/",
+    "r": "http://example.org/relation/",
+    "confidence": "http://example.org/confidence"
+  }},
+  "@graph": [
+    {{
+      "@id": "e:openai",
+      "@type": "s:Organization",
+      "s:name": "OpenAI",
+      "s:description": "AI company that created GPT-4",
+      "confidence": 0.95
+    }},
+    {{
+      "@id": "e:gpt4",
+      "@type": "s:SoftwareApplication",
+      "s:name": "GPT-4",
+      "s:description": "Language model",
+      "confidence": 0.95
+    }},
+    {{
+      "@id": "e:copilot",
+      "@type": "s:SoftwareApplication",
+      "s:name": "Microsoft Copilot",
+      "s:description": "Code generation tool",
+      "confidence": 0.95
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "creates",
+      "s:about": {{"@id": "e:openai"}},
+      "s:object": {{"@id": "e:gpt4"}},
+      "s:description": "OpenAI created GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:2",
+      "@type": "s:Relationship",
+      "s:name": "uses",
+      "s:about": {{"@id": "e:copilot"}},
+      "s:object": {{"@id": "e:gpt4"}},
+      "s:description": "Microsoft Copilot uses GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }}
+  ]
+}}
+
+═══════════════════════════════════════════════════════════════════════
+RULES YOU MUST FOLLOW:
+═══════════════════════════════════════════════════════════════════════
+
+1. Entity @id: "e:" + normalized_name (e.g., e:google, e:tensorflow)
+2. Relationship @id: "r:" + number (e.g., r:1, r:2, r:3)
+3. Entity @type: Use "s:" prefix (s:Organization, s:SoftwareApplication)
+4. Relationship @type: Always "s:Relationship"
+5. Relationship s:name: The relationship type (creates, uses, supports, etc.)
+6. s:about and s:object: Use {{"@id": "e:..."}} format for source and target
+7. Extract ONLY from text - no guessing
+8. Relationships can ONLY reference entities in the @graph
+9. Confidence: 0.85-1.0 for explicit, 0.7-0.85 for implicit
+
+CRITICAL: Always include "s:name" property in relationships to specify the relationship type!
+
+LIMITS: Extract up to {entity_limit} entities and their relationships.
+
+NOW EXTRACT FROM THE TEXT ABOVE.
+Output ONLY valid JSON following the example format."""
+
+        # Generate
+        response = self.llm.generate(prompt, retry_strategy=self.retry_strategy)
+
+        # Extract text
+        if hasattr(response, 'content'):
+            response_text = response.content
+        elif hasattr(response, 'text'):
+            response_text = response.text
         else:
-            raise ValueError(f"Failed to generate structured extraction output. Response type: {type(response)}")
+            response_text = str(response)
 
-        current_result = extraction_result
+        response_text = response_text.strip()
 
-        # Step 2: Optional Verification - validate extraction accuracy
-        if self.use_verification:
-            verification_prompt = self._build_verification_prompt(text, current_result)
+        # Parse JSON
+        import json
+        try:
+            result = json.loads(response_text)
 
-            verified_response = self.llm.generate(
-                verification_prompt,
-                response_model=LLMExtractionOutput,
-                retry_strategy=self.retry_strategy
-            )
+            # Validate structure
+            if "@context" not in result or "@graph" not in result:
+                logger.error("Invalid JSON-LD structure")
+                return self._create_empty_graph()
 
-            # Extract verified results
-            if isinstance(verified_response, LLMExtractionOutput):
-                current_result = verified_response
-            elif hasattr(verified_response, 'structured_output') and verified_response.structured_output:
-                current_result = verified_response.structured_output
-            # If verification fails, continue with current results
+            # Remove dangling references
+            result = self._remove_dangling_references(result)
 
-        # Step 3: Optional Semantic Refinement - enhance semantic accuracy and completeness
-        if self.use_refinement:
-            refinement_prompt = self._build_semantic_refinement_prompt(text, current_result)
+            # Log results
+            entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+            relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
+            logger.info(f"Extracted {len(entities)} entities and {len(relationships)} relationships")
 
-            refined_response = self.llm.generate(
-                refinement_prompt,
-                response_model=LLMExtractionOutput,
-                retry_strategy=self.retry_strategy
-            )
+            return result
 
-            # Extract refined results
-            if isinstance(refined_response, LLMExtractionOutput):
-                current_result = refined_response
-            elif hasattr(refined_response, 'structured_output') and refined_response.structured_output:
-                current_result = refined_response.structured_output
-            # If refinement fails, continue with current results
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON: {e}")
+            return self._create_empty_graph()
 
-        # Step 4: Optional Graph Consolidation - clean up isolated entities
-        if self.use_consolidation:
-            # Phase 1: Remove attribute-like isolated entities
-            isolated_entity_names = self._identify_isolated_entities(current_result)
-            entities_to_keep = []
+    def _remove_dangling_references(self, result: dict) -> dict:
+        """Remove relationships that reference non-existent entities"""
+        defined_entities = {
+            item['@id']
+            for item in result.get('@graph', [])
+            if item.get('@id', '').startswith('e:')
+        }
 
-            for entity in current_result.entities:
-                if entity.name in isolated_entity_names and self._is_likely_attribute(entity):
-                    # Skip this entity - it's likely an attribute, not a core entity
-                    continue
-                entities_to_keep.append(entity)
+        cleaned_graph = []
+        removed_count = 0
 
-            # Update the entity list
-            current_result.entities = entities_to_keep
+        for item in result.get('@graph', []):
+            item_id = item.get('@id', '')
 
-            # Phase 2: Find relationships for remaining isolated entities
-            remaining_isolated_names = self._identify_isolated_entities(current_result)
-            if remaining_isolated_names:
-                isolated_entities = [e for e in current_result.entities if e.name in remaining_isolated_names]
-                new_relationships = self._find_missing_relationships(text, isolated_entities, current_result.entities)
-                current_result.relationships.extend(new_relationships)
+            # Keep all entities
+            if item_id.startswith('e:'):
+                cleaned_graph.append(item)
 
-        final_result = current_result
+            # Keep only valid relationships
+            elif item_id.startswith('r:'):
+                source_id = item.get('s:about', {}).get('@id', '')
+                target_id = item.get('s:object', {}).get('@id', '')
 
-        # Step 3: Register entities and deduplicate
-        canonical_entities = {}
-        entity_name_mapping = {}  # original_name -> canonical_id
+                if source_id in defined_entities and target_id in defined_entities:
+                    cleaned_graph.append(item)
+                else:
+                    removed_count += 1
+                    logger.debug(f"Removed dangling relationship: {item_id}")
 
-        for entity in final_result.entities:
-            canonical_id = self.entity_registry.register_entity(entity)
-            canonical_entities[canonical_id] = self.entity_registry.entities[canonical_id]
-            entity_name_mapping[entity.name] = canonical_id
+        if removed_count > 0:
+            logger.warning(f"Removed {removed_count} relationships with dangling references")
 
-        # Step 4: Resolve relationships using canonical entity names
-        resolved_relationships = []
-        for rel in final_result.relationships:
-            # Map relationship entity names to canonical IDs
-            source_id = entity_name_mapping.get(rel.source)
-            target_id = entity_name_mapping.get(rel.target)
+        result['@graph'] = cleaned_graph
+        return result
 
-            if source_id and target_id and source_id != target_id:
-                # Update relationship to use canonical names
-                source_name = canonical_entities[source_id].name
-                target_name = canonical_entities[target_id].name
+    def _get_entity_limit(self, length: Optional[str]) -> int:
+        """Get entity extraction limit based on length parameter"""
+        if length == "brief":
+            return 10
+        elif length == "detailed":
+            return 25
+        elif length == "comprehensive":
+            return 50
+        else:  # standard
+            return 15
 
-                resolved_rel = Relationship(
-                    source=source_name,
-                    target=target_name,
-                    relation=rel.relation,
-                    context=rel.context,
-                    confidence=rel.confidence
-                )
-                resolved_relationships.append(resolved_rel)
-
-        return ExtractionOutput(
-            entities=canonical_entities,
-            relationships=resolved_relationships,
-            verification_confidence=final_result.verification_confidence,
-            deduplication_summary=self.entity_registry.get_stats()
-        )
+    def _create_empty_graph(self) -> dict:
+        """Create empty JSON-LD graph for error cases"""
+        return {
+            "@context": {
+                "s": "https://schema.org/",
+                "d": "http://purl.org/dc/terms/",
+                "sk": "http://www.w3.org/2004/02/skos/core#",
+                "e": "http://example.org/entity/",
+                "r": "http://example.org/relation/",
+                "confidence": "http://example.org/confidence"
+            },
+            "@graph": []
+        }
 
     def _extract_long_document(
         self,
         text: str,
         domain_focus: Optional[str],
-        entity_types: Optional[List[EntityType]],
-        style: Optional[str] = None,
-        length: Optional[str] = None
-    ) -> ExtractionOutput:
-        """Handle long documents using incremental extraction with entity registry"""
-
+        length: Optional[str]
+    ) -> dict:
+        """Handle long documents using chunking"""
         chunks = self._split_text_into_chunks(text)
+
+        if len(chunks) == 1:
+            return self._extract_single_chunk(chunks[0], domain_focus, length)
+
+        # Extract from each chunk
+        all_entities = []
         all_relationships = []
+        seen_entity_ids = set()
+        seen_relationship_ids = set()
 
-        for chunk in chunks:
-            chunk_result = self._extract_single_chunk(chunk, domain_focus, entity_types, style, length)
-            all_relationships.extend(chunk_result.relationships)
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Extracting from chunk {i+1}/{len(chunks)}")
+            chunk_result = self._extract_single_chunk(chunk, domain_focus, length)
 
-        # Final output uses accumulated entities and relationships
-        return ExtractionOutput(
-            entities=self.entity_registry.entities.copy(),
-            relationships=all_relationships,
-            verification_confidence=0.8,  # Conservative estimate for long docs
-            deduplication_summary=self.entity_registry.get_stats()
-        )
+            # Merge entities
+            for entity in chunk_result.get("@graph", []):
+                entity_id = entity.get("@id", "")
+                if entity_id.startswith("e:") and entity_id not in seen_entity_ids:
+                    all_entities.append(entity)
+                    seen_entity_ids.add(entity_id)
+
+            # Merge relationships (deduplicate by source-target-relation)
+            for item in chunk_result.get("@graph", []):
+                item_id = item.get("@id", "")
+                if item_id.startswith("r:"):
+                    source = item.get("s:about", {}).get("@id", "")
+                    target = item.get("s:object", {}).get("@id", "")
+                    relation = item.get("s:name", "")
+                    triple = (source, relation, target)
+
+                    if triple not in seen_relationship_ids:
+                        all_relationships.append(item)
+                        seen_relationship_ids.add(triple)
+
+        return {
+            "@context": chunk_result.get("@context", self._create_empty_graph()["@context"]),
+            "@graph": all_entities + all_relationships
+        }
 
     def _split_text_into_chunks(self, text: str, overlap: int = 200) -> List[str]:
-        """Split text into overlapping chunks (same logic as BasicSummarizer)"""
+        """Split text into overlapping chunks"""
         chunks = []
         start = 0
 
@@ -701,369 +356,207 @@ class BasicExtractor:
 
         return chunks
 
-    def _is_likely_attribute(self, entity: Entity) -> bool:
-        """
-        Simple heuristic to detect attribute-like entities that should be properties
-
-        Args:
-            entity: Entity to check
-
-        Returns:
-            True if entity is likely an attribute rather than a core entity
-        """
-        # Generic terms that are usually attributes, not entities
-        ATTRIBUTE_PATTERNS = {
-            'api', 'input', 'output', 'process', 'system', 'data', 'information',
-            'type', 'status', 'method', 'interface', 'protocol', 'format',
-            'mode', 'version', 'level', 'state', 'config', 'setting',
-            'chat', 'interaction', 'session', 'completion', 'response'
-        }
-
-        name_lower = entity.name.lower().strip()
-
-        # Check if it's a generic single word that's an attribute pattern
-        if ' ' not in entity.name and name_lower in ATTRIBUTE_PATTERNS:
-            return True
-
-        # Check if it's a very short generic concept
-        if len(entity.name) <= 4 and entity.type == EntityType.CONCEPT:
-            return True
-
-        # Check if it's a generic plural noun (often attributes)
-        if name_lower.endswith('s') and name_lower[:-1] in ATTRIBUTE_PATTERNS:
-            return True
-
-        return False
-
-    def _identify_isolated_entities(self, extraction: LLMExtractionOutput) -> Set[str]:
-        """
-        Identify entities that have no relationships (isolated nodes)
-
-        Args:
-            extraction: The extraction result to analyze
-
-        Returns:
-            Set of entity names that are isolated
-        """
-        # Get all entities mentioned in relationships
-        connected_entities = set()
-        for rel in extraction.relationships:
-            connected_entities.add(rel.source)
-            connected_entities.add(rel.target)
-
-        # Find entities with no relationships
-        all_entities = {entity.name for entity in extraction.entities}
-        isolated_entities = all_entities - connected_entities
-
-        return isolated_entities
-
-    def _find_missing_relationships(
+    def refine_extraction(
         self,
         text: str,
-        isolated_entities: List[Entity],
-        all_entities: List[Entity]
-    ) -> List[Relationship]:
+        previous_extraction: dict,
+        domain_focus: Optional[str] = None
+    ) -> dict:
         """
-        Find relationships for isolated entities using targeted LLM prompts
+        Refine a previous extraction by finding missing entities/relationships
+        and verifying relationship directionality.
 
         Args:
-            text: Original source text
-            isolated_entities: List of entities that need connections
-            all_entities: All entities available for connections
+            text: The original source text
+            previous_extraction: The previous JSON-LD extraction result
+            domain_focus: Optional domain focus
 
         Returns:
-            List of new relationships connecting isolated entities
+            Refined JSON-LD extraction with merged results
         """
-        if not isolated_entities:
-            return []
+        logger.info("Starting extraction refinement")
 
-        # Build entity context for the LLM
-        isolated_names = [e.name for e in isolated_entities]
-        available_targets = [e.name for e in all_entities if e.name not in isolated_names]
+        domain_note = f" Focus on {domain_focus} domain." if domain_focus else ""
 
-        if not available_targets:
-            return []  # No entities to connect to
+        # Create summary of previous extraction for prompt
+        prev_entities = [item for item in previous_extraction.get('@graph', [])
+                        if item.get('@id', '').startswith('e:')]
+        prev_relationships = [item for item in previous_extraction.get('@graph', [])
+                             if item.get('@id', '').startswith('r:')]
 
-        # Create a concise, focused prompt
-        prompt = f"""Find relationships for specific isolated entities based on the source text.
+        # Build entity summary for the prompt
+        entity_summary = "\n".join([
+            f"  - {e.get('s:name', e.get('@id'))} ({e.get('@type', 'Unknown')})"
+            for e in prev_entities[:20]  # Limit to avoid token overflow
+        ])
 
-ORIGINAL TEXT:
+        # Build relationship summary for the prompt
+        relationship_summary = "\n".join([
+            f"  - {r.get('s:about', {}).get('@id', '?')} --[{r.get('s:name', '?')}]--> {r.get('s:object', {}).get('@id', '?')}"
+            for r in prev_relationships[:20]  # Limit to avoid token overflow
+        ])
+
+        # Refinement prompt
+        prompt = f"""You are refining a knowledge graph extraction. Review the text and the existing extraction to find MISSING entities and relationships, and to verify relationship directionality.
+
+TEXT TO ANALYZE:
 {text}
 
-ISOLATED ENTITIES TO CONNECT:
-{', '.join(isolated_names)}
+EXISTING EXTRACTION:
+Entities found:
+{entity_summary if entity_summary else "  (none)"}
 
-AVAILABLE ENTITIES TO CONNECT TO:
-{', '.join(available_targets)}
+Relationships found:
+{relationship_summary if relationship_summary else "  (none)"}
 
-TASK: Find ONLY relationships that connect the isolated entities to available entities.
-Each relationship must be clearly stated or strongly implied in the source text.
+TASK: Find missing entities and relationships, and verify directionality.{domain_note}
+
+CRITICAL CHECKS:
+1. Missing entities: Are there important entities in the text that were not extracted?
+2. Missing relationships: Are there relationships mentioned in the text that were not captured?
+3. Relationship directionality: Check CAREFULLY that relationships point in the correct direction.
+   - Example: If text says "AbstractAgent uses AbstractCore", then relationship should be:
+     s:about: e:abstractagent (source/subject)
+     s:object: e:abstractcore (target/object)
+   - NOT the reverse!
+
+OUTPUT FORMAT: JSON-LD with ONLY the NEW/CORRECTED items (entities and relationships).
+
+Example of corrected relationship:
+{{
+  "@context": {{
+    "s": "https://schema.org/",
+    "e": "http://example.org/entity/",
+    "r": "http://example.org/relation/",
+    "confidence": "http://example.org/confidence"
+  }},
+  "@graph": [
+    {{
+      "@id": "e:new_entity",
+      "@type": "s:Organization",
+      "s:name": "New Entity",
+      "s:description": "A missing entity",
+      "confidence": 0.9
+    }},
+    {{
+      "@id": "r:corrected",
+      "@type": "s:Relationship",
+      "s:name": "uses",
+      "s:about": {{"@id": "e:source"}},
+      "s:object": {{"@id": "e:target"}},
+      "s:description": "Corrected relationship direction",
+      "confidence": 0.95,
+      "strength": 0.9
+    }}
+  ]
+}}
 
 RULES:
-- Only return relationships for the isolated entities listed above
-- Only connect to entities in the available list
-- Use precise semantic relationship types from the vocabulary: dcterms:creator, schema:isPartOf, schema:utilizes, schema:enables, schema:describes, etc.
-- Base relationships on actual content from the text, not assumptions
-- Return empty if no clear relationships exist
+1. Include ONLY new entities not in the existing extraction
+2. Include ONLY new relationships not in the existing extraction
+3. Include corrected versions of relationships with wrong directionality
+4. Entity @id: "e:" + normalized_name
+5. Relationship @id: "r:" + number
+6. Relationship s:name: The relationship type (uses, creates, etc.)
+7. s:about: Source/subject entity
+8. s:object: Target/object entity
+9. Verify directionality matches the text exactly!
 
-Return a JSON list of relationships in this exact format:
-[
-  {{
-    "source": "EntityName",
-    "target": "EntityName",
-    "relation": "relationship_type",
-    "context": "Brief context from text",
-    "confidence": 0.8
-  }}
-]
+Output ONLY valid JSON following the format above. If no changes needed, output empty @graph array."""
 
-Only include relationships that are grounded in the source text."""
+        # Generate refinements
+        response = self.llm.generate(prompt, retry_strategy=self.retry_strategy)
 
+        # Extract text
+        if hasattr(response, 'content'):
+            response_text = response.content
+        elif hasattr(response, 'text'):
+            response_text = response.text
+        else:
+            response_text = str(response)
+
+        response_text = response_text.strip()
+
+        # Parse JSON
+        import json
         try:
-            # Use a simpler response model for just relationships
-            from pydantic import BaseModel, Field
-            from typing import List
+            refinements = json.loads(response_text)
 
-            class RelationshipList(BaseModel):
-                relationships: List[Relationship] = Field(description="List of relationships")
+            if "@graph" not in refinements:
+                logger.warning("Refinement response missing @graph, returning previous extraction")
+                return previous_extraction
 
-            response = self.llm.generate(
-                prompt,
-                response_model=RelationshipList,
-                retry_strategy=self.retry_strategy
-            )
+            # Merge refinements with previous extraction
+            return self._merge_extractions(previous_extraction, refinements)
 
-            if isinstance(response, RelationshipList):
-                return response.relationships
-            elif hasattr(response, 'structured_output') and response.structured_output:
-                return response.structured_output.relationships
-            else:
-                return []
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse refinement JSON: {e}")
+            return previous_extraction
 
-        except Exception:
-            # If relationship discovery fails, return empty list
-            # This ensures the system remains robust
-            return []
+    def _merge_extractions(self, base: dict, refinements: dict) -> dict:
+        """
+        Merge refinement results with base extraction.
 
-    def _build_extraction_prompt(
-        self,
-        text: str,
-        domain_focus: Optional[str],
-        entity_types: Optional[List[EntityType]],
-        style: Optional[str] = None,
-        length: Optional[str] = None
-    ) -> str:
-        """Build the initial extraction prompt"""
+        Strategy:
+        - Add new entities
+        - Replace relationships that have been corrected (same source/target but corrected direction)
+        - Add new relationships
+        """
+        # Get existing items
+        base_graph = base.get('@graph', [])
+        refinement_graph = refinements.get('@graph', [])
 
-        # Domain-specific instructions
-        domain_instruction = ""
-        if domain_focus:
-            domain_instruction = f"\nFocus on entities and relationships relevant to: {domain_focus}"
+        # Build sets for tracking
+        base_entity_ids = {item['@id'] for item in base_graph if item.get('@id', '').startswith('e:')}
+        base_rel_triples = {}  # (source, relation, target) -> relationship object
 
-        # Entity type filtering
-        type_instruction = ""
-        if entity_types:
-            type_names = [t.value for t in entity_types]
-            type_instruction = f"\nFocus on these entity types: {', '.join(type_names)}"
+        for item in base_graph:
+            if item.get('@id', '').startswith('r:'):
+                source = item.get('s:about', {}).get('@id', '')
+                target = item.get('s:object', {}).get('@id', '')
+                relation = item.get('s:name', '')
+                if source and target:
+                    base_rel_triples[(source, relation, target)] = item
 
-        # Style instructions based on knowledge graph best practices
-        style_instruction = ""
-        if style == "structured":
-            style_instruction = "\n🎯 STRUCTURED EXTRACTION:\n- Differentiate core entities (subjects) from attributes (properties)\n- Create clear hierarchies using part-of relationships\n- Group related information under parent entities\n- Use precise, directional relationship types"
-        elif style == "focused":
-            style_instruction = "\n🎯 FOCUSED EXTRACTION:\n- Extract only the most important core entities (avoid extracting attributes as entities)\n- Prioritize entities central to the domain focus\n- Use specific relationship types instead of generic ones\n- Focus on entities that are primary subjects, not descriptive details"
-        elif style == "minimal":
-            style_instruction = "\n🎯 MINIMAL EXTRACTION:\n- Extract only essential entities that cannot be attributes of other entities\n- Consolidate related information under fewer core entities\n- Use the most important, specific relationships only\n- Avoid redundancy and over-extraction"
-        elif style == "comprehensive":
-            style_instruction = "\n🎯 COMPREHENSIVE EXTRACTION:\n- Extract all significant entities while maintaining proper hierarchy\n- Distinguish between core entities and their attributes\n- Include both obvious and implied relationships with precise types\n- Build a complete but well-structured knowledge graph"
+        # Merge entities
+        merged_graph = list(base_graph)  # Start with base
+        next_rel_id = len([item for item in base_graph if item.get('@id', '').startswith('r:')]) + 1
 
-        # Length instructions
-        length_instruction = ""
-        if length == "brief":
-            length_instruction = "\nExtraction depth: Limit to 5-10 key entities and 3-5 main relationships."
-        elif length == "detailed":
-            length_instruction = "\nExtraction depth: Extract comprehensive details including 15-25 entities and 10-15 relationships."
-        elif length == "comprehensive":
-            length_instruction = "\nExtraction depth: Perform exhaustive extraction including all entities and relationships, aliases, and detailed context."
-        else:  # standard
-            length_instruction = "\nExtraction depth: Extract 10-15 key entities and 5-10 important relationships."
+        for item in refinement_graph:
+            item_id = item.get('@id', '')
 
-        prompt = f"""You are a specialized semantic knowledge extractor. Your goal is to identify first-class entities and their relationships while avoiding the extraction of mere properties as entities.
+            # Add new entities
+            if item_id.startswith('e:') and item_id not in base_entity_ids:
+                merged_graph.append(item)
+                logger.info(f"Added new entity: {item.get('s:name', item_id)}")
 
-🎯 **ENTITY vs PROPERTY DISTINCTION** (Critical Rule):
+            # Handle relationships
+            elif item_id.startswith('r:'):
+                source = item.get('s:about', {}).get('@id', '')
+                target = item.get('s:object', {}).get('@id', '')
+                relation = item.get('s:name', '')
 
-**EXTRACT as ENTITIES** (First-class objects):
-✓ Proper nouns: Google, TensorFlow, Python, ChatGPT
-✓ People: individuals with names (John Smith, Dr. Sarah Johnson)
-✓ Organizations: companies, institutions (Microsoft, MIT, NATO)
-✓ Technologies: specific systems/tools (Docker, React, MongoDB)
-✓ Concepts: distinct ideas (machine learning, blockchain, democracy)
-✓ Locations: places (San Francisco, Europe, Main Street)
-✓ Products: specific items (iPhone, Tesla Model 3, Windows 11)
+                if source and target:
+                    triple = (source, relation, target)
+                    reverse_triple = (target, relation, source)
 
-**DO NOT EXTRACT as ENTITIES** (These are properties):
-✗ Generic terms: API, system, process, data, input, output
-✗ Attributes: version, status, type, mode, format, level
-✗ Descriptors: interface, protocol, method, function, service
-✗ Common nouns without specificity: user, developer, company
+                    # Check if this corrects a reversed relationship
+                    if reverse_triple in base_rel_triples:
+                        # Remove the incorrectly directed relationship
+                        old_rel = base_rel_triples[reverse_triple]
+                        merged_graph = [r for r in merged_graph if r.get('@id') != old_rel.get('@id')]
+                        logger.info(f"Corrected relationship direction: {relation} from {source} to {target}")
 
-🔬 **ENTITY TYPES** - Use most specific:
+                    # Add if new
+                    if triple not in base_rel_triples:
+                        # Assign new ID
+                        item['@id'] = f"r:{next_rel_id}"
+                        next_rel_id += 1
+                        merged_graph.append(item)
+                        logger.info(f"Added new relationship: {relation} from {source} to {target}")
 
-**Core Entities:** person, organization, location, event
-**Knowledge:** concept, theory, method, field, domain, hypothesis
-**Technology:** software_application, technology, product, algorithm, framework
-**Information:** document, publication, dataset, model, specification
-**Processes:** process, investigation, analysis, transformation
-
-🔗 **RELATIONSHIP TYPES** - Be precise:
-
-**Structural:** has_part, is_part_of, contains, belongs_to
-**Causal:** causes, enables, prevents, influences, triggers
-**Temporal:** before, after, during, precedes, follows
-**Functional:** implements, utilizes, produces, consumes, transforms
-**Knowledge:** explains, describes, defines, exemplifies
-**Social:** works_for, collaborates_with, manages, reports_to
-**Creation:** created_by, authored_by, developed_by, invented_by
-
-📚 **EXAMPLES:**
-
-**Good Example:**
-Text: "Google's TensorFlow framework helps developers build AI models"
-✓ Entities: Google (organization), TensorFlow (software_application), AI (concept)
-✓ Relationships: Google created_by TensorFlow, TensorFlow enables AI
-✗ Avoid: "framework", "developers", "models" as entities
-
-**Bad Example:**
-✗ Extracting: framework (generic), developers (generic), models (generic)
-✗ These should be properties of the main entities
-
-**Good Example:**
-Text: "The API processes user input through machine learning algorithms"
-✓ Entities: machine learning (concept)
-✓ Relationships: machine learning enables processing
-✗ Avoid: "API", "input", "algorithms" as separate entities
-
-{domain_instruction}{type_instruction}{style_instruction}{length_instruction}
-
-📄 TEXT TO ANALYZE:
-{text}
-
-🎯 EXTRACTION RULES:
-1. **First-class entities only**: Extract entities that have independent identity
-2. **Specific relationships**: Use precise relationship types, avoid "related_to"
-3. **High confidence**: Only extract what's clearly stated (confidence ≥ 0.7)
-4. **Semantic accuracy**: Choose most specific entity/relationship types
-5. **Factual grounding**: Base everything on the actual text content
-
-Extract entities and relationships following these semantic principles."""
-
-        return prompt
-
-    def _build_verification_prompt(
-        self,
-        original_text: str,
-        extraction: LLMExtractionOutput
-    ) -> str:
-        """Build verification prompt to validate extraction accuracy"""
-
-        # Format the extracted entities and relationships for verification
-        entity_list = []
-        for entity in extraction.entities:
-            entity_list.append(f"- {entity.name} ({entity.type.value}): {entity.context[:100]}")
-
-        relationship_list = []
-        for rel in extraction.relationships:
-            relationship_list.append(f"- {rel.source} --{rel.relation.value}--> {rel.target}: {rel.context[:100]}")
-
-        entities_text = "\n".join(entity_list) if entity_list else "None extracted"
-        relationships_text = "\n".join(relationship_list) if relationship_list else "None extracted"
-
-        prompt = f"""Verify and validate this knowledge extraction for accuracy and completeness.
-
-ORIGINAL TEXT:
-{original_text}
-
-EXTRACTED ENTITIES:
-{entities_text}
-
-EXTRACTED RELATIONSHIPS:
-{relationships_text}
-
-🔍 **VERIFICATION TASKS:**
-
-1. **Accuracy Check**: Are all entities and relationships actually present in the text?
-   - Remove any hallucinated or incorrectly extracted items
-   - Ensure entity types are accurate
-   - Verify relationship types are correct
-
-2. **Completeness Check**: Are there obvious entities or relationships missing?
-   - Add clearly mentioned entities that were missed
-   - Add obvious relationships that were missed
-   - Don't over-extract - only add what's clearly stated
-
-3. **Quality Check**: Are entities properly categorized?
-   - Ensure first-class entities vs properties distinction
-   - Use most specific entity types possible
-   - Use most specific relationship types possible
-
-4. **Confidence Assessment**: Set realistic confidence scores
-   - High confidence (0.9+): Explicitly stated in text
-   - Medium confidence (0.7-0.9): Clearly implied
-   - Low confidence (0.5-0.7): Somewhat inferred
-
-Return the verified extraction with corrected entities, relationships, and confidence scores."""
-
-        return prompt
-
-    def _build_semantic_refinement_prompt(
-        self,
-        original_text: str,
-        extraction: LLMExtractionOutput
-    ) -> str:
-        """Build semantic refinement prompt to enhance extraction quality"""
-
-        # Format the extracted entities and relationships for refinement
-        entity_list = []
-        for entity in extraction.entities:
-            entity_list.append(f"- {entity.name} ({entity.type.value}): {entity.context[:100]}")
-
-        relationship_list = []
-        for rel in extraction.relationships:
-            relationship_list.append(f"- {rel.source} --{rel.relation.value}--> {rel.target}: {rel.context[:100]}")
-
-        entities_text = "\n".join(entity_list) if entity_list else "None extracted"
-        relationships_text = "\n".join(relationship_list) if relationship_list else "None extracted"
-
-        prompt = f"""Refine this knowledge graph extraction to improve semantic accuracy and completeness.
-
-ORIGINAL TEXT:
-{original_text}
-
-CURRENT EXTRACTION:
-
-ENTITIES:
-{entities_text}
-
-RELATIONSHIPS:
-{relationships_text}
-
-🔬 **SEMANTIC REFINEMENT AREAS:**
-
-1. **Completeness**: Look for ADDITIONAL entities referenced indirectly or implicitly
-2. **Semantic Precision**: Improve entity types - use most specific semantic type possible
-3. **Relationship Quality**: Find NEW semantic relationships not captured initially
-4. **Hidden Connections**: Search for implicit semantic patterns or hierarchies
-
-🎯 **REFINEMENT TASKS:**
-- Identify any missed entities that are semantically important
-- Upgrade generic entity types to more specific semantic types
-- Replace vague relationships with precise semantic connections
-- Add implicit relationships that provide semantic context
-- Improve confidence scores based on semantic clarity
-- Remove any semantically inconsistent extractions
-
-**Focus on finding NEW semantic elements while maintaining accuracy. Each addition should provide unique semantic value to the knowledge graph.**
-
-Return the enhanced entities and relationships with improved semantic precision."""
-
-        return prompt
+        # Return merged result
+        return {
+            "@context": base.get("@context", refinements.get("@context", {})),
+            "@graph": merged_graph
+        }
