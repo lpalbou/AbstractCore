@@ -18,6 +18,7 @@ Options:
     --model=<model>            LLM model (requires --provider)
     --no-embeddings           Disable semantic entity deduplication
     --fast                    Use fast extraction (skip verification, larger chunks, no embeddings)
+    --iterate=<number>        Number of refinement iterations (default: 1, finds missing entities and verifies relationships)
     --minified                Output minified JSON-LD (compact, no indentation)
     --verbose                 Show detailed progress information
     --help                    Show this help message
@@ -28,6 +29,7 @@ Examples:
     python -m abstractllm.apps.extractor data.md --entity-types=person,organization --output=kg.jsonld
     python -m abstractllm.apps.extractor large.txt --fast --minified --verbose  # Fast, compact output
     python -m abstractllm.apps.extractor report.txt --length=detailed --provider=openai --model=gpt-4o-mini
+    python -m abstractllm.apps.extractor doc.txt --iterate=3 --verbose  # 3 refinement passes for higher quality
 """
 
 import argparse
@@ -43,7 +45,7 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-from ..processing import BasicExtractor, EntityType, RelationType
+from ..processing import BasicExtractor
 from ..core.factory import create_llm
 
 
@@ -93,32 +95,13 @@ def read_file_content(file_path: str) -> str:
             raise Exception(f"Cannot read file {file_path}: {e}")
 
 
-def parse_entity_types(types_str: Optional[str]) -> Optional[List[EntityType]]:
-    """Parse comma-separated entity types string to EntityType list"""
+def parse_entity_types(types_str: Optional[str]) -> Optional[List[str]]:
+    """Parse comma-separated entity types string (informational only in new extractor)"""
     if not types_str:
         return None
 
-    type_map = {
-        'person': EntityType.PERSON,
-        'organization': EntityType.ORGANIZATION,
-        'location': EntityType.LOCATION,
-        'concept': EntityType.CONCEPT,
-        'event': EntityType.EVENT,
-        'technology': EntityType.TECHNOLOGY,
-        'product': EntityType.PRODUCT,
-        'date': EntityType.DATE,
-        'other': EntityType.OTHER,
-    }
-
-    types_list = []
-    for type_str in types_str.lower().split(','):
-        type_str = type_str.strip()
-        if type_str not in type_map:
-            available_types = ', '.join(type_map.keys())
-            raise ValueError(f"Invalid entity type '{type_str}'. Available types: {available_types}")
-        types_list.append(type_map[type_str])
-
-    return types_list
+    # Just return as list of strings - new extractor doesn't use this
+    return [t.strip() for t in types_str.lower().split(',')]
 
 
 def parse_extraction_style(style_str: Optional[str]) -> str:
@@ -151,243 +134,8 @@ def parse_extraction_length(length_str: Optional[str]) -> str:
     return length_lower
 
 
-def entity_type_to_semantic_type(entity_type: EntityType) -> str:
-    """Map EntityType to appropriate ontology class following semantic recommendations"""
-    # Following semantic expert recommendations for maximum interoperability
-    type_map = {
-        EntityType.PERSON: "schema:Person",  # 40-45% adoption
-        EntityType.ORGANIZATION: "schema:Organization",  # Standard for organizational entities
-        EntityType.LOCATION: "schema:Place",  # Geographic locations
-        EntityType.CONCEPT: "skos:Concept",  # Specifically designed for concept representation
-        EntityType.EVENT: "schema:Event",  # Standard for events
-        EntityType.TECHNOLOGY: "schema:SoftwareApplication",  # Digital/software entities
-        EntityType.PRODUCT: "schema:Product",  # Commercial products
-        EntityType.DATE: "schema:Date",  # Temporal information
-        EntityType.OTHER: "schema:Thing"  # Fallback for general entities
-    }
-    return type_map.get(entity_type, "schema:Thing")
 
-
-def _get_entity_uri_prefix(entity_type: EntityType) -> str:
-    """Get URI prefix for entity type following semantic recommendations"""
-    prefix_map = {
-        EntityType.PERSON: "person",
-        EntityType.ORGANIZATION: "org",
-        EntityType.LOCATION: "place",
-        EntityType.CONCEPT: "concept",
-        EntityType.EVENT: "event",
-        EntityType.TECHNOLOGY: "tech",
-        EntityType.PRODUCT: "product",
-        EntityType.DATE: "date",
-        EntityType.OTHER: "entity"
-    }
-    return prefix_map.get(entity_type, "entity")
-
-
-def _clean_uri_component(name: str) -> str:
-    """Clean name for URI component following best practices"""
-    import re
-    # Convert to lowercase, replace spaces with hyphens, remove special chars
-    cleaned = re.sub(r'[^a-zA-Z0-9\s-]', '', name.lower())
-    cleaned = re.sub(r'\s+', '-', cleaned.strip())
-    cleaned = re.sub(r'-+', '-', cleaned)  # Remove multiple consecutive hyphens
-    return cleaned[:50]  # Limit length for practical URIs
-
-
-def relation_type_to_semantic_property(relation_type: RelationType) -> str:
-    """Map RelationType to appropriate ontology property following semantic recommendations"""
-    # Following semantic expert recommendations with precise, directional relationships
-    property_map = {
-        # Core relationships from original enum
-        RelationType.WORKS_FOR: "schema:worksFor",
-        RelationType.LOCATED_IN: "schema:location",
-        RelationType.CREATED_BY: "dcterms:creator",
-        RelationType.RELATED_TO: "dcterms:relation",
-        RelationType.CAUSES: "schema:result",
-        RelationType.UTILIZES: "schema:instrument",  # Updated from USES
-        RelationType.PARTICIPATES_IN: "schema:participant",
-        RelationType.SIMILAR_TO: "skos:closeMatch",
-        RelationType.OTHER: "dcterms:relation",
-
-        # Extended relationships from new enum
-        RelationType.HAS_PART: "schema:hasPart",
-        RelationType.IS_PART_OF: "schema:isPartOf",
-        RelationType.CONTAINS: "schema:containsPlace",
-        RelationType.BELONGS_TO: "schema:memberOf",
-        RelationType.ENABLES: "schema:enables",
-        RelationType.PREVENTS: "schema:prevents",
-        RelationType.INFLUENCES: "schema:influences",
-        RelationType.BEFORE: "schema:beforeTime",
-        RelationType.AFTER: "schema:afterTime",
-        RelationType.DURING: "schema:during",
-        RelationType.IMPLEMENTS: "schema:implements",
-        RelationType.PRODUCES: "schema:produces",
-        RelationType.CONSUMES: "schema:consumes",
-        RelationType.TRANSFORMS: "schema:transforms",
-        RelationType.EXPLAINS: "schema:explains",
-        RelationType.DESCRIBES: "schema:describes",
-        RelationType.DEFINES: "schema:defines",
-        RelationType.SUPPORTS: "schema:supports",
-        RelationType.CONTRADICTS: "schema:contradicts",
-        RelationType.VALIDATES: "schema:validates",
-        RelationType.AUTHORED_BY: "dcterms:creator",
-        RelationType.DEVELOPED_BY: "dcterms:creator",
-        RelationType.INVENTED_BY: "dcterms:creator"
-    }
-    return property_map.get(relation_type, "dcterms:relation")
-
-
-def format_jsonld_output(result, source_file: str) -> Dict[str, Any]:
-    """Format extraction result as JSON-LD following semantic best practices"""
-
-    # Enhanced JSON-LD context following semantic expert recommendations
-    context = {
-        # Multiple ontology support for maximum interoperability
-        "dcterms": "http://purl.org/dc/terms/",  # 60-70% adoption
-        "schema": "https://schema.org/",  # 35-45% adoption
-        "skos": "http://www.w3.org/2004/02/skos/core#",  # 15-20% adoption
-        "cito": "http://purl.org/spar/cito/",  # 15-20% adoption
-        "kg": "https://abstractllm.com/kg/",  # Custom namespace
-
-        # Semantic properties
-        "confidence": "kg:confidence",
-        "aliases": "kg:aliases",
-        "extractionMetadata": "kg:extractionMetadata",
-        "verificationConfidence": "kg:verificationConfidence",
-        "deduplicationSummary": "kg:deduplicationSummary"
-    }
-
-    # Convert entities to JSON-LD format
-    entities_jsonld = []
-    entity_id_map = {}  # canonical_id -> @id
-
-    for canonical_id, entity in result.entities.items():
-        # Create semantic IRI following URI pattern recommendations
-        entity_type_prefix = _get_entity_uri_prefix(entity.type)
-        clean_name = _clean_uri_component(entity.name)
-        entity_iri = f"kg:{entity_type_prefix}-{clean_name}"
-        entity_id_map[canonical_id] = entity_iri
-
-        entity_jsonld = {
-            "@id": entity_iri,
-            "@type": entity_type_to_semantic_type(entity.type),
-            "schema:name": entity.name,  # Use schema:name for compatibility
-            "confidence": entity.confidence
-        }
-
-        # Add aliases using SKOS vocabulary
-        if entity.aliases:
-            entity_jsonld["skos:altLabel"] = entity.aliases
-
-        # Add context as description using Dublin Core
-        if entity.context:
-            entity_jsonld["dcterms:description"] = entity.context
-
-        entities_jsonld.append(entity_jsonld)
-
-    # Convert relationships to JSON-LD format
-    relationships_jsonld = []
-    for i, rel in enumerate(result.relationships):
-        # Find entity IRIs
-        source_iri = None
-        target_iri = None
-
-        for canonical_id, entity in result.entities.items():
-            if entity.name == rel.source:
-                source_iri = entity_id_map[canonical_id]
-            if entity.name == rel.target:
-                target_iri = entity_id_map[canonical_id]
-
-        if source_iri and target_iri:
-            relationship_jsonld = {
-                "@id": f"kg:relation/{i}",
-                "@type": "kg:Relationship",
-                "subject": {"@id": source_iri},
-                "predicate": relation_type_to_semantic_property(rel.relation),
-                "object": {"@id": target_iri},
-                "confidence": rel.confidence,
-                "dcterms:description": rel.context  # Use Dublin Core for context
-            }
-            relationships_jsonld.append(relationship_jsonld)
-
-    # Create complete JSON-LD document following semantic best practices
-    extraction_id = f"kg:extraction/{int(time.time())}"
-
-    jsonld_doc = {
-        "@context": context,
-        "@type": "kg:KnowledgeGraph",
-        "@id": extraction_id,
-
-        # Dublin Core metadata (60-70% adoption)
-        "dcterms:source": source_file,
-        "dcterms:created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "dcterms:creator": "AbstractLLM Basic Extractor",
-        "dcterms:description": f"Knowledge graph extracted from {source_file}",
-
-        # Schema.org compatibility
-        "schema:name": f"Knowledge Graph from {source_file}",
-        "schema:dateCreated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-
-        # Extraction-specific metadata
-        "extractionMetadata": {
-            "verificationConfidence": result.verification_confidence,
-            "deduplicationSummary": result.deduplication_summary,
-            "entitiesCount": len(result.entities),
-            "relationshipsCount": len(result.relationships),
-            "extractorVersion": "BasicExtractor-2.0"
-        },
-
-        # Entity and relationship collections
-        "entities": entities_jsonld,
-        "relationships": relationships_jsonld
-    }
-
-    return jsonld_doc
-
-
-def format_json_output(result, source_file: str) -> Dict[str, Any]:
-    """Format extraction result as plain JSON"""
-
-    # Convert entities to simple dict format
-    entities_dict = {}
-    for canonical_id, entity in result.entities.items():
-        entities_dict[canonical_id] = {
-            "name": entity.name,
-            "type": entity.type.value,
-            "aliases": entity.aliases,
-            "context": entity.context,
-            "confidence": entity.confidence
-        }
-
-    # Convert relationships to simple list format
-    relationships_list = []
-    for rel in result.relationships:
-        relationships_list.append({
-            "source": rel.source,
-            "target": rel.target,
-            "relation": rel.relation.value,
-            "context": rel.context,
-            "confidence": rel.confidence
-        })
-
-    return {
-        "source": source_file,
-        "extractionDate": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "verificationConfidence": result.verification_confidence,
-        "deduplicationSummary": result.deduplication_summary,
-        "entities": entities_dict,
-        "relationships": relationships_list
-    }
-
-
-def format_yaml_output(result, source_file: str) -> str:
-    """Format extraction result as YAML"""
-    if not YAML_AVAILABLE:
-        raise ImportError("PyYAML is required for YAML output format. Install with: pip install PyYAML")
-
-    json_output = format_json_output(result, source_file)
-    return yaml.dump(json_output, default_flow_style=False, indent=2, sort_keys=False)
-
+# Legacy helper functions removed - new extractor returns JSON-LD directly
 
 def main():
     """Main CLI function"""
@@ -400,6 +148,7 @@ Examples:
   python -m abstractllm.apps.extractor report.txt --focus=technology --style=structured --verbose
   python -m abstractllm.apps.extractor data.md --entity-types=person,organization --output=kg.jsonld
   python -m abstractllm.apps.extractor large.txt --length=detailed --fast --minified --verbose
+  python -m abstractllm.apps.extractor doc.txt --iterate=3 --verbose  # Iterative refinement for quality
 
 Supported file types: .txt, .md, .py, .js, .html, .json, .csv, and most text-based files
 
@@ -416,6 +165,11 @@ Performance options:
   - Default: High accuracy with Chain of Verification (slower, 2x LLM calls per chunk)
   - --fast: Optimized speed (skip verification, larger chunks, no embeddings)
   - For large files: Use --fast flag for significant speedup (2-4x faster)
+
+Quality enhancement:
+  - --iterate=N: Perform N refinement passes to find missing entities/relationships
+  - Each iteration reviews the extraction to find gaps and verify relationship directionality
+  - Recommended: 2-3 iterations for critical extractions, 1 (default) for speed
 
 Default model setup:
   - Requires Ollama: https://ollama.com/
@@ -514,6 +268,13 @@ Default model setup:
     )
 
     parser.add_argument(
+        '--iterate',
+        type=int,
+        default=1,
+        help='Number of refinement iterations to find missing entities and verify relationships (default: 1)'
+    )
+
+    parser.add_argument(
         '--minified',
         action='store_true',
         help='Output minified JSON-LD (compact, no indentation)'
@@ -541,6 +302,15 @@ Default model setup:
 
         if args.chunk_size > 32000:
             print("Error: Chunk size cannot exceed 32000 characters")
+            sys.exit(1)
+
+        # Validate iterate parameter
+        if args.iterate < 1:
+            print("Error: Iterate must be at least 1")
+            sys.exit(1)
+
+        if args.iterate > 5:
+            print("Error: Iterate cannot exceed 5 (diminishing returns)")
             sys.exit(1)
 
         # Validate provider/model pair
@@ -588,9 +358,6 @@ Default model setup:
 
             extractor = BasicExtractor(
                 llm=llm,
-                extraction_mode=extraction_mode,
-                use_embeddings=use_embeddings,
-                similarity_threshold=args.similarity_threshold,
                 max_chunk_size=args.chunk_size
             )
         else:
@@ -600,9 +367,6 @@ Default model setup:
 
             try:
                 extractor = BasicExtractor(
-                    extraction_mode=extraction_mode,
-                    use_embeddings=use_embeddings,
-                    similarity_threshold=args.similarity_threshold,
                     max_chunk_size=args.chunk_size
                 )
             except RuntimeError as e:
@@ -626,35 +390,56 @@ Default model setup:
             style=extraction_style,
             length=extraction_length
         )
+
+        # Perform iterative refinement if requested
+        if args.iterate > 1:
+            for iteration in range(2, args.iterate + 1):
+                if args.verbose:
+                    entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+                    relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
+                    print(f"\nIteration {iteration}/{args.iterate}: Refining extraction ({len(entities)} entities, {len(relationships)} relationships)...")
+
+                result = extractor.refine_extraction(
+                    text=content,
+                    previous_extraction=result,
+                    domain_focus=args.focus
+                )
+
         end_time = time.time()
 
         if args.verbose:
             duration = end_time - start_time
-            print(f"Extraction completed in {duration:.2f} seconds")
-            print(f"Found {len(result.entities)} entities and {len(result.relationships)} relationships")
-            if result.deduplication_summary.get('merged', 0) > 0:
-                print(f"Merged {result.deduplication_summary['merged']} duplicate entities")
+            print(f"\nExtraction completed in {duration:.2f} seconds")
+            # Count entities and relationships from @graph
+            entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+            relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
+            print(f"Final result: {len(entities)} entities and {len(relationships)} relationships")
 
         # Format output
         # Determine JSON indentation (minified or pretty-printed)
         json_indent = None if args.minified else 2
 
         if args.format == 'json-ld':
+            # New extractor already returns clean JSON-LD, just output it directly
             formatted_output = json.dumps(
-                format_jsonld_output(result, args.file_path),
+                result,
                 indent=json_indent,
                 ensure_ascii=False,
                 separators=(',', ':') if args.minified else None
             )
         elif args.format == 'json':
+            # For simple JSON, just output the result as-is
             formatted_output = json.dumps(
-                format_json_output(result, args.file_path),
+                result,
                 indent=json_indent,
                 ensure_ascii=False,
                 separators=(',', ':') if args.minified else None
             )
         else:  # yaml
-            formatted_output = format_yaml_output(result, args.file_path)
+            if not YAML_AVAILABLE:
+                print("Error: PyYAML is required for YAML output format. Install with: pip install PyYAML")
+                sys.exit(1)
+            formatted_output = yaml.dump(result, default_flow_style=False, indent=2, sort_keys=False)
 
         # Output result
         if args.output:

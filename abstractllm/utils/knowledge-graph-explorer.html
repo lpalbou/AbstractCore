@@ -213,25 +213,46 @@
     let searchQuery = '';
 
     // Colors for entity categories - supporting semantic types from our extractors
+    // Support both abbreviated (s:, skos:, dcterms:) and full (schema:, etc.) prefixes
     const categoryColors = {
       "schema:Person": "#4CAF50",
+      "s:Person": "#4CAF50",
       "schema:Organization": "#2196F3",
+      "s:Organization": "#2196F3",
       "schema:Place": "#FF9800",
+      "s:Place": "#FF9800",
       "schema:Event": "#9C27B0",
+      "s:Event": "#9C27B0",
       "skos:Concept": "#673AB7",
+      "sk:Concept": "#673AB7",
       "schema:ScholarlyField": "#795548",
+      "s:ScholarlyField": "#795548",
       "schema:Theory": "#2196F3",
+      "s:Theory": "#2196F3",
       "schema:Method": "#FF9800",
+      "s:Method": "#FF9800",
       "schema:SoftwareApplication": "#607D8B",
+      "s:SoftwareApplication": "#607D8B",
       "schema:Product": "#E91E63",
+      "s:Product": "#E91E63",
       "schema:Algorithm": "#FF5722",
+      "s:Algorithm": "#FF5722",
       "schema:Dataset": "#03A9F4",
+      "s:Dataset": "#03A9F4",
       "dcterms:Text": "#009688",
+      "d:Text": "#009688",
       "schema:Model": "#9E9E9E",
+      "s:Model": "#9E9E9E",
       "schema:CreativeWork": "#795548",
+      "s:CreativeWork": "#795548",
       "schema:Process": "#009688",
+      "s:Process": "#009688",
       "schema:Analysis": "#3F51B5",
+      "s:Analysis": "#3F51B5",
       "schema:Investigation": "#F44336",
+      "s:Investigation": "#F44336",
+      "schema:Relationship": "#999999",
+      "s:Relationship": "#999999",
       "default": "#888888"
     };
 
@@ -364,10 +385,16 @@
       // Fallback to original semantic format with @graph
       else if (data["@graph"] && Array.isArray(data["@graph"])) {
         data["@graph"].forEach(node => {
-          if (node["@id"] && !node["@id"].startsWith("relationship:")) {
+          // Check if this is a relationship node (starts with r: or relationship:)
+          const isRelationship = node["@id"] && (
+            node["@id"].startsWith("relationship:") ||
+            node["@id"].startsWith("r:")
+          );
+
+          if (node["@id"] && !isRelationship) {
             entities[node["@id"]] = {
               id: node["@id"],
-              label: node["schema:name"] || node["skos:definition"] || node["@id"].split(':')[1],
+              label: node["schema:name"] || node["s:name"] || node["skos:definition"] || node["@id"].split(':')[1],
               type: node["@type"] || "Unknown",
               category: node["@type"] || "Unknown",
               properties: { ...node }
@@ -384,31 +411,41 @@
               const targetId = value["@id"];
 
               if (entities[sourceId] && entities[targetId]) {
+                // Use property name as the relationship label
+                const relLabel = key.split(':').pop();
                 relationships.push({
                   id: `${sourceId}-${key}-${targetId}`,
                   source: sourceId,
                   target: targetId,
                   type: key,
-                  label: key.split(':').pop(),
+                  label: relLabel,
+                  predicate: relLabel,
                   properties: { relationship: key }
                 });
               }
             }
           });
 
-          // Explicit relationship nodes
-          if (node["@id"] && node["@id"].startsWith("relationship:")) {
-            if (node["schema:about"] && node["schema:object"]) {
-              const sourceId = node["schema:about"]["@id"];
-              const targetId = node["schema:object"]["@id"];
+          // Explicit relationship nodes (with r: or relationship: prefix)
+          if (node["@id"] && (node["@id"].startsWith("relationship:") || node["@id"].startsWith("r:"))) {
+            // Support both s:about/s:object and schema:about/schema:object
+            const aboutNode = node["s:about"] || node["schema:about"];
+            const objectNode = node["s:object"] || node["schema:object"];
+
+            if (aboutNode && objectNode) {
+              const sourceId = aboutNode["@id"];
+              const targetId = objectNode["@id"];
 
               if (entities[sourceId] && entities[targetId]) {
+                // Always use s:name or schema:name for label, NOT the ID
+                const relName = node["s:name"] || node["schema:name"] || "related";
                 relationships.push({
                   id: node["@id"],
                   source: sourceId,
                   target: targetId,
                   type: node["@type"],
-                  label: node["@type"].split(':').pop(),
+                  label: relName,  // Use the name property directly
+                  predicate: relName,  // Store for later use
                   properties: { ...node }
                 });
               }
@@ -590,7 +627,7 @@
 
           const description = document.createElement('div');
           description.className = 'description';
-          description.textContent = d.properties["dcterms:description"] || d.properties["schema:description"] || 'No description available';
+          description.textContent = d.properties["dcterms:description"] || d.properties["d:description"] || d.properties["schema:description"] || d.properties["s:description"] || 'No description available';
 
           tooltip.appendChild(header);
           tooltip.appendChild(description);
@@ -969,8 +1006,9 @@
       detailsType.textContent = d.type.split(':').pop();
       detailsContent.innerHTML = '';
 
-      // Show description if available
-      const description = d.properties["dcterms:description"] || d.properties["schema:description"];
+      // Show description if available (support both abbreviated and full prefixes)
+      const description = d.properties["dcterms:description"] || d.properties["d:description"] ||
+                          d.properties["schema:description"] || d.properties["s:description"];
       if (description) {
         const summary = document.createElement('div');
         summary.className = 'summary';
@@ -1009,13 +1047,14 @@
         detailsContent.appendChild(typeProperty);
       }
 
-      // Show aliases if available
-      if (d.properties["skos:altLabel"]) {
+      // Show aliases if available (support both abbreviated and full prefixes)
+      const altLabel = d.properties["skos:altLabel"] || d.properties["sk:altLabel"];
+      if (altLabel) {
         const aliasProperty = document.createElement('div');
         aliasProperty.className = 'property';
-        const aliases = Array.isArray(d.properties["skos:altLabel"])
-          ? d.properties["skos:altLabel"].join(', ')
-          : d.properties["skos:altLabel"];
+        const aliases = Array.isArray(altLabel)
+          ? altLabel.join(', ')
+          : altLabel;
         aliasProperty.innerHTML = `
           <div class="property-name">Aliases:</div>
           <div class="property-value">${aliases}</div>
@@ -1044,10 +1083,8 @@
           const sourceName = entities[sourceId].label;
           const targetName = entities[targetId].label;
 
-          // Better relationship display showing the predicate
-          const predicate = link.predicate ? link.predicate.split(':').pop() :
-            (link.properties && link.properties.predicate ? link.properties.predicate.split(':').pop() :
-            (link.type && link.type !== 'kg:Relationship' ? link.type.split(':').pop() : link.label));
+          // Use the predicate/label from the link object (already extracted from s:name)
+          const predicate = link.predicate || link.label || 'related';
 
           relationshipDiv.innerHTML = `
             <strong>${sourceName}</strong> →
@@ -1055,11 +1092,14 @@
             <strong>${targetName}</strong>
           `;
 
-          if (link.properties && link.properties["dcterms:description"]) {
+          // Support both abbreviated and full prefixes for description
+          const relDescription = link.properties && (link.properties["dcterms:description"] || link.properties["d:description"] ||
+                                                      link.properties["schema:description"] || link.properties["s:description"]);
+          if (relDescription) {
             const descDiv = document.createElement('div');
             descDiv.style.fontSize = '12px';
             descDiv.style.marginTop = '5px';
-            descDiv.textContent = link.properties["dcterms:description"];
+            descDiv.textContent = relDescription;
             relationshipDiv.appendChild(descDiv);
           }
 
