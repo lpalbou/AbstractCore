@@ -9,6 +9,7 @@ Features:
 """
 
 from typing import Optional, List
+import json
 import logging
 from pydantic import BaseModel, Field
 
@@ -21,19 +22,29 @@ logger = logging.getLogger(__name__)
 
 class BasicExtractor:
     """
-    Basic Extractor for semantic knowledge extraction with clean JSON-LD output
+    Basic Extractor for semantic knowledge extraction with multiple output formats
 
     Key features:
+    - Multiple output formats: JSON-LD, RDF triples, minified JSON-LD
     - Generic relationship IDs (r:1, r:2, etc.) with s:name for relationship type
     - No orphaned entity references
     - Schema.org vocabulary
     - Production-ready output
 
-    Example:
+    Examples:
         >>> extractor = BasicExtractor()
+
+        # Default JSON-LD format
         >>> result = extractor.extract("Google created TensorFlow")
-        >>> # Relationships have s:name property for the type:
-        >>> # {"@id": "r:1", "s:name": "creates", "s:about": {...}, "s:object": {...}}
+        >>> # {"@context": {...}, "@graph": [...]}
+
+        # RDF triples format (SUBJECT PREDICATE OBJECT)
+        >>> result = extractor.extract("Google created TensorFlow", output_format="triples")
+        >>> # {"triples": [...], "simple_triples": ["Google creates TensorFlow"]}
+
+        # Minified JSON-LD
+        >>> result = extractor.extract("Google created TensorFlow", output_format="jsonld_minified")
+        >>> # {"format": "jsonld_minified", "data": "{\"@context\":{...}}"}
     """
 
     def __init__(
@@ -72,13 +83,33 @@ class BasicExtractor:
         domain_focus: Optional[str] = None,
         entity_types: Optional[List[str]] = None,
         style: Optional[str] = None,
-        length: Optional[str] = None
+        length: Optional[str] = None,
+        output_format: str = "jsonld"
     ) -> dict:
-        """Extract entities and relationships from text"""
+        """
+        Extract entities and relationships from text
+
+        Args:
+            text: Text to extract knowledge from
+            domain_focus: Optional domain to focus on
+            entity_types: Optional specific entity types to extract (reserved for future use)
+            style: Optional style parameter (reserved for future use)
+            length: Extract length ("brief", "standard", "detailed", "comprehensive")
+            output_format: Output format ("jsonld", "triples", "jsonld_minified")
+
+        Returns:
+            dict: Extracted knowledge in requested format
+        """
+        # Note: entity_types and style parameters are reserved for future enhancements
+        _ = entity_types  # Reserved for future entity type filtering
+        _ = style  # Reserved for future style customization
+
         if len(text) > self.max_chunk_size:
-            return self._extract_long_document(text, domain_focus, length)
+            result = self._extract_long_document(text, domain_focus, length)
         else:
-            return self._extract_single_chunk(text, domain_focus, length)
+            result = self._extract_single_chunk(text, domain_focus, length)
+
+        return self._format_output(result, output_format)
 
     def _extract_single_chunk(
         self,
@@ -94,7 +125,7 @@ class BasicExtractor:
         domain_note = f" Focus on {domain_focus} domain." if domain_focus else ""
 
         # Knowledge extraction prompt with JSON-LD output
-        prompt = f"""You are extracting a knowledge graph from text. Output valid JSON-LD.
+        prompt = f"""You are an expert in Semantic extraction to create high-quality information-rich knowledge graphs. 
 
 TEXT TO ANALYZE:
 {text}
@@ -104,13 +135,16 @@ TASK: Create a JSON-LD knowledge graph with entities and relationships.{domain_n
 ENTITY TYPES (with s: prefix):
 - s:Person - People by name
 - s:Organization - Companies, institutions
+- s:Event - Events, meetings, conferences, etc
+- s:Goal - Abstract goals, objectives
+- s:Task - Abstract tasks, actions
 - s:SoftwareApplication - Software, libraries, frameworks, tools
 - s:Place - Locations
 - s:Product - Products, services
 - sk:Concept - Abstract concepts, technologies
 
 RELATIONSHIP TYPES:
-- provides, supports, uses, creates, partOf, integrates, compatible_with
+- is_a, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, occurs_in, occurs_when
 
 COMPLETE EXAMPLE:
 
@@ -173,15 +207,15 @@ Output:
 RULES YOU MUST FOLLOW:
 ═══════════════════════════════════════════════════════════════════════
 
-1. Entity @id: "e:" + normalized_name (e.g., e:google, e:tensorflow)
-2. Relationship @id: "r:" + number (e.g., r:1, r:2, r:3)
-3. Entity @type: Use "s:" prefix (s:Organization, s:SoftwareApplication)
+1. Entity @id: "e:" + normalized_name (e.g., e:laurent, e:laboratory, etc)
+2. Entity @type: Use "s:" prefix (s:Organization, s:Person, s:Event, s:Concept, s:Place, s:Product, s:Task, s:Goal, etc)
+3. Relationship @id: "r:" + number (e.g., r:1, r:2, r:3, etc)
 4. Relationship @type: Always "s:Relationship"
-5. Relationship s:name: The relationship type (creates, uses, supports, etc.)
+5. Relationship s:name: The relationship type (is_a, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, occurs_in, occurs_when, etc.)
 6. s:about and s:object: Use {{"@id": "e:..."}} format for source and target
-7. Extract ONLY from text - no guessing
+7. Extract entities from text ONLY - no guessing
 8. Relationships can ONLY reference entities in the @graph
-9. Confidence: 0.85-1.0 for explicit, 0.7-0.85 for implicit
+9. Confidence: 0.85-1.0 for explicit, 0.7-0.85 for implicit, 0.5-0.7 for inferred, below for uncertain
 
 CRITICAL: Always include "s:name" property in relationships to specify the relationship type!
 
@@ -224,7 +258,25 @@ Output ONLY valid JSON following the example format."""
             return result
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON: {e}")
+            logger.warning(f"JSON parsing failed: {e}")
+
+            # Attempt self-correction
+            from ..utils.self_fixes import fix_json
+            corrected_json = fix_json(response_text)
+
+            if corrected_json:
+                try:
+                    result = json.loads(corrected_json)
+                    if "@context" in result and "@graph" in result:
+                        result = self._remove_dangling_references(result)
+                        entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+                        relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
+                        logger.info(f"✅ JSON self-correction successful! Extracted {len(entities)} entities and {len(relationships)} relationships")
+                        return result
+                except json.JSONDecodeError:
+                    pass
+
+            logger.error("JSON self-correction failed, returning empty graph")
             return self._create_empty_graph()
 
     def _remove_dangling_references(self, result: dict) -> dict:
@@ -490,7 +542,22 @@ Output ONLY valid JSON following the format above. If no changes needed, output 
             return self._merge_extractions(previous_extraction, refinements)
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse refinement JSON: {e}")
+            logger.warning(f"Refinement JSON parsing failed: {e}")
+
+            # Attempt self-correction
+            from ..utils.self_fixes import fix_json
+            corrected_json = fix_json(response_text)
+
+            if corrected_json:
+                try:
+                    refinements = json.loads(corrected_json)
+                    if "@graph" in refinements:
+                        logger.info("✅ Refinement JSON self-correction successful!")
+                        return self._merge_extractions(previous_extraction, refinements)
+                except json.JSONDecodeError:
+                    pass
+
+            logger.warning("Refinement JSON self-correction failed, returning previous extraction")
             return previous_extraction
 
     def _merge_extractions(self, base: dict, refinements: dict) -> dict:
@@ -560,3 +627,126 @@ Output ONLY valid JSON following the format above. If no changes needed, output 
             "@context": base.get("@context", refinements.get("@context", {})),
             "@graph": merged_graph
         }
+
+    def _format_output(self, jsonld_result: dict, output_format: str) -> dict:
+        """
+        Format the output according to the requested format
+
+        Args:
+            jsonld_result: The JSON-LD extraction result
+            output_format: Desired output format ("jsonld", "triples", "jsonld_minified")
+
+        Returns:
+            dict: Formatted result
+        """
+        if output_format == "jsonld":
+            return jsonld_result
+        elif output_format == "jsonld_minified":
+            return self._minify_jsonld(jsonld_result)
+        elif output_format == "triples":
+            return self._convert_to_triples(jsonld_result)
+        else:
+            logger.warning(f"Unknown output format '{output_format}', defaulting to jsonld")
+            return jsonld_result
+
+    def _minify_jsonld(self, jsonld_result: dict) -> dict:
+        """
+        Convert JSON-LD result to minified JSON string format
+
+        Args:
+            jsonld_result: The JSON-LD extraction result
+
+        Returns:
+            dict: Result with minified JSON string
+        """
+        import json
+        minified_json = json.dumps(jsonld_result, ensure_ascii=False, separators=(',', ':'))
+        return {
+            "format": "jsonld_minified",
+            "data": minified_json,
+            "entities_count": len([item for item in jsonld_result.get('@graph', [])
+                                  if item.get('@id', '').startswith('e:')]),
+            "relationships_count": len([item for item in jsonld_result.get('@graph', [])
+                                       if item.get('@id', '').startswith('r:')])
+        }
+
+    def _convert_to_triples(self, jsonld_result: dict) -> dict:
+        """
+        Convert JSON-LD result to RDF-style triples (SUBJECT PREDICATE OBJECT)
+
+        Based on semantic web/RDF/OWL standards:
+        - Subject: The entity being described (URI or identifier)
+        - Predicate: The property/relationship (URI describing the relationship)
+        - Object: The value or target entity (URI, identifier, or literal)
+
+        Args:
+            jsonld_result: The JSON-LD extraction result
+
+        Returns:
+            dict: Result with triples array and entity definitions
+        """
+        triples = []
+        entities = {}
+
+        graph = jsonld_result.get('@graph', [])
+        context = jsonld_result.get('@context', {})
+
+        # Extract entities for reference
+        for item in graph:
+            item_id = item.get('@id', '')
+            if item_id.startswith('e:'):
+                entities[item_id] = {
+                    'id': item_id,
+                    'type': item.get('@type', ''),
+                    'name': item.get('s:name', ''),
+                    'description': item.get('s:description', ''),
+                    'confidence': item.get('confidence', 0.0)
+                }
+
+        # Extract relationship triples
+        for item in graph:
+            item_id = item.get('@id', '')
+            if item_id.startswith('r:'):
+                subject_ref = item.get('s:about', {})
+                object_ref = item.get('s:object', {})
+                predicate = item.get('s:name', '')
+
+                subject_id = subject_ref.get('@id', '') if isinstance(subject_ref, dict) else str(subject_ref)
+                object_id = object_ref.get('@id', '') if isinstance(object_ref, dict) else str(object_ref)
+
+                if subject_id and predicate and object_id:
+                    # Get human-readable names if available
+                    subject_name = entities.get(subject_id, {}).get('name', subject_id)
+                    object_name = entities.get(object_id, {}).get('name', object_id)
+
+                    triple = {
+                        'subject': subject_id,
+                        'subject_name': subject_name,
+                        'predicate': predicate,
+                        'object': object_id,
+                        'object_name': object_name,
+                        'triple_text': f"{subject_name} {predicate} {object_name}",
+                        'confidence': item.get('confidence', 0.0),
+                        'strength': item.get('strength', 0.0),
+                        'description': item.get('s:description', '')
+                    }
+                    triples.append(triple)
+
+        # Simple text format for easy consumption
+        simple_triples = []
+        for triple in triples:
+            simple_triples.append(f"{triple['subject_name']} {triple['predicate']} {triple['object_name']}")
+
+        return {
+            "format": "triples",
+            "triples": triples,
+            "simple_triples": simple_triples,
+            "entities": entities,
+            "context": context,
+            "statistics": {
+                "entities_count": len(entities),
+                "relationships_count": len(triples),
+                "total_triples": len(triples)
+            }
+        }
+
