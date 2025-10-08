@@ -168,17 +168,21 @@ class BasicExtractor:
 from abstractllm import create_llm
 from abstractllm.processing import BasicExtractor
 
-# Use OpenAI for higher quality
-llm = create_llm("openai", model="gpt-4o-mini")
+# RECOMMENDED: Use cloud providers for complex JSON-LD extraction
+llm = create_llm("openai", model="gpt-4o-mini")  # Best for production
 extractor = BasicExtractor(llm)
 
-# Use Anthropic Claude
+# OR use Anthropic Claude for high quality
 llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 extractor = BasicExtractor(llm)
 
-# Use local MLX model (Apple Silicon)
-llm = create_llm("mlx", model="mlx-community/Qwen3-7B-4bit")
+# LOCAL MODELS: Work well for simple extraction, may struggle with complex JSON-LD
+llm = create_llm("ollama", model="qwen3-coder:30b")  # Good for code and structured tasks
 extractor = BasicExtractor(llm)
+
+# For simple fact extraction with local models, use direct prompting:
+facts_prompt = """Extract facts as JSON: [{"entity": "...", "action": "...", "object": "..."}]"""
+facts = llm.generate(facts_prompt)  # Works reliably with local models
 ```
 
 ## Command Line Interface
@@ -336,27 +340,31 @@ python -m abstractllm.apps.extractor research_paper.pdf \
 
 ### 1. Model Selection
 
-**For Speed (Local):**
+**For Complex JSON-LD Extraction (RECOMMENDED):**
 ```python
-# Fast, free, good quality
-llm = create_llm("ollama", model="gemma3:1b-it-qat")
+# Best quality for structured knowledge graphs
+llm = create_llm("openai", model="gpt-4o-mini")  # $0.001-0.01 per request
+extractor = BasicExtractor(llm)
+
+# Alternative: High-quality Claude
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Similar cost
 extractor = BasicExtractor(llm)
 ```
 
-**For Quality (Cloud):**
+**For Simple Fact Extraction (Local):**
 ```python
-# Higher quality, costs money
-llm = create_llm("openai", model="gpt-4o-mini")
-extractor = BasicExtractor(llm)
+# Works well with qwen3-coder:30b for basic structured output
+llm = create_llm("ollama", model="qwen3-coder:30b")  # 18GB, free
+# Use simple JSON prompts instead of complex JSON-LD
+
+# Lightweight option
+llm = create_llm("ollama", model="gemma3:1b-it-qat")  # 1GB, very fast
 ```
 
-**For Privacy (Local):**
-```python
-# Private, no data leaves your machine
-llm = create_llm("mlx", model="mlx-community/Qwen3-7B-4bit")  # Apple Silicon
-# or
-llm = create_llm("ollama", model="qwen3-coder:7b")  # Any platform
-```
+**Reality Check:**
+- ✅ **Cloud models**: Excellent at complex JSON-LD with schema.org vocabulary
+- ⚠️ **Local models**: Good for simple facts, struggle with complex structured formats
+- 💡 **Best approach**: Use cloud models for production knowledge graphs, local models for simple extraction
 
 ### 2. Document Processing
 

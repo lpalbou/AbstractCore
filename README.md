@@ -143,8 +143,11 @@ print(f"{person.name} is {person.age}")  # John Doe is 25
 
 # 1. Text Summarization with multiple styles and lengths
 from abstractllm.processing import BasicSummarizer
+from abstractllm.processing.basic_summarizer import SummaryStyle, SummaryLength
 
-local_llm = create_llm("ollama", model="gemma3:1b")  # Fast, free, 95% quality
+# Use qwen3-coder:30b for better quality (if you have 20GB+ RAM)
+# Or use gemma3:1b-it-qat for fast, lightweight option
+local_llm = create_llm("ollama", model="qwen3-coder:30b")  # Good for complex tasks
 summarizer = BasicSummarizer(local_llm)
 result = summarizer.summarize(
     long_text,
@@ -158,19 +161,19 @@ print(f"Confidence: {result.confidence:.2f}")
 # CLI: summarizer report.txt --style=executive --length=brief --output=summary.md
 # See docs/basic-summarizer.md for full documentation
 
-# 2. Knowledge Graph Extraction with multiple output formats
-from abstractllm.processing import BasicExtractor
+# 2. Simple Knowledge Extraction
+# For complex JSON-LD knowledge graphs, use cloud providers like OpenAI/Anthropic
 
-extractor = BasicExtractor(local_llm)
-knowledge_graph = extractor.extract(
-    "Google created TensorFlow. Microsoft uses TensorFlow for Azure AI.",
-    domain_focus="technology",
-    length="standard",
-    output_format="triples"  # or "jsonld", "jsonld_minified"
-)
-print(knowledge_graph["simple_triples"])  # ["Google creates TensorFlow", "Microsoft uses TensorFlow"]
+simple_extraction_prompt = """Extract key facts as JSON:
+Google created TensorFlow. Microsoft uses TensorFlow for Azure AI.
 
-# CLI: python -m abstractllm.apps.extractor document.txt --format=triples --focus=technology
+Return: [{"entity": "Google", "action": "created", "object": "TensorFlow"}]"""
+
+facts = local_llm.generate(simple_extraction_prompt)
+print(facts.content)  # Valid JSON with extracted facts
+
+# For advanced knowledge graphs:
+# CLI: python -m abstractllm.apps.extractor document.txt --provider=openai --model=gpt-4o-mini
 # See docs/basic-extractor.md for full documentation
 
 # Chat history compaction for unlimited conversation length
