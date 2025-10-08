@@ -464,6 +464,25 @@ BasicExtractor uses standard vocabularies for maximum compatibility:
 }
 ```
 
+## JSON Self-Correction
+
+BasicExtractor includes automatic JSON self-correction that attempts to fix malformed LLM responses before giving up:
+
+**Automatic Recovery**:
+- Extracts JSON from text with extra content
+- Fixes common formatting issues (trailing commas, quote problems)
+- Repairs truncated JSON by adding missing braces
+- Creates minimal valid structure from partial content
+
+**In Action**:
+```
+⚠️  JSON parsing failed: Expecting ',' delimiter: line 3 column 45
+ℹ️  JSON self-fix: Fixed common formatting issues
+✅ JSON self-correction successful! Extracted 3 entities and 2 relationships
+```
+
+This significantly improves extraction reliability, especially with local models that may produce slightly malformed JSON.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -480,6 +499,11 @@ ollama serve
 - Try a different model: `--provider=openai --model=gpt-4o-mini`
 - Increase extraction length: `--length=detailed`
 - Add domain focus: `--focus=technology`
+
+**JSON parsing errors**
+- Automatic self-correction handles most cases
+- If persistent, try a more capable model
+- Check model output with `--verbose` flag
 
 **Large file processing slow**
 - Use `--fast` flag for speed

@@ -149,11 +149,14 @@ Examples:
   python -m abstractllm.apps.extractor data.md --entity-types=person,organization --output=kg.jsonld
   python -m abstractllm.apps.extractor large.txt --length=detailed --fast --minified --verbose
   python -m abstractllm.apps.extractor doc.txt --iterate=3 --verbose  # Iterative refinement for quality
+  python -m abstractllm.apps.extractor doc.txt --format=triples --verbose  # RDF triples output
+  python -m abstractllm.apps.extractor doc.txt --format=triples --output=triples.txt  # Simple triples
 
 Supported file types: .txt, .md, .py, .js, .html, .json, .csv, and most text-based files
 
 Output formats:
   - json-ld: Knowledge Graph format using schema.org vocabulary (default)
+  - triples: RDF-style SUBJECT PREDICATE OBJECT format for semantic web
   - json: Simple JSON format
   - yaml: YAML format
 
@@ -215,7 +218,7 @@ Default model setup:
     )
 
     # Build format choices based on available dependencies
-    format_choices = ['json-ld', 'json']
+    format_choices = ['json-ld', 'triples', 'json']
     if YAML_AVAILABLE:
         format_choices.append('yaml')
 
@@ -223,7 +226,7 @@ Default model setup:
         '--format',
         choices=format_choices,
         default='json-ld',
-        help='Output format (default: json-ld)' + ('' if YAML_AVAILABLE else ' - install PyYAML for YAML support')
+        help='Output format: json-ld (JSON-LD graph), triples (RDF SUBJECT PREDICATE OBJECT), json (simple JSON)' + (', yaml' if YAML_AVAILABLE else ' - install PyYAML for YAML support')
     )
 
     parser.add_argument(
@@ -383,27 +386,40 @@ Default model setup:
             print("Extracting entities and relationships...")
 
         start_time = time.time()
+
+        # Always extract in JSON-LD format first (for refinement compatibility)
         result = extractor.extract(
             text=content,
             domain_focus=args.focus,
             entity_types=entity_types,
             style=extraction_style,
-            length=extraction_length
+            length=extraction_length,
+            output_format="jsonld"
         )
 
         # Perform iterative refinement if requested
         if args.iterate > 1:
+            if args.verbose:
+                print(f"\nStarting {args.iterate - 1} refinement iteration(s)...")
+
             for iteration in range(2, args.iterate + 1):
                 if args.verbose:
                     entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
                     relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
-                    print(f"\nIteration {iteration}/{args.iterate}: Refining extraction ({len(entities)} entities, {len(relationships)} relationships)...")
+                    print(f"\n📝 Iteration {iteration}/{args.iterate}: Reviewing extraction ({len(entities)} entities, {len(relationships)} relationships)...")
 
+                prev_count = len(result.get('@graph', []))
                 result = extractor.refine_extraction(
                     text=content,
                     previous_extraction=result,
                     domain_focus=args.focus
                 )
+                new_count = len(result.get('@graph', []))
+
+                if args.verbose and new_count > prev_count:
+                    print(f"   ✓ Added {new_count - prev_count} new items")
+                elif args.verbose:
+                    print(f"   ✓ No changes needed")
 
         end_time = time.time()
 
@@ -415,12 +431,47 @@ Default model setup:
             relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
             print(f"Final result: {len(entities)} entities and {len(relationships)} relationships")
 
+        # Apply final output format conversion
+        if args.format == 'json-ld' and args.minified:
+            # Convert to minified JSON-LD
+            result = extractor._format_output(result, "jsonld_minified")
+        elif args.format == 'triples':
+            # Convert to triples format
+            result = extractor._format_output(result, "triples")
+        # else: keep as jsonld for json, yaml, and non-minified json-ld
+
         # Format output
         # Determine JSON indentation (minified or pretty-printed)
         json_indent = None if args.minified else 2
 
-        if args.format == 'json-ld':
-            # New extractor already returns clean JSON-LD, just output it directly
+        if args.format == 'json-ld' and args.minified:
+            # Minified JSON-LD format - result is already formatted by extractor
+            if result.get('format') == 'jsonld_minified':
+                formatted_output = result['data']  # Pre-minified string
+            else:
+                # Fallback minification
+                formatted_output = json.dumps(result, ensure_ascii=False, separators=(',', ':'))
+        elif args.format == 'triples':
+            # Triples format - output the simple triples plus detailed info
+            if result.get('format') == 'triples':
+                if args.verbose:
+                    # Verbose: show detailed triples with metadata
+                    output_data = {
+                        "format": "triples",
+                        "simple_triples": result.get('simple_triples', []),
+                        "detailed_triples": result.get('triples', []),
+                        "entities": result.get('entities', {}),
+                        "statistics": result.get('statistics', {})
+                    }
+                    formatted_output = json.dumps(output_data, indent=json_indent, ensure_ascii=False)
+                else:
+                    # Non-verbose: just show simple triples
+                    simple_triples = result.get('simple_triples', [])
+                    formatted_output = '\n'.join(simple_triples)
+            else:
+                formatted_output = json.dumps(result, indent=json_indent, ensure_ascii=False)
+        elif args.format == 'json-ld':
+            # Standard JSON-LD format
             formatted_output = json.dumps(
                 result,
                 indent=json_indent,
