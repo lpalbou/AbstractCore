@@ -55,31 +55,38 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 
 ### ✅ What AbstractCore Does Well
 
+**🚀 Built-in Production Applications**
+- **📝 Text Summarization**: Ready-to-use summarizer with 6 styles (executive, analytical, conversational, etc.) and CLI
+- **🕸️ Knowledge Graph Extraction**: Extract entities/relationships with JSON-LD and RDF triple outputs, perfect for semantic applications
+
+**🔌 Universal LLM Infrastructure**
 - **🌐 Universal API Server**: OpenAI-compatible endpoints for ALL providers
 - **🤖 Agentic CLI Compatibility** (In Progress): Initial support for Codex, Gemini CLI, Crush
 - **🔌 Universal Provider Support**: Same API for OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - **🛠️ Tool Calling**: Native support across all providers with automatic execution
-- **🔧 MCP Support** (Planned): Model Context Protocol endpoints (stub implementation)
-- **🔍 Web Search**: Real-time DuckDuckGo search with time filtering and regional results
 - **📊 Structured Output**: Type-safe JSON responses with Pydantic validation
 - **⚡ Streaming**: Real-time responses with proper tool handling
+
+**🔧 Production-Ready Features**
 - **🔄 Retry & Circuit Breakers**: Production-grade error handling and recovery
 - **🔔 Event System**: Comprehensive observability and monitoring hooks
 - **🔢 Vector Embeddings**: SOTA embeddings with similarity matrices, clustering, and performance optimization
-- **📝 Text Summarization**: Built-in `summarizer` CLI with multiple styles and configurable parameters
-- **🕸️ Knowledge Graph Extraction**: `extractor` CLI for semantic entity/relationship extraction
+- **🔍 Web Search**: Real-time DuckDuckGo search with time filtering and regional results
 - **💬 Simple Sessions**: Conversation memory without complexity
 - **🗜️ Chat Compaction**: SOTA conversation summarization for unlimited chat length
 - **⌨️ Basic CLI**: Interactive command-line tool for testing and demonstration
+
+**🔧 Experimental**
+- **🔧 MCP Support** (Planned): Model Context Protocol endpoints (stub implementation)
 
 ### ❌ What AbstractCore Doesn't Do
 
 AbstractCore is **infrastructure, not application logic**. For more advanced capabilities:
 
-- **Complex Workflows**: Use [AbstractAgent](https://github.com/lpalbou/AbstractAgent) for autonomous agents
-- **Advanced Memory**: Use [AbstractMemory](https://github.com/lpalbou/AbstractMemory) for temporal knowledge graphs
-- **Multi-Agent Systems**: Use specialized orchestration frameworks
-- **RAG Pipelines**: Built-in embeddings, but you build the pipeline
+- **Advanced Memory** (WIP): Use [AbstractMemory](https://github.com/lpalbou/AbstractMemory) for temporal knowledge graphs
+- **Complex Workflows** (WIP): Use [AbstractAgent](https://github.com/lpalbou/AbstractAgent) for autonomous agents
+- **Multi-Agent Systems** (WIP): Use [AbstractSwarm](https://github.com/lpalbou/AbstractSwarm) to distribute tasks across agents
+- **RAG Pipelines**: (WIP): Use [RAGnarok](https://github.com/lpalbou/RAGnarok) to leverage GraphRAG in your applications
 - **Prompt Templates**: Bring your own templating system
 
 ## Quick Start
@@ -100,6 +107,12 @@ pip install abstractcore[ollama,mlx]        # Local providers
 pip install abstractcore[embeddings]        # Vector embeddings
 pip install abstractcore[server]            # API server
 ```
+
+**Need help with setup?** See **[📋 Prerequisites & Setup Guide](docs/prerequisites.md)** for detailed instructions on:
+- Getting OpenAI/Anthropic API keys
+- Installing and configuring Ollama with models
+- Setting up LMStudio, MLX, and HuggingFace
+- Troubleshooting common issues
 
 ### 30-Second Example
 
@@ -126,16 +139,39 @@ person = llm.generate(
 )
 print(f"{person.name} is {person.age}")  # John Doe is 25
 
-# Text processing with built-in summarizer (recommended: fast local model)
+# Built-in Text Processing Applications
+
+# 1. Text Summarization with multiple styles and lengths
+from abstractllm.processing import BasicSummarizer
+
 local_llm = create_llm("ollama", model="gemma3:1b")  # Fast, free, 95% quality
 summarizer = BasicSummarizer(local_llm)
 result = summarizer.summarize(
     long_text,
     focus="business implications",
-    style=SummaryStyle.EXECUTIVE
+    style=SummaryStyle.EXECUTIVE,
+    length=SummaryLength.BRIEF
 )
 print(result.summary)
 print(f"Confidence: {result.confidence:.2f}")
+
+# CLI: summarizer report.txt --style=executive --length=brief --output=summary.md
+# See docs/basic-summarizer.md for full documentation
+
+# 2. Knowledge Graph Extraction with multiple output formats
+from abstractllm.processing import BasicExtractor
+
+extractor = BasicExtractor(local_llm)
+knowledge_graph = extractor.extract(
+    "Google created TensorFlow. Microsoft uses TensorFlow for Azure AI.",
+    domain_focus="technology",
+    length="standard",
+    output_format="triples"  # or "jsonld", "jsonld_minified"
+)
+print(knowledge_graph["simple_triples"])  # ["Google creates TensorFlow", "Microsoft uses TensorFlow"]
+
+# CLI: python -m abstractllm.apps.extractor document.txt --format=triples --focus=technology
+# See docs/basic-extractor.md for full documentation
 
 # Chat history compaction for unlimited conversation length
 session = BasicSession(
@@ -146,16 +182,6 @@ session = BasicSession(
 )
 # Conversation continues indefinitely with automatic compaction
 # Or manually: session.force_compact(preserve_recent=6, focus="key decisions")
-
-# Knowledge graph extraction from text documents
-# Styles: structured, focused, minimal, comprehensive
-# Lengths: brief, standard, detailed, comprehensive
-extractor document.txt --focus=technology --style=structured --length=standard --output=kg.jsonld
-
-# Text summarization with built-in CLI
-# Styles: structured (bullets), narrative (flowing), objective (neutral), analytical (insights), executive (business), conversational (chat)
-# Lengths: brief (2-3 sentences), standard (1-2 paragraphs), detailed (multiple paragraphs), comprehensive (full analysis)
-summarizer report.txt --style=executive --length=brief --output=summary.md
 ```
 
 ### CLI Tools
@@ -191,12 +217,14 @@ python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-20
 
 | Provider | Status | Best For | Setup |
 |----------|--------|----------|-------|
-| **OpenAI** | ✅ Full | Production APIs, latest models | `OPENAI_API_KEY` |
-| **Anthropic** | ✅ Full | Claude models, long context | `ANTHROPIC_API_KEY` |
-| **Ollama** | ✅ Full | Local/private, no costs | Install Ollama |
-| **MLX** | ✅ Full | Apple Silicon optimization | Built-in |
-| **LMStudio** | ✅ Full | Local with GUI | Start LMStudio |
-| **HuggingFace** | ✅ Full | Open source models | Built-in |
+| **OpenAI** | ✅ Full | Production APIs, latest models | [Get API key →](docs/prerequisites.md#openai-setup) |
+| **Anthropic** | ✅ Full | Claude models, long context | [Get API key →](docs/prerequisites.md#anthropic-setup) |
+| **Ollama** | ✅ Full | Local/private, no costs | [Install guide →](docs/prerequisites.md#ollama-setup) |
+| **MLX** | ✅ Full | Apple Silicon optimization | [Setup guide →](docs/prerequisites.md#mlx-setup-apple-silicon) |
+| **LMStudio** | ✅ Full | Local with GUI | [Setup guide →](docs/prerequisites.md#lmstudio-setup) |
+| **HuggingFace** | ✅ Full | Open source models | [Setup guide →](docs/prerequisites.md#huggingface-setup) |
+
+**📋 Complete setup instructions for all providers: [Prerequisites & Setup Guide](docs/prerequisites.md)**
 
 ## Framework Comparison
 
@@ -601,15 +629,24 @@ Autonomous agents with planning, tool execution, and self-improvement capabiliti
 
 ## Documentation
 
+### Built-in Applications
+- **[📝 Basic Summarizer](docs/basic-summarizer.md)** - Production-ready text summarization with multiple styles and formats
+- **[🕸️ Basic Extractor](docs/basic-extractor.md)** - Knowledge graph extraction with JSON-LD and RDF triple outputs
+
+### Core Features
 - **[🌐 Server Guide](docs/server.md)** - Universal API server documentation
 - **[🤖 Agentic CLI Compatibility](docs/compatibility-agentic-cli.md)** - Use with Codex, Gemini CLI, Crush
 - **[🔢 Vector Embeddings](docs/embeddings.md)** - Similarity matrices, clustering, and semantic search
+- **[💬 Chat Compaction](docs/chat-compaction.md)** - SOTA conversation history summarization
+
+### Getting Started
+- **[📋 Prerequisites & Setup](docs/prerequisites.md)** - Complete setup guide for all providers (API keys, Ollama, LMStudio, etc.)
 - **[Getting Started](docs/getting-started.md)** - Your first AbstractCore program
 - **[Capabilities](docs/capabilities.md)** - What AbstractCore can and cannot do
 - **[Providers](docs/providers.md)** - Complete provider guide
 - **[Examples](docs/examples.md)** - Real-world use cases
-- **[Basic Summarizer](docs/basic-summarizer.md)** - Built-in text processing capabilities
-- **[Chat Compaction](docs/chat-compaction.md)** - SOTA conversation history summarization
+
+### Reference
 - **[API Reference](docs/api_reference.md)** - Complete API documentation
 - **[Architecture](docs/architecture.md)** - How it works internally
 - **[Framework Comparison](docs/comparison.md)** - Detailed comparison with alternatives
