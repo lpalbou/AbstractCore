@@ -125,14 +125,11 @@ class BasicExtractor:
         domain_note = f" Focus on {domain_focus} domain." if domain_focus else ""
 
         # Knowledge extraction prompt with JSON-LD output
-        prompt = f"""You are an expert in Semantic extraction to create high-quality information-rich knowledge graphs. 
+        prompt = f"""You are an expert in Semantic extraction and your task it to create consistent high-quality information-rich knowledge graphs. Your output is a JSON-LD knowledge graph with entities and relationships.{domain_note}.
 
-TEXT TO ANALYZE:
-{text}
+STEP 1 : always start by identifying the entities in the text and to classify them in 2 groups based on their importance: the primary entities are the main subjects, the main topics or main ideas; the secondary entities relates either to details of the primary entities or to additional information.
 
-TASK: Create a JSON-LD knowledge graph with entities and relationships.{domain_note}
-
-ENTITY TYPES (with s: prefix):
+ENTITY TYPES must be one of:
 - s:Person - People by name
 - s:Organization - Companies, institutions
 - s:Event - Events, meetings, conferences, etc
@@ -143,14 +140,19 @@ ENTITY TYPES (with s: prefix):
 - s:Product - Products, services
 - sk:Concept - Abstract concepts, technologies
 
-RELATIONSHIP TYPES:
+LIMITS: try to limit the number of entities to {entity_limit}.
+
+STEP 2 : ONCE all the entities have been created and annotated, then identify and characterize all the relationships between the selected entities.
+
+RELATIONSHIP TYPES must be one of:
 - is_a, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, occurs_in, occurs_when
 
-COMPLETE EXAMPLE:
+STEP 3 : create the JSON-LD knowledge graph with the entities and relationships identified and characterized in step 1 and 2. Be extra mindful to use the correct JSON-LD syntax. An example is provided just below.
 
-Input: "OpenAI created GPT-4. Microsoft Copilot uses GPT-4 for code generation."
+----------------------------------
+EXAMPLE: HERE IS AN INPUT TEXT: "OpenAI created GPT-4. Microsoft Copilot uses GPT-4 for code generation."
 
-Output:
+AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
 {{
   "@context": {{
     "s": "https://schema.org/",
@@ -202,27 +204,11 @@ Output:
     }}
   ]
 }}
+----------------------------------
 
-═══════════════════════════════════════════════════════════════════════
-RULES YOU MUST FOLLOW:
-═══════════════════════════════════════════════════════════════════════
-
-1. Entity @id: "e:" + normalized_name (e.g., e:laurent, e:laboratory, etc)
-2. Entity @type: Use "s:" prefix (s:Organization, s:Person, s:Event, s:Concept, s:Place, s:Product, s:Task, s:Goal, etc)
-3. Relationship @id: "r:" + number (e.g., r:1, r:2, r:3, etc)
-4. Relationship @type: Always "s:Relationship"
-5. Relationship s:name: The relationship type (is_a, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, occurs_in, occurs_when, etc.)
-6. s:about and s:object: Use {{"@id": "e:..."}} format for source and target
-7. Extract entities from text ONLY - no guessing
-8. Relationships can ONLY reference entities in the @graph
-9. Confidence: 0.85-1.0 for explicit, 0.7-0.85 for implicit, 0.5-0.7 for inferred, below for uncertain
-
-CRITICAL: Always include "s:name" property in relationships to specify the relationship type!
-
-LIMITS: Extract up to {entity_limit} entities and their relationships.
-
-NOW EXTRACT FROM THE TEXT ABOVE.
-Output ONLY valid JSON following the example format."""
+FOLLOW STEPS 1, 2 AND 3 TO CREATE THE JSON-LD KNOWLEDGE GRAPH FOR THAT INPUT TEXT:
+{text}
+"""
 
         # Generate
         response = self.llm.generate(prompt, retry_strategy=self.retry_strategy)
