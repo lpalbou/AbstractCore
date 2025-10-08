@@ -149,18 +149,19 @@ ollama serve
 #### 3. Download Models
 
 ```bash
-# Recommended starter models (good balance of speed/quality)
-ollama pull qwen2.5-coder:7b      # 4.9GB - Great for coding
-ollama pull gemma3:1b             # 1.3GB - Very fast, good quality
-ollama pull llama3.2:3b          # 2.0GB - Good general purpose
+# Recommended starter models (verified available)
+ollama pull qwen3-coder:30b      # 18GB - Excellent for code, works great with AbstractCore
+ollama pull gemma3:1b-it-qat     # 1.0GB - AbstractCore default, very fast
+ollama pull gemma3:1b            # 815MB - Very fast, good quality
+ollama pull cogito:3b            # 2.2GB - Good general purpose
 
-# High-quality models (slower, need more RAM)
-ollama pull qwen2.5:14b          # 8.7GB - Excellent quality
-ollama pull llama3.1:8b          # 4.7GB - Very good reasoning
+# Smaller models for resource-constrained systems
+ollama pull gemma3:270m-it-qat   # 241MB - Ultra-fast for testing
+ollama pull gemma3:270m          # 291MB - Minimal resource usage
 
-# Ultra-fast models (great for testing)
-ollama pull gemma3:1b-it-qat     # 1.1GB - AbstractCore default
-ollama pull tinyllama            # 637MB - Smallest model
+# Specialized models
+ollama pull nomic-embed-text     # 274MB - For embeddings
+ollama pull granite3.3:2b        # 1.5GB - Good general purpose
 ```
 
 #### 4. Test Setup
@@ -178,10 +179,12 @@ print(response.content)
 
 | Model | Size | RAM Needed | Speed | Best For |
 |-------|------|------------|-------|----------|
-| `gemma3:1b` | 1.3GB | 4GB | ⚡⚡⚡ | Testing, basic tasks |
-| `qwen2.5-coder:7b` | 4.9GB | 8GB | ⚡⚡ | Code generation |
-| `llama3.2:3b` | 2.0GB | 6GB | ⚡⚡ | General purpose |
-| `qwen2.5:14b` | 8.7GB | 16GB | ⚡ | High-quality tasks |
+| `gemma3:270m-it-qat` | 241MB | 2GB | ⚡⚡⚡ | Ultra-fast testing |
+| `gemma3:1b-it-qat` | 1.0GB | 4GB | ⚡⚡⚡ | AbstractCore default, general tasks |
+| `gemma3:1b` | 815MB | 4GB | ⚡⚡⚡ | Fast general purpose |
+| `cogito:3b` | 2.2GB | 6GB | ⚡⚡ | Balanced quality/speed |
+| `granite3.3:2b` | 1.5GB | 6GB | ⚡⚡ | Good reasoning |
+| `qwen3-coder:30b` | 18GB | 32GB | ⚡ | Code generation, complex tasks |
 
 ### MLX Setup (Apple Silicon)
 
