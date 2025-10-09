@@ -55,28 +55,57 @@ def fix_json(text: str) -> Optional[str]:
 
 def _extract_json_from_text(text: str) -> Optional[str]:
     """Extract JSON from text that may contain other content"""
+    if not text or not text.strip():
+        return None
+
+    # Strategy 1: Simple brace counting from first {
+    # This handles cases where JSON is embedded in explanatory text
+    first_brace = text.find('{')
+    if first_brace != -1:
+        candidate = _extract_json_by_brace_counting(text[first_brace:])
+        if candidate and _is_valid_json(candidate):
+            return candidate
+
+    # Strategy 2: Regex patterns (fallback)
+    # Improved patterns that handle nested braces better
     patterns = [
-        r'\{[^{}]*"@context"[^{}]*"@graph".*?\}(?:\s*\})*',  # JSON-LD
-        r'\{.*?"@context".*?\}',                              # JSON with @context
-        r'\{.*?"@graph".*?\}',                               # JSON with @graph
-        r'\{.*?\}',                                          # Any JSON object
+        r'\{.*?"@context".*?"@graph".*?\}',  # JSON-LD (simplified)
+        r'\{.*?"@context".*?\}',             # JSON with @context
+        r'\{.*?"@graph".*?\}',               # JSON with @graph
+        r'\{.*?\}',                          # Any JSON object
     ]
 
     for pattern in patterns:
         matches = re.findall(pattern, text, re.DOTALL)
         for match in matches:
-            # Count braces to find complete JSON
-            brace_count = 0
-            for i, char in enumerate(match):
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        candidate = match[:i+1]
-                        if _is_valid_json(candidate):
-                            return candidate
+            candidate = _extract_json_by_brace_counting(match)
+            if candidate and _is_valid_json(candidate):
+                return candidate
 
+    return None
+
+
+def _extract_json_by_brace_counting(text: str) -> Optional[str]:
+    """Extract complete JSON using brace counting"""
+    if not text or not text.strip():
+        return None
+
+    # Find first opening brace
+    start = text.find('{')
+    if start == -1:
+        return None
+
+    # Count braces to find matching closing brace
+    brace_count = 0
+    for i, char in enumerate(text[start:], start):
+        if char == '{':
+            brace_count += 1
+        elif char == '}':
+            brace_count -= 1
+            if brace_count == 0:
+                return text[start:i+1]
+
+    # If we get here, braces weren't balanced
     return None
 
 

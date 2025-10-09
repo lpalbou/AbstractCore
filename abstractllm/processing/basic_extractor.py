@@ -55,7 +55,7 @@ class BasicExtractor:
         """Initialize the extractor"""
         if llm is None:
             try:
-                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=16000)
+                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=32000, max_output_tokens=8000)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}\n\n"
@@ -67,7 +67,7 @@ class BasicExtractor:
                     "   from abstractllm import create_llm\n"
                     "   from abstractllm.processing import BasicExtractor\n"
                     "   \n"
-                    "   llm = create_llm('openai', model='gpt-4o-mini')\n"
+                    "   llm = create_llm('openai', model='gpt-4o-mini', max_tokens=32000, max_output_tokens=8000)\n"
                     "   extractor = BasicExtractor(llm)"
                 )
                 raise RuntimeError(error_msg) from e
@@ -208,6 +208,8 @@ AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
 
 FOLLOW STEPS 1, 2 AND 3 TO CREATE THE JSON-LD KNOWLEDGE GRAPH FOR THAT INPUT TEXT:
 {text}
+
+CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
 """
 
         # Generate
@@ -285,8 +287,21 @@ FOLLOW STEPS 1, 2 AND 3 TO CREATE THE JSON-LD KNOWLEDGE GRAPH FOR THAT INPUT TEX
 
             # Keep only valid relationships
             elif item_id.startswith('r:'):
-                source_id = item.get('s:about', {}).get('@id', '')
-                target_id = item.get('s:object', {}).get('@id', '')
+                # Safely extract source and target IDs
+                source_ref = item.get('s:about', {})
+                target_ref = item.get('s:object', {})
+
+                if isinstance(source_ref, dict):
+                    source_id = source_ref.get('@id', '')
+                else:
+                    source_id = str(source_ref) if source_ref else ''
+                    logger.warning(f"Relationship {item_id} has non-dict s:about: {type(source_ref)}")
+
+                if isinstance(target_ref, dict):
+                    target_id = target_ref.get('@id', '')
+                else:
+                    target_id = str(target_ref) if target_ref else ''
+                    logger.warning(f"Relationship {item_id} has non-dict s:object: {type(target_ref)}")
 
                 if source_id in defined_entities and target_id in defined_entities:
                     cleaned_graph.append(item)
@@ -343,34 +358,79 @@ FOLLOW STEPS 1, 2 AND 3 TO CREATE THE JSON-LD KNOWLEDGE GRAPH FOR THAT INPUT TEX
         seen_entity_ids = set()
         seen_relationship_ids = set()
 
+        chunk_result = None  # Initialize to handle case where no chunks succeed
         for i, chunk in enumerate(chunks):
             logger.info(f"Extracting from chunk {i+1}/{len(chunks)}")
             chunk_result = self._extract_single_chunk(chunk, domain_focus, length)
 
-            # Merge entities
-            for entity in chunk_result.get("@graph", []):
-                entity_id = entity.get("@id", "")
-                if entity_id.startswith("e:") and entity_id not in seen_entity_ids:
-                    all_entities.append(entity)
-                    seen_entity_ids.add(entity_id)
+            # Validate chunk result
+            if not isinstance(chunk_result, dict):
+                logger.error(f"Chunk {i+1} returned {type(chunk_result)} instead of dict")
+                chunk_result = self._create_empty_graph()
+            elif "@graph" not in chunk_result:
+                logger.error(f"Chunk {i+1} missing @graph")
+                chunk_result = self._create_empty_graph()
 
-            # Merge relationships (deduplicate by source-target-relation)
-            for item in chunk_result.get("@graph", []):
-                item_id = item.get("@id", "")
-                if item_id.startswith("r:"):
-                    source = item.get("s:about", {}).get("@id", "")
-                    target = item.get("s:object", {}).get("@id", "")
-                    relation = item.get("s:name", "")
-                    triple = (source, relation, target)
+            # Safely merge entities with additional error handling
+            try:
+                graph_items = chunk_result.get("@graph", [])
+                if not isinstance(graph_items, list):
+                    logger.error(f"Chunk {i+1} @graph is not a list: {type(graph_items)}")
+                    graph_items = []
 
-                    if triple not in seen_relationship_ids:
-                        all_relationships.append(item)
-                        seen_relationship_ids.add(triple)
+                for entity in graph_items:
+                    if not isinstance(entity, dict):
+                        logger.warning(f"Chunk {i+1} contains non-dict entity: {type(entity)}")
+                        continue
+                    entity_id = entity.get("@id", "")
+                    if entity_id.startswith("e:") and entity_id not in seen_entity_ids:
+                        all_entities.append(entity)
+                        seen_entity_ids.add(entity_id)
 
-        return {
-            "@context": chunk_result.get("@context", self._create_empty_graph()["@context"]),
+                # Merge relationships (deduplicate by source-target-relation)
+                for item in graph_items:
+                    if not isinstance(item, dict):
+                        logger.warning(f"Chunk {i+1} contains non-dict item: {type(item)}")
+                        continue
+                    item_id = item.get("@id", "")
+                    if item_id.startswith("r:"):
+                        source_ref = item.get("s:about", {})
+                        target_ref = item.get("s:object", {})
+
+                        # Safely extract IDs
+                        if isinstance(source_ref, dict):
+                            source = source_ref.get("@id", "")
+                        else:
+                            source = str(source_ref) if source_ref else ""
+
+                        if isinstance(target_ref, dict):
+                            target = target_ref.get("@id", "")
+                        else:
+                            target = str(target_ref) if target_ref else ""
+
+                        relation = item.get("s:name", "")
+                        triple = (source, relation, target)
+
+                        if triple not in seen_relationship_ids:
+                            all_relationships.append(item)
+                            seen_relationship_ids.add(triple)
+            except Exception as e:
+                logger.error(f"Error processing chunk {i+1}: {e}")
+                continue
+
+        # Build final result with safe context extraction
+        default_context = self._create_empty_graph()["@context"]
+        final_context = default_context
+
+        # Try to get context from the last valid chunk, fallback to default
+        if isinstance(chunk_result, dict) and "@context" in chunk_result:
+            final_context = chunk_result["@context"]
+
+        final_result = {
+            "@context": final_context,
             "@graph": all_entities + all_relationships
         }
+        return final_result
 
     def _split_text_into_chunks(self, text: str, overlap: int = 200) -> List[str]:
         """Split text into overlapping chunks"""
@@ -429,8 +489,17 @@ FOLLOW STEPS 1, 2 AND 3 TO CREATE THE JSON-LD KNOWLEDGE GRAPH FOR THAT INPUT TEX
         ])
 
         # Build relationship summary for the prompt
+        def safe_extract_id(ref):
+            """Safely extract @id from a reference that might be dict or string"""
+            if isinstance(ref, dict):
+                return ref.get('@id', '?')
+            elif ref:
+                return str(ref)
+            else:
+                return '?'
+
         relationship_summary = "\n".join([
-            f"  - {r.get('s:about', {}).get('@id', '?')} --[{r.get('s:name', '?')}]--> {r.get('s:object', {}).get('@id', '?')}"
+            f"  - {safe_extract_id(r.get('s:about', {}))} --[{r.get('s:name', '?')}]--> {safe_extract_id(r.get('s:object', {}))}"
             for r in prev_relationships[:20]  # Limit to avoid token overflow
         ])
 
@@ -565,8 +634,20 @@ Output ONLY valid JSON following the format above. If no changes needed, output 
 
         for item in base_graph:
             if item.get('@id', '').startswith('r:'):
-                source = item.get('s:about', {}).get('@id', '')
-                target = item.get('s:object', {}).get('@id', '')
+                # Safely extract source and target IDs
+                source_ref = item.get('s:about', {})
+                target_ref = item.get('s:object', {})
+
+                if isinstance(source_ref, dict):
+                    source = source_ref.get('@id', '')
+                else:
+                    source = str(source_ref) if source_ref else ''
+
+                if isinstance(target_ref, dict):
+                    target = target_ref.get('@id', '')
+                else:
+                    target = str(target_ref) if target_ref else ''
+
                 relation = item.get('s:name', '')
                 if source and target:
                     base_rel_triples[(source, relation, target)] = item
@@ -585,8 +666,20 @@ Output ONLY valid JSON following the format above. If no changes needed, output 
 
             # Handle relationships
             elif item_id.startswith('r:'):
-                source = item.get('s:about', {}).get('@id', '')
-                target = item.get('s:object', {}).get('@id', '')
+                # Safely extract source and target IDs
+                source_ref = item.get('s:about', {})
+                target_ref = item.get('s:object', {})
+
+                if isinstance(source_ref, dict):
+                    source = source_ref.get('@id', '')
+                else:
+                    source = str(source_ref) if source_ref else ''
+
+                if isinstance(target_ref, dict):
+                    target = target_ref.get('@id', '')
+                else:
+                    target = str(target_ref) if target_ref else ''
+
                 relation = item.get('s:name', '')
 
                 if source and target:
@@ -625,6 +718,16 @@ Output ONLY valid JSON following the format above. If no changes needed, output 
         Returns:
             dict: Formatted result
         """
+        # Validate input - ensure it's a dict
+        if not isinstance(jsonld_result, dict):
+            logger.error(f"_format_output received {type(jsonld_result)} instead of dict: {repr(jsonld_result)}")
+            jsonld_result = self._create_empty_graph()
+
+        # Ensure it has the required structure
+        if "@graph" not in jsonld_result:
+            logger.error("_format_output received dict without @graph")
+            jsonld_result = self._create_empty_graph()
+
         if output_format == "jsonld":
             return jsonld_result
         elif output_format == "jsonld_minified":
