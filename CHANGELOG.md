@@ -40,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No hardcoded timeout values remain in provider implementations
   - Consistent 300-second default across HTTP clients, tool execution, and embeddings
 
+### Documentation
+- **Updated Model References**: Modernized documentation to use current recommended models
+  - Updated `docs/getting-started.md` to use `qwen3:4b-instruct-2507-q4_K_M` (default) and `qwen3-coder:30b` (premium)
+  - Replaced outdated `qwen2.5-coder:7b` references throughout getting started guide
+  - Added proper cross-references to reorganized documentation (`server.md`, `internal-cli.md`)
+  - Enhanced "What's Next?" section with links to universal API server and CLI documentation
+
+- **Cross-Reference Validation**: Verified all documentation links and anchors
+  - Confirmed `docs/prerequisites.md` section anchors match README.md references
+  - Validated provider setup links point to correct sections (#openai-setup, #anthropic-setup, etc.)
+  - Ensured consistent documentation structure across all guides
+
 ## [2.2.0] - 2025-10-01
 
 ### Added

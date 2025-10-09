@@ -2,6 +2,25 @@
 
 Do not pay attention to this.
 
+1) rename to AbstractCore
+2) LLM-as-a-judge
+3) Media handling
+
+
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000 --reload
+
+
+time python -m abstractllm.apps.extractor /Users/albou/projects/promptons/examples/docs/christmas_carol_ebook_chapter_1.txt --provider lmstudio --model bytedance/seed-oss-36b --timeout 3600
+
+time python -m abstractllm.apps.extractor /Users/albou/projects/promptons/examples/docs/christmas_carol_ebook_chapter_1.txt --provider lmstudio --model qwen/qwen3-4b-2507 --iterate=2
+
+time python -m abstractllm.apps.extractor /Users/albou/projects/promptons/examples/docs/christmas_carol_ebook_chapter_1.txt --provider lmstudio --model qwen/qwen3-4b-2507 --iterate=3
+
+time python -m abstractllm.apps.extractor /Users/albou/projects/promptons/examples/docs/christmas_carol_ebook_chapter_1.txt --provider lmstudio --model qwen/qwen3-next-80b
+
+time python -m abstractllm.apps.extractor /Users/albou/projects/promptons/examples/docs/christmas_carol_ebook_chapter_1.txt --provider lmstudio --model qwen/qwen3-coder-30b
+
+
 - async ? (huge dev I fear)
 
 - handle images
@@ -21,10 +40,6 @@ SHOULD IT BE IN ABSTRACT MEMORY OR ABSTRACT CORE ?
 
 need a token estimator to share
 
-summmarizer : cli ?
-- gemma3:1b-it-qat
-- gemma3:270m-it-qat
-- gemma3n:e2b
 
 function similar(text1, text2) with embeddings
 

@@ -191,6 +191,8 @@ session = BasicSession(
 
 AbstractCore includes a simple CLI tool for quick testing and demonstration:
 
+**[📋 Complete Internal CLI Guide →](docs/internal-cli.md)**
+
 ```bash
 # Interactive chat with any provider
 python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
@@ -618,7 +620,7 @@ codex --model "anthropic/claude-3-5-haiku-latest" "Review this code"
 - ⚠️ **Model Capabilities** - Some features may require GPT-4 class models
 - ⚠️ **Tool Calling** - Works but complex multi-turn tool scenarios need more testing
 
-**[📖 Technical Documentation →](docs/compatibility-agentic-cli.md)** (Implementation details and architecture)
+**[📖 Server Documentation →](docs/server.md)** (Complete server setup, agentic CLI integration, and troubleshooting)
 
 ## Advanced Capabilities
 
@@ -638,13 +640,14 @@ Autonomous agents with planning, tool execution, and self-improvement capabiliti
 
 ### Core Features
 - **[🌐 Server Guide](docs/server.md)** - Universal API server documentation
-- **[🤖 Agentic CLI Compatibility](docs/compatibility-agentic-cli.md)** - Use with Codex, Gemini CLI, Crush
+- **[🤖 Agentic CLI Compatibility](docs/server.md)** - Use with Codex, Gemini CLI, Crush (see Server Documentation)
 - **[🔢 Vector Embeddings](docs/embeddings.md)** - Similarity matrices, clustering, and semantic search
 - **[💬 Chat Compaction](docs/chat-compaction.md)** - SOTA conversation history summarization
 
 ### Getting Started
 - **[📋 Prerequisites & Setup](docs/prerequisites.md)** - Complete setup guide for all providers (API keys, Ollama, LMStudio, etc.)
 - **[Getting Started](docs/getting-started.md)** - Your first AbstractCore program
+- **[⌨️ Internal CLI](docs/internal-cli.md)** - Built-in CLI for testing and interactive conversations
 - **[Capabilities](docs/capabilities.md)** - What AbstractCore can and cannot do
 - **[Providers](docs/providers.md)** - Complete provider guide
 - **[Examples](docs/examples.md)** - Real-world use cases

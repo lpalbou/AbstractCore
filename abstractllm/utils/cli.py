@@ -26,6 +26,7 @@ import time
 
 from .. import create_llm, BasicSession
 from ..tools.common_tools import list_files, read_file, execute_command, web_search
+from ..processing import BasicExtractor
 
 
 class SimpleCLI:
@@ -50,7 +51,7 @@ class SimpleCLI:
 
         print(f"🚀 AbstractLLM CLI - {provider}:{model}")
         print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
-        print("Commands: /help /quit /clear /stream /debug /history [n] /model <spec> /compact /system [prompt]")
+        print("Commands: /help /quit /clear /stream /debug /history [n] /model <spec> /compact /facts [file] /system [prompt]")
         print("Tools: list_files, read_file, execute_command, web_search")
         print("=" * 60)
 
@@ -75,6 +76,7 @@ class SimpleCLI:
             print("  /history [n] - Show conversation history or last n interactions")
             print("  /model <provider:model> - Change model")
             print("  /compact - Compact chat history using gemma3:1b-it-qat-it-qat")
+            print("  /facts [file] - Extract facts from conversation history")
             print("  /system [prompt] - Show or change system prompt")
             print("\n🛠️ Tools: list_files, read_file, execute_command, web_search\n")
 
@@ -125,6 +127,17 @@ class SimpleCLI:
 
         elif cmd == 'compact':
             self.handle_compact()
+
+        elif cmd.startswith('facts'):
+            # Parse /facts [file] command
+            parts = cmd.split()
+            if len(parts) == 1:
+                # No file specified - display facts in chat
+                self.handle_facts(None)
+            else:
+                # File specified - save as JSON-LD
+                filename = parts[1]
+                self.handle_facts(filename)
 
         elif cmd.startswith('system'):
             # Parse /system [prompt] command
@@ -200,6 +213,102 @@ class SimpleCLI:
 
         except Exception as e:
             print(f"❌ Compaction failed: {e}")
+
+    def handle_facts(self, filename: str = None):
+        """Handle /facts [file] command - extract facts from conversation history"""
+        messages = self.session.get_messages()
+
+        if len(messages) <= 1:  # Only system message
+            print("📝 No conversation history to extract facts from")
+            return
+
+        try:
+            print("🔍 Extracting facts from conversation history...")
+
+            # Create fact extractor using current provider for consistency
+            extractor = BasicExtractor(self.provider)
+
+            # Format conversation history as text
+            conversation_text = self._format_conversation_for_extraction(messages)
+
+            if not conversation_text.strip():
+                print("📝 No substantive conversation content found")
+                return
+
+            print(f"   Processing {len(conversation_text)} characters of conversation...")
+
+            start_time = time.time()
+
+            if filename is None:
+                # Display facts as triples in chat
+                result = extractor.extract(conversation_text, output_format="triples")
+
+                duration = time.time() - start_time
+                print(f"✅ Fact extraction completed in {duration:.1f}s")
+
+                if result and result.get("simple_triples"):
+                    print("\n📋 Facts extracted from conversation:")
+                    print("=" * 50)
+                    for i, triple in enumerate(result["simple_triples"], 1):
+                        print(f"{i:2d}. {triple}")
+                    print("=" * 50)
+
+                    stats = result.get("statistics", {})
+                    entities_count = stats.get("entities_count", 0)
+                    relationships_count = stats.get("relationships_count", 0)
+                    print(f"📊 Found {entities_count} entities and {relationships_count} relationships")
+                else:
+                    print("❌ No facts could be extracted from the conversation")
+
+            else:
+                # Save as JSON-LD file
+                result = extractor.extract(conversation_text, output_format="jsonld")
+
+                duration = time.time() - start_time
+                print(f"✅ Fact extraction completed in {duration:.1f}s")
+
+                if result and result.get("@graph"):
+                    # Ensure filename has .jsonld extension
+                    if not filename.endswith('.jsonld'):
+                        filename = f"{filename}.jsonld"
+
+                    import json
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        json.dump(result, f, indent=2, ensure_ascii=False)
+
+                    entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+                    relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
+
+                    print(f"💾 Facts saved to {filename}")
+                    print(f"📊 Saved {len(entities)} entities and {len(relationships)} relationships as JSON-LD")
+                else:
+                    print("❌ No facts could be extracted from the conversation")
+
+        except Exception as e:
+            print(f"❌ Fact extraction failed: {e}")
+            if self.debug_mode:
+                import traceback
+                traceback.print_exc()
+
+    def _format_conversation_for_extraction(self, messages):
+        """Format conversation messages for fact extraction"""
+        formatted_lines = []
+
+        for msg in messages:
+            # Skip system messages for fact extraction
+            if msg.role == 'system':
+                continue
+
+            content = msg.content.strip()
+            if not content:
+                continue
+
+            if msg.role == 'user':
+                formatted_lines.append(f"User: {content}")
+            elif msg.role == 'assistant':
+                formatted_lines.append(f"Assistant: {content}")
+
+        return "\n\n".join(formatted_lines)
 
     def handle_history(self, n_interactions: int = None):
         """Handle /history [n] command - show conversation history verbatim"""
@@ -400,6 +509,7 @@ Commands:
   /history [n] - Show conversation history or last n interactions
   /model <provider:model> - Change model
   /compact - Compact chat history using gemma3:1b-it-qat
+  /facts [file] - Extract facts from conversation history
   /system [prompt] - Show or change system prompt
 
 Tools: list_files, read_file, execute_command, web_search
