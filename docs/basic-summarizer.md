@@ -2,7 +2,7 @@
 
 The Basic Summarizer demonstrates how to build sophisticated text processing capabilities on top of AbstractCore using clean, zero-shot structured prompting techniques.
 
-**💡 Recommended Setup**: For best performance, use the free local model `gemma3:1b` with Ollama, which provides fast processing (29s), high quality (95% confidence), and zero API costs.
+**💡 Recommended Setup**: For best performance, use the free local model `gemma3:1b-it-qat` with Ollama, which provides fast processing (29s), high quality (95% confidence), and zero API costs.
 
 ## Overview
 
@@ -19,7 +19,7 @@ The `BasicSummarizer` showcases AbstractCore's core strengths:
 **Prerequisites**: For local processing, install [Ollama](https://ollama.ai) and download the recommended model:
 ```bash
 # Install Ollama, then download the fast, high-quality model
-ollama pull gemma3:1b
+ollama pull gemma3:1b-it-qat
 ```
 
 ```python
@@ -27,7 +27,7 @@ from abstractllm import create_llm
 from abstractllm.processing import BasicSummarizer, SummaryStyle, SummaryLength
 
 # Recommended: Fast local model for cost-effective processing
-llm = create_llm("ollama", model="gemma3:1b")
+llm = create_llm("ollama", model="gemma3:1b-it-qat")
 
 # Alternative: Cloud provider for highest quality
 # llm = create_llm("openai", model="gpt-4o-mini")
@@ -231,7 +231,7 @@ from abstractllm.core.retry import RetryConfig
 
 # Configure retry behavior
 config = RetryConfig(max_attempts=3, initial_delay=1.0)
-llm = create_llm("ollama", model="gemma3:1b", retry_config=config)
+llm = create_llm("ollama", model="gemma3:1b-it-qat", retry_config=config)
 
 summarizer = BasicSummarizer(llm)
 
@@ -253,7 +253,7 @@ except Exception as e:
 ### Provider Selection
 
 **Recommended for Production:**
-- **Ollama gemma3:1b**: Fast (29s), high quality (95% confidence), cost-effective local processing
+- **Ollama gemma3:1b-it-qat**: Fast (29s), high quality (95% confidence), cost-effective local processing
 - **Ollama qwen3-coder:30b**: Premium quality (98% confidence), slower (119s), best for critical tasks
 
 **Cloud Alternatives:**
@@ -263,7 +263,7 @@ except Exception as e:
 **Performance Comparison:**
 ```
 Model              Speed    Quality  Cost    Best For
-gemma3:1b         Fast     High     Free    Production, high-volume
+gemma3:1b-it-qat  Fast     High     Free    Production, high-volume
 qwen3-coder:30b   Slow     Premium  Free    Critical accuracy
 GPT-4o-mini       Medium   High     Paid    Occasional use
 Claude-3.5        Medium   High     Paid    Narrative summaries
@@ -273,7 +273,7 @@ Claude-3.5        Medium   High     Paid    Narrative summaries
 
 ```python
 # Free local processing with excellent quality
-llm = create_llm("ollama", model="gemma3:1b")  # Fast, free, high quality
+llm = create_llm("ollama", model="gemma3:1b-it-qat")  # Fast, free, high quality
 summarizer = BasicSummarizer(llm)
 
 # Brief summaries for even faster processing

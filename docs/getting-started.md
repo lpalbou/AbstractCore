@@ -31,7 +31,7 @@ For privacy or cost reasons:
 ```bash
 # Install Ollama first
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5-coder:7b
+ollama pull qwen3:4b-instruct-2507-q4_K_M
 
 # Then install AbstractCore
 pip install abstractcore
@@ -53,7 +53,7 @@ from abstractllm import create_llm
 # Choose your provider (uncomment one):
 llm = create_llm("openai", model="gpt-4o-mini")        # Cloud
 # llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Cloud
-# llm = create_llm("ollama", model="qwen2.5-coder:7b")   # Local
+# llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")   # Local
 
 # Generate your first response
 response = llm.generate("What is the capital of France?")
@@ -81,7 +81,7 @@ from abstractllm import create_llm
 # Same interface, different providers
 openai_llm = create_llm("openai", model="gpt-4o-mini")
 claude_llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
-local_llm = create_llm("ollama", model="qwen2.5-coder:7b")
+local_llm = create_llm("ollama", model="qwen3-coder:30b")
 
 question = "Explain Python list comprehensions"
 
@@ -225,10 +225,10 @@ llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 
 ### Ollama (Local)
 ```bash
-ollama pull qwen2.5-coder:7b
+ollama pull qwen3:4b-instruct-2507-q4_K_M
 ```
 ```python
-llm = create_llm("ollama", model="qwen2.5-coder:7b")
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
 ```
 
 ### MLX (Apple Silicon)
@@ -236,7 +236,7 @@ llm = create_llm("ollama", model="qwen2.5-coder:7b")
 pip install abstractcore[mlx]
 ```
 ```python
-llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
+llm = create_llm("mlx", model="mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit")
 ```
 
 ## Common Patterns
@@ -266,7 +266,7 @@ from abstractllm import create_llm
 providers = [
     ("openai", "gpt-4o-mini"),
     ("anthropic", "claude-3-5-haiku-latest"),
-    ("ollama", "qwen2.5-coder:7b")
+    ("ollama", "qwen3-coder:30b")
 ]
 
 def generate_with_fallback(prompt):
@@ -347,9 +347,11 @@ class User(BaseModel):
 
 For quick testing and exploration, AbstractCore includes a basic CLI tool:
 
+**[📋 Complete Internal CLI Guide →](internal-cli.md)**
+
 ```bash
 # Interactive chat with any provider
-python -m abstractllm.utils.cli --provider ollama --model qwen2.5-coder:7b
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
 
 # Quick one-off questions
 python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --prompt "What is Python?"
@@ -381,9 +383,11 @@ Now that you have the basics:
 
 1. **[Explore Examples](examples.md)** - Real-world use cases and patterns
 2. **[Learn About Providers](providers.md)** - Deep dive into each provider
-3. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and can't do
-4. **[Read the API Reference](api_reference.md)** - Complete API documentation
-5. **[Check Advanced Features](../README.md#core-features)** - Embeddings, events, retry logic
+3. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
+4. **[Use Internal CLI](internal-cli.md)** - Built-in testing CLI with advanced features
+5. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and cannot do
+6. **[Read the API Reference](api_reference.md)** - Complete API documentation
+7. **[Check Advanced Features](../README.md#core-features)** - Embeddings, events, retry logic
 
 ## Getting Help
 

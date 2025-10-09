@@ -1,6 +1,24 @@
-# CLI Usage Guide
+# AbstractCore Internal CLI
 
-The AbstractCore CLI now includes advanced chat history management and system control commands.
+AbstractCore includes a built-in CLI tool for testing, demonstration, and interactive conversations. This is AbstractCore's internal testing CLI, not to be confused with external agentic CLIs like Codex or Gemini CLI.
+
+## Overview
+
+The AbstractCore internal CLI provides advanced chat history management and system control commands for interactive testing of LLM providers.
+
+**Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)?**
+→ **See [Server Documentation](server.md)** for complete setup guides.
+
+## Quick Start
+
+```bash
+# Start the internal CLI
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+
+# Or with any provider
+python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini
+python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest
+```
 
 ## New Commands
 
@@ -32,6 +50,46 @@ Compacts your chat history using the fast local `gemma3:1b` model to create a su
 - Long conversations that slow down responses
 - When you want to preserve context but reduce memory usage
 - Before switching to a different topic
+
+### `/facts [file]` - Extract Facts from Conversation
+
+Extracts facts from your conversation history as simple triples (subject-predicate-object). Display them in chat or save as structured JSON-LD.
+
+```bash
+# In the CLI
+/facts
+
+# Output example:
+🔍 Extracting facts from conversation history...
+   Processing 415 characters of conversation...
+✅ Fact extraction completed in 4.5s
+
+📋 Facts extracted from conversation:
+==================================================
+ 1. OpenAI creates GPT-4
+ 2. Microsoft Copilot uses GPT-4
+ 3. Google develops TensorFlow
+==================================================
+📊 Found 3 entities and 2 relationships
+```
+
+```bash
+# Save to JSON-LD file
+/facts myconversation
+
+# Output example:
+🔍 Extracting facts from conversation history...
+   Processing 415 characters of conversation...
+✅ Fact extraction completed in 3.3s
+💾 Facts saved to myconversation.jsonld
+📊 Saved 3 entities and 2 relationships as JSON-LD
+```
+
+**When to use:**
+- Extract key information discussed in the conversation
+- Create structured knowledge from chat sessions
+- Document facts for later reference or analysis
+- Generate semantic data for knowledge graphs
 
 ### `/history [n]` - Show Conversation History
 
@@ -190,6 +248,9 @@ python -m abstractllm.utils.cli --provider ollama --model gemma3:1b
 
 # Compact when needed
 👤 You: /compact
+
+# Extract facts from the conversation
+👤 You: /facts
 
 # Continue conversation with preserved context and new system prompt
 👤 You: Can you explain more about functions?
