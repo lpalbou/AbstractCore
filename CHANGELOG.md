@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.2.3] - 2025-10-09
+
+### Fixed
+- **Installation Package [all] Extra**: Fixed `pip install abstractcore[all]` to truly install ALL modules
+  - **Issue**: The `[all]` extra was missing development dependencies (dev, test, docs)
+  - **Solution**: Updated `[all]` extra to include complete dependency set (12 total extras)
+  - **Coverage**: Now includes all providers, features, and development tools
+    - **All Providers** (6): openai, anthropic, ollama, lmstudio, huggingface, mlx
+    - **All Features** (3): embeddings, processing, server
+    - **All Development** (3): dev, test, docs
+  - **Impact**: Users can now confidently use `abstractcore[all]` for complete installation without missing dependencies
+
+### Technical
+- **Comprehensive Installation**: `pip install abstractcore[all]` now installs 12 dependency groups
+- **Development Ready**: Includes all testing frameworks (pytest-cov, responses), code tools (black, mypy, ruff), and documentation tools (mkdocs)
+- **Verified Configuration**: All referenced extras exist and are properly defined with no circular dependencies
+
 ## [2.2.2] - 2025-10-09
 
 ### Added
