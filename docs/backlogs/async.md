@@ -118,7 +118,7 @@ Decision
 
 Status: BACKLOG
 Priority: HIGH (after server implementation)
-Target: v2.2.0
+Target: v2.2.1
 
 ---
 

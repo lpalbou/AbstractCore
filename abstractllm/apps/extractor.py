@@ -21,6 +21,7 @@ Options:
     --iterate=<number>        Number of refinement iterations (default: 1, finds missing entities and verifies relationships)
     --minified                Output minified JSON-LD (compact, no indentation)
     --verbose                 Show detailed progress information
+    --timeout=<seconds>       HTTP timeout for LLM providers (default: 300, increase for large models)
     --help                    Show this help message
 
 Examples:
@@ -289,6 +290,13 @@ Default model setup:
         help='Show detailed progress information'
     )
 
+    parser.add_argument(
+        '--timeout',
+        type=float,
+        default=300.0,
+        help='HTTP request timeout in seconds for LLM providers (default: 300, i.e., 5 minutes). Increase for large models like 36B+ parameters'
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -314,6 +322,15 @@ Default model setup:
 
         if args.iterate > 5:
             print("Error: Iterate cannot exceed 5 (diminishing returns)")
+            sys.exit(1)
+
+        # Validate timeout parameter
+        if args.timeout < 30.0:
+            print("Error: Timeout must be at least 30 seconds")
+            sys.exit(1)
+
+        if args.timeout > 7200.0:  # 2 hours
+            print("Error: Timeout cannot exceed 7200 seconds (2 hours)")
             sys.exit(1)
 
         # Validate provider/model pair
@@ -383,7 +400,7 @@ Default model setup:
                 if adjusted_chunk_size != args.chunk_size:
                     print(f"Adjusted chunk size from {args.chunk_size} to {adjusted_chunk_size} characters for {args.provider} compatibility")
 
-            llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens, max_output_tokens=max_output_tokens)
+            llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=args.timeout)
 
             extractor = BasicExtractor(
                 llm=llm,

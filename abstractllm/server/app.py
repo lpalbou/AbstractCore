@@ -480,13 +480,13 @@ configure_logging(
 app = FastAPI(
     title="AbstractCore Server",
     description="Universal LLM Gateway - OpenAI-Compatible API for ALL Providers",
-    version="2.1.2"
+    version="2.2.1"
 )
 
 # Get server logger
 server_logger = get_logger("server")
 server_logger.info("🚀 AbstractCore Server Starting",
-                   version="2.1.2",
+                   version="2.2.1",
                    logging_configured=True)
 
 app.add_middleware(
@@ -2353,7 +2353,7 @@ async def create_embeddings(provider: str, request: OpenAIEmbeddingRequest):
                 for i, text in enumerate(texts):
                     try:
                         # Call Ollama's embeddings API directly
-                        with httpx.Client(timeout=180.0) as client:
+                        with httpx.Client(timeout=300.0) as client:
                             response = client.post(
                                 "http://localhost:11434/api/embeddings",
                                 json={"model": embedding_model, "prompt": text},
@@ -2555,7 +2555,7 @@ async def get_capabilities():
     return {
         "api_version": "v1",
         "server": "AbstractCore",
-        "version": "2.1.2",
+        "version": "2.2.1",
         "capabilities": {
             "chat_completions": True,
             "text_completions": True,
