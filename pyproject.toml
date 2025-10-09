@@ -122,7 +122,7 @@ all-providers = [
 ]
 
 all = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,processing,server]",
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,processing,server,dev,test,docs]",
 ]
 
 lightweight = [
