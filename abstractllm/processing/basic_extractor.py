@@ -235,6 +235,9 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                 logger.error("Invalid JSON-LD structure")
                 return self._create_empty_graph()
 
+            # Normalize JSON-LD references (convert strings to objects)
+            result = self._normalize_jsonld_references(result)
+
             # Remove dangling references
             result = self._remove_dangling_references(result)
 
@@ -256,6 +259,7 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                 try:
                     result = json.loads(corrected_json)
                     if "@context" in result and "@graph" in result:
+                        result = self._normalize_jsonld_references(result)
                         result = self._remove_dangling_references(result)
                         entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
                         relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
@@ -295,13 +299,13 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                     source_id = source_ref.get('@id', '')
                 else:
                     source_id = str(source_ref) if source_ref else ''
-                    logger.warning(f"Relationship {item_id} has non-dict s:about: {type(source_ref)}")
+                    logger.debug(f"Relationship {item_id} has non-dict s:about: {type(source_ref)} (normalized)")
 
                 if isinstance(target_ref, dict):
                     target_id = target_ref.get('@id', '')
                 else:
                     target_id = str(target_ref) if target_ref else ''
-                    logger.warning(f"Relationship {item_id} has non-dict s:object: {type(target_ref)}")
+                    logger.debug(f"Relationship {item_id} has non-dict s:object: {type(target_ref)} (normalized)")
 
                 if source_id in defined_entities and target_id in defined_entities:
                     cleaned_graph.append(item)
@@ -339,6 +343,54 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
             },
             "@graph": []
         }
+
+    def _normalize_jsonld_references(self, result: dict) -> dict:
+        """
+        Normalize JSON-LD references to ensure proper object format.
+
+        Some LLMs generate string references instead of object references:
+        - Wrong: "s:about": "e:entity_id"
+        - Correct: "s:about": {"@id": "e:entity_id"}
+
+        This method fixes such inconsistencies.
+        """
+        if not isinstance(result, dict) or "@graph" not in result:
+            return result
+
+        normalized_graph = []
+
+        for item in result.get("@graph", []):
+            if not isinstance(item, dict):
+                normalized_graph.append(item)
+                continue
+
+            # Only process relationships that have reference fields
+            item_id = item.get("@id", "")
+            if item_id.startswith("r:"):
+                # Create a copy to avoid modifying the original
+                normalized_item = item.copy()
+
+                # Normalize s:about reference
+                if "s:about" in normalized_item:
+                    about_ref = normalized_item["s:about"]
+                    if isinstance(about_ref, str) and about_ref.startswith("e:"):
+                        normalized_item["s:about"] = {"@id": about_ref}
+
+                # Normalize s:object reference
+                if "s:object" in normalized_item:
+                    object_ref = normalized_item["s:object"]
+                    if isinstance(object_ref, str) and object_ref.startswith("e:"):
+                        normalized_item["s:object"] = {"@id": object_ref}
+
+                normalized_graph.append(normalized_item)
+            else:
+                # Keep entities and other items as-is
+                normalized_graph.append(item)
+
+        # Return result with normalized graph
+        result_copy = result.copy()
+        result_copy["@graph"] = normalized_graph
+        return result_copy
 
     def _extract_long_document(
         self,
@@ -521,8 +573,8 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
             for r in prev_relationships[:15]  # Limit to avoid token overflow
         ])
 
-        # Knowledge graph refinement prompt with JSON-LD output
-        prompt = f"""You are an expert in Semantic extraction and your task is to refine and improve an existing knowledge graph. You will create a COMPLETE refined JSON-LD knowledge graph with entities and relationships.{domain_note}
+        # Knowledge graph refinement prompt with JSON-LD output (matches initial extraction format)
+        prompt = f"""You are an expert in Semantic extraction and your task is to refine and improve an existing knowledge graph. Your output is a COMPLETE refined JSON-LD knowledge graph with entities and relationships.{domain_note}
 
 EXISTING GRAPH TO REFINE:
 Current Entities:
@@ -553,16 +605,17 @@ ENTITY TYPES must be one of:
 
 LIMITS: try to limit the total number of entities to {entity_limit}.
 
-STEP 2: Identify the complete SET of relationships between the selected entities, starting with existing relationships and adding any missing ones. Verify that all relationship directions are correct according to the text.
+STEP 2: ONCE all the entities have been created and annotated, then identify and characterize all the relationships between the selected entities.
 
 RELATIONSHIP TYPES must be one of:
 - is_a, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, occurs_in, occurs_when
 
-STEP 3: Create the COMPLETE refined JSON-LD knowledge graph with ALL entities and relationships (existing + new + corrected). Be extra mindful to use the correct JSON-LD syntax.
+STEP 3: Create the COMPLETE refined JSON-LD knowledge graph with ALL entities and relationships (existing + new + corrected). Be extra mindful to use the correct JSON-LD syntax. An example is provided just below.
 
 ----------------------------------
-EXAMPLE: If the existing graph had "OpenAI" and "GPT-4" but missed "Microsoft Copilot", and the text mentions "Microsoft Copilot uses GPT-4", the COMPLETE refined output should include ALL entities and relationships:
+EXAMPLE: HERE IS AN INPUT TEXT: "OpenAI created GPT-4. Microsoft Copilot uses GPT-4 for code generation."
 
+AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
 {{
   "@context": {{
     "s": "https://schema.org/",
@@ -619,7 +672,7 @@ EXAMPLE: If the existing graph had "OpenAI" and "GPT-4" but missed "Microsoft Co
 FOLLOW STEPS 1, 2 AND 3 TO CREATE THE COMPLETE REFINED JSON-LD KNOWLEDGE GRAPH FOR THIS TEXT:
 {text}
 
-CRITICAL: ONLY OUTPUT THE FULL COMPLETE REFINED JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
+CRITICAL: ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
 
         # Generate
         response = self.llm.generate(prompt, retry_strategy=self.retry_strategy)
@@ -643,6 +696,9 @@ CRITICAL: ONLY OUTPUT THE FULL COMPLETE REFINED JSON-LD WITHOUT ANY OTHER TEXT O
             if "@context" not in result or "@graph" not in result:
                 logger.error("Invalid refined JSON-LD structure")
                 return previous_extraction
+
+            # Normalize JSON-LD references (convert strings to objects)
+            result = self._normalize_jsonld_references(result)
 
             # Remove dangling references
             result = self._remove_dangling_references(result)
@@ -668,6 +724,7 @@ CRITICAL: ONLY OUTPUT THE FULL COMPLETE REFINED JSON-LD WITHOUT ANY OTHER TEXT O
                 try:
                     result = json.loads(corrected_json)
                     if "@context" in result and "@graph" in result:
+                        result = self._normalize_jsonld_references(result)
                         result = self._remove_dangling_references(result)
                         entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
                         relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
