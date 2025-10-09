@@ -18,6 +18,9 @@ python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
 # Or with any provider
 python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini
 python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest
+
+# With streaming enabled (--stream flag)
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b --stream
 ```
 
 ## New Commands
@@ -90,6 +93,37 @@ Extracts facts from your conversation history as simple triples (subject-predica
 - Create structured knowledge from chat sessions
 - Document facts for later reference or analysis
 - Generate semantic data for knowledge graphs
+
+### `/stream` - Toggle Streaming Mode
+
+Toggle real-time streaming of responses. You can also start with streaming enabled using the `--stream` flag.
+
+```bash
+# Toggle streaming mode in CLI
+/stream
+
+# Output examples:
+🌊 Stream mode: ON
+🌊 Stream mode: OFF
+```
+
+**Two ways to enable streaming:**
+
+```bash
+# Method 1: Start with streaming enabled
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b --stream
+
+# Method 2: Toggle during conversation
+👤 You: /stream
+🌊 Stream mode: ON
+👤 You: Write a haiku about programming
+🤖 Assistant: Code flows like a stream... [appears word by word]
+```
+
+**When to use:**
+- Real-time response display for better user experience
+- Immediate feedback during long responses
+- Interactive conversations where responsiveness matters
 
 ### `/history [n]` - Show Conversation History
 
