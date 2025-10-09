@@ -203,7 +203,7 @@ python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --prompt "
 # With streaming
 python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-20241022 --stream
 
-# Commands: /help /quit /clear /stream /debug /history /model <spec>
+# Commands: /help /quit /clear /stream /debug /history /model <spec> /compact /facts [file] /system [prompt]
 # Built-in tools: list_files, read_file, execute_command, web_search
 ```
 

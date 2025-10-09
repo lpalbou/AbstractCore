@@ -356,6 +356,9 @@ python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
 # Quick one-off questions
 python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --prompt "What is Python?"
 
+# With streaming mode for real-time responses
+python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest --stream
+
 # With web search capabilities
 # Try: "search for today's AI news" or "find recent Python tutorials"
 ```
@@ -366,8 +369,11 @@ python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --prompt "
 - `/clear` - Clear conversation history
 - `/stream` - Toggle streaming mode
 - `/debug` - Toggle debug output
-- `/history` - Show conversation history
+- `/history [n]` - Show conversation history or last n interactions
 - `/model <provider:model>` - Switch providers/models
+- `/compact` - Compact chat history using fast local model
+- `/facts [file]` - Extract facts from conversation (display or save as JSON-LD)
+- `/system [prompt]` - Show or change system prompt
 
 **Built-in Tools:**
 - `list_files` - List files in directories
