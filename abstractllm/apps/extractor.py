@@ -352,16 +352,42 @@ Default model setup:
         use_embeddings = not args.no_embeddings
 
         if args.provider and args.model:
-            # Custom provider/model with max_tokens adjusted for chunk size
+            # Custom provider/model with max_tokens adjusted for chunk size and provider limits
             max_tokens = max(32000, args.chunk_size)
-            if args.verbose:
-                print(f"Initializing BasicExtractor (mode: {extraction_mode}, {args.provider}, {args.model}, {max_tokens} token context, 8000 output tokens)...")
 
-            llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens, max_output_tokens=8000)
+            # Adjust chunk size for provider-specific limits first
+            adjusted_chunk_size = args.chunk_size
+
+            # Adjust limits for specific providers to avoid context overflow
+            if args.provider.lower() == "anthropic":
+                # Claude models have varying context limits
+                if "haiku" in args.model.lower():
+                    # Claude 3.5 Haiku: 200K tokens total
+                    max_tokens = min(max_tokens, 150000)  # Leave room for output
+                    max_output_tokens = 4000  # Conservative output limit
+                    adjusted_chunk_size = min(args.chunk_size, 4000)  # Smaller chunks for Haiku
+                elif "sonnet" in args.model.lower():
+                    # Claude 3.5 Sonnet: 200K tokens
+                    max_tokens = min(max_tokens, 180000)
+                    max_output_tokens = 8000
+                else:
+                    # Claude 3 Opus or other: assume 200K
+                    max_tokens = min(max_tokens, 180000)
+                    max_output_tokens = 8000
+            else:
+                # Default for other providers
+                max_output_tokens = 8000
+
+            if args.verbose:
+                print(f"Initializing BasicExtractor (mode: {extraction_mode}, {args.provider}, {args.model}, {max_tokens} token context, {max_output_tokens} output tokens)...")
+                if adjusted_chunk_size != args.chunk_size:
+                    print(f"Adjusted chunk size from {args.chunk_size} to {adjusted_chunk_size} characters for {args.provider} compatibility")
+
+            llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens, max_output_tokens=max_output_tokens)
 
             extractor = BasicExtractor(
                 llm=llm,
-                max_chunk_size=args.chunk_size
+                max_chunk_size=adjusted_chunk_size
             )
         else:
             # Default configuration
@@ -397,45 +423,37 @@ Default model setup:
             output_format="jsonld"
         )
 
-        # DEBUG: Check result type
-        if not isinstance(result, dict):
-            print(f"ERROR: extractor.extract() returned {type(result)} instead of dict: {repr(result)}")
-            sys.exit(1)
-
         # Perform iterative refinement if requested
         if args.iterate > 1:
             if args.verbose:
                 print(f"\nStarting {args.iterate - 1} refinement iteration(s)...")
 
             for iteration in range(2, args.iterate + 1):
-                # DEBUG: Check result type before iteration
-                if not isinstance(result, dict):
-                    print(f"ERROR: result is {type(result)} before iteration {iteration}: {repr(result)}")
-                    sys.exit(1)
-
                 if args.verbose:
                     entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
                     relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
                     print(f"\n📝 Iteration {iteration}/{args.iterate}: Reviewing extraction ({len(entities)} entities, {len(relationships)} relationships)...")
 
-                prev_count = len(result.get('@graph', []))
+                prev_entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+                prev_relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
+
                 result = extractor.refine_extraction(
                     text=content,
                     previous_extraction=result,
-                    domain_focus=args.focus
+                    domain_focus=args.focus,
+                    length=extraction_length
                 )
 
-                # DEBUG: Check result type after refinement
-                if not isinstance(result, dict):
-                    print(f"ERROR: refine_extraction returned {type(result)} in iteration {iteration}: {repr(result)}")
-                    sys.exit(1)
+                new_entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+                new_relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
 
-                new_count = len(result.get('@graph', []))
-
-                if args.verbose and new_count > prev_count:
-                    print(f"   ✓ Added {new_count - prev_count} new items")
-                elif args.verbose:
-                    print(f"   ✓ No changes needed")
+                if args.verbose:
+                    entity_diff = len(new_entities) - len(prev_entities)
+                    rel_diff = len(new_relationships) - len(prev_relationships)
+                    if entity_diff > 0 or rel_diff > 0:
+                        print(f"   ✓ Refinement: +{entity_diff} entities, +{rel_diff} relationships")
+                    else:
+                        print(f"   ✓ No significant changes needed")
 
         end_time = time.time()
 
@@ -443,22 +461,12 @@ Default model setup:
             duration = end_time - start_time
             print(f"\nExtraction completed in {duration:.2f} seconds")
 
-            # DEBUG: Check result type before final processing
-            if not isinstance(result, dict):
-                print(f"ERROR: Final result is {type(result)} instead of dict: {repr(result)}")
-                sys.exit(1)
-
             # Count entities and relationships from @graph
             entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
             relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
             print(f"Final result: {len(entities)} entities and {len(relationships)} relationships")
 
         # Apply final output format conversion
-        # DEBUG: Check result type before format conversion
-        if not isinstance(result, dict):
-            print(f"ERROR: Result is {type(result)} before format conversion: {repr(result)}")
-            sys.exit(1)
-
         if args.format == 'json-ld' and args.minified:
             # Convert to minified JSON-LD
             result = extractor._format_output(result, "jsonld_minified")
@@ -466,11 +474,6 @@ Default model setup:
             # Convert to triples format
             result = extractor._format_output(result, "triples")
         # else: keep as jsonld for json, yaml, and non-minified json-ld
-
-        # DEBUG: Check result type after format conversion
-        if not isinstance(result, dict):
-            print(f"ERROR: Result is {type(result)} after format conversion: {repr(result)}")
-            sys.exit(1)
 
         # Format output
         # Determine JSON indentation (minified or pretty-printed)
