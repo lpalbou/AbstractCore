@@ -2,7 +2,7 @@
 AbstractLLM - Unified interface to all LLM providers with essential infrastructure.
 """
 
-__version__ = "2.2.2"
+__version__ = "2.2.3"
 
 from .core.factory import create_llm
 from .core.session import BasicSession
