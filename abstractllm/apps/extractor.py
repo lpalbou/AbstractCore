@@ -353,11 +353,11 @@ Default model setup:
 
         if args.provider and args.model:
             # Custom provider/model with max_tokens adjusted for chunk size
-            max_tokens = max(16000, args.chunk_size)
+            max_tokens = max(32000, args.chunk_size)
             if args.verbose:
-                print(f"Initializing BasicExtractor (mode: {extraction_mode}, {args.provider}, {args.model}, {max_tokens} token context)...")
+                print(f"Initializing BasicExtractor (mode: {extraction_mode}, {args.provider}, {args.model}, {max_tokens} token context, 8000 output tokens)...")
 
-            llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens)
+            llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens, max_output_tokens=8000)
 
             extractor = BasicExtractor(
                 llm=llm,
@@ -366,7 +366,7 @@ Default model setup:
         else:
             # Default configuration
             if args.verbose:
-                print(f"Initializing BasicExtractor (mode: {extraction_mode}, ollama, gemma3:1b-it-qat, threshold: {args.similarity_threshold})...")
+                print(f"Initializing BasicExtractor (mode: {extraction_mode}, ollama, gemma3:1b-it-qat, 32000 token context, 8000 output tokens)...")
 
             try:
                 extractor = BasicExtractor(
@@ -397,12 +397,22 @@ Default model setup:
             output_format="jsonld"
         )
 
+        # DEBUG: Check result type
+        if not isinstance(result, dict):
+            print(f"ERROR: extractor.extract() returned {type(result)} instead of dict: {repr(result)}")
+            sys.exit(1)
+
         # Perform iterative refinement if requested
         if args.iterate > 1:
             if args.verbose:
                 print(f"\nStarting {args.iterate - 1} refinement iteration(s)...")
 
             for iteration in range(2, args.iterate + 1):
+                # DEBUG: Check result type before iteration
+                if not isinstance(result, dict):
+                    print(f"ERROR: result is {type(result)} before iteration {iteration}: {repr(result)}")
+                    sys.exit(1)
+
                 if args.verbose:
                     entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
                     relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
@@ -414,6 +424,12 @@ Default model setup:
                     previous_extraction=result,
                     domain_focus=args.focus
                 )
+
+                # DEBUG: Check result type after refinement
+                if not isinstance(result, dict):
+                    print(f"ERROR: refine_extraction returned {type(result)} in iteration {iteration}: {repr(result)}")
+                    sys.exit(1)
+
                 new_count = len(result.get('@graph', []))
 
                 if args.verbose and new_count > prev_count:
@@ -426,12 +442,23 @@ Default model setup:
         if args.verbose:
             duration = end_time - start_time
             print(f"\nExtraction completed in {duration:.2f} seconds")
+
+            # DEBUG: Check result type before final processing
+            if not isinstance(result, dict):
+                print(f"ERROR: Final result is {type(result)} instead of dict: {repr(result)}")
+                sys.exit(1)
+
             # Count entities and relationships from @graph
             entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
             relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
             print(f"Final result: {len(entities)} entities and {len(relationships)} relationships")
 
         # Apply final output format conversion
+        # DEBUG: Check result type before format conversion
+        if not isinstance(result, dict):
+            print(f"ERROR: Result is {type(result)} before format conversion: {repr(result)}")
+            sys.exit(1)
+
         if args.format == 'json-ld' and args.minified:
             # Convert to minified JSON-LD
             result = extractor._format_output(result, "jsonld_minified")
@@ -439,6 +466,11 @@ Default model setup:
             # Convert to triples format
             result = extractor._format_output(result, "triples")
         # else: keep as jsonld for json, yaml, and non-minified json-ld
+
+        # DEBUG: Check result type after format conversion
+        if not isinstance(result, dict):
+            print(f"ERROR: Result is {type(result)} after format conversion: {repr(result)}")
+            sys.exit(1)
 
         # Format output
         # Determine JSON indentation (minified or pretty-printed)
