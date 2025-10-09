@@ -151,7 +151,7 @@ ollama serve
 ```bash
 # Recommended starter models (verified available)
 ollama pull qwen3-coder:30b      # 18GB - Excellent for code, works great with AbstractCore
-ollama pull gemma3:1b-it-qat     # 1.0GB - AbstractCore default, very fast
+ollama pull qwen3:4b-instruct-2507-q4_K_M     # 4GB - AbstractCore default, balanced performance
 ollama pull gemma3:1b            # 815MB - Very fast, good quality
 ollama pull cogito:3b            # 2.2GB - Good general purpose
 
@@ -180,7 +180,7 @@ print(response.content)
 | Model | Size | RAM Needed | Speed | Best For |
 |-------|------|------------|-------|----------|
 | `gemma3:270m-it-qat` | 241MB | 2GB | ⚡⚡⚡ | Ultra-fast testing |
-| `gemma3:1b-it-qat` | 1.0GB | 4GB | ⚡⚡⚡ | AbstractCore default, general tasks |
+| `qwen3:4b-instruct-2507-q4_K_M` | 4GB | 8GB | ⚡⚡ | AbstractCore default, balanced performance |
 | `gemma3:1b` | 815MB | 4GB | ⚡⚡⚡ | Fast general purpose |
 | `cogito:3b` | 2.2GB | 6GB | ⚡⚡ | Balanced quality/speed |
 | `granite3.3:2b` | 1.5GB | 6GB | ⚡⚡ | Good reasoning |

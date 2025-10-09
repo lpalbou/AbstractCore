@@ -55,14 +55,17 @@ class BasicExtractor:
         """Initialize the extractor"""
         if llm is None:
             try:
-                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=32000, max_output_tokens=8000)
+                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", max_tokens=32000, max_output_tokens=8000)
             except Exception as e:
                 error_msg = (
-                    f"❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}\n\n"
+                    f"❌ Failed to initialize default Ollama model 'qwen3:4b-instruct-2507-q4_K_M': {e}\n\n"
                     "💡 To use the default model, please:\n"
                     "   1. Install Ollama from: https://ollama.com/\n"
-                    "   2. Download the model: ollama pull gemma3:1b-it-qat\n"
+                    "   2. Download the model: ollama pull qwen3:4b-instruct-2507-q4_K_M\n"
                     "   3. Start Ollama service\n\n"
+                    "⚡ For best performance, consider these models:\n"
+                    "   - qwen3-coder:30b (excellent for structured output, requires 32GB RAM)\n"
+                    "   - gpt-oss:120b (highest quality, requires 120GB RAM)\n\n"
                     "🔧 Alternatively, provide a custom LLM instance:\n"
                     "   from abstractllm import create_llm\n"
                     "   from abstractllm.processing import BasicExtractor\n"

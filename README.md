@@ -146,7 +146,7 @@ from abstractllm.processing import BasicSummarizer
 from abstractllm.processing.basic_summarizer import SummaryStyle, SummaryLength
 
 # Use qwen3-coder:30b for better quality (if you have 20GB+ RAM)
-# Or use gemma3:1b-it-qat for fast, lightweight option
+# Or use qwen3:4b-instruct-2507-q4_K_M for balanced performance
 local_llm = create_llm("ollama", model="qwen3-coder:30b")  # Good for complex tasks
 summarizer = BasicSummarizer(local_llm)
 result = summarizer.summarize(

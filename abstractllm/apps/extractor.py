@@ -141,7 +141,7 @@ def parse_extraction_length(length_str: Optional[str]) -> str:
 def main():
     """Main CLI function"""
     parser = argparse.ArgumentParser(
-        description="AbstractLLM Entity & Relationship Extractor - Default: gemma3:1b-it-qat (requires Ollama)",
+        description="AbstractLLM Entity & Relationship Extractor - Default: qwen3:4b-instruct-2507-q4_K_M (requires Ollama)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -177,7 +177,8 @@ Quality enhancement:
 
 Default model setup:
   - Requires Ollama: https://ollama.com/
-  - Download model: ollama pull gemma3:1b-it-qat
+  - Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
+  - For best performance: qwen3-coder:30b or gpt-oss:120b
   - Or use --provider and --model for other providers
         """
     )
@@ -409,7 +410,7 @@ Default model setup:
         else:
             # Default configuration
             if args.verbose:
-                print(f"Initializing BasicExtractor (mode: {extraction_mode}, ollama, gemma3:1b-it-qat, 32000 token context, 8000 output tokens)...")
+                print(f"Initializing BasicExtractor (mode: {extraction_mode}, ollama, qwen3:4b-instruct-2507-q4_K_M, 32000 token context, 8000 output tokens)...")
 
             try:
                 extractor = BasicExtractor(
