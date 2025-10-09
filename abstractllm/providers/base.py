@@ -48,7 +48,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
         self.model_capabilities = get_model_capabilities(model)
 
         # Setup timeout configuration
-        self._timeout = kwargs.get('timeout', 180.0)  # Default 180 seconds for HTTP requests
+        self._timeout = kwargs.get('timeout', 300.0)  # Default 300 seconds (5 minutes) for HTTP requests
         self._tool_timeout = kwargs.get('tool_timeout', 300.0)  # Default 300 seconds for tool execution
 
         # Setup tool execution mode

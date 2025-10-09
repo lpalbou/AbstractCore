@@ -389,8 +389,8 @@ Configure timeouts for HTTP requests, tools, and circuit breaker recovery:
 llm = create_llm(
     "openai",
     model="gpt-4o-mini",
-    timeout=180,            # HTTP request timeout (default: 180s)
-    tool_timeout=300,       # Tool execution timeout (default: 300s)
+    timeout=300,            # HTTP request timeout (default: 300s, 5 minutes)
+    tool_timeout=300,       # Tool execution timeout (default: 300s, 5 minutes)
 )
 
 # Runtime timeout adjustments

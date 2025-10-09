@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.2.1] - 2025-10-09
+
+### Enhanced
+- **Timeout Configuration**: Unified timeout management across all components
+  - Updated default HTTP timeout from 180s to 300s (5 minutes) for better reliability with large models
+  - All providers now consistently inherit timeout from base configuration
+  - Server endpoints updated to use unified 5-minute default
+  - Improved handling of large language models (36B+ parameters) that require longer processing time
+
+- **Extractor CLI Improvements**: Enhanced command-line interface for knowledge graph extraction
+  - Added `--timeout` parameter with proper validation (30s minimum, 2 hours maximum)
+  - Users can now configure timeout for large documents and models: `--timeout 3600` for 60 minutes
+  - Improved error messages for timeout validation
+  - Better support for processing large documents with resource-intensive models
+
+### Fixed
+- **BasicExtractor JSON-LD Consistency**: Resolved structural inconsistencies in knowledge graph output
+  - Fixed JSON-LD reference normalization where some providers generated string references instead of proper object format
+  - Corrected refinement prompt to match initial extraction format exactly (`@type: "s:Relationship"` vs `@type: "r:provides"`)
+  - Added missing `s:name` and `strength` fields in relationship refinement
+  - All providers now generate consistent, properly structured JSON-LD output
+
+- **Cross-Provider Compatibility**: Improved extraction reliability across different LLM providers
+  - LMStudio models now generate proper JSON-LD object references through automatic normalization
+  - Reduced warning noise by converting normalization messages to debug level
+  - Enhanced iterative refinement to follow exact same structure rules as initial extraction
+
+### Technical
+- **Centralized Timeout Management**: All timeout configuration now emanates from `base.py`
+  - Providers inherit timeout via `self._timeout` from BaseProvider class
+  - Factory system properly propagates timeout parameters through `**kwargs`
+  - No hardcoded timeout values remain in provider implementations
+  - Consistent 300-second default across HTTP clients, tool execution, and embeddings
+
 ## [2.2.0] - 2025-10-01
 
 ### Added
