@@ -223,7 +223,8 @@ class BasicJudge:
         custom_criteria: Optional[List[str]] = None,
         reference: Optional[str] = None,
         include_criteria: bool = False,
-        max_file_size: int = 1000000  # 1MB default limit per file
+        max_file_size: int = 1000000,  # 1MB default limit per file
+        exclude_global: bool = False  # Include global assessment by default
     ) -> Union[dict, List[dict]]:
         """
         Evaluate content from one or multiple files sequentially to avoid context overflow
@@ -236,10 +237,12 @@ class BasicJudge:
             reference: Optional reference/expected output for comparison
             include_criteria: Include detailed explanation of evaluation criteria in assessment
             max_file_size: Maximum file size in bytes (default 1MB to avoid context overflow)
+            exclude_global: If True, skip global assessment for multiple files (default False)
 
         Returns:
             dict: Single assessment if one file provided
-            List[dict]: List of assessments if multiple files provided
+            dict: {"global": global_assessment, "files": [assessments]} if multiple files and exclude_global=False
+            List[dict]: List of assessments if multiple files and exclude_global=True
 
         Raises:
             FileNotFoundError: If any file doesn't exist
@@ -340,11 +343,138 @@ class BasicJudge:
 
         logger.info(f"Completed evaluation of {len(file_paths)} file(s)")
 
-        # Return single assessment if only one file, otherwise return list
+        # Return single assessment if only one file
         if len(assessments) == 1:
             return assessments[0]
-        else:
+
+        # Multiple files: handle global assessment
+        if exclude_global:
+            # Return list of assessments (original behavior)
             return assessments
+        else:
+            # Generate global assessment and return structured result
+            logger.info("Generating global assessment from individual file evaluations...")
+            global_assessment = self._generate_global_assessment(
+                assessments, context, criteria, custom_criteria, include_criteria
+            )
+
+            return {
+                "global": global_assessment,
+                "files": assessments
+            }
+
+    def _generate_global_assessment(
+        self,
+        individual_assessments: List[dict],
+        context: str,
+        criteria: Optional[JudgmentCriteria],
+        custom_criteria: Optional[List[str]],
+        include_criteria: bool
+    ) -> dict:
+        """
+        Generate a global assessment from multiple individual file assessments
+
+        Args:
+            individual_assessments: List of individual file assessment dictionaries
+            context: The evaluation context
+            criteria: JudgmentCriteria used for individual evaluations
+            custom_criteria: Custom criteria used for individual evaluations
+            include_criteria: Whether to include detailed criteria explanations
+
+        Returns:
+            dict: Global assessment summarizing all individual assessments
+        """
+
+        # Build summary content from individual assessments
+        file_summaries = []
+        total_files = len(individual_assessments)
+
+        # Calculate aggregate statistics
+        overall_scores = [a.get('overall_score', 0) for a in individual_assessments]
+        avg_score = sum(overall_scores) / len(overall_scores) if overall_scores else 0
+
+        score_distribution = {
+            5: sum(1 for s in overall_scores if s >= 4.5),
+            4: sum(1 for s in overall_scores if 3.5 <= s < 4.5),
+            3: sum(1 for s in overall_scores if 2.5 <= s < 3.5),
+            2: sum(1 for s in overall_scores if 1.5 <= s < 2.5),
+            1: sum(1 for s in overall_scores if s < 1.5)
+        }
+
+        # Collect all strengths and weaknesses
+        all_strengths = []
+        all_weaknesses = []
+        all_feedback = []
+
+        for i, assessment in enumerate(individual_assessments):
+            file_ref = assessment.get('source_reference', f'File {i+1}')
+            score = assessment.get('overall_score', 0)
+
+            # Keep file summaries very concise to avoid context overflow
+            file_name = file_ref.split(":")[-1].strip() if ":" in file_ref else f"File {i+1}"
+            file_summaries.append(f"{file_name}: {score}/5")
+
+            # Collect feedback for pattern analysis
+            strengths = assessment.get('strengths', [])
+            weaknesses = assessment.get('weaknesses', [])
+            feedback = assessment.get('actionable_feedback', [])
+
+            all_strengths.extend(strengths)
+            all_weaknesses.extend(weaknesses)
+            all_feedback.extend(feedback)
+
+        # Extract most common patterns (limit to avoid context overflow)
+        common_strengths = list(set(all_strengths))[:3]  # Top 3 unique strengths
+        common_weaknesses = list(set(all_weaknesses))[:3]  # Top 3 unique weaknesses
+        key_recommendations = list(set(all_feedback))[:3]  # Top 3 unique recommendations
+
+        # Create concise content for global evaluation
+        global_content = f"""GLOBAL ASSESSMENT REQUEST: Evaluate {total_files} files in "{context}" context.
+
+FILE SCORES: {', '.join(file_summaries)}
+AVERAGE: {avg_score:.1f}/5 (Excellent:{score_distribution[5]}, Good:{score_distribution[4]}, Adequate:{score_distribution[3]}, Poor:{score_distribution[2]}, Very Poor:{score_distribution[1]})
+
+KEY PATTERNS:
+Strengths: {'; '.join(common_strengths) if common_strengths else 'Various individual strengths'}
+Weaknesses: {'; '.join(common_weaknesses) if common_weaknesses else 'Various individual weaknesses'}
+Recommendations: {'; '.join(key_recommendations) if key_recommendations else 'See individual assessments'}
+
+Provide a comprehensive global assessment of overall quality and recommendations."""
+
+        # Generate global assessment using the judge
+        try:
+            global_assessment = self.evaluate(
+                content=global_content,
+                context=f"global assessment summary for {total_files} files ({context})",
+                criteria=criteria,
+                custom_criteria=custom_criteria,
+                include_criteria=include_criteria
+            )
+
+            # Update the source reference to indicate this is a global assessment
+            global_assessment['source_reference'] = f"Global assessment of {total_files} files (context: {context})"
+
+            # Enhance the judge summary to indicate this is a global assessment
+            original_summary = global_assessment.get('judge_summary', '')
+            global_assessment['judge_summary'] = f"I conducted a global assessment synthesizing evaluations of {total_files} files. {original_summary}"
+
+            return global_assessment
+
+        except Exception as e:
+            logger.error(f"Global assessment generation failed: {e}")
+            # Return fallback global assessment
+            return {
+                "overall_score": int(round(avg_score)),
+                "judge_summary": f"I was asked to provide a global assessment of {total_files} files in the context of '{context}', but encountered a technical error. Based on individual scores, the average quality appears to be {avg_score:.1f}/5.",
+                "source_reference": f"Global assessment of {total_files} files (context: {context})",
+                "reasoning": f"Global assessment failed due to technical error: {str(e)}. Fallback assessment based on {total_files} individual file scores with average {avg_score:.1f}/5.",
+                "evaluation_context": f"global assessment summary for {total_files} files ({context})",
+                "criteria_used": [],
+                "strengths": list(set(all_strengths))[:5] if all_strengths else [],
+                "weaknesses": list(set(all_weaknesses))[:5] if all_weaknesses else [],
+                "actionable_feedback": ["Review individual file assessments for detailed recommendations", "Address common patterns identified across files"],
+                "evaluation_criteria_details": None
+            }
 
     def _build_evaluation_prompt(
         self,
