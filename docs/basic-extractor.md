@@ -7,7 +7,7 @@ BasicExtractor is a production-ready tool for extracting structured knowledge gr
 ```python
 from abstractllm.processing import BasicExtractor
 
-# Initialize with default model (Ollama gemma3:1b-it-qat)
+# Initialize with default model (Ollama qwen3:4b-instruct-2507-q4_K_M)
 extractor = BasicExtractor()
 
 # Extract knowledge graph
@@ -26,12 +26,26 @@ pip install abstractcore[all]
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
-# 2. Download model: ollama pull gemma3:1b-it-qat
+# 2. Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
 # 3. Start Ollama service
 
 # Alternative: Use cloud providers
 pip install abstractcore[openai,anthropic]
 ```
+
+### Model Performance Recommendations
+
+**Default Model**: `qwen3:4b-instruct-2507-q4_K_M`
+- **Size**: ~4GB model
+- **RAM**: ~8GB required
+- **Speed**: Good balance of speed and quality
+- **Setup**: `ollama pull qwen3:4b-instruct-2507-q4_K_M`
+
+**For Best Performance**:
+- **`qwen3-coder:30b`**: Excellent for structured JSON-LD output (requires 32GB RAM)
+- **`gpt-oss:120b`**: Highest quality extraction (requires 120GB RAM)
+
+**For Production**: Cloud providers (OpenAI GPT-4o-mini, Claude) offer the most reliable JSON-LD generation.
 
 ## Output Formats
 
@@ -357,8 +371,8 @@ extractor = BasicExtractor(llm)
 llm = create_llm("ollama", model="qwen3-coder:30b")  # 18GB, free
 # Use simple JSON prompts instead of complex JSON-LD
 
-# Lightweight option
-llm = create_llm("ollama", model="gemma3:1b-it-qat")  # 1GB, very fast
+# Default option
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")  # 4GB, balanced
 ```
 
 **Reality Check:**
@@ -491,7 +505,7 @@ This significantly improves extraction reliability, especially with local models
 ```bash
 # Install Ollama and download model
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull gemma3:1b-it-qat
+ollama pull qwen3:4b-instruct-2507-q4_K_M
 ollama serve
 ```
 
@@ -581,8 +595,9 @@ def process_documents(file_paths):
 
 | Model | Text Length | Extraction Time | Quality |
 |-------|-------------|-----------------|---------|
-| `gemma3:1b-it-qat` | 1000 chars | 2-5 seconds | Good |
-| `qwen3-coder:7b` | 1000 chars | 5-10 seconds | Better |
+| `qwen3:4b-instruct-2507-q4_K_M` | 1000 chars | 3-7 seconds | Good |
+| `qwen3-coder:30b` | 1000 chars | 8-15 seconds | Excellent |
+| `gpt-oss:120b` | 1000 chars | 10-20 seconds | Best |
 | `gpt-4o-mini` | 1000 chars | 3-8 seconds | Best |
 | `claude-3-5-haiku` | 1000 chars | 2-6 seconds | Best |
 
