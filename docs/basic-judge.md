@@ -150,10 +150,13 @@ class BasicJudge:
 - **`reference`** (str, optional): Reference content for comparison-based evaluation
 - **`include_criteria`** (bool, optional): Include detailed explanation of evaluation criteria in assessment (default: False)
 - **`max_file_size`** (int, optional): Maximum file size in bytes to prevent context overflow (default: 1MB)
+- **`exclude_global`** (bool, optional): Skip global assessment for multiple files (default: False)
 
 **Returns:**
 - `evaluate()`: Single assessment dictionary
-- `evaluate_files()`: Single dict if one file, List[dict] if multiple files
+- `evaluate_files()`: Single dict if one file
+- `evaluate_files()`: `{"global": global_assessment, "files": [individual_assessments]}` if multiple files (default)
+- `evaluate_files()`: `[individual_assessments]` if multiple files and `exclude_global=True`
 
 ### JudgmentCriteria Configuration
 
@@ -223,6 +226,56 @@ except ValueError as e:
     print(f"File too large: {e}")
 ```
 
+### Global Assessment for Multiple Files
+
+When evaluating multiple files, BasicJudge automatically generates a global assessment that synthesizes all individual evaluations:
+
+```python
+from abstractllm.processing import BasicJudge
+
+judge = BasicJudge()
+
+# Evaluate multiple files - returns global + individual assessments
+result = judge.evaluate_files(
+    ["src/main.py", "src/utils.py", "tests/test_main.py"],
+    context="Python code review"
+)
+
+# Access global assessment (appears first)
+global_assessment = result['global']
+print(f"Global Score: {global_assessment['overall_score']}/5")
+print(f"Global Summary: {global_assessment['judge_summary']}")
+
+# Access individual file assessments
+individual_assessments = result['files']
+for assessment in individual_assessments:
+    print(f"File: {assessment['source_reference']}")
+    print(f"Score: {assessment['overall_score']}/5")
+
+# Optional: Get original format (list of assessments only)
+results = judge.evaluate_files(
+    ["file1.py", "file2.py"],
+    exclude_global=True  # Skip global assessment
+)
+# Returns: [assessment1, assessment2] (original behavior)
+```
+
+**Global Assessment Features:**
+- **Synthesis**: Combines patterns across all individual file evaluations
+- **Score Distribution**: Shows how many files scored at each level (1-5)
+- **Pattern Analysis**: Identifies common strengths and weaknesses
+- **Aggregate Scoring**: Provides overall quality assessment
+- **Appears First**: Global assessment is shown before individual file results
+
+**CLI Global Assessment:**
+```bash
+# Default: Includes global assessment
+judge file1.py file2.py file3.py --context="code review"
+
+# Skip global assessment (original behavior)
+judge file1.py file2.py file3.py --context="code review" --exclude-global
+```
+
 ## Command Line Interface
 
 The `judge` CLI provides comprehensive evaluation capabilities for files and direct text input.
@@ -284,6 +337,7 @@ judge large_doc.md --verbose
 | `--custom-criteria` | Comma-separated custom criteria | Free text |
 | `--reference` | Reference content for comparison | File path or text |
 | `--include-criteria` | Include detailed criteria explanations in assessment | Flag |
+| `--exclude-global` | Skip global assessment for multiple files | Flag (default: False, global assessment included) |
 | `--format` | Output format | `json` (default), `plain`, `yaml` |
 | `--output` | Output file path | Console if not provided |
 | `--provider` | LLM provider | `ollama`, `openai`, `anthropic`, etc. |

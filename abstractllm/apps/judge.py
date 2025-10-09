@@ -353,6 +353,12 @@ Default model setup:
     )
 
     parser.add_argument(
+        '--exclude-global',
+        action='store_true',
+        help='Skip global assessment for multiple files (default: False, global assessment included)'
+    )
+
+    parser.add_argument(
         '--timeout',
         type=float,
         default=300.0,
@@ -463,7 +469,8 @@ Default model setup:
                     criteria=judgment_criteria,
                     custom_criteria=custom_criteria,
                     reference=reference,
-                    include_criteria=args.include_criteria
+                    include_criteria=args.include_criteria,
+                    exclude_global=args.exclude_global
                 )
             else:
                 # It's text content - use evaluate
@@ -483,7 +490,8 @@ Default model setup:
                 criteria=judgment_criteria,
                 custom_criteria=custom_criteria,
                 reference=reference,
-                include_criteria=args.include_criteria
+                include_criteria=args.include_criteria,
+                exclude_global=args.exclude_global
             )
 
         end_time = time.time()
@@ -491,13 +499,26 @@ Default model setup:
         if args.verbose:
             duration = end_time - start_time
             if isinstance(assessment, list):
+                # Original format: list of assessments (exclude_global=True)
                 print(f"\nEvaluation completed in {duration:.2f} seconds")
                 print(f"Evaluated {len(assessment)} files:")
                 for i, result in enumerate(assessment):
                     overall_score = result.get('overall_score', 0)
                     source = result.get('source_reference', f'File {i+1}')
                     print(f"  {source}: {overall_score}/5")
+            elif isinstance(assessment, dict) and 'global' in assessment and 'files' in assessment:
+                # New format: global + files (exclude_global=False)
+                print(f"\nEvaluation completed in {duration:.2f} seconds")
+                global_score = assessment['global'].get('overall_score', 0)
+                file_count = len(assessment['files'])
+                print(f"Global assessment: {global_score}/5")
+                print(f"Individual files ({file_count}):")
+                for result in assessment['files']:
+                    overall_score = result.get('overall_score', 0)
+                    source = result.get('source_reference', f'File')
+                    print(f"  {source}: {overall_score}/5")
             else:
+                # Single assessment
                 overall_score = assessment.get('overall_score', 0)
                 print(f"\nEvaluation completed in {duration:.2f} seconds")
                 print(f"Overall assessment: {overall_score}/5")
@@ -507,12 +528,30 @@ Default model setup:
             formatted_output = json.dumps(assessment, indent=2, ensure_ascii=False)
         elif args.format == 'plain':
             if isinstance(assessment, list):
-                # Multiple assessments - format each separately
+                # Original format: list of assessments (exclude_global=True)
                 output_parts = []
                 for i, single_assessment in enumerate(assessment):
                     if i > 0:
                         output_parts.append("\n" + "=" * 80 + "\n")
                     output_parts.append(format_assessment_plain(single_assessment))
+                formatted_output = "\n".join(output_parts)
+            elif isinstance(assessment, dict) and 'global' in assessment and 'files' in assessment:
+                # New format: global + files (exclude_global=False) - Global assessment first
+                output_parts = []
+
+                # Add global assessment first
+                output_parts.append("🌍 GLOBAL ASSESSMENT")
+                output_parts.append("=" * 80)
+                output_parts.append(format_assessment_plain(assessment['global']))
+
+                # Add individual file assessments
+                output_parts.append("\n" + "📁 INDIVIDUAL FILE ASSESSMENTS")
+                output_parts.append("=" * 80)
+                for i, single_assessment in enumerate(assessment['files']):
+                    if i > 0:
+                        output_parts.append("\n" + "-" * 40 + "\n")
+                    output_parts.append(format_assessment_plain(single_assessment))
+
                 formatted_output = "\n".join(output_parts)
             else:
                 # Single assessment
