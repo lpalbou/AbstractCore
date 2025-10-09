@@ -62,6 +62,8 @@ summarizer = "abstractllm.apps.summarizer:main"
 abstractllm-summarizer = "abstractllm.apps.summarizer:main"
 extractor = "abstractllm.apps.extractor:main"
 abstractllm-extractor = "abstractllm.apps.extractor:main"
+judge = "abstractllm.apps.judge:main"
+abstractllm-judge = "abstractllm.apps.judge:main"
 
 [project.optional-dependencies]
 # Individual providers

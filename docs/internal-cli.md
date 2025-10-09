@@ -58,6 +58,52 @@ Compacts your chat history using the fast local `gemma3:1b` model to create a su
 
 Extracts facts from your conversation history as simple triples (subject-predicate-object). Display them in chat or save as structured JSON-LD.
 
+### `/judge` - Evaluate Conversation Quality
+
+**NEW**: Evaluates the quality and interest of the current discussion using LLM-as-a-judge. This is a demonstrator showing objective assessment capabilities with constructive feedback.
+
+```bash
+# In the CLI
+/judge
+
+# Output example:
+⚖️  Evaluating conversation quality...
+   Analyzing 450 characters of conversation...
+✅ Evaluation completed in 35.2s
+
+📊 Overall Discussion Quality: 4/5
+
+📈 Quality Dimensions:
+   Clarity      : 5/5
+   Coherence    : 4/5
+   Actionability: 3/5
+   Relevance    : 5/5
+   Completeness : 4/5
+   Soundness    : 4/5
+   Simplicity   : 5/5
+
+✅ Conversation Strengths:
+   • The discussion maintains clear focus and addresses questions directly
+   • Explanations are well-structured and easy to follow
+   • Technical concepts are explained in accessible language
+
+💡 Suggestions for Better Discussions:
+   • Include more specific examples to illustrate key points
+   • Add actionable next steps or recommendations where appropriate
+   • Consider exploring alternative approaches or edge cases
+
+🤔 Assessment Summary:
+   The conversation demonstrates strong clarity and relevance with well-structured exchanges.
+
+📌 Note: This is a demonstrator showing LLM-as-a-judge capabilities for objective assessment.
+```
+
+**When to use:**
+- Get objective feedback on discussion quality
+- Understand strengths and areas for improvement in conversations
+- Demonstrate LLM-as-a-judge evaluation capabilities
+- Practice critical assessment and constructive feedback
+
 ```bash
 # In the CLI
 /facts

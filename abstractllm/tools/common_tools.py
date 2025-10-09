@@ -8,14 +8,10 @@ Migrated from legacy system with enhanced decorator support.
 """
 
 import os
-import json
 import subprocess
 import requests
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
-import glob
-import shutil
-from urllib.parse import urljoin, urlparse
+from typing import Optional
 import logging
 import platform
 import re
@@ -975,58 +971,42 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
 
 
 @tool(
-    description="Advanced file editing with line-based operations, multi-operation support, and atomic transactions",
-    tags=["file", "edit", "modify", "lines", "insert", "delete", "replace", "patch"],
-    when_to_use="When you need to perform precise file modifications like inserting/deleting lines, replacing specific content, or making multiple coordinated edits",
+    description="Edit files using pattern matching and replacement - simple, powerful, and intuitive",
+    tags=["file", "edit", "modify", "pattern", "replace", "regex"],
+    when_to_use="When you need to edit files by finding patterns (text, functions, code blocks) and replacing them",
     examples=[
         {
-            "description": "Insert lines at specific position",
+            "description": "Replace simple text",
             "arguments": {
                 "file_path": "config.py",
-                "operation": "insert",
-                "line_number": 10,
-                "content": "# New configuration option\nDEBUG = True"
+                "pattern": "debug = False",
+                "replacement": "debug = True"
             }
         },
         {
-            "description": "Delete specific lines",
-            "arguments": {
-                "file_path": "old_code.py",
-                "operation": "delete",
-                "start_line": 5,
-                "end_line": 8
-            }
-        },
-        {
-            "description": "Replace lines with new content",
+            "description": "Update function definition using regex",
             "arguments": {
                 "file_path": "script.py",
-                "operation": "replace",
-                "start_line": 15,
-                "end_line": 17,
-                "content": "def improved_function():\n    return 'better implementation'"
+                "pattern": r"def old_function\([^)]*\):",
+                "replacement": "def new_function(param1, param2):",
+                "use_regex": True
             }
         },
         {
-            "description": "Multiple operations in sequence",
+            "description": "Replace with occurrence limit",
             "arguments": {
-                "file_path": "refactor.py",
-                "operation": "multi",
-                "operations": [
-                    {"type": "replace", "start_line": 1, "end_line": 1, "content": "#!/usr/bin/env python3"},
-                    {"type": "insert", "line_number": 10, "content": "import logging"},
-                    {"type": "delete", "start_line": 20, "end_line": 22}
-                ]
+                "file_path": "document.txt",
+                "pattern": "TODO",
+                "replacement": "DONE",
+                "max_replacements": 1
             }
         },
         {
-            "description": "Preview changes without applying",
+            "description": "Preview changes before applying",
             "arguments": {
                 "file_path": "test.py",
-                "operation": "replace",
-                "start_line": 5,
-                "end_line": 7,
-                "content": "new code here",
+                "pattern": "class OldClass",
+                "replacement": "class NewClass",
                 "preview_only": True
             }
         }
@@ -1034,300 +1014,207 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
 )
 def edit_file(
     file_path: str,
-    operation: str,
-    content: str = "",
-    line_number: Optional[int] = None,
+    pattern: str,
+    replacement: str,
+    use_regex: bool = False,
+    max_replacements: int = -1,
     start_line: Optional[int] = None,
     end_line: Optional[int] = None,
-    operations: Optional[List[Dict[str, Any]]] = None,
-    create_backup: bool = True,
     preview_only: bool = False,
     encoding: str = "utf-8"
 ) -> str:
     """
-    Advanced file editing with multiple operation modes and safety features.
-    
-    This tool provides sophisticated file editing capabilities with atomic operations,
-    backup creation, and preview functionality. It supports line-based operations
-    for precise modifications without rewriting entire files.
-    
+    Edit files using pattern matching and replacement.
+
+    Finds patterns (text or regex) in files and replaces them with new content.
+
     Args:
         file_path: Path to the file to edit
-        operation: Type of operation - "insert", "delete", "replace", "multi", "transform"
-        content: Content to insert or replace (for insert/replace operations)
-        line_number: Specific line number for insert operations (1-indexed)
-        start_line: Starting line number for range operations (1-indexed, inclusive)
-        end_line: Ending line number for range operations (1-indexed, inclusive)
-        operations: List of operations for "multi" mode
-        create_backup: Whether to create a backup before editing (default: True)
+        pattern: Text or regex pattern to find
+        replacement: Text to replace matches with
+        use_regex: Whether to treat pattern as regex (default: False)
+        max_replacements: Maximum number of replacements (-1 for unlimited, default: -1)
+        start_line: Starting line number to limit search scope (1-indexed, optional)
+        end_line: Ending line number to limit search scope (1-indexed, optional)
         preview_only: Show what would be changed without applying (default: False)
         encoding: File encoding (default: "utf-8")
-        
+
     Returns:
-        Detailed results of the editing operation with change summary
-        
-    Operation Types:
-        - "insert": Insert content at a specific line number
-        - "delete": Delete line(s) from start_line to end_line
-        - "replace": Replace line(s) from start_line to end_line with new content
-        - "multi": Perform multiple operations in sequence
-        - "transform": Apply a function to each line (advanced)
-        
-    Multi-operation format:
-        operations = [
-            {"type": "insert", "line_number": 5, "content": "new line"},
-            {"type": "delete", "start_line": 10, "end_line": 12},
-            {"type": "replace", "start_line": 20, "end_line": 20, "content": "replacement"}
-        ]
+        Success message with replacement details or error message
+
+    Examples:
+        edit_file("config.py", "debug = False", "debug = True")
+        edit_file("script.py", r"def old_func\([^)]*\):", "def new_func():", use_regex=True)
+        edit_file("document.txt", "TODO", "DONE", max_replacements=1)
+        edit_file("test.py", "class OldClass", "class NewClass", preview_only=True)
     """
     try:
         # Validate file exists
         path = Path(file_path)
         if not path.exists():
             return f"❌ File not found: {file_path}"
-        
+
         if not path.is_file():
             return f"❌ Path is not a file: {file_path}"
-        
+
         # Read current content
         try:
             with open(path, 'r', encoding=encoding) as f:
-                lines = f.readlines()
+                content = f.read()
         except UnicodeDecodeError:
             return f"❌ Cannot decode file with encoding '{encoding}'. File may be binary."
         except Exception as e:
             return f"❌ Error reading file: {str(e)}"
-        
-        original_line_count = len(lines)
-        
-        # Create backup if requested
-        backup_path = None
-        if create_backup and not preview_only:
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            backup_path = f"{file_path}.backup_{timestamp}"
+
+        original_content = content
+
+        # Handle line range targeting if specified
+        search_content = content
+        line_offset = 0
+        if start_line is not None or end_line is not None:
+            lines = content.splitlines(keepends=True)
+            total_lines = len(lines)
+
+            # Validate line range parameters
+            if start_line is not None and (start_line < 1 or start_line > total_lines):
+                return f"❌ Invalid start_line {start_line}. Must be between 1 and {total_lines}"
+
+            if end_line is not None and (end_line < 1 or end_line > total_lines):
+                return f"❌ Invalid end_line {end_line}. Must be between 1 and {total_lines}"
+
+            if start_line is not None and end_line is not None and start_line > end_line:
+                return f"❌ Invalid line range: start_line ({start_line}) cannot be greater than end_line ({end_line})"
+
+            # Calculate actual line range (convert to 0-indexed)
+            start_idx = (start_line - 1) if start_line is not None else 0
+            end_idx = end_line if end_line is not None else total_lines
+
+            # Extract target lines for search
+            target_lines = lines[start_idx:end_idx]
+            search_content = ''.join(target_lines)
+            line_offset = start_idx  # Track where our search content starts in the original file
+
+
+        # Perform pattern matching and replacement on targeted content
+        if use_regex:
             try:
-                shutil.copy2(file_path, backup_path)
-            except Exception as e:
-                return f"❌ Failed to create backup: {str(e)}"
-        
-        # Process operations
-        modified_lines = lines.copy()
-        changes_made = []
-        
-        if operation == "insert":
-            if line_number is None:
-                return "❌ line_number required for insert operation"
-            
-            # Validate line number
-            if line_number < 1 or line_number > len(modified_lines) + 1:
-                return f"❌ Invalid line_number: {line_number}. File has {len(modified_lines)} lines."
-            
-            # Prepare content with proper line endings
-            insert_content = content.rstrip('\n') + '\n' if content and not content.endswith('\n') else content
-            insert_lines = insert_content.splitlines(keepends=True) if insert_content else ['']
-            
-            # Insert at specified position (convert to 0-indexed)
-            insert_idx = line_number - 1
-            modified_lines[insert_idx:insert_idx] = insert_lines
-            
-            changes_made.append(f"Inserted {len(insert_lines)} line(s) at line {line_number}")
-            
-        elif operation == "delete":
-            if start_line is None:
-                return "❌ start_line required for delete operation"
-            
-            end_line = end_line or start_line  # Default to single line
-            
-            # Validate line range
-            if start_line < 1 or start_line > len(modified_lines):
-                return f"❌ Invalid start_line: {start_line}. File has {len(modified_lines)} lines."
-            if end_line < start_line or end_line > len(modified_lines):
-                return f"❌ Invalid end_line: {end_line}. Must be >= start_line and <= {len(modified_lines)}."
-            
-            # Delete lines (convert to 0-indexed)
-            start_idx = start_line - 1
-            end_idx = end_line
-            deleted_count = end_idx - start_idx
-            
-            del modified_lines[start_idx:end_idx]
-            
-            if deleted_count == 1:
-                changes_made.append(f"Deleted line {start_line}")
+                regex_pattern = re.compile(pattern, re.MULTILINE | re.DOTALL)
+            except re.error as e:
+                return f"❌ Invalid regex pattern '{pattern}': {str(e)}"
+
+            # Count matches first
+            matches = list(regex_pattern.finditer(search_content))
+            if not matches:
+                range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
+                return f"No matches found for regex pattern '{pattern}' in '{file_path}'{range_info}"
+
+            # Apply replacements to search content
+            if max_replacements == -1:
+                updated_search_content = regex_pattern.sub(replacement, search_content)
+                replacements_made = len(matches)
             else:
-                changes_made.append(f"Deleted lines {start_line}-{end_line} ({deleted_count} lines)")
-                
-        elif operation == "replace":
-            if start_line is None:
-                return "❌ start_line required for replace operation"
-            
-            end_line = end_line or start_line  # Default to single line
-            
-            # Validate line range
-            if start_line < 1 or start_line > len(modified_lines):
-                return f"❌ Invalid start_line: {start_line}. File has {len(modified_lines)} lines."
-            if end_line < start_line or end_line > len(modified_lines):
-                return f"❌ Invalid end_line: {end_line}. Must be >= start_line and <= {len(modified_lines)}."
-            
-            # Prepare replacement content
-            replace_content = content.rstrip('\n') + '\n' if content and not content.endswith('\n') else content
-            replace_lines = replace_content.splitlines(keepends=True) if replace_content else ['']
-            
-            # Replace lines (convert to 0-indexed)
-            start_idx = start_line - 1
-            end_idx = end_line
-            replaced_count = end_idx - start_idx
-            
-            modified_lines[start_idx:end_idx] = replace_lines
-            
-            if replaced_count == 1:
-                changes_made.append(f"Replaced line {start_line} with {len(replace_lines)} line(s)")
-            else:
-                changes_made.append(f"Replaced lines {start_line}-{end_line} ({replaced_count} lines) with {len(replace_lines)} line(s)")
-                
-        elif operation == "multi":
-            if not operations:
-                return "❌ operations list required for multi operation"
-            
-            # Sort operations by line number (descending) to avoid index shifting issues
-            sorted_ops = []
-            for i, op in enumerate(operations):
-                op_type = op.get("type")
-                if op_type in ["insert"]:
-                    sort_key = op.get("line_number", 0)
-                elif op_type in ["delete", "replace"]:
-                    sort_key = op.get("start_line", 0)
-                else:
-                    return f"❌ Invalid operation type in operation {i}: {op_type}"
-                sorted_ops.append((sort_key, op))
-            
-            # Sort in descending order to process from bottom to top
-            sorted_ops.sort(key=lambda x: x[0], reverse=True)
-            
-            for line_num, op in sorted_ops:
-                op_type = op.get("type")
-                
-                if op_type == "insert":
-                    line_num = op.get("line_number")
-                    op_content = op.get("content", "")
-                    
-                    if line_num < 1 or line_num > len(modified_lines) + 1:
-                        return f"❌ Invalid line_number in insert operation: {line_num}"
-                    
-                    insert_content = op_content.rstrip('\n') + '\n' if op_content and not op_content.endswith('\n') else op_content
-                    insert_lines = insert_content.splitlines(keepends=True) if insert_content else ['']
-                    
-                    insert_idx = line_num - 1
-                    modified_lines[insert_idx:insert_idx] = insert_lines
-                    changes_made.append(f"Inserted {len(insert_lines)} line(s) at line {line_num}")
-                    
-                elif op_type == "delete":
-                    start = op.get("start_line")
-                    end = op.get("end_line", start)
-                    
-                    if start < 1 or start > len(modified_lines) or end < start or end > len(modified_lines):
-                        return f"❌ Invalid line range in delete operation: {start}-{end}"
-                    
-                    start_idx = start - 1
-                    end_idx = end
-                    deleted_count = end_idx - start_idx
-                    
-                    del modified_lines[start_idx:end_idx]
-                    
-                    if deleted_count == 1:
-                        changes_made.append(f"Deleted line {start}")
-                    else:
-                        changes_made.append(f"Deleted lines {start}-{end} ({deleted_count} lines)")
-                        
-                elif op_type == "replace":
-                    start = op.get("start_line")
-                    end = op.get("end_line", start)
-                    op_content = op.get("content", "")
-                    
-                    if start < 1 or start > len(modified_lines) or end < start or end > len(modified_lines):
-                        return f"❌ Invalid line range in replace operation: {start}-{end}"
-                    
-                    replace_content = op_content.rstrip('\n') + '\n' if op_content and not op_content.endswith('\n') else op_content
-                    replace_lines = replace_content.splitlines(keepends=True) if replace_content else ['']
-                    
-                    start_idx = start - 1
-                    end_idx = end
-                    replaced_count = end_idx - start_idx
-                    
-                    modified_lines[start_idx:end_idx] = replace_lines
-                    
-                    if replaced_count == 1:
-                        changes_made.append(f"Replaced line {start} with {len(replace_lines)} line(s)")
-                    else:
-                        changes_made.append(f"Replaced lines {start}-{end} ({replaced_count} lines) with {len(replace_lines)} line(s)")
-        
+                updated_search_content = regex_pattern.sub(replacement, search_content, count=max_replacements)
+                replacements_made = min(len(matches), max_replacements)
         else:
-            return f"❌ Unknown operation: {operation}. Available: insert, delete, replace, multi"
-        
-        # Generate results
-        final_line_count = len(modified_lines)
-        line_diff = final_line_count - original_line_count
-        
-        results = []
-        
+            # Simple text replacement on search content
+            count = search_content.count(pattern)
+            if count == 0:
+                range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
+                return f"No occurrences of '{pattern}' found in '{file_path}'{range_info}"
+
+            if max_replacements == -1:
+                updated_search_content = search_content.replace(pattern, replacement)
+                replacements_made = count
+            else:
+                updated_search_content = search_content.replace(pattern, replacement, max_replacements)
+                replacements_made = min(count, max_replacements)
+
+        # Reconstruct the full file content if line ranges were used
+        if start_line is not None or end_line is not None:
+            lines = content.splitlines(keepends=True)
+            start_idx = (start_line - 1) if start_line is not None else 0
+            end_idx = end_line if end_line is not None else len(lines)
+
+            # Rebuild the file with the updated targeted section
+            updated_content = ''.join(lines[:start_idx]) + updated_search_content + ''.join(lines[end_idx:])
+        else:
+            updated_content = updated_search_content
+
+        # Preview mode - show changes without applying
         if preview_only:
+            results = []
             results.append(f"🔍 Preview Mode - Changes NOT Applied")
-            results.append(f"  • File: {file_path}")
-            results.append(f"  • Original lines: {original_line_count}")
-            results.append(f"  • Final lines: {final_line_count}")
-            if line_diff != 0:
-                sign = "+" if line_diff > 0 else ""
-                results.append(f"  • Line difference: {sign}{line_diff}")
-            
-            results.append(f"\n📝 Changes that would be made:")
-            for change in changes_made:
-                results.append(f"  • {change}")
-            
-            # Show preview of affected areas
-            if operation != "multi":
-                if operation == "insert" and line_number:
-                    start_preview = max(1, line_number - 2)
-                    end_preview = min(len(modified_lines), line_number + 3)
-                    results.append(f"\n📄 Preview around line {line_number}:")
-                    
-                    for i in range(start_preview - 1, end_preview):
-                        line_num = i + 1
-                        line_content = modified_lines[i].rstrip() if i < len(modified_lines) else ""
-                        marker = ">>>" if line_num == line_number else "   "
-                        results.append(f"  {marker} {line_num:3d}: {line_content}")
-            
+            results.append(f"File: {file_path}")
+            if start_line is not None or end_line is not None:
+                range_desc = f"lines {start_line or 1}-{end_line or 'end'}"
+                results.append(f"Target range: {range_desc}")
+            results.append(f"Pattern: {pattern}")
+            results.append(f"Replacement: {replacement}")
+            results.append(f"Regex mode: {'Yes' if use_regex else 'No'}")
+            results.append(f"Matches found: {replacements_made}")
+
+            if replacements_made > 0:
+                results.append(f"\n📝 Changes that would be made:")
+                results.append(f"  • {replacements_made} replacement(s)")
+
+                # Show preview of first few changes
+                preview_lines = []
+                if use_regex:
+                    regex_pattern = re.compile(pattern, re.MULTILINE | re.DOTALL)
+                    matches = list(regex_pattern.finditer(search_content))
+                    for i, match in enumerate(matches[:3]):  # Show first 3 matches
+                        # Calculate line number relative to original file
+                        match_line_in_search = search_content[:match.start()].count('\n') + 1
+                        actual_line_num = match_line_in_search + line_offset
+                        matched_text = match.group()[:50] + ("..." if len(match.group()) > 50 else "")
+                        preview_lines.append(f"    Match {i+1} at line {actual_line_num}: '{matched_text}'")
+                else:
+                    # For simple text, show where matches occur
+                    pos = 0
+                    match_count = 0
+                    while pos < len(search_content) and match_count < 3:
+                        pos = search_content.find(pattern, pos)
+                        if pos == -1:
+                            break
+                        match_line_in_search = search_content[:pos].count('\n') + 1
+                        actual_line_num = match_line_in_search + line_offset
+                        preview_lines.append(f"    Match {match_count+1} at line {actual_line_num}: '{pattern}'")
+                        pos += len(pattern)
+                        match_count += 1
+
+                results.extend(preview_lines)
+                if replacements_made > 3:
+                    results.append(f"    ... and {replacements_made - 3} more matches")
+
             return "\n".join(results)
-        
+
         # Apply changes to file
         try:
             with open(path, 'w', encoding=encoding) as f:
-                f.writelines(modified_lines)
+                f.write(updated_content)
         except Exception as e:
-            # Restore backup if write fails
-            if backup_path and os.path.exists(backup_path):
-                shutil.copy2(backup_path, file_path)
-                return f"❌ Write failed, backup restored: {str(e)}"
             return f"❌ Write failed: {str(e)}"
-        
+
         # Success message
+        results = []
         results.append(f"✅ File edited successfully: {file_path}")
-        results.append(f"  • Original lines: {original_line_count}")
-        results.append(f"  • Final lines: {final_line_count}")
-        
-        if line_diff != 0:
-            sign = "+" if line_diff > 0 else ""
-            results.append(f"  • Line difference: {sign}{line_diff}")
-        
-        if backup_path:
-            results.append(f"  • Backup created: {backup_path}")
-        
-        results.append(f"\n📝 Changes applied:")
-        for change in changes_made:
-            results.append(f"  • {change}")
-        
+        if start_line is not None or end_line is not None:
+            range_desc = f"lines {start_line or 1}-{end_line or 'end'}"
+            results.append(f"Target range: {range_desc}")
+        results.append(f"Pattern: {pattern}")
+        results.append(f"Replacement: {replacement}")
+        results.append(f"Replacements made: {replacements_made}")
+
+        # Calculate size change
+        size_change = len(updated_content) - len(original_content)
+        if size_change != 0:
+            sign = "+" if size_change > 0 else ""
+            results.append(f"Size change: {sign}{size_change} characters")
+
         return "\n".join(results)
-        
+
     except Exception as e:
-        return f"❌ Error in file editing: {str(e)}"
+        return f"❌ Error editing file: {str(e)}"
 
 
 
