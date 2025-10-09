@@ -26,7 +26,7 @@ import time
 
 from .. import create_llm, BasicSession
 from ..tools.common_tools import list_files, read_file, execute_command, web_search
-from ..processing import BasicExtractor
+from ..processing import BasicExtractor, BasicJudge
 
 
 class SimpleCLI:
@@ -51,7 +51,7 @@ class SimpleCLI:
 
         print(f"🚀 AbstractLLM CLI - {provider}:{model}")
         print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
-        print("Commands: /help /quit /clear /stream /debug /history [n] /model <spec> /compact /facts [file] /system [prompt]")
+        print("Commands: /help /quit /clear /stream /debug /history [n] /model <spec> /compact /facts [file] /judge /system [prompt]")
         print("Tools: list_files, read_file, execute_command, web_search")
         print("=" * 60)
 
@@ -77,6 +77,7 @@ class SimpleCLI:
             print("  /model <provider:model> - Change model")
             print("  /compact - Compact chat history using gemma3:1b-it-qat-it-qat")
             print("  /facts [file] - Extract facts from conversation history")
+            print("  /judge - Evaluate conversation quality and provide feedback")
             print("  /system [prompt] - Show or change system prompt")
             print("\n🛠️ Tools: list_files, read_file, execute_command, web_search\n")
 
@@ -138,6 +139,9 @@ class SimpleCLI:
                 # File specified - save as JSON-LD
                 filename = parts[1]
                 self.handle_facts(filename)
+
+        elif cmd == 'judge':
+            self.handle_judge()
 
         elif cmd.startswith('system'):
             # Parse /system [prompt] command
@@ -286,6 +290,117 @@ class SimpleCLI:
 
         except Exception as e:
             print(f"❌ Fact extraction failed: {e}")
+            if self.debug_mode:
+                import traceback
+                traceback.print_exc()
+
+    def handle_judge(self):
+        """Handle /judge command - evaluate conversation quality and provide feedback"""
+        messages = self.session.get_messages()
+
+        if len(messages) <= 1:  # Only system message
+            print("📝 No conversation history to evaluate")
+            return
+
+        try:
+            print("⚖️  Evaluating conversation quality...")
+
+            # Create judge using current provider for consistency
+            judge = BasicJudge(self.provider)
+
+            # Format conversation history as text
+            conversation_text = self._format_conversation_for_extraction(messages)
+
+            if not conversation_text.strip():
+                print("📝 No substantive conversation content found")
+                return
+
+            print(f"   Analyzing {len(conversation_text)} characters of conversation...")
+
+            start_time = time.time()
+
+            # Evaluate the conversation with focus on discussion quality
+            from ..processing.basic_judge import JudgmentCriteria
+            criteria = JudgmentCriteria(
+                is_clear=True,       # How clear is the discussion
+                is_coherent=True,    # How well does it flow
+                is_actionable=True,  # Does it provide useful insights
+                is_relevant=True,    # Is the discussion focused
+                is_complete=True,    # Does it address the topics thoroughly
+                is_innovative=False, # Not focused on innovation for general chat
+                is_working=False,    # Not applicable to conversation
+                is_sound=True,       # Are the arguments/explanations sound
+                is_simple=True       # Is the communication clear and accessible
+            )
+
+            assessment = judge.evaluate(
+                content=conversation_text,
+                context="conversational discussion quality",
+                criteria=criteria
+            )
+
+            duration = time.time() - start_time
+            print(f"✅ Evaluation completed in {duration:.1f}s")
+
+            # Display judge's summary first (most important)
+            judge_summary = assessment.get('judge_summary', '')
+            if judge_summary:
+                print(f"\n📝 Judge's Assessment:")
+                print(f"   {judge_summary}")
+
+            # Source reference
+            source_ref = assessment.get('source_reference', '')
+            if source_ref:
+                print(f"\n📄 Source: {source_ref}")
+
+            # Display assessment in a conversational format
+            overall_score = assessment.get('overall_score', 0)
+            print(f"\n📊 Overall Discussion Quality: {overall_score}/5")
+
+            # Show key dimension scores
+            key_scores = [
+                ('clarity_score', 'Clarity'),
+                ('coherence_score', 'Coherence'),
+                ('actionability_score', 'Actionability'),
+                ('relevance_score', 'Relevance'),
+                ('completeness_score', 'Completeness'),
+                ('soundness_score', 'Soundness'),
+                ('simplicity_score', 'Simplicity')
+            ]
+
+            print("\n📈 Quality Dimensions:")
+            for field, label in key_scores:
+                score = assessment.get(field)
+                if score is not None:
+                    print(f"   {label:13}: {score}/5")
+
+            # Show strengths
+            strengths = assessment.get('strengths', [])
+            if strengths:
+                print(f"\n✅ Conversation Strengths:")
+                for strength in strengths[:3]:  # Show top 3
+                    print(f"   • {strength}")
+
+            # Show improvement suggestions
+            feedback = assessment.get('actionable_feedback', [])
+            if feedback:
+                print(f"\n💡 Suggestions for Better Discussions:")
+                for suggestion in feedback[:3]:  # Show top 3
+                    print(f"   • {suggestion}")
+
+            # Show brief reasoning (shortened for chat)
+            reasoning = assessment.get('reasoning', '')
+            if reasoning:
+                # Extract first few sentences of reasoning
+                sentences = reasoning.split('. ')
+                brief_reasoning = '. '.join(sentences[:2]) + '.' if len(sentences) > 2 else reasoning
+                print(f"\n🤔 Assessment Summary:")
+                print(f"   {brief_reasoning}")
+
+            print(f"\n📌 Note: This is a demonstrator showing LLM-as-a-judge capabilities for objective assessment.")
+
+        except Exception as e:
+            print(f"❌ Conversation evaluation failed: {e}")
             if self.debug_mode:
                 import traceback
                 traceback.print_exc()
@@ -510,6 +625,7 @@ Commands:
   /model <provider:model> - Change model
   /compact - Compact chat history using gemma3:1b-it-qat
   /facts [file] - Extract facts from conversation history
+  /judge - Evaluate conversation quality and provide feedback
   /system [prompt] - Show or change system prompt
 
 Tools: list_files, read_file, execute_command, web_search

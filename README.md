@@ -57,6 +57,7 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 
 **🚀 Built-in Production Applications**
 - **📝 Text Summarization**: Ready-to-use summarizer with 6 styles (executive, analytical, conversational, etc.) and CLI
+- **⚖️ LLM-as-a-Judge**: Production-ready objective evaluation with structured assessments, multiple file support, and critical analysis
 - **🕸️ Knowledge Graph Extraction**: Extract entities/relationships with JSON-LD and RDF triple outputs, perfect for semantic applications
 
 **🔌 Universal LLM Infrastructure**
@@ -175,6 +176,34 @@ print(facts.content)  # Valid JSON with extracted facts
 # For advanced knowledge graphs:
 # CLI: python -m abstractllm.apps.extractor document.txt --provider=openai --model=gpt-4o-mini
 # See docs/basic-extractor.md for full documentation
+
+# 3. LLM-as-a-Judge for Objective Evaluation
+from abstractllm.processing import BasicJudge
+
+# Use same local model for consistency
+judge = BasicJudge(local_llm)
+
+# Evaluate content with structured assessment
+assessment = judge.evaluate(
+    "This function calculates the sum efficiently with clear documentation.",
+    context="code review",
+    include_criteria=True  # Include detailed criteria explanations
+)
+
+print(f"Overall Score: {assessment['overall_score']}/5")
+print(f"Judge Summary: {assessment['judge_summary']}")
+print("Recommendations:", assessment['actionable_feedback'])
+
+# Evaluate multiple files sequentially (avoids context overflow)
+results = judge.evaluate_files(
+    ["src/main.py", "src/utils.py", "tests/test_main.py"],
+    context="Python code review"
+)
+for result in results:
+    print(f"File: {result['source_reference']} - Score: {result['overall_score']}/5")
+
+# CLI: judge file1.py file2.py --context="code review" --format=json
+# See docs/basic-judge.md for full documentation
 
 # Chat history compaction for unlimited conversation length
 session = BasicSession(
@@ -636,6 +665,7 @@ Autonomous agents with planning, tool execution, and self-improvement capabiliti
 
 ### Built-in Applications
 - **[📝 Basic Summarizer](docs/basic-summarizer.md)** - Production-ready text summarization with multiple styles and formats
+- **[⚖️ Basic Judge](docs/basic-judge.md)** - LLM-as-a-judge for objective evaluation with structured assessments and multiple file support
 - **[🕸️ Basic Extractor](docs/basic-extractor.md)** - Knowledge graph extraction with JSON-LD and RDF triple outputs
 
 ### Core Features
@@ -660,6 +690,30 @@ Autonomous agents with planning, tool execution, and self-improvement capabiliti
 ## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Testing Status
+
+**✅ All tests passing as of October 9th, 2025**
+
+**Test Environment:**
+- **Hardware**: MacBook Pro (14-inch, Nov 2024)
+- **Chip**: Apple M4 Max
+- **Memory**: 128 GB
+- **OS**: macOS Sequoia 15.3.1
+
+**Software Environment:**
+- **Python**: 3.12.2
+- **Ollama**: 0.12.3 (with 22 models including gpt-oss:120b, qwen3-coder:30b, embedding models)
+- **LM Studio**: 0.3.30
+
+**Key Dependencies (Virtual Environment):**
+- **Core**: pydantic 2.11.9, httpx 0.28.1, tiktoken 0.11.0
+- **LLM Providers**: openai 1.108.1, anthropic 0.68.0
+- **Local ML**: transformers 4.56.2, torch 2.8.0, mlx 0.29.2, mlx-lm 0.28.1, llama-cpp-python 0.3.16
+- **Embeddings**: sentence-transformers 5.1.1, numpy 2.3.3
+- **Server**: fastapi 0.117.1, uvicorn 0.37.0, sse-starlette 3.0.2
+
+The full test suite has been validated on this configuration, ensuring compatibility with Apple Silicon M4 Max and high-memory environments. All core features, providers, tools, embeddings, and server functionality are working correctly. Dependencies match pyproject.toml requirements with no conflicts detected.
 
 ## License
 
