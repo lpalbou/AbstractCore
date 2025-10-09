@@ -458,37 +458,50 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
         self,
         text: str,
         previous_extraction: dict,
-        domain_focus: Optional[str] = None
+        domain_focus: Optional[str] = None,
+        length: Optional[str] = None
     ) -> dict:
         """
         Refine a previous extraction by finding missing entities/relationships
-        and verifying relationship directionality.
+        and creating a complete refined knowledge graph.
 
         Args:
             text: The original source text
             previous_extraction: The previous JSON-LD extraction result
             domain_focus: Optional domain focus
+            length: Extract length for refinement scope
 
         Returns:
-            Refined JSON-LD extraction with merged results
+            Complete refined JSON-LD extraction
         """
         logger.info("Starting extraction refinement")
 
+        if len(text) > self.max_chunk_size:
+            return self._refine_long_document(text, previous_extraction, domain_focus, length)
+        else:
+            return self._refine_single_chunk(text, previous_extraction, domain_focus, length)
+
+    def _refine_single_chunk(
+        self,
+        text: str,
+        previous_extraction: dict,
+        domain_focus: Optional[str],
+        length: Optional[str]
+    ) -> dict:
+        """Refine extraction from a single chunk using the complete graph approach"""
+
+        logger.info("Starting JSON-LD refinement with complete graph output")
+
+        entity_limit = self._get_entity_limit(length) if length else 20  # More generous for refinement
         domain_note = f" Focus on {domain_focus} domain." if domain_focus else ""
 
-        # Create summary of previous extraction for prompt
+        # Create formatted summary of existing extraction
         prev_entities = [item for item in previous_extraction.get('@graph', [])
                         if item.get('@id', '').startswith('e:')]
         prev_relationships = [item for item in previous_extraction.get('@graph', [])
                              if item.get('@id', '').startswith('r:')]
 
-        # Build entity summary for the prompt
-        entity_summary = "\n".join([
-            f"  - {e.get('s:name', e.get('@id'))} ({e.get('@type', 'Unknown')})"
-            for e in prev_entities[:20]  # Limit to avoid token overflow
-        ])
-
-        # Build relationship summary for the prompt
+        # Build concise existing graph summary
         def safe_extract_id(ref):
             """Safely extract @id from a reference that might be dict or string"""
             if isinstance(ref, dict):
@@ -498,38 +511,58 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
             else:
                 return '?'
 
-        relationship_summary = "\n".join([
-            f"  - {safe_extract_id(r.get('s:about', {}))} --[{r.get('s:name', '?')}]--> {safe_extract_id(r.get('s:object', {}))}"
-            for r in prev_relationships[:20]  # Limit to avoid token overflow
+        existing_entities = "\n".join([
+            f"  - {e.get('s:name', e.get('@id'))} ({e.get('@type', 'Unknown')})"
+            for e in prev_entities[:15]  # Limit to avoid token overflow
         ])
 
-        # Refinement prompt
-        prompt = f"""You are refining a knowledge graph extraction. Review the text and the existing extraction to find MISSING entities and relationships, and to verify relationship directionality.
+        existing_relationships = "\n".join([
+            f"  - {safe_extract_id(r.get('s:about', {}))} --[{r.get('s:name', '?')}]--> {safe_extract_id(r.get('s:object', {}))}"
+            for r in prev_relationships[:15]  # Limit to avoid token overflow
+        ])
 
-TEXT TO ANALYZE:
-{text}
+        # Knowledge graph refinement prompt with JSON-LD output
+        prompt = f"""You are an expert in Semantic extraction and your task is to refine and improve an existing knowledge graph. You will create a COMPLETE refined JSON-LD knowledge graph with entities and relationships.{domain_note}
 
-EXISTING EXTRACTION:
-Entities found:
-{entity_summary if entity_summary else "  (none)"}
+EXISTING GRAPH TO REFINE:
+Current Entities:
+{existing_entities if existing_entities else "  (none)"}
 
-Relationships found:
-{relationship_summary if relationship_summary else "  (none)"}
+Current Relationships:
+{existing_relationships if existing_relationships else "  (none)"}
 
-TASK: Find missing entities and relationships, and verify directionality.{domain_note}
+REFINEMENT TASK: Review the text below and the existing graph above. Create a COMPLETE refined knowledge graph that:
+1. INCLUDES all valuable entities and relationships from the existing graph
+2. ADDS any missing entities that should have been extracted
+3. ADDS any missing relationships that should have been captured
+4. CORRECTS any relationship directions that are wrong
+5. REMOVES any entities or relationships that are not supported by the text
 
-CRITICAL CHECKS:
-1. Missing entities: Are there important entities in the text that were not extracted?
-2. Missing relationships: Are there relationships mentioned in the text that were not captured?
-3. Relationship directionality: Check CAREFULLY that relationships point in the correct direction.
-   - Example: If text says "AbstractAgent uses AbstractCore", then relationship should be:
-     s:about: e:abstractagent (source/subject)
-     s:object: e:abstractcore (target/object)
-   - NOT the reverse!
+STEP 1: Identify the complete SET of entities in the text, starting with the existing entities and adding any missing ones. Classify them in 2 groups based on their importance: the primary entities are the main subjects, the main topics or main ideas; the secondary entities relate either to details of the primary entities or to additional information.
 
-OUTPUT FORMAT: JSON-LD with ONLY the NEW/CORRECTED items (entities and relationships).
+ENTITY TYPES must be one of:
+- s:Person - People by name
+- s:Organization - Companies, institutions
+- s:Event - Events, meetings, conferences, etc
+- s:Goal - Abstract goals, objectives
+- s:Task - Abstract tasks, actions
+- s:SoftwareApplication - Software, libraries, frameworks, tools
+- s:Place - Locations
+- s:Product - Products, services
+- sk:Concept - Abstract concepts, technologies
 
-Example of corrected relationship:
+LIMITS: try to limit the total number of entities to {entity_limit}.
+
+STEP 2: Identify the complete SET of relationships between the selected entities, starting with existing relationships and adding any missing ones. Verify that all relationship directions are correct according to the text.
+
+RELATIONSHIP TYPES must be one of:
+- is_a, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, occurs_in, occurs_when
+
+STEP 3: Create the COMPLETE refined JSON-LD knowledge graph with ALL entities and relationships (existing + new + corrected). Be extra mindful to use the correct JSON-LD syntax.
+
+----------------------------------
+EXAMPLE: If the existing graph had "OpenAI" and "GPT-4" but missed "Microsoft Copilot", and the text mentions "Microsoft Copilot uses GPT-4", the COMPLETE refined output should include ALL entities and relationships:
+
 {{
   "@context": {{
     "s": "https://schema.org/",
@@ -539,39 +572,56 @@ Example of corrected relationship:
   }},
   "@graph": [
     {{
-      "@id": "e:new_entity",
+      "@id": "e:openai",
       "@type": "s:Organization",
-      "s:name": "New Entity",
-      "s:description": "A missing entity",
-      "confidence": 0.9
+      "s:name": "OpenAI",
+      "s:description": "AI company that created GPT-4",
+      "confidence": 0.95
     }},
     {{
-      "@id": "r:corrected",
+      "@id": "e:gpt4",
+      "@type": "s:SoftwareApplication",
+      "s:name": "GPT-4",
+      "s:description": "Language model",
+      "confidence": 0.95
+    }},
+    {{
+      "@id": "e:copilot",
+      "@type": "s:SoftwareApplication",
+      "s:name": "Microsoft Copilot",
+      "s:description": "Code generation tool",
+      "confidence": 0.95
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "creates",
+      "s:about": {{"@id": "e:openai"}},
+      "s:object": {{"@id": "e:gpt4"}},
+      "s:description": "OpenAI created GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:2",
       "@type": "s:Relationship",
       "s:name": "uses",
-      "s:about": {{"@id": "e:source"}},
-      "s:object": {{"@id": "e:target"}},
-      "s:description": "Corrected relationship direction",
+      "s:about": {{"@id": "e:copilot"}},
+      "s:object": {{"@id": "e:gpt4"}},
+      "s:description": "Microsoft Copilot uses GPT-4",
       "confidence": 0.95,
       "strength": 0.9
     }}
   ]
 }}
+----------------------------------
 
-RULES:
-1. Include ONLY new entities not in the existing extraction
-2. Include ONLY new relationships not in the existing extraction
-3. Include corrected versions of relationships with wrong directionality
-4. Entity @id: "e:" + normalized_name
-5. Relationship @id: "r:" + number
-6. Relationship s:name: The relationship type (uses, creates, etc.)
-7. s:about: Source/subject entity
-8. s:object: Target/object entity
-9. Verify directionality matches the text exactly!
+FOLLOW STEPS 1, 2 AND 3 TO CREATE THE COMPLETE REFINED JSON-LD KNOWLEDGE GRAPH FOR THIS TEXT:
+{text}
 
-Output ONLY valid JSON following the format above. If no changes needed, output empty @graph array."""
+CRITICAL: ONLY OUTPUT THE FULL COMPLETE REFINED JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
 
-        # Generate refinements
+        # Generate
         response = self.llm.generate(prompt, retry_strategy=self.retry_strategy)
 
         # Extract text
@@ -587,14 +637,25 @@ Output ONLY valid JSON following the format above. If no changes needed, output 
         # Parse JSON
         import json
         try:
-            refinements = json.loads(response_text)
+            result = json.loads(response_text)
 
-            if "@graph" not in refinements:
-                logger.warning("Refinement response missing @graph, returning previous extraction")
+            # Validate structure
+            if "@context" not in result or "@graph" not in result:
+                logger.error("Invalid refined JSON-LD structure")
                 return previous_extraction
 
-            # Merge refinements with previous extraction
-            return self._merge_extractions(previous_extraction, refinements)
+            # Remove dangling references
+            result = self._remove_dangling_references(result)
+
+            # Log results
+            entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+            relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
+            prev_entities = [item for item in previous_extraction.get('@graph', []) if item.get('@id', '').startswith('e:')]
+            prev_relationships = [item for item in previous_extraction.get('@graph', []) if item.get('@id', '').startswith('r:')]
+
+            logger.info(f"Refinement: {len(prev_entities)} → {len(entities)} entities, {len(prev_relationships)} → {len(relationships)} relationships")
+
+            return result
 
         except json.JSONDecodeError as e:
             logger.warning(f"Refinement JSON parsing failed: {e}")
@@ -605,107 +666,55 @@ Output ONLY valid JSON following the format above. If no changes needed, output 
 
             if corrected_json:
                 try:
-                    refinements = json.loads(corrected_json)
-                    if "@graph" in refinements:
-                        logger.info("✅ Refinement JSON self-correction successful!")
-                        return self._merge_extractions(previous_extraction, refinements)
+                    result = json.loads(corrected_json)
+                    if "@context" in result and "@graph" in result:
+                        result = self._remove_dangling_references(result)
+                        entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
+                        relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
+                        logger.info(f"✅ Refinement JSON self-correction successful! Refined to {len(entities)} entities and {len(relationships)} relationships")
+                        return result
                 except json.JSONDecodeError:
                     pass
 
-            logger.warning("Refinement JSON self-correction failed, returning previous extraction")
+            logger.error("Refinement JSON self-correction failed, returning previous extraction")
             return previous_extraction
 
-    def _merge_extractions(self, base: dict, refinements: dict) -> dict:
-        """
-        Merge refinement results with base extraction.
+    def _refine_long_document(
+        self,
+        text: str,
+        previous_extraction: dict,
+        domain_focus: Optional[str],
+        length: Optional[str]
+    ) -> dict:
+        """Handle long documents using chunking for refinement"""
+        chunks = self._split_text_into_chunks(text)
 
-        Strategy:
-        - Add new entities
-        - Replace relationships that have been corrected (same source/target but corrected direction)
-        - Add new relationships
-        """
-        # Get existing items
-        base_graph = base.get('@graph', [])
-        refinement_graph = refinements.get('@graph', [])
+        if len(chunks) == 1:
+            return self._refine_single_chunk(chunks[0], previous_extraction, domain_focus, length)
 
-        # Build sets for tracking
-        base_entity_ids = {item['@id'] for item in base_graph if item.get('@id', '').startswith('e:')}
-        base_rel_triples = {}  # (source, relation, target) -> relationship object
+        logger.info(f"Refining long document with {len(chunks)} chunks")
 
-        for item in base_graph:
-            if item.get('@id', '').startswith('r:'):
-                # Safely extract source and target IDs
-                source_ref = item.get('s:about', {})
-                target_ref = item.get('s:object', {})
+        # Start with the previous extraction as the base
+        current_extraction = previous_extraction
 
-                if isinstance(source_ref, dict):
-                    source = source_ref.get('@id', '')
-                else:
-                    source = str(source_ref) if source_ref else ''
+        # Refine each chunk against the evolving extraction
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Refining chunk {i+1}/{len(chunks)}")
 
-                if isinstance(target_ref, dict):
-                    target = target_ref.get('@id', '')
-                else:
-                    target = str(target_ref) if target_ref else ''
+            # Refine this chunk against the current extraction
+            chunk_refinement = self._refine_single_chunk(chunk, current_extraction, domain_focus, length)
 
-                relation = item.get('s:name', '')
-                if source and target:
-                    base_rel_triples[(source, relation, target)] = item
+            # Validate chunk result
+            if not isinstance(chunk_refinement, dict) or "@graph" not in chunk_refinement:
+                logger.warning(f"Chunk {i+1} refinement failed, skipping")
+                continue
 
-        # Merge entities
-        merged_graph = list(base_graph)  # Start with base
-        next_rel_id = len([item for item in base_graph if item.get('@id', '').startswith('r:')]) + 1
+            # Update current extraction with refinements from this chunk
+            current_extraction = chunk_refinement
 
-        for item in refinement_graph:
-            item_id = item.get('@id', '')
+        logger.info("Long document refinement completed")
+        return current_extraction
 
-            # Add new entities
-            if item_id.startswith('e:') and item_id not in base_entity_ids:
-                merged_graph.append(item)
-                logger.info(f"Added new entity: {item.get('s:name', item_id)}")
-
-            # Handle relationships
-            elif item_id.startswith('r:'):
-                # Safely extract source and target IDs
-                source_ref = item.get('s:about', {})
-                target_ref = item.get('s:object', {})
-
-                if isinstance(source_ref, dict):
-                    source = source_ref.get('@id', '')
-                else:
-                    source = str(source_ref) if source_ref else ''
-
-                if isinstance(target_ref, dict):
-                    target = target_ref.get('@id', '')
-                else:
-                    target = str(target_ref) if target_ref else ''
-
-                relation = item.get('s:name', '')
-
-                if source and target:
-                    triple = (source, relation, target)
-                    reverse_triple = (target, relation, source)
-
-                    # Check if this corrects a reversed relationship
-                    if reverse_triple in base_rel_triples:
-                        # Remove the incorrectly directed relationship
-                        old_rel = base_rel_triples[reverse_triple]
-                        merged_graph = [r for r in merged_graph if r.get('@id') != old_rel.get('@id')]
-                        logger.info(f"Corrected relationship direction: {relation} from {source} to {target}")
-
-                    # Add if new
-                    if triple not in base_rel_triples:
-                        # Assign new ID
-                        item['@id'] = f"r:{next_rel_id}"
-                        next_rel_id += 1
-                        merged_graph.append(item)
-                        logger.info(f"Added new relationship: {relation} from {source} to {target}")
-
-        # Return merged result
-        return {
-            "@context": base.get("@context", refinements.get("@context", {})),
-            "@graph": merged_graph
-        }
 
     def _format_output(self, jsonld_result: dict, output_format: str) -> dict:
         """
