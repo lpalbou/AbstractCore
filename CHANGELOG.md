@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.2.2] - 2025-10-09
+
+### Added
+- **LLM-as-a-Judge**: Production-ready objective evaluation with structured assessments
+  - **BasicJudge** class for critical assessment with constructive skepticism
+  - **Multiple file support** with sequential processing to avoid context overflow
+  - **Global assessment synthesis** for multi-file evaluations (appears first, followed by individual file results)
+  - **Enhanced assessment structure** with judge summary, source reference, and optional criteria details
+  - **9 evaluation criteria**: clarity, simplicity, actionability, soundness, innovation, effectiveness, relevance, completeness, coherence
+  - **CLI with simple command**: `judge file1.py file2.py --context="code review"` (console script entry point)
+  - **Flexible output formats**: JSON, plain text, YAML with structured scoring (1-5 scale)
+  - **Optional global assessment control**: `--exclude-global` flag for original list behavior
+
+### Enhanced
+- **Built-in Applications**: BasicJudge added to production-ready application suite
+  - **Structured output integration** with Pydantic validation and FeedbackRetry for validation error recovery
+  - **Chain-of-thought reasoning** for transparent evaluation with low temperature (0.1) for consistency
+  - **Custom criteria support** and reference-based evaluation for specialized assessment needs
+  - **Comprehensive error handling** with graceful fallbacks and detailed diagnostics
+
+### Documentation
+- **Complete BasicJudge documentation**: Enhanced `docs/basic-judge.md` with API reference, examples, and best practices
+  - **Real-world examples**: Code review, documentation assessment, academic writing evaluation, multiple file scenarios
+  - **CLI parameter documentation** with practical usage patterns and advanced options
+  - **Global assessment examples** showing synthesis of multiple file evaluations
+- **Updated README.md**: Added BasicJudge to built-in applications with 30-second examples
+- **Internal CLI integration**: Added `/judge` command for conversation quality evaluation with detailed feedback
+
+### Technical
+- **Context overflow prevention**: Optimized global assessment prompts to work within model context limits
+- **Production-grade architecture**: Proper Pydantic integration, sequential file processing, backward compatibility
+- **Console script integration**: Simple `judge` command available after package installation (matches `extractor`, `summarizer`)
+- **Full backward compatibility**: All existing functionality preserved, optional features clearly marked
+
 ## [2.2.1] - 2025-10-09
 
 ### Enhanced
