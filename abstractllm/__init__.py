@@ -1,5 +1,27 @@
 """
 AbstractLLM - Unified interface to all LLM providers with essential infrastructure.
+
+Key Features:
+• Multi-provider support (OpenAI, Anthropic, Ollama, HuggingFace, MLX, LMStudio)
+• Unified token parameter vocabulary across all providers
+• Production-ready retry strategies and circuit breakers
+• Tool calling and structured output support
+• Vector embeddings with SOTA models
+• Event system for observability
+
+Quick Start:
+    from abstractllm import create_llm
+
+    # Unified token management across all providers
+    llm = create_llm(
+        provider="openai",
+        model="gpt-4o",
+        max_tokens=8000,        # Total budget
+        max_output_tokens=2000  # Reserve for output
+    )
+
+    response = llm.generate("Hello, world!")
+    print(response.content)
 """
 
 __version__ = "2.2.4"

@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.2.5] - 2025-10-10
+
+### Enhanced
+- **Unified Token Parameter Strategy**: Improved token management with helper methods and comprehensive validation
+  - **Helper Methods**: Added `calculate_token_budget()`, `validate_token_constraints()`, `estimate_tokens()`, and `get_token_configuration_summary()` for better token planning
+  - **Proactive Guidance**: Automatic warnings during provider initialization help identify potentially problematic configurations
+  - **Smart Validation**: Provider-specific suggestions (e.g., GPT-4: 128k limit, Claude: 200k, Gemini: 1M) with efficiency ratio analysis
+  - **Legacy Support**: Added deprecation warning for `context_size` parameter while maintaining backward compatibility
+
+### Documentation
+- **Comprehensive Token Vocabulary**: Enhanced documentation across core modules with clear examples and best practices
+  - **Two Configuration Strategies**: Budget + Output Reserve (recommended) and Explicit Input + Output (advanced) with concrete examples
+  - **Provider Abstraction Explained**: Clear documentation of how AbstractLLM handles provider-specific parameter mapping internally
+  - **Helper Method Examples**: Complete usage examples for token estimation, validation, and configuration summary generation
+  - **Quick Start Integration**: Updated package docstring with unified token management examples
+
+### Technical
+- **Enhanced Validation Framework**: Built-in token configuration validation with actionable feedback
+  - **Automatic Warning System**: Validates configurations during provider initialization with debug logging
+  - **Safety Margin Calculations**: Token budget estimation with configurable safety margins for production use
+  - **Efficiency Analysis**: Warns when output tokens exceed 80% of context window or input allocation is too small
+  - **Error Prevention**: Helps users avoid common token configuration mistakes before runtime
+
+This release focuses on improving the developer experience with AbstractLLM's unified token parameter approach, providing better guidance and validation while maintaining full backward compatibility.
+
 ## [2.2.4] - 2025-10-10
 
 ### Fixed
