@@ -474,7 +474,7 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             if stream:
-                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, tools)
+                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'))
             else:
                 response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p)
 
@@ -561,7 +561,7 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             if stream:
-                return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools)
+                return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags'))
             else:
                 response = self._single_generate_gguf(generation_kwargs)
 
@@ -631,12 +631,22 @@ class HuggingFaceProvider(BaseProvider):
             tool_calls=tool_calls
         )
 
-    def _stream_generate_gguf(self, kwargs: Dict[str, Any]) -> Iterator[GenerateResponse]:
-        """Stream response using GGUF"""
+    def _stream_generate_gguf(self, kwargs: Dict[str, Any], tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+        """Stream response using GGUF with tool tag rewriting support"""
         stream = self.llm.create_chat_completion(**kwargs)
 
         current_tool_call = None
         accumulated_arguments = ""
+        
+        # Initialize tool tag rewriter if needed
+        rewriter = None
+        buffer = ""
+        if tool_call_tags:
+            try:
+                from ..tools.integration import create_tag_rewriter
+                rewriter = create_tag_rewriter(tool_call_tags)
+            except ImportError:
+                pass
 
         for chunk in stream:
             if 'choices' not in chunk or not chunk['choices']:
@@ -652,6 +662,11 @@ class HuggingFaceProvider(BaseProvider):
                 if content:
                     import html
                     content = html.unescape(content)
+                    
+                    # Apply tool tag rewriting if enabled
+                    if rewriter:
+                        rewritten_content, buffer = rewriter.rewrite_streaming_chunk(content, buffer)
+                        content = rewritten_content
 
                 yield GenerateResponse(
                     content=content,
@@ -752,18 +767,28 @@ class HuggingFaceProvider(BaseProvider):
             )
 
     def _stream_generate_transformers(self, input_text: str, max_new_tokens: int,
-                                     temperature: float, top_p: float) -> Iterator[GenerateResponse]:
-        """Stream response using transformers (simulated, original implementation)"""
+                                     temperature: float, top_p: float, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+        """Stream response using transformers (simulated, original implementation) with tool tag rewriting support"""
         try:
             # HuggingFace doesn't have native streaming, so we simulate it
             full_response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p)
 
             if full_response.content:
-                words = full_response.content.split()
+                # Apply tool tag rewriting if enabled
+                content = full_response.content
+                if tool_call_tags:
+                    try:
+                        from ..tools.integration import create_tag_rewriter
+                        rewriter = create_tag_rewriter(tool_call_tags)
+                        content = rewriter.rewrite_text(content)
+                    except ImportError:
+                        pass
+                
+                words = content.split()
                 for i, word in enumerate(words):
-                    content = word + (" " if i < len(words) - 1 else "")
+                    chunk_content = word + (" " if i < len(words) - 1 else "")
                     yield GenerateResponse(
-                        content=content,
+                        content=chunk_content,
                         model=self.model,
                         finish_reason="stop" if i == len(words) - 1 else None
                     )
@@ -878,12 +903,13 @@ class HuggingFaceProvider(BaseProvider):
 
     def _stream_generate_transformers_with_tools(self, input_text: str, max_new_tokens: int,
                                                temperature: float, top_p: float,
-                                               tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
+                                               tools: Optional[List[Dict[str, Any]]] = None,
+                                               tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end"""
         collected_content = ""
 
         # Stream the response content
-        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p):
+        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p, tool_call_tags):
             collected_content += chunk.content
             yield chunk
 
@@ -922,13 +948,14 @@ class HuggingFaceProvider(BaseProvider):
 
     def _stream_generate_gguf_with_tools(self, generation_kwargs: Dict[str, Any],
                                        tools: Optional[List[Dict[str, Any]]] = None,
-                                       has_native_tools: bool = False) -> Iterator[GenerateResponse]:
+                                       has_native_tools: bool = False,
+                                       tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Stream generate GGUF with tool execution at the end"""
         collected_content = ""
         collected_tool_calls = []
 
         # Stream the response content
-        for chunk in self._stream_generate_gguf(generation_kwargs):
+        for chunk in self._stream_generate_gguf(generation_kwargs, tool_call_tags):
             collected_content += chunk.content
             if chunk.tool_calls:
                 collected_tool_calls.extend(chunk.tool_calls)

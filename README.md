@@ -75,6 +75,8 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 - **🔍 Web Search**: Real-time DuckDuckGo search with time filtering and regional results
 - **💬 Simple Sessions**: Conversation memory without complexity
 - **🗜️ Chat Compaction**: SOTA conversation summarization for unlimited chat length
+- **🏷️ Tool Call Tag Rewriting**: Real-time tool call format conversion for agentic CLI compatibility
+- **🔧 Tool Execution Control**: Flexible tool execution control for different deployment scenarios
 - **⌨️ Basic CLI**: Interactive command-line tool for testing and demonstration
 
 **🔧 Experimental**
@@ -671,6 +673,7 @@ Autonomous agents with planning, tool execution, and self-improvement capabiliti
 ### Core Features
 - **[🌐 Server Guide](docs/server.md)** - Universal API server documentation
 - **[🤖 Agentic CLI Compatibility](docs/server.md)** - Use with Codex, Gemini CLI, Crush (see Server Documentation)
+- **[🏷️ Tool Call Tag Rewriting](docs/tool-call-tag-rewriting.md)** - Real-time tool call format conversion for CLI compatibility
 - **[🔢 Vector Embeddings](docs/embeddings.md)** - Similarity matrices, clustering, and semantic search
 - **[💬 Chat Compaction](docs/chat-compaction.md)** - SOTA conversation history summarization
 

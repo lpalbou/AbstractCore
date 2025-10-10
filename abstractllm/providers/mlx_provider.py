@@ -126,7 +126,7 @@ class MLXProvider(BaseProvider):
 
         try:
             if stream:
-                return self._stream_generate_with_tools(full_prompt, max_tokens, temperature, top_p, tools)
+                return self._stream_generate_with_tools(full_prompt, max_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'))
             else:
                 response = self._single_generate(full_prompt, max_tokens, temperature, top_p)
 
@@ -227,9 +227,19 @@ class MLXProvider(BaseProvider):
             }
         )
 
-    def _stream_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float) -> Iterator[GenerateResponse]:
-        """Generate real streaming response using MLX stream_generate"""
+    def _stream_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+        """Generate real streaming response using MLX stream_generate with tool tag rewriting support"""
         try:
+            # Initialize tool tag rewriter if needed
+            rewriter = None
+            buffer = ""
+            if tool_call_tags:
+                try:
+                    from ..tools.integration import create_tag_rewriter
+                    rewriter = create_tag_rewriter(tool_call_tags)
+                except ImportError:
+                    pass
+
             # Use MLX's native streaming with minimal parameters
             for response in self.stream_generate_fn(
                 self.llm,
@@ -238,8 +248,15 @@ class MLXProvider(BaseProvider):
                 max_tokens=max_tokens
             ):
                 # Each response has a .text attribute with the new token(s)
+                content = response.text
+                
+                # Apply tool tag rewriting if enabled
+                if rewriter and content:
+                    rewritten_content, buffer = rewriter.rewrite_streaming_chunk(content, buffer)
+                    content = rewritten_content
+                
                 yield GenerateResponse(
-                    content=response.text,
+                    content=content,
                     model=self.model,
                     finish_reason=None,  # MLX doesn't provide finish reason in stream
                     raw_response=response
@@ -270,12 +287,13 @@ class MLXProvider(BaseProvider):
 
     def _stream_generate_with_tools(self, full_prompt: str, max_tokens: int,
                                    temperature: float, top_p: float,
-                                   tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
+                                   tools: Optional[List[Dict[str, Any]]] = None,
+                                   tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end"""
         collected_content = ""
 
         # Stream the response content
-        for chunk in self._stream_generate(full_prompt, max_tokens, temperature, top_p):
+        for chunk in self._stream_generate(full_prompt, max_tokens, temperature, top_p, tool_call_tags):
             collected_content += chunk.content
             yield chunk
 

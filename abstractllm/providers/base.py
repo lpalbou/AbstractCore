@@ -207,6 +207,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
                                response_model: Optional[Type[BaseModel]] = None,
                                retry_strategy=None,  # Custom retry strategy for structured output
                                tool_call_tags: Optional[str] = None,  # Tool call tag rewriting
+                               execute_tools: Optional[bool] = None,  # Tool execution control
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate with integrated telemetry and error handling.
@@ -215,6 +216,8 @@ class BaseProvider(AbstractLLMInterface, ABC):
         Args:
             response_model: Optional Pydantic model for structured output
             retry_strategy: Optional retry strategy for structured output validation
+            tool_call_tags: Optional tool call tag format for rewriting
+            execute_tools: Whether to execute tools automatically (True) or let agent handle execution (False)
         """
         # Handle structured output request
         if response_model is not None:
@@ -258,6 +261,13 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 else:
                     # Handle other types gracefully
                     self.logger.warning(f"Unknown tool type: {type(tool)}, skipping")
+        
+        # Handle tool execution control
+        should_execute_tools = execute_tools if execute_tools is not None else True
+        if not should_execute_tools and converted_tools:
+            # If tools are provided but execution is disabled, 
+            # we still pass them to the provider for generation but won't execute them
+            self.logger.info("Tool execution disabled - tools will be generated but not executed")
 
         # Define generation function for retry wrapper
         def _execute_generation():
@@ -282,6 +292,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
                     system_prompt=system_prompt,
                     tools=converted_tools,
                     stream=stream,
+                    execute_tools=should_execute_tools,
                     **kwargs
                 )
 
@@ -299,21 +310,9 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 provider_key=self.provider_key
             )
 
-            # Apply tool call tag rewriting if requested
-            if tool_call_tags:
-                try:
-                    from ..tools.integration import apply_tool_call_tag_rewriting
-                    response = apply_tool_call_tag_rewriting(response, tool_call_tags)
-                except ImportError:
-                    # If integration module is not available, skip rewriting
-                    pass
-                except Exception as e:
-                    # Log error but don't fail the generation
-                    if hasattr(self, 'logger'):
-                        self.logger.warning(f"Tool call tag rewriting failed: {e}")
-
             # Handle streaming vs non-streaming differently
             if stream:
+                # For streaming, tool tag rewriting is handled at the provider level
                 # Wrap the stream to emit events
                 def stream_with_events():
                     try:
@@ -331,6 +330,19 @@ class BaseProvider(AbstractLLMInterface, ABC):
 
                 return stream_with_events()
             else:
+                # For non-streaming, apply tool call tag rewriting if requested
+                if tool_call_tags:
+                    try:
+                        from ..tools.integration import apply_tool_call_tag_rewriting
+                        response = apply_tool_call_tag_rewriting(response, tool_call_tags)
+                    except ImportError:
+                        # If integration module is not available, skip rewriting
+                        pass
+                    except Exception as e:
+                        # Log error but don't fail the generation
+                        if hasattr(self, 'logger'):
+                            self.logger.warning(f"Tool call tag rewriting failed: {e}")
+                
                 # Non-streaming: track after completion
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response
@@ -361,6 +373,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
                           tools: Optional[List[Dict[str, Any]]] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
+                          execute_tools: Optional[bool] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
         Internal generation method to be implemented by subclasses.
@@ -368,6 +381,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
 
         Args:
             response_model: Optional Pydantic model for structured output
+            execute_tools: Whether to execute tools automatically (True) or let agent handle execution (False)
         """
         raise NotImplementedError("Subclasses must implement _generate_internal")
 
@@ -529,7 +543,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
         """
         return kwargs.get("max_output_tokens", self.max_output_tokens)
 
-    def _handle_prompted_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]]) -> GenerateResponse:
+    def _handle_prompted_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]], execute_tools_param: bool = None) -> GenerateResponse:
         """Handle tool execution for prompted responses (shared implementation)"""
         if not response.content:
             return response
@@ -542,10 +556,18 @@ class BaseProvider(AbstractLLMInterface, ABC):
             return response
 
         # Execute with events and return result
-        return self._execute_tools_with_events(response, tool_calls)
+        return self._execute_tools_with_events(response, tool_calls, execute_tools_param)
 
-    def _execute_tools_with_events(self, response: GenerateResponse, tool_calls: List) -> GenerateResponse:
+    def _execute_tools_with_events(self, response: GenerateResponse, tool_calls: List, execute_tools_param: bool = None) -> GenerateResponse:
         """Core tool execution with event emission (shared implementation)"""
+        # Check if tool execution is enabled
+        should_execute = execute_tools_param if execute_tools_param is not None else self.execute_tools
+        
+        if not should_execute:
+            # Tool execution disabled - return response with tool calls but don't execute
+            self.logger.info("Tool execution disabled - returning response with tool calls")
+            return response
+        
         # Emit tool started event
         event_data = {
             "tool_calls": [{

@@ -122,6 +122,65 @@ export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+## Advanced Parameters
+
+### Tool Call Tag Rewriting
+
+The server supports real-time tool call tag rewriting for agentic CLI compatibility:
+
+```python
+# Rewrite tool calls for different CLIs
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{"role": "user", "content": "Weather in Paris?"}],
+    tools=[{"type": "function", "function": {"name": "get_weather", "description": "Get weather"}}],
+    tool_call_tags="qwen3"  # For Codex CLI compatibility
+)
+```
+
+**Supported Formats:**
+- `qwen3` - `<|tool_call|>...JSON...</|tool_call|>` (Codex, OpenAI)
+- `llama3` - `<function_call>...JSON...</function_call>` (Crush, Anthropic)
+- `xml` - `<tool_call>...JSON...</tool_call>` (Gemini CLI)
+- `gemma` - ````tool_code...JSON...```` (Gemma models)
+- `codex` - Same as qwen3
+- `crush` - Same as llama3
+- `gemini` - Same as xml
+- `openai` - Same as qwen3
+- `anthropic` - Same as llama3
+
+### Tool Execution Control
+
+Control whether the server executes tools automatically or lets the agent handle execution:
+
+```python
+# AbstractCore executes tools automatically (default)
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{"role": "user", "content": "Weather in Paris?"}],
+    tools=[{"type": "function", "function": {"name": "get_weather"}}],
+    execute_tools=True  # Default: tools are executed
+)
+
+# Let the agent handle tool execution (for agentic CLI mode)
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{"role": "user", "content": "Weather in Paris?"}],
+    tools=[{"type": "function", "function": {"name": "get_weather"}}],
+    execute_tools=False  # Tools are generated but not executed
+)
+```
+
+**When to use `execute_tools=False`:**
+- **Agentic CLI mode**: When the CLI will handle tool execution
+- **API server mode**: When you want to return tool calls for external processing
+- **Custom tool handling**: When you have custom tool execution logic
+
+**When to use `execute_tools=True` (default):**
+- **Standalone usage**: When you want AbstractCore to handle everything
+- **Simple applications**: When you want automatic tool execution
+- **Development/testing**: When you want immediate tool results
+
 ## Debug Logging
 
 AbstractCore server includes comprehensive debug logging that captures **every request and response** with full payloads.
