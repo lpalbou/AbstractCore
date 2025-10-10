@@ -126,6 +126,15 @@ class UniversalToolHandler:
                     }
                 }
             }
+            
+            # Add enhanced metadata if available (provider-agnostic)
+            if tool_def.tags:
+                native_tool["function"]["tags"] = tool_def.tags
+            if tool_def.when_to_use:
+                native_tool["function"]["when_to_use"] = tool_def.when_to_use
+            if tool_def.examples:
+                native_tool["function"]["examples"] = tool_def.examples
+            
             native_tools.append(native_tool)
 
         return native_tools
