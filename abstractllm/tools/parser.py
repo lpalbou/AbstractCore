@@ -96,7 +96,8 @@ def parse_tool_calls(response: str, model_name: Optional[str] = None) -> List[To
         ToolFormat.SPECIAL_TOKEN: _parse_special_token,
         ToolFormat.FUNCTION_CALL: _parse_function_call,
         ToolFormat.XML_WRAPPED: _parse_xml_wrapped,
-        ToolFormat.RAW_JSON: _parse_raw_json
+        ToolFormat.RAW_JSON: _parse_raw_json,
+        ToolFormat.NATIVE: _parse_any_format  # Native tools use any format as fallback
     }
 
     parser = parsers.get(tool_format, _parse_any_format)
@@ -357,8 +358,8 @@ def _parse_raw_json(response: str) -> List[ToolCall]:
     """Parse raw JSON tool calls."""
     tool_calls = []
 
-    # Try to find JSON objects that look like tool calls
-    json_pattern = r'\{[^}]+["\']name["\'][^}]+\}'
+    # Try to find JSON objects that look like tool calls - handle nested objects
+    json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*["\']name["\'][^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
 
     for match in re.finditer(json_pattern, response):
         try:
@@ -377,7 +378,7 @@ def _parse_raw_json(response: str) -> List[ToolCall]:
             continue
 
     # Also try to parse JSON from code blocks
-    code_block_pattern = r'```(?:json)?\s*\n(\{.*?\})\s*\n```'
+    code_block_pattern = r'```(?:json|tool_code)?\s*\n(\{.*?\})\s*\n```'
     for match in re.finditer(code_block_pattern, response, re.DOTALL):
         try:
             json_str = match.group(1).strip()
@@ -515,7 +516,9 @@ def _format_qwen_style(tools: List[ToolDefinition]) -> str:
                     desc = example.get("description", f"Example {i}")
                     args = example.get("arguments", {})
                     prompt += f"{i}. {desc}:\n"
-                    prompt += f'<|tool_call|>\n{{"name": "{tool.name}", "arguments": {json.dumps(args)}}}\n</|tool_call|>\n\n'
+                    # Use Qwen3-specific tool call format
+                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.SPECIAL_TOKEN)
+                    prompt += f"{tool_call_example}\n\n"
 
     return prompt
 
@@ -559,7 +562,9 @@ def _format_llama_style(tools: List[ToolDefinition]) -> str:
                     desc = example.get("description", f"Example {i}")
                     args = example.get("arguments", {})
                     prompt += f"{i}. {desc}:\n"
-                    prompt += f'<function_call>\n{{"name": "{tool.name}", "arguments": {json.dumps(args)}}}\n</function_call>\n\n'
+                    # Use architecture-specific tool call format
+                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.FUNCTION_CALL)
+                    prompt += f"{tool_call_example}\n\n"
 
     return prompt
 
@@ -643,7 +648,9 @@ def _format_generic_style(tools: List[ToolDefinition]) -> str:
                     desc = example.get("description", f"Example {i}")
                     args = example.get("arguments", {})
                     prompt += f"{i}. {desc}:\n"
-                    prompt += f'{{"name": "{tool.name}", "arguments": {json.dumps(args)}}}\n\n'
+                    # Use generic format for unknown architectures
+                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.RAW_JSON)
+                    prompt += f"{tool_call_example}\n\n"
 
     return prompt
 
@@ -694,6 +701,37 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
 
     # Clean up extra whitespace and return
     return content.strip()
+
+
+def _format_tool_call_example(tool_name: str, arguments: Dict[str, Any], tool_format: ToolFormat) -> str:
+    """
+    Format a tool call example using the correct format for the architecture.
+    
+    Args:
+        tool_name: Name of the tool
+        arguments: Tool arguments
+        tool_format: The tool format for the architecture
+        
+    Returns:
+        Formatted tool call example string
+    """
+    tool_call_json = json.dumps({"name": tool_name, "arguments": arguments})
+    
+    if tool_format == ToolFormat.SPECIAL_TOKEN:
+        # Qwen3, GLM-4.5+ format
+        return f"<|tool_call|>\n{tool_call_json}\n</|tool_call|>"
+    elif tool_format == ToolFormat.FUNCTION_CALL:
+        # LLaMA3 format
+        return f"<function_call>\n{tool_call_json}\n</function_call>"
+    elif tool_format == ToolFormat.XML_WRAPPED:
+        # XML format
+        return f"<tool_call>\n{tool_call_json}\n</tool_call>"
+    elif tool_format == ToolFormat.TOOL_CODE:
+        # Gemma format
+        return f"```tool_code\n{tool_call_json}\n```"
+    else:
+        # Generic format - just the JSON
+        return tool_call_json
 
 
 def _critical_rules():
