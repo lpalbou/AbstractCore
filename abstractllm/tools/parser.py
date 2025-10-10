@@ -376,6 +376,24 @@ def _parse_raw_json(response: str) -> List[ToolCall]:
         except json.JSONDecodeError:
             continue
 
+    # Also try to parse JSON from code blocks
+    code_block_pattern = r'```(?:json)?\s*\n(\{.*?\})\s*\n```'
+    for match in re.finditer(code_block_pattern, response, re.DOTALL):
+        try:
+            json_str = match.group(1).strip()
+            tool_data = json.loads(json_str)
+
+            if "name" in tool_data:
+                tool_call = ToolCall(
+                    name=tool_data.get("name", ""),
+                    arguments=tool_data.get("arguments", tool_data.get("parameters", {})),
+                    call_id=tool_data.get("id")
+                )
+                tool_calls.append(tool_call)
+
+        except json.JSONDecodeError:
+            continue
+
     return tool_calls
 
 

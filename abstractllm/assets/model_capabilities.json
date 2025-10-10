@@ -189,6 +189,66 @@
       "audio_support": false,
       "source": "Anthropic official docs"
     },
+    "claude-4-opus": {
+      "context_length": 200000,
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "notes": "Claude 4 Opus with enhanced capabilities",
+      "source": "Anthropic official docs"
+    },
+    "claude-4.1-opus": {
+      "context_length": 200000,
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "notes": "Claude 4.1 Opus with improved performance",
+      "source": "Anthropic official docs"
+    },
+    "claude-4-sonnet": {
+      "context_length": 200000,
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "notes": "Claude 4 Sonnet with balanced performance",
+      "source": "Anthropic official docs"
+    },
+    "claude-4.5-sonnet": {
+      "context_length": 200000,
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "notes": "Claude 4.5 Sonnet with enhanced reasoning",
+      "source": "Anthropic official docs"
+    },
     "llama-3.2-1b": {
       "context_length": 8192,
       "max_output_tokens": 2048,
@@ -776,8 +836,8 @@
       "max_tools": -1,
       "vision_support": true,
       "audio_support": true,
-      "notes": "Next generation model with improved capabilities",
-      "source": "Expected specifications"
+      "notes": "GPT-5 base model with multimodal capabilities",
+      "source": "OpenAI official docs"
     },
     "gpt-5-turbo": {
       "context_length": 200000,
@@ -788,8 +848,340 @@
       "max_tools": -1,
       "vision_support": true,
       "audio_support": true,
-      "notes": "Faster variant of GPT-5",
-      "source": "Expected specifications"
+      "notes": "GPT-5 Turbo with faster inference",
+      "source": "OpenAI official docs"
+    },
+    "gpt-5-pro": {
+      "context_length": 200000,
+      "max_output_tokens": 16384,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": true,
+      "notes": "GPT-5 Pro with extended output capabilities",
+      "source": "OpenAI official docs"
+    },
+    "gpt-5-mini": {
+      "context_length": 200000,
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": true,
+      "notes": "GPT-5 Mini with cost-optimized performance",
+      "source": "OpenAI official docs"
+    },
+    "gpt-5-vision": {
+      "context_length": 200000,
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 2048x2048"
+      ],
+      "audio_support": true,
+      "notes": "GPT-5 Vision with enhanced multimodal capabilities",
+      "source": "OpenAI official docs"
+    },
+    "qwen3-0.6b": {
+      "context_length": 32768,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3 base model with thinking capabilities",
+      "source": "Alibaba Qwen3 technical report"
+    },
+    "qwen3-1.7b": {
+      "context_length": 32768,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3 1.7B model with thinking capabilities",
+      "source": "Alibaba Qwen3 technical report"
+    },
+    "qwen3-4b": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3 4B model with extended context via YaRN scaling",
+      "source": "Alibaba Qwen3 technical report"
+    },
+    "qwen3-8b": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3 8B model with thinking capabilities",
+      "source": "Alibaba Qwen3 technical report"
+    },
+    "qwen3-14b": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3 14B model with thinking capabilities",
+      "source": "Alibaba Qwen3 technical report"
+    },
+    "qwen3-32b": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3 32B model with advanced thinking capabilities",
+      "source": "Alibaba Qwen3 technical report"
+    },
+    "qwen3-30b-a3b": {
+      "context_length": 40960,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3 MoE model with 4-bit precision, 30B total/3B active parameters",
+      "source": "Alibaba Qwen3 technical report"
+    },
+    "qwen3-235b-a22b": {
+      "context_length": 40960,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3 MoE model with 4-bit precision, 235B total/22B active parameters",
+      "source": "Alibaba Qwen3 technical report"
+    },
+    "qwen3-next-80b-a3b": {
+      "context_length": 262144,
+      "max_output_tokens": 16384,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3-Next hybrid MoE with 512 experts/10 activated, extensible to 1M tokens with YaRN",
+      "source": "Alibaba Qwen3-Next technical report"
+    },
+    "qwen3-vl": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "video_support": true,
+      "audio_support": false,
+      "image_resolutions": ["variable"],
+      "notes": "Qwen3-VL multimodal model with vision and video support",
+      "source": "Alibaba Qwen3-VL technical report"
+    },
+    "qwen2.5-0.5b": {
+      "context_length": 32768,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Qwen2.5 0.5B model",
+      "source": "Alibaba official docs"
+    },
+    "qwen2.5-1.5b": {
+      "context_length": 32768,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Qwen2.5 1.5B model",
+      "source": "Alibaba official docs"
+    },
+    "qwen2.5-3b": {
+      "context_length": 32768,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Qwen2.5 3B model",
+      "source": "Alibaba official docs"
+    },
+    "qwen2.5-7b": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Qwen2.5 7B model with MCP support",
+      "source": "Alibaba official docs"
+    },
+    "qwen2.5-14b": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Qwen2.5 14B model",
+      "source": "Alibaba official docs"
+    },
+    "qwen2.5-32b": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Qwen2.5 32B model",
+      "source": "Alibaba official docs"
+    },
+    "qwen2.5-72b": {
+      "context_length": 131072,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Qwen2.5 72B model",
+      "source": "Alibaba official docs"
+    },
+    "qwen2.5-vl": {
+      "context_length": 128000,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": true,
+      "image_resolutions": ["variable"],
+      "audio_support": false,
+      "notes": "Qwen2.5-VL multimodal model",
+      "source": "Alibaba official docs"
+    },
+    "gemma3n": {
+      "context_length": 128000,
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "notes": "Gemma3n device-optimized multimodal model",
+      "source": "Google Gemma3n announcement"
+    },
+    "seed-oss": {
+      "context_length": 524288,
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "notes": "SEED-OSS 36B parameter model with 512K context and thinking budget control",
+      "source": "ByteDance SEED-OSS documentation"
+    },
+    "glm-4.5": {
+      "context_length": 128000,
+      "max_output_tokens": 4096,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "GLM-4.5 MoE model with 355B total/32B active parameters",
+      "source": "Zhipu AI GLM-4.5 announcement"
+    },
+    "glm-4.6": {
+      "context_length": 128000,
+      "max_output_tokens": 4096,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "GLM-4.6 MoE model with enhanced capabilities",
+      "source": "Zhipu AI GLM-4.6 announcement"
+    },
+    "glm-4.5-air": {
+      "context_length": 128000,
+      "max_output_tokens": 4096,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "GLM-4.5-Air lightweight model optimized for efficiency",
+      "source": "Zhipu AI GLM-4.5-Air announcement"
+    },
+    "llama-4-17b-scout-16e-instruct": {
+      "context_length": 10485760,
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "notes": "LLaMA 4 Scout variant with 16 experts, 10M context",
+      "source": "Meta LLaMA 4 announcement"
+    },
+    "llama-4-109b": {
+      "context_length": 10000000,
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "notes": "LLaMA 4 109B total parameters (MoE), multimodal with early fusion",
+      "source": "Meta LLaMA 4 announcement"
     }
   },
   "tool_support_levels": {
@@ -802,6 +1194,12 @@
     "prompted": "Can output JSON with prompting",
     "none": "Poor structured output capability"
   },
+  "capability_types": {
+    "thinking_support": "Chain-of-thought reasoning capabilities",
+    "thinking_budget": "Configurable reasoning length control",
+    "video_support": "Video processing capabilities",
+    "fim_support": "Fill-in-the-middle code completion"
+  },
   "default_capabilities": {
     "context_length": 16384,
     "max_output_tokens": 4096,
@@ -809,6 +1207,10 @@
     "structured_output": "none",
     "parallel_tools": false,
     "vision_support": false,
-    "audio_support": false
+    "audio_support": false,
+    "thinking_support": false,
+    "thinking_budget": false,
+    "video_support": false,
+    "fim_support": false
   }
 }

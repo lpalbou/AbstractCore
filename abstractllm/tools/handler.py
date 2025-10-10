@@ -206,38 +206,69 @@ class UniversalToolHandler:
 
         return tool_defs
 
-    def _parse_native_response(self, response: Dict[str, Any]) -> ToolCallResponse:
+    def _parse_native_response(self, response) -> ToolCallResponse:
         """Parse native API response format."""
         # Handle None response
         if response is None:
             return ToolCallResponse(content="", tool_calls=[], raw_response=None)
 
-        content = response.get("content", "")
-        tool_calls = []
+        # Handle different response types
+        if hasattr(response, 'content'):
+            # GenerateResponse object
+            content = response.content
+            tool_calls = []
+            
+            # Check if response has tool_calls attribute
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                for tc in response.tool_calls:
+                    tool_call = ToolCall(
+                        name=getattr(tc, 'name', '') or getattr(tc, 'function', {}).get('name', ''),
+                        arguments=getattr(tc, 'arguments', {}) or getattr(tc, 'function', {}).get('arguments', {}),
+                        call_id=getattr(tc, 'id', None)
+                    )
+                    # Handle string arguments (need to parse JSON)
+                    if isinstance(tool_call.arguments, str):
+                        try:
+                            tool_call.arguments = json.loads(tool_call.arguments)
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse tool arguments: {tool_call.arguments}")
+                            tool_call.arguments = {}
 
-        # Extract tool calls based on provider format
-        if "tool_calls" in response:
-            for tc in response["tool_calls"]:
-                tool_call = ToolCall(
-                    name=tc.get("name") or tc.get("function", {}).get("name"),
-                    arguments=tc.get("arguments") or tc.get("function", {}).get("arguments", {}),
-                    call_id=tc.get("id")
-                )
-                # Handle string arguments (need to parse JSON)
-                if isinstance(tool_call.arguments, str):
-                    try:
-                        tool_call.arguments = json.loads(tool_call.arguments)
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse tool arguments: {tool_call.arguments}")
-                        tool_call.arguments = {}
+                    tool_calls.append(tool_call)
+            
+            return ToolCallResponse(
+                content=content,
+                tool_calls=tool_calls,
+                raw_response=response
+            )
+        else:
+            # Dictionary response
+            content = response.get("content", "")
+            tool_calls = []
 
-                tool_calls.append(tool_call)
+            # Extract tool calls based on provider format
+            if "tool_calls" in response:
+                for tc in response["tool_calls"]:
+                    tool_call = ToolCall(
+                        name=tc.get("name") or tc.get("function", {}).get("name"),
+                        arguments=tc.get("arguments") or tc.get("function", {}).get("arguments", {}),
+                        call_id=tc.get("id")
+                    )
+                    # Handle string arguments (need to parse JSON)
+                    if isinstance(tool_call.arguments, str):
+                        try:
+                            tool_call.arguments = json.loads(tool_call.arguments)
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse tool arguments: {tool_call.arguments}")
+                            tool_call.arguments = {}
 
-        return ToolCallResponse(
-            content=content,
-            tool_calls=tool_calls,
-            raw_response=response
-        )
+                    tool_calls.append(tool_call)
+
+            return ToolCallResponse(
+                content=content,
+                tool_calls=tool_calls,
+                raw_response=response
+            )
 
     def _parse_prompted_response(self, response: str) -> ToolCallResponse:
         """Parse prompted response format."""
