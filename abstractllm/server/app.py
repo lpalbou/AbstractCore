@@ -93,6 +93,18 @@ class OpenAIChatCompletionRequest(BaseModel):
         description="Controls tool usage: 'auto', 'none', or {'type': 'function', 'function': {'name': 'func_name'}}"
     )
     parallel_tool_calls: Optional[bool] = Field(default=True, description="Whether to enable parallel function calling")
+    
+    # === TOOL CALL TAG REWRITING ===
+    tool_call_tags: Optional[str] = Field(
+        default=None,
+        description="Tool call tag format: 'qwen3', 'llama3', 'xml', 'gemma', 'codex', 'crush', 'gemini', 'openai', 'anthropic', or custom format"
+    )
+    
+    # === TOOL EXECUTION CONTROL ===
+    execute_tools: Optional[bool] = Field(
+        default=True,
+        description="Whether AbstractCore should execute tools automatically (True) or let the agent handle tool execution (False)"
+    )
 
     # === STRUCTURED OUTPUT ===
     response_format: Optional[Dict[str, Any]] = Field(
@@ -382,6 +394,18 @@ class AnthropicMessagesRequest(BaseModel):
     stream: Optional[bool] = Field(default=False, description="Enable streaming")
     stop_sequences: Optional[List[str]] = Field(default=None, description="Stop sequences")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Request metadata")
+    
+    # === TOOL CALL TAG REWRITING ===
+    tool_call_tags: Optional[str] = Field(
+        default=None,
+        description="Tool call tag format: 'qwen3', 'llama3', 'xml', 'gemma', 'codex', 'crush', 'gemini', 'openai', 'anthropic', or custom format"
+    )
+    
+    # === TOOL EXECUTION CONTROL ===
+    execute_tools: Optional[bool] = Field(
+        default=True,
+        description="Whether AbstractCore should execute tools automatically (True) or let the agent handle tool execution (False)"
+    )
 
     # Tool calling support
     tools: Optional[List[Dict[str, Any]]] = Field(default=None, description="Available tools for function calling")
@@ -437,6 +461,18 @@ class ResponsesRequest(BaseModel):
     tools: Optional[List[Dict[str, Any]]] = Field(default=None)
     tool_choice: Optional[Union[str, Dict[str, Any]]] = Field(default="auto")
     parallel_tool_calls: Optional[bool] = Field(default=True)
+    
+    # === TOOL CALL TAG REWRITING ===
+    tool_call_tags: Optional[str] = Field(
+        default=None,
+        description="Tool call tag format: 'qwen3', 'llama3', 'xml', 'gemma', 'codex', 'crush', 'gemini', 'openai', 'anthropic', or custom format"
+    )
+    
+    # === TOOL EXECUTION CONTROL ===
+    execute_tools: Optional[bool] = Field(
+        default=True,
+        description="Whether AbstractCore should execute tools automatically (True) or let the agent handle tool execution (False)"
+    )
 
     # Structured output
     response_format: Optional[Dict[str, Any]] = Field(default=None)
@@ -860,6 +896,14 @@ async def openai_responses(request: ResponsesRequest):
             "tools": request.tools,
             "tool_choice": request.tool_choice if request.tools else None
         }
+        
+        # Add tool call tag rewriting support
+        if hasattr(request, 'tool_call_tags') and request.tool_call_tags:
+            gen_kwargs["tool_call_tags"] = request.tool_call_tags
+        
+        # Add tool execution control
+        if hasattr(request, 'execute_tools') and request.execute_tools is not None:
+            gen_kwargs["execute_tools"] = request.execute_tools
 
         logger.info("🎯 Starting Generation",
                     request_id=request_id,
@@ -1153,6 +1197,14 @@ async def anthropic_messages(request: AnthropicMessagesRequest, beta: Optional[b
             "temperature": request.temperature,
             "max_output_tokens": request.max_tokens,
         }
+        
+        # Add tool call tag rewriting support
+        if hasattr(request, 'tool_call_tags') and request.tool_call_tags:
+            gen_kwargs["tool_call_tags"] = request.tool_call_tags
+        
+        # Add tool execution control
+        if hasattr(request, 'execute_tools') and request.execute_tools is not None:
+            gen_kwargs["execute_tools"] = request.execute_tools
 
         # Determine if local model
         is_local_model = provider.lower() in ["ollama", "lmstudio"]
@@ -1779,6 +1831,14 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
             filtered_tools = request.tools
         else:
             gen_kwargs["tools"] = None
+        
+        # Add tool call tag rewriting support
+        if hasattr(request, 'tool_call_tags') and request.tool_call_tags:
+            gen_kwargs["tool_call_tags"] = request.tool_call_tags
+        
+        # Add tool execution control
+        if hasattr(request, 'execute_tools') and request.execute_tools is not None:
+            gen_kwargs["execute_tools"] = request.execute_tools
 
         # Add response format support
         if hasattr(request, 'response_format') and request.response_format:

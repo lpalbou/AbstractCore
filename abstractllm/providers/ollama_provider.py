@@ -137,7 +137,7 @@ class OllamaProvider(BaseProvider):
             endpoint = "/api/generate"
 
         if stream:
-            return self._stream_generate(endpoint, payload, tools)
+            return self._stream_generate(endpoint, payload, tools, kwargs.get('tool_call_tags'))
         else:
             return self._single_generate(endpoint, payload, tools)
 
@@ -193,8 +193,8 @@ class OllamaProvider(BaseProvider):
                     finish_reason="error"
                 )
 
-    def _stream_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
-        """Generate streaming response"""
+    def _stream_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+        """Generate streaming response with tool tag rewriting support"""
         try:
             with self.client.stream(
                 "POST",
@@ -205,6 +205,16 @@ class OllamaProvider(BaseProvider):
 
                 # Collect full response for tool processing
                 full_content = ""
+                
+                # Initialize tool tag rewriter if needed
+                rewriter = None
+                buffer = ""
+                if tool_call_tags:
+                    try:
+                        from ..tools.integration import create_tag_rewriter
+                        rewriter = create_tag_rewriter(tool_call_tags)
+                    except ImportError:
+                        pass
 
                 for line in response.iter_lines():
                     if line:
@@ -219,6 +229,11 @@ class OllamaProvider(BaseProvider):
 
                             done = chunk.get("done", False)
                             full_content += content
+
+                            # Apply tool tag rewriting if enabled
+                            if rewriter and content:
+                                rewritten_content, buffer = rewriter.rewrite_streaming_chunk(content, buffer)
+                                content = rewritten_content
 
                             chunk_response = GenerateResponse(
                                 content=content,

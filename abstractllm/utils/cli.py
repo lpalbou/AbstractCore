@@ -79,6 +79,7 @@ class SimpleCLI:
             print("  /facts [file] - Extract facts from conversation history")
             print("  /judge - Evaluate conversation quality and provide feedback")
             print("  /system [prompt] - Show or change system prompt")
+            print("  /tooltag <opening_tag> <closing_tag> - Test tool call tag rewriting")
             print("\n🛠️ Tools: list_files, read_file, write_file, execute_command\n")
 
         elif cmd == 'clear':
@@ -155,6 +156,19 @@ class SimpleCLI:
                     self.handle_system_change(new_prompt)
                 else:
                     self.handle_system_show()
+
+        elif cmd.startswith('tooltag'):
+            # Parse /tooltag <opening_tag> <closing_tag> command
+            parts = cmd.split()
+            if len(parts) != 3:
+                print("❓ Usage: /tooltag <opening_tag> <closing_tag>")
+                print("   Example: /tooltag '<|tool_call|>' '</|tool_call|>'")
+                print("   Example: /tooltag '<function_call>' '</function_call>'")
+                print("   Example: /tooltag '<tool_call>' '</tool_call>'")
+            else:
+                opening_tag = parts[1]
+                closing_tag = parts[2]
+                self.handle_tooltag_test(opening_tag, closing_tag)
 
         else:
             print(f"❓ Unknown command: /{cmd}. Type /help for help.")
@@ -537,6 +551,12 @@ class SimpleCLI:
         print(f"📝 Old: {old_prompt[:100]}{'...' if len(old_prompt) > 100 else ''}")
         print(f"📝 New: {new_prompt[:100]}{'...' if len(new_prompt) > 100 else ''}")
 
+    def handle_tooltag_test(self, opening_tag: str, closing_tag: str):
+        """Handle /tooltag command - set tool call tags for the session"""
+        from ..tools.tag_rewriter import ToolCallTags
+        self.session.tool_call_tags = ToolCallTags(opening_tag, closing_tag)
+        print(f"🏷️ Tool call tags set to: {opening_tag}...{closing_tag}")
+
     def generate_response(self, user_input: str):
         """Generate and display response."""
         start_time = time.time()
@@ -545,7 +565,12 @@ class SimpleCLI:
             if self.debug_mode:
                 print(f"🔍 Sending to {self.provider_name}:{self.model_name}")
 
-            response = self.session.generate(user_input, stream=self.stream_mode)
+            # Pass tool_call_tags if set
+            kwargs = {}
+            if hasattr(self.session, 'tool_call_tags') and self.session.tool_call_tags:
+                kwargs['tool_call_tags'] = self.session.tool_call_tags
+            
+            response = self.session.generate(user_input, stream=self.stream_mode, **kwargs)
 
             if self.stream_mode:
                 print("🤖 Assistant: ", end="", flush=True)

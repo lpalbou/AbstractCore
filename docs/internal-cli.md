@@ -305,6 +305,71 @@ You are a helpful AI assistant.
 - Switch between different AI personas during conversation
 - Debug unexpected AI behavior by checking the active system prompt
 
+### `/tooltag <opening_tag> <closing_tag>` - Test Tool Call Tag Rewriting
+
+Test tool call tag rewriting with custom tags to verify compatibility with different agentic CLIs.
+
+```bash
+# Test LLaMA3 format (Crush CLI)
+/tooltag '<function_call>' '</function_call>'
+
+# Test XML format (Gemini CLI)
+/tooltag '<tool_call>' '</tool_call>'
+
+# Test Qwen3 format (Codex CLI)
+/tooltag '<|tool_call|>' '</|tool_call|>'
+
+# Test Gemma format
+/tooltag '```tool_code' '```'
+
+# Test custom format
+/tooltag '<my_tool>' '</my_tool>'
+```
+
+**Features:**
+- Tests custom tool call tag formats
+- Compares with default behavior
+- Works with both streaming and non-streaming modes
+- Verifies tag rewriting functionality
+- Shows detailed results and analysis
+
+**Example Output:**
+```
+🏷️ Testing Tool Call Tag Rewriting
+📝 Opening Tag: '<function_call>'
+📝 Closing Tag: '</function_call>'
+============================================================
+🤖 Testing with openai:gpt-4o-mini
+🌊 Streaming: OFF
+📝 Prompt: Please help me with two tasks:
+1. Get the current weather for Paris
+2. Calculate what 15 * 23 equals
+
+Use the available tools to help me with these tasks.
+
+============================================================
+🔧 Testing with custom tool call tags...
+🤖 Assistant (with custom tags): <function_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</function_call>
+
+🔧 Testing without custom tags (default behavior)...
+🤖 Assistant (default): <|tool_call|>{"name": "get_weather", "arguments": {"location": "Paris"}}</|tool_call|>
+
+============================================================
+📊 Summary:
+   Model: openai:gpt-4o-mini
+   Streaming: OFF
+   Custom tags: '<function_call>'...'</function_call>'
+   Custom tags found: ✅ YES
+   Default tags found: ✅ YES
+```
+
+**When to use:**
+- Test compatibility with specific agentic CLIs (Codex, Crush, Gemini CLI)
+- Verify tool call tag rewriting works correctly
+- Debug tool call format issues
+- Compare different tag formats side by side
+- Test both streaming and non-streaming modes
+
 ## Usage Examples
 
 ### Starting the CLI with Auto-Compact

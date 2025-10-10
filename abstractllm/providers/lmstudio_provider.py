@@ -30,7 +30,20 @@ class LMStudioProvider(BaseProvider):
         self.tool_handler = UniversalToolHandler(model)
 
         self.base_url = base_url.rstrip('/')
-        self.client = httpx.Client(timeout=self._timeout)
+
+        # Ensure timeout is properly set and not None
+        timeout_value = getattr(self, '_timeout', None)
+        if timeout_value is None:
+            timeout_value = 300.0
+
+        try:
+            self.client = httpx.Client(timeout=timeout_value)
+        except Exception as e:
+            # Fallback with default timeout if client creation fails
+            try:
+                self.client = httpx.Client(timeout=300.0)
+            except Exception:
+                raise RuntimeError(f"Failed to create HTTP client for LMStudio: {e}")
 
         # Validate model exists in LMStudio
         self._validate_model()
@@ -46,12 +59,16 @@ class LMStudioProvider(BaseProvider):
                 raise ModelNotFoundError(error_message)
         except httpx.ConnectError:
             # LMStudio not running - will fail later when trying to generate
+            if hasattr(self, 'logger'):
+                self.logger.debug(f"LMStudio server not accessible at {self.base_url} - model validation skipped")
             pass
         except ModelNotFoundError:
             # Re-raise model not found errors
             raise
-        except Exception:
-            # Other errors (like timeout) - continue, will fail later if needed
+        except Exception as e:
+            # Other errors (like timeout, None type errors) - continue, will fail later if needed
+            if hasattr(self, 'logger'):
+                self.logger.debug(f"Model validation failed with error: {e} - continuing anyway")
             pass
 
     def unload(self) -> None:
@@ -85,6 +102,8 @@ class LMStudioProvider(BaseProvider):
                           tools: Optional[List[Dict[str, Any]]] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
+                          execute_tools: Optional[bool] = None,
+                          tool_call_tags: Optional[str] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using LM Studio"""
 
@@ -137,13 +156,17 @@ class LMStudioProvider(BaseProvider):
 
             # Execute tools if enabled and tools are present
             if self.execute_tools and tools and self.tool_handler.supports_prompted and response.content:
-                response = self._handle_prompted_tool_execution(response, tools)
+                response = self._handle_prompted_tool_execution(response, tools, execute_tools)
 
             return response
 
     def _single_generate(self, payload: Dict[str, Any]) -> GenerateResponse:
         """Generate single response"""
         try:
+            # Ensure client is available
+            if not hasattr(self, 'client') or self.client is None:
+                raise ProviderAPIError("HTTP client not initialized")
+
             response = self.client.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
@@ -177,13 +200,23 @@ class LMStudioProvider(BaseProvider):
                 }
             )
 
+        except AttributeError as e:
+            # Handle None type errors specifically
+            if "'NoneType'" in str(e):
+                raise ProviderAPIError(f"LMStudio provider not properly initialized: {str(e)}")
+            else:
+                raise ProviderAPIError(f"LMStudio configuration error: {str(e)}")
         except Exception as e:
             error_str = str(e).lower()
             if ('404' in error_str or 'not found' in error_str or 'model' in error_str) and ('not found' in error_str):
                 # Model not found - show available models
-                available_models = get_available_models("lmstudio", base_url=self.base_url)
-                error_message = format_model_error("LMStudio", self.model, available_models)
-                raise ModelNotFoundError(error_message)
+                try:
+                    available_models = get_available_models("lmstudio", base_url=self.base_url)
+                    error_message = format_model_error("LMStudio", self.model, available_models)
+                    raise ModelNotFoundError(error_message)
+                except Exception:
+                    # If model discovery also fails, provide a generic error
+                    raise ModelNotFoundError(f"Model '{self.model}' not found in LMStudio and could not fetch available models")
             else:
                 raise ProviderAPIError(f"LMStudio API error: {str(e)}")
 
@@ -258,10 +291,26 @@ class LMStudioProvider(BaseProvider):
 
     def _update_http_client_timeout(self) -> None:
         """Update HTTP client timeout when timeout is changed."""
-        if hasattr(self, 'client'):
-            # Create new client with updated timeout
-            self.client.close()
-            self.client = httpx.Client(timeout=self._timeout)
+        if hasattr(self, 'client') and self.client is not None:
+            try:
+                # Create new client with updated timeout
+                self.client.close()
+
+                # Ensure timeout is not None
+                timeout_value = getattr(self, '_timeout', None)
+                if timeout_value is None:
+                    timeout_value = 300.0
+
+                self.client = httpx.Client(timeout=timeout_value)
+            except Exception as e:
+                # Log error but don't fail - timeout update is not critical
+                if hasattr(self, 'logger'):
+                    self.logger.warning(f"Failed to update HTTP client timeout: {e}")
+                # Try to create a new client with default timeout
+                try:
+                    self.client = httpx.Client(timeout=300.0)
+                except Exception:
+                    pass  # Best effort - don't fail the operation
 
 
     def _stream_generate_with_tools(self, payload: Dict[str, Any],
@@ -284,7 +333,7 @@ class LMStudioProvider(BaseProvider):
             )
 
             # Execute tools using base method
-            final_response = self._handle_prompted_tool_execution(complete_response, tools)
+            final_response = self._handle_prompted_tool_execution(complete_response, tools, self.execute_tools)
 
             # If tools were executed, yield the tool results as final chunk
             if final_response.content != collected_content:

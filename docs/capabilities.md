@@ -59,7 +59,48 @@ ollama_response = ollama_llm.generate("Weather in Paris?", tools=tools)
 
 **Why it's exceptional**: Most libraries only support OpenAI-style tools. AbstractCore makes ANY model work with tools.
 
-### 4. Structured Output with Automatic Retry
+### 4. Tool Call Tag Rewriting for Agentic CLI Compatibility
+
+**What it does**: Automatically rewrites tool call tags to match different agentic CLI requirements in real-time.
+
+```python
+# Rewrite tool calls for different CLIs
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# For Codex CLI (Qwen3 format)
+response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="qwen3")
+# Output: <|tool_call|>{"name": "get_weather", "arguments": {"location": "Paris"}}</|tool_call|>
+
+# For Crush CLI (LLaMA3 format)  
+response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="llama3")
+# Output: <function_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</function_call>
+
+# For Gemini CLI (XML format)
+response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
+# Output: <tool_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</tool_call>
+```
+
+**Why it's exceptional**: Seamless compatibility with any agentic CLI without code changes.
+
+### 5. Tool Execution Control
+
+**What it does**: Control whether AbstractCore executes tools automatically or lets the agent handle execution.
+
+```python
+# AbstractCore executes tools automatically (default)
+llm = create_llm("openai", model="gpt-4o-mini", execute_tools=True)
+response = llm.generate("Weather in Paris?", tools=tools)
+# Tools are executed and results are included in response
+
+# Let the agent handle tool execution (for API server mode)
+llm = create_llm("openai", model="gpt-4o-mini", execute_tools=False)
+response = llm.generate("Weather in Paris?", tools=tools)
+# Tools are generated but not executed - agent handles execution
+```
+
+**Why it's exceptional**: Flexible tool execution control for different deployment scenarios.
+
+### 6. Structured Output with Automatic Retry
 
 **What it does**: Gets typed Python objects from LLMs with automatic validation and retry on failures.
 

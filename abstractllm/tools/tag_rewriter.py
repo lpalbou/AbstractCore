@@ -31,9 +31,15 @@ class ToolCallTags:
             raise ValueError("Both start_tag and end_tag must be provided")
         
         # Ensure tags are properly formatted
-        if not self.start_tag.startswith('<'):
+        # Only add angle brackets if the tag doesn't already have them
+        # and doesn't start with special characters like ```
+        if (not self.start_tag.startswith('<') and 
+            not self.start_tag.startswith('```') and
+            not self.start_tag.startswith('`')):
             self.start_tag = f'<{self.start_tag}>'
-        if not self.end_tag.startswith('</'):
+        if (not self.end_tag.startswith('</') and 
+            not self.end_tag.startswith('```') and
+            not self.end_tag.startswith('`')):
             self.end_tag = f'</{self.end_tag.split(">")[0].split("<")[-1]}>'
 
 
@@ -93,6 +99,8 @@ class ToolCallTagRewriter:
         patterns.append((gemma_pattern, f"{self.target_tags.start_tag}\\1{self.target_tags.end_tag}"))
         
         # Pattern 5: Generic JSON (wrap in tags) - only standalone JSON
+        # This pattern matches JSON objects that start with { and contain "name"
+        # It's more flexible and handles nested structures better
         json_pattern = re.compile(
             r'(?<![<])(\{[^{}]*["\']name["\'][^{}]*(?:\{[^{}]*\}[^{}]*)*\})(?![>])',
             re.DOTALL
@@ -122,11 +130,36 @@ class ToolCallTagRewriter:
         
         rewritten = text
         
-        # Apply each pattern only once to avoid double-processing
+        # Apply each pattern to find all matches, not just the first one
         for pattern, replacement in self._compiled_patterns:
-            if pattern.search(rewritten):
-                rewritten = pattern.sub(replacement, rewritten, count=1)
-                break  # Only apply the first matching pattern
+            # Find all matches and replace them
+            matches = list(pattern.finditer(rewritten))
+            if matches:
+                # Replace from end to beginning to avoid index shifting
+                for match in reversed(matches):
+                    start, end = match.span()
+                    match_text = match.group(1) if match.groups() else match.group(0)
+                    # Create replacement with proper tags
+                    if match.groups():
+                        replacement_text = f"{self.target_tags.start_tag}{match_text}{self.target_tags.end_tag}"
+                    else:
+                        replacement_text = f"{self.target_tags.start_tag}{match_text}{self.target_tags.end_tag}"
+                    rewritten = rewritten[:start] + replacement_text + rewritten[end:]
+                break  # Only apply the first matching pattern type
+        
+        # Additional pass for plain JSON tool calls that might not match the regex
+        # This handles cases where the regex is too restrictive
+        if not (self.target_tags.start_tag in rewritten and self.target_tags.end_tag in rewritten):
+            # Look for JSON objects in the text and wrap them
+            # Use a more flexible approach that finds balanced JSON objects
+            import re
+            # Find all potential JSON objects by looking for balanced braces
+            json_objects = self._find_json_objects(rewritten)
+            for json_obj in json_objects:
+                if self._is_plain_json_tool_call(json_obj):
+                    # Replace the JSON object with wrapped version
+                    wrapped_json = f"{self.target_tags.start_tag}{json_obj}{self.target_tags.end_tag}"
+                    rewritten = rewritten.replace(json_obj, wrapped_json, 1)
         
         return rewritten
     
@@ -161,48 +194,65 @@ class ToolCallTagRewriter:
             # Already in target format, just return as-is
             return full_text, ""
         
-        # SOTA Strategy: Immediate rewriting with buffer management
-        rewritten_chunk = ""
-        new_buffer = buffer
+        # Check if we have a complete tool call in the full text
+        if self._has_complete_tool_call(full_text):
+            # Rewrite the complete tool call
+            rewritten_tool_call = self._rewrite_complete_tool_call(full_text)
+            return rewritten_tool_call, ""
         
-        # Process the chunk character by character for precise control
-        i = 0
-        while i < len(chunk):
-            char = chunk[i]
+        # Check if we have an incomplete tool call (start tag but no end tag)
+        if self._has_incomplete_tool_call(full_text):
+            # We have a start tag but no end tag yet
+            # Don't output anything yet, keep buffering
+            return "", full_text
+        
+        # Check if we have a complete plain JSON tool call
+        if self._is_plain_json_tool_call(full_text.strip()):
+            # We have a complete plain JSON tool call
+            rewritten_tool_call = self._rewrite_complete_tool_call(full_text.strip())
+            return rewritten_tool_call, ""
+        
+        # Check if we're in the middle of a potential plain JSON tool call
+        if (full_text.strip().startswith('{') and 
+            '"name"' in full_text and
+            full_text.count('{') == full_text.count('}')):
+            # We have a complete JSON object, try to parse it
+            try:
+                import json
+                json.loads(full_text.strip())
+                # If we get here, it's valid JSON - treat as tool call
+                rewritten_tool_call = self._rewrite_complete_tool_call(full_text.strip())
+                return rewritten_tool_call, ""
+            except:
+                # Not valid JSON, keep buffering
+                return "", full_text
+        elif (full_text.strip().startswith('{') and 
+              '"name"' in full_text):
+            # We're in the middle of a potential JSON tool call, keep buffering
+            return "", full_text
+        else:
+            # Check if there's a JSON tool call embedded in the text
+            import re
+            json_pattern = r'\{[^{}]*"name"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+            matches = re.findall(json_pattern, full_text)
             
-            # Add character to buffer
-            new_buffer += char
-            
-            # Check if we have a complete tool call in the buffer
-            if self._has_complete_tool_call(new_buffer):
-                # Rewrite the complete tool call
-                rewritten_tool_call = self._rewrite_complete_tool_call(new_buffer)
-                rewritten_chunk += rewritten_tool_call
-                new_buffer = ""  # Clear buffer after processing
-            elif self._has_incomplete_tool_call(new_buffer):
-                # We have a start tag but no end tag yet
-                # Don't output anything yet, keep buffering
-                pass
-            elif self._is_plain_json_tool_call(new_buffer):
-                # We have a complete plain JSON tool call
-                rewritten_tool_call = self._rewrite_complete_tool_call(new_buffer)
-                rewritten_chunk += rewritten_tool_call
-                new_buffer = ""  # Clear buffer after processing
+            if matches:
+                # Found JSON tool calls in the text, rewrite them
+                rewritten_text = full_text
+                for match in matches:
+                    try:
+                        import json
+                        json.loads(match)
+                        # Valid JSON, rewrite it
+                        rewritten_match = f"<function_call>{match}</function_call>"
+                        rewritten_text = rewritten_text.replace(match, rewritten_match)
+                    except:
+                        # Not valid JSON, skip
+                        continue
+                return rewritten_text, ""
             else:
-                # Check if we're in the middle of a potential plain JSON tool call
-                if (new_buffer.strip().startswith('{') and 
-                    not new_buffer.strip().endswith('}') and
-                    '"name"' in new_buffer):
-                    # We're in the middle of a potential JSON tool call, keep buffering
-                    pass
-                else:
-                    # No tool call detected, output the character
-                    rewritten_chunk += char
-                    new_buffer = ""  # Clear buffer if no tool call
-            
-            i += 1
-        
-        return rewritten_chunk, new_buffer
+                # No tool call detected, output the chunk and clear buffer
+                return chunk, ""
     
     def _has_complete_tool_call(self, text: str) -> bool:
         """Check if text contains a complete tool call."""
@@ -262,6 +312,32 @@ class ToolCallTagRewriter:
             return isinstance(data, dict) and "name" in data
         except:
             return False
+    
+    def _find_json_objects(self, text: str) -> List[str]:
+        """Find all potential JSON objects in text by looking for balanced braces."""
+        json_objects = []
+        i = 0
+        while i < len(text):
+            if text[i] == '{':
+                # Find the matching closing brace
+                brace_count = 0
+                start = i
+                for j in range(i, len(text)):
+                    if text[j] == '{':
+                        brace_count += 1
+                    elif text[j] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            # Found balanced braces
+                            potential_json = text[start:j+1]
+                            # Check if it contains "name" (likely a tool call)
+                            if '"name"' in potential_json:
+                                json_objects.append(potential_json)
+                            break
+                i = j + 1
+            else:
+                i += 1
+        return json_objects
     
     def _rewrite_complete_tool_call(self, text: str) -> str:
         """Rewrite a complete tool call to target format."""
