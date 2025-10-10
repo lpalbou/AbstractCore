@@ -372,6 +372,28 @@ class BaseProvider(AbstractLLMInterface, ABC):
         # Validate parameters after setting defaults
         self._validate_token_parameters()
 
+        # Run enhanced validation and warn about potential issues
+        self._check_token_configuration_warnings()
+
+    def _check_token_configuration_warnings(self):
+        """Check token configuration and emit warnings for potential issues"""
+        import warnings
+
+        try:
+            warnings_list = self.validate_token_constraints()
+            for warning in warnings_list[:3]:  # Limit to first 3 warnings to avoid spam
+                warnings.warn(f"Token configuration warning for {self.model}: {warning}",
+                             UserWarning, stacklevel=4)
+
+            # Also log warnings for debugging
+            if warnings_list and hasattr(self, 'logger'):
+                self.logger.debug(f"Token configuration warnings for {self.model}: {'; '.join(warnings_list)}")
+
+        except Exception as e:
+            # Don't fail provider initialization due to validation warnings
+            if hasattr(self, 'logger'):
+                self.logger.debug(f"Error checking token configuration warnings: {e}")
+
     def _get_default_max_output_tokens(self) -> int:
         """Get default max_output_tokens using JSON capabilities as single source of truth"""
         from ..architectures import get_model_capabilities
@@ -649,3 +671,21 @@ class BaseProvider(AbstractLLMInterface, ABC):
         """
         # Default implementation does nothing (suitable for API providers)
         pass
+
+    # Token configuration helpers - expose interface methods for user convenience
+    def get_token_configuration_summary(self) -> str:
+        """Get a human-readable summary of current token configuration"""
+        return super().get_token_configuration_summary()
+
+    def validate_token_constraints(self) -> List[str]:
+        """Validate token configuration and return warnings/suggestions"""
+        return super().validate_token_constraints()
+
+    def calculate_token_budget(self, input_text: str, desired_output_tokens: int,
+                              safety_margin: float = 0.1) -> tuple[int, List[str]]:
+        """Helper to estimate required max_tokens given input and desired output"""
+        return super().calculate_token_budget(input_text, desired_output_tokens, safety_margin)
+
+    def estimate_tokens(self, text: str) -> int:
+        """Rough estimation of token count for given text"""
+        return super().estimate_tokens(text)

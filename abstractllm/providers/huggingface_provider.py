@@ -43,15 +43,23 @@ except ImportError:
 class HuggingFaceProvider(BaseProvider):
     """HuggingFace provider with dual support for transformers and GGUF models"""
 
-    def __init__(self, model: str = "microsoft/DialoGPT-medium",
+    def __init__(self, model: str = "Qwen/Qwen3-4B",
                  device: Optional[str] = None,
                  n_gpu_layers: Optional[int] = None,
                  **kwargs):
 
-        # Remove old context_size parameter and handle it through unified system
+        # Handle legacy context_size parameter with deprecation warning
         context_size = kwargs.pop("context_size", None)
-        if context_size and "max_tokens" not in kwargs:
-            kwargs["max_tokens"] = context_size
+        if context_size is not None:
+            import warnings
+            warnings.warn(
+                "The 'context_size' parameter is deprecated. Use 'max_tokens' instead. "
+                "context_size will be removed in a future version.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            if "max_tokens" not in kwargs:
+                kwargs["max_tokens"] = context_size
 
         super().__init__(model, **kwargs)
 
