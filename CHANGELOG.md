@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.2.4] - 2025-10-10
+
+### Fixed
+- **ONNX Optimization and Warning Management**: Improved embedding performance and user experience
+  - **Smart ONNX Model Selection**: EmbeddingManager now automatically selects optimized `model_O3.onnx` for better performance
+  - **Warning Suppression**: Eliminated harmless warnings from PyTorch 2.8+ and sentence-transformers during model loading
+  - **Graceful Fallbacks**: Multiple fallback layers ensure reliability (optimized ONNX → basic ONNX → PyTorch)
+  - **Performance Improvement**: ONNX optimization provides significant speedup for batch embedding operations
+  - **Clean Implementation**: Conservative approach with minimal code changes (40 lines) for maintainability
+
+### Technical
+- Added `_suppress_onnx_warnings()` context manager to handle known harmless warnings
+- Added `_get_optimal_onnx_model()` function for intelligent ONNX variant selection
+- Enhanced `_load_model()` with multi-layer fallback strategy and clear logging
+- Zero breaking changes - all improvements are additive with sensible defaults
+
 ## [2.2.3] - 2025-10-09
 
 ### Fixed
