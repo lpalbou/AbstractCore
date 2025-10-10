@@ -206,6 +206,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
                                stream: bool = False,
                                response_model: Optional[Type[BaseModel]] = None,
                                retry_strategy=None,  # Custom retry strategy for structured output
+                               tool_call_tags: Optional[str] = None,  # Tool call tag rewriting
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate with integrated telemetry and error handling.
@@ -297,6 +298,19 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 _execute_generation,
                 provider_key=self.provider_key
             )
+
+            # Apply tool call tag rewriting if requested
+            if tool_call_tags:
+                try:
+                    from ..tools.integration import apply_tool_call_tag_rewriting
+                    response = apply_tool_call_tag_rewriting(response, tool_call_tags)
+                except ImportError:
+                    # If integration module is not available, skip rewriting
+                    pass
+                except Exception as e:
+                    # Log error but don't fail the generation
+                    if hasattr(self, 'logger'):
+                        self.logger.warning(f"Tool call tag rewriting failed: {e}")
 
             # Handle streaming vs non-streaming differently
             if stream:

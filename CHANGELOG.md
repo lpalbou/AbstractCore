@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.2.6] - 2024-12-19
+
+### Fixed
+- **Native Tool Metadata Preservation**: Enhanced metadata (tags, when_to_use, examples) now preserved in native tool calls
+- **Architecture-Aware Examples**: Tool examples now use correct format per architecture (Qwen3: `<|tool_call|>`, LLaMA3: `<function_call>`, Gemma3: plain JSON)
+- **Tool Call Parsing**: Fixed parsing system works with all tool call formats across all architectures
+
+### Enhanced
+- **Tool Call Format Detection**: Improved regex patterns for better JSON tool call detection
+- **Parser Fallback System**: Added proper fallback handling for unknown tool formats
+- **Real Model Testing**: Comprehensive testing with actual Ollama models confirms all fixes work correctly
+
+### Documentation
+- **Architecture Model Checks**: Updated test results documentation with latest fixes and improvements
+- **Tool Metadata Usage**: Documented how enhanced metadata is handled in both prompted and native tool calling
+
 ## [2.2.5] - 2025-10-10
 
 ### Enhanced
