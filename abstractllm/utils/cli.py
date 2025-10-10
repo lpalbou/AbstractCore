@@ -25,7 +25,7 @@ import sys
 import time
 
 from .. import create_llm, BasicSession
-from ..tools.common_tools import list_files, read_file, execute_command, web_search
+from ..tools.common_tools import list_files, read_file, write_file, execute_command
 from ..processing import BasicExtractor, BasicJudge
 
 
@@ -46,13 +46,13 @@ class SimpleCLI:
         self.session = BasicSession(
             self.provider,
             system_prompt="You are a helpful AI assistant.",
-            tools=[list_files, read_file, execute_command, web_search]
+            tools=[list_files, read_file, write_file, execute_command]
         )
 
         print(f"🚀 AbstractLLM CLI - {provider}:{model}")
         print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
         print("Commands: /help /quit /clear /stream /debug /history [n] /model <spec> /compact /facts [file] /judge /system [prompt]")
-        print("Tools: list_files, read_file, execute_command, web_search")
+        print("Tools: list_files, read_file, write_file, execute_command")
         print("=" * 60)
 
     def handle_command(self, user_input: str) -> bool:
@@ -79,7 +79,7 @@ class SimpleCLI:
             print("  /facts [file] - Extract facts from conversation history")
             print("  /judge - Evaluate conversation quality and provide feedback")
             print("  /system [prompt] - Show or change system prompt")
-            print("\n🛠️ Tools: list_files, read_file, execute_command, web_search\n")
+            print("\n🛠️ Tools: list_files, read_file, write_file, execute_command\n")
 
         elif cmd == 'clear':
             self.session.clear_history(keep_system=True)
@@ -120,7 +120,7 @@ class SimpleCLI:
                 self.session = BasicSession(
                     self.provider,
                     system_prompt="You are a helpful AI assistant.",
-                    tools=[list_files, read_file, execute_command, web_search]
+                    tools=[list_files, read_file, write_file, execute_command]
                 )
                 print("✅ Model switched")
             except Exception as e:
@@ -628,7 +628,7 @@ Commands:
   /judge - Evaluate conversation quality and provide feedback
   /system [prompt] - Show or change system prompt
 
-Tools: list_files, read_file, execute_command, web_search
+Tools: list_files, read_file, write_file, execute_command
 
 Note: This is a basic demonstrator with limited capabilities. For production
 use cases requiring advanced reasoning, ReAct patterns, or complex tool chains,
