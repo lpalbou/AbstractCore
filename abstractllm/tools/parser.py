@@ -35,6 +35,13 @@ class ToolFormat(Enum):
     NATIVE = "native"                 # API-level tool calls
 
 
+def _has_json_tool_pattern(response: str) -> bool:
+    """Check if response contains JSON tool call pattern."""
+    # Look for JSON objects that look like tool calls
+    json_pattern = r'\{[^{}]*["\']name["\'][^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+    return bool(re.search(json_pattern, response, re.DOTALL))
+
+
 def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     """
     Detect if response contains tool calls.
@@ -52,25 +59,30 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     # Get expected format from architecture
     tool_format = _get_tool_format(model_name)
 
-    # Check format-specific patterns
+    # Check format-specific patterns (case-insensitive)
+    response_lower = response.lower()
     if tool_format == ToolFormat.TOOL_CODE:
-        return "```tool_code" in response or "```tool_call" in response
+        return "```tool_code" in response_lower or "```tool_call" in response_lower
     elif tool_format == ToolFormat.SPECIAL_TOKEN:
-        return "<|tool_call|>" in response
+        return "<|tool_call|>" in response_lower
     elif tool_format == ToolFormat.FUNCTION_CALL:
-        return "<function_call" in response or _has_json_tool_pattern(response)
+        return "<function_call" in response_lower or _has_json_tool_pattern(response)
     elif tool_format == ToolFormat.XML_WRAPPED:
-        return "<tool_call>" in response
+        return "<tool_call>" in response_lower
     else:
-        # Try common patterns
+        # Try common patterns (case-insensitive)
         return any([
-            "```tool_code" in response,
-            "```tool_call" in response,
-            "<|tool_call|>" in response,
-            "<function_call" in response,
-            "<tool_call>" in response,
+            "```tool_code" in response_lower,
+            "```tool_call" in response_lower,
+            "<|tool_call|>" in response_lower,
+            "<function_call" in response_lower,
+            "<tool_call>" in response_lower,
             _has_json_tool_pattern(response),
         ])
+    
+    # Additional check for plain JSON when no specific format is detected
+    if tool_format == ToolFormat.RAW_JSON:
+        return _has_json_tool_pattern(response)
 
 
 def parse_tool_calls(response: str, model_name: Optional[str] = None) -> List[ToolCall]:
@@ -158,14 +170,6 @@ def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
         return ToolFormat.FUNCTION_CALL
 
 
-def _has_json_tool_pattern(text: str) -> bool:
-    """Check for JSON-like tool call patterns."""
-    patterns = [
-        r'\\{\\s*["\']name["\']\\s*:',  # {"name": ...
-        r'\\{\\s*["\']function["\']\\s*:',  # {"function": ...
-        r'tool_call\\s*:\\s*\\{',  # tool_call: {
-    ]
-    return any(re.search(pattern, text) for pattern in patterns)
 
 
 def _parse_special_token(response: str) -> List[ToolCall]:
