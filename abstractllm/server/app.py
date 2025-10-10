@@ -480,13 +480,13 @@ configure_logging(
 app = FastAPI(
     title="AbstractCore Server",
     description="Universal LLM Gateway - OpenAI-Compatible API for ALL Providers",
-    version="2.2.3"
+    version="2.2.4"
 )
 
 # Get server logger
 server_logger = get_logger("server")
 server_logger.info("🚀 AbstractCore Server Starting",
-                   version="2.2.3",
+                   version="2.2.4",
                    logging_configured=True)
 
 app.add_middleware(
@@ -2555,7 +2555,7 @@ async def get_capabilities():
     return {
         "api_version": "v1",
         "server": "AbstractCore",
-        "version": "2.2.3",
+        "version": "2.2.4",
         "capabilities": {
             "chat_completions": True,
             "text_completions": True,

@@ -3,9 +3,11 @@
 Do not pay attention to this.
 
 1) rename to AbstractCore
-2) LLM-as-a-judge
+2) [OK] LLM-as-a-judge
 3) Media handling
-
+4) tool detection (at streaming / message level)
+5) tool rewrite (intercept and rewrite the tool to conform to a specific agent; eg <tool_call> or <|tool_call|> or ```tool.code...```)
+6) make sure the register (tool) is leveraging the decorator, docstring and examples
 
 uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000 --reload
 

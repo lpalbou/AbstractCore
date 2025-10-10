@@ -11,6 +11,8 @@ import logging
 import atexit
 import sys
 import builtins
+import warnings
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Union, Any, Dict, TYPE_CHECKING
@@ -33,6 +35,44 @@ except ImportError:
 from .models import EmbeddingBackend, get_model_config, list_available_models, get_default_model
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _suppress_onnx_warnings():
+    """Temporarily suppress known harmless ONNX and sentence-transformers warnings."""
+    with warnings.catch_warnings():
+        # Suppress PyTorch ONNX registration warnings (harmless in PyTorch 2.8+)
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Symbolic function.*already registered.*",
+            category=UserWarning,
+            module="torch.onnx._internal.registration"
+        )
+
+        # Suppress sentence-transformers multiple ONNX file warnings
+        warnings.filterwarnings(
+            "ignore",
+            message=".*Multiple ONNX files found.*defaulting to.*",
+            category=UserWarning,
+            module="sentence_transformers.models.Transformer"
+        )
+
+        # Suppress ONNX Runtime provider warnings (these are system-level logs)
+        # Note: CoreML warnings are logged directly to stderr by ONNX Runtime,
+        # not through Python's warning system, so they're harder to suppress
+
+        yield
+
+
+def _get_optimal_onnx_model() -> Optional[str]:
+    """Select optimal ONNX model using conservative strategy.
+
+    Returns:
+        ONNX model filename or None to use default
+    """
+    # Conservative strategy: try O3 optimization (good performance, widely supported)
+    # If it fails, sentence-transformers will fallback to model.onnx automatically
+    return "onnx/model_O3.onnx"
 
 
 class EmbeddingManager:
@@ -132,7 +172,7 @@ class EmbeddingManager:
             self.has_events = False
 
     def _load_model(self):
-        """Load the HuggingFace embedding model with optimal backend."""
+        """Load the HuggingFace embedding model with optimal backend and reduced warnings."""
         try:
             if sentence_transformers is None:
                 raise ImportError("sentence-transformers is required but not installed")
@@ -147,28 +187,46 @@ class EmbeddingManager:
             # Determine best backend
             backend = self._select_backend()
 
-            # Load model with backend (will use HuggingFace cache automatically)
-            if backend == EmbeddingBackend.ONNX:
-                try:
+            # Load model with optimal ONNX selection and warning suppression
+            with _suppress_onnx_warnings():
+                if backend == EmbeddingBackend.ONNX:
+                    try:
+                        # Try optimized ONNX model first
+                        optimal_onnx = _get_optimal_onnx_model()
+                        model_kwargs = {"file_name": optimal_onnx} if optimal_onnx else {}
+
+                        self.model = sentence_transformers.SentenceTransformer(
+                            self.model_id,
+                            backend="onnx",
+                            model_kwargs=model_kwargs,
+                            trust_remote_code=self.trust_remote_code
+                        )
+                        onnx_model = optimal_onnx or "model.onnx"
+                        logger.info(f"Loaded {self.model_id} with ONNX backend ({onnx_model})")
+
+                    except Exception as e:
+                        logger.warning(f"Optimized ONNX failed: {e}. Trying basic ONNX.")
+                        try:
+                            # Fallback to basic ONNX
+                            self.model = sentence_transformers.SentenceTransformer(
+                                self.model_id,
+                                backend="onnx",
+                                trust_remote_code=self.trust_remote_code
+                            )
+                            logger.info(f"Loaded {self.model_id} with basic ONNX backend")
+                        except Exception as e2:
+                            logger.warning(f"All ONNX variants failed: {e2}. Falling back to PyTorch.")
+                            self.model = sentence_transformers.SentenceTransformer(
+                                self.model_id,
+                                trust_remote_code=self.trust_remote_code
+                            )
+                            logger.info(f"Loaded {self.model_id} with PyTorch backend")
+                else:
                     self.model = sentence_transformers.SentenceTransformer(
                         self.model_id,
-                        backend="onnx",
                         trust_remote_code=self.trust_remote_code
                     )
-                    logger.info(f"Loaded {self.model_id} with ONNX backend (cached in ~/.cache/huggingface/)")
-                except Exception as e:
-                    logger.warning(f"ONNX backend failed: {e}. Falling back to PyTorch.")
-                    self.model = sentence_transformers.SentenceTransformer(
-                        self.model_id,
-                        trust_remote_code=self.trust_remote_code
-                    )
-                    logger.info(f"Loaded {self.model_id} with PyTorch backend (cached in ~/.cache/huggingface/)")
-            else:
-                self.model = sentence_transformers.SentenceTransformer(
-                    self.model_id,
-                    trust_remote_code=self.trust_remote_code
-                )
-                logger.info(f"Loaded {self.model_id} with PyTorch backend (cached in ~/.cache/huggingface/)")
+                    logger.info(f"Loaded {self.model_id} with PyTorch backend")
 
         except ImportError:
             raise ImportError(

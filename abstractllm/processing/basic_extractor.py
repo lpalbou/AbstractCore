@@ -133,22 +133,22 @@ class BasicExtractor:
 STEP 1 : always start by identifying the entities in the text and to classify them in 2 groups based on their importance: the primary entities are the main subjects, the main topics or main ideas; the secondary entities relates either to details of the primary entities or to additional information.
 
 ENTITY TYPES must be one of:
+- sk:Concept - Abstract concepts, technologies
 - s:Person - People by name
 - s:Organization - Companies, institutions
 - s:Event - Events, meetings, conferences, etc
 - s:Goal - Abstract goals, objectives
 - s:Task - Abstract tasks, actions
-- s:SoftwareApplication - Software, libraries, frameworks, tools
 - s:Place - Locations
 - s:Product - Products, services
-- sk:Concept - Abstract concepts, technologies
+- s:SoftwareApplication - Software, libraries, frameworks, tools
 
 LIMITS: try to limit the number of entities to {entity_limit}.
 
 STEP 2 : ONCE all the entities have been created and annotated, then identify and characterize all the relationships between the selected entities.
 
 RELATIONSHIP TYPES must be one of:
-- is_a, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, occurs_in, occurs_when
+- is, is_not, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, constitutes, models, occurs_in, occurs_when
 
 STEP 3 : create the JSON-LD knowledge graph with the entities and relationships identified and characterized in step 1 and 2. Be extra mindful to use the correct JSON-LD syntax. An example is provided just below.
 
@@ -611,7 +611,7 @@ LIMITS: try to limit the total number of entities to {entity_limit}.
 STEP 2: ONCE all the entities have been created and annotated, then identify and characterize all the relationships between the selected entities.
 
 RELATIONSHIP TYPES must be one of:
-- is_a, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, occurs_in, occurs_when
+- is, is_not, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, constitutes, models, occurs_in, occurs_when
 
 STEP 3: Create the COMPLETE refined JSON-LD knowledge graph with ALL entities and relationships (existing + new + corrected). Be extra mindful to use the correct JSON-LD syntax. An example is provided just below.
 
