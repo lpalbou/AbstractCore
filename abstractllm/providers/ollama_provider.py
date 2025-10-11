@@ -211,7 +211,7 @@ class OllamaProvider(BaseProvider):
                 buffer = ""
                 if tool_call_tags:
                     try:
-                        from ..tools.integration import create_tag_rewriter
+                        from ..tools.tag_rewriter import create_tag_rewriter
                         rewriter = create_tag_rewriter(tool_call_tags)
                     except ImportError:
                         pass
