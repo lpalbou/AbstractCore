@@ -318,9 +318,13 @@ class BaseProvider(AbstractLLMInterface, ABC):
                         # Import and create unified stream processor
                         from .streaming import UnifiedStreamProcessor
 
+                        # CRITICAL: If custom tags are set, AbstractCore should NOT execute tools
+                        # The agent/CLI will handle execution based on tag recognition
+                        actual_execute_tools = should_execute_tools and not bool(tool_call_tags)
+
                         processor = UnifiedStreamProcessor(
                             model_name=self.model,
-                            execute_tools=should_execute_tools,
+                            execute_tools=actual_execute_tools,  # Disabled when custom tags
                             tool_call_tags=tool_call_tags
                         )
 
