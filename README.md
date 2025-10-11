@@ -4,7 +4,9 @@ A unified, powerful Python library for seamless interaction with multiple Large 
 
 ## Quick Overview
 
-AbstractCore simplifies LLM interactions by providing a consistent, intuitive interface across different providers. Write once, run everywhere.
+AbstractCore simplifies LLM interactions by providing a consistent, intuitive interface across different providers. 
+
+*Write once, run everywhere*.
 
 ## Core Library Usage
 
