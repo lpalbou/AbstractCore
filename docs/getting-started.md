@@ -121,55 +121,54 @@ print(f"Summary: {review.summary}")
 
 ### 3. Tool Calling (LLM with Superpowers)
 
-Let your LLM call functions:
+Let your LLM call functions with the `@tool` decorator:
 
 ```python
-from abstractllm import create_llm
+from abstractllm import create_llm, tool
+from abstractllm.tool import ToolDefinition
 
+# Simple way to create tools: Use @tool decorator
+@tool
 def get_weather(city: str) -> str:
-    # In reality, call a weather API
+    """Get current weather for a specified city."""
+    # In a real scenario, you'd call an actual weather API
     return f"The weather in {city} is sunny, 72°F"
 
-def calculate(expression: str) -> str:
+@tool
+def calculate(expression: str) -> float:
+    """Perform a mathematical calculation."""
     try:
-        result = eval(expression)  # Don't do this in production!
-        return f"{expression} = {result}"
-    except:
-        return "Invalid calculation"
+        result = eval(expression)  # Simplified for demo - don't use eval in production!
+        return result
+    except Exception:
+        return float('nan')  # Return NaN for invalid calculations
 
-tools = [
-    {
-        "name": "get_weather",
-        "description": "Get current weather for a city",
-        "parameters": {
-            "type": "object",
-            "properties": {"city": {"type": "string"}},
-            "required": ["city"]
-        }
-    },
-    {
-        "name": "calculate",
-        "description": "Perform mathematical calculations",
-        "parameters": {
-            "type": "object",
-            "properties": {"expression": {"type": "string"}},
-            "required": ["expression"]
-        }
-    }
-]
-
+# Instantiate the LLM
 llm = create_llm("openai", model="gpt-4o-mini")
 
+# Automatically extract tool definitions from decorated functions
 response = llm.generate(
     "What's the weather in Tokyo and what's 15 * 23?",
-    tools=tools
+    tools=[get_weather, calculate]  # Pass tool functions directly
 )
 
 print(response.content)
 # Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
+
+# Advanced: Manually get tool definitions if needed
+weather_tool: ToolDefinition = get_weather.tool_definition
+calc_tool: ToolDefinition = calculate.tool_definition
+
+# Inspect tool definitions
+print(weather_tool.name)  # "get_weather"
+print(weather_tool.description)  # "Get current weather for a specified city."
 ```
 
-> **🏷️ Advanced Tool Features**: For agentic CLI compatibility, AbstractCore supports automatic tool call format conversion. See [Tool Call Tag Rewriting](tool-call-tag-rewriting.md) for details.
+> **🏷️ Advanced Tool Features**:
+> - `@tool` automatically generates ToolDefinition
+> - Supports complex type hints and docstrings
+> - Automatic parameter extraction
+> - See [Tool Call Tag Rewriting](tool-call-tag-rewriting.md) for agentic CLI compatibility
 
 ### 4. Streaming (Real-Time Responses)
 

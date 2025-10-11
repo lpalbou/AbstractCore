@@ -400,6 +400,8 @@ graph TD
 
 #### Unified Streaming Architecture
 
+> **📊 Comprehensive Visual Documentation**: For detailed architectural diagrams, data flow visualizations, state machines, and performance charts of the streaming system, see the [Streaming Architecture Visual Guide](streaming-architecture-visual-guide.md).
+
 AbstractCore's streaming system represents a major architectural improvement that replaced a problematic dual-mode system with an elegant, high-performance unified approach:
 
 **Architecture Components**:
