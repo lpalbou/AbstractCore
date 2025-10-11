@@ -161,30 +161,42 @@ class ToolCallTagRewriter:
         Returns:
             Text with rewritten tool call tags
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.debug(f"rewrite_text called with text: {text[:100] if text else None}")
+        logger.debug(f"Target output tags: start='{self._output_start_tag}', end='{self._output_end_tag}'")
+
         if not text or not self.target_tags.preserve_json:
+            logger.debug("Early return: text is empty or preserve_json is False")
             return text
 
         # Check if we already have the target format (avoid double-tagging)
         # Check using output tags (with angle brackets)
         if (self._output_start_tag in text and
             self._output_end_tag in text):
+            logger.debug(f"Already in target format, returning as-is")
             # Already in target format, just return as-is
             return text
 
         rewritten = text
+        logger.debug(f"Starting pattern matching with {len(self._compiled_patterns)} patterns")
 
         # Apply each pattern to find all matches, not just the first one
-        for pattern, replacement in self._compiled_patterns:
+        for i, (pattern, replacement) in enumerate(self._compiled_patterns):
             # Find all matches and replace them
             matches = list(pattern.finditer(rewritten))
+            logger.debug(f"Pattern {i}: {pattern.pattern[:50]}... - found {len(matches)} matches")
             if matches:
                 # Replace from end to beginning to avoid index shifting
                 for match in reversed(matches):
                     start, end = match.span()
                     match_text = match.group(1) if match.groups() else match.group(0)
+                    logger.debug(f"Match found at {start}:{end}, text: {match_text[:50]}")
                     # Create replacement with properly formatted output tags
                     replacement_text = f"{self._output_start_tag}{match_text}{self._output_end_tag}"
                     rewritten = rewritten[:start] + replacement_text + rewritten[end:]
+                    logger.debug(f"Replaced with: {replacement_text[:100]}")
                 break  # Only apply the first matching pattern type
 
         # Additional pass for plain JSON tool calls that might not match the regex
@@ -200,7 +212,9 @@ class ToolCallTagRewriter:
                     # Replace the JSON object with wrapped version using output tags
                     wrapped_json = f"{self._output_start_tag}{json_obj}{self._output_end_tag}"
                     rewritten = rewritten.replace(json_obj, wrapped_json, 1)
+                    logger.debug(f"Plain JSON wrapped: {wrapped_json[:100]}")
 
+        logger.debug(f"Final rewritten text: {rewritten[:200] if rewritten else None}")
         return rewritten
     
     def rewrite_streaming_chunk(self, chunk: str, buffer: str = "") -> Tuple[str, str]:

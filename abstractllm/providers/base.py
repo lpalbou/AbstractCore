@@ -52,9 +52,9 @@ class BaseProvider(AbstractLLMInterface, ABC):
         self._tool_timeout = kwargs.get('tool_timeout', 300.0)  # Default 300 seconds for tool execution
 
         # Setup tool execution mode
-        # execute_tools: True = AbstractCore executes tools (default for standalone usage)
-        #                False = Pass-through mode (for API server / agentic CLI)
-        self.execute_tools = kwargs.get('execute_tools', True)
+        # execute_tools: True = AbstractCore executes tools (legacy mode)
+        #                False = Pass-through mode (default - for API server / agentic CLI)
+        self.execute_tools = kwargs.get('execute_tools', False)
 
         # Setup retry manager with optional configuration
         retry_config = kwargs.get('retry_config', None)
@@ -263,9 +263,9 @@ class BaseProvider(AbstractLLMInterface, ABC):
                     self.logger.warning(f"Unknown tool type: {type(tool)}, skipping")
         
         # Handle tool execution control
-        should_execute_tools = execute_tools if execute_tools is not None else True
+        should_execute_tools = execute_tools if execute_tools is not None else self.execute_tools
         if not should_execute_tools and converted_tools:
-            # If tools are provided but execution is disabled, 
+            # If tools are provided but execution is disabled,
             # we still pass them to the provider for generation but won't execute them
             self.logger.info("Tool execution disabled - tools will be generated but not executed")
 
@@ -318,14 +318,14 @@ class BaseProvider(AbstractLLMInterface, ABC):
                         # Import and create unified stream processor
                         from .streaming import UnifiedStreamProcessor
 
-                        # CRITICAL: If custom tags are set, AbstractCore should NOT execute tools
-                        # The agent/CLI will handle execution based on tag recognition
-                        actual_execute_tools = should_execute_tools and not bool(tool_call_tags)
+                        # Use the should_execute_tools value (defaults to False)
+                        actual_execute_tools = should_execute_tools
 
                         processor = UnifiedStreamProcessor(
                             model_name=self.model,
-                            execute_tools=actual_execute_tools,  # Disabled when custom tags
-                            tool_call_tags=tool_call_tags
+                            execute_tools=actual_execute_tools,  # Default: False (pass-through mode)
+                            tool_call_tags=tool_call_tags,
+                            default_target_format="qwen3"  # Always rewrite to qwen3 format
                         )
 
                         # Process stream with incremental tool detection and execution
@@ -342,7 +342,11 @@ class BaseProvider(AbstractLLMInterface, ABC):
 
                 return unified_stream()
             else:
-                # Non-streaming: track after completion (tag rewriting handled by providers)
+                # Non-streaming: apply tag rewriting if needed
+                if response and response.content and converted_tools:
+                    # Apply default qwen3 rewriting for non-streaming responses
+                    response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
+
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response
 
@@ -768,3 +772,36 @@ class BaseProvider(AbstractLLMInterface, ABC):
         except Exception:
             # If we can't determine, err on the side of applying rewriting
             return True
+
+    def _apply_non_streaming_tag_rewriting(self, response: GenerateResponse, tool_call_tags: Optional[str] = None) -> GenerateResponse:
+        """Apply tag rewriting to non-streaming response content."""
+        try:
+            from .streaming import UnifiedStreamProcessor
+
+            # Create a temporary processor for tag rewriting
+            processor = UnifiedStreamProcessor(
+                model_name=self.model,
+                execute_tools=False,  # No execution, just rewriting
+                tool_call_tags=tool_call_tags,
+                default_target_format="qwen3"  # Always rewrite to qwen3 format
+            )
+
+            # Apply tag rewriting to the content
+            if processor.tag_rewriter and response.content:
+                rewritten_content = processor._apply_tag_rewriting_direct(response.content)
+
+                # Return new response with rewritten content
+                return GenerateResponse(
+                    content=rewritten_content,
+                    model=response.model,
+                    finish_reason=response.finish_reason,
+                    raw_response=response.raw_response,
+                    usage=response.usage,
+                    tool_calls=response.tool_calls
+                )
+
+        except Exception as e:
+            self.logger.debug(f"Non-streaming tag rewriting failed: {e}")
+
+        # Return original response if rewriting fails
+        return response
