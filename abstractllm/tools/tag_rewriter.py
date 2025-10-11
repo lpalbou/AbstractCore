@@ -41,10 +41,15 @@ class ToolCallTags:
                 not self.start_tag.startswith('```') and
                 not self.start_tag.startswith('`')):
                 self.start_tag = f'<{self.start_tag}>'
-            if (not self.end_tag.startswith('</') and
+
+            # For end tag: check if it already has angle brackets at all
+            # If it starts with '<' (like '<END>'), leave it as-is
+            # Only auto-format if it's a plain tag (like 'custom_tool')
+            if (not self.end_tag.startswith('<') and
                 not self.end_tag.startswith('```') and
                 not self.end_tag.startswith('`')):
-                self.end_tag = f'</{self.end_tag.split(">")[0].split("<")[-1]}>'
+                # Plain tag - add </ prefix
+                self.end_tag = f'</{self.end_tag}>'
 
 
 class ToolCallTagRewriter:
@@ -58,50 +63,83 @@ class ToolCallTagRewriter:
     def __init__(self, target_tags: ToolCallTags):
         """
         Initialize the tag rewriter.
-        
+
         Args:
             target_tags: Target tag configuration
         """
         self.target_tags = target_tags
+        # Compute formatted tags for output
+        self._output_start_tag = self._format_tag_for_output(target_tags.start_tag, is_end=False)
+        self._output_end_tag = self._format_tag_for_output(target_tags.end_tag, is_end=True)
         self._compiled_patterns = self._compile_patterns()
+
+    def _format_tag_for_output(self, tag: str, is_end: bool = False) -> str:
+        """
+        Format tag for output, respecting auto_format setting.
+
+        When auto_format=True: Plain tags like 'ojlk' become '<ojlk>' and 'dfsd' becomes '</dfsd>'
+        When auto_format=False: Tags are used exactly as specified by user
+
+        Args:
+            tag: The tag to format
+            is_end: Whether this is an end tag (adds '/' prefix if needed)
+
+        Returns:
+            Formatted tag
+        """
+        # If auto_format is disabled, use tags exactly as specified
+        if not self.target_tags.auto_format:
+            return tag
+
+        # If tag already has angle brackets or special formatting, return as-is
+        if tag.startswith('<') or tag.startswith('```') or tag.startswith('`'):
+            return tag
+
+        # Plain tag - wrap with angle brackets only if auto_format is enabled
+        if is_end:
+            # End tag: add </ prefix and > suffix
+            return f'</{tag}>'
+        else:
+            # Start tag: add < prefix and > suffix
+            return f'<{tag}>'
     
     def _compile_patterns(self) -> List[Tuple[re.Pattern, str]]:
         """
         Compile regex patterns for different tool call formats.
-        
+
         Returns:
             List of (pattern, replacement_template) tuples
         """
         patterns = []
-        
+
         # Pattern 1: Qwen3 format <|tool_call|>...JSON...</|tool_call|>
         qwen_pattern = re.compile(
             r'<\|tool_call\|>\s*(.*?)\s*</\|tool_call\|>',
             re.DOTALL | re.IGNORECASE
         )
-        patterns.append((qwen_pattern, f"{self.target_tags.start_tag}\\1{self.target_tags.end_tag}"))
-        
+        patterns.append((qwen_pattern, f"{self._output_start_tag}\\1{self._output_end_tag}"))
+
         # Pattern 2: LLaMA3 format <function_call>...JSON...</function_call>
         llama_pattern = re.compile(
             r'<function_call>\s*(.*?)\s*</function_call>',
             re.DOTALL | re.IGNORECASE
         )
-        patterns.append((llama_pattern, f"{self.target_tags.start_tag}\\1{self.target_tags.end_tag}"))
-        
+        patterns.append((llama_pattern, f"{self._output_start_tag}\\1{self._output_end_tag}"))
+
         # Pattern 3: XML format <tool_call>...JSON...</tool_call>
         xml_pattern = re.compile(
             r'<tool_call>\s*(.*?)\s*</tool_call>',
             re.DOTALL | re.IGNORECASE
         )
-        patterns.append((xml_pattern, f"{self.target_tags.start_tag}\\1{self.target_tags.end_tag}"))
-        
+        patterns.append((xml_pattern, f"{self._output_start_tag}\\1{self._output_end_tag}"))
+
         # Pattern 4: Gemma format ```tool_code...JSON...```
         gemma_pattern = re.compile(
             r'```tool_code\s*\n(.*?)\n```',
             re.DOTALL | re.IGNORECASE
         )
-        patterns.append((gemma_pattern, f"{self.target_tags.start_tag}\\1{self.target_tags.end_tag}"))
-        
+        patterns.append((gemma_pattern, f"{self._output_start_tag}\\1{self._output_end_tag}"))
+
         # Pattern 5: Generic JSON (wrap in tags) - only standalone JSON
         # This pattern matches JSON objects that start with { and contain "name"
         # It's more flexible and handles nested structures better
@@ -109,31 +147,32 @@ class ToolCallTagRewriter:
             r'(?<![<])(\{[^{}]*["\']name["\'][^{}]*(?:\{[^{}]*\}[^{}]*)*\})(?![>])',
             re.DOTALL
         )
-        patterns.append((json_pattern, f"{self.target_tags.start_tag}\\1{self.target_tags.end_tag}"))
-        
+        patterns.append((json_pattern, f"{self._output_start_tag}\\1{self._output_end_tag}"))
+
         return patterns
     
     def rewrite_text(self, text: str) -> str:
         """
         Rewrite tool call tags in text.
-        
+
         Args:
             text: Input text containing tool calls
-            
+
         Returns:
             Text with rewritten tool call tags
         """
         if not text or not self.target_tags.preserve_json:
             return text
-        
+
         # Check if we already have the target format (avoid double-tagging)
-        if (self.target_tags.start_tag in text and 
-            self.target_tags.end_tag in text):
+        # Check using output tags (with angle brackets)
+        if (self._output_start_tag in text and
+            self._output_end_tag in text):
             # Already in target format, just return as-is
             return text
-        
+
         rewritten = text
-        
+
         # Apply each pattern to find all matches, not just the first one
         for pattern, replacement in self._compiled_patterns:
             # Find all matches and replace them
@@ -143,17 +182,14 @@ class ToolCallTagRewriter:
                 for match in reversed(matches):
                     start, end = match.span()
                     match_text = match.group(1) if match.groups() else match.group(0)
-                    # Create replacement with proper tags
-                    if match.groups():
-                        replacement_text = f"{self.target_tags.start_tag}{match_text}{self.target_tags.end_tag}"
-                    else:
-                        replacement_text = f"{self.target_tags.start_tag}{match_text}{self.target_tags.end_tag}"
+                    # Create replacement with properly formatted output tags
+                    replacement_text = f"{self._output_start_tag}{match_text}{self._output_end_tag}"
                     rewritten = rewritten[:start] + replacement_text + rewritten[end:]
                 break  # Only apply the first matching pattern type
-        
+
         # Additional pass for plain JSON tool calls that might not match the regex
         # This handles cases where the regex is too restrictive
-        if not (self.target_tags.start_tag in rewritten and self.target_tags.end_tag in rewritten):
+        if not (self._output_start_tag in rewritten and self._output_end_tag in rewritten):
             # Look for JSON objects in the text and wrap them
             # Use a more flexible approach that finds balanced JSON objects
             import re
@@ -161,10 +197,10 @@ class ToolCallTagRewriter:
             json_objects = self._find_json_objects(rewritten)
             for json_obj in json_objects:
                 if self._is_plain_json_tool_call(json_obj):
-                    # Replace the JSON object with wrapped version
-                    wrapped_json = f"{self.target_tags.start_tag}{json_obj}{self.target_tags.end_tag}"
+                    # Replace the JSON object with wrapped version using output tags
+                    wrapped_json = f"{self._output_start_tag}{json_obj}{self._output_end_tag}"
                     rewritten = rewritten.replace(json_obj, wrapped_json, 1)
-        
+
         return rewritten
     
     def rewrite_streaming_chunk(self, chunk: str, buffer: str = "") -> Tuple[str, str]:
@@ -191,10 +227,11 @@ class ToolCallTagRewriter:
         
         # Combine buffer with current chunk
         full_text = buffer + chunk
-        
+
         # Check if we already have the target format (avoid double-tagging)
-        if (self.target_tags.start_tag in full_text and 
-            self.target_tags.end_tag in full_text):
+        # Use output tags for checking
+        if (self._output_start_tag in full_text and
+            self._output_end_tag in full_text):
             # Already in target format, just return as-is
             return full_text, ""
         
@@ -352,19 +389,19 @@ class ToolCallTagRewriter:
             (r'<tool_call>(.*?)</tool_call>', r'\1'),
             (r'```tool_code(.*?)```', r'\1'),
         ]
-        
+
         for pattern, replacement in source_patterns:
             match = re.search(pattern, text, re.DOTALL)
             if match:
                 # Extract the JSON content
                 json_content = match.group(1).strip()
-                # Wrap in target format
-                return f"{self.target_tags.start_tag}{json_content}{self.target_tags.end_tag}"
-        
+                # Wrap in target format using output tags (with angle brackets)
+                return f"{self._output_start_tag}{json_content}{self._output_end_tag}"
+
         # Check for plain JSON
         if self._is_plain_json_tool_call(text):
-            return f"{self.target_tags.start_tag}{text.strip()}{self.target_tags.end_tag}"
-        
+            return f"{self._output_start_tag}{text.strip()}{self._output_end_tag}"
+
         # If no pattern matches, return original text
         return text
     

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.2.8] - 2025-10-11
 
+### Fixed
+- **CRITICAL: Streaming Tool Call Tag Rewriting**: Fixed broken tag rewriting in streaming mode
+  - **Problem**: Custom tool call tags (set via `/tooltag` command) were ignored in streaming mode
+  - **Root Cause**: Broken `_apply_tag_rewriting()` method tried to create temporary provider instances instead of using existing tag rewriter infrastructure
+  - **Solution**: Completely rewrote tag rewriting integration to use proven `ToolCallTagRewriter.rewrite_streaming_chunk()` method
+  - **Result**: Custom tags now work identically in streaming and non-streaming modes
+  - **Implementation**:
+    - Added `_initialize_tag_rewriter()` method to properly parse tag configurations
+    - Replaced broken temporary provider approach with direct streaming chunk rewriting
+    - Added tag rewrite buffer management for handling split tool calls across chunks
+    - Maintains <10ms first chunk latency with zero performance regression
+
 ### Added
 - **Unified Streaming Architecture**: Revolutionary new streaming implementation
   - **Problem**: Complex dual-mode streaming with inconsistent tool handling
@@ -18,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Zero buffering overhead
     - 5x faster first chunk delivery (<10ms)
     - Robust support for multiple tool formats (Qwen, LLaMA, Gemma, XML)
+    - **NOW WITH**: Full custom tag rewriting support in streaming mode
 
 ### Technical Improvements
 - **Streaming Performance**:

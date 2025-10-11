@@ -1,8 +1,8 @@
 """
-Unified streaming processor with incremental tool detection.
+FIXED unified streaming processor with proper tag rewriting support.
 
-This module provides a single streaming strategy that handles tools elegantly
-while maintaining real-time streaming performance, with proper tag rewriting support.
+This is a corrected implementation that properly handles tool call tag rewriting
+in streaming scenarios.
 """
 
 import json
@@ -17,19 +17,7 @@ from ..tools.core import ToolCall
 logger = logging.getLogger(__name__)
 
 
-class ToolDetectionState(Enum):
-    """
-    State machine for tool call detection.
-
-    Note: This is kept for backward compatibility with older tests.
-    The current implementation doesn't use explicit state transitions.
-    """
-    SCANNING = "scanning"  # Looking for tool call start
-    IN_TOOL_CALL = "in_tool_call"  # Inside a tool call
-    COMPLETE = "complete"  # Tool call completed
-
-
-class IncrementalToolDetector:
+class IncrementalToolDetectorV2:
     """
     Improved incremental tool call detector that preserves tool calls for tag rewriting.
 
@@ -73,11 +61,7 @@ class IncrementalToolDetector:
 
     def reset(self):
         """Reset detector state."""
-        self.state = ToolDetectionState.SCANNING
         self.accumulated_content = ""
-        self.current_tool_content = ""
-        self.tool_start_pos = None
-        self.current_pattern = None
         self.completed_tools = []
 
     def _get_patterns_for_model(self, model_name: str) -> List[Dict]:
@@ -112,106 +96,53 @@ class IncrementalToolDetector:
 
         self.accumulated_content += chunk_content
         completed_tools = []
-        streamable_content = ""
+        complete_call_found = False
 
-        # Process content based on current state
-        if self.state == ToolDetectionState.SCANNING:
-            streamable_content, completed_tools = self._scan_for_tool_start(chunk_content)
-        elif self.state == ToolDetectionState.IN_TOOL_CALL:
-            streamable_content, completed_tools = self._collect_tool_content(chunk_content)
-
-        return streamable_content, completed_tools
-
-    def _scan_for_tool_start(self, chunk_content: str) -> Tuple[str, List[ToolCall]]:
-        """Scan for tool call start patterns."""
-        streamable_content = ""
-        completed_tools = []
-
-        # Check for tool start patterns
+        # Look for complete tool calls in accumulated content
         for pattern_info in self.active_patterns:
             start_pattern = pattern_info['start']
-            match = re.search(start_pattern, self.accumulated_content, re.IGNORECASE)
+            end_pattern = pattern_info['end']
 
-            if match:
-                # Found tool start
-                self.tool_start_pos = match.start()
-                self.state = ToolDetectionState.IN_TOOL_CALL
-                self.current_pattern = pattern_info
+            # Build full pattern to match complete tool call
+            full_pattern = f"{re.escape(start_pattern)}(.*?){re.escape(end_pattern)}"
 
-                # Return content before tool start as streamable
-                if self.rewrite_tags:
-                    # When rewriting, keep tool call in content but still track state
-                    streamable_content = ""  # Don't stream partial content yet
-                else:
-                    # Normal mode - stream content before tool call
-                    streamable_content = self.accumulated_content[:self.tool_start_pos]
+            matches = list(re.finditer(full_pattern, self.accumulated_content, re.DOTALL | re.IGNORECASE))
 
-                # Start collecting tool content
-                self.current_tool_content = self.accumulated_content[match.end():]
+            if matches:
+                complete_call_found = True
 
-                logger.debug(f"Tool call start detected: {start_pattern} for model {self.model_name}")
-                logger.debug(f"Accumulated content: {repr(self.accumulated_content[:100])}")
+            for match in matches:
+                json_content = match.group(1).strip()
+                tool_call = self._parse_tool_json(json_content)
 
-                # Immediately check if tool is already complete (if end tag is in current content)
-                additional_streamable, additional_tools = self._collect_tool_content("")
-                streamable_content += additional_streamable
-                completed_tools.extend(additional_tools)
-                break
-        else:
-            # No tool start found
-            if self.rewrite_tags:
-                # Check for partial tool tags when rewriting
+                if tool_call:
+                    completed_tools.append(tool_call)
+                    logger.debug(f"Complete tool call detected: {tool_call.name}")
+
+        # Determine what to stream
+        if self.rewrite_tags:
+            # When rewriting, we need to be careful:
+            # - If we found complete tool calls, stream ALL content (it will be rewritten)
+            # - If no complete tool calls yet, check if we might have partial tool call
+            #   If yes, buffer everything
+            #   If no, stream what we have
+            if complete_call_found:
+                # Complete tool call found - stream everything for rewriting
+                streamable_content = self.accumulated_content
+                self.accumulated_content = ""  # Clear buffer after streaming
+            else:
+                # No complete tool call yet - check for partial
                 if self._might_have_partial_tool_call():
-                    streamable_content = ""  # Buffer everything
+                    # Might be building up a tool call - don't stream yet
+                    streamable_content = ""
                 else:
+                    # No tool call detected at all - safe to stream
                     streamable_content = self.accumulated_content
                     self.accumulated_content = ""
-            else:
-                # Normal streaming - use smart buffering
-                streamable_content = self._extract_streamable_content()
-
-        return streamable_content, completed_tools
-
-    def _collect_tool_content(self, chunk_content: str) -> Tuple[str, List[ToolCall]]:
-        """Collect content for current tool call."""
-        streamable_content = ""
-        completed_tools = []
-
-        # Add new content to tool content
-        self.current_tool_content += chunk_content
-
-        # Check for tool end pattern
-        end_pattern = self.current_pattern['end']
-        end_match = re.search(end_pattern, self.current_tool_content, re.IGNORECASE)
-
-        if end_match:
-            # Tool call is complete
-            tool_json_content = self.current_tool_content[:end_match.start()].strip()
-
-            # Try to parse the tool call
-            tool_call = self._parse_tool_json(tool_json_content)
-            if tool_call:
-                completed_tools.append(tool_call)
-                logger.debug(f"Complete tool call parsed: {tool_call.name}")
-
-            if self.rewrite_tags:
-                # When rewriting, stream the complete accumulated content including tool call
-                streamable_content = self.accumulated_content
-                self.accumulated_content = ""
-            else:
-                # Normal mode - don't stream the tool call itself
-                pass
-
-            # Reset for next tool
-            remaining_content = self.current_tool_content[end_match.end():]
-            self.reset()
-
-            # Continue processing remaining content
-            if remaining_content:
-                self.accumulated_content = remaining_content
-                additional_streamable, additional_tools = self._scan_for_tool_start("")
-                streamable_content += additional_streamable
-                completed_tools.extend(additional_tools)
+        else:
+            # When NOT rewriting, check for partial tool tags at end
+            # and buffer them to avoid streaming incomplete tags
+            streamable_content = self._extract_streamable_content()
 
         return streamable_content, completed_tools
 
@@ -288,44 +219,15 @@ class IncrementalToolDetector:
 
         return None
 
-    def finalize(self) -> List[ToolCall]:
-        """Finalize and return any remaining tool calls."""
-        completed_tools = []
-
-        if self.state == ToolDetectionState.IN_TOOL_CALL:
-            # Try to parse any remaining content as incomplete tool
-            if self.current_tool_content:
-                # Try to parse incomplete JSON by looking for valid JSON objects
-                tool_call = self._try_parse_incomplete_json(self.current_tool_content)
-                if tool_call:
-                    completed_tools.append(tool_call)
-
-        return completed_tools
-
-    def _try_parse_incomplete_json(self, content: str) -> Optional[ToolCall]:
-        """Try to parse potentially incomplete JSON by finding valid JSON objects."""
-        # Look for complete JSON objects within the content
-        brace_count = 0
-        json_start = -1
-
-        for i, char in enumerate(content):
-            if char == '{':
-                if brace_count == 0:
-                    json_start = i
-                brace_count += 1
-            elif char == '}':
-                brace_count -= 1
-                if brace_count == 0 and json_start >= 0:
-                    # Found complete JSON object
-                    json_content = content[json_start:i+1]
-                    tool_call = self._parse_tool_json(json_content)
-                    if tool_call:
-                        return tool_call
-
-        return None
+    def finalize(self) -> Tuple[str, List[ToolCall]]:
+        """Finalize and return remaining content and tools."""
+        # Stream any remaining accumulated content
+        remaining_content = self.accumulated_content
+        self.accumulated_content = ""
+        return remaining_content, []
 
 
-class UnifiedStreamProcessor:
+class UnifiedStreamProcessorV2:
     """
     FIXED unified streaming processor with proper tag rewriting.
 
@@ -342,14 +244,11 @@ class UnifiedStreamProcessor:
 
         # Initialize tag rewriter if custom tags are provided
         self.tag_rewriter = None
-        # Backwards compatibility: tag_rewrite_buffer attribute (unused in current implementation)
-        self.tag_rewrite_buffer = ""
-
         if tool_call_tags:
             self._initialize_tag_rewriter(tool_call_tags)
 
         # Create detector - if we have tag rewriter, preserve tool calls in content
-        self.detector = IncrementalToolDetector(
+        self.detector = IncrementalToolDetectorV2(
             model_name=model_name,
             rewrite_tags=bool(self.tag_rewriter)
         )
@@ -411,12 +310,8 @@ class UnifiedStreamProcessor:
                             raw_response=chunk.raw_response
                         )
 
-            # Finalize - get any remaining tools and handle remaining content
-            final_tools = self.detector.finalize()
-
-            # Get any remaining accumulated content
-            remaining_content = self.detector.accumulated_content
-            self.detector.accumulated_content = ""
+            # Finalize - stream any remaining content
+            remaining_content, final_tools = self.detector.finalize()
 
             if remaining_content:
                 if self.tag_rewriter:
@@ -449,24 +344,22 @@ class UnifiedStreamProcessor:
             if isinstance(tool_call_tags, str):
                 # Parse string format: either "start,end" or just "start"
                 if ',' in tool_call_tags:
-                    # Comma-separated: User specified both start and end tags
-                    # Store as plain tags, rewriter will wrap with angle brackets
                     parts = tool_call_tags.split(',')
                     if len(parts) == 2:
+                        # Disable auto_format to use exact tags from user
                         tags = ToolCallTags(
                             start_tag=parts[0].strip(),
                             end_tag=parts[1].strip(),
-                            auto_format=False  # Don't auto-format, keep plain tags
+                            auto_format=False  # CRITICAL: Don't auto-add <>
                         )
                     else:
                         logger.warning(f"Invalid tool_call_tags format: {tool_call_tags}")
                         return
                 else:
-                    # Single tag: Auto-format to <tag> and </tag>
                     tags = ToolCallTags(
                         start_tag=tool_call_tags.strip(),
                         end_tag=tool_call_tags.strip(),
-                        auto_format=True  # Enable auto-formatting for single tags
+                        auto_format=False
                     )
                 self.tag_rewriter = ToolCallTagRewriter(tags)
             elif isinstance(tool_call_tags, ToolCallTags):
