@@ -293,6 +293,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
                     tools=converted_tools,
                     stream=stream,
                     execute_tools=should_execute_tools,
+                    tool_call_tags=tool_call_tags,
                     **kwargs
                 )
 
@@ -310,15 +311,22 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 provider_key=self.provider_key
             )
 
-            # Handle streaming vs non-streaming differently
+            # Handle streaming with unified processor
             if stream:
-                # For streaming, tool tag rewriting is handled at the provider level
-                # Wrap the stream to emit events
-                def stream_with_events():
+                def unified_stream():
                     try:
-                        # Yield all chunks from the original stream
-                        for chunk in response:
-                            yield chunk
+                        # Import and create unified stream processor
+                        from .streaming import UnifiedStreamProcessor
+
+                        processor = UnifiedStreamProcessor(
+                            model_name=self.model,
+                            execute_tools=should_execute_tools,
+                            tool_call_tags=tool_call_tags
+                        )
+
+                        # Process stream with incremental tool detection and execution
+                        for processed_chunk in processor.process_stream(response, converted_tools):
+                            yield processed_chunk
 
                         # Track generation after streaming completes
                         self._track_generation(prompt, None, start_time, success=True, stream=True)
@@ -328,22 +336,9 @@ class BaseProvider(AbstractLLMInterface, ABC):
                         self._track_generation(prompt, None, start_time, success=False, error=e, stream=True)
                         raise
 
-                return stream_with_events()
+                return unified_stream()
             else:
-                # For non-streaming, apply tool call tag rewriting if requested
-                if tool_call_tags:
-                    try:
-                        from ..tools.integration import apply_tool_call_tag_rewriting
-                        response = apply_tool_call_tag_rewriting(response, tool_call_tags)
-                    except ImportError:
-                        # If integration module is not available, skip rewriting
-                        pass
-                    except Exception as e:
-                        # Log error but don't fail the generation
-                        if hasattr(self, 'logger'):
-                            self.logger.warning(f"Tool call tag rewriting failed: {e}")
-                
-                # Non-streaming: track after completion
+                # Non-streaming: track after completion (tag rewriting handled by providers)
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response
 
@@ -472,10 +467,10 @@ class BaseProvider(AbstractLLMInterface, ABC):
         capabilities = get_model_capabilities(self.model)
 
         if capabilities:
-            context_length = capabilities.get('context_length')
-            if context_length:
-                self.logger.debug(f"Using context_length {context_length} from model capabilities for {self.model}")
-                return context_length
+            max_tokens = capabilities.get('max_tokens')
+            if max_tokens:
+                self.logger.debug(f"Using max_tokens {max_tokens} from model capabilities for {self.model}")
+                return max_tokens
 
         # If no exact match, try model family/generation fallback
         model_lower = self.model.lower()
@@ -494,17 +489,17 @@ class BaseProvider(AbstractLLMInterface, ABC):
         for family, patterns in family_patterns.items():
             if any(pattern in model_lower for pattern in patterns):
                 family_caps = get_model_capabilities(family)
-                if family_caps and family_caps.get('context_length'):
-                    context_length = family_caps['context_length']
-                    self.logger.debug(f"Using context_length {context_length} from family {family} for {self.model}")
-                    return context_length
+                if family_caps and family_caps.get('max_tokens'):
+                    max_tokens = family_caps['max_tokens']
+                    self.logger.debug(f"Using max_tokens {max_tokens} from family {family} for {self.model}")
+                    return max_tokens
 
         # Use JSON capabilities as single source of truth for defaults
         from ..architectures import get_context_limits
         limits = get_context_limits(self.model)
-        context_length = limits['context_length']
-        self.logger.debug(f"Using default context_length {context_length} from model_capabilities.json for {self.model}")
-        return context_length
+        max_tokens = limits['max_tokens']
+        self.logger.debug(f"Using default max_tokens {max_tokens} from model_capabilities.json for {self.model}")
+        return max_tokens
 
     def _prepare_generation_kwargs(self, **kwargs) -> Dict[str, Any]:
         """
@@ -610,7 +605,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
             )
 
         # Format tool results and append to response
-        results_text = self._format_tool_results(tool_results)
+        results_text = self._format_tool_results(tool_calls, tool_results)
 
         # Return updated response with tool results
         # Use the cleaned content from tool parsing
@@ -625,14 +620,25 @@ class BaseProvider(AbstractLLMInterface, ABC):
             tool_calls=response.tool_calls  # Keep original format
         )
 
-    def _format_tool_results(self, tool_results: List) -> str:
-        """Format tool results as text (shared implementation)"""
+    def _format_tool_results(self, tool_calls: List, tool_results: List) -> str:
+        """Format tool results with tool transparency (shared implementation)"""
         results_text = "\n\nTool Results:\n"
-        for result in tool_results:
+        for call, result in zip(tool_calls, tool_results):
+            # Format parameters for display (limit size)
+            params_str = str(call.arguments) if call.arguments else "{}"
+            if len(params_str) > 100:
+                params_str = params_str[:97] + "..."
+
+            # Show tool name and parameters for transparency
+            results_text += f"🔧 Tool: {call.name}({params_str})\n"
+
+            # Show result
             if result.success:
                 results_text += f"- {result.output}\n"
             else:
                 results_text += f"- Error: {result.error}\n"
+            results_text += "\n"  # Add spacing between tool calls
+
         return results_text
 
     def _convert_native_tool_calls_to_standard(self, native_tool_calls: List[Dict[str, Any]]) -> List:
@@ -725,3 +731,36 @@ class BaseProvider(AbstractLLMInterface, ABC):
     def estimate_tokens(self, text: str) -> int:
         """Rough estimation of token count for given text"""
         return super().estimate_tokens(text)
+
+    def _needs_tag_rewriting(self, tool_call_tags) -> bool:
+        """Check if tag rewriting is needed (tags are non-standard)"""
+        try:
+            from ..tools.tag_rewriter import ToolCallTags
+
+            if isinstance(tool_call_tags, str):
+                # String format - handle comma-separated format
+                if ',' in tool_call_tags:
+                    # Comma-separated format like '<function_call>,</function_call>'
+                    parts = tool_call_tags.split(',')
+                    if len(parts) == 2:
+                        opening_tag = parts[0].strip()
+                        closing_tag = parts[1].strip()
+                        if opening_tag == "<function_call>" and closing_tag == "</function_call>":
+                            return False
+                else:
+                    # Single tag format
+                    if tool_call_tags in ["<function_call>", "</function_call>"]:
+                        return False
+            elif isinstance(tool_call_tags, ToolCallTags):
+                # ToolCallTags object - check if it contains standard tags
+                if (hasattr(tool_call_tags, 'start_tag') and hasattr(tool_call_tags, 'end_tag')):
+                    # Only standard if exactly matches the standard format
+                    if (tool_call_tags.start_tag == "<function_call>" and tool_call_tags.end_tag == "</function_call>"):
+                        return False
+
+            # Any other format or non-standard tags need rewriting
+            return True
+
+        except Exception:
+            # If we can't determine, err on the side of applying rewriting
+            return True

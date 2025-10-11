@@ -150,9 +150,22 @@ class LMStudioProvider(BaseProvider):
         }
 
         if stream:
-            return self._stream_generate_with_tools(payload, tools)
+            return self._stream_generate(payload)
         else:
             response = self._single_generate(payload)
+
+            # Apply tool call tag rewriting BEFORE tool execution (for custom tags)
+            if tool_call_tags and response.content:
+                try:
+                    from ..tools.integration import apply_tool_call_tag_rewriting
+                    response = apply_tool_call_tag_rewriting(response, tool_call_tags)
+                except ImportError:
+                    # If integration module is not available, skip rewriting
+                    pass
+                except Exception as e:
+                    # Log error but don't fail the generation
+                    if hasattr(self, 'logger'):
+                        self.logger.warning(f"Tool call tag rewriting failed: {e}")
 
             # Execute tools if enabled and tools are present
             if self.execute_tools and tools and self.tool_handler.supports_prompted and response.content:
@@ -313,33 +326,3 @@ class LMStudioProvider(BaseProvider):
                     pass  # Best effort - don't fail the operation
 
 
-    def _stream_generate_with_tools(self, payload: Dict[str, Any],
-                                   tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
-        """Stream generate with tool execution at the end"""
-        collected_content = ""
-
-        # Stream the response content
-        for chunk in self._stream_generate(payload):
-            collected_content += chunk.content
-            yield chunk
-
-        # Execute tools if enabled and we have collected content
-        if self.execute_tools and tools and self.tool_handler.supports_prompted and collected_content:
-            # Create complete response for tool processing
-            complete_response = GenerateResponse(
-                content=collected_content,
-                model=self.model,
-                finish_reason="stop"
-            )
-
-            # Execute tools using base method
-            final_response = self._handle_prompted_tool_execution(complete_response, tools, self.execute_tools)
-
-            # If tools were executed, yield the tool results as final chunk
-            if final_response.content != collected_content:
-                tool_results_content = final_response.content[len(collected_content):]
-                yield GenerateResponse(
-                    content=tool_results_content,
-                    model=self.model,
-                    finish_reason="stop"
-                )
