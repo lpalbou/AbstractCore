@@ -31,69 +31,126 @@ response = client.chat.completions.create(
 | Endpoint | Method | What It Does |
 |----------|---------|-------------|
 | `/` | GET | Server info + quick examples |
-| `/chat` | GET/POST | Universal chat endpoint |
-| `/models` | GET | List all available models |
-| `/providers` | GET | Show provider status |
-| `/health` | GET | Health check |
-| `/test` | GET | Test all providers quickly |
 | `/v1/chat/completions` | POST | OpenAI compatible endpoint |
+| `/{provider}/v1/chat/completions` | POST | Provider-specific OpenAI endpoint |
 | `/v1/responses` | POST | OpenAI Responses API (Codex preferred) |
 | `/v1/messages` | POST | Anthropic Messages API compatible |
+| `/v1/models` | GET | List all available models |
+| `/providers` | GET | Show provider status |
+| `/health` | GET | Health check |
 | `/docs` | GET | Interactive API documentation |
 
 ## Usage Examples
 
-### 1. URL Chat (No JSON needed!)
+### 1. Basic Chat (OpenAI Compatible)
 ```bash
-# Just URL parameters - works in any browser
-curl "http://localhost:8000/chat?message=Hello%20world"
-curl "http://localhost:8000/chat?message=Write%20code&provider=anthropic"
-
-# Streaming responses
-curl "http://localhost:8000/chat?message=Tell%20a%20story&stream=true"
-```
-
-### 2. POST Chat (Simple JSON)
-```bash
-# Regular response
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Hello!", "provider": "anthropic"}'
-
-# Streaming response
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Tell me a story", "stream": true}'
-```
-
-### 3. OpenAI Compatible
-```bash
-# Regular response
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "ollama/qwen3-coder:30b",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-
-# Streaming response (OpenAI format)
+# Standard OpenAI endpoint with provider in model name
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "anthropic/claude-3-5-haiku-latest",
-    "messages": [{"role": "user", "content": "Tell me a story"}],
-    "stream": true
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+
+# Provider-specific endpoint
+curl -X POST http://localhost:8000/ollama/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Write a Python function"}]
   }'
 ```
 
-### 4. Test All Providers
-```bash
-# See which providers are working
-curl http://localhost:8000/test
+### 2. Tool Call Tag Rewriting Examples
 
-# List models by type
-curl "http://localhost:8000/models?type=chat"
-curl "http://localhost:8000/models?provider=ollama&type=chat"
+#### Server Configuration Approach (for Agentic CLIs)
+
+**Step 1: Configure server for your CLI**
+```bash
+# For Codex CLI (default qwen3 format)
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# For Crush CLI (llama3 format)
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# For Gemini CLI (xml format)
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+```
+
+**Step 2: Test with standard OpenAI requests**
+```bash
+# This request will get the format configured in Step 1
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Get weather for Paris"}],
+    "tools": [{"type": "function", "function": {"name": "get_weather", "description": "Get weather"}}]
+  }'
+
+# Output depends on server configuration:
+# - Default: <|tool_call|>{"name": "get_weather"}...</|tool_call|>
+# - llama3:  <function_call>{"name": "get_weather"}...</function_call>
+# - xml:     <tool_call>{"name": "get_weather"}...</tool_call>
+```
+
+#### Per-Request Override (only when YOU control the client)
+```bash
+# Override server defaults (only works if you write the client code)
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Calculate 15 * 23"}],
+    "tools": [{"type": "function", "function": {"name": "calculate", "description": "Math operations"}}],
+    "tool_call_tags": "llama3"
+  }'
+# Output: <function_call>{"name": "calculate"}...</function_call>
+
+# Custom format override
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Search for information"}],
+    "tools": [{"type": "function", "function": {"name": "web_search", "description": "Search web"}}],
+    "tool_call_tags": "[TOOL],[/TOOL]"
+  }'
+# Output: [TOOL]{"name": "web_search"}...[/TOOL]
+```
+
+### 3. Streaming with Tool Call Tag Rewriting
+
+```bash
+# Configure server for your preferred format first
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Then standard streaming request gets your configured format
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Write Python code and test it"}],
+    "tools": [{"type": "function", "function": {"name": "execute_code", "description": "Execute code"}}],
+    "stream": true
+  }'
+# Streams: <function_call>{"name": "execute_code"}...</function_call>
+```
+
+### 4. Testing and Discovery
+
+```bash
+# List all available models
+curl http://localhost:8000/v1/models
+
+# Check server health
+curl http://localhost:8000/health
+
+# Get provider status
+curl http://localhost:8000/providers
 ```
 
 ## Configuration
@@ -113,41 +170,99 @@ uvicorn abstractllm.server.app:app --port 3000
 
 ### Environment Variables
 ```bash
-# Set defaults
+# Set provider defaults
 export ABSTRACTCORE_DEFAULT_PROVIDER=anthropic
 export ABSTRACTCORE_DEFAULT_MODEL=claude-3-5-haiku-latest
+
+# Tool call tag rewriting defaults (✅ NOW IMPLEMENTED)
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3  # For Crush CLI compatibility
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false    # For agentic CLI mode
 
 # Provider API keys
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
+
+# Debug mode for development
+export ABSTRACTCORE_DEBUG=true
 ```
+
+> **✅ New**: Environment variable defaults for tool call tag rewriting are now fully implemented! Set once at server startup, applies to all requests from agentic CLIs.
 
 ## Advanced Parameters
 
 ### Tool Call Tag Rewriting
 
-The server supports real-time tool call tag rewriting for agentic CLI compatibility:
+The server supports real-time tool call tag rewriting for agentic CLI compatibility. **No server restart required** - tool call formats are converted on-demand per request.
+
+#### Python Client Examples
+
+**For Direct API Usage** (when you control the client code):
 
 ```python
-# Rewrite tool calls for different CLIs
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+
+# Option 1: Use server defaults (configured at startup)
 response = client.chat.completions.create(
     model="anthropic/claude-3-5-haiku-latest",
-    messages=[{"role": "user", "content": "Weather in Paris?"}],
-    tools=[{"type": "function", "function": {"name": "get_weather", "description": "Get weather"}}],
-    tool_call_tags="qwen3"  # For Codex CLI compatibility
+    messages=[{"role": "user", "content": "Get weather in Paris"}],
+    tools=[{"type": "function", "function": {"name": "get_weather", "description": "Get weather"}}]
 )
+# Output format depends on server's ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS
+
+# Option 2: Override server defaults per request (only when YOU control the client)
+response = client.chat.completions.create(
+    model="ollama/qwen3-coder:30b",
+    messages=[{"role": "user", "content": "Calculate 15 * 23"}],
+    tools=[{"type": "function", "function": {"name": "calculate", "description": "Math operations"}}],
+    tool_call_tags="llama3"  # Only works if YOU write the client code
+)
+# Output: <function_call>{"name": "calculate"}...</function_call>
+```
+
+**For Agentic CLIs** (Codex, Crush, Gemini CLI):
+- CLIs send standard OpenAI requests (no custom parameters)
+- Server applies tag rewriting based on `ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS`
+- Configure server defaults at startup, not per-request
+
+#### JavaScript/Node.js Examples
+
+**For Direct API Usage** (when you control the client):
+
+```javascript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:8000/v1',
+  apiKey: 'unused'
+});
+
+// Uses server defaults (configured at startup)
+const response = await client.chat.completions.create({
+  model: 'ollama/qwen3-coder:30b',
+  messages: [{role: 'user', content: 'List directory contents'}],
+  tools: [{type: 'function', function: {name: 'list_files', description: 'List files'}}]
+});
+// Output format depends on server's ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS
+
+// Override defaults (only if YOU control the client code)
+const customResponse = await client.chat.completions.create({
+  model: 'ollama/qwen3-coder:30b',
+  messages: [{role: 'user', content: 'List directory contents'}],
+  tools: [{type: 'function', function: {name: 'list_files', description: 'List files'}}],
+  tool_call_tags: 'xml'  // Only works if YOU write the client
+});
+// Output: <tool_call>{"name": "list_files"}...</tool_call>
 ```
 
 **Supported Formats:**
-- `qwen3` - `<|tool_call|>...JSON...</|tool_call|>` (Codex, OpenAI)
-- `llama3` - `<function_call>...JSON...</function_call>` (Crush, Anthropic)
+- `qwen3` (default) - `<|tool_call|>...JSON...</|tool_call|>` (Qwen models)
+- `openai` - No rewriting (native JSON tool calls) (OpenAI API, Codex CLI)
+- `llama3` - `<function_call>...JSON...</function_call>` (Crush, Anthropic CLIs)
 - `xml` - `<tool_call>...JSON...</tool_call>` (Gemini CLI)
 - `gemma` - ````tool_code...JSON...```` (Gemma models)
-- `codex` - Same as qwen3
-- `crush` - Same as llama3
-- `gemini` - Same as xml
-- `openai` - Same as qwen3
-- `anthropic` - Same as llama3
+- `"START,END"` - Custom comma-separated format
 
 ### Tool Execution Control
 
@@ -236,6 +351,72 @@ cat logs/verbatim_*.jsonl | jq -r 'select(.provider=="lmstudio") | .metadata.tok
 # Average response time by provider
 cat logs/verbatim_*.jsonl | jq -r 'select(.provider=="lmstudio") | .metadata.latency_ms' | awk '{sum+=$1; count++} END {print "Average latency:", sum/count "ms"}'
 ```
+
+## Quick Start: Server for Agentic CLIs
+
+**✅ IMPLEMENTED**: Configure server defaults for your specific CLI using environment variables:
+
+### For Codex CLI (qwen3 format)
+```bash
+# Default format is already qwen3, so no configuration needed
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Configure CLI
+export OPENAI_BASE_URL="http://localhost:8000/v1"
+export OPENAI_API_KEY="unused"
+export ABSTRACTCORE_API_KEY="unused"
+
+# Use Codex - gets qwen3 format by default
+codex --model "ollama/qwen3-coder:30b" "Write a Python function"
+# ✅ Tool calls: <|tool_call|>...JSON...</|tool_call|>
+```
+
+### For Crush CLI (llama3 format)
+```bash
+# Configure server for Crush CLI format
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Configure CLI (same as above)
+export OPENAI_BASE_URL="http://localhost:8000/v1"
+export OPENAI_API_KEY="unused"
+export ABSTRACTCORE_API_KEY="unused"
+
+# Use Crush - automatically gets llama3 format
+crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"
+# ✅ Tool calls: <function_call>...JSON...</function_call>
+```
+
+### For Gemini CLI (xml format)
+```bash
+# Configure server for Gemini CLI format
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Configure CLI (same as above)
+export OPENAI_BASE_URL="http://localhost:8000/v1"
+export OPENAI_API_KEY="unused"
+export ABSTRACTCORE_API_KEY="unused"
+
+# Use Gemini CLI - automatically gets xml format
+gemini-cli --model "ollama/qwen3-coder:30b" "Review this project"
+# ✅ Tool calls: <tool_call>...JSON...</tool_call>
+```
+
+### For Custom CLI
+```bash
+# Configure server for your custom format
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS="[TOOL],[/TOOL]"
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Your CLI automatically gets your custom format
+# ✅ Tool calls: [TOOL]...JSON...[/TOOL]
+```
+
+> **Key Point**: CLIs send standard OpenAI requests. Server applies your configured defaults automatically.
 
 ## Agentic CLI Compatibility
 
@@ -700,15 +881,73 @@ You'll know the setup is working when:
 
 **Debug any issues with:** `tail -f logs/abstractllm_*.log`
 
+## Quick Verification
+
+Test that environment variable defaults are working:
+
+```bash
+# 1. Start server with default format (qwen3)
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# 2. Test default format
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Calculate 5*5"}],
+    "tools": [{"type": "function", "function": {"name": "calc", "description": "Math"}}]
+  }'
+# Look for: <|tool_call|>{"name": "calc"}...</|tool_call|>
+
+# 3. Restart server with environment variable default
+pkill -f "abstractllm.server.app"
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# 4. Same request, automatically gets new format from environment variable
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Calculate 5*5"}],
+    "tools": [{"type": "function", "function": {"name": "calc", "description": "Math"}}]
+  }'
+# Look for: <function_call>{"name": "calc"}...</function_call>
+
+# 5. Test that request parameters still override environment defaults
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Calculate 5*5"}],
+    "tools": [{"type": "function", "function": {"name": "calc", "description": "Math"}}],
+    "tool_call_tags": "xml"
+  }'
+# Look for: <tool_call>{"name": "calc"}...</tool_call>
+```
+
+✅ **Success indicators**:
+- Same request produces different formats when environment variable changes
+- Request parameters override environment defaults
+- Agentic CLIs get correct format automatically
+
+🎯 **Perfect for Agentic CLIs**: Set `ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS` once, all CLI requests get the right format!
+
 ## Getting Started
 
 1. **Install**: `pip install abstractcore[server]`
 2. **Start**: `uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000`
-3. **Test**: Visit `http://localhost:8000`
+3. **Test**: Visit `http://localhost:8000` or run verification above
 4. **Use**: Point any OpenAI client or agentic CLI to your server
 
-That's it! No complexity, no confusion, just a working universal LLM API server.
+That's it! No complexity, no confusion, just a working universal LLM API server with **automatic tool call format conversion** for any agentic CLI.
 
 ---
 
-**AbstractCore Server** - One server, all models, any language. 🚀
+**AbstractCore Server** - One server, all models, any language, any tool format, any agentic CLI. 🚀
+
+**✅ NEW: Agentic CLI Support**
+- **Codex CLI**: Works out of the box (qwen3 format)
+- **Crush CLI**: `export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3`
+- **Gemini CLI**: `export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml`
+- **Custom CLI**: `export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS="[TOOL],[/TOOL]"`

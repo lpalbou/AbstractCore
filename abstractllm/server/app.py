@@ -536,6 +536,8 @@ app.add_middleware(
 # Global config
 DEFAULT_PROVIDER = os.getenv("ABSTRACTCORE_DEFAULT_PROVIDER", "openai")
 DEFAULT_MODEL = os.getenv("ABSTRACTCORE_DEFAULT_MODEL", "gpt-4o-mini")
+DEFAULT_TOOL_CALL_TAGS = os.getenv("ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS", None)
+DEFAULT_EXECUTE_TOOLS = os.getenv("ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS", "true").lower() == "true"
 
 
 # ============================================================================
@@ -897,13 +899,17 @@ async def openai_responses(request: ResponsesRequest):
             "tool_choice": request.tool_choice if request.tools else None
         }
         
-        # Add tool call tag rewriting support
+        # Add tool call tag rewriting support (with environment variable default)
         if hasattr(request, 'tool_call_tags') and request.tool_call_tags:
             gen_kwargs["tool_call_tags"] = request.tool_call_tags
-        
-        # Add tool execution control
+        elif DEFAULT_TOOL_CALL_TAGS:
+            gen_kwargs["tool_call_tags"] = DEFAULT_TOOL_CALL_TAGS
+
+        # Add tool execution control (with environment variable default)
         if hasattr(request, 'execute_tools') and request.execute_tools is not None:
             gen_kwargs["execute_tools"] = request.execute_tools
+        elif not DEFAULT_EXECUTE_TOOLS:  # Only override if env var is explicitly set to false
+            gen_kwargs["execute_tools"] = DEFAULT_EXECUTE_TOOLS
 
         logger.info("🎯 Starting Generation",
                     request_id=request_id,
@@ -1198,13 +1204,17 @@ async def anthropic_messages(request: AnthropicMessagesRequest, beta: Optional[b
             "max_output_tokens": request.max_tokens,
         }
         
-        # Add tool call tag rewriting support
+        # Add tool call tag rewriting support (with environment variable default)
         if hasattr(request, 'tool_call_tags') and request.tool_call_tags:
             gen_kwargs["tool_call_tags"] = request.tool_call_tags
-        
-        # Add tool execution control
+        elif DEFAULT_TOOL_CALL_TAGS:
+            gen_kwargs["tool_call_tags"] = DEFAULT_TOOL_CALL_TAGS
+
+        # Add tool execution control (with environment variable default)
         if hasattr(request, 'execute_tools') and request.execute_tools is not None:
             gen_kwargs["execute_tools"] = request.execute_tools
+        elif not DEFAULT_EXECUTE_TOOLS:  # Only override if env var is explicitly set to false
+            gen_kwargs["execute_tools"] = DEFAULT_EXECUTE_TOOLS
 
         # Determine if local model
         is_local_model = provider.lower() in ["ollama", "lmstudio"]
@@ -1818,27 +1828,25 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
             "max_output_tokens": calculated_max_output,  # Use calculated value
         }
 
-        # Determine if local model for later use
-        is_local_model = provider.lower() in ["ollama", "lmstudio"]
-        filtered_tools = None
-
-        # Pass tools directly (provider will handle them appropriately)
+        # Pass tools directly - BaseProvider handles all tool processing uniformly
         if request.tools:
             gen_kwargs["tools"] = request.tools
             if request.tool_choice:
                 gen_kwargs["tool_choice"] = request.tool_choice
-            # Keep reference for later streaming logic
-            filtered_tools = request.tools
         else:
             gen_kwargs["tools"] = None
         
-        # Add tool call tag rewriting support
+        # Add tool call tag rewriting support (with environment variable default)
         if hasattr(request, 'tool_call_tags') and request.tool_call_tags:
             gen_kwargs["tool_call_tags"] = request.tool_call_tags
-        
-        # Add tool execution control
+        elif DEFAULT_TOOL_CALL_TAGS:
+            gen_kwargs["tool_call_tags"] = DEFAULT_TOOL_CALL_TAGS
+
+        # Add tool execution control (with environment variable default)
         if hasattr(request, 'execute_tools') and request.execute_tools is not None:
             gen_kwargs["execute_tools"] = request.execute_tools
+        elif not DEFAULT_EXECUTE_TOOLS:  # Only override if env var is explicitly set to false
+            gen_kwargs["execute_tools"] = DEFAULT_EXECUTE_TOOLS
 
         # Add response format support
         if hasattr(request, 'response_format') and request.response_format:
@@ -1882,16 +1890,23 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                         pass
 
         if request.stream:
-            # Enhanced OpenAI-compatible streaming with tool calling support
+            # Clean OpenAI-compatible streaming - Universal tool call conversion
             def generate_openai_stream():
                 try:
                     gen_kwargs["stream"] = True
                     chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
                     created_time = int(time.time())
-                    tool_calls = []  # Track tool calls across chunks
-                    accumulated_content = ""  # Track content for tool call parsing
-                    tool_calls_emitted = False  # Track if tool calls were emitted
-                    buffering_for_tools = False  # Track if we're buffering content for tool detection
+                    tool_calls = []  # Track tool calls for final response
+
+                    # Initialize tool call detector for universal conversion
+                    tool_call_buffer = ""
+                    in_tool_call = False
+                    tool_call_patterns = [
+                        (r'<\|tool_call\|>(.*?)</\|tool_call\|>', 'qwen3'),
+                        (r'<function_call>(.*?)</function_call>', 'llama'),
+                        (r'<tool_call>(.*?)</tool_call>', 'generic'),
+                    ]
+                    import re
 
                     for chunk in llm.generate(**gen_kwargs):
                         openai_chunk = {
@@ -1906,85 +1921,72 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                             }]
                         }
 
-                        # Handle content streaming
+                        # Handle content streaming with universal tool call detection
                         if hasattr(chunk, 'content') and chunk.content:
-                            # For local models with tools, buffer when we detect tool call markers
-                            if is_local_model and filtered_tools:
-                                accumulated_content += chunk.content
+                            content = chunk.content
 
-                                # Only start buffering if we detect potential tool call
-                                import re
-                                if not buffering_for_tools and "<|" in chunk.content:
-                                    buffering_for_tools = True  # Start buffering when we see tool marker
+                            # Check if this content contains tool call markers
+                            has_tool_start = any(
+                                marker in content
+                                for marker in ['<|tool_call|>', '<function_call>', '<tool_call>']
+                            )
+                            has_tool_end = any(
+                                marker in content
+                                for marker in ['</|tool_call|>', '</function_call>', '</tool_call>']
+                            )
 
-                                # Check if we have complete tool calls to parse
-                                # Handle both <|tool_call|> and <|\ntool_call|> (with newline/whitespace)
-                                if buffering_for_tools and re.search(r'<\|\s*tool_call\s*\|>', accumulated_content) and "</|tool_call|>" in accumulated_content:
-                                    try:
-                                        # Parse tool calls from accumulated content
-                                        tool_handler = UniversalToolHandler(actual_model)
-                                        if tool_handler.supports_prompted:
-                                            parsed_response = tool_handler.parse_response(accumulated_content, mode="prompted")
-                                            if parsed_response.has_tool_calls():
-                                                # Emit tool calls in streaming format
-                                                for tool_call in parsed_response.tool_calls:
-                                                    tool_call_chunk = {
-                                                        "id": chat_id,
-                                                        "object": "chat.completion.chunk",
-                                                        "created": created_time,
-                                                        "model": f"{actual_provider}/{actual_model}",
-                                                        "choices": [{
-                                                            "index": 0,
-                                                            "delta": {
-                                                                "tool_calls": [{
-                                                                    "id": tool_call.call_id or f"call_{uuid.uuid4().hex[:8]}",
-                                                                    "type": "function",
-                                                                    "function": {
-                                                                        "name": tool_call.name,
-                                                                        "arguments": json.dumps(tool_call.arguments) if isinstance(tool_call.arguments, dict) else str(tool_call.arguments)
-                                                                    }
-                                                                }]
-                                                            },
-                                                            "finish_reason": None
-                                                        }]
+                            if has_tool_start or in_tool_call:
+                                # We're in a tool call - buffer it
+                                tool_call_buffer += content
+                                in_tool_call = True
+
+                                if has_tool_end:
+                                    # Complete tool call detected - parse and convert
+                                    for pattern, format_type in tool_call_patterns:
+                                        match = re.search(pattern, tool_call_buffer, re.DOTALL)
+                                        if match:
+                                            try:
+                                                # Extract and parse the JSON content
+                                                tool_json_str = match.group(1).strip()
+                                                tool_data = json.loads(tool_json_str)
+
+                                                # Create OpenAI-format tool call
+                                                tool_call_obj = {
+                                                    "id": f"call_{uuid.uuid4().hex[:8]}",
+                                                    "type": "function",
+                                                    "function": {
+                                                        "name": tool_data.get("name", ""),
+                                                        "arguments": json.dumps(tool_data.get("arguments", {}))
                                                     }
-                                                    yield f"data: {json.dumps(tool_call_chunk)}\n\n"
-                                                    tool_calls.extend(parsed_response.tool_calls)
-                                                    tool_calls_emitted = True
+                                                }
 
-                                                # Send cleaned content if any remains
-                                                if parsed_response.content and parsed_response.content.strip():
-                                                    content_chunk = {
-                                                        "id": chat_id,
-                                                        "object": "chat.completion.chunk",
-                                                        "created": created_time,
-                                                        "model": f"{actual_provider}/{actual_model}",
-                                                        "choices": [{
-                                                            "index": 0,
-                                                            "delta": {"content": parsed_response.content},
-                                                            "finish_reason": None
-                                                        }]
-                                                    }
-                                                    yield f"data: {json.dumps(content_chunk)}\n\n"
+                                                # Send as tool_calls delta
+                                                openai_chunk["choices"][0]["delta"]["tool_calls"] = [{
+                                                    "index": len(tool_calls),
+                                                    **tool_call_obj
+                                                }]
+                                                tool_calls.append(tool_call_obj)
+                                                yield f"data: {json.dumps(openai_chunk)}\n\n"
 
-                                                # Clear accumulated content after parsing
-                                                accumulated_content = ""
-                                                buffering_for_tools = False
-                                                continue
-                                    except Exception as e:
-                                        print(f"🔧 Streaming tool call parsing failed: {e}")
+                                                # Clear buffer and reset state
+                                                tool_call_buffer = ""
+                                                in_tool_call = False
 
-                                # Emit content if not buffering OR after tool calls were emitted
-                                # Stream content normally unless we're actively buffering for tool detection
-                                if not buffering_for_tools:
-                                    openai_chunk["choices"][0]["delta"]["content"] = chunk.content
-                                    yield f"data: {json.dumps(openai_chunk)}\n\n"
+                                            except (json.JSONDecodeError, KeyError) as e:
+                                                # If parsing fails, stream as regular content
+                                                print(f"⚠️ Failed to parse tool call: {e}")
+                                                openai_chunk["choices"][0]["delta"]["content"] = tool_call_buffer
+                                                yield f"data: {json.dumps(openai_chunk)}\n\n"
+                                                tool_call_buffer = ""
+                                                in_tool_call = False
+                                            break
+                                # Don't yield incomplete tool calls
                             else:
-                                # Regular content streaming for non-local models
-                                openai_chunk["choices"][0]["delta"]["content"] = chunk.content
+                                # Regular content - stream immediately
+                                openai_chunk["choices"][0]["delta"]["content"] = content
                                 yield f"data: {json.dumps(openai_chunk)}\n\n"
 
-                        # Handle tool calls
+                        # Handle tool calls from BaseProvider (when properly extracted)
                         elif hasattr(chunk, 'tool_calls') and chunk.tool_calls:
                             for tool_call in chunk.tool_calls:
                                 tool_call_chunk = {
@@ -2015,31 +2017,6 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                         elif hasattr(chunk, 'delta') and chunk.delta:
                             openai_chunk["choices"][0]["delta"] = chunk.delta
                             yield f"data: {json.dumps(openai_chunk)}\n\n"
-
-                    # Emit any remaining buffered content if no tool calls were found
-                    # BUT do not emit incomplete tool calls
-                    if buffering_for_tools and accumulated_content and not tool_calls_emitted:
-                        # Check if it's an incomplete tool call - if so, discard it
-                        has_incomplete_tool_call = (
-                            "<|tool_call|>" in accumulated_content and
-                            "</|tool_call|>" not in accumulated_content
-                        )
-
-                        if not has_incomplete_tool_call:
-                            # Only emit if it's not an incomplete tool call
-                            remaining_content_chunk = {
-                                "id": chat_id,
-                                "object": "chat.completion.chunk",
-                                "created": created_time,
-                                "model": f"{actual_provider}/{actual_model}",
-                                "choices": [{
-                                    "index": 0,
-                                    "delta": {"content": accumulated_content},
-                                    "finish_reason": None
-                                }]
-                            }
-                            yield f"data: {json.dumps(remaining_content_chunk)}\n\n"
-                        # If it's incomplete tool call, discard silently
 
                     # Final chunk
                     finish_reason = "tool_calls" if tool_calls else "stop"
@@ -2076,34 +2053,56 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
             )
         else:
-            # Enhanced regular response with tool calling support
+            # Non-streaming response with universal tool call conversion
             response = llm.generate(**gen_kwargs)
 
-            # Parse tool calls from response if using local model with filtered tools
-            if is_local_model and filtered_tools and response.content:
-                try:
-                    tool_handler = UniversalToolHandler(actual_model)
-                    if tool_handler.supports_prompted:
-                        parsed_response = tool_handler.parse_response(response.content, mode="prompted")
-                        if parsed_response.has_tool_calls():
-                            # Convert to GenerateResponse format
-                            response.tool_calls = parsed_response.tool_calls
-                            # Clean tool syntax from content
-                            response.content = parsed_response.content
+            # Initialize for tool call detection
+            import re
+            tool_calls_found = []
+            content = response.content or ""
 
-                            print(f"🔧 Parsed {len(parsed_response.tool_calls)} tool calls from local model response")
-                except Exception as e:
-                    print(f"🔧 Tool call parsing failed: {e}")
+            # Check for tool calls in the content
+            tool_call_patterns = [
+                (r'<\|tool_call\|>(.*?)</\|tool_call\|>', 'qwen3'),
+                (r'<function_call>(.*?)</function_call>', 'llama'),
+                (r'<tool_call>(.*?)</tool_call>', 'generic'),
+            ]
+
+            # Try to extract tool calls from content
+            for pattern, format_type in tool_call_patterns:
+                matches = re.findall(pattern, content, re.DOTALL)
+                for match in matches:
+                    try:
+                        # Parse the JSON content
+                        tool_data = json.loads(match.strip())
+                        tool_calls_found.append({
+                            "id": f"call_{uuid.uuid4().hex[:8]}",
+                            "type": "function",
+                            "function": {
+                                "name": tool_data.get("name", ""),
+                                "arguments": json.dumps(tool_data.get("arguments", {}))
+                            }
+                        })
+                        # Remove the tool call from content
+                        full_match = re.search(pattern, content, re.DOTALL)
+                        if full_match:
+                            content = content.replace(full_match.group(0), "").strip()
+                    except (json.JSONDecodeError, KeyError) as e:
+                        print(f"⚠️ Failed to parse tool call in non-streaming response: {e}")
 
             # Prepare message object
             message = {
                 "role": "assistant",
-                "content": response.content
+                "content": content if not tool_calls_found else None
             }
 
-            # Handle tool calls in response
+            # Handle tool calls - either from extraction or from BaseProvider
             finish_reason = "stop"
-            if hasattr(response, 'tool_calls') and response.tool_calls:
+            if tool_calls_found:
+                message["tool_calls"] = tool_calls_found
+                finish_reason = "tool_calls"
+            elif hasattr(response, 'tool_calls') and response.tool_calls:
+                # Fallback to BaseProvider tool calls if available
                 message["tool_calls"] = []
                 for tool_call in response.tool_calls:
                     message["tool_calls"].append({
@@ -2115,7 +2114,6 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                         }
                     })
                 finish_reason = "tool_calls"
-                # Content should be null when there are tool calls
                 message["content"] = None
 
             # OpenAI-compatible response format
