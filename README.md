@@ -75,7 +75,7 @@ AbstractCore is **focused infrastructure** for LLM applications. It handles the 
 - **🔍 Web Search**: Real-time DuckDuckGo search with time filtering and regional results
 - **💬 Simple Sessions**: Conversation memory without complexity
 - **🗜️ Chat Compaction**: SOTA conversation summarization for unlimited chat length
-- **🏷️ Tool Call Tag Rewriting**: Real-time tool call format conversion for agentic CLI compatibility
+- **🏷️ Tool Call Tag Rewriting**: Real-time tool call format conversion for agentic CLI compatibility ([Documentation →](docs/tool-call-tag-rewriting.md))
 - **🔧 Tool Execution Control**: Flexible tool execution control for different deployment scenarios
 - **⌨️ Basic CLI**: Interactive command-line tool for testing and demonstration
 
