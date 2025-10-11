@@ -437,6 +437,13 @@ class UnifiedStreamProcessor:
                         finish_reason="stop"
                     )
 
+            # Add final newline to complete the stream
+            yield GenerateResponse(
+                content="\n",
+                model=self.model_name,
+                finish_reason="stop"
+            )
+
         except Exception as e:
             logger.error(f"Error in unified stream processing: {e}")
             raise
