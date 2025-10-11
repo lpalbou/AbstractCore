@@ -155,19 +155,6 @@ class LMStudioProvider(BaseProvider):
         else:
             response = self._single_generate(payload)
 
-            # Apply tool call tag rewriting BEFORE tool execution (for custom tags)
-            if tool_call_tags and response.content:
-                try:
-                    from ..tools.integration import apply_tool_call_tag_rewriting
-                    response = apply_tool_call_tag_rewriting(response, tool_call_tags)
-                except ImportError:
-                    # If integration module is not available, skip rewriting
-                    pass
-                except Exception as e:
-                    # Log error but don't fail the generation
-                    if hasattr(self, 'logger'):
-                        self.logger.warning(f"Tool call tag rewriting failed: {e}")
-
             # Execute tools if enabled and tools are present
             if self.execute_tools and tools and self.tool_handler.supports_prompted and response.content:
                 response = self._handle_prompted_tool_execution(response, tools, execute_tools)
