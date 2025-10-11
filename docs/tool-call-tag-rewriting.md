@@ -100,7 +100,8 @@ response = session.generate(
 
 | Format | Tags | Best For |
 |--------|------|----------|
-| **Default** (qwen3) | `<|tool_call|>...JSON...</|tool_call|>` | Codex CLI, OpenAI tools |
+| **Default** (qwen3) | `<|tool_call|>...JSON...</|tool_call|>` | Qwen models, some CLIs |
+| `openai` | No rewriting (native JSON) | OpenAI API, Codex CLI |
 | `llama3` | `<function_call>...JSON...</function_call>` | Crush CLI, Anthropic tools |
 | `xml` | `<tool_call>...JSON...</tool_call>` | Gemini CLI, XML-based tools |
 | `gemma` | ````tool_code...JSON...```` | Gemma models |

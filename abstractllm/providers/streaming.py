@@ -360,9 +360,28 @@ class UnifiedStreamProcessor:
         # Backwards compatibility: tag_rewrite_buffer attribute (unused in current implementation)
         self.tag_rewrite_buffer = ""
 
+        # Determine whether tool_call_tags contains predefined format or custom tags
         if tool_call_tags:
-            # Custom tags provided - use them
-            self._initialize_tag_rewriter(tool_call_tags)
+            # Check if tool_call_tags is a predefined format name
+            predefined_formats = ["qwen3", "openai", "llama3", "xml", "gemma"]
+
+            if tool_call_tags in predefined_formats:
+                # It's a predefined format - use default rewriter
+                self._initialize_default_rewriter(tool_call_tags)
+                logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as predefined format")
+            elif ',' in tool_call_tags:
+                # It contains comma - likely custom tags like "START,END"
+                self._initialize_tag_rewriter(tool_call_tags)
+                logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as custom comma-separated tags")
+            else:
+                # Single string that's not a predefined format - could be custom single tag
+                # Try as custom first, fall back to treating as predefined format
+                try:
+                    self._initialize_tag_rewriter(tool_call_tags)
+                    logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as custom single tag")
+                except Exception as e:
+                    logger.debug(f"Failed to initialize as custom tag, trying as predefined format: {e}")
+                    self._initialize_default_rewriter(tool_call_tags)
         else:
             # No custom tags - initialize default rewriter to target format
             self._initialize_default_rewriter(default_target_format)
@@ -481,17 +500,77 @@ class UnifiedStreamProcessor:
         try:
             from ..tools.tag_rewriter import ToolCallTagRewriter, ToolCallTags
 
-            if target_format == "qwen3":
-                # Create rewriter that converts any format to qwen3
+            # Check if target_format contains custom tags (comma-separated)
+            if ',' in target_format:
+                # Custom tag format: "START,END"
+                parts = target_format.split(',')
+                if len(parts) == 2:
+                    target_tags = ToolCallTags(
+                        start_tag=parts[0].strip(),
+                        end_tag=parts[1].strip(),
+                        auto_format=False  # Use exact custom tags
+                    )
+                    self.tag_rewriter = ToolCallTagRewriter(target_tags)
+                    logger.debug(f"Initialized custom tag rewriter '{parts[0].strip()}...{parts[1].strip()}' for model {self.model_name}")
+                else:
+                    logger.warning(f"Invalid custom tag format '{target_format}' - expected 'START,END'")
+                    return
+            elif target_format == "qwen3":
+                # Qwen3 format: <|tool_call|>...JSON...</|tool_call|>
                 target_tags = ToolCallTags(
                     start_tag="<|tool_call|>",
                     end_tag="</|tool_call|>",
                     auto_format=False  # Use exact tags
                 )
                 self.tag_rewriter = ToolCallTagRewriter(target_tags)
-                logger.debug(f"Initialized default qwen3 tag rewriter for model {self.model_name}")
+                logger.debug(f"Initialized qwen3 tag rewriter for model {self.model_name}")
+            elif target_format == "openai":
+                # OpenAI format: No text rewriting needed!
+                # OpenAI's API already returns structured JSON tool calls,
+                # so we should not apply any tag rewriting at all.
+                # Setting tag_rewriter to None means no rewriting will occur.
+                self.tag_rewriter = None
+                logger.debug(f"OpenAI format selected - no tag rewriting will be applied (OpenAI uses native JSON tool calls)")
+                return
+            elif target_format == "llama3":
+                # LLaMA3/Crush CLI format: <function_call>...JSON...</function_call>
+                target_tags = ToolCallTags(
+                    start_tag="<function_call>",
+                    end_tag="</function_call>",
+                    auto_format=False
+                )
+                self.tag_rewriter = ToolCallTagRewriter(target_tags)
+                logger.debug(f"Initialized llama3 tag rewriter for model {self.model_name}")
+            elif target_format == "xml":
+                # XML/Gemini CLI format: <tool_call>...JSON...</tool_call>
+                target_tags = ToolCallTags(
+                    start_tag="<tool_call>",
+                    end_tag="</tool_call>",
+                    auto_format=False
+                )
+                self.tag_rewriter = ToolCallTagRewriter(target_tags)
+                logger.debug(f"Initialized xml tag rewriter for model {self.model_name}")
+            elif target_format == "gemma":
+                # Gemma format: ```tool_code...JSON...```
+                target_tags = ToolCallTags(
+                    start_tag="```tool_code\n",
+                    end_tag="\n```",
+                    auto_format=False
+                )
+                self.tag_rewriter = ToolCallTagRewriter(target_tags)
+                logger.debug(f"Initialized gemma tag rewriter for model {self.model_name}")
             else:
-                logger.warning(f"Unknown default target format: {target_format}")
+                # Try to handle as single tag format (auto-format to <tag>...</tag>)
+                if target_format and not target_format.isspace():
+                    target_tags = ToolCallTags(
+                        start_tag=target_format.strip(),
+                        end_tag=target_format.strip(),
+                        auto_format=True  # Auto-wrap with angle brackets
+                    )
+                    self.tag_rewriter = ToolCallTagRewriter(target_tags)
+                    logger.debug(f"Initialized auto-formatted tag rewriter '<{target_format.strip()}>...</{target_format.strip()}>' for model {self.model_name}")
+                else:
+                    logger.warning(f"Unknown or empty target format: '{target_format}' - no tag rewriting will be applied")
 
         except Exception as e:
             logger.error(f"Failed to initialize default rewriter: {e}")
