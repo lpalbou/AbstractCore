@@ -662,7 +662,7 @@ class SimpleCLI:
         print("=" * 60)
 
     def generate_response(self, user_input: str):
-        """Generate and display response."""
+        """Generate and display response with tool execution."""
         start_time = time.time()
 
         try:
@@ -673,17 +673,24 @@ class SimpleCLI:
             kwargs = {}
             if hasattr(self.session, 'tool_call_tags') and self.session.tool_call_tags:
                 kwargs['tool_call_tags'] = self.session.tool_call_tags
-            
+
             response = self.session.generate(user_input, stream=self.stream_mode, **kwargs)
 
             if self.stream_mode:
                 print("🤖 Assistant: ", end="", flush=True)
+                full_content = ""
                 for chunk in response:
                     if hasattr(chunk, 'content') and chunk.content:
                         print(chunk.content, end="", flush=True)
+                        full_content += chunk.content
                 print()  # New line
+
+                # After streaming is complete, check for and execute tool calls
+                self._execute_tool_calls_if_present(full_content)
             else:
                 print(f"🤖 Assistant: {response.content}")
+                # For non-streaming, execute tool calls immediately
+                self._execute_tool_calls_if_present(response.content)
 
             if self.debug_mode:
                 latency = (time.time() - start_time) * 1000
@@ -696,6 +703,67 @@ class SimpleCLI:
             if self.debug_mode:
                 import traceback
                 traceback.print_exc()
+
+    def _execute_tool_calls_if_present(self, content: str):
+        """Parse and execute tool calls from response content."""
+        import re
+        import json
+
+        if not content:
+            return
+
+        # Parse qwen3-style tool calls: <|tool_call|>{"name": "...", "arguments": {...}}</|tool_call|>
+        tool_pattern = r'<\|tool_call\|>(.*?)</\|tool_call\|>'
+        tool_matches = re.findall(tool_pattern, content, re.DOTALL)
+
+        if not tool_matches:
+            return
+
+        print("\n🔧 Tool Results:")
+
+        # Available tools mapping
+        available_tools = {
+            "list_files": list_files,
+            "read_file": read_file,
+            "write_file": write_file,
+            "execute_command": execute_command
+        }
+
+        for tool_json in tool_matches:
+            try:
+                # Parse tool call JSON
+                tool_data = json.loads(tool_json.strip())
+                tool_name = tool_data.get("name")
+                tool_args = tool_data.get("arguments", {})
+
+                if tool_name not in available_tools:
+                    print(f"❌ Unknown tool: {tool_name}")
+                    continue
+
+                # Display tool call for transparency
+                args_str = str(tool_args) if tool_args else "{}"
+                if len(args_str) > 100:
+                    args_str = args_str[:97] + "..."
+                print(f"**{tool_name}({args_str})**")
+
+                # Execute the tool
+                tool_function = available_tools[tool_name]
+
+                if tool_args:
+                    result = tool_function(**tool_args)
+                else:
+                    result = tool_function()
+
+                print(f"✅ {result}")
+
+            except json.JSONDecodeError as e:
+                print(f"❌ Failed to parse tool call JSON: {e}")
+                print(f"   Raw content: {tool_json[:100]}...")
+            except Exception as e:
+                print(f"❌ Tool execution failed: {e}")
+                if self.debug_mode:
+                    import traceback
+                    traceback.print_exc()
 
     def run_interactive(self):
         """Run the interactive REPL."""

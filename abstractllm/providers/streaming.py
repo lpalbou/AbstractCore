@@ -197,6 +197,7 @@ class IncrementalToolDetector:
             if self.rewrite_tags:
                 # When rewriting, stream the complete accumulated content including tool call
                 streamable_content = self.accumulated_content
+                logger.debug(f"Tool complete, streaming accumulated content for rewriting: {streamable_content[:200]}")
                 self.accumulated_content = ""
             else:
                 # Normal mode - don't stream the tool call itself
@@ -217,26 +218,37 @@ class IncrementalToolDetector:
 
     def _might_have_partial_tool_call(self) -> bool:
         """Check if accumulated content might contain start of a tool call."""
-        # Check for partial start tags at end of content
-        tail = self.accumulated_content[-30:] if len(self.accumulated_content) > 30 else self.accumulated_content
+        # Check for partial tool tags more aggressively to handle character-by-character streaming
+        tail = self.accumulated_content[-20:] if len(self.accumulated_content) > 20 else self.accumulated_content
 
-        # Check for any pattern start tags (or prefixes of them)
+        # Expanded list of potential partial starts to catch character-by-character streaming
+        potential_partial_starts = [
+            '<', '<|', '<f', '</', '<t', '`', '``',
+            '<fu', '<fun', '<func', '<funct', '<functi', '<functio', '<function',  # <function_call>
+            '<tool', '<tool_', '<tool_c', '<tool_ca', '<tool_cal',  # <tool_call>
+            '<|t', '<|to', '<|too', '<|tool', '<|tool_', '<|tool_c'  # <|tool_call|>
+        ]
+
+        # Check if tail ends with any potential partial start
+        for start in potential_partial_starts:
+            if tail.endswith(start):
+                return True
+
+        # Also check if we have the start of any tag pattern in the middle
+        for pattern_partial in ['<function', '<tool_call', '<|tool', '```tool']:
+            if pattern_partial in tail:
+                return True
+
+        # Check if we have an incomplete tool call (start tag but no end tag)
         for pattern_info in self.active_patterns:
             start_pattern = pattern_info['start']
-            # Remove regex escaping for simple string checking
-            start_tag = start_pattern.replace('\\|', '|').replace('\\', '')
+            end_pattern = pattern_info['end']
 
-            # Check if we have partial match of start tag
-            for i in range(1, len(start_tag) + 1):
-                partial = start_tag[:i]
-                if tail.endswith(partial):
-                    return True
-
-            # Also check if we have start tag (incomplete tool call)
             if re.search(start_pattern, self.accumulated_content, re.IGNORECASE):
-                # Has start tag but we already know no complete match (from earlier check)
-                # So this is definitely incomplete
-                return True
+                # Has start tag - check if also has end tag
+                if not re.search(end_pattern, self.accumulated_content, re.IGNORECASE):
+                    # Incomplete tool call - should buffer
+                    return True
 
         return False
 
@@ -333,25 +345,32 @@ class UnifiedStreamProcessor:
     then rewrites them BEFORE yielding.
     """
 
-    def __init__(self, model_name: str, execute_tools: bool = True,
-                 tool_call_tags: Optional[str] = None):
+    def __init__(self, model_name: str, execute_tools: bool = False,
+                 tool_call_tags: Optional[str] = None,
+                 default_target_format: str = "qwen3"):
         """Initialize the stream processor."""
         self.model_name = model_name
-        self.execute_tools = execute_tools
+        # Note: execute_tools parameter is kept for backward compatibility but ignored
+        # Tool execution is now handled by the client (CLI)
         self.tool_call_tags = tool_call_tags
+        self.default_target_format = default_target_format
 
-        # Initialize tag rewriter if custom tags are provided
+        # Always initialize tag rewriter - either custom tags or default target format
         self.tag_rewriter = None
         # Backwards compatibility: tag_rewrite_buffer attribute (unused in current implementation)
         self.tag_rewrite_buffer = ""
 
         if tool_call_tags:
+            # Custom tags provided - use them
             self._initialize_tag_rewriter(tool_call_tags)
+        else:
+            # No custom tags - initialize default rewriter to target format
+            self._initialize_default_rewriter(default_target_format)
 
-        # Create detector - if we have tag rewriter, preserve tool calls in content
+        # Create detector - always preserve tool calls for rewriting since we always have a rewriter
         self.detector = IncrementalToolDetector(
             model_name=model_name,
-            rewrite_tags=bool(self.tag_rewriter)
+            rewrite_tags=True  # Always preserve for rewriting
         )
 
     def process_stream(self, response_stream: Iterator[GenerateResponse],
@@ -359,19 +378,12 @@ class UnifiedStreamProcessor:
         """
         Process a response stream with tag rewriting and tool detection.
 
-        Processing order (FIXED):
-        1. Accumulate chunks
-        2. Detect complete tool calls
-        3. If tag rewriting enabled, rewrite tool call tags in content
-        4. Yield rewritten content
-        5. Execute tools (if enabled)
-
         Args:
             response_stream: Iterator of response chunks
             converted_tools: Available tools for execution
 
         Yields:
-            GenerateResponse: Processed chunks with rewritten tags and tool execution
+            GenerateResponse: Processed chunks with rewritten tags
         """
         try:
             for chunk in response_stream:
@@ -379,13 +391,14 @@ class UnifiedStreamProcessor:
                     yield chunk
                     continue
 
-                # Process chunk through detector
-                # If tag rewriting enabled, this preserves tool calls in content
+                # Process chunk through detector (preserves tool calls for rewriting)
                 streamable_content, completed_tools = self.detector.process_chunk(chunk.content)
 
-                # Apply tag rewriting if enabled and we have content
+                # Apply tag rewriting if we have content
                 if streamable_content and self.tag_rewriter:
+                    logger.debug(f"Applying tag rewriting to: {streamable_content[:100]}")
                     streamable_content = self._apply_tag_rewriting_direct(streamable_content)
+                    logger.debug(f"After tag rewriting: {streamable_content[:100]}")
 
                 # Yield streamable content
                 if streamable_content:
@@ -397,19 +410,9 @@ class UnifiedStreamProcessor:
                         raw_response=chunk.raw_response
                     )
 
-                # Execute completed tools if enabled
-                if completed_tools and self.execute_tools and converted_tools:
-                    logger.debug(f"Executing {len(completed_tools)} tools immediately")
-                    tool_results = self._execute_tools_immediately(completed_tools, converted_tools)
-
-                    if tool_results:
-                        yield GenerateResponse(
-                            content=tool_results,
-                            model=chunk.model,
-                            finish_reason=chunk.finish_reason,
-                            usage=chunk.usage,
-                            raw_response=chunk.raw_response
-                        )
+                # Tools are detected but not executed here - client (CLI) will handle execution
+                if completed_tools:
+                    logger.debug(f"Detected {len(completed_tools)} tools - client will handle execution")
 
             # Finalize - get any remaining tools and handle remaining content
             final_tools = self.detector.finalize()
@@ -428,21 +431,8 @@ class UnifiedStreamProcessor:
                     finish_reason="stop"
                 )
 
-            if final_tools and self.execute_tools and converted_tools:
-                tool_results = self._execute_tools_immediately(final_tools, converted_tools)
-                if tool_results:
-                    yield GenerateResponse(
-                        content=tool_results,
-                        model=self.model_name,
-                        finish_reason="stop"
-                    )
-
-            # Add final newline to complete the stream
-            yield GenerateResponse(
-                content="\n",
-                model=self.model_name,
-                finish_reason="stop"
-            )
+            if final_tools:
+                logger.debug(f"Finalized {len(final_tools)} tools - client will handle execution")
 
         except Exception as e:
             logger.error(f"Error in unified stream processing: {e}")
@@ -486,6 +476,26 @@ class UnifiedStreamProcessor:
         except Exception as e:
             logger.error(f"Failed to initialize tag rewriter: {e}")
 
+    def _initialize_default_rewriter(self, target_format: str):
+        """Initialize default rewriter to convert any tool format to target format."""
+        try:
+            from ..tools.tag_rewriter import ToolCallTagRewriter, ToolCallTags
+
+            if target_format == "qwen3":
+                # Create rewriter that converts any format to qwen3
+                target_tags = ToolCallTags(
+                    start_tag="<|tool_call|>",
+                    end_tag="</|tool_call|>",
+                    auto_format=False  # Use exact tags
+                )
+                self.tag_rewriter = ToolCallTagRewriter(target_tags)
+                logger.debug(f"Initialized default qwen3 tag rewriter for model {self.model_name}")
+            else:
+                logger.warning(f"Unknown default target format: {target_format}")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize default rewriter: {e}")
+
     def _apply_tag_rewriting_direct(self, content: str) -> str:
         """
         Apply tag rewriting using the direct (non-streaming) rewriter method.
@@ -498,34 +508,13 @@ class UnifiedStreamProcessor:
 
         try:
             # Use direct text rewriting since we have complete tool calls
-            return self.tag_rewriter.rewrite_text(content)
+            rewritten = self.tag_rewriter.rewrite_text(content)
+            if rewritten != content:
+                logger.debug(f"Tag rewriting successful: {content[:50]} -> {rewritten[:50]}")
+            else:
+                logger.debug(f"Tag rewriting had no effect on: {content[:50]}")
+            return rewritten
         except Exception as e:
             logger.debug(f"Tag rewriting failed: {e}")
             return content
 
-    def _execute_tools_immediately(self, tool_calls: List[ToolCall],
-                                  converted_tools: List[Dict[str, Any]]) -> str:
-        """Execute tools immediately and return formatted results."""
-        try:
-            from ..tools import execute_tools
-
-            tool_results = execute_tools(tool_calls)
-
-            results_text = "\n\n🔧 Tool Results:\n"
-            for call, result in zip(tool_calls, tool_results):
-                params_str = str(call.arguments) if call.arguments else "{}"
-                if len(params_str) > 100:
-                    params_str = params_str[:97] + "..."
-
-                results_text += f"**{call.name}({params_str})**\n"
-
-                if result.success:
-                    results_text += f"✅ {result.output}\n\n"
-                else:
-                    results_text += f"❌ Error: {result.error}\n\n"
-
-            return results_text
-
-        except Exception as e:
-            logger.error(f"Tool execution failed: {e}")
-            return f"\n\n❌ Tool execution error: {e}\n\n"

@@ -150,6 +150,7 @@ class LMStudioProvider(BaseProvider):
         }
 
         if stream:
+            # Return streaming response - BaseProvider will handle tag rewriting via UnifiedStreamProcessor
             return self._stream_generate(payload)
         else:
             response = self._single_generate(payload)
