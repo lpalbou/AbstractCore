@@ -6,6 +6,7 @@ This guide shows real-world use cases for AbstractCore with complete, copy-paste
 
 - [Basic Usage](#basic-usage)
 - [Tool Calling Examples](#tool-calling-examples)
+- [Tool Call Tag Rewriting Examples](#tool-call-tag-rewriting-examples)
 - [Structured Output Examples](#structured-output-examples)
 - [Streaming Examples](#streaming-examples)
 - [Session Management](#session-management)
@@ -266,6 +267,191 @@ response = llm.generate(
 
 print(response.content)
 ```
+
+## Tool Call Tag Rewriting Examples
+
+> **Real-time tool call format conversion for agentic CLI compatibility**
+
+Tool call tag rewriting enables AbstractCore to work seamlessly with any agentic CLI by converting tool calls to the expected format in real-time. This happens automatically during generation, including streaming.
+
+### Codex CLI Integration (Default Format)
+
+```python
+from abstractllm import create_llm
+
+# Define tools (standard JSON format)
+weather_tool = {
+    "name": "get_weather",
+    "description": "Get current weather for a city",
+    "parameters": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"]
+    }
+}
+
+# Codex CLI expects qwen3 format (default - no configuration needed)
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate("What's the weather in Tokyo?", tools=[weather_tool])
+
+print(response.content)
+# Output includes: <|tool_call|>{"name": "get_weather", "arguments": {"city": "Tokyo"}}</|tool_call|>
+```
+
+### Crush CLI Integration
+
+```python
+# Crush CLI expects LLaMA3 format - just specify the format
+llm = create_llm("ollama", model="qwen3-coder:30b", tool_call_tags="llama3")
+response = llm.generate("Get weather for London", tools=[weather_tool])
+
+print(response.content)
+# Output includes: <function_call>{"name": "get_weather", "arguments": {"city": "London"}}</function_call>
+```
+
+### Custom CLI Format
+
+```python
+# Your custom CLI expects: [TOOL]...JSON...[/TOOL]
+llm = create_llm("openai", model="gpt-4o-mini", tool_call_tags="[TOOL],[/TOOL]")
+response = llm.generate("Check weather in Paris", tools=[weather_tool])
+
+print(response.content)
+# Output includes: [TOOL]{"name": "get_weather", "arguments": {"city": "Paris"}}[/TOOL]
+```
+
+### Real-Time Streaming with Tag Rewriting
+
+```python
+# Streaming works seamlessly with any format
+calculator_tool = {
+    "name": "calculate",
+    "description": "Perform mathematical calculations",
+    "parameters": {
+        "type": "object",
+        "properties": {"expression": {"type": "string"}},
+        "required": ["expression"]
+    }
+}
+
+llm = create_llm("ollama", model="qwen3-coder:30b", tool_call_tags="llama3")
+
+print("AI: ", end="", flush=True)
+for chunk in llm.generate(
+    "Calculate 15 * 23 and explain the result",
+    tools=[calculator_tool],
+    stream=True
+):
+    print(chunk.content, end="", flush=True)
+
+    # Tool calls are detected and executed in real-time
+    if chunk.tool_calls:
+        for tool_call in chunk.tool_calls:
+            result = tool_call.execute()
+            print(f"\n🛠️ Tool executed: {result}")
+
+print("\n")
+# Shows: <function_call>{"name": "calculate", "arguments": {"expression": "15 * 23"}}</function_call>
+# With immediate tool execution during streaming
+```
+
+### Multiple Tools with Different Formats
+
+```python
+# Define multiple tools
+tools = [
+    {
+        "name": "get_weather",
+        "description": "Get weather information",
+        "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+        }
+    },
+    {
+        "name": "calculate",
+        "description": "Perform calculations",
+        "parameters": {
+            "type": "object",
+            "properties": {"expression": {"type": "string"}},
+            "required": ["expression"]
+        }
+    },
+    {
+        "name": "list_files",
+        "description": "List files in a directory",
+        "parameters": {
+            "type": "object",
+            "properties": {"directory": {"type": "string"}},
+            "required": ["directory"]
+        }
+    }
+]
+
+# Test with XML format for Gemini CLI
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest", tool_call_tags="xml")
+response = llm.generate(
+    "What's 2+2, weather in NYC, and files in current directory?",
+    tools=tools
+)
+
+print(response.content)
+# All tool calls converted to: <tool_call>{"name": "...", "arguments": {...}}</tool_call>
+```
+
+### Session-Based Format Configuration
+
+```python
+from abstractllm import BasicSession
+
+# Configure format once for entire session
+llm = create_llm("openai", model="gpt-4o-mini", tool_call_tags="llama3")
+session = BasicSession(provider=llm)
+
+# All tool calls in this session use LLaMA3 format
+session.generate("Calculate 10 * 5", tools=[calculator_tool])
+session.generate("What's the weather like?", tools=[weather_tool])
+session.generate("List files in documents", tools=[{
+    "name": "list_files",
+    "description": "List directory contents",
+    "parameters": {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"]
+    }
+}])
+
+# All responses contain: <function_call>...JSON...</function_call>
+```
+
+### Production Monitoring with Events
+
+```python
+from abstractllm.events import EventType, on_global
+
+# Monitor tool usage across different formats
+def log_tool_calls(event):
+    for call in event.data.get('tool_calls', []):
+        print(f"🔧 {call.name} executed for CLI format: {llm.tool_call_tags}")
+
+on_global(EventType.TOOL_COMPLETED, log_tool_calls)
+
+# Test with different formats
+for format_name in ["qwen3", "llama3", "xml"]:
+    llm = create_llm("ollama", model="qwen3-coder:30b", tool_call_tags=format_name)
+    response = llm.generate("Calculate 5 * 5", tools=[calculator_tool])
+    print(f"{format_name} format result: {response.content[:100]}...")
+```
+
+**Key Benefits**:
+- ✅ **Zero Configuration**: Default format works with most CLIs
+- ✅ **Real-Time Processing**: No post-processing delays
+- ✅ **Streaming Compatible**: Works perfectly with streaming mode
+- ✅ **Universal Support**: All providers and models supported
+- ✅ **Format Flexibility**: Predefined formats + custom tags
+
+> **📋 Related**: [Tool Call Tag Rewriting Guide](tool-call-tag-rewriting.md) | [Unified Streaming Architecture](architecture.md#unified-streaming-architecture)
 
 ## Structured Output Examples
 

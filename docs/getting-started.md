@@ -169,6 +169,8 @@ print(response.content)
 # Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
 ```
 
+> **🏷️ Advanced Tool Features**: For agentic CLI compatibility, AbstractCore supports automatic tool call format conversion. See [Tool Call Tag Rewriting](tool-call-tag-rewriting.md) for details.
+
 ### 4. Streaming (Real-Time Responses)
 
 Show responses as they're generated:
@@ -388,12 +390,13 @@ python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-la
 Now that you have the basics:
 
 1. **[Explore Examples](examples.md)** - Real-world use cases and patterns
-2. **[Learn About Providers](providers.md)** - Deep dive into each provider
-3. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
-4. **[Use Internal CLI](internal-cli.md)** - Built-in testing CLI with advanced features
-5. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and cannot do
-6. **[Read the API Reference](api_reference.md)** - Complete API documentation
-7. **[Check Advanced Features](../README.md#core-features)** - Embeddings, events, retry logic
+2. **[Tool Call Tag Rewriting](tool-call-tag-rewriting.md)** - Format conversion for agentic CLI compatibility
+3. **[Learn About Providers](providers.md)** - Deep dive into each provider
+4. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
+5. **[Use Internal CLI](internal-cli.md)** - Built-in testing CLI with advanced features
+6. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and cannot do
+7. **[Read the API Reference](api_reference.md)** - Complete API documentation
+8. **[Check Advanced Features](../README.md#core-features)** - Embeddings, events, retry logic
 
 ## Getting Help
 
