@@ -29,7 +29,7 @@ class TestJSONCapabilitiesIntegration:
         json_caps = get_model_capabilities('gpt-4')
 
         # Verify JSON has the expected values
-        assert json_caps['context_length'] == 128000
+        assert json_caps['max_tokens'] == 128000
         assert json_caps['max_output_tokens'] == 4096
         assert json_caps['tool_support'] == 'native'
 
@@ -43,7 +43,7 @@ class TestJSONCapabilitiesIntegration:
         json_caps = get_model_capabilities('gpt-5')
 
         # Verify JSON has the expected values
-        assert json_caps['context_length'] == 200000
+        assert json_caps['max_tokens'] == 200000
         assert json_caps['max_output_tokens'] == 8192
         assert json_caps['tool_support'] == 'native'
 
@@ -58,7 +58,7 @@ class TestJSONCapabilitiesIntegration:
         json_caps = get_model_capabilities(unknown_model)
 
         # Should get default capabilities
-        assert json_caps['context_length'] == 16384  # Default: 16K total
+        assert json_caps['max_tokens'] == 16384  # Default: 16K total
         assert json_caps['max_output_tokens'] == 4096  # Default: 4K output
         assert json_caps['architecture'] == 'generic'  # Default architecture
 
@@ -308,7 +308,7 @@ class TestSystemEndToEnd:
 
         # 2. Test provider creation with capabilities
         provider = OllamaProvider(model)
-        assert provider.max_tokens == capabilities['context_length']
+        assert provider.max_tokens == capabilities['max_tokens']
         assert provider.max_output_tokens == capabilities['max_output_tokens']
 
         # 3. Test tool registration

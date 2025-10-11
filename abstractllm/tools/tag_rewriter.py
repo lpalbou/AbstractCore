@@ -15,32 +15,36 @@ from dataclasses import dataclass
 class ToolCallTags:
     """
     Configuration for tool call tags.
-    
+
     Attributes:
         start_tag: Opening tag for tool calls (e.g., "<|tool_call|>")
         end_tag: Closing tag for tool calls (e.g., "</|tool_call|>")
         preserve_json: Whether to preserve the JSON content between tags
+        auto_format: Whether to automatically add angle brackets if missing
     """
     start_tag: str
     end_tag: str
     preserve_json: bool = True
+    auto_format: bool = True
     
     def __post_init__(self):
         """Validate tag configuration."""
         if not self.start_tag or not self.end_tag:
             raise ValueError("Both start_tag and end_tag must be provided")
-        
-        # Ensure tags are properly formatted
-        # Only add angle brackets if the tag doesn't already have them
-        # and doesn't start with special characters like ```
-        if (not self.start_tag.startswith('<') and 
-            not self.start_tag.startswith('```') and
-            not self.start_tag.startswith('`')):
-            self.start_tag = f'<{self.start_tag}>'
-        if (not self.end_tag.startswith('</') and 
-            not self.end_tag.startswith('```') and
-            not self.end_tag.startswith('`')):
-            self.end_tag = f'</{self.end_tag.split(">")[0].split("<")[-1]}>'
+
+        # Only auto-format if enabled
+        if self.auto_format:
+            # Ensure tags are properly formatted
+            # Only add angle brackets if the tag doesn't already have them
+            # and doesn't start with special characters like ```
+            if (not self.start_tag.startswith('<') and
+                not self.start_tag.startswith('```') and
+                not self.start_tag.startswith('`')):
+                self.start_tag = f'<{self.start_tag}>'
+            if (not self.end_tag.startswith('</') and
+                not self.end_tag.startswith('```') and
+                not self.end_tag.startswith('`')):
+                self.end_tag = f'</{self.end_tag.split(">")[0].split("<")[-1]}>'
 
 
 class ToolCallTagRewriter:

@@ -33,13 +33,27 @@ class SimpleCLI:
     """Simplified CLI REPL for AbstractLLM"""
 
     def __init__(self, provider: str, model: str, stream: bool = False,
-                 max_tokens: int = 4000, debug: bool = False, **kwargs):
+                 max_tokens: int = None, debug: bool = False, **kwargs):
         self.provider_name = provider
         self.model_name = model
         self.stream_mode = stream
         self.debug_mode = debug
-        self.max_tokens = max_tokens
         self.kwargs = kwargs
+
+        # Auto-detect max_tokens from model capabilities if not specified
+        if max_tokens is None:
+            try:
+                from ..architectures.detection import get_model_capabilities
+                capabilities = get_model_capabilities(model)
+                max_tokens = capabilities.get('max_tokens', 16384)  # Fallback to 16K if not found
+                if debug:
+                    print(f"🔍 Auto-detected max_tokens: {max_tokens} (from model capabilities)")
+            except Exception as e:
+                max_tokens = 16384  # Safe fallback
+                if debug:
+                    print(f"⚠️ Failed to auto-detect max_tokens, using fallback: {max_tokens} ({e})")
+
+        self.max_tokens = max_tokens
 
         # Initialize provider and session with tools
         self.provider = create_llm(provider, model=model, max_tokens=max_tokens, **kwargs)
@@ -51,7 +65,7 @@ class SimpleCLI:
 
         print(f"🚀 AbstractLLM CLI - {provider}:{model}")
         print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
-        print("Commands: /help /quit /clear /stream /debug /history [n] /model <spec> /compact /facts [file] /judge /system [prompt]")
+        print("Commands: /help /quit /clear /stream /debug /status /history [n] /model <spec> /compact /facts [file] /judge /system [prompt]")
         print("Tools: list_files, read_file, write_file, execute_command")
         print("=" * 60)
 
@@ -72,7 +86,8 @@ class SimpleCLI:
             print("  /quit - Exit")
             print("  /clear - Clear history")
             print("  /stream - Toggle streaming")
-            print("  /debug - Toggle debug mode")
+            print("  /debug - Toggle CLI debug mode (timing, auto-detection info)")
+            print("  /status - Show current provider, model, capabilities, and token usage")
             print("  /history [n] - Show conversation history or last n interactions")
             print("  /model <provider:model> - Change model")
             print("  /compact - Compact chat history using gemma3:1b-it-qat-it-qat")
@@ -92,7 +107,11 @@ class SimpleCLI:
 
         elif cmd == 'debug':
             self.debug_mode = not self.debug_mode
-            print(f"🐛 Debug mode: {'ON' if self.debug_mode else 'OFF'}")
+            print(f"🐛 CLI Debug mode: {'ON' if self.debug_mode else 'OFF'} (controls timing & auto-detection info)")
+            print("💡 Note: System debug logs are controlled by logging level, not CLI debug mode")
+
+        elif cmd == 'status':
+            self.handle_status()
 
         elif cmd.startswith('history'):
             # Parse /history [n] command
@@ -166,8 +185,9 @@ class SimpleCLI:
                 print("   Example: /tooltag '<function_call>' '</function_call>'")
                 print("   Example: /tooltag '<tool_call>' '</tool_call>'")
             else:
-                opening_tag = parts[1]
-                closing_tag = parts[2]
+                # Strip quotes from the tags if present
+                opening_tag = parts[1].strip("'\"")
+                closing_tag = parts[2].strip("'\"")
                 self.handle_tooltag_test(opening_tag, closing_tag)
 
         else:
@@ -554,8 +574,92 @@ class SimpleCLI:
     def handle_tooltag_test(self, opening_tag: str, closing_tag: str):
         """Handle /tooltag command - set tool call tags for the session"""
         from ..tools.tag_rewriter import ToolCallTags
-        self.session.tool_call_tags = ToolCallTags(opening_tag, closing_tag)
+        # Disable auto-formatting to use tags exactly as specified by user
+        self.session.tool_call_tags = ToolCallTags(opening_tag, closing_tag, auto_format=False)
         print(f"🏷️ Tool call tags set to: {opening_tag}...{closing_tag}")
+
+    def handle_status(self):
+        """Handle /status command - show comprehensive system status"""
+        print("📊 AbstractLLM CLI Status")
+        print("=" * 60)
+
+        # Provider and Model info
+        print(f"🔧 Provider: {self.provider_name}")
+        print(f"🤖 Model: {self.model_name}")
+        print(f"🌊 Streaming: {'Enabled' if self.stream_mode else 'Disabled'}")
+
+        # Debug status - show both CLI and system logging
+        print(f"🐛 CLI Debug: {'Enabled' if self.debug_mode else 'Disabled'}")
+
+        # Try to detect system logging level
+        try:
+            import logging
+            logger = logging.getLogger()
+            current_level = logger.getEffectiveLevel()
+            level_name = logging.getLevelName(current_level)
+
+            # Check if debug messages would be shown
+            if current_level <= logging.DEBUG:
+                system_debug = "Enabled (DEBUG level)"
+            elif current_level <= logging.INFO:
+                system_debug = "Info level"
+            else:
+                system_debug = "Warning+ only"
+
+            print(f"📊 System Logging: {system_debug}")
+        except:
+            print(f"📊 System Logging: Unknown")
+
+        # Token usage
+        current_tokens = self.session.get_token_estimate()
+        print(f"💾 Token Usage: {current_tokens:,} / {self.max_tokens:,} tokens ({(current_tokens/self.max_tokens*100):.1f}%)")
+
+        # Model capabilities
+        try:
+            from ..architectures.detection import get_model_capabilities
+            capabilities = get_model_capabilities(self.model_name)
+
+            print("\n🎯 Model Capabilities:")
+            print(f"   Max Input Tokens: {capabilities.get('max_tokens', 'Unknown'):,}")
+            print(f"   Max Output Tokens: {capabilities.get('max_output_tokens', 'Unknown'):,}")
+            print(f"   Tool Support: {capabilities.get('tool_support', 'Unknown')}")
+            print(f"   Structured Output: {capabilities.get('structured_output', 'Unknown')}")
+            print(f"   Vision Support: {'Yes' if capabilities.get('vision_support', False) else 'No'}")
+            print(f"   Audio Support: {'Yes' if capabilities.get('audio_support', False) else 'No'}")
+            print(f"   Thinking Support: {'Yes' if capabilities.get('thinking_support', False) else 'No'}")
+
+            # Show aliases if any
+            aliases = capabilities.get('aliases', [])
+            if aliases:
+                print(f"   Model Aliases: {', '.join(aliases)}")
+
+        except Exception as e:
+            print(f"\n⚠️ Could not retrieve model capabilities: {e}")
+
+        # Available tools
+        print("\n🛠️ Available Tools:")
+        tools = ["list_files", "read_file", "write_file", "execute_command"]
+        for i, tool in enumerate(tools, 1):
+            print(f"   {i}. {tool}")
+
+        # Session info
+        messages = self.session.get_messages()
+        conversation_messages = [msg for msg in messages if msg.role != 'system']
+        interactions = len(conversation_messages) // 2  # user + assistant = 1 interaction
+
+        print(f"\n📝 Session Info:")
+        print(f"   Total Messages: {len(messages)}")
+        print(f"   Interactions: {interactions}")
+        print(f"   System Prompt: {'Set' if self.session.system_prompt else 'Default'}")
+
+        # Check for compaction
+        has_summary = any(msg.role == 'system' and '[CONVERSATION HISTORY]' in msg.content for msg in messages)
+        if has_summary:
+            print(f"   History: Compacted (summary available)")
+        else:
+            print(f"   History: Full conversation")
+
+        print("=" * 60)
 
     def generate_response(self, user_input: str):
         """Generate and display response."""
@@ -645,7 +749,8 @@ Commands:
   /quit - Exit
   /clear - Clear history
   /stream - Toggle streaming
-  /debug - Toggle debug mode
+  /debug - Toggle CLI debug mode (timing, auto-detection)
+  /status - Show current status (provider, model, capabilities, tokens)
   /history [n] - Show conversation history or last n interactions
   /model <provider:model> - Change model
   /compact - Compact chat history using gemma3:1b-it-qat
@@ -670,7 +775,7 @@ build custom solutions using the AbstractCore framework directly.
     # Optional arguments
     parser.add_argument('--stream', action='store_true', help='Enable streaming mode')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--max-tokens', type=int, default=4000, help='Maximum tokens (default: 4000)')
+    parser.add_argument('--max-tokens', type=int, default=None, help='Maximum tokens (default: auto-detect from model capabilities)')
     parser.add_argument('--prompt', help='Execute single prompt and exit')
 
     # Provider-specific

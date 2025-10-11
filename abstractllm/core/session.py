@@ -103,6 +103,10 @@ class BasicSession:
         if 'tools' not in kwargs and self.tools:
             kwargs['tools'] = self.tools
 
+        # Pass session tool_call_tags if available and not overridden in kwargs
+        if hasattr(self, 'tool_call_tags') and self.tool_call_tags is not None and 'tool_call_tags' not in kwargs:
+            kwargs['tool_call_tags'] = self.tool_call_tags
+
         # Call provider
         response = self.provider.generate(
             prompt=prompt,

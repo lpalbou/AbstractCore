@@ -96,12 +96,38 @@ def get_architecture_format(architecture: str) -> Dict[str, Any]:
     return _architecture_formats["architectures"].get(architecture, {})
 
 
-def get_model_capabilities(model_name: str) -> Dict[str, Any]:
+def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     """
-    Get model capabilities from JSON configuration.
+    Resolve a model name to its canonical name by checking aliases.
 
     Args:
-        model_name: Full model name
+        model_name: Model name that might be an alias
+        models: Models dictionary from capabilities JSON
+
+    Returns:
+        Canonical model name
+    """
+    # First check if it's already a canonical name
+    if model_name in models:
+        return model_name
+
+    # Check if it's an alias of any model
+    for canonical_name, model_info in models.items():
+        aliases = model_info.get("aliases", [])
+        if model_name in aliases:
+            logger.debug(f"Resolved alias '{model_name}' to canonical name '{canonical_name}'")
+            return canonical_name
+
+    # Return original name if no alias found
+    return model_name
+
+
+def get_model_capabilities(model_name: str) -> Dict[str, Any]:
+    """
+    Get model capabilities from JSON configuration with alias support.
+
+    Args:
+        model_name: Full model name (can be an alias)
 
     Returns:
         Model capabilities dictionary
@@ -113,25 +139,34 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
 
     models = _model_capabilities.get("models", {})
 
-    # First try exact match
-    if model_name in models:
-        capabilities = models[model_name].copy()
+    # Step 1: Resolve aliases to canonical names
+    canonical_name = resolve_model_alias(model_name, models)
+
+    # Step 2: Try exact match with canonical name
+    if canonical_name in models:
+        capabilities = models[canonical_name].copy()
+        # Remove alias-specific fields from capabilities
+        capabilities.pop("canonical_name", None)
+        capabilities.pop("aliases", None)
         # Add architecture if not present
         if "architecture" not in capabilities:
-            capabilities["architecture"] = detect_architecture(model_name)
+            capabilities["architecture"] = detect_architecture(canonical_name)
         return capabilities
 
-    # Try partial matches for common model naming patterns
+    # Step 3: Try partial matches for common model naming patterns
     model_lower = model_name.lower()
     for model_key, capabilities in models.items():
         if model_key.lower() in model_lower or model_lower in model_key.lower():
             result = capabilities.copy()
+            # Remove alias-specific fields
+            result.pop("canonical_name", None)
+            result.pop("aliases", None)
             if "architecture" not in result:
                 result["architecture"] = detect_architecture(model_name)
             logger.debug(f"Using capabilities from '{model_key}' for '{model_name}'")
             return result
 
-    # Fallback to default capabilities based on architecture
+    # Step 4: Fallback to default capabilities based on architecture
     architecture = detect_architecture(model_name)
     default_caps = _model_capabilities.get("default_capabilities", {}).copy()
     default_caps["architecture"] = architecture
@@ -217,7 +252,7 @@ def get_context_limits(model_name: str) -> Dict[str, int]:
     """Get context and output token limits."""
     capabilities = get_model_capabilities(model_name)
     return {
-        "context_length": capabilities.get("context_length", 16384),  # 16K total: 12K input + 4K output
+        "max_tokens": capabilities.get("max_tokens", 16384),  # 16K total context window
         "max_output_tokens": capabilities.get("max_output_tokens", 4096)  # 4K output tokens
     }
 

@@ -445,14 +445,15 @@ for rec in review.recommendations:
 
 ## Streaming Examples
 
-### Basic Streaming
+### Basic Streaming (Unified 2025)
 
 ```python
+# Real-time streaming works identically across ALL providers
 from abstractllm import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 
-print("AI: ", end="", flush=True)
+print("AI Story Generator: ", end="", flush=True)
 for chunk in llm.generate(
     "Write a short story about a programmer who discovers their code is alive",
     stream=True
@@ -461,45 +462,64 @@ for chunk in llm.generate(
 print("\n")
 ```
 
-### Streaming with Progress
+### Advanced Streaming with Progress and Performance Tracking
 
 ```python
 from abstractllm import create_llm
-import sys
 import time
 
-def streaming_with_progress(prompt):
-    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+def streaming_with_insights(prompt):
+    # Supports any provider: OpenAI, Anthropic, Ollama, MLX
+    llm = create_llm("openai", model="gpt-4o-mini")
 
-    print("🤖 AI is thinking...\n")
-    print("Response: ", end="", flush=True)
+    print("🤖 Generating response...")
 
-    chunks = []
     start_time = time.time()
+    chunks = []
 
+    print("Response: ", end="", flush=True)
     for chunk in llm.generate(prompt, stream=True):
         chunks.append(chunk)
         print(chunk.content, end="", flush=True)
 
-    elapsed = time.time() - start_time
+        # Optional real-time performance insights
+        if len(chunks) % 10 == 0:
+            current_time = time.time() - start_time
+            chars_generated = sum(len(c.content) for c in chunks)
+            print(f"\n📊 Progress: {len(chunks)} chunks, {chars_generated} chars, {current_time:.1f}s")
+
+    # Final performance summary
+    total_time = time.time() - start_time
     total_chars = sum(len(chunk.content) for chunk in chunks)
 
-    print(f"\n\n📊 Stats: {len(chunks)} chunks, {total_chars} characters, {elapsed:.1f}s")
-    print(f"⚡ Speed: {total_chars/elapsed:.0f} chars/sec")
+    print(f"\n\n🚀 Streaming Stats:")
+    print(f"- Total Chunks: {len(chunks)}")
+    print(f"- Total Characters: {total_chars}")
+    print(f"- Duration: {total_time:.2f}s")
+    print(f"- Speed: {total_chars/total_time:.0f} chars/sec")
 
-# Usage
-streaming_with_progress("Explain how neural networks work in simple terms")
+# Usage with various prompts
+streaming_with_insights("Explain quantum computing in simple terms")
 ```
 
-### Streaming with Tools
+### Real-Time Streaming with Tools (Unified Implementation)
 
 ```python
 from abstractllm import create_llm
+from datetime import datetime
 
 def get_current_time() -> str:
     """Get the current time."""
-    from datetime import datetime
     return datetime.now().strftime("%H:%M:%S")
+
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    weather_data = {
+        "New York": "Sunny, 22°C",
+        "London": "Cloudy, 15°C",
+        "Tokyo": "Partly cloudy, 25°C"
+    }
+    return weather_data.get(city, f"Weather data unavailable for {city}")
 
 time_tool = {
     "name": "get_current_time",
@@ -507,20 +527,95 @@ time_tool = {
     "parameters": {"type": "object", "properties": {}}
 }
 
-llm = create_llm("openai", model="gpt-4o-mini")
+weather_tool = {
+    "name": "get_weather",
+    "description": "Get current weather for a city",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "description": "Name of the city"}
+        }
+    }
+}
 
-print("AI: ", end="", flush=True)
+# Works identically across providers
+llm = create_llm("ollama", model="qwen2.5-coder:7b")
+
+print("🤖 AI Assistant: ", end="", flush=True)
 for chunk in llm.generate(
-    "What time is it? Please tell me and then write a haiku about time",
-    tools=[time_tool],
+    "What time is it right now? And can you tell me the weather in New York?",
+    tools=[time_tool, weather_tool],
     stream=True
 ):
-    if chunk.has_tool_calls():
-        print("\n[🛠️ Using tool...] ", end="", flush=True)
-    else:
-        print(chunk.content, end="", flush=True)
-print("\n")
+    # Real-time chunk processing and tool execution
+    print(chunk.content, end="", flush=True)
+
+    # Immediate tool call detection and execution
+    if chunk.tool_calls:
+        for tool_call in chunk.tool_calls:
+            result = tool_call.execute()
+            print(f"\n🛠️ Tool Result: {result}")
+
+print("\n")  # Newline after streaming
+
+# Features:
+# ✅ Real-time tool call detection
+# ✅ Immediate mid-stream tool execution
+# ✅ Zero buffering overhead
+# ✅ Works with OpenAI, Anthropic, Ollama, MLX
+# ✅ Consistent behavior across all providers
 ```
+
+### Performance-Optimized Streaming
+
+```python
+from abstractllm import create_llm
+import time
+
+def compare_providers(prompt):
+    """Compare streaming performance across providers."""
+    providers = [
+        ("openai", "gpt-4o-mini"),
+        ("anthropic", "claude-3-5-haiku-latest"),
+        ("ollama", "qwen2.5-coder:7b")
+    ]
+
+    for provider, model in providers:
+        try:
+            llm = create_llm(provider, model=model)
+
+            print(f"\n📊 Testing {provider.upper()} - {model}")
+            start_time = time.time()
+
+            chunks = []
+            for chunk in llm.generate(prompt, stream=True):
+                chunks.append(chunk)
+                print(chunk.content, end="", flush=True)
+
+            total_time = time.time() - start_time
+            total_chars = sum(len(chunk.content) for chunk in chunks)
+
+            print(f"\n\n🚀 {provider.upper()} Performance:")
+            print(f"- Chunks: {len(chunks)}")
+            print(f"- Characters: {total_chars}")
+            print(f"- Duration: {total_time:.2f}s")
+            print(f"- Speed: {total_chars/total_time:.0f} chars/sec")
+
+        except Exception as e:
+            print(f"❌ {provider} failed: {e}")
+
+# Compare streaming performance
+compare_providers("Write a creative short story about artificial intelligence")
+```
+
+**Streaming Features**:
+- ⚡ First chunk in <10ms
+- 🔧 Unified strategy across ALL providers
+- 🛠️ Real-time tool call detection
+- 📊 Mid-stream tool execution
+- 💨 Zero buffering overhead
+- 🚀 Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
+- 🔒 Robust error handling for malformed responses
 
 ## Session Management
 

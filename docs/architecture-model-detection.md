@@ -52,7 +52,7 @@ detect_architecture("qwen/qwen3-next-80b")   # Returns: "qwen3_next"
 **Key Capabilities**:
 - **Tool Support**: `native`, `prompted`, or `none`
 - **Structured Output**: `native`, `prompted`, or `none`
-- **Context Length**: Maximum input tokens
+- **Max Tokens**: Maximum input tokens
 - **Multimodal**: Vision, audio, video support
 - **Special Features**: Thinking support, FIM, etc.
 
@@ -60,7 +60,7 @@ detect_architecture("qwen/qwen3-next-80b")   # Returns: "qwen3_next"
 ```python
 capabilities = get_model_capabilities("qwen3-4b-instruct")
 print(capabilities["tool_support"])        # "prompted"
-print(capabilities["context_length"])      # 32768
+print(capabilities["max_tokens"])      # 32768
 print(capabilities["vision_support"])      # False
 ```
 
@@ -307,7 +307,7 @@ Stores individual model capabilities:
 {
   "models": {
     "qwen3-4b-instruct": {
-      "context_length": 32768,
+      "max_tokens": 32768,
       "max_output_tokens": 8192,
       "tool_support": "prompted",
       "structured_output": "prompted",
@@ -315,7 +315,7 @@ Stores individual model capabilities:
     }
   },
   "default_capabilities": {
-    "context_length": 16384,
+    "max_tokens": 16384,
     "max_output_tokens": 4096,
     "tool_support": "none",
     "structured_output": "none"
@@ -331,7 +331,7 @@ Stores individual model capabilities:
 {
   "models": {
     "new-model-7b": {
-      "context_length": 32768,
+      "max_tokens": 32768,
       "max_output_tokens": 4096,
       "tool_support": "native",
       "structured_output": "native",
