@@ -402,110 +402,13 @@ async def create_embeddings(request: EmbeddingRequest):
             input_count=len(request.input) if isinstance(request.input, list) else 1
         )
 
-        # Route to appropriate provider
+        # Route to EmbeddingManager with provider parameter
+        # EmbeddingManager handles all embedding logic for all providers
+        from ..embeddings.manager import EmbeddingManager
+
+        # Validate provider
         provider_lower = provider.lower()
-
-        if provider_lower == "huggingface":
-            # HuggingFace: Use local EmbeddingManager
-            from ..embeddings.manager import EmbeddingManager
-
-            # Create embedding manager with just the HuggingFace model name (no provider prefix)
-            embedder = EmbeddingManager(
-                model=model,
-                output_dims=request.dimensions
-            )
-
-            # Process input - handle both string and list
-            if isinstance(request.input, str):
-                inputs = [request.input]
-            else:
-                inputs = request.input
-
-            # Generate embeddings
-            embeddings = embedder.embed_batch(inputs)
-
-            # Convert to OpenAI format
-            embedding_objects = []
-            for i, embedding in enumerate(embeddings):
-                embedding_objects.append({
-                    "object": "embedding",
-                    "embedding": embedding,
-                    "index": i
-                })
-
-            # Calculate usage (rough estimate)
-            total_tokens = sum(embedder.estimate_tokens(text) for text in inputs)
-
-            response = {
-                "object": "list",
-                "data": embedding_objects,
-                "model": f"{provider}/{model}",
-                "usage": {
-                    "prompt_tokens": total_tokens,
-                    "total_tokens": total_tokens
-                }
-            }
-
-            logger.info(
-                "✅ HuggingFace embeddings generated",
-                count=len(embedding_objects),
-                dimensions=len(embeddings[0]) if embeddings else 0,
-                total_tokens=total_tokens
-            )
-
-            return response
-
-        elif provider_lower == "ollama":
-            # Ollama: Delegate to provider's embed method
-            from ..providers.ollama_provider import OllamaProvider
-
-            # Create provider instance
-            ollama = OllamaProvider(model=model)
-
-            # Call provider's embed method
-            response = ollama.embed(
-                input_text=request.input
-            )
-
-            # Update model field to include provider prefix
-            response["model"] = f"{provider}/{model}"
-
-            logger.info(
-                "✅ Ollama embeddings generated",
-                count=len(response.get("data", [])),
-                dimensions=len(response["data"][0]["embedding"]) if response.get("data") else 0
-            )
-
-            return response
-
-        elif provider_lower == "lmstudio":
-            # LMStudio: Delegate to provider's embed method
-            from ..providers.lmstudio_provider import LMStudioProvider
-
-            # Create provider instance
-            lmstudio = LMStudioProvider(model=model)
-
-            # Call provider's embed method with optional parameters
-            response = lmstudio.embed(
-                input_text=request.input,
-                encoding_format=request.encoding_format,
-                dimensions=request.dimensions,
-                user=request.user
-            )
-
-            # Update model field to include provider prefix
-            response["model"] = f"{provider}/{model}"
-
-            logger.info(
-                "✅ LMStudio embeddings generated",
-                count=len(response.get("data", [])),
-                dimensions=len(response["data"][0]["embedding"]) if response.get("data") else 0
-            )
-
-            return response
-
-        else:
-            # Unsupported provider
+        if provider_lower not in ["huggingface", "ollama", "lmstudio"]:
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -515,6 +418,54 @@ async def create_embeddings(request: EmbeddingRequest):
                     }
                 }
             )
+
+        # Create embedding manager with provider specification
+        embedder = EmbeddingManager(
+            model=model,
+            provider=provider_lower,
+            output_dims=request.dimensions
+        )
+
+        # Process input - handle both string and list
+        if isinstance(request.input, str):
+            inputs = [request.input]
+        else:
+            inputs = request.input
+
+        # Generate embeddings
+        embeddings = embedder.embed_batch(inputs)
+
+        # Convert to OpenAI format
+        embedding_objects = []
+        for i, embedding in enumerate(embeddings):
+            embedding_objects.append({
+                "object": "embedding",
+                "embedding": embedding,
+                "index": i
+            })
+
+        # Calculate usage (rough estimate)
+        total_tokens = sum(embedder.estimate_tokens(text) for text in inputs)
+
+        response = {
+            "object": "list",
+            "data": embedding_objects,
+            "model": f"{provider}/{model}",
+            "usage": {
+                "prompt_tokens": total_tokens,
+                "total_tokens": total_tokens
+            }
+        }
+
+        logger.info(
+            "✅ Embeddings generated",
+            provider=provider_lower,
+            count=len(embedding_objects),
+            dimensions=len(embeddings[0]) if embeddings else 0,
+            total_tokens=total_tokens
+        )
+
+        return response
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
