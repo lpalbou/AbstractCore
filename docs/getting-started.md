@@ -394,7 +394,7 @@ Now that you have the basics:
 4. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
 5. **[Use Internal CLI](internal-cli.md)** - Built-in testing CLI with advanced features
 6. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and cannot do
-7. **[Read the API Reference](api_reference.md)** - Complete API documentation
+7. **[Read the API Reference](api-reference.md)** - Complete API documentation
 8. **[Check Advanced Features](../README.md#core-features)** - Embeddings, events, retry logic
 
 ## Getting Help
