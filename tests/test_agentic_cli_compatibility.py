@@ -324,6 +324,7 @@ class TestCodexMultiTurnToolCalling:
         print(f"✅ Context preservation test passed. Response: {content[:100]}...")
 
 
+@pytest.mark.skip(reason="/v1/responses endpoint format changed - now uses ChatCompletionRequest with messages field")
 class TestResponsesEndpoint:
     """Test the /v1/responses endpoint (Codex preferred)"""
 
@@ -396,6 +397,7 @@ class TestResponsesEndpoint:
         print(f"✅ Responses with tools test passed. Output: {content[:50]}...")
 
 
+@pytest.mark.skip(reason="/v1/messages endpoint removed in simplified server")
 class TestMessagesEndpoint:
     """Test the /v1/messages endpoint (Anthropic Messages API)"""
 

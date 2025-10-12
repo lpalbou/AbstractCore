@@ -76,7 +76,7 @@ class TestArchitectureDetection:
         test_cases = [
             ('gpt-4', 'gpt'),
             ('qwen3-coder:30b', 'qwen3_moe'),  # Updated: more specific detection
-            ('llama-3.1-8b', 'llama'),
+            ('llama-3.1-8b', 'llama3_1'),  # Updated: more specific detection
             ('claude-3.5-sonnet', 'claude'),
             ('unknown-model', 'generic')
         ]
@@ -231,7 +231,7 @@ class TestRealProviderIntegration:
 
         # Test basic properties
         assert provider.model == 'qwen3-coder:30b'
-        assert provider.architecture == 'qwen'
+        assert provider.architecture == 'qwen3_moe'  # Updated: more specific detection
 
         # Test capabilities
         capabilities = provider.get_capabilities()
