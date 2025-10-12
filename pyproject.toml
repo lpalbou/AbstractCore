@@ -19,6 +19,7 @@ keywords = [
     "openai",
     "anthropic",
     "ollama",
+    "lmstudio",
     "huggingface",
     "mlx",
     "ai",
