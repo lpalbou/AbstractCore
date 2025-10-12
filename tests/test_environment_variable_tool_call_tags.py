@@ -27,14 +27,17 @@ class TestEnvironmentVariableToolCallTags:
         assert processor.tag_rewriter.target_tags.auto_format == False
 
     def test_predefined_format_openai_no_rewriting(self):
-        """Test openai predefined format disables tag rewriting (uses native JSON)"""
+        """Test openai predefined format enables JSON conversion instead of tag rewriting"""
         processor = UnifiedStreamProcessor(
             model_name="test-model",
             tool_call_tags="openai"
         )
 
-        # Should have NO tag rewriter (OpenAI uses native JSON tool calls)
+        # Should have NO tag rewriter (OpenAI uses JSON conversion instead)
         assert processor.tag_rewriter is None
+
+        # Should have OpenAI JSON conversion enabled
+        assert processor.convert_to_openai_json is True
 
     def test_predefined_format_llama3(self):
         """Test llama3 predefined format initialization"""
@@ -164,18 +167,26 @@ class TestEnvironmentVariableTagRewriting:
         assert expected_output in result
 
     def test_openai_format_no_rewriting(self):
-        """Test tool call rewriting with openai format does no rewriting"""
+        """Test tool call rewriting with openai format does JSON conversion instead"""
         processor = UnifiedStreamProcessor(
             model_name="test-model",
             tool_call_tags="openai"
         )
 
-        # Should NOT rewrite anything (OpenAI uses native JSON tool calls)
+        # OpenAI should convert text-based tool calls to JSON format
+        # Regular text without tool calls should be unchanged
         input_text = 'This is regular text with no tool calls to rewrite.'
 
         result = processor._apply_tag_rewriting_direct(input_text)
-        # Should return unchanged
+        # Should return unchanged (no tag rewriter when format is openai)
         assert result == input_text
+
+        # But when there ARE tool calls, they should be converted to OpenAI JSON
+        tool_call_text = '<|tool_call|>{"name": "test", "arguments": {}}</|tool_call|>'
+        result = processor._convert_to_openai_format(tool_call_text)
+        # Should contain OpenAI JSON structure
+        assert '"type": "function"' in result
+        assert '"name": "test"' in result
 
     def test_llama3_format_rewriting(self):
         """Test tool call rewriting with llama3 format"""
