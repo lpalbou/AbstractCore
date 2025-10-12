@@ -50,9 +50,8 @@ class LMStudioProvider(BaseProvider):
     def _validate_model(self):
         """Validate that the model exists in LMStudio"""
         try:
-            # Remove /v1 from base_url for model discovery since it adds /v1/models
-            discovery_base_url = self.base_url.replace("/v1", "")
-            available_models = self.list_available_models(base_url=discovery_base_url)
+            # Use base_url as-is (should include /v1) for model discovery
+            available_models = self.list_available_models(base_url=self.base_url)
             if available_models and self.model not in available_models:
                 error_message = format_model_error("LMStudio", self.model, available_models)
                 raise ModelNotFoundError(error_message)

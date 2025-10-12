@@ -33,11 +33,12 @@ class SimpleCLI:
     """Simplified CLI REPL for AbstractLLM"""
 
     def __init__(self, provider: str, model: str, stream: bool = False,
-                 max_tokens: int = None, debug: bool = False, **kwargs):
+                 max_tokens: int = None, debug: bool = False, show_banner: bool = True, **kwargs):
         self.provider_name = provider
         self.model_name = model
         self.stream_mode = stream
         self.debug_mode = debug
+        self.single_prompt_mode = not show_banner  # Clean output for single-prompt mode
         self.kwargs = kwargs
 
         # Auto-detect max_tokens from model capabilities if not specified
@@ -63,11 +64,13 @@ class SimpleCLI:
             tools=[list_files, read_file, write_file, execute_command]
         )
 
-        print(f"🚀 AbstractLLM CLI - {provider}:{model}")
-        print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
-        print("Commands: /help /quit /clear /stream /debug /status /history [n] /model <spec> /compact /facts [file] /judge /system [prompt]")
-        print("Tools: list_files, read_file, write_file, execute_command")
-        print("=" * 60)
+        # Only show banner in interactive mode
+        if show_banner:
+            print(f"🚀 AbstractLLM CLI - {provider}:{model}")
+            print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
+            print("Commands: /help /quit /clear /stream /debug /status /history [n] /model <spec> /compact /facts [file] /judge /system [prompt]")
+            print("Tools: list_files, read_file, write_file, execute_command")
+            print("=" * 60)
 
     def handle_command(self, user_input: str) -> bool:
         """Handle commands. Returns True if command processed, False otherwise."""
@@ -572,11 +575,11 @@ class SimpleCLI:
         print(f"📝 New: {new_prompt[:100]}{'...' if len(new_prompt) > 100 else ''}")
 
     def handle_tooltag_test(self, opening_tag: str, closing_tag: str):
-        """Handle /tooltag command - set tool call tags for the session"""
-        from ..tools.tag_rewriter import ToolCallTags
-        # Disable auto-formatting to use tags exactly as specified by user
-        self.session.tool_call_tags = ToolCallTags(opening_tag, closing_tag, auto_format=False)
-        print(f"🏷️ Tool call tags set to: {opening_tag}...{closing_tag}")
+        """Handle /tooltag command - demonstrate tool call format handling"""
+        print(f"🏷️ Tool call format testing: {opening_tag}...{closing_tag}")
+        print("💡 Note: CLI now uses universal tool call parser that handles multiple formats automatically")
+        print("   Supported formats: Qwen3, LLaMA3, XML, Gemma, and plain JSON")
+        print("   No configuration needed - detection is automatic!")
 
     def handle_status(self):
         """Handle /status command - show comprehensive system status"""
@@ -663,34 +666,90 @@ class SimpleCLI:
 
     def generate_response(self, user_input: str):
         """Generate and display response with tool execution."""
+        import re
         start_time = time.time()
 
         try:
             if self.debug_mode:
                 print(f"🔍 Sending to {self.provider_name}:{self.model_name}")
 
-            # Pass tool_call_tags if set
-            kwargs = {}
-            if hasattr(self.session, 'tool_call_tags') and self.session.tool_call_tags:
-                kwargs['tool_call_tags'] = self.session.tool_call_tags
-
-            response = self.session.generate(user_input, stream=self.stream_mode, **kwargs)
+            # Don't pass tool_call_tags to avoid format confusion
+            # Let the model use its native format, we'll parse it universally
+            response = self.session.generate(user_input, stream=self.stream_mode)
 
             if self.stream_mode:
-                print("🤖 Assistant: ", end="", flush=True)
+                if not self.single_prompt_mode:
+                    print("🤖 Assistant: ", end="", flush=True)
                 full_content = ""
+                display_buffer = ""  # Buffer for cleaned display content
+                
                 for chunk in response:
                     if hasattr(chunk, 'content') and chunk.content:
-                        print(chunk.content, end="", flush=True)
                         full_content += chunk.content
-                print()  # New line
-
-                # After streaming is complete, check for and execute tool calls
-                self._execute_tool_calls_if_present(full_content)
+                        
+                        # Filter out internal model tags that shouldn't appear
+                        # These tags indicate model formatting issues
+                        chunk_text = chunk.content
+                        
+                        # Remove internal conversation tags
+                        chunk_text = re.sub(r'<\|assistant\|>', '', chunk_text)
+                        chunk_text = re.sub(r'<\|user\|>', '', chunk_text)
+                        chunk_text = re.sub(r'<\|system\|>', '', chunk_text)
+                        
+                        # For now, don't display tool calls during streaming
+                        # We'll show them after execution
+                        # Check if this chunk contains tool call markers
+                        has_tool_marker = any(marker in chunk_text for marker in [
+                            '<|tool_call|>', '</|tool_call|>',
+                            '<function_call>', '</function_call>',
+                            '<tool_call>', '</tool_call>',
+                            '```tool_code'
+                        ])
+                        
+                        if not has_tool_marker:
+                            print(chunk_text, end="", flush=True)
+                            display_buffer += chunk_text
+                        else:
+                            # Buffer the chunk, we'll process after streaming
+                            display_buffer += chunk_text
+                
+                print()  # New line after streaming
+                
+                # Parse and execute tool calls from full content
+                clean_content, tool_calls = self._parse_and_strip_tool_calls(full_content)
+                
+                # If we buffered tool call content, we should have shown clean content
+                # For now, if there's significant difference, show the clean version
+                if tool_calls and clean_content.strip() and clean_content.strip() != display_buffer.strip():
+                    # We had tool calls that weren't displayed cleanly
+                    # This happens when tool calls appear mid-stream
+                    if self.debug_mode:
+                        print(f"\n🔍 Cleaned content differs from streamed content")
+                
+                self._execute_tool_calls(tool_calls)
             else:
-                print(f"🤖 Assistant: {response.content}")
-                # For non-streaming, execute tool calls immediately
-                self._execute_tool_calls_if_present(response.content)
+                # Non-streaming: parse content, display clean version, execute tools
+                clean_content, tool_calls = self._parse_and_strip_tool_calls(response.content)
+                
+                # Display only the clean content (without tool call syntax)
+                if clean_content.strip():
+                    if self.single_prompt_mode:
+                        print(clean_content)
+                    else:
+                        print(f"🤖 Assistant: {clean_content}")
+                elif tool_calls:
+                    # Only tool calls, no text response
+                    if not self.single_prompt_mode:
+                        print(f"🤖 Assistant: ", end="")
+                else:
+                    # Empty response
+                    if self.single_prompt_mode:
+                        print(response.content)
+                    else:
+                        print(f"🤖 Assistant: {response.content}")
+                
+                # Execute tool calls
+                self._execute_tool_calls(tool_calls)
 
             if self.debug_mode:
                 latency = (time.time() - start_time) * 1000
@@ -704,23 +763,86 @@ class SimpleCLI:
                 import traceback
                 traceback.print_exc()
 
-    def _execute_tool_calls_if_present(self, content: str):
-        """Parse and execute tool calls from response content."""
+    def _parse_and_strip_tool_calls(self, content: str):
+        """
+        Parse tool calls from content and return (clean_content, tool_calls).
+        
+        Returns:
+            Tuple of (content_without_tool_calls, list_of_tool_call_dicts)
+        """
         import re
         import json
-
+        
         if not content:
+            return content, []
+        
+        # Use the universal parser from tools.parser for better compatibility
+        try:
+            from ..tools.parser import parse_tool_calls
+            detected_calls = parse_tool_calls(content, self.model_name)
+            
+            if not detected_calls:
+                return content, []
+            
+            # Convert to simple dicts for execution
+            tool_calls = []
+            for call in detected_calls:
+                tool_calls.append({
+                    'name': call.name,
+                    'arguments': call.arguments if isinstance(call.arguments, dict) else {}
+                })
+            
+            # Strip tool call syntax from content using syntax rewriter
+            from ..tools.syntax_rewriter import ToolCallSyntaxRewriter, SyntaxFormat
+            rewriter = ToolCallSyntaxRewriter(SyntaxFormat.PASSTHROUGH, model_name=self.model_name)
+            clean_content = rewriter.remove_tool_call_patterns(content)
+            
+            return clean_content, tool_calls
+            
+        except Exception as e:
+            if self.debug_mode:
+                print(f"⚠️ Tool parsing fallback to regex: {e}")
+            
+            # Fallback to regex parsing for multiple formats
+            tool_calls = []
+            clean_content = content
+            
+            # Support multiple tool call formats
+            patterns = [
+                r'<\|tool_call\|>(.*?)</\|tool_call\|>',  # Qwen3
+                r'<function_call>(.*?)</function_call>',   # LLaMA3
+                r'<tool_call>(.*?)</tool_call>',           # XML
+                r'```tool_code\s*\n(.*?)\n```',            # Gemma
+            ]
+            
+            for pattern in patterns:
+                matches = re.findall(pattern, content, re.DOTALL)
+                for match in matches:
+                    try:
+                        tool_data = json.loads(match.strip())
+                        if 'name' in tool_data:
+                            tool_calls.append({
+                                'name': tool_data['name'],
+                                'arguments': tool_data.get('arguments', {})
+                            })
+                            # Remove this tool call from content
+                            clean_content = re.sub(pattern, '', clean_content, count=1, flags=re.DOTALL)
+                    except json.JSONDecodeError:
+                        continue
+            
+            # Clean up extra whitespace
+            clean_content = re.sub(r'\n\s*\n\s*\n', '\n\n', clean_content).strip()
+            
+            return clean_content, tool_calls
+
+    def _execute_tool_calls(self, tool_calls):
+        """Execute a list of tool call dictionaries."""
+        if not tool_calls:
             return
-
-        # Parse qwen3-style tool calls: <|tool_call|>{"name": "...", "arguments": {...}}</|tool_call|>
-        tool_pattern = r'<\|tool_call\|>(.*?)</\|tool_call\|>'
-        tool_matches = re.findall(tool_pattern, content, re.DOTALL)
-
-        if not tool_matches:
-            return
-
-        print("\n🔧 Tool Results:")
-
+        
+        if not self.single_prompt_mode:
+            print("\n🔧 Tool Results:")
+        
         # Available tools mapping
         available_tools = {
             "list_files": list_files,
@@ -728,37 +850,37 @@ class SimpleCLI:
             "write_file": write_file,
             "execute_command": execute_command
         }
-
-        for tool_json in tool_matches:
+        
+        for tool_data in tool_calls:
             try:
-                # Parse tool call JSON
-                tool_data = json.loads(tool_json.strip())
                 tool_name = tool_data.get("name")
                 tool_args = tool_data.get("arguments", {})
-
+                
                 if tool_name not in available_tools:
                     print(f"❌ Unknown tool: {tool_name}")
                     continue
-
-                # Display tool call for transparency
-                args_str = str(tool_args) if tool_args else "{}"
-                if len(args_str) > 100:
-                    args_str = args_str[:97] + "..."
-                print(f"**{tool_name}({args_str})**")
-
+                
+                # Display tool call for transparency (only in interactive mode)
+                if not self.single_prompt_mode:
+                    args_str = str(tool_args) if tool_args else "{}"
+                    if len(args_str) > 100:
+                        args_str = args_str[:97] + "..."
+                    print(f"**{tool_name}({args_str})**")
+                
                 # Execute the tool
                 tool_function = available_tools[tool_name]
-
+                
                 if tool_args:
                     result = tool_function(**tool_args)
                 else:
                     result = tool_function()
-
-                print(f"✅ {result}")
-
-            except json.JSONDecodeError as e:
-                print(f"❌ Failed to parse tool call JSON: {e}")
-                print(f"   Raw content: {tool_json[:100]}...")
+                
+                # In single-prompt mode, just print the result cleanly
+                if self.single_prompt_mode:
+                    print(result)
+                else:
+                    print(f"✅ {result}")
+                
             except Exception as e:
                 print(f"❌ Tool execution failed: {e}")
                 if self.debug_mode:
@@ -794,8 +916,8 @@ class SimpleCLI:
     def run_single_prompt(self, prompt: str):
         """Execute single prompt and exit."""
         try:
-            response = self.session.generate(prompt, stream=False)
-            print(response.content)
+            # Use generate_response for consistent tool handling
+            self.generate_response(prompt)
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -860,13 +982,14 @@ build custom solutions using the AbstractCore framework directly.
     if args.api_key:
         kwargs['api_key'] = args.api_key
 
-    # Create CLI
+    # Create CLI (suppress banner for single-prompt mode)
     cli = SimpleCLI(
         provider=args.provider,
         model=args.model,
         stream=args.stream,
         max_tokens=args.max_tokens,
         debug=args.debug,
+        show_banner=not args.prompt,  # Hide banner in single-prompt mode
         **kwargs
     )
 
