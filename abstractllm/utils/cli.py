@@ -777,9 +777,11 @@ class SimpleCLI:
             return content, []
         
         # Use the universal parser from tools.parser for better compatibility
+        # IMPORTANT: Use format-agnostic parsing in CLI since models can generate
+        # different formats regardless of their architecture
         try:
-            from ..tools.parser import parse_tool_calls
-            detected_calls = parse_tool_calls(content, self.model_name)
+            from ..tools.parser import _parse_any_format
+            detected_calls = _parse_any_format(content)
             
             if not detected_calls:
                 return content, []
