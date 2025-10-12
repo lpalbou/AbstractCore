@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "abstractcore"
-version = "2.2.4"
+version = "2.3.0"
 description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
 readme = "README.md"
 license = {text = "MIT"}

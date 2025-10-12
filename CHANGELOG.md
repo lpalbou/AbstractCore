@@ -6,6 +6,157 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.3.0] - 2025-10-12
+
+### Major Changes
+
+#### Server Simplification and Enhancement
+- Simplified server implementation in `abstractllm/server/app.py` (reduced from ~4000 to ~1500 lines)
+- Removed complex model discovery in favor of direct provider queries
+- Added comprehensive endpoint documentation with OpenAI-style descriptions
+- Enhanced request/response models with detailed parameter descriptions and examples
+
+#### Multi-Provider Embedding Support
+- `EmbeddingManager` now supports three providers: HuggingFace, Ollama, and LMStudio
+- Unified embedding API across all providers with automatic format conversion
+- Provider-specific caching for isolation and performance
+- Backward compatible with existing HuggingFace-only code (default provider)
+
+#### Tool Call Syntax Rewriting
+- Added `syntax_rewriter.py` for server-side tool call format conversion
+- Supports multiple formats: OpenAI, Codex, Qwen3, LLaMA3, Gemma, XML
+- Automatic format detection based on headers, user-agent, and model name
+- Enables seamless integration with agentic CLIs (Codex, Crush, Gemini CLI)
+
+#### Model Discovery and Filtering
+- Added `/v1/models?type=text-embedding` endpoint for filtering embedding models
+- Heuristic-based model type detection (embedding vs text-generation)
+- Embedding patterns: "embed", "all-minilm", "bert-", "-bert", "bge-", "gte-", etc.
+- Provider-specific model filtering via query parameters
+
+### Server Enhancements
+
+#### API Endpoints
+- Enhanced `/v1/embeddings` endpoint with multi-provider support
+- Added `type` parameter to `/v1/models` for model type filtering (text-generation/text-embedding)
+- Improved `/v1/chat/completions` with comprehensive parameter documentation
+- Added `/{provider}/v1/chat/completions` for provider-specific requests
+- Enhanced `/v1/responses` endpoint for agentic CLI compatibility
+- Updated `/providers` endpoint with detailed provider information
+
+#### Request/Response Models
+- Added detailed field descriptions and examples to all Pydantic models
+- `EmbeddingRequest`: Comprehensive parameter explanations using OpenAI reference style
+- `ChatCompletionRequest`: Enhanced with field-level documentation and examples
+- `ChatMessage`: Detailed role and content descriptions with use cases
+- Default examples updated to use working models
+
+#### Format Conversion
+- Automatic tool call format conversion for different agentic CLIs
+- Support for custom tool call tags via `agent_format` parameter
+- Configurable tool execution (server-side vs client-side)
+- Environment variable configuration for default formats
+
+### Core Library Improvements
+
+#### Embeddings
+- Provider parameter added to `EmbeddingManager.__init__()` (default: "huggingface")
+- `embed()` and `embed_batch()` methods now delegate to provider-specific implementations
+- Ollama provider: Added `embed()` method using `/api/embeddings` endpoint
+- LMStudio provider: Added `embed()` method using `/v1/embeddings` endpoint
+- Cache naming includes provider for proper isolation
+
+#### Providers
+- Enhanced provider base classes with improved error handling
+- Better streaming support across all providers
+- Consistent timeout handling and retry logic
+- Improved tool call detection and parsing
+
+#### Exception Handling
+- Added `UnsupportedProviderError` for better error messages
+- Enhanced exception types for embedding-specific errors
+- Improved error context and debugging information
+
+### Documentation Overhaul
+
+#### Consolidated Documentation
+- Merged `common-mistakes.md` into `troubleshooting.md` with cross-references
+- Merged `server-api-reference.md` into simplified `server.md` (1006 → 479 lines)
+- Created comprehensive `docs/README.md` as navigation hub
+- Removed redundant documentation files (8 files consolidated)
+
+#### New Documentation
+- Created `tool-syntax-rewriting.md` covering both tag and syntax rewriters
+- Enhanced `embeddings.md` with multi-provider support and examples
+- Updated `architecture.md` with server architecture and present-tense language
+- Improved `getting-started.md` with comprehensive tool documentation
+
+#### Documentation Organization
+- Moved `basic-*.md` files to `docs/apps/` subdirectory
+- Created `docs/archive/` for superseded documentation
+- Added `docs/archive/README.md` explaining archived content
+- Updated all cross-references across documentation
+
+#### Documentation Style
+- Removed historical/refactoring language ("replaced", "improved", "before/after")
+- Converted all documentation to present tense
+- Focused on current capabilities and actionable content
+- Simplified language for clarity and accessibility
+
+#### Root README Updates
+- Added clearer distinction between core library and optional server
+- Enhanced documentation section with better organization
+- Added "Architecture & Advanced" section
+- Improved Quick Links with comprehensive navigation
+
+### Technical Improvements
+
+#### Code Quality
+- Removed unused `simple_model_discovery.py` module
+- Cleaned up temporary debug files and scripts
+- Removed integration.py tool module (functionality moved to providers)
+- Better separation of concerns between core and server
+
+#### Testing
+- Added comprehensive tests for embedding providers
+- Enhanced server endpoint testing
+- Improved tool call syntax rewriting tests
+- Better test coverage for multi-provider scenarios
+
+### Breaking Changes
+None. All changes are backward compatible with version 2.2.x.
+
+### Migration Guide
+
+#### For Embedding Users
+If you were using embeddings, no changes needed. The default behavior remains HuggingFace.
+
+To use other providers:
+```python
+from abstractllm.embeddings import EmbeddingManager
+
+# HuggingFace (default, unchanged)
+embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
+
+# Ollama (new)
+embedder = EmbeddingManager(model="granite-embedding:278m", provider="ollama")
+
+# LMStudio (new)
+embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", provider="lmstudio")
+```
+
+#### For Server Users
+Server API endpoints remain compatible. New features:
+- Use `?type=text-embedding` to filter embedding models
+- Use `agent_format` parameter for custom tool call formats
+- Environment variables for default configuration
+
+#### For Documentation Users
+- Use `docs/server.md` instead of `server-api-reference.md`
+- Use `docs/troubleshooting.md` for all troubleshooting (includes common mistakes)
+- Use `docs/README.md` as navigation hub
+- Reference `prerequisites.md` instead of deleted `providers.md`
+
 ## [2.2.8] - 2025-10-11
 
 ### Fixed
