@@ -112,8 +112,7 @@ response = client.chat.completions.create(
 - **[Code Examples](examples/)** - Working examples for all features
 
 ### Server (Optional HTTP REST API)
-- **[Server Guide](docs/server.md)** - Server setup and deployment
-- **[Server API Reference](docs/server-api-reference.md)** - Complete REST API documentation
+- **[Server Documentation](docs/server.md)** - Complete server setup, API reference, and deployment
 
 ## Use Cases
 

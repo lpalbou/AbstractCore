@@ -1,157 +1,41 @@
-# AbstractCore Server - Universal LLM Gateway
+# AbstractCore Server
 
-Transform AbstractCore into a universal OpenAI-compatible API server that works with ANY LLM provider. One server, all models, any client.
+Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.
 
-## Table of Contents
+## Quick Start
 
-- [Quick Start](#quick-start-5-minutes)
-- [Configuration](#configuration)
-- [Use Cases](#use-cases)
-- [Agentic CLI Integration](#agentic-cli-integration)
-- [Deployment](#deployment)
-- [Related Documentation](#related-documentation)
-
----
-
-## Quick Start (5 Minutes)
-
-### Prerequisites
-
-- Python 3.9+ (`python --version`)
-- pip (`python -m pip --version`)
-- Port 8000 available (`lsof -i :8000` should show nothing)
-
-### Step 1: Install (30 seconds)
+### Install and Run (2 minutes)
 
 ```bash
+# Install
 pip install abstractcore[server]
-```
 
-### Step 2: Start Server (10 seconds)
-
-```bash
+# Start server
 uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
-```
 
-You should see:
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-```
-
-### Step 3: Quick Test (20 seconds)
-
-```bash
-# Check server health
+# Test
 curl http://localhost:8000/health
-# Expected: {"status":"healthy"}
-
-# List available models
-curl http://localhost:8000/v1/models
+# Response: {"status":"healthy"}
 ```
 
-### Step 4: Your First Generation (1 minute)
+### First Request
 
-**Using curl:**
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai/gpt-4o-mini",
-    "messages": [{"role": "user", "content": "Write a haiku about coding"}]
+    "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
-**Using Python:**
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
-
-response = client.chat.completions.create(
-    model="openai/gpt-4o-mini",
-    messages=[{"role": "user", "content": "Write a haiku about coding"}]
-)
-print(response.choices[0].message.content)
-```
-
-✅ **Success!** You now have a universal LLM gateway running.
-
----
-
-## Configuration
-
-### Environment Variables
-
-#### Core Server Settings
-
-```bash
-# Default provider and model
-export ABSTRACTCORE_DEFAULT_PROVIDER=openai
-export ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
-
-# Debug mode (logs all requests/responses)
-export ABSTRACTCORE_DEBUG=true
-```
-
-#### Provider API Keys
-
-```bash
-# Cloud providers
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# Local providers
-export OLLAMA_HOST="http://localhost:11434"
-export LMSTUDIO_HOST="http://localhost:1234"
-```
-
-#### Tool Call Configuration (for Agentic CLIs)
-
-```bash
-# Set tool call format for CLI compatibility
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=qwen3    # Default, Codex CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3   # Crush CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml      # Gemini CLI
-
-# Control tool execution
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=true   # Server executes tools
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return tools to client
-```
-
-### Server Startup Options
-
-```bash
-# Development mode with auto-reload
-uvicorn abstractllm.server.app:app --reload --log-level debug
-
-# Production with multiple workers
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000 --workers 4
-
-# Custom port
-uvicorn abstractllm.server.app:app --port 3000
-
-# With SSL
-uvicorn abstractllm.server.app:app \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --ssl-keyfile=./key.pem \
-  --ssl-certfile=./cert.pem
-```
-
----
-
-## Use Cases
-
-### 1. OpenAI Client Compatibility
-
-Use any OpenAI-compatible client with any provider:
+Or with Python:
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 
-# Use Claude with OpenAI's client!
 response = client.chat.completions.create(
     model="anthropic/claude-3-5-haiku-latest",
     messages=[{"role": "user", "content": "Explain quantum computing"}]
@@ -159,55 +43,74 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-### 2. Local Model Gateway
+---
 
-Run powerful models locally for privacy:
+## Configuration
+
+### Environment Variables
 
 ```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3-coder:30b
+# Provider API keys
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
 
-# Use via AbstractCore server
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "ollama/qwen3-coder:30b",
-    "messages": [{"role": "user", "content": "Write a Python function"}]
-  }'
+# Local providers
+export OLLAMA_HOST="http://localhost:11434"
+export LMSTUDIO_HOST="http://localhost:1234"
+
+# Default settings
+export ABSTRACTCORE_DEFAULT_PROVIDER=openai
+export ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
+
+# Debug mode
+export ABSTRACTCORE_DEBUG=true
 ```
 
-### 3. Multi-Provider Fallback
+### Startup Options
 
-```python
-import requests
+```bash
+# Development with auto-reload
+uvicorn abstractllm.server.app:app --reload
 
-providers = [
-    ("ollama/qwen3-coder:30b", "Free local model"),
-    ("openai/gpt-4o-mini", "Cheap cloud fallback"),
-    ("anthropic/claude-3-5-haiku-latest", "Quality fallback")
-]
+# Production with multiple workers
+uvicorn abstractllm.server.app:app --workers 4
 
-def generate_with_fallback(prompt):
-    for model, description in providers:
-        try:
-            response = requests.post(
-                "http://localhost:8000/v1/chat/completions",
-                json={"model": model, "messages": [{"role": "user", "content": prompt}]},
-                timeout=30
-            )
-            if response.status_code == 200:
-                print(f"✓ Using {description}")
-                return response.json()
-        except Exception as e:
-            print(f"✗ {description} failed: {e}")
-            continue
-    raise Exception("All providers failed")
-
-result = generate_with_fallback("Hello world")
+# Custom port
+uvicorn abstractllm.server.app:app --port 3000
 ```
 
-### 4. Streaming Responses
+---
+
+## API Endpoints
+
+### Chat Completions
+
+**Endpoint:** `POST /v1/chat/completions`
+
+Standard OpenAI-compatible endpoint. Works with all providers.
+
+**Request:**
+```json
+{
+  "model": "provider/model-name",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant"},
+    {"role": "user", "content": "Hello!"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 1000,
+  "stream": false
+}
+```
+
+**Key Parameters:**
+- `model` (required): Format `"provider/model-name"` (e.g., `"openai/gpt-4o-mini"`)
+- `messages` (required): Array of message objects
+- `stream` (optional): Enable streaming responses
+- `tools` (optional): Tools for function calling
+- `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
+
+**Example with streaming:**
 
 ```python
 from openai import OpenAI
@@ -216,7 +119,7 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 
 stream = client.chat.completions.create(
     model="ollama/qwen3-coder:30b",
-    messages=[{"role": "user", "content": "Write a long story"}],
+    messages=[{"role": "user", "content": "Write a story"}],
     stream=True
 )
 
@@ -225,39 +128,118 @@ for chunk in stream:
         print(chunk.choices[0].delta.content, end="", flush=True)
 ```
 
-### 5. Embeddings Generation
+---
 
+### Embeddings
+
+**Endpoint:** `POST /v1/embeddings`
+
+Generate embedding vectors for semantic search, RAG, and similarity analysis.
+
+**Request:**
+```json
+{
+  "input": "Text to embed",
+  "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+}
+```
+
+**Supported Providers:**
+- **HuggingFace**: Local models with ONNX acceleration
+- **Ollama**: `ollama/granite-embedding:278m`, etc.
+- **LMStudio**: Any loaded embedding model
+
+**Batch Embedding:**
 ```bash
 curl -X POST http://localhost:8000/v1/embeddings \
   -H "Content-Type: application/json" \
   -d '{
-    "input": "Machine learning is fascinating",
-    "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+    "input": ["text 1", "text 2", "text 3"],
+    "model": "ollama/granite-embedding:278m"
   }'
 ```
 
 ---
 
+### Model Discovery
+
+**Endpoint:** `GET /v1/models`
+
+List all available models from configured providers.
+
+**Query Parameters:**
+- `provider`: Filter by provider (e.g., `ollama`, `openai`)
+- `type`: Filter by type (`text-generation` or `text-embedding`)
+
+**Examples:**
+```bash
+# All models
+curl http://localhost:8000/v1/models
+
+# Ollama models only
+curl http://localhost:8000/v1/models?provider=ollama
+
+# Embedding models only
+curl http://localhost:8000/v1/models?type=text-embedding
+
+# Ollama embeddings
+curl http://localhost:8000/v1/models?provider=ollama&type=text-embedding
+```
+
+---
+
+### Provider Status
+
+**Endpoint:** `GET /providers`
+
+List all available providers and their status.
+
+**Response:**
+```json
+{
+  "providers": [
+    {
+      "name": "ollama",
+      "type": "llm",
+      "model_count": 15,
+      "status": "available"
+    }
+  ]
+}
+```
+
+---
+
+### Health Check
+
+**Endpoint:** `GET /health`
+
+Server health check for monitoring.
+
+**Response:** `{"status": "healthy"}`
+
+---
+
 ## Agentic CLI Integration
 
-AbstractCore server is optimized for integration with agentic CLI tools like Codex, Crush, and Gemini CLI.
+Use AbstractCore server with agentic CLI tools like Codex, Crush, and Gemini CLI.
 
-### Codex CLI Setup
+### Codex CLI
 
 ```bash
-# Set environment variables
+# Setup
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 export ABSTRACTCORE_API_KEY="unused"
 
-# Use Codex with any model
+# Use with any model
 codex --model "ollama/qwen3-coder:30b" "Write a factorial function"
 ```
 
-### Crush CLI Setup
+### Crush CLI (LLaMA3 format)
 
 ```bash
-# Configure server for Crush (llama3 format)
+# Configure server
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
 uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
@@ -266,14 +248,14 @@ uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
-# Use Crush
+# Use
 crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"
 ```
 
-### Gemini CLI Setup
+### Gemini CLI (XML format)
 
 ```bash
-# Configure server for Gemini (xml format)
+# Configure server
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
 uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
@@ -282,21 +264,22 @@ uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
-# Use Gemini CLI
+# Use
 gemini-cli --model "ollama/qwen3-coder:30b" "Review this project"
 ```
 
-### Recommended Models for CLIs
+### Tool Call Format Configuration
 
-**For Coding:**
-- `ollama/qwen3-coder:30b` - Excellent code generation
-- `ollama/deepseek-coder:33b` - Strong reasoning
-- `lmstudio` - Whatever model you've loaded
+```bash
+# Set format for your CLI
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=qwen3    # Codex CLI
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3   # Crush CLI
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml      # Gemini CLI
 
-**For General Tasks:**
-- `anthropic/claude-3-5-haiku-latest` - Fast and intelligent
-- `openai/gpt-4o-mini` - Reliable and cost-effective
-- `ollama/qwen3:4b-instruct-2507-q4_K_M` - Local and private
+# Control tool execution
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=true   # Server executes
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client
+```
 
 ---
 
@@ -314,18 +297,13 @@ ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD curl -f http://localhost:8000/health || exit 1
-
 CMD ["uvicorn", "abstractllm.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 ```
 
-**Build and Run:**
+**Run:**
 ```bash
 docker build -t abstractcore-server .
-docker run -p 8000:8000 \
-  -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  abstractcore-server
+docker run -p 8000:8000 -e OPENAI_API_KEY=$OPENAI_API_KEY abstractcore-server
 ```
 
 ### Docker Compose
@@ -339,55 +317,31 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ABSTRACTCORE_DEFAULT_PROVIDER=anthropic
-      - ABSTRACTCORE_DEFAULT_MODEL=claude-3-5-haiku-latest
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - ./logs:/app/logs
     restart: unless-stopped
-```
-
-**Start:**
-```bash
-docker-compose up -d
 ```
 
 ### Production with Gunicorn
 
 ```bash
-# Install Gunicorn
 pip install gunicorn
 
-# Run with multiple workers
 gunicorn abstractllm.server.app:app \
   --worker-class uvicorn.workers.UvicornWorker \
   --workers 4 \
   --bind 0.0.0.0:8000
 ```
 
-### Cloud Deployment
-
-**Railway/Vercel/Fly.io:**
-1. Install: `pip install abstractcore[server]`
-2. Start command: `uvicorn abstractllm.server.app:app --host 0.0.0.0 --port $PORT`
-3. Set environment variables via platform UI
-
 ---
 
-## Debug Logging
+## Debug and Monitoring
 
-Enable comprehensive logging for troubleshooting:
+### Enable Debug Logging
 
 ```bash
-# Enable debug mode
 export ABSTRACTCORE_DEBUG=true
-
-# Start server
 uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
-
-# Logs are created in logs/ directory
-tail -f logs/abstractllm_*.log
 ```
 
 **Log Files:**
@@ -402,86 +356,124 @@ grep '"level": "error"' logs/abstractllm_*.log
 
 # Track token usage
 cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
-  awk '{sum+=$1} END {print "Total tokens:", sum}'
+  awk '{sum+=$1} END {print "Total:", sum}'
 
 # Monitor specific model
 grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl
 ```
 
----
+### Interactive Documentation
 
-## REST API Endpoints
-
-AbstractCore server provides these HTTP endpoints:
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/v1/chat/completions` | POST | Standard OpenAI chat endpoint |
-| `/{provider}/v1/chat/completions` | POST | Provider-specific chat endpoint |
-| `/v1/responses` | POST | Simplified endpoint for CLIs |
-| `/v1/embeddings` | POST | Create embeddings |
-| `/v1/models` | GET | List available models |
-| `/providers` | GET | List providers and their status |
-| `/docs` | GET | Interactive API documentation |
-
-**Complete REST API reference:** [Server API Reference](server-api-reference.md)
+Visit while server is running:
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
 
 ---
 
-## Quick Validation
+## Common Patterns
 
-Before using in production, verify:
+### Multi-Provider Fallback
+
+```python
+import requests
+
+providers = [
+    "ollama/qwen3-coder:30b",
+    "openai/gpt-4o-mini",
+    "anthropic/claude-3-5-haiku-latest"
+]
+
+def generate_with_fallback(prompt):
+    for model in providers:
+        try:
+            response = requests.post(
+                "http://localhost:8000/v1/chat/completions",
+                json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+                timeout=30
+            )
+            if response.status_code == 200:
+                return response.json()
+        except Exception:
+            continue
+    raise Exception("All providers failed")
+```
+
+### Local Model Gateway
 
 ```bash
-# 1. Server starts
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3-coder:30b
 
-# 2. Health check passes
-curl http://localhost:8000/health
-# Expected: {"status":"healthy"}
-
-# 3. Models available
-curl http://localhost:8000/v1/models | jq '.data | length'
-# Expected: > 0
-
-# 4. Basic generation works
+# Use via AbstractCore server
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}'
-
-# 5. Streaming works
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": "Count to 5"}], "stream": true}'
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Write a Python function"}]
+  }'
 ```
 
 ---
 
-## Why Choose AbstractCore Server?
+## Troubleshooting
 
-✅ **Universal**: Works with all providers through one API  
-✅ **OpenAI Compatible**: Drop-in replacement for OpenAI API  
+### Server Won't Start
+
+```bash
+# Check port availability
+lsof -i :8000
+
+# Use different port
+uvicorn abstractllm.server.app:app --port 3000
+```
+
+### No Models Available
+
+```bash
+# Check providers
+curl http://localhost:8000/providers
+
+# Check API keys
+echo $OPENAI_API_KEY
+
+# Start Ollama
+ollama serve
+ollama list
+```
+
+### Authentication Errors
+
+```bash
+# Set API keys
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Restart server after setting keys
+```
+
+---
+
+## Why AbstractCore Server?
+
+✅ **Universal**: One API for all providers  
+✅ **OpenAI Compatible**: Drop-in replacement  
 ✅ **Simple**: Clean, focused endpoints  
-✅ **Fast**: Lightweight implementation  
+✅ **Fast**: Lightweight, high-performance  
 ✅ **Debuggable**: Comprehensive logging  
-✅ **CLI Ready**: Full Codex/Gemini CLI/Crush support  
+✅ **CLI Ready**: Codex, Gemini CLI, Crush support  
 ✅ **Production Ready**: Docker, multi-worker, health checks  
 
 ---
 
 ## Related Documentation
 
-**Server Documentation:**
-- **[Server API Reference](server-api-reference.md)** - Complete REST API documentation for all HTTP endpoints
-
-**Core Library Documentation:**
-- **[Python API Reference](api-reference.md)** - AbstractCore library functions and classes
 - **[Getting Started](getting-started.md)** - Core library quick start
-- **[Embeddings Guide](embeddings.md)** - Embeddings deep dive and use cases
+- **[Architecture](architecture.md)** - System architecture including server
+- **[Python API Reference](api-reference.md)** - Core library API
+- **[Embeddings Guide](embeddings.md)** - Embeddings deep dive
 - **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
-- **[Prerequisites](prerequisites.md)** - Provider setup instructions
 
 ---
 
-**AbstractCore Server** - One server, all models, any language, any tool format, any agentic CLI. 🚀
+**AbstractCore Server** - One server, all models, any client. 🚀

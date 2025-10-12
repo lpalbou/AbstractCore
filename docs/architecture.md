@@ -4,9 +4,14 @@ AbstractCore provides a unified interface to all major LLM providers with produc
 
 ## System Overview
 
+AbstractCore operates as both a Python library and an optional HTTP server:
+
 ```mermaid
 graph TD
     A[Your Application] --> B[AbstractCore API]
+    AA[HTTP Clients] --> BB[AbstractCore Server]
+    BB --> B
+    
     B --> C[Provider Interface]
     C --> D[Event System]
     C --> E[Tool System]
@@ -28,6 +33,7 @@ graph TD
     M --> S[HuggingFace Models]
 
     style B fill:#e1f5fe
+    style BB fill:#4caf50
     style C fill:#f3e5f5
     style G fill:#fff3e0
 ```
@@ -49,6 +55,10 @@ graph TD
 ### 4. Simplicity Over Features
 **Goal**: Clean, focused API that's easy to understand
 **Implementation**: Minimal core with clear extension points
+
+### 5. Optional HTTP Access
+**Goal**: Flexible deployment as library or server
+**Implementation**: OpenAI-compatible REST API built on core library
 
 ## Core Components
 
@@ -400,9 +410,7 @@ graph TD
 
 #### Unified Streaming Architecture
 
-> **📊 Comprehensive Visual Documentation**: For detailed architectural diagrams, data flow visualizations, state machines, and performance charts of the streaming system, see the [Streaming Architecture Visual Guide](streaming-architecture-visual-guide.md).
-
-AbstractCore's streaming system represents a major architectural improvement that replaced a problematic dual-mode system with an elegant, high-performance unified approach:
+AbstractCore's streaming system provides high-performance, character-by-character streaming with real-time tool detection:
 
 **Architecture Components**:
 
@@ -424,22 +432,22 @@ graph TD
     style E fill:#9c27b0
 ```
 
-**Key Improvements**:
+**Key Features**:
 
-1. **Single Streaming Strategy**
-   - Eliminated dual-mode complexity (37% code reduction)
-   - Consistent behavior across all providers
-   - 5x faster first chunk delivery (<10ms latency)
+1. **Unified Streaming Strategy**
+   - Single consistent approach across all providers
+   - First chunk delivery in <10ms
+   - Minimal code complexity
 
 2. **Incremental Tool Detection**
    - Real-time tool call detection during streaming
    - Immediate tool execution without buffering
    - Handles partial tool calls across chunk boundaries
 
-3. **Advanced Streaming Fixes**
-   - **Character-by-Character Streaming**: Handles micro-chunking from providers like LMStudio (22+ tiny chunks per tool call)
-   - **Intelligent Buffering**: Smart detection of partial tool calls vs. complete content
-   - **Robust Parsing**: Auto-repair for malformed JSON and incomplete tool calls
+3. **Character-by-Character Streaming**
+   - Handles micro-chunking from providers (22+ tiny chunks per tool call)
+   - Intelligent buffering for partial tool calls
+   - Robust parsing with auto-repair for malformed JSON
 
 4. **Tool Call Tag Rewriting Integration**
    - Real-time format conversion during streaming
@@ -512,6 +520,82 @@ graph LR
     style A fill:#2196f3
     style B fill:#4caf50
 ```
+
+### 9. Server Architecture (Optional Component)
+
+The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
+
+```mermaid
+graph TD
+    A[HTTP Client] --> B[FastAPI Server]
+    B --> C{Endpoint Router}
+    
+    C --> D[/v1/chat/completions]
+    C --> E[/v1/embeddings]
+    C --> F[/v1/models]
+    C --> G[/providers]
+    
+    D --> H[Request Validation]
+    E --> H
+    F --> I[Provider Discovery]
+    G --> I
+    
+    H --> J[AbstractCore Library]
+    I --> J
+    
+    J --> K[Provider Interface]
+    K --> L[LLM Providers]
+    
+    style B fill:#4caf50
+    style J fill:#e1f5fe
+    style K fill:#f3e5f5
+```
+
+**Architecture Layers**:
+
+1. **HTTP Layer**: FastAPI-based REST API with request validation
+2. **Translation Layer**: Converts HTTP requests to AbstractCore library calls
+3. **Core Layer**: Uses the full AbstractCore provider system
+4. **Response Layer**: Transforms responses to OpenAI-compatible format
+
+**Key Capabilities**:
+
+- **OpenAI Compatibility**: Drop-in replacement for OpenAI API clients
+- **Universal Provider Access**: Single API for all providers (OpenAI, Anthropic, Ollama, etc.)
+- **Format Conversion**: Automatic tool call format conversion for agentic CLIs
+- **Streaming Support**: Server-sent events for real-time responses
+- **Model Discovery**: Dynamic model listing across all providers
+- **Embedding Support**: Multi-provider embedding generation (HuggingFace, Ollama, LMStudio)
+
+**Request Flow Example**:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server as FastAPI Server
+    participant Core as AbstractCore
+    participant Provider as LLM Provider
+    
+    Client->>Server: POST /v1/chat/completions
+    Server->>Server: Validate Request
+    Server->>Core: create_llm(provider, model)
+    Server->>Core: llm.generate(messages, tools)
+    Core->>Provider: API call with retry logic
+    Provider->>Core: Response
+    Core->>Core: Execute tools if needed
+    Core->>Server: GenerateResponse
+    Server->>Server: Convert to OpenAI format
+    Server->>Client: HTTP Response (streaming or complete)
+```
+
+**Server Features**:
+
+- **Automatic Retry**: Built-in retry logic from core library
+- **Event System**: Full observability through events
+- **Debug Logging**: Comprehensive request/response logging
+- **Health Checks**: `/health` endpoint for monitoring
+- **Interactive Docs**: Auto-generated Swagger UI at `/docs`
+- **Multi-Worker Support**: Production deployment with multiple workers
 
 ## Architecture Benefits
 
@@ -669,5 +753,6 @@ AbstractCore's architecture prioritizes:
 3. **Universality** - Same interface and features across all providers
 4. **Extensibility** - Clear extension points for advanced features
 5. **Observability** - Comprehensive events for monitoring and control
+6. **Flexibility** - Deploy as Python library or OpenAI-compatible HTTP server
 
 The result is a foundation that works reliably in production while remaining simple enough to learn quickly and flexible enough to build advanced applications on top of.
