@@ -368,6 +368,25 @@ def generate_openai_stream(llm, gen_kwargs: Dict[str, Any], provider: str, model
 
 def convert_to_openai_response(response, provider: str, model: str, request: OpenAIChatCompletionRequest) -> Dict[str, Any]:
     """Convert AbstractCore response to OpenAI format"""
+    # Handle None response case
+    if response is None:
+        response_dict = {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": f"{provider}/{model}",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Error: No response generated"
+                },
+                "finish_reason": "error"
+            }],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        }
+        return response_dict
+
     response_dict = {
         "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
         "object": "chat.completion",

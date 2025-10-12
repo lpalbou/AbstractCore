@@ -67,6 +67,44 @@ class OllamaProvider(BaseProvider):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)
 
+    def _convert_messages_for_ollama(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert OpenAI messages to Ollama-compatible format
+
+        Ollama only supports roles: ["system", "user", "assistant"]
+        - Converts role: "tool" to role: "user" with markers
+        - Removes tool_calls from assistant messages
+        - Preserves all other message types
+        """
+        if not messages:
+            return []
+
+        converted = []
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+
+            role = msg.get("role")
+
+            if role == "tool":
+                # Convert tool message to user message with clear markers
+                tool_content = msg.get("content", "")
+                tool_call_id = msg.get("tool_call_id", "unknown")
+                converted.append({
+                    "role": "user",
+                    "content": f"[TOOL RESULT {tool_call_id}]: {tool_content}"
+                })
+            elif role == "assistant" and msg.get("tool_calls"):
+                # Remove tool_calls from assistant messages (Ollama doesn't support them)
+                converted.append({
+                    "role": "assistant",
+                    "content": msg.get("content", "")
+                })
+            else:
+                # Keep supported roles as-is (system, user, assistant without tool_calls)
+                converted.append(msg.copy())
+
+        return converted
+
     def _generate_internal(self,
                           prompt: str,
                           messages: Optional[List[Dict[str, str]]] = None,
@@ -115,8 +153,9 @@ class OllamaProvider(BaseProvider):
                     "content": effective_system_prompt
                 })
 
-            # Add conversation history
-            payload["messages"].extend(messages)
+            # Add conversation history (converted to Ollama-compatible format)
+            converted_messages = self._convert_messages_for_ollama(messages)
+            payload["messages"].extend(converted_messages)
 
             # Add current prompt as user message (only if non-empty)
             # When using messages array, prompt should be empty or already in messages
