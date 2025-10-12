@@ -1,16 +1,202 @@
 # AbstractCore Troubleshooting Guide
 
-Complete troubleshooting guide for AbstractCore core library and server.
+Complete troubleshooting guide for AbstractCore core library and server, including common mistakes and how to avoid them.
 
 ## Table of Contents
 
+- [Common Mistakes to Avoid](#common-mistakes-to-avoid)
 - [Quick Diagnosis](#quick-diagnosis)
 - [Installation Issues](#installation-issues)
 - [Core Library Issues](#core-library-issues)
 - [Server Issues](#server-issues)
 - [Provider-Specific Issues](#provider-specific-issues)
 - [Performance Issues](#performance-issues)
+- [Best Practices](#best-practices)
 - [Debug Techniques](#debug-techniques)
+
+---
+
+## Common Mistakes to Avoid
+
+Understanding common pitfalls helps prevent issues before they occur.
+
+### Top 3 Critical Mistakes
+
+1. **🔑 Incorrect Provider Configuration**
+   - *Symptom*: Authentication failures, no model response
+   - *Quick Fix*: Always set API keys as environment variables
+   - See: [Authentication Errors](#issue-authentication-errors)
+
+2. **🧩 Mishandling Tool Calls**
+   - *Symptom*: Tools not executing, streaming interruptions
+   - *Quick Fix*: Use `@tool` decorator and handle tool calls properly
+   - See: [Tool Calls Not Working](#issue-tool-calls-not-working)
+
+3. **💻 Provider Dependency Confusion**
+   - *Symptom*: `ModuleNotFoundError` for providers
+   - *Quick Fix*: Install provider-specific packages with `pip install abstractcore[provider]`
+   - See: [ModuleNotFoundError](#issue-modulenotfounderror)
+
+### Common Mistake Patterns
+
+#### Mistake: Missing or Incorrect API Keys
+
+**You'll See:**
+- `ProviderAPIError: Authentication failed`
+- No response from the model
+- Cryptic error messages about credentials
+
+**Why This Happens:**
+- API keys not set as environment variables
+- Whitespace or copying errors in key
+- Incorrect key permissions or expired credentials
+
+**Solution:** See [Authentication Errors](#issue-authentication-errors) for complete fix.
+
+**Prevention:**
+- Use environment variables for sensitive credentials
+- Store keys in `.env` files (add to `.gitignore`)
+- Regularly rotate and update API keys
+- Use secret management tools for production
+
+#### Mistake: Incorrect Tool Call Handling
+
+**You'll See:**
+- Tools not executing during generation
+- Partial or missing tool call results
+- Streaming interruptions
+
+**Why This Happens:**
+- Not using `@tool` decorator
+- Incorrect tool definition format
+- Not handling tool responses
+
+**Solution:**
+```python
+from abstractllm import create_llm, tool
+
+# Use @tool decorator for automatic tool definition
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Weather in {city}: sunny, 72°F"
+
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate(
+    "What's the weather in Tokyo?",
+    tools=[get_weather]  # Pass decorated function directly
+)
+```
+
+**Prevention:**
+- Always use `@tool` decorator for automatic tool definitions
+- Use type hints for all parameters
+- Add clear docstrings for tool descriptions
+- Handle tool execution errors gracefully
+- See: [Tool Calls Not Working](#issue-tool-calls-not-working)
+
+#### Mistake: Overlooking Error Handling
+
+**You'll See:**
+- Unhandled exceptions
+- Silent failures in tool or generation calls
+- Unexpected application crashes
+
+**Why This Happens:**
+- Not catching provider-specific exceptions
+- Assuming 100% reliability of LLM responses
+- No retry or fallback mechanisms
+
+**Solution:**
+```python
+from abstractllm import create_llm
+from abstractllm.exceptions import ProviderAPIError, RateLimitError
+
+providers = [
+    ("openai", "gpt-4o-mini"),
+    ("anthropic", "claude-3-5-haiku-latest"),
+    ("ollama", "qwen3-coder:30b")
+]
+
+def generate_with_fallback(prompt):
+    for provider, model in providers:
+        try:
+            llm = create_llm(provider, model=model)
+            return llm.generate(prompt)
+        except (ProviderAPIError, RateLimitError) as e:
+            print(f"Failed with {provider}: {e}")
+            continue
+    raise Exception("All providers failed")
+```
+
+**Prevention:**
+- Always use try/except blocks
+- Implement provider fallback strategies
+- Log and monitor errors systematically
+- Design for graceful degradation
+
+#### Mistake: Memory and Performance Bottlenecks
+
+**You'll See:**
+- High memory consumption
+- Slow response times
+- Out-of-memory errors during long generations
+
+**Why This Happens:**
+- Not managing token limits
+- Generating overly long responses
+- Inefficient streaming configurations
+
+**Solution:**
+```python
+# Optimize memory and performance
+response = llm.generate(
+    "Complex task",
+    max_tokens=1000,  # Limit response length
+    timeout=30,       # Set reasonable timeout
+    temperature=0.7   # Control creativity/randomness
+)
+```
+
+**Prevention:**
+- Always set `max_tokens`
+- Use streaming for long responses
+- Monitor memory usage in production
+- See: [Performance Issues](#performance-issues)
+
+#### Mistake: Hardcoding Credentials
+
+**You'll See:**
+- Exposed API keys in code
+- Inflexible configuration management
+- Security vulnerabilities
+
+**Why This Happens:**
+- Copying example code directly
+- Not understanding configuration best practices
+- Lack of environment-based configuration
+
+**Solution:**
+```python
+import os
+from abstractllm import create_llm
+
+# Best practice: Load from environment
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+DEFAULT_MODEL = os.getenv('DEFAULT_LLM_MODEL', 'gpt-4o-mini')
+
+llm = create_llm(
+    "openai",
+    model=DEFAULT_MODEL,
+    api_key=OPENAI_API_KEY
+)
+```
+
+**Prevention:**
+- Never hardcode API keys or sensitive data
+- Use environment variables
+- Implement configuration management libraries
+- Follow 12-factor app configuration principles
 
 ---
 
@@ -513,6 +699,47 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 
 ---
 
+## Best Practices
+
+Follow these best practices to avoid issues:
+
+### Configuration Management
+- ✅ Use environment variables for API keys
+- ✅ Never commit credentials to version control
+- ✅ Use `.env` files (add to `.gitignore`)
+- ✅ Implement configuration validation
+- ✅ Use secret management in production
+
+### Tool Development
+- ✅ Always use `@tool` decorator
+- ✅ Add type hints to all parameters
+- ✅ Write clear docstrings
+- ✅ Handle edge cases and errors
+- ✅ Test tools independently first
+
+### Error Handling
+- ✅ Always use try/except blocks
+- ✅ Implement provider fallback strategies
+- ✅ Log errors systematically
+- ✅ Design for graceful degradation
+- ✅ Monitor error rates in production
+
+### Performance
+- ✅ Always set `max_tokens`
+- ✅ Use streaming for long responses
+- ✅ Batch similar requests when possible
+- ✅ Monitor memory usage
+- ✅ Profile slow operations
+
+### Security
+- ✅ Validate all user inputs
+- ✅ Sanitize file paths and commands
+- ✅ Use least privilege principle
+- ✅ Regular security audits
+- ✅ Keep dependencies updated
+
+---
+
 ## Debug Techniques
 
 ### Enable Debug Logging
@@ -616,7 +843,7 @@ If you're still stuck:
    - [Prerequisites](prerequisites.md) - Provider setup
    - [Python API Reference](api-reference.md) - Core library API
    - [Server Guide](server.md) - Server setup
-   - [Server API Reference](server-api-reference.md) - REST API endpoints
+   - [Server API Reference](server.md) - REST API endpoints
 
 2. **Enable Debug Mode:**
    ```bash

@@ -168,7 +168,7 @@ print(weather_tool.description)  # "Get current weather for a specified city."
 > - `@tool` automatically generates ToolDefinition
 > - Supports complex type hints and docstrings
 > - Automatic parameter extraction
-> - See [Tool Call Tag Rewriting](tool-call-tag-rewriting.md) for agentic CLI compatibility
+> - See [Tool Call Syntax Rewriting](tool-syntax-rewriting.md) for agentic CLI compatibility
 
 ### 4. Streaming (Real-Time Responses)
 
@@ -377,10 +377,18 @@ python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-la
 - `/system [prompt]` - Show or change system prompt
 
 **Built-in Tools:**
-- `list_files` - List files in directories
-- `read_file` - Read file contents
-- `execute_command` - Run shell commands
-- `web_search` - Search the web with DuckDuckGo (supports time filtering!)
+
+AbstractCore includes a comprehensive set of tools for file operations, web search, and system commands:
+
+- **`list_files`** - Find and list files by name/path with pattern matching (case-insensitive, glob patterns, recursive)
+- **`search_files`** - Search for text patterns INSIDE files using regex (grep-like functionality, multiple output modes)
+- **`read_file`** - Read file contents with optional line range selection
+- **`write_file`** - Write or append content to files (creates directories automatically)
+- **`edit_file`** - Edit files using pattern matching and replacement (supports regex, preview mode)
+- **`execute_command`** - Execute shell commands safely with security controls and platform detection
+- **`web_search`** - Search the web with DuckDuckGo (no API key required, supports time filtering!)
+
+**For detailed tool documentation and examples, see:** [`abstractllm/tools/common_tools.py`](../abstractllm/tools/common_tools.py)
 
 > **Note**: This CLI is a basic demonstrator. For production applications requiring complex reasoning or advanced agent behaviors, build custom solutions using the AbstractCore framework directly.
 
@@ -389,9 +397,9 @@ python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-la
 Now that you have the basics:
 
 1. **[Explore Examples](examples.md)** - Real-world use cases and patterns
-2. **[Tool Call Tag Rewriting](tool-call-tag-rewriting.md)** - Format conversion for agentic CLI compatibility
-3. **[Learn About Providers](providers.md)** - Deep dive into each provider
-4. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
+2. **[Tool Call Syntax Rewriting](tool-syntax-rewriting.md)** - Format conversion for agentic CLI compatibility
+3. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
+4. **[Provider Setup](prerequisites.md)** - Detailed provider configuration
 5. **[Use Internal CLI](internal-cli.md)** - Built-in testing CLI with advanced features
 6. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and cannot do
 7. **[Read the API Reference](api-reference.md)** - Complete API documentation

@@ -4,7 +4,7 @@ AbstractCore includes built-in support for vector embeddings with **multiple pro
 
 **Two ways to use embeddings:**
 1. **Python Library** (this guide) - Direct programmatic usage via `EmbeddingManager`
-2. **REST API** - HTTP endpoints via AbstractCore server (see [Server API Reference](server-api-reference.md#embeddings-endpoint))
+2. **REST API** - HTTP endpoints via AbstractCore server (see [Server API Reference](server.md#embeddings-endpoint))
 
 ## Quick Start
 
@@ -568,7 +568,7 @@ curl -X POST http://localhost:8000/v1/embeddings \
 - `ollama/model-name` - Ollama models
 - `lmstudio/model-name` - LMStudio models
 
-**Complete REST API documentation:** [Server API Reference](server-api-reference.md#embeddings-endpoint)
+**Complete REST API documentation:** [Server API Reference](server.md#embeddings-endpoint)
 
 ## Provider-Specific Features
 
@@ -604,7 +604,7 @@ curl -X POST http://localhost:8000/v1/embeddings \
 
 **Server (REST API):**
 - **[Server Guide](server.md)** - Server setup and deployment
-- **[Server API Reference](server-api-reference.md)** - REST API endpoints including embeddings
+- **[Server API Reference](server.md)** - REST API endpoints including embeddings
 - **[Troubleshooting](troubleshooting.md)** - Common embedding issues
 
 ---

@@ -131,6 +131,6 @@ llm = create_llm("ollama",
 3. Use `verbose=True` for detailed logs
 
 > **📚 Related Docs**:
-> - [Tool Call Conversion](tool-call-tag-rewriting.md)
+> - [Tool Call Conversion](tool-syntax-rewriting.md)
 > - [Tool System Integration](tool-system-architecture.md)
 > - [Production Examples](examples.md#streaming-patterns)

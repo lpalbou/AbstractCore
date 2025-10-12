@@ -6,7 +6,7 @@ This guide shows real-world use cases for AbstractCore with complete, copy-paste
 
 - [Basic Usage](#basic-usage)
 - [Tool Calling Examples](#tool-calling-examples)
-- [Tool Call Tag Rewriting Examples](#tool-call-tag-rewriting-examples)
+- [Tool Call Syntax Rewriting Examples](#tool-call-syntax-rewriting-examples)
 - [Structured Output Examples](#structured-output-examples)
 - [Streaming Examples](#streaming-examples)
 - [Session Management](#session-management)
@@ -268,11 +268,13 @@ response = llm.generate(
 print(response.content)
 ```
 
-## Tool Call Tag Rewriting Examples
+## Tool Call Syntax Rewriting Examples
 
 > **Real-time tool call format conversion for agentic CLI compatibility**
 
-Tool call tag rewriting enables AbstractCore to work seamlessly with any agentic CLI by converting tool calls to the expected format in real-time. This happens automatically during generation, including streaming.
+Tool call syntax rewriting enables AbstractCore to work seamlessly with any agentic CLI by converting tool calls to the expected format in real-time. This happens automatically during generation, including streaming.
+
+> **📋 Related**: [Tool Call Syntax Rewriting Guide](tool-syntax-rewriting.md)
 
 ### Codex CLI Integration (Default Format)
 
@@ -451,7 +453,7 @@ for format_name in ["qwen3", "llama3", "xml"]:
 - ✅ **Universal Support**: All providers and models supported
 - ✅ **Format Flexibility**: Predefined formats + custom tags
 
-> **📋 Related**: [Tool Call Tag Rewriting Guide](tool-call-tag-rewriting.md) | [Unified Streaming Architecture](architecture.md#unified-streaming-architecture)
+> **📋 Related**: [Tool Call Tag Rewriting Guide](tool-syntax-rewriting.md) | [Unified Streaming Architecture](architecture.md#unified-streaming-architecture)
 
 ## Structured Output Examples
 
@@ -1371,7 +1373,7 @@ These examples show AbstractCore's versatility across different use cases. To co
 For more information:
 - [Getting Started](getting-started.md) - Basic setup and usage
 - [Capabilities](capabilities.md) - What AbstractCore can do
-- [Providers](providers.md) - Choosing the right provider
+- [Prerequisites](prerequisites.md) - Provider setup and configuration
 - [API Reference](api-reference.md) - Complete API documentation
 
 ---

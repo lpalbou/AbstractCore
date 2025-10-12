@@ -27,14 +27,13 @@ Complete navigation guide for AbstractCore documentation.
 
 ### Provider Documentation
 
-- **[Providers](providers.md)** - Deep dive into each provider's capabilities
+- **[Prerequisites](prerequisites.md)** - Provider setup and configuration (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
 - **[Capabilities](capabilities.md)** - What AbstractCore can and cannot do
 
 ### Advanced Topics
 
-- **[Tool Call Tag Rewriting](tool-call-tag-rewriting.md)** - Tool format conversion for agentic CLIs
+- **[Tool Call Syntax Rewriting](tool-syntax-rewriting.md)** - Tool format conversion for agentic CLIs
 - **[Internal CLI](internal-cli.md)** - Built-in CLI tool for testing and exploration
-- **[Common Mistakes](common-mistakes.md)** - Pitfalls to avoid
 
 ## 🌐 Server (Optional HTTP REST API)
 
@@ -42,20 +41,13 @@ Complete navigation guide for AbstractCore documentation.
 
 ### Server Documentation
 
-- **[Server Guide](server.md)** - Complete server setup and deployment:
+- **[Server Documentation](server.md)** - Complete guide including:
   - Quick start (5 minutes)
-  - Configuration
-  - Use cases
-  - Agentic CLI integration
-  - Deployment
-
-- **[Server API Reference](server-api-reference.md)** - Complete REST API documentation:
-  - Chat completions (`/v1/chat/completions`)
-  - Embeddings (`/v1/embeddings`)
-  - Models (`/v1/models`)
-  - Providers (`/providers`)
-  - All HTTP request/response formats
+  - Configuration and environment variables
+  - API endpoints: chat completions, embeddings, models, providers
+  - Use cases and examples
   - Agentic CLI integration (Codex, Crush, Gemini CLI)
+  - Deployment (Docker, production, cloud)
 
 ## 🔧 Specialized Topics
 
@@ -85,7 +77,7 @@ Complete navigation guide for AbstractCore documentation.
 
 ```
 docs/
-├── INDEX.md                    # This file - navigation guide
+├── README.md                   # This file - navigation guide
 │
 ├── Getting Started/
 │   ├── prerequisites.md        # Provider setup
@@ -96,13 +88,11 @@ docs/
 │   ├── api-reference.md        # Python API reference ⭐
 │   ├── embeddings.md           # Embeddings guide
 │   ├── examples.md             # Code examples
-│   ├── providers.md            # Provider details
 │   ├── capabilities.md         # What AbstractCore can do
-│   └── tool-call-tag-rewriting.md  # Tool format conversion
+│   └── tool-syntax-rewriting.md  # Tool format conversion
 │
 ├── Server (Optional HTTP REST API)/
-│   ├── server.md               # Server guide (consolidated)
-│   └── server-api-reference.md # REST API reference ⭐
+│   └── server.md               # Complete server documentation ⭐
 │
 ├── Specialized/
 │   ├── apps/                   # Built-in applications
@@ -112,7 +102,6 @@ docs/
 │   ├── internal-cli.md         # Built-in CLI tool
 │   ├── architecture.md         # System architecture
 │   ├── comparison.md           # vs alternatives
-│   ├── common-mistakes.md      # Pitfalls
 │   └── chat-compaction.md      # History management
 │
 └── Archive/
@@ -121,7 +110,7 @@ docs/
 
 **⭐ Key Distinction:**
 - **`api-reference.md`** = Python library API (functions, classes)
-- **`server-api-reference.md`** = HTTP REST API (endpoints, requests)
+- **`server.md`** = HTTP REST API (endpoints, requests)
 
 ## 🎯 Quick Navigation
 
@@ -141,18 +130,18 @@ docs/
 - See Python API → [Python API Reference](api-reference.md)
 
 **Set Up Server (HTTP REST API):**
-- Start the server → [Server Guide](server.md#quick-start-5-minutes)
-- Configure environment → [Server Guide](server.md#configuration)
-- Use with OpenAI client → [Server Guide](server.md#use-cases)
-- Integrate with Codex CLI → [Server Guide](server.md#agentic-cli-integration)
-- Deploy to production → [Server Guide](server.md#deployment)
+- Start the server → [Server Documentation](server.md#quick-start)
+- Configure environment → [Server Documentation](server.md#configuration)
+- Use with OpenAI client → [Server Documentation](server.md#quick-start)
+- Integrate with Codex CLI → [Server Documentation](server.md#agentic-cli-integration)
+- Deploy to production → [Server Documentation](server.md#deployment)
 
 **REST API Integration:**
-- See all HTTP endpoints → [Server API Reference](server-api-reference.md)
-- Use chat completions → [Server API Reference](server-api-reference.md#chat-completions-endpoints)
-- Create embeddings → [Server API Reference](server-api-reference.md#embeddings-endpoint)
-- List models → [Server API Reference](server-api-reference.md#models-endpoint)
-- Check providers → [Server API Reference](server-api-reference.md#providers-endpoint)
+- See all HTTP endpoints → [Server Documentation](server.md#api-endpoints)
+- Use chat completions → [Server Documentation](server.md#chat-completions)
+- Create embeddings → [Server Documentation](server.md#embeddings)
+- List models → [Server Documentation](server.md#model-discovery)
+- Check providers → [Server Documentation](server.md#provider-status)
 
 **Troubleshoot:**
 - Fix authentication errors → [Troubleshooting](troubleshooting.md#authentication-errors)
@@ -198,7 +187,7 @@ docs/
 
 ### For Advanced Users
 1. [Architecture](architecture.md) - Understand system
-2. [Tool Call Tag Rewriting](tool-call-tag-rewriting.md) - Format conversion
+2. [Tool Call Syntax Rewriting](tool-syntax-rewriting.md) - Format conversion
 3. [Internal CLI](internal-cli.md) - Advanced CLI usage
 4. [Capabilities](capabilities.md) - Deep dive into features
 
@@ -217,15 +206,14 @@ docs/
 | prerequisites.md | Core Library | ✅ Current | Oct 12, 2025 |
 | api-reference.md | Python API | ✅ Current | Oct 12, 2025 |
 | embeddings.md | Core Library | ✅ Current | Oct 12, 2025 |
-| server.md | Server | ✅ Consolidated | Oct 12, 2025 |
-| server-api-reference.md | REST API | ✅ Consolidated | Oct 12, 2025 |
-| troubleshooting.md | Both | ✅ Consolidated | Oct 12, 2025 |
+| server.md | Server + REST API | ✅ Consolidated | Oct 12, 2025 |
+| troubleshooting.md | Core + Server | ✅ Consolidated | Oct 12, 2025 |
 
 **All documents cross-referenced and up-to-date as of October 12, 2025.**
 
 **Key Files:**
 - **`api-reference.md`** - For Python programmers using AbstractCore library
-- **`server-api-reference.md`** - For HTTP/REST API integration with the server
+- **`server.md`** - For HTTP/REST API integration with the server
 
 ---
 
