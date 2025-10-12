@@ -398,12 +398,24 @@ async def create_embeddings(request: EmbeddingRequest):
             input_count=len(request.input) if isinstance(request.input, list) else 1
         )
 
+        # Currently, only HuggingFace embeddings are supported by EmbeddingManager
+        if provider.lower() != "huggingface":
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": f"Embedding provider '{provider}' not supported. Only 'huggingface' is currently supported.",
+                        "type": "unsupported_provider"
+                    }
+                }
+            )
+
         # Import and create embedding manager
         from ..embeddings.manager import EmbeddingManager
 
-        # Create embedding manager with the specific model
+        # Create embedding manager with just the HuggingFace model name (no provider prefix)
         embedder = EmbeddingManager(
-            model=f"{provider}/{model}",
+            model=model,
             output_dims=request.dimensions
         )
 
