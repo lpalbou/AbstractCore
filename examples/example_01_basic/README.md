@@ -95,7 +95,7 @@ llm = AbstractLLM(
 ### Reference Documentation
 
 - [AbstractLLM Core Documentation](/docs/getting-started.md)
-- [Provider Configuration](/docs/providers.md)
+- [Provider Configuration](/docs/prerequisites.md)
 - [Troubleshooting Guide](/docs/troubleshooting.md)
 
 ### Next Steps

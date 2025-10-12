@@ -101,18 +101,25 @@ response = client.chat.completions.create(
 
 ## Documentation
 
+**📚 Complete Documentation:** [docs/](docs/) - Full documentation index and navigation guide
+
 ### Getting Started
-- **[Prerequisites & Setup](docs/prerequisites.md)** - Install and configure providers
-- **[Getting Started Guide](docs/getting-started.md)** - Core library quick start and examples
+- **[Prerequisites & Setup](docs/prerequisites.md)** - Install and configure providers (OpenAI, Anthropic, Ollama, etc.)
+- **[Getting Started Guide](docs/getting-started.md)** - 5-minute quick start with core concepts
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 
 ### Core Library (Python)
 - **[Python API Reference](docs/api-reference.md)** - Complete Python API documentation
 - **[Embeddings Guide](docs/embeddings.md)** - Semantic search, RAG, and vector embeddings
 - **[Code Examples](examples/)** - Working examples for all features
+- **[Capabilities](docs/capabilities.md)** - What AbstractCore can and cannot do
 
 ### Server (Optional HTTP REST API)
 - **[Server Documentation](docs/server.md)** - Complete server setup, API reference, and deployment
+
+### Architecture & Advanced
+- **[Architecture](docs/architecture.md)** - System design and architecture overview
+- **[Tool Syntax Rewriting](docs/tool-syntax-rewriting.md)** - Format conversion for agentic CLIs
 
 ## Use Cases
 
@@ -233,10 +240,12 @@ All tests passing as of October 12th, 2025.
 
 ## Quick Links
 
-- **[📚 Documentation](docs/)** - Complete documentation
+- **[📚 Documentation Index](docs/)** - Complete documentation navigation guide
 - **[🚀 Getting Started](docs/getting-started.md)** - 5-minute quick start
+- **[⚙️ Prerequisites](docs/prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, etc.)
+- **[📖 Python API](docs/api-reference.md)** - Complete Python API reference
+- **[🌐 Server Guide](docs/server.md)** - HTTP API server setup
 - **[🔧 Troubleshooting](docs/troubleshooting.md)** - Fix common issues
-- **[🌐 Server Guide](docs/server.md)** - API server setup
 - **[💻 Examples](examples/)** - Working code examples
 - **[🐛 Issues](https://github.com/lpalbou/AbstractCore/issues)** - Report bugs
 - **[💬 Discussions](https://github.com/lpalbou/AbstractCore/discussions)** - Get help
