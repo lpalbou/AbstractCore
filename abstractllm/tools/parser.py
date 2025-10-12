@@ -175,18 +175,23 @@ def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
 def _parse_special_token(response: str) -> List[ToolCall]:
     """Parse Qwen-style <|tool_call|> format with robust fallback."""
     tool_calls = []
+    
+    # Pre-process: Remove markdown code fences that might wrap tool calls
+    # This handles cases like ```json\n<|tool_call|>...\n```
+    cleaned_response = re.sub(r'```(?:json|python|tool_code|tool_call)?\s*\n', '', response, flags=re.IGNORECASE)
+    cleaned_response = re.sub(r'\n```\s*(?=\n|$)', '', cleaned_response)
 
     # First, find all tool call positions to avoid duplicates from overlapping patterns
     all_matches = []
 
     # Strategy 1: Look for properly closed tags
     pattern_with_close = r'<\|tool_call\|>\s*(.*?)\s*</\|tool_call\|>'
-    for match in re.finditer(pattern_with_close, response, re.DOTALL | re.IGNORECASE):
+    for match in re.finditer(pattern_with_close, cleaned_response, re.DOTALL | re.IGNORECASE):
         all_matches.append((match.start(), match.end(), match.group(1).strip()))
 
     # Strategy 2: Look for opening tags followed by valid JSON (no closing tag)
     pattern_no_close = r'<\|tool_call\|>\s*(\{(?:[^{}]|(?:\{[^{}]*\}))*\})\s*(?:</\|tool_call\|>|$|\n|<)'
-    for match in re.finditer(pattern_no_close, response, re.DOTALL | re.IGNORECASE):
+    for match in re.finditer(pattern_no_close, cleaned_response, re.DOTALL | re.IGNORECASE):
         # Check if this match overlaps with any closed tag match
         overlaps = False
         for closed_start, closed_end, _ in all_matches:
@@ -198,7 +203,7 @@ def _parse_special_token(response: str) -> List[ToolCall]:
 
     # Strategy 3: Ultra-robust pattern - just find start tag + JSON, ignore ending completely
     pattern_start_json = r'<\|tool_call\|>\s*(\{[^<]*?\})'
-    for match in re.finditer(pattern_start_json, response, re.DOTALL | re.IGNORECASE):
+    for match in re.finditer(pattern_start_json, cleaned_response, re.DOTALL | re.IGNORECASE):
         # Check if this match overlaps with any previous matches
         overlaps = False
         for prev_start, prev_end, _ in all_matches:
@@ -208,8 +213,9 @@ def _parse_special_token(response: str) -> List[ToolCall]:
         if not overlaps:
             json_candidate = match.group(1).strip()
             # Basic validation that it looks like JSON and contains tool structure
+            # Accept "name", "command", or "function" as valid tool identifiers
             if (json_candidate.startswith('{') and json_candidate.endswith('}') and
-                ('"name"' in json_candidate or '"function"' in json_candidate)):
+                ('"name"' in json_candidate or '"command"' in json_candidate or '"function"' in json_candidate)):
                 all_matches.append((match.start(), match.end(), json_candidate))
 
     # Sort by position and parse each match
@@ -248,12 +254,26 @@ def _parse_special_token(response: str) -> List[ToolCall]:
                 fixed_json = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
                 tool_data = json.loads(fixed_json)
 
-            if isinstance(tool_data, dict) and "name" in tool_data:
-                tool_calls.append(ToolCall(
-                    name=tool_data["name"],
-                    arguments=tool_data.get("arguments", {}),
-                    call_id=tool_data.get("id")
-                ))
+            if isinstance(tool_data, dict):
+                # Normalize field names: accept "name", "command", "function", "tool", "action"
+                tool_name = None
+                if "name" in tool_data:
+                    tool_name = tool_data["name"]
+                elif "command" in tool_data:
+                    tool_name = tool_data["command"]
+                elif "function" in tool_data:
+                    tool_name = tool_data["function"]
+                elif "tool" in tool_data:
+                    tool_name = tool_data["tool"]
+                elif "action" in tool_data:
+                    tool_name = tool_data["action"]
+                
+                if tool_name:
+                    tool_calls.append(ToolCall(
+                        name=tool_name,
+                        arguments=tool_data.get("arguments", tool_data.get("params", tool_data.get("parameters", {}))),
+                        call_id=tool_data.get("id")
+                    ))
         except json.JSONDecodeError as e:
             logger.debug(f"JSON decode error for tool call: {e}, JSON string: {repr(json_str)}")
             continue
