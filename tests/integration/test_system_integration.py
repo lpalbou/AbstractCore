@@ -75,7 +75,7 @@ class TestArchitectureDetection:
         """Test detection of known model architectures."""
         test_cases = [
             ('gpt-4', 'gpt'),
-            ('qwen3-coder:30b', 'qwen'),
+            ('qwen3-coder:30b', 'qwen3_moe'),  # Updated: more specific detection
             ('llama-3.1-8b', 'llama'),
             ('claude-3.5-sonnet', 'claude'),
             ('unknown-model', 'generic')
