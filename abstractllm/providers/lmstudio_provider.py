@@ -14,10 +14,9 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..exceptions import ProviderAPIError, ModelNotFoundError
+from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
-from ..utils.simple_model_discovery import get_available_models, format_model_error
 
 
 class LMStudioProvider(BaseProvider):
@@ -53,7 +52,7 @@ class LMStudioProvider(BaseProvider):
         try:
             # Remove /v1 from base_url for model discovery since it adds /v1/models
             discovery_base_url = self.base_url.replace("/v1", "")
-            available_models = get_available_models("lmstudio", base_url=discovery_base_url)
+            available_models = self.list_available_models(base_url=discovery_base_url)
             if available_models and self.model not in available_models:
                 error_message = format_model_error("LMStudio", self.model, available_models)
                 raise ModelNotFoundError(error_message)
@@ -212,7 +211,7 @@ class LMStudioProvider(BaseProvider):
             if ('404' in error_str or 'not found' in error_str or 'model' in error_str) and ('not found' in error_str):
                 # Model not found - show available models
                 try:
-                    available_models = get_available_models("lmstudio", base_url=self.base_url)
+                    available_models = self.list_available_models(base_url=self.base_url)
                     error_message = format_model_error("LMStudio", self.model, available_models)
                     raise ModelNotFoundError(error_message)
                 except Exception:
@@ -314,3 +313,21 @@ class LMStudioProvider(BaseProvider):
                     pass  # Best effort - don't fail the operation
 
 
+
+    def list_available_models(self, **kwargs) -> List[str]:
+        """List available models from LMStudio server."""
+        try:
+            # Use provided base_url or fall back to instance base_url
+            base_url = kwargs.get('base_url', self.base_url)
+
+            response = self.client.get(f"{base_url}/models", timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                models = [model["id"] for model in data.get("data", [])]
+                return sorted(models)
+            else:
+                self.logger.warning(f"LMStudio API returned status {response.status_code}")
+                return []
+        except Exception as e:
+            self.logger.warning(f"Failed to list LMStudio models: {e}")
+            return []

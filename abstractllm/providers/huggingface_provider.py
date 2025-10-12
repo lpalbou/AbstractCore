@@ -16,8 +16,7 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..exceptions import ModelNotFoundError
-from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..exceptions import ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -220,7 +219,7 @@ class HuggingFaceProvider(BaseProvider):
             error_str = str(e).lower()
             if ('not found' in error_str or 'does not exist' in error_str or
                 'not a valid model identifier' in error_str):
-                available_models = get_available_models("huggingface")
+                available_models = self.list_available_models()
                 error_message = format_model_error("HuggingFace", self.model, available_models)
                 raise ModelNotFoundError(error_message)
             else:
@@ -983,3 +982,27 @@ class HuggingFaceProvider(BaseProvider):
                     model=self.model,
                     finish_reason="stop"
                 )
+
+    @classmethod
+    def list_available_models(cls, **kwargs) -> List[str]:
+        """List available HuggingFace models from local cache (excluding MLX models)."""
+        try:
+            hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+            if not hf_cache.exists():
+                return []
+
+            models = []
+            for item in hf_cache.iterdir():
+                if item.is_dir() and item.name.startswith("models--"):
+                    # Convert models--microsoft--DialoGPT-medium to microsoft/DialoGPT-medium
+                    model_name = item.name.replace("models--", "").replace("--", "/")
+
+                    # CRITICAL: Exclude MLX models from HuggingFace list
+                    # Any model with "mlx" in the name should be classified as MLX, not HuggingFace
+                    if "mlx" not in model_name.lower():
+                        models.append(model_name)
+
+            return sorted(models)
+
+        except Exception:
+            return []

@@ -4,7 +4,7 @@ Base provider with integrated telemetry, events, and exception handling.
 
 import time
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
-from abc import ABC
+from abc import ABC, abstractmethod
 
 try:
     from pydantic import BaseModel
@@ -739,6 +739,26 @@ class BaseProvider(AbstractLLMInterface, ABC):
     def estimate_tokens(self, text: str) -> int:
         """Rough estimation of token count for given text"""
         return super().estimate_tokens(text)
+
+    @abstractmethod
+    def list_available_models(self, **kwargs) -> List[str]:
+        """
+        List available models for this provider.
+
+        Each provider must implement this method to return a list of available models.
+        The server will use this method to aggregate models across all providers.
+
+        Args:
+            **kwargs: Provider-specific parameters (e.g., api_key, base_url)
+
+        Returns:
+            List of model names available for this provider
+
+        Note:
+            This is an abstract method that MUST be implemented by all provider subclasses.
+            Each provider should implement its own discovery logic (API calls, local scanning, etc.).
+        """
+        pass
 
     def _needs_tag_rewriting(self, tool_call_tags) -> bool:
         """Check if tag rewriting is needed (tags are non-standard)"""

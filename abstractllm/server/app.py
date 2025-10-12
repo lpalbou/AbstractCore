@@ -18,10 +18,99 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from ..core.factory import create_llm
-from ..utils.simple_model_discovery import get_available_models
 from ..utils.structured_logging import get_logger, configure_logging
 from ..tools import UniversalToolHandler
 from ..tools.parser import detect_tool_calls, parse_tool_calls
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def get_available_models_for_provider(provider_name: str) -> List[str]:
+    """
+    Get available models for a provider using the provider's list_available_models() method.
+
+    Replacement for deprecated simple_model_discovery.get_available_models()
+    """
+    try:
+        # Map provider names to their imports and classes
+        provider_map = {
+            "anthropic": ("anthropic_provider", "AnthropicProvider"),
+            "openai": ("openai_provider", "OpenAIProvider"),
+            "ollama": ("ollama_provider", "OllamaProvider"),
+            "mlx": ("mlx_provider", "MLXProvider"),
+            "lmstudio": ("lmstudio_provider", "LMStudioProvider"),
+            "huggingface": ("huggingface_provider", "HuggingFaceProvider"),
+        }
+
+        if provider_name.lower() not in provider_map:
+            return []
+
+        module_name, class_name = provider_map[provider_name.lower()]
+
+        # Dynamic import to avoid circular dependencies
+        from importlib import import_module
+        provider_module = import_module(f"..providers.{module_name}", __name__)
+        provider_class = getattr(provider_module, class_name)
+
+        # Create a temporary instance with a dummy model (since we're just listing models)
+        # Use default models for each provider to avoid model not found errors
+        default_models = {
+            "anthropic": "claude-3-haiku-20240307",
+            "openai": "gpt-3.5-turbo",
+            "ollama": "llama2",
+            "mlx": "mlx-community/Mistral-7B-Instruct-v0.1-4bit",
+            "lmstudio": "local-model",
+            "huggingface": "microsoft/DialoGPT-medium"
+        }
+
+        default_model = default_models.get(provider_name.lower(), "dummy-model")
+
+        # For providers that validate models on init, catch those errors
+        try:
+            provider = provider_class(model=default_model)
+            models = provider.list_available_models()
+            return models
+        except Exception as init_error:
+            # If provider init fails (e.g., no API key, model not found), try alternative approach
+            if provider_name.lower() == "ollama":
+                # For Ollama, try to list models without validating the default model
+                import httpx
+                response = httpx.get("http://localhost:11434/api/tags", timeout=5.0)
+                if response.status_code == 200:
+                    data = response.json()
+                    return sorted([model["name"] for model in data.get("models", [])])
+            elif provider_name.lower() == "lmstudio":
+                # For LMStudio, try to list models directly
+                import httpx
+                response = httpx.get("http://localhost:1234/v1/models", timeout=5.0)
+                if response.status_code == 200:
+                    data = response.json()
+                    return sorted([model["id"] for model in data.get("data", [])])
+            elif provider_name.lower() in ["mlx", "huggingface"]:
+                # For MLX and HuggingFace, we can use the existing logic without provider instance
+                from pathlib import Path
+                hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+                if hf_cache.exists():
+                    models = []
+                    for item in hf_cache.iterdir():
+                        if item.is_dir() and item.name.startswith("models--"):
+                            model_name = item.name.replace("models--", "").replace("--", "/")
+                            if provider_name.lower() == "mlx":
+                                if "mlx" in model_name.lower():
+                                    models.append(model_name)
+                            else:  # huggingface
+                                if "mlx" not in model_name.lower():
+                                    models.append(model_name)
+                    return sorted(models)
+
+            return []
+
+    except Exception as e:
+        logger = get_logger()
+        logger.debug(f"Failed to get models for provider {provider_name}: {e}")
+        return []
 
 
 # ============================================================================
@@ -2087,7 +2176,7 @@ async def standard_models_list(type: Optional[ModelType] = None):
 
     for provider_name in providers:
         try:
-            available_models = get_available_models(provider_name)
+            available_models = get_available_models_for_provider(provider_name)
             for model_id in available_models:
                 model_type = classify_model_type(model_id)
 
@@ -2147,7 +2236,7 @@ async def provider_models_list(provider: str, type: Optional[ModelType] = None):
     models = []
 
     try:
-        available_models = get_available_models(provider)
+        available_models = get_available_models_for_provider(provider)
         for model_id in available_models:
             model_type = classify_model_type(model_id)
 
@@ -2201,7 +2290,7 @@ def check_provider_availability(provider_name: str) -> tuple[str, int]:
                     return "unavailable", 0
                 else:
                     # Try to get actual models
-                    models = get_available_models(provider_name)
+                    models = get_available_models_for_provider(provider_name)
                     if models:
                         return "available", len(models)
                     else:
@@ -2209,7 +2298,7 @@ def check_provider_availability(provider_name: str) -> tuple[str, int]:
 
         # For local providers, check actual model availability
         else:
-            models = get_available_models(provider_name)
+            models = get_available_models_for_provider(provider_name)
             if models:
                 return "available", len(models)
             else:

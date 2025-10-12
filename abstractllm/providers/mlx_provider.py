@@ -13,8 +13,7 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..exceptions import ProviderAPIError, ModelNotFoundError
-from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -56,7 +55,7 @@ class MLXProvider(BaseProvider):
             # Check if it's a model not found error
             error_str = str(e).lower()
             if 'not found' in error_str or 'does not exist' in error_str or 'failed to load' in error_str:
-                available_models = get_available_models("mlx")
+                available_models = self.list_available_models()
                 error_message = format_model_error("MLX", self.model, available_models)
                 raise ModelNotFoundError(error_message)
             else:
@@ -317,3 +316,29 @@ class MLXProvider(BaseProvider):
                     model=self.model,
                     finish_reason="stop"
                 )
+
+    @classmethod
+    def list_available_models(cls, **kwargs) -> List[str]:
+        """List available MLX models from HuggingFace cache."""
+        from pathlib import Path
+
+        try:
+            hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+            if not hf_cache.exists():
+                return []
+
+            models = []
+            for item in hf_cache.iterdir():
+                if item.is_dir() and item.name.startswith("models--"):
+                    # Convert models--mlx-community--Qwen3-Coder-30B-A3B-Instruct-4bit to mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+                    model_name = item.name.replace("models--", "").replace("--", "/")
+
+                    # Include ANY model with "mlx" in the name (case-insensitive)
+                    # This captures: mlx-community/*, */mlx-*, *-mlx-*, etc.
+                    if "mlx" in model_name.lower():
+                        models.append(model_name)
+
+            return sorted(models)
+
+        except Exception:
+            return []

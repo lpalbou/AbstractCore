@@ -16,8 +16,7 @@ except ImportError:
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..media import MediaHandler
-from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError
-from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -175,7 +174,7 @@ class AnthropicProvider(BaseProvider):
                 raise AuthenticationError(f"Anthropic authentication failed: {str(e)}")
             elif ('not_found_error' in error_str and 'model:' in error_str) or '404' in error_str:
                 # Model not found - show available models
-                available_models = get_available_models("anthropic", api_key=self.api_key)
+                available_models = self.list_available_models(api_key=self.api_key)
                 error_message = format_model_error("Anthropic", self.model, available_models)
                 raise ModelNotFoundError(error_message)
             else:
@@ -419,3 +418,38 @@ class AnthropicProvider(BaseProvider):
         """Update Anthropic client timeout when timeout is changed."""
         # Create new client with updated timeout
         self.client = anthropic.Anthropic(api_key=self.api_key, timeout=self._timeout)
+    def list_available_models(self, **kwargs) -> List[str]:
+        """List available models from Anthropic API."""
+        try:
+            import httpx
+
+            # Use provided API key or instance API key
+            api_key = kwargs.get('api_key', self.api_key)
+            if not api_key:
+                self.logger.debug("No Anthropic API key available for model listing")
+                return []
+
+            # Make API call to list models
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01"
+            }
+
+            response = httpx.get(
+                "https://api.anthropic.com/v1/models",
+                headers=headers,
+                timeout=10.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                models = [model["id"] for model in data.get("data", [])]
+                self.logger.debug(f"Retrieved {len(models)} models from Anthropic API")
+                return sorted(models, reverse=True)  # Latest models first
+            else:
+                self.logger.warning(f"Anthropic API returned status {response.status_code}")
+                return []
+
+        except Exception as e:
+            self.logger.debug(f"Failed to fetch Anthropic models from API: {e}")
+            return []

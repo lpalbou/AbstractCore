@@ -16,8 +16,7 @@ except ImportError:
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..media import MediaHandler
-from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError
-from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -478,3 +477,41 @@ class OpenAIProvider(BaseProvider):
                 return obj
 
         return remove_defaults(parameters)
+
+    @classmethod
+    def list_available_models(cls, **kwargs) -> List[str]:
+        """List available models from OpenAI API."""
+        try:
+            import openai
+
+            # Get API key from kwargs or environment
+            api_key = kwargs.get('api_key') or os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                return []
+
+            # Create temporary client
+            client = openai.OpenAI(api_key=api_key, timeout=5.0)
+            models = client.models.list()
+
+            # Extract model IDs and filter to chat models only
+            # Filter based on actual OpenAI chat completion model patterns
+            available_models = [model.id for model in models.data]
+            chat_models = []
+
+            for model_id in available_models:
+                # Include GPT models for chat completions
+                if any(pattern in model_id for pattern in [
+                    "gpt-3.5", "gpt-4", "gpt-5", "gpt-o1", "o1-",  # Standard patterns
+                    "text-davinci", "code-davinci"  # Legacy but still chat-capable
+                ]):
+                    # Exclude embedding, fine-tuning, and other non-chat models
+                    if not any(exclude in model_id for exclude in [
+                        "embedding", "similarity", "search", "edit",
+                        "insert", "davinci-002", "babbage", "ada", "curie"
+                    ]):
+                        chat_models.append(model_id)
+
+            return sorted(chat_models, reverse=True)  # Latest models first
+
+        except Exception:
+            return []
