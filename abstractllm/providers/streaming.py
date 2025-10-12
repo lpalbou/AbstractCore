@@ -8,6 +8,7 @@ while maintaining real-time streaming performance, with proper tag rewriting sup
 import json
 import re
 import logging
+import uuid
 from typing import List, Dict, Any, Optional, Iterator, Tuple
 from enum import Enum
 
@@ -360,6 +361,9 @@ class UnifiedStreamProcessor:
         # Backwards compatibility: tag_rewrite_buffer attribute (unused in current implementation)
         self.tag_rewrite_buffer = ""
 
+        # Flag to indicate if we're converting to OpenAI JSON format (not text rewriting)
+        self.convert_to_openai_json = False
+
         # Determine whether tool_call_tags contains predefined format or custom tags
         if tool_call_tags:
             # Check if tool_call_tags is a predefined format name
@@ -386,10 +390,11 @@ class UnifiedStreamProcessor:
             # No custom tags - initialize default rewriter to target format
             self._initialize_default_rewriter(default_target_format)
 
-        # Create detector - always preserve tool calls for rewriting since we always have a rewriter
+        # Create detector - preserve tool calls for rewriting/conversion
+        # When converting to OpenAI JSON, we still need to detect and extract tool calls
         self.detector = IncrementalToolDetector(
             model_name=model_name,
-            rewrite_tags=True  # Always preserve for rewriting
+            rewrite_tags=(self.tag_rewriter is not None or self.convert_to_openai_json)
         )
 
     def process_stream(self, response_stream: Iterator[GenerateResponse],
@@ -413,11 +418,16 @@ class UnifiedStreamProcessor:
                 # Process chunk through detector (preserves tool calls for rewriting)
                 streamable_content, completed_tools = self.detector.process_chunk(chunk.content)
 
-                # Apply tag rewriting if we have content
-                if streamable_content and self.tag_rewriter:
-                    logger.debug(f"Applying tag rewriting to: {streamable_content[:100]}")
-                    streamable_content = self._apply_tag_rewriting_direct(streamable_content)
-                    logger.debug(f"After tag rewriting: {streamable_content[:100]}")
+                # Apply tag rewriting or OpenAI conversion if we have content
+                if streamable_content:
+                    if self.convert_to_openai_json:
+                        logger.debug(f"Converting to OpenAI format: {streamable_content[:100]}")
+                        streamable_content = self._convert_to_openai_format(streamable_content)
+                        logger.debug(f"After OpenAI conversion: {streamable_content[:100]}")
+                    elif self.tag_rewriter:
+                        logger.debug(f"Applying tag rewriting to: {streamable_content[:100]}")
+                        streamable_content = self._apply_tag_rewriting_direct(streamable_content)
+                        logger.debug(f"After tag rewriting: {streamable_content[:100]}")
 
                 # Yield streamable content
                 if streamable_content:
@@ -429,9 +439,17 @@ class UnifiedStreamProcessor:
                         raw_response=chunk.raw_response
                     )
 
-                # Tools are detected but not executed here - client (CLI) will handle execution
+                # Yield tool calls for server processing
                 if completed_tools:
-                    logger.debug(f"Detected {len(completed_tools)} tools - client will handle execution")
+                    logger.debug(f"Detected {len(completed_tools)} tools - yielding for server processing")
+                    yield GenerateResponse(
+                        content="",
+                        tool_calls=completed_tools,
+                        model=chunk.model,
+                        finish_reason=chunk.finish_reason,
+                        usage=chunk.usage,
+                        raw_response=chunk.raw_response
+                    )
 
             # Finalize - get any remaining tools and handle remaining content
             final_tools = self.detector.finalize()
@@ -441,7 +459,9 @@ class UnifiedStreamProcessor:
             self.detector.accumulated_content = ""
 
             if remaining_content:
-                if self.tag_rewriter:
+                if self.convert_to_openai_json:
+                    remaining_content = self._convert_to_openai_format(remaining_content)
+                elif self.tag_rewriter:
                     remaining_content = self._apply_tag_rewriting_direct(remaining_content)
 
                 yield GenerateResponse(
@@ -451,7 +471,13 @@ class UnifiedStreamProcessor:
                 )
 
             if final_tools:
-                logger.debug(f"Finalized {len(final_tools)} tools - client will handle execution")
+                logger.debug(f"Finalized {len(final_tools)} tools - yielding for server processing")
+                yield GenerateResponse(
+                    content="",
+                    tool_calls=final_tools,
+                    model=self.model_name,
+                    finish_reason="tool_calls"
+                )
 
         except Exception as e:
             logger.error(f"Error in unified stream processing: {e}")
@@ -525,12 +551,15 @@ class UnifiedStreamProcessor:
                 self.tag_rewriter = ToolCallTagRewriter(target_tags)
                 logger.debug(f"Initialized qwen3 tag rewriter for model {self.model_name}")
             elif target_format == "openai":
-                # OpenAI format: No text rewriting needed!
-                # OpenAI's API already returns structured JSON tool calls,
-                # so we should not apply any tag rewriting at all.
-                # Setting tag_rewriter to None means no rewriting will occur.
-                self.tag_rewriter = None
-                logger.debug(f"OpenAI format selected - no tag rewriting will be applied (OpenAI uses native JSON tool calls)")
+                # OpenAI format: Convert text-based tool calls TO OpenAI's structured JSON format
+                # This is NOT a text rewriting operation - it's a format conversion
+                # We need to:
+                # 1. Detect tool calls in text (Qwen3/LLaMA/XML formats)
+                # 2. Parse the JSON content
+                # 3. Wrap in OpenAI's structured format with id, type, function fields
+                self.tag_rewriter = None  # No text rewriting
+                self.convert_to_openai_json = True  # Enable JSON conversion
+                logger.debug(f"OpenAI format selected - will convert text-based tool calls to OpenAI JSON format")
                 return
             elif target_format == "llama3":
                 # LLaMA3/Crush CLI format: <function_call>...JSON...</function_call>
@@ -596,4 +625,79 @@ class UnifiedStreamProcessor:
         except Exception as e:
             logger.debug(f"Tag rewriting failed: {e}")
             return content
+
+    def _convert_to_openai_format(self, content: str) -> str:
+        """
+        Convert text-based tool calls to OpenAI JSON format.
+
+        Detects tool calls in formats like:
+        - Qwen3: <|tool_call|>{"name": "shell", "arguments": {...}}</|tool_call|>
+        - LLaMA: <function_call>{"name": "shell", "arguments": {...}}</function_call>
+        - XML: <tool_call>{"name": "shell", "arguments": {...}}</tool_call>
+
+        Converts to OpenAI format:
+        {"id": "call_abc123", "type": "function", "function": {"name": "shell", "arguments": "{...}"}}
+        """
+        if not content:
+            return content
+
+        # Patterns for different tool call formats
+        patterns = [
+            (r'<\|tool_call\|>\s*(.*?)\s*</\|tool_call\|>', 'qwen3'),
+            (r'<function_call>\s*(.*?)\s*</function_call>', 'llama'),
+            (r'<tool_call>\s*(.*?)\s*</tool_call>', 'xml'),
+            (r'```tool_code\s*\n(.*?)\n```', 'gemma'),
+        ]
+
+        converted_content = content
+
+        for pattern, format_type in patterns:
+            matches = list(re.finditer(pattern, converted_content, re.DOTALL | re.IGNORECASE))
+
+            if matches:
+                logger.debug(f"Found {len(matches)} tool calls in {format_type} format")
+
+                # Replace from end to beginning to maintain indices
+                for match in reversed(matches):
+                    try:
+                        # Extract JSON content
+                        json_content = match.group(1).strip()
+
+                        # Parse the JSON to validate and extract fields
+                        tool_data = json.loads(json_content)
+
+                        if not isinstance(tool_data, dict) or "name" not in tool_data:
+                            logger.warning(f"Invalid tool call JSON: {json_content[:100]}")
+                            continue
+
+                        # Generate OpenAI-compatible tool call ID
+                        call_id = f"call_{uuid.uuid4().hex[:24]}"
+
+                        # Convert to OpenAI format
+                        openai_tool_call = {
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_data["name"],
+                                "arguments": json.dumps(tool_data.get("arguments", {}))
+                            }
+                        }
+
+                        # Replace the text-based tool call with OpenAI JSON format
+                        openai_json = json.dumps(openai_tool_call)
+                        converted_content = converted_content[:match.start()] + openai_json + converted_content[match.end():]
+
+                        logger.debug(f"Converted {format_type} tool call to OpenAI format: {openai_json[:100]}")
+
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse tool call JSON: {e}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error converting tool call to OpenAI format: {e}")
+                        continue
+
+                # Only process the first matching format type
+                break
+
+        return converted_content
 

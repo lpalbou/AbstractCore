@@ -1890,23 +1890,21 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                         pass
 
         if request.stream:
-            # Clean OpenAI-compatible streaming - Universal tool call conversion
+            # Fixed OpenAI-compatible streaming - Properly delegates to UnifiedStreamProcessor
             def generate_openai_stream():
                 try:
                     gen_kwargs["stream"] = True
                     chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
                     created_time = int(time.time())
-                    tool_calls = []  # Track tool calls for final response
+                    tool_calls_sent = []  # Track sent tool calls for proper indexing
 
-                    # Initialize tool call detector for universal conversion
-                    tool_call_buffer = ""
-                    in_tool_call = False
-                    tool_call_patterns = [
-                        (r'<\|tool_call\|>(.*?)</\|tool_call\|>', 'qwen3'),
-                        (r'<function_call>(.*?)</function_call>', 'llama'),
-                        (r'<tool_call>(.*?)</tool_call>', 'generic'),
-                    ]
-                    import re
+                    # The UnifiedStreamProcessor already handles ALL tool detection correctly
+                    # We should NOT duplicate this logic in the server
+                    # The processor handles:
+                    # 1. All tool call formats (Qwen, LLaMA, XML, etc.)
+                    # 2. Split chunks and buffering
+                    # 3. Tag rewriting when configured
+                    # 4. Edge cases and malformed JSON
 
                     for chunk in llm.generate(**gen_kwargs):
                         openai_chunk = {
@@ -1921,74 +1919,19 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                             }]
                         }
 
-                        # Handle content streaming with universal tool call detection
+                        # Simply pass through content from the processor
+                        # The UnifiedStreamProcessor has already handled everything
                         if hasattr(chunk, 'content') and chunk.content:
-                            content = chunk.content
+                            # Stream the content as-is - processor has already handled everything
+                            openai_chunk["choices"][0]["delta"]["content"] = chunk.content
+                            yield f"data: {json.dumps(openai_chunk)}\n\n"
 
-                            # Check if this content contains tool call markers
-                            has_tool_start = any(
-                                marker in content
-                                for marker in ['<|tool_call|>', '<function_call>', '<tool_call>']
-                            )
-                            has_tool_end = any(
-                                marker in content
-                                for marker in ['</|tool_call|>', '</function_call>', '</tool_call>']
-                            )
-
-                            if has_tool_start or in_tool_call:
-                                # We're in a tool call - buffer it
-                                tool_call_buffer += content
-                                in_tool_call = True
-
-                                if has_tool_end:
-                                    # Complete tool call detected - parse and convert
-                                    for pattern, format_type in tool_call_patterns:
-                                        match = re.search(pattern, tool_call_buffer, re.DOTALL)
-                                        if match:
-                                            try:
-                                                # Extract and parse the JSON content
-                                                tool_json_str = match.group(1).strip()
-                                                tool_data = json.loads(tool_json_str)
-
-                                                # Create OpenAI-format tool call
-                                                tool_call_obj = {
-                                                    "id": f"call_{uuid.uuid4().hex[:8]}",
-                                                    "type": "function",
-                                                    "function": {
-                                                        "name": tool_data.get("name", ""),
-                                                        "arguments": json.dumps(tool_data.get("arguments", {}))
-                                                    }
-                                                }
-
-                                                # Send as tool_calls delta
-                                                openai_chunk["choices"][0]["delta"]["tool_calls"] = [{
-                                                    "index": len(tool_calls),
-                                                    **tool_call_obj
-                                                }]
-                                                tool_calls.append(tool_call_obj)
-                                                yield f"data: {json.dumps(openai_chunk)}\n\n"
-
-                                                # Clear buffer and reset state
-                                                tool_call_buffer = ""
-                                                in_tool_call = False
-
-                                            except (json.JSONDecodeError, KeyError) as e:
-                                                # If parsing fails, stream as regular content
-                                                print(f"⚠️ Failed to parse tool call: {e}")
-                                                openai_chunk["choices"][0]["delta"]["content"] = tool_call_buffer
-                                                yield f"data: {json.dumps(openai_chunk)}\n\n"
-                                                tool_call_buffer = ""
-                                                in_tool_call = False
-                                            break
-                                # Don't yield incomplete tool calls
-                            else:
-                                # Regular content - stream immediately
-                                openai_chunk["choices"][0]["delta"]["content"] = content
-                                yield f"data: {json.dumps(openai_chunk)}\n\n"
-
-                        # Handle tool calls from BaseProvider (when properly extracted)
-                        elif hasattr(chunk, 'tool_calls') and chunk.tool_calls:
+                        # Handle tool calls that were properly extracted by the processor
+                        if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
                             for tool_call in chunk.tool_calls:
+                                logger.debug(f"🔧 Processing tool call: {tool_call.name}")
+                                logger.debug(f"🔧 Arguments type: {type(tool_call.arguments)}")
+                                logger.debug(f"🔧 Arguments value: {repr(tool_call.arguments)}")
                                 tool_call_chunk = {
                                     "id": chat_id,
                                     "object": "chat.completion.chunk",
@@ -1998,7 +1941,7 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                                         "index": 0,
                                         "delta": {
                                             "tool_calls": [{
-                                                "index": len(tool_calls),
+                                                "index": len(tool_calls_sent),
                                                 "id": tool_call.call_id or f"call_{uuid.uuid4().hex[:8]}",
                                                 "type": "function",
                                                 "function": {
@@ -2010,7 +1953,11 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                                         "finish_reason": None
                                     }]
                                 }
-                                tool_calls.append(tool_call)
+
+                                # Log the final arguments value for debugging
+                                final_args = json.dumps(tool_call.arguments) if isinstance(tool_call.arguments, dict) else str(tool_call.arguments)
+                                logger.debug(f"🔧 Final arguments: {repr(final_args)}")
+                                tool_calls_sent.append(tool_call)
                                 yield f"data: {json.dumps(tool_call_chunk)}\n\n"
 
                         # Handle other chunk types
@@ -2019,7 +1966,7 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                             yield f"data: {json.dumps(openai_chunk)}\n\n"
 
                     # Final chunk
-                    finish_reason = "tool_calls" if tool_calls else "stop"
+                    finish_reason = "tool_calls" if tool_calls_sent else "stop"
                     final_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -2053,56 +2000,26 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
             )
         else:
-            # Non-streaming response with universal tool call conversion
+            # Fixed non-streaming response - Properly delegates to BaseProvider
             response = llm.generate(**gen_kwargs)
 
-            # Initialize for tool call detection
-            import re
-            tool_calls_found = []
-            content = response.content or ""
-
-            # Check for tool calls in the content
-            tool_call_patterns = [
-                (r'<\|tool_call\|>(.*?)</\|tool_call\|>', 'qwen3'),
-                (r'<function_call>(.*?)</function_call>', 'llama'),
-                (r'<tool_call>(.*?)</tool_call>', 'generic'),
-            ]
-
-            # Try to extract tool calls from content
-            for pattern, format_type in tool_call_patterns:
-                matches = re.findall(pattern, content, re.DOTALL)
-                for match in matches:
-                    try:
-                        # Parse the JSON content
-                        tool_data = json.loads(match.strip())
-                        tool_calls_found.append({
-                            "id": f"call_{uuid.uuid4().hex[:8]}",
-                            "type": "function",
-                            "function": {
-                                "name": tool_data.get("name", ""),
-                                "arguments": json.dumps(tool_data.get("arguments", {}))
-                            }
-                        })
-                        # Remove the tool call from content
-                        full_match = re.search(pattern, content, re.DOTALL)
-                        if full_match:
-                            content = content.replace(full_match.group(0), "").strip()
-                    except (json.JSONDecodeError, KeyError) as e:
-                        print(f"⚠️ Failed to parse tool call in non-streaming response: {e}")
+            # The BaseProvider has already handled ALL tool detection correctly
+            # We should NOT duplicate this logic in the server
+            # The provider handles:
+            # 1. All tool call formats (Qwen, LLaMA, XML, etc.)
+            # 2. Tool parsing and extraction
+            # 3. Tag rewriting when configured
 
             # Prepare message object
             message = {
                 "role": "assistant",
-                "content": content if not tool_calls_found else None
+                "content": response.content
             }
 
-            # Handle tool calls - either from extraction or from BaseProvider
+            # Handle tool calls that were properly extracted by the provider
             finish_reason = "stop"
-            if tool_calls_found:
-                message["tool_calls"] = tool_calls_found
-                finish_reason = "tool_calls"
-            elif hasattr(response, 'tool_calls') and response.tool_calls:
-                # Fallback to BaseProvider tool calls if available
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                # Use the tool calls extracted by BaseProvider
                 message["tool_calls"] = []
                 for tool_call in response.tool_calls:
                     message["tool_calls"].append({
@@ -2114,6 +2031,7 @@ async def enhanced_chat_completions(provider: str, request: OpenAIChatCompletion
                         }
                     })
                 finish_reason = "tool_calls"
+                # If tool calls are present, content should be None per OpenAI spec
                 message["content"] = None
 
             # OpenAI-compatible response format
