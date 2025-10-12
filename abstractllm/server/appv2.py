@@ -374,11 +374,13 @@ def generate_streaming_response(
             if hasattr(chunk, 'content') and chunk.content:
                 content = chunk.content
 
-                # For OpenAI/Codex format: clean content (remove tool call syntax)
+                # For OpenAI/Codex format: only clean if content contains tool calls
                 # For other formats: apply syntax rewriting
                 if syntax_rewriter.target_format in [SyntaxFormat.OPENAI, SyntaxFormat.CODEX]:
-                    # Clean content - remove tool call syntax entirely
-                    content = syntax_rewriter.remove_tool_call_patterns(content)
+                    # Only clean content if it contains tool call patterns
+                    # This prevents stripping spaces from regular text chunks
+                    if any(pattern in content for pattern in ['<function_call>', '<tool_call>', '<|tool_call|>', '```tool_code']):
+                        content = syntax_rewriter.remove_tool_call_patterns(content)
                 elif syntax_rewriter.target_format != SyntaxFormat.PASSTHROUGH:
                     # Apply format-specific rewriting for non-OpenAI formats
                     content = syntax_rewriter.rewrite_content(content)
@@ -481,11 +483,13 @@ def convert_to_openai_response(
     # Apply syntax rewriting to content
     content = response.content if hasattr(response, 'content') else str(response)
 
-    # For OpenAI/Codex format: clean content (remove tool call syntax)
+    # For OpenAI/Codex format: only clean if content contains tool calls
     # For other formats: apply syntax rewriting
     if syntax_rewriter.target_format in [SyntaxFormat.OPENAI, SyntaxFormat.CODEX]:
-        # Clean content - remove tool call syntax entirely
-        content = syntax_rewriter.remove_tool_call_patterns(content)
+        # Only clean content if it contains tool call patterns
+        # This prevents stripping spaces from regular text
+        if any(pattern in content for pattern in ['<function_call>', '<tool_call>', '<|tool_call|>', '```tool_code']):
+            content = syntax_rewriter.remove_tool_call_patterns(content)
     elif syntax_rewriter.target_format != SyntaxFormat.PASSTHROUGH:
         # Apply format-specific rewriting for non-OpenAI formats
         content = syntax_rewriter.rewrite_content(content)
