@@ -399,7 +399,7 @@ curl -H "X-Agent-Type: codex" ...
 **Core Library:**
 - **[Python API Reference](api-reference.md)** - Complete Python API
 - **[Getting Started](getting-started.md)** - Basic usage examples
-- **[Providers](providers.md)** - Provider-specific details
+- **[Prerequisites](prerequisites.md)** - Provider setup and configuration
 
 **Server:**
 - **[Server Guide](server.md)** - Server setup and configuration

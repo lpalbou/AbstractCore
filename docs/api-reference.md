@@ -746,5 +746,5 @@ on_global(EventType.RETRY_ATTEMPTED, production_monitor)
 For more examples and use cases, see:
 - [Getting Started](getting-started.md) - Basic setup and usage
 - [Examples](examples.md) - Practical use cases
-- [Providers](providers.md) - Provider-specific documentation
+- [Prerequisites](prerequisites.md) - Provider setup and configuration
 - [Capabilities](capabilities.md) - What AbstractCore can do

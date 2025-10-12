@@ -179,11 +179,10 @@ docs/
 3. [Examples](examples.md) - See real code
 4. [Troubleshooting](troubleshooting.md) - Fix issues
 
-### For API Users
-1. [Server Guide](server.md) - Setup server
-2. [API Reference](api-reference.md) - Learn endpoints
-3. [Codex CLI Integration](codex-cli-integration.md) - CLI integration
-4. [Troubleshooting](troubleshooting.md) - Fix server issues
+### For Server/API Users
+1. [Server Documentation](server.md) - Setup server and learn API endpoints
+2. [Prerequisites](prerequisites.md) - Configure providers
+3. [Troubleshooting](troubleshooting.md) - Fix server issues
 
 ### For Advanced Users
 1. [Architecture](architecture.md) - Understand system
