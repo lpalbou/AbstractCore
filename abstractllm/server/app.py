@@ -96,6 +96,7 @@ def is_embedding_model(model_name: str) -> bool:
         "all-minilm",      # Sentence-transformers MiniLM models
         "all-mpnet",       # Sentence-transformers MPNet models
         "nomic-embed",     # Nomic embedding models
+        "bert-",           # BERT models (e.g., bert-base-uncased)
         "-bert",           # BERT-based embedding models (e.g., nomic-bert-2048)
         "bge-",            # BAAI BGE embedding models
         "gte-",            # GTE embedding models
@@ -196,11 +197,49 @@ class ChatCompletionRequest(BaseModel):
 
 class EmbeddingRequest(BaseModel):
     """OpenAI-compatible embedding request"""
-    input: Union[str, List[str]] = Field(description="Text to embed")
-    model: str = Field(description="Embedding model identifier (provider/model)")
-    encoding_format: Optional[str] = Field(default="float", description="Encoding format")
-    dimensions: Optional[int] = Field(default=None, description="Number of dimensions to return")
-    user: Optional[str] = Field(default=None, description="User identifier")
+    input: Union[str, List[str]] = Field(
+        description="Input text to embed, encoded as a string or array of strings. "
+                    "To embed multiple inputs in a single request, pass an array of strings. "
+                    "The input must not exceed the max input tokens for the model (8192 tokens for most embedding models), "
+                    "cannot be an empty string, and any array must be 2048 dimensions or less.",
+        example="this is the story of starship lost in space"
+    )
+    model: str = Field(
+        description="ID of the model to use. Use provider/model format (e.g., 'huggingface/sentence-transformers/all-MiniLM-L6-v2', "
+                    "'ollama/granite-embedding:278m', 'lmstudio/text-embedding-all-minilm-l6-v2'). "
+                    "You can use the List models API to see all available models, or filter by type=text-embedding.",
+        example="huggingface/sentence-transformers/all-MiniLM-L6-v2"
+    )
+    encoding_format: Optional[str] = Field(
+        default="float",
+        description="The format to return the embeddings in. Can be either 'float' or 'base64'. Defaults to 'float'.",
+        example="float"
+    )
+    dimensions: Optional[int] = Field(
+        default=None,
+        description="The number of dimensions the resulting output embeddings should have. "
+                    "Only supported in some models (e.g., text-embedding-3 and later models). "
+                    "If specified, embeddings will be truncated to this dimension. "
+                    "Set to 0 or None to use the model's default dimension.",
+        example=0
+    )
+    user: Optional[str] = Field(
+        default=None,
+        description="A unique identifier representing your end-user, which can help OpenAI/providers to monitor and detect abuse. "
+                    "This is optional but recommended for production applications.",
+        example="user-123"
+    )
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "input": "this is the story of starship lost in space",
+                "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+                "encoding_format": "float",
+                "dimensions": 0,
+                "user": "user-123"
+            }
+        }
 
 # ============================================================================
 # Helper Functions
@@ -460,13 +499,27 @@ async def create_response(request: ChatCompletionRequest, http_request: Request)
 @app.post("/v1/embeddings")
 async def create_embeddings(request: EmbeddingRequest):
     """
-    OpenAI-compatible embeddings endpoint with provider routing.
-
-    Supports the provider/model format for routing to the appropriate embedding provider.
-    Routes to provider-specific embedding implementations:
-    - HuggingFace: Uses local EmbeddingManager with sentence-transformers
-    - Ollama: Routes to Ollama's /api/embeddings endpoint
-    - LMStudio: Routes to LMStudio's OpenAI-compatible /v1/embeddings endpoint
+    Create embedding vectors representing the input text.
+    
+    Creates an embedding vector representing the input text. Embeddings are useful for:
+    - Semantic search
+    - Document similarity
+    - Clustering and classification
+    - Retrieval-Augmented Generation (RAG)
+    
+    **Supported Providers:**
+    - **HuggingFace**: Local sentence-transformers models with ONNX acceleration
+    - **Ollama**: Local embedding models via Ollama API
+    - **LMStudio**: Local embedding models via LMStudio API
+    
+    **Model Format:** Use `provider/model` format:
+    - `huggingface/sentence-transformers/all-MiniLM-L6-v2`
+    - `ollama/granite-embedding:278m`
+    - `lmstudio/text-embedding-all-minilm-l6-v2`
+    
+    **To see available embedding models:** `GET /v1/models?type=text-embedding`
+    
+    **Returns:** A list of embedding objects containing the embedding vector and metadata.
     """
     try:
         # Parse provider and model
