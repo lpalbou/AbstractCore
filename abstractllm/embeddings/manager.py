@@ -77,20 +77,27 @@ def _get_optimal_onnx_model() -> Optional[str]:
 
 class EmbeddingManager:
     """
-    Production-ready embedding manager with SOTA models and efficient serving.
+    Production-ready embedding manager with multi-provider support and efficient serving.
+
+    Supported Providers:
+    - HuggingFace (default): Local sentence-transformers models with ONNX acceleration
+    - Ollama: Local embedding models via Ollama API
+    - LMStudio: Local embedding models via LMStudio API
 
     Features:
-    - EmbeddingGemma default (Google's 2025 SOTA on-device model)
-    - ONNX backend for 2-3x faster inference
-    - Smart two-layer caching (memory + disk)
-    - Matryoshka dimension truncation
+    - Multi-provider support (HuggingFace, Ollama, LMStudio)
+    - Smart two-layer caching (memory + disk) across all providers
+    - ONNX backend for 2-3x faster inference (HuggingFace)
+    - Matryoshka dimension truncation (when supported)
     - Event system integration
     - Batch processing optimization
+    - Unified interface regardless of provider
     """
 
     def __init__(
         self,
         model: str = None,
+        provider: str = "huggingface",
         backend: Union[str, EmbeddingBackend] = "auto",
         cache_dir: Optional[Path] = None,
         cache_size: int = 1000,
@@ -100,47 +107,82 @@ class EmbeddingManager:
         """Initialize the embedding manager.
 
         Args:
-            model: HuggingFace model ID. Defaults to sentence-transformers/all-MiniLM-L6-v2.
-            backend: Inference backend ('auto', 'pytorch', 'onnx', 'openvino')
+            model: Model identifier (HuggingFace model ID for HF provider, model name for others).
+            provider: Embedding provider ('huggingface', 'ollama', 'lmstudio'). Defaults to 'huggingface'.
+            backend: Inference backend for HuggingFace ('auto', 'pytorch', 'onnx', 'openvino')
             cache_dir: Directory for persistent cache. Defaults to ~/.abstractllm/embeddings
             cache_size: Maximum number of embeddings to cache in memory
-            output_dims: Output dimensions for Matryoshka truncation (if supported)
-            trust_remote_code: Whether to trust remote code (for some models)
+            output_dims: Output dimensions for Matryoshka truncation (if supported by provider)
+            trust_remote_code: Whether to trust remote code (HuggingFace only)
         """
-        # Model configuration - HuggingFace only
-        if model is None:
-            model = get_default_model()  # Returns alias "all-minilm-l6-v2"
+        # Store provider
+        self.provider = provider.lower()
+        
+        # Validate provider
+        if self.provider not in ["huggingface", "ollama", "lmstudio"]:
+            raise ValueError(f"Unsupported provider: {provider}. Supported: huggingface, ollama, lmstudio")
+        
+        # Initialize provider-specific attributes
+        self.model_config = None
+        self._provider_instance = None
+        
+        # Set up model identifier
+        if self.provider == "huggingface":
+            # Model configuration - HuggingFace only
+            if model is None:
+                model = get_default_model()  # Returns alias "all-minilm-l6-v2"
 
-        # Handle model aliases from our favored models config
-        if model in list_available_models():
-            self.model_config = get_model_config(model)
-            self.model_id = self.model_config.model_id
+            # Handle model aliases from our favored models config
+            if model in list_available_models():
+                self.model_config = get_model_config(model)
+                self.model_id = self.model_config.model_id
+            else:
+                # Direct HuggingFace model ID
+                self.model_id = model
+                self.model_config = None
+
+            self.backend = EmbeddingBackend(backend) if backend != "auto" else None
+            self.trust_remote_code = trust_remote_code
+            
+            # Validate Matryoshka dimensions
+            if output_dims and self.model_config:
+                if not self.model_config.supports_matryoshka:
+                    logger.warning(f"Model {self.model_id} doesn't support Matryoshka. Ignoring output_dims.")
+                    output_dims = None
+                elif output_dims not in self.model_config.matryoshka_dims:
+                    logger.warning(f"Dimension {output_dims} not in supported dims {self.model_config.matryoshka_dims}")
         else:
-            # Direct HuggingFace model ID
+            # Ollama or LMStudio provider
+            if model is None:
+                raise ValueError(f"Model name is required for {self.provider} provider")
+            
             self.model_id = model
-            self.model_config = None
+            self.backend = None
+            self.trust_remote_code = False
+            
+            # Create provider instance for delegation
+            if self.provider == "ollama":
+                from ..providers.ollama_provider import OllamaProvider
+                self._provider_instance = OllamaProvider(model=model)
+                logger.info(f"Initialized Ollama embedding provider with model: {model}")
+            elif self.provider == "lmstudio":
+                from ..providers.lmstudio_provider import LMStudioProvider
+                self._provider_instance = LMStudioProvider(model=model)
+                logger.info(f"Initialized LMStudio embedding provider with model: {model}")
 
-        self.backend = EmbeddingBackend(backend) if backend != "auto" else None
+        # Common setup for all providers
         self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".abstractllm" / "embeddings"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_size = cache_size
         self.output_dims = output_dims
-        self.trust_remote_code = trust_remote_code
 
-        # Validate Matryoshka dimensions
-        if self.output_dims and self.model_config:
-            if not self.model_config.supports_matryoshka:
-                logger.warning(f"Model {self.model_id} doesn't support Matryoshka. Ignoring output_dims.")
-                self.output_dims = None
-            elif self.output_dims not in self.model_config.matryoshka_dims:
-                logger.warning(f"Dimension {self.output_dims} not in supported dims {self.model_config.matryoshka_dims}")
-
-        # Initialize model
+        # Initialize model (HuggingFace only)
         self.model = None
-        self._load_model()
+        if self.provider == "huggingface":
+            self._load_model()
 
-        # Set up persistent cache
-        cache_name = self.model_id.replace("/", "_").replace("-", "_")
+        # Set up persistent cache (include provider in cache name for isolation)
+        cache_name = f"{self.provider}_{self.model_id.replace('/', '_').replace('-', '_')}"
         if self.output_dims:
             cache_name += f"_dim{self.output_dims}"
         self.cache_file = self.cache_dir / f"{cache_name}_cache.pkl"
@@ -517,21 +559,38 @@ class EmbeddingManager:
                 "text_length": len(text),
                 "cache_hit": True,
                 "model": self.model_id,
+                "provider": self.provider,
                 "dimension": len(embedding)
             })
             return embedding
 
         try:
-            # Generate embedding using HuggingFace model
-            embedding = self.model.encode(
-                text,
-                show_progress_bar=False,
-                convert_to_numpy=True
-            ).tolist()
+            # Generate embedding based on provider
+            if self.provider == "huggingface":
+                # HuggingFace: Use sentence-transformers model
+                embedding = self.model.encode(
+                    text,
+                    show_progress_bar=False,
+                    convert_to_numpy=True
+                ).tolist()
 
-            # Apply Matryoshka truncation if specified
-            if self.output_dims and len(embedding) > self.output_dims:
-                embedding = embedding[:self.output_dims]
+                # Apply Matryoshka truncation if specified
+                if self.output_dims and len(embedding) > self.output_dims:
+                    embedding = embedding[:self.output_dims]
+                    
+            else:
+                # Ollama or LMStudio: Delegate to provider
+                result = self._provider_instance.embed(input_text=text)
+                
+                # Extract embedding from OpenAI-compatible response
+                if "data" in result and len(result["data"]) > 0:
+                    embedding = result["data"][0]["embedding"]
+                    
+                    # Apply dimension truncation if specified
+                    if self.output_dims and len(embedding) > self.output_dims:
+                        embedding = embedding[:self.output_dims]
+                else:
+                    raise ValueError(f"Invalid response from {self.provider} provider")
 
             # Store in persistent cache
             self._persistent_cache[text_hash] = embedding
@@ -546,16 +605,17 @@ class EmbeddingManager:
                 "text_length": len(text),
                 "cache_hit": False,
                 "model": self.model_id,
+                "provider": self.provider,
                 "dimension": len(embedding),
                 "duration_ms": duration_ms,
-                "backend": self.backend.value if self.backend else "pytorch"
+                "backend": self.backend.value if self.backend else self.provider
             })
 
-            logger.debug(f"Generated embedding for text (length: {len(text)}, dims: {len(embedding)})")
+            logger.debug(f"Generated embedding for text (length: {len(text)}, dims: {len(embedding)}, provider: {self.provider})")
             return embedding
 
         except Exception as e:
-            logger.error(f"Failed to embed text: {e}")
+            logger.error(f"Failed to embed text with {self.provider}: {e}")
             # Return zero vector as fallback
             dim = self.output_dims or self.get_dimension()
             return [0.0] * dim
@@ -594,29 +654,51 @@ class EmbeddingManager:
         # Process uncached texts in batch
         if uncached_texts:
             try:
-                # Generate batch embeddings using HuggingFace model
-                batch_embeddings = self.model.encode(
-                    uncached_texts,
-                    show_progress_bar=False,
-                    convert_to_numpy=True
-                )
+                if self.provider == "huggingface":
+                    # HuggingFace: Use sentence-transformers batch encoding
+                    batch_embeddings = self.model.encode(
+                        uncached_texts,
+                        show_progress_bar=False,
+                        convert_to_numpy=True
+                    )
 
-                # Convert to list and apply Matryoshka truncation
-                for i, (text, embedding, idx) in enumerate(zip(uncached_texts, batch_embeddings, uncached_indices)):
-                    embedding_list = embedding.tolist()  # Convert numpy to list
+                    # Convert to list and apply Matryoshka truncation
+                    for i, (text, embedding, idx) in enumerate(zip(uncached_texts, batch_embeddings, uncached_indices)):
+                        embedding_list = embedding.tolist()  # Convert numpy to list
 
-                    # Apply Matryoshka truncation if specified
-                    if self.output_dims and len(embedding_list) > self.output_dims:
-                        embedding_list = embedding_list[:self.output_dims]
+                        # Apply Matryoshka truncation if specified
+                        if self.output_dims and len(embedding_list) > self.output_dims:
+                            embedding_list = embedding_list[:self.output_dims]
 
-                    text_hash = self._text_hash(text)
-                    self._persistent_cache[text_hash] = embedding_list
-                    cached_embeddings[idx] = embedding_list
+                        text_hash = self._text_hash(text)
+                        self._persistent_cache[text_hash] = embedding_list
+                        cached_embeddings[idx] = embedding_list
 
-                logger.debug(f"Generated {len(batch_embeddings)} embeddings in batch")
+                    logger.debug(f"Generated {len(batch_embeddings)} embeddings in batch (HuggingFace)")
+                    
+                else:
+                    # Ollama or LMStudio: Delegate to provider (supports batch in single call)
+                    result = self._provider_instance.embed(input_text=uncached_texts)
+                    
+                    # Extract embeddings from OpenAI-compatible response
+                    if "data" in result:
+                        for text, embedding_data, idx in zip(uncached_texts, result["data"], uncached_indices):
+                            embedding = embedding_data["embedding"]
+                            
+                            # Apply dimension truncation if specified
+                            if self.output_dims and len(embedding) > self.output_dims:
+                                embedding = embedding[:self.output_dims]
+                            
+                            text_hash = self._text_hash(text)
+                            self._persistent_cache[text_hash] = embedding
+                            cached_embeddings[idx] = embedding
+                        
+                        logger.debug(f"Generated {len(result['data'])} embeddings in batch ({self.provider})")
+                    else:
+                        raise ValueError(f"Invalid batch response from {self.provider} provider")
 
             except Exception as e:
-                logger.error(f"Failed to embed batch: {e}")
+                logger.error(f"Failed to embed batch with {self.provider}: {e}")
                 # Fill with zero vectors as fallback
                 dim = self.output_dims or self.get_dimension()
                 zero_embedding = [0.0] * dim
@@ -635,6 +717,7 @@ class EmbeddingManager:
             "cache_hits": cache_hits,
             "new_embeddings": len(uncached_texts),
             "model": self.model_id,
+            "provider": self.provider,
             "duration_ms": duration_ms
         })
 
@@ -645,7 +728,14 @@ class EmbeddingManager:
         """Get the dimension of embeddings produced by this model."""
         if self.output_dims:
             return self.output_dims
-        return self.model.get_sentence_embedding_dimension()
+        
+        if self.provider == "huggingface":
+            return self.model.get_sentence_embedding_dimension()
+        else:
+            # For Ollama/LMStudio, we need to generate a test embedding to get dimension
+            # This is cached, so it's only done once
+            test_embedding = self.embed("test")
+            return len(test_embedding)
 
     def estimate_tokens(self, text: str) -> int:
         """Estimate the number of tokens in the text for embedding usage calculations.
@@ -1089,12 +1179,13 @@ class EmbeddingManager:
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get statistics about the embedding caches."""
         return {
+            "provider": self.provider,
             "persistent_cache_size": len(self._persistent_cache),
             "normalized_cache_size": len(self._normalized_cache),
             "memory_cache_info": self.embed.cache_info()._asdict(),
             "embedding_dimension": self.get_dimension(),
             "model_id": self.model_id,
-            "backend": self.backend.value if self.backend else "auto",
+            "backend": self.backend.value if self.backend else self.provider,
             "cache_file": str(self.cache_file),
             "normalized_cache_file": str(self.normalized_cache_file),
             "output_dims": self.output_dims
