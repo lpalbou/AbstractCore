@@ -331,3 +331,55 @@ class LMStudioProvider(BaseProvider):
         except Exception as e:
             self.logger.warning(f"Failed to list LMStudio models: {e}")
             return []
+
+    def embed(self, input_text: Union[str, List[str]], **kwargs) -> Dict[str, Any]:
+        """
+        Generate embeddings using LMStudio's OpenAI-compatible embedding API.
+        
+        Args:
+            input_text: Single string or list of strings to embed
+            **kwargs: Additional parameters (encoding_format, dimensions, user, etc.)
+            
+        Returns:
+            Dict with embeddings in OpenAI-compatible format:
+            {
+                "object": "list",
+                "data": [{"object": "embedding", "embedding": [...], "index": 0}, ...],
+                "model": "model-name",
+                "usage": {"prompt_tokens": N, "total_tokens": N}
+            }
+        """
+        try:
+            # Prepare request payload for OpenAI-compatible API
+            payload = {
+                "input": input_text,
+                "model": self.model
+            }
+            
+            # Add optional parameters if provided
+            if "encoding_format" in kwargs:
+                payload["encoding_format"] = kwargs["encoding_format"]
+            if "dimensions" in kwargs and kwargs["dimensions"]:
+                payload["dimensions"] = kwargs["dimensions"]
+            if "user" in kwargs:
+                payload["user"] = kwargs["user"]
+            
+            # Call LMStudio's embeddings API (OpenAI-compatible)
+            response = self.client.post(
+                f"{self.base_url}/embeddings",
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+            response.raise_for_status()
+            
+            # LMStudio returns OpenAI-compatible format, so we can return it directly
+            result = response.json()
+            
+            # Ensure the model field uses our provider-prefixed format
+            result["model"] = self.model
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate embeddings: {e}")
+            raise ProviderAPIError(f"LMStudio embedding error: {str(e)}")

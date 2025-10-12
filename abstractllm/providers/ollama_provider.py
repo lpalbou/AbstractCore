@@ -408,3 +408,67 @@ class OllamaProvider(BaseProvider):
         except Exception as e:
             self.logger.warning(f"Failed to list Ollama models: {e}")
             return []
+
+    def embed(self, input_text: Union[str, List[str]], **kwargs) -> Dict[str, Any]:
+        """
+        Generate embeddings using Ollama's embedding API.
+        
+        Args:
+            input_text: Single string or list of strings to embed
+            **kwargs: Additional parameters (currently unused)
+            
+        Returns:
+            Dict with embeddings in OpenAI-compatible format:
+            {
+                "object": "list",
+                "data": [{"object": "embedding", "embedding": [...], "index": 0}, ...],
+                "model": "model-name",
+                "usage": {"prompt_tokens": N, "total_tokens": N}
+            }
+        """
+        try:
+            # Convert single string to list for uniform processing
+            texts = [input_text] if isinstance(input_text, str) else input_text
+            
+            embeddings_data = []
+            total_tokens = 0
+            
+            for idx, text in enumerate(texts):
+                # Call Ollama's embeddings API
+                payload = {
+                    "model": self.model,
+                    "prompt": text
+                }
+                
+                response = self.client.post(
+                    f"{self.base_url}/api/embeddings",
+                    json=payload
+                )
+                response.raise_for_status()
+                
+                result = response.json()
+                embedding = result.get("embedding", [])
+                
+                # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
+                estimated_tokens = max(1, len(text) // 4)
+                total_tokens += estimated_tokens
+                
+                embeddings_data.append({
+                    "object": "embedding",
+                    "embedding": embedding,
+                    "index": idx
+                })
+            
+            return {
+                "object": "list",
+                "data": embeddings_data,
+                "model": self.model,
+                "usage": {
+                    "prompt_tokens": total_tokens,
+                    "total_tokens": total_tokens
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate embeddings: {e}")
+            raise ProviderAPIError(f"Ollama embedding error: {str(e)}")
