@@ -99,6 +99,48 @@ response = client.chat.completions.create(
 - Building web applications that need HTTP API
 - Multi-language access (not just Python)
 
+## Internal CLI (Optional Interactive Testing Tool)
+
+AbstractCore includes a **built-in CLI** for interactive testing, development, and conversation management. This is an internal testing tool, distinct from external agentic CLIs.
+
+```bash
+# Start interactive CLI
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+
+# With streaming enabled
+python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --stream
+
+# Single prompt execution
+python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest --prompt "What is Python?"
+```
+
+**Key Features:**
+- Interactive REPL with conversation history
+- Chat history compaction and management
+- Fact extraction from conversations
+- Conversation quality evaluation (LLM-as-a-judge)
+- Tool call testing and debugging
+- System prompt management
+- Multiple provider support
+
+**Popular Commands:**
+- `/compact` - Compress chat history while preserving context
+- `/facts [file]` - Extract structured facts from conversation
+- `/judge` - Evaluate conversation quality with feedback
+- `/history [n]` - View conversation history
+- `/stream` - Toggle real-time streaming
+- `/system [prompt]` - Show or change system prompt
+- `/status` - Show current provider, model, and capabilities
+
+**Full Documentation:** [Internal CLI Guide](docs/internal-cli.md)
+
+**When to use the CLI:**
+- Interactive development and testing
+- Debugging tool calls and provider behavior
+- Conversation management experiments
+- Quick prototyping with different models
+- Learning AbstractCore capabilities
+
 ## Documentation
 
 **📚 Complete Documentation:** [docs/](docs/) - Full documentation index and navigation guide
