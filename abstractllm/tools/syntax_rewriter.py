@@ -300,30 +300,88 @@ class ToolCallSyntaxRewriter:
         return cleaned_content.strip()
 
     def remove_tool_call_patterns(self, content: str) -> str:
-        """Remove existing tool call patterns from content."""
+        """
+        Remove existing tool call patterns from content.
+        
+        This method intelligently removes tool call syntax while preserving
+        the surrounding text content. It handles multiple formats and edge cases
+        like double-tagging and malformed tool calls.
+        """
         if not content:
             return content
 
-        # Common tool call patterns to remove
+        cleaned = content
+        
+        # Remove internal conversation format tags that shouldn't appear
+        # These indicate model output issues
+        cleaned = re.sub(r'<\|assistant\|>', '', cleaned)
+        cleaned = re.sub(r'<\|user\|>', '', cleaned)
+        cleaned = re.sub(r'<\|system\|>', '', cleaned)
+        
+        # Common tool call patterns to remove (in order of specificity)
         patterns = [
-            # Qwen format
+            # Qwen format (with potential double-tagging)
+            r'<\|tool_call\|>+\s*',  # Opening tags (including doubles)
+            r'\s*</\|tool_call\|>+',  # Closing tags (including doubles)
+            # After removing tags, remove the JSON content if it's a tool call
             r'<\|tool_call\|>.*?</\|tool_call\|>',
+            
             # LLaMA format
+            r'<function_call>\s*',
+            r'\s*</function_call>',
             r'<function_call>.*?</function_call>',
+            
             # XML format
+            r'<tool_call>\s*',
+            r'\s*</tool_call>',
             r'<tool_call>.*?</tool_call>',
+            
             # Gemma format
+            r'```tool_code\s*',
+            r'\s*```(?=\s|$)',  # Closing backticks only if followed by space or end
             r'```tool_code.*?```',
-            # Generic JSON tool calls
-            r'\{[^{}]*"name"[^{}]*"arguments"[^{}]*\}',
         ]
 
-        cleaned = content
-        for pattern in patterns:
+        # First pass: remove complete tool call blocks
+        complete_patterns = [
+            r'<\|tool_call\|>.*?</\|tool_call\|>',
+            r'<function_call>.*?</function_call>',
+            r'<tool_call>.*?</tool_call>',
+            r'```tool_code.*?```',
+        ]
+        
+        for pattern in complete_patterns:
             cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-
-        # Clean up extra whitespace
-        cleaned = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned)
+        
+        # Second pass: remove orphaned tags (from malformed tool calls)
+        orphaned_patterns = [
+            r'<\|tool_call\|>+',
+            r'</\|tool_call\|>+',
+            r'<function_call>',
+            r'</function_call>',
+            r'<tool_call>',
+            r'</tool_call>',
+            r'```tool_code',
+        ]
+        
+        for pattern in orphaned_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        # Third pass: remove standalone JSON tool calls that weren't wrapped in tags
+        # Be careful here - only remove if it looks like a tool call
+        # (has "name" and "arguments" fields at the top level)
+        json_pattern = r'^\s*\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}\s*$'
+        lines = cleaned.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            if not re.match(json_pattern, line, re.MULTILINE):
+                cleaned_lines.append(line)
+        cleaned = '\n'.join(cleaned_lines)
+        
+        # Clean up extra whitespace (but preserve paragraph breaks)
+        cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)
+        cleaned = re.sub(r'^\s+', '', cleaned)  # Leading whitespace
+        cleaned = re.sub(r'\s+$', '', cleaned)  # Trailing whitespace
 
         return cleaned.strip()
 

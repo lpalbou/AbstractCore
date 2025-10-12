@@ -969,7 +969,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "notes": "Qwen3-Next hybrid MoE with 512 experts/10 activated, extensible to 1M tokens with YaRN",
+      "notes": "Qwen3-Next hybrid MoE with 512 experts/10 activated, extensible to 1M tokens with YaRN. Uses <|tool_call|> format for tool calls",
       "source": "Alibaba Qwen3-Next technical report",
       "canonical_name": "qwen3-next-80b-a3b",
       "aliases": [

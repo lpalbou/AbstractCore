@@ -83,7 +83,8 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "prompted",
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
       "patterns": ["qwen3-next"]
     },
     "qwen3_vl": {
