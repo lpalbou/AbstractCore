@@ -99,3 +99,13 @@ class MockProvider(BaseProvider):
     def validate_config(self) -> bool:
         """Validate mock provider configuration"""
         return True
+
+    def list_available_models(self, **kwargs) -> List[str]:
+        """List available mock models for testing."""
+        return [
+            "mock-model",
+            "mock-chat-model",
+            "mock-streaming-model",
+            "mock-structured-model",
+            "mock-vision-model"
+        ]

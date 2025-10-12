@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from ..core.factory import create_llm
 from ..utils.structured_logging import get_logger, configure_logging
-from ..utils.simple_model_discovery import get_available_models
+# Removed simple_model_discovery import - now using provider methods directly
 from ..tools.syntax_rewriter import (
     ToolCallSyntaxRewriter,
     SyntaxFormat,
@@ -69,6 +69,55 @@ logger = get_logger("appv2")
 logger.info("🚀 AbstractCore Server V2 Starting", version="2.0.0", debug_mode=debug_mode)
 
 # ============================================================================
+# Provider Model Discovery
+# ============================================================================
+
+def get_models_from_provider(provider_name: str) -> List[str]:
+    """Get available models from a specific provider using their list_available_models() method."""
+    try:
+        if provider_name == "openai":
+            from ..providers.openai_provider import OpenAIProvider
+            return OpenAIProvider.list_available_models()
+        elif provider_name == "anthropic":
+            from ..providers.anthropic_provider import AnthropicProvider
+            # Need minimal instance for API key access
+            try:
+                provider = AnthropicProvider(model="claude-3-haiku-20240307")
+                return provider.list_available_models()
+            except Exception:
+                return []
+        elif provider_name == "ollama":
+            from ..providers.ollama_provider import OllamaProvider
+            # Need minimal instance for HTTP client
+            try:
+                provider = OllamaProvider(model="llama2")
+                return provider.list_available_models()
+            except Exception:
+                return []
+        elif provider_name == "lmstudio":
+            from ..providers.lmstudio_provider import LMStudioProvider
+            # Need minimal instance for HTTP client
+            try:
+                provider = LMStudioProvider(model="local-model")
+                return provider.list_available_models()
+            except Exception:
+                return []
+        elif provider_name == "mlx":
+            from ..providers.mlx_provider import MLXProvider
+            return MLXProvider.list_available_models()
+        elif provider_name == "huggingface":
+            from ..providers.huggingface_provider import HuggingFaceProvider
+            return HuggingFaceProvider.list_available_models()
+        elif provider_name == "mock":
+            # Mock provider for testing
+            return ["mock-model-1", "mock-model-2", "mock-embedding-1"]
+        else:
+            return []
+    except Exception as e:
+        logger.debug(f"Failed to get models from provider {provider_name}: {e}")
+        return []
+
+# ============================================================================
 # Models
 # ============================================================================
 
@@ -106,6 +155,14 @@ class ChatCompletionRequest(BaseModel):
         default=None,
         description="Target agent format: 'auto', 'openai', 'codex', 'qwen3', 'llama3', 'passthrough'"
     )
+
+class EmbeddingRequest(BaseModel):
+    """OpenAI-compatible embedding request"""
+    input: Union[str, List[str]] = Field(description="Text to embed")
+    model: str = Field(description="Embedding model identifier (provider/model)")
+    encoding_format: Optional[str] = Field(default="float", description="Encoding format")
+    dimensions: Optional[int] = Field(default=None, description="Number of dimensions to return")
+    user: Optional[str] = Field(default=None, description="User identifier")
 
 # ============================================================================
 # Helper Functions
@@ -213,24 +270,45 @@ async def health_check():
     }
 
 @app.get("/v1/models")
-async def list_models():
-    """List available models from all AbstractCore providers."""
-    try:
-        # Get models from AbstractCore's discovery system
-        available_models = get_available_models()
+async def list_models(provider: Optional[str] = None):
+    """
+    List available models from AbstractCore providers.
 
-        # Convert to OpenAI format
+    Args:
+        provider: Optional provider filter. If specified, only models from that provider are returned.
+                 If not specified, models from all providers are returned.
+    """
+    try:
         models_data = []
-        for provider, models in available_models.items():
+
+        if provider:
+            # Get models from specific provider
+            models = get_models_from_provider(provider.lower())
             for model in models:
-                model_id = f"{provider}/{model}" if provider != "openai" else model
+                model_id = f"{provider.lower()}/{model}"
                 models_data.append({
                     "id": model_id,
                     "object": "model",
-                    "owned_by": provider,
+                    "owned_by": provider.lower(),
                     "created": int(time.time()),
                     "permission": [{"allow_create_engine": False, "allow_sampling": True}]
                 })
+            logger.info(f"Listed {len(models_data)} models for provider {provider}")
+        else:
+            # Get models from all providers
+            providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface", "mock"]
+            for prov in providers:
+                models = get_models_from_provider(prov)
+                for model in models:
+                    model_id = f"{prov}/{model}"
+                    models_data.append({
+                        "id": model_id,
+                        "object": "model",
+                        "owned_by": prov,
+                        "created": int(time.time()),
+                        "permission": [{"allow_create_engine": False, "allow_sampling": True}]
+                    })
+            logger.info(f"Listed {len(models_data)} models from all providers")
 
         return {
             "object": "list",
@@ -239,16 +317,142 @@ async def list_models():
 
     except Exception as e:
         logger.error(f"Failed to list models: {e}")
-        # Fallback to basic model list
         return {
             "object": "list",
-            "data": [
-                {"id": "gpt-4o-mini", "object": "model", "owned_by": "openai"},
-                {"id": "claude-3-5-haiku-latest", "object": "model", "owned_by": "anthropic"},
-                {"id": "qwen3-coder:30b", "object": "model", "owned_by": "ollama"},
-                {"id": "lmstudio/qwen/qwen3-next-80b", "object": "model", "owned_by": "lmstudio"},
-            ]
+            "data": []
         }
+
+@app.get("/providers")
+async def list_providers():
+    """
+    List all AbstractCore providers currently registered.
+    This is an AbstractCore-specific endpoint for discovering available providers.
+    """
+    try:
+        providers_info = []
+        providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface", "mock"]
+
+        for provider_name in providers:
+            models = get_models_from_provider(provider_name)
+            if models:  # Only include providers that have models
+                providers_info.append({
+                    "name": provider_name,
+                    "type": "llm",  # Could be extended to include "embedding" type
+                    "model_count": len(models),
+                    "status": "available",
+                    "description": f"{provider_name.title()} provider with {len(models)} available models"
+                })
+
+        logger.info(f"Listed {len(providers_info)} available providers")
+
+        return {
+            "providers": sorted(providers_info, key=lambda x: x["name"])
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to list providers: {e}")
+        return {
+            "providers": []
+        }
+
+@app.post("/v1/responses")
+async def create_response(request: ChatCompletionRequest, http_request: Request):
+    """
+    OpenAI Responses API endpoint.
+
+    This endpoint provides real-time conversation capabilities similar to the OpenAI Responses API.
+    It uses the same processing as chat completions but with streaming optimized for real-time interaction.
+    """
+    # For now, delegate to chat completions with streaming enabled
+    # The OpenAI Responses API is essentially streaming chat completions with enhanced real-time features
+    request.stream = True  # Force streaming for responses API
+
+    provider, model = parse_model_string(request.model)
+
+    logger.info(
+        "📡 Responses API Request",
+        provider=provider,
+        model=model,
+        messages=len(request.messages),
+        has_tools=bool(request.tools)
+    )
+
+    return await process_chat_completion(provider, model, request, http_request)
+
+@app.post("/v1/embeddings")
+async def create_embeddings(request: EmbeddingRequest):
+    """
+    OpenAI-compatible embeddings endpoint with provider routing.
+
+    Supports the provider/model format for routing to the appropriate embedding provider.
+    """
+    try:
+        # Parse provider and model
+        provider, model = parse_model_string(request.model)
+
+        logger.info(
+            "🔢 Embedding Request",
+            provider=provider,
+            model=model,
+            input_type=type(request.input).__name__,
+            input_count=len(request.input) if isinstance(request.input, list) else 1
+        )
+
+        # Import and create embedding manager
+        from ..embeddings.manager import EmbeddingManager
+
+        # Create embedding manager with the specific model
+        embedder = EmbeddingManager(
+            model=f"{provider}/{model}",
+            output_dims=request.dimensions
+        )
+
+        # Process input - handle both string and list
+        if isinstance(request.input, str):
+            inputs = [request.input]
+        else:
+            inputs = request.input
+
+        # Generate embeddings
+        embeddings = embedder.embed_batch(inputs)
+
+        # Convert to OpenAI format
+        embedding_objects = []
+        for i, embedding in enumerate(embeddings):
+            embedding_objects.append({
+                "object": "embedding",
+                "embedding": embedding,
+                "index": i
+            })
+
+        # Calculate usage (rough estimate)
+        total_tokens = sum(embedder.estimate_tokens(text) for text in inputs)
+
+        response = {
+            "object": "list",
+            "data": embedding_objects,
+            "model": f"{provider}/{model}",
+            "usage": {
+                "prompt_tokens": total_tokens,
+                "total_tokens": total_tokens
+            }
+        }
+
+        logger.info(
+            "✅ Embeddings generated",
+            count=len(embedding_objects),
+            dimensions=len(embeddings[0]) if embeddings else 0,
+            total_tokens=total_tokens
+        )
+
+        return response
+
+    except Exception as e:
+        logger.error(f"❌ Embedding generation failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": {"message": str(e), "type": "embedding_error"}}
+        )
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest, http_request: Request):

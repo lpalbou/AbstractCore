@@ -15,8 +15,7 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..exceptions import ProviderAPIError, ModelNotFoundError
-from ..utils.simple_model_discovery import get_available_models, format_model_error
+from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, ToolDefinition, execute_tools
 from ..events import EventType
 
@@ -222,7 +221,7 @@ class OllamaProvider(BaseProvider):
             if ('404' in error_str or 'not found' in error_str or 'model not found' in error_str or
                 'pull model' in error_str or 'no such model' in error_str):
                 # Model not found - provide helpful error
-                available_models = get_available_models("ollama", base_url=self.base_url)
+                available_models = self.list_available_models(base_url=self.base_url)
                 error_message = format_model_error("Ollama", self.model, available_models)
                 raise ModelNotFoundError(error_message)
             else:
@@ -391,3 +390,21 @@ class OllamaProvider(BaseProvider):
             # Create new client with updated timeout
             self.client.close()
             self.client = httpx.Client(timeout=self._timeout)
+
+    def list_available_models(self, **kwargs) -> List[str]:
+        """List available models from Ollama server."""
+        try:
+            # Use provided base_url or fall back to instance base_url
+            base_url = kwargs.get('base_url', self.base_url)
+
+            response = self.client.get(f"{base_url}/api/tags", timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                models = [model["name"] for model in data.get("models", [])]
+                return sorted(models)
+            else:
+                self.logger.warning(f"Ollama API returned status {response.status_code}")
+                return []
+        except Exception as e:
+            self.logger.warning(f"Failed to list Ollama models: {e}")
+            return []
