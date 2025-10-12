@@ -1,6 +1,10 @@
 # Vector Embeddings Guide
 
-AbstractCore includes built-in support for vector embeddings using state-of-the-art open-source models. This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.
+AbstractCore includes built-in support for vector embeddings with **multiple providers** (HuggingFace, Ollama, LMStudio). This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.
+
+**Two ways to use embeddings:**
+1. **Python Library** (this guide) - Direct programmatic usage via `EmbeddingManager`
+2. **REST API** - HTTP endpoints via AbstractCore server (see [Server API Reference](server-api-reference.md#embeddings-endpoint))
 
 ## Quick Start
 
@@ -16,14 +20,26 @@ pip install abstractcore[embeddings]
 ```python
 from abstractllm.embeddings import EmbeddingManager
 
-# Create embedder with default model (all-MiniLM-L6-v2)
-embedder = EmbeddingManager()
+# Option 1: HuggingFace (default) - Local models with ONNX acceleration
+embedder = EmbeddingManager()  # Uses all-MiniLM-L6-v2 by default
 
-# Generate embedding for a single text
+# Option 2: Ollama - Local models via Ollama API
+embedder = EmbeddingManager(
+    provider="ollama",
+    model="granite-embedding:278m"
+)
+
+# Option 3: LMStudio - Local models via LMStudio API
+embedder = EmbeddingManager(
+    provider="lmstudio",
+    model="text-embedding-all-minilm-l6-v2"
+)
+
+# Generate embedding for a single text (works with all providers)
 embedding = embedder.embed("Machine learning transforms how we process information")
-print(f"Embedding dimension: {len(embedding)}")  # 384
+print(f"Embedding dimension: {len(embedding)}")  # 384 for MiniLM
 
-# Compute similarity between texts
+# Compute similarity between texts (works with all providers)
 similarity = embedder.compute_similarity(
     "artificial intelligence",
     "machine learning"
@@ -31,9 +47,13 @@ similarity = embedder.compute_similarity(
 print(f"Similarity: {similarity:.3f}")  # 0.847
 ```
 
-## Available Models
+## Available Providers & Models
 
-AbstractCore includes several SOTA open-source embedding models:
+AbstractCore supports multiple embedding providers:
+
+### HuggingFace Provider (Default)
+
+Local sentence-transformers models with ONNX acceleration for 2-3x speedup.
 
 | Model | Size | Dimensions | Languages | Best For |
 |-------|------|------------|-----------|----------|
@@ -41,8 +61,6 @@ AbstractCore includes several SOTA open-source embedding models:
 | **qwen3-embedding** | 1.5B | 1536 | 100+ | Qwen-based multilingual, instruction-tuned |
 | **embeddinggemma** | 300M | 768 | 100+ | General purpose, multilingual |
 | **granite** | 278M | 768 | 100+ | Enterprise applications |
-
-### Model Selection
 
 ```python
 # Default: all-MiniLM-L6-v2 (fast and lightweight)
@@ -54,12 +72,50 @@ embedder = EmbeddingManager(model="qwen3-embedding")
 # Google's EmbeddingGemma for multilingual support
 embedder = EmbeddingManager(model="embeddinggemma")
 
-# IBM Granite for enterprise use
-embedder = EmbeddingManager(model="granite")
-
 # Direct HuggingFace model ID
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 ```
+
+### Ollama Provider
+
+Local embedding models via Ollama API. Requires Ollama running locally.
+
+```python
+# Setup: Install Ollama and pull an embedding model
+# ollama pull granite-embedding:278m
+
+# Use Ollama embeddings
+embedder = EmbeddingManager(
+    provider="ollama",
+    model="granite-embedding:278m"
+)
+
+# Other popular Ollama embedding models:
+# - nomic-embed-text (274MB)
+# - granite-embedding:107m (smaller, faster)
+```
+
+### LMStudio Provider
+
+Local embedding models via LMStudio API. Requires LMStudio running with a loaded model.
+
+```python
+# Setup: Start LMStudio and load an embedding model
+
+# Use LMStudio embeddings
+embedder = EmbeddingManager(
+    provider="lmstudio",
+    model="text-embedding-all-minilm-l6-v2"
+)
+```
+
+### Provider Comparison
+
+| Provider | Speed | Setup | Privacy | Cost | Best For |
+|----------|-------|-------|---------|------|----------|
+| **HuggingFace** | ⚡⚡⚡ | Easy | Full | Free | Development, production |
+| **Ollama** | ⚡⚡ | Medium | Full | Free | Privacy, custom models |
+| **LMStudio** | ⚡⚡ | Easy (GUI) | Full | Free | GUI management, testing |
 
 ## Core Features
 
@@ -487,18 +543,70 @@ print(f"Calls per second: {stats['calls_per_second']:.1f}")
 - **Very Short Texts**: Embeddings work better with meaningful content
 - **High-frequency Operations**: Consider caching for repeated queries
 
+## Using Embeddings via REST API
+
+If you prefer HTTP endpoints over Python code, use the AbstractCore server:
+
+```bash
+# Start the server
+pip install abstractcore[server]
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+```
+
+**HTTP Request:**
+```bash
+curl -X POST http://localhost:8000/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Machine learning is fascinating",
+    "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+  }'
+```
+
+**Supported providers via REST API:**
+- `huggingface/model-name` - HuggingFace models
+- `ollama/model-name` - Ollama models
+- `lmstudio/model-name` - LMStudio models
+
+**Complete REST API documentation:** [Server API Reference](server-api-reference.md#embeddings-endpoint)
+
+## Provider-Specific Features
+
+### HuggingFace Features
+- **ONNX Acceleration**: 2-3x faster inference
+- **Matryoshka Truncation**: Reduce dimensions for efficiency
+- **Persistent Caching**: Automatic disk caching of embeddings
+
+### Ollama Features
+- **Simple Setup**: Just `ollama pull <model>`
+- **Full Privacy**: No data leaves your machine
+- **Custom Models**: Use any Ollama-compatible model
+
+### LMStudio Features
+- **GUI Management**: Easy model loading via GUI
+- **Testing Friendly**: Perfect for experimentation
+- **OpenAI Compatible**: Standard API format
+
 ## Next Steps
 
 - **Start Simple**: Try the semantic search example with your own data
-- **Experiment with Models**: Compare different embedding models for your use case
+- **Experiment with Providers**: Compare HuggingFace, Ollama, and LMStudio
 - **Optimize Performance**: Use batch processing and caching for production
 - **Build RAG**: Combine embeddings with AbstractCore LLMs for RAG applications
+- **Use REST API**: Deploy embeddings as HTTP service with the server
 
-For more information:
-- [Examples](examples.md) - More practical examples
-- [API Reference](api_reference.md) - Complete EmbeddingManager API
-- [Getting Started](getting-started.md) - Basic AbstractCore setup
+## Related Documentation
+
+**Core Library:**
+- **[Python API Reference](api-reference.md)** - Complete EmbeddingManager API
+- **[Getting Started](getting-started.md)** - Basic AbstractCore setup
+- **[Examples](examples.md)** - More practical examples
+
+**Server (REST API):**
+- **[Server Guide](server.md)** - Server setup and deployment
+- **[Server API Reference](server-api-reference.md)** - REST API endpoints including embeddings
+- **[Troubleshooting](troubleshooting.md)** - Common embedding issues
 
 ---
 
-**Remember**: Embeddings are the foundation for semantic understanding. Combined with AbstractCore's LLM capabilities, you can build sophisticated AI applications that understand meaning, not just keywords.
+**Remember**: Embeddings are the foundation for semantic understanding. Combined with AbstractCore's multi-provider LLM capabilities, you can build sophisticated AI applications that understand meaning, not just keywords.

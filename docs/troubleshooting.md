@@ -1,277 +1,638 @@
-# AbstractLLM Core Troubleshooting Guide
+# AbstractCore Troubleshooting Guide
 
-## Overview
+Complete troubleshooting guide for AbstractCore core library and server.
 
-This guide provides comprehensive troubleshooting strategies for AbstractLLM Core, covering setup, tool calling, performance, integration, and debugging challenges.
+## Table of Contents
 
-## 1. Common Setup Issues
+- [Quick Diagnosis](#quick-diagnosis)
+- [Installation Issues](#installation-issues)
+- [Core Library Issues](#core-library-issues)
+- [Server Issues](#server-issues)
+- [Provider-Specific Issues](#provider-specific-issues)
+- [Performance Issues](#performance-issues)
+- [Debug Techniques](#debug-techniques)
 
-### 1.1 Provider Configuration Problems
+---
 
-#### Symptoms
-- Authentication failures
-- API key rejection
-- Unsupported model selection
+## Quick Diagnosis
 
-#### Diagnosis
+Run these checks first:
+
 ```bash
-# Check current provider configuration
-python -m abstractllm.utils.cli --config show
-# Verify API keys and endpoints
-cat ~/.abstractllm/config.json
+# Check Python version
+python --version  # Should be 3.9+
+
+# Check AbstractCore installation
+pip show abstractcore
+
+# Test core library
+python -c "from abstractllm import create_llm; print('✓ Core library OK')"
+
+# Test server (if installed)
+curl http://localhost:8000/health  # Should return {"status":"healthy"}
 ```
 
-#### Solutions
+---
 
-**OpenAI Provider**:
-```bash
-# Verify and set OpenAI API key
-export OPENAI_API_KEY='sk-...'
-python -m abstractllm.utils.cli --provider openai --validate-key
+## Installation Issues
 
-# Common API key issues
-# - Ensure no whitespace
-# - Check key has correct permissions
-# - Verify organization access
+### Issue: ModuleNotFoundError
+
+**Symptoms:**
+```
+ModuleNotFoundError: No module named 'abstractllm'
+ModuleNotFoundError: No module named 'openai'
 ```
 
-**Local Model Providers**:
+**Solutions:**
 ```bash
-# Validate Ollama/HuggingFace model availability
-python -m abstractllm.utils.cli --provider ollama --list-models
-python -m abstractllm.utils.cli --provider huggingface --list-models
+# Install AbstractCore
+pip install abstractcore
 
-# Troubleshoot model download
-ollama pull qwen3-coder:30b
-# OR
-huggingface-cli download mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+# Install with specific provider
+pip install abstractcore[openai]
+pip install abstractcore[anthropic]
+pip install abstractcore[ollama]
+
+# Install everything
+pip install abstractcore[all]
+
+# Verify installation
+pip list | grep abstract
 ```
 
-#### Prevention
-- Use environment variables for sensitive credentials
-- Regularly update provider configurations
-- Check model compatibility matrix in documentation
+### Issue: Dependency Conflicts
 
-### 1.2 Installation Dependencies
-
-#### Symptoms
-- Package import errors
-- Dependency conflicts
-- Version incompatibilities
-
-#### Diagnosis
-```bash
-# Check AbstractLLM and dependency versions
-pip freeze | grep abstractllm
-pip freeze | grep torch
-pip freeze | grep transformers
-
-# Validate installation
-python -m pip check abstractllm
+**Symptoms:**
+```
+ERROR: pip's dependency resolver does not currently take into account all the packages...
 ```
 
-#### Solutions
+**Solutions:**
 ```bash
-# Create clean virtual environment
+# Create clean environment
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # Linux/Mac
+# OR
+.venv\Scripts\activate  # Windows
 
-# Recommended installation
-pip install abstractllm[full] --upgrade
-
-# Resolve dependency conflicts
+# Fresh install
 pip install --upgrade pip
-pip install abstractllm[full] --no-deps
-pip install -r requirements.txt
+pip install abstractcore[all]
+
+# If still failing, try one provider at a time
+pip install abstractcore[openai]
 ```
 
-## 2. Tool Calling Issues
+---
 
-### 2.1 Tool Call Format Problems
+## Core Library Issues
 
-#### Symptoms
-- Tools not executing
-- Malformed tool call content
-- Streaming interruption
+### Issue: Authentication Errors
 
-#### Diagnosis
+**Symptoms:**
+```
+Error: OpenAI API key not found
+Error: Authentication failed
+Error: Invalid API key
+```
+
+**Solutions:**
+
 ```bash
-# Enable verbose tool call logging
-export ABSTRACTLLM_DEBUG=true
-python -m abstractllm.utils.cli --tools-verbose
+# Check if API key is set
+echo $OPENAI_API_KEY  # Should show your key
+echo $ANTHROPIC_API_KEY
 
-# Inspect tool call raw content
-python -m abstractllm.utils.debug tool_calls
+# Set API key
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Add to shell profile for persistence
+echo 'export OPENAI_API_KEY="sk-..."' >> ~/.bashrc
+source ~/.bashrc
+
+# Verify key format
+# OpenAI: starts with "sk-"
+# Anthropic: starts with "sk-ant-"
+
+# Test authentication
+python -c "from abstractllm import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)"
 ```
 
-#### Solutions
+### Issue: Model Not Found
 
-**Custom Tool Call Tags**:
+**Symptoms:**
+```
+Error: Model 'qwen3-coder:30b' not found
+Error: Unsupported model
+```
+
+**Solutions:**
+
+**For Ollama:**
+```bash
+# Check available models
+ollama list
+
+# Pull missing model
+ollama pull qwen3-coder:30b
+
+# Verify Ollama is running
+ollama serve
+```
+
+**For LMStudio:**
+```bash
+# Check LMStudio server
+curl http://localhost:1234/v1/models
+
+# In LMStudio GUI:
+# 1. Go to "Local Server" tab
+# 2. Select model from dropdown
+# 3. Click "Start Server"
+```
+
+**For OpenAI/Anthropic:**
 ```python
-# Specify exact tool call tags
-from abstractllm import ToolCallTags
+# Use correct model names
+llm = create_llm("openai", model="gpt-4o-mini")  # ✓ Correct
+llm = create_llm("openai", model="gpt4")  # ✗ Wrong
 
-custom_tags = ToolCallTags(
-    start_tag='MYTOOL',
-    end_tag='ENDMYTOOL',
-    auto_format=False
-)
-
-# Use with CLI or programmatically
-abstractllm.generate(
-    prompt="List files",
-    tool_call_tags=custom_tags
-)
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # ✓ Correct
+llm = create_llm("anthropic", model="claude-3")  # ✗ Wrong
 ```
 
-**Debugging Tool Calls**:
+### Issue: Connection Errors
+
+**Symptoms:**
+```
+Connection refused
+Timeout error
+Network error
+```
+
+**Solutions:**
+
+**For Ollama:**
 ```bash
-# Validate tool call parsing
-python -m abstractllm.utils.cli \
-    --model qwen3-coder:30b \
-    --prompt "List files in current directory" \
-    --tools-debug
+# Start Ollama service
+ollama serve
+
+# Check if running
+curl http://localhost:11434/api/tags
+
+# If using custom host
+export OLLAMA_HOST="http://localhost:11434"
 ```
 
-### 2.2 Streaming Tool Call Issues
+**For LMStudio:**
+```bash
+# Verify server is running
+curl http://localhost:1234/v1/models
 
-#### Symptoms
-- Tool calls disappear during streaming
-- Partial tool execution
-- Inconsistent tool behavior
+# Check port in LMStudio GUI (usually 1234)
+```
 
-#### Solution
+**For Cloud Providers:**
+```bash
+# Test network connection
+ping api.openai.com
+ping api.anthropic.com
+
+# Check proxy settings
+echo $HTTP_PROXY
+echo $HTTPS_PROXY
+
+# Disable proxy if needed
+unset HTTP_PROXY
+unset HTTPS_PROXY
+```
+
+### Issue: Tool Calls Not Working
+
+**Symptoms:**
+- Tools not being called
+- Empty tool responses
+- Tool format errors
+
+**Solutions:**
+
 ```python
-# Ensure streaming mode compatibility
-stream_response = abstractllm.generate(
-    prompt="List files",
-    stream=True,
-    stream_tools=True  # Explicit tool streaming
+from abstractllm import create_llm, tool
+
+# Ensure @tool decorator is used
+@tool
+def get_weather(city: str) -> str:
+    """Get weather for a city."""
+    return f"Weather in {city}: sunny, 72°F"
+
+# Use tool correctly
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate(
+    "What's the weather in Paris?",
+    tools=[get_weather]  # Pass as list
 )
 
-for chunk in stream_response:
-    print(chunk.content)  # Safe streaming
-    if chunk.tools:
-        for tool in chunk.tools:
-            print(f"Tool detected: {tool.name}")
+# Check if tool was called
+if hasattr(response, 'tool_calls') and response.tool_calls:
+    print("Tools were called")
 ```
 
-## 3. Performance Issues
+---
 
-### 3.1 Response Time and Latency
+## Server Issues
 
-#### Diagnosis
+### Issue: Server Won't Start
+
+**Symptoms:**
+```
+Address already in use
+Port 8000 is already allocated
+```
+
+**Solutions:**
+
 ```bash
-# Measure generation performance
-python -m abstractllm.utils.performance \
-    --provider ollama \
-    --model qwen3-coder:30b \
-    --prompt-length 500 \
-    --iterations 10
+# Check what's using port 8000
+lsof -i :8000  # Linux/Mac
+netstat -ano | findstr :8000  # Windows
+
+# Kill process on port
+kill -9 $(lsof -t -i:8000)  # Linux/Mac
+
+# Use different port
+uvicorn abstractllm.server.app:app --port 3000
 ```
 
-#### Solutions
+### Issue: ABSTRACTCORE_API_KEY Error
+
+**Symptoms:**
+```
+Error: Missing environment variable: ABSTRACTCORE_API_KEY
+```
+
+**Solutions:**
+
+```bash
+# Set the required variable
+export ABSTRACTCORE_API_KEY="unused"
+
+# For Codex CLI, set ALL three:
+export OPENAI_BASE_URL="http://localhost:8000/v1"
+export OPENAI_API_KEY="unused"
+export ABSTRACTCORE_API_KEY="unused"
+
+# Verify they're set
+echo $OPENAI_BASE_URL
+echo $OPENAI_API_KEY
+echo $ABSTRACTCORE_API_KEY
+```
+
+### Issue: Server Running but No Response
+
+**Symptoms:**
+- curl hangs
+- No response from endpoints
+- Timeout errors
+
+**Solutions:**
+
+```bash
+# Check server is actually running
+curl http://localhost:8000/health
+
+# Check server logs
+tail -f logs/abstractllm_*.log
+
+# Enable debug mode
+export ABSTRACTCORE_DEBUG=true
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Test with simple request
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": "test"}]}'
+```
+
+### Issue: Models Not Showing
+
+**Symptoms:**
+```
+curl http://localhost:8000/v1/models returns empty list
+```
+
+**Solutions:**
+
+```bash
+# Check if providers are configured
+curl http://localhost:8000/providers
+
+# Verify provider setup:
+
+# For Ollama
+ollama list  # Should show models
+ollama serve  # Make sure it's running
+
+# For OpenAI
+echo $OPENAI_API_KEY  # Should be set
+
+# For Anthropic
+echo $ANTHROPIC_API_KEY  # Should be set
+
+# For LMStudio
+curl http://localhost:1234/v1/models  # Should return models
+```
+
+### Issue: Tool Calls Not Working with CLI
+
+**Symptoms:**
+- Codex/Crush/Gemini CLI not detecting tools
+- Tool format errors in streaming
+
+**Solutions:**
+
+```bash
+# Set correct tool format for your CLI
+
+# For Codex CLI (qwen3 format - default)
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# For Crush CLI (llama3 format)
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# For Gemini CLI (xml format)
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Restart server after changing environment variables
+pkill -f "abstractllm.server.app"
+```
+
+---
+
+## Provider-Specific Issues
+
+### Ollama
+
+**Issue: Ollama not responding**
+```bash
+# Restart Ollama
+pkill ollama
+ollama serve
+
+# Check status
+curl http://localhost:11434/api/tags
+
+# List models
+ollama list
+
+# Pull model if missing
+ollama pull qwen3-coder:30b
+```
+
+**Issue: Out of memory**
+```bash
+# Use smaller models
+ollama pull gemma3:1b  # Only 1GB
+ollama pull qwen3:4b-instruct-2507-q4_K_M  # 4GB
+
+# Check system memory
+free -h  # Linux
+vm_stat  # macOS
+
+# Close other applications
+```
+
+### OpenAI
+
+**Issue: Rate limits**
+```bash
+# Check your rate limits
+# https://platform.openai.com/account/rate-limits
+
+# Implement backoff in code
+import time
+try:
+    response = llm.generate("prompt")
+except RateLimitError:
+    time.sleep(20)  # Wait before retry
+```
+
+**Issue: Billing**
+```bash
+# Check billing dashboard
+# https://platform.openai.com/account/billing
+
+# Verify payment method is added
+# Check usage limits aren't exceeded
+```
+
+### Anthropic
+
+**Issue: API key format**
+```bash
+# Anthropic keys start with "sk-ant-"
+echo $ANTHROPIC_API_KEY  # Should start with sk-ant-
+
+# Get key from console
+# https://console.anthropic.com/
+```
+
+### LMStudio
+
+**Issue: Connection refused**
+```bash
+# Verify LMStudio server is running
+# Check LMStudio GUI shows "Server running"
+
+# Test connection
+curl http://localhost:1234/v1/models
+
+# Check port number in LMStudio (usually 1234)
+```
+
+---
+
+## Performance Issues
+
+### Issue: Slow Responses
+
+**Diagnosis:**
+```bash
+# Time a request
+time python -c "from abstractllm import create_llm; llm = create_llm('ollama', model='qwen3:4b-instruct-2507-q4_K_M'); print(llm.generate('test').content)"
+```
+
+**Solutions:**
+
+**Use Faster Models:**
 ```python
-# Configure timeout and performance parameters
-response = abstractllm.generate(
-    prompt="Complex task",
-    max_tokens=1000,
-    timeout=30,  # seconds
-    stream=True,
-    temperature=0.7
-)
+# Faster cloud models
+llm = create_llm("openai", model="gpt-4o-mini")  # Fast
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Fast
+
+# Faster local models
+llm = create_llm("ollama", model="gemma3:1b")  # Very fast
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")  # Balanced
 ```
 
-### 3.2 Memory Management
-
-#### Diagnosis
-```bash
-# Check memory usage during generation
-python -m abstractllm.utils.memory_profile \
-    --model mlx-community/GLM-4.5-Air-4bit
-```
-
-#### Solutions
+**Enable Streaming:**
 ```python
-# Manage memory-intensive generations
-response = abstractllm.generate(
-    prompt="Large computation",
-    max_tokens=2000,
-    low_memory=True,  # Optimize memory
-    batch_size=16
+# Improves perceived speed
+for chunk in llm.generate("Long response", stream=True):
+    print(chunk.content, end="", flush=True)
+```
+
+**Optimize Parameters:**
+```python
+response = llm.generate(
+    "prompt",
+    max_tokens=500,      # Limit length
+    temperature=0.3      # Lower = faster
 )
 ```
 
-## 4. Server and CLI Integration
+### Issue: High Memory Usage
 
-### 4.1 OpenAI-Compatible Endpoint
-
-#### Diagnosis
-```bash
-# Test endpoint compatibility
-curl http://localhost:8000/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -d '{
-        "model": "gpt-3.5-turbo",
-        "messages": [{"role": "user", "content": "Hello"}]
-    }'
-```
-
-### 4.2 Agentic CLI Troubleshooting
+**Solutions:**
 
 ```bash
-# Validate CLI configuration
-python -m abstractllm.utils.cli --doctor
+# Use smaller models
+ollama pull gemma3:1b  # 1GB instead of 30GB
 
-# Reset CLI configuration
-python -m abstractllm.utils.cli --reset-config
+# Close other applications
+
+# For MLX on Mac
+# Use 4-bit quantized models
+llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 ```
 
-## 5. Debugging Techniques
+---
 
-### 5.1 Logging and Verbose Mode
+## Debug Techniques
+
+### Enable Debug Logging
+
+**Core Library:**
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+from abstractllm import create_llm
+llm = create_llm("openai", model="gpt-4o-mini")
+```
+
+**Server:**
+```bash
+# Enable debug mode
+export ABSTRACTCORE_DEBUG=true
+
+# Start with debug logging
+uvicorn abstractllm.server.app:app --log-level debug
+
+# Monitor logs
+tail -f logs/abstractllm_*.log
+```
+
+### Analyze Logs
 
 ```bash
-# Enable comprehensive logging
-export ABSTRACTLLM_LOG_LEVEL=DEBUG
-export ABSTRACTLLM_TRACE=true
+# Find errors
+grep '"level": "error"' logs/abstractllm_*.log
 
-# Log to file for detailed analysis
-python -m abstractllm.utils.cli \
-    --log-file /tmp/abstractllm_debug.log
+# Track specific request
+grep "req_abc123" logs/abstractllm_*.log
+
+# Monitor latency
+cat logs/verbatim_*.jsonl | jq '.metadata.latency_ms'
+
+# Token usage
+cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
+  awk '{sum+=$1} END {print "Total:", sum}'
 ```
 
-### 5.2 Performance Profiling
+### Test in Isolation
+
+```python
+# Test provider directly
+from abstractllm import create_llm
+
+try:
+    llm = create_llm("openai", model="gpt-4o-mini")
+    response = llm.generate("Hello")
+    print(f"✓ Success: {response.content}")
+except Exception as e:
+    print(f"✗ Error: {e}")
+```
+
+### Collect Debug Information
 
 ```bash
-# Profile model generation
-python -m abstractllm.utils.profile \
-    --provider ollama \
-    --model qwen3-coder:30b \
-    --output /tmp/profile_report.json
+# Create debug report
+echo "=== System ===" > debug_report.txt
+uname -a >> debug_report.txt
+python --version >> debug_report.txt
+
+echo "=== Packages ===" >> debug_report.txt
+pip freeze | grep -E "abstract|openai|anthropic" >> debug_report.txt
+
+echo "=== Environment ===" >> debug_report.txt
+env | grep -E "ABSTRACT|OPENAI|ANTHROPIC|OLLAMA" >> debug_report.txt
+
+echo "=== Tests ===" >> debug_report.txt
+python -c "from abstractllm import create_llm; print('Core library: OK')" >> debug_report.txt 2>&1
+curl http://localhost:8000/health >> debug_report.txt 2>&1
+
+cat debug_report.txt
 ```
 
-## 6. Error Code Reference
+---
 
-### Common Error Patterns
+## Common Error Messages
 
-| Error Code | Description | Solution |
-|-----------|-------------|----------|
-| `ABTLLM-001` | Provider Authentication Failed | Verify API credentials |
-| `ABTLLM-002` | Model Unavailable | Check model compatibility |
-| `ABTLLM-003` | Tool Call Parsing Error | Validate tool call format |
-| `ABTLLM-004` | Streaming Interruption | Retry with stream=True |
-| `ABTLLM-005` | Memory Allocation Error | Use low_memory=True |
+| Error | Meaning | Solution |
+|-------|---------|----------|
+| `ModuleNotFoundError` | Package not installed | `pip install abstractcore[all]` |
+| `Authentication Error` | Invalid API key | Check API key environment variable |
+| `Connection refused` | Service not running | Start Ollama/LMStudio/server |
+| `Model not found` | Model unavailable | Pull model or check name |
+| `Rate limit exceeded` | Too many requests | Wait or upgrade plan |
+| `Timeout` | Request took too long | Use smaller model or increase timeout |
+| `Out of memory` | Insufficient RAM | Use smaller model |
+| `Port already in use` | Another process using port | Kill process or use different port |
 
-## Conclusion
+---
 
-This guide covers the most common challenges with AbstractLLM Core. Always ensure you're using the latest version and consult the [official documentation](https://abstractllm.ai/docs) for the most up-to-date troubleshooting information.
+## Getting Help
 
-### Need More Help?
+If you're still stuck:
 
-- Join our [Discord Community](https://discord.abstractllm.ai)
-- File an issue on [GitHub Discussions](https://github.com/abstractllm/core/discussions)
-- Email support: `support@abstractllm.ai`
+1. **Check Documentation:**
+   - [Getting Started](getting-started.md) - Core library quick start
+   - [Prerequisites](prerequisites.md) - Provider setup
+   - [Python API Reference](api-reference.md) - Core library API
+   - [Server Guide](server.md) - Server setup
+   - [Server API Reference](server-api-reference.md) - REST API endpoints
 
-**Last Updated**: 2025-10-11
-**AbstractLLM Core Version**: v2.5.0
+2. **Enable Debug Mode:**
+   ```bash
+   export ABSTRACTCORE_DEBUG=true
+   ```
+
+3. **Collect Information:**
+   - Error messages
+   - Debug logs
+   - System information
+   - Steps to reproduce
+
+4. **Community Support:**
+   - GitHub Issues: [github.com/lpalbou/AbstractCore/issues](https://github.com/lpalbou/AbstractCore/issues)
+   - GitHub Discussions: [github.com/lpalbou/AbstractCore/discussions](https://github.com/lpalbou/AbstractCore/discussions)
+
+---
+
+**Remember**: Most issues are configuration-related. Double-check environment variables, API keys, and that services are running before diving deep into debugging.

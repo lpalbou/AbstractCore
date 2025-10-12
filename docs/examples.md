@@ -1372,7 +1372,7 @@ For more information:
 - [Getting Started](getting-started.md) - Basic setup and usage
 - [Capabilities](capabilities.md) - What AbstractCore can do
 - [Providers](providers.md) - Choosing the right provider
-- [API Reference](api_reference.md) - Complete API documentation
+- [API Reference](api-reference.md) - Complete API documentation
 
 ---
 
