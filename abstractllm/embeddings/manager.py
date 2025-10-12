@@ -238,18 +238,116 @@ class EmbeddingManager:
             raise
 
     def _select_backend(self) -> EmbeddingBackend:
-        """Select the optimal backend automatically."""
+        """Select the optimal backend automatically with intelligent model compatibility checking."""
         if self.backend:
             return self.backend
 
-        # Auto-select: prefer ONNX if available
+        # Check if onnxruntime is available
         try:
             import onnxruntime  # type: ignore
-            # Check if onnxruntime is available
             _ = onnxruntime.__version__
-            return EmbeddingBackend.ONNX
         except ImportError:
             return EmbeddingBackend.PYTORCH
+
+        # Check if this model has good ONNX support before attempting ONNX
+        if self._has_onnx_support():
+            logger.debug(f"Model {self.model_id} has ONNX support, using ONNX backend")
+            return EmbeddingBackend.ONNX
+        else:
+            logger.debug(f"Model {self.model_id} lacks ONNX support, using PyTorch backend")
+            return EmbeddingBackend.PYTORCH
+
+    def _has_onnx_support(self) -> bool:
+        """Check if the model has good ONNX support to avoid problematic dynamic export."""
+        # Check 1: Does the model have pre-exported ONNX files?
+        if self._has_preexported_onnx():
+            return True
+
+        # Check 2: Is this a model type known to work well with ONNX export?
+        if self._is_onnx_compatible_model():
+            return True
+
+        # Default: no ONNX support detected
+        return False
+
+    def _has_preexported_onnx(self) -> bool:
+        """Check if the model has pre-exported ONNX files in HuggingFace cache."""
+        try:
+            import os
+            from pathlib import Path
+
+            # Get HuggingFace cache directory
+            hf_cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+
+            # Convert model ID to cache directory format (org--model)
+            cache_dir_name = f"models--{self.model_id.replace('/', '--')}"
+            model_cache_dir = hf_cache_dir / cache_dir_name
+
+            if not model_cache_dir.exists():
+                return False
+
+            # Look for ONNX files in snapshots
+            for snapshot_dir in model_cache_dir.glob("snapshots/*"):
+                if snapshot_dir.is_dir():
+                    # Check for common ONNX file patterns
+                    onnx_patterns = ["model.onnx", "onnx/model.onnx", "onnx/model_O*.onnx"]
+                    for pattern in onnx_patterns:
+                        if list(snapshot_dir.glob(pattern)):
+                            logger.debug(f"Found pre-exported ONNX files for {self.model_id}")
+                            return True
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"Error checking for pre-exported ONNX files: {e}")
+            return False
+
+    def _is_onnx_compatible_model(self) -> bool:
+        """Check if the model type/name is known to work well with ONNX export."""
+        # Models known to work well with ONNX (based on sentence-transformers supported models)
+        onnx_compatible_patterns = [
+            # Popular embedding models with good ONNX support
+            "sentence-transformers/all-minilm",
+            "sentence-transformers/all-mpnet",
+            "sentence-transformers/multi-qa",
+            "sentence-transformers/paraphrase",
+            "sentence-transformers/distiluse",
+            "microsoft/DialoGPT",
+            "microsoft/MiniLM",
+            # BERT-based models generally work well
+            "bert-",
+            "distilbert-",
+            "roberta-",
+            # Some other well-supported models
+            "thenlper/gte-",
+            "BAAI/bge-",
+        ]
+
+        model_lower = self.model_id.lower()
+
+        # Check if model matches any known compatible pattern
+        for pattern in onnx_compatible_patterns:
+            if pattern.lower() in model_lower:
+                logger.debug(f"Model {self.model_id} matches ONNX-compatible pattern: {pattern}")
+                return True
+
+        # Models known to have ONNX export issues (avoid dynamic export)
+        problematic_patterns = [
+            "qwen",  # Qwen models often have ONNX export issues
+            "llama",  # LLaMA models usually problematic for embeddings
+            "mixtral",
+            "deepseek",
+            "codellama",
+        ]
+
+        for pattern in problematic_patterns:
+            if pattern.lower() in model_lower:
+                logger.debug(f"Model {self.model_id} matches problematic pattern: {pattern}")
+                return False
+
+        # For unknown models, be conservative and use PyTorch
+        logger.debug(f"Model {self.model_id} is unknown for ONNX compatibility, using PyTorch")
+        return False
 
 
     def _load_persistent_cache(self) -> Dict[str, List[float]]:
@@ -548,6 +646,26 @@ class EmbeddingManager:
         if self.output_dims:
             return self.output_dims
         return self.model.get_sentence_embedding_dimension()
+
+    def estimate_tokens(self, text: str) -> int:
+        """Estimate the number of tokens in the text for embedding usage calculations.
+
+        This provides a rough estimate based on text length, suitable for usage tracking.
+        For embeddings, this is mainly used for billing/quota calculations.
+
+        Args:
+            text: Text to estimate tokens for
+
+        Returns:
+            Estimated number of tokens
+        """
+        if not text:
+            return 0
+
+        # Simple heuristic: roughly 4 characters per token for most languages
+        # This is consistent with OpenAI's embedding token estimation
+        estimated_tokens = max(1, len(text) // 4)
+        return estimated_tokens
 
     def compute_similarity(self, text1: str, text2: str) -> float:
         """Compute cosine similarity between two texts.
