@@ -68,7 +68,7 @@ class SimpleCLI:
         if show_banner:
             print(f"🚀 AbstractLLM CLI - {provider}:{model}")
             print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
-            print("Commands: /help /quit /clear /stream /debug /status /history [n] /model <spec> /compact /facts [file] /judge /system [prompt]")
+            print("Commands: /help /quit /clear /stream /debug /status /history [n] /model <spec> /compact /facts [file] /judge /system [prompt] /save <file> /load <file>")
             print("Tools: list_files, read_file, write_file, execute_command")
             print("=" * 60)
 
@@ -97,6 +97,8 @@ class SimpleCLI:
             print("  /facts [file] - Extract facts from conversation history")
             print("  /judge - Evaluate conversation quality and provide feedback")
             print("  /system [prompt] - Show or change system prompt")
+            print("  /save <file> - Save current session to file (preserves all metadata)")
+            print("  /load <file> - Load session from file (replaces current session)")
             print("  /tooltag <opening_tag> <closing_tag> - Test tool call tag rewriting")
             print("\n🛠️ Tools: list_files, read_file, write_file, execute_command\n")
 
@@ -178,6 +180,26 @@ class SimpleCLI:
                     self.handle_system_change(new_prompt)
                 else:
                     self.handle_system_show()
+
+        elif cmd.startswith('save'):
+            # Parse /save <file> command
+            parts = cmd.split()
+            if len(parts) != 2:
+                print("❓ Usage: /save <filename>")
+                print("   Example: /save my_conversation.json")
+            else:
+                filename = parts[1]
+                self.handle_save(filename)
+
+        elif cmd.startswith('load'):
+            # Parse /load <file> command
+            parts = cmd.split()
+            if len(parts) != 2:
+                print("❓ Usage: /load <filename>")
+                print("   Example: /load my_conversation.json")
+            else:
+                filename = parts[1]
+                self.handle_load(filename)
 
         elif cmd.startswith('tooltag'):
             # Parse /tooltag <opening_tag> <closing_tag> command
@@ -574,6 +596,100 @@ class SimpleCLI:
         print(f"📝 Old: {old_prompt[:100]}{'...' if len(old_prompt) > 100 else ''}")
         print(f"📝 New: {new_prompt[:100]}{'...' if len(new_prompt) > 100 else ''}")
 
+    def handle_save(self, filename: str):
+        """Handle /save <file> command - save current session to file"""
+        try:
+            # Ensure .json extension for consistency
+            if not filename.endswith('.json'):
+                filename = f"{filename}.json"
+            
+            print(f"💾 Saving session to {filename}...")
+            
+            # Get session info before saving
+            messages = self.session.get_messages()
+            tokens = self.session.get_token_estimate()
+            
+            # Save using enhanced serialization
+            self.session.save(filename)
+            
+            print(f"✅ Session saved successfully!")
+            print(f"   📁 File: {filename}")
+            print(f"   📝 Messages: {len(messages)}")
+            print(f"   🔢 Tokens: ~{tokens:,}")
+            print(f"   🤖 Provider: {self.provider_name}:{self.model_name}")
+            print(f"   ⚙️  Settings: auto_compact={self.session.auto_compact}")
+            
+            # Note about provider restoration
+            print(f"   💡 Note: Provider and tools will need to be specified when loading")
+            
+        except Exception as e:
+            print(f"❌ Failed to save session: {e}")
+            if self.debug_mode:
+                import traceback
+                traceback.print_exc()
+
+    def handle_load(self, filename: str):
+        """Handle /load <file> command - load session from file"""
+        try:
+            # Ensure .json extension for consistency
+            if not filename.endswith('.json'):
+                filename = f"{filename}.json"
+            
+            # Check if file exists
+            import os
+            if not os.path.exists(filename):
+                print(f"❌ File not found: {filename}")
+                return
+            
+            print(f"📂 Loading session from {filename}...")
+            
+            # Store current session info for comparison
+            old_messages = len(self.session.get_messages())
+            old_tokens = self.session.get_token_estimate()
+            
+            # Load session with current provider and tools
+            from ..tools.common_tools import list_files, read_file, write_file, execute_command
+            tools = [list_files, read_file, write_file, execute_command]
+            
+            loaded_session = BasicSession.load(filename, provider=self.provider, tools=tools)
+            
+            # Replace current session
+            self.session = loaded_session
+            
+            # Get new session info
+            new_messages = len(self.session.get_messages())
+            new_tokens = self.session.get_token_estimate()
+            
+            print(f"✅ Session loaded successfully!")
+            print(f"   📁 File: {filename}")
+            print(f"   📝 Messages: {old_messages} → {new_messages}")
+            print(f"   🔢 Tokens: ~{old_tokens:,} → ~{new_tokens:,}")
+            print(f"   🤖 Provider: {self.provider_name}:{self.model_name} (current)")
+            print(f"   ⚙️  Settings: auto_compact={self.session.auto_compact}")
+            
+            # Show session structure
+            messages = self.session.get_messages()
+            conversation_messages = [msg for msg in messages if msg.role != 'system']
+            interactions = len(conversation_messages) // 2
+            
+            has_summary = any(msg.role == 'system' and '[CONVERSATION HISTORY]' in msg.content for msg in messages)
+            if has_summary:
+                print(f"   📚 History: Compacted conversation with {interactions} recent interactions")
+            else:
+                print(f"   💬 History: Full conversation with {interactions} interactions")
+            
+            # Show timestamps if available
+            if messages:
+                first_msg = next((msg for msg in messages if msg.role != 'system'), None)
+                if first_msg and hasattr(first_msg, 'timestamp') and first_msg.timestamp:
+                    print(f"   📅 Created: {first_msg.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+        except Exception as e:
+            print(f"❌ Failed to load session: {e}")
+            if self.debug_mode:
+                import traceback
+                traceback.print_exc()
+
     def handle_tooltag_test(self, opening_tag: str, closing_tag: str):
         """Handle /tooltag command - demonstrate tool call format handling"""
         print(f"🏷️ Tool call format testing: {opening_tag}...{closing_tag}")
@@ -949,6 +1065,8 @@ Commands:
   /facts [file] - Extract facts from conversation history
   /judge - Evaluate conversation quality and provide feedback
   /system [prompt] - Show or change system prompt
+  /save <file> - Save current session to file (preserves all metadata)
+  /load <file> - Load session from file (replaces current session)
 
 Tools: list_files, read_file, write_file, execute_command
 

@@ -14,19 +14,49 @@ class Message:
     role: str
     content: str
     timestamp: Optional[datetime] = None
-    name: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         if self.timestamp is None:
             self.timestamp = datetime.now()
+        if self.metadata is None:
+            self.metadata = {}
+
+    @property
+    def name(self) -> Optional[str]:
+        """Get the username from metadata"""
+        return self.metadata.get('name') if self.metadata else None
+
+    @name.setter
+    def name(self, value: Optional[str]):
+        """Set the username in metadata"""
+        if self.metadata is None:
+            self.metadata = {}
+        if value is not None:
+            self.metadata['name'] = value
+        elif 'name' in self.metadata:
+            del self.metadata['name']
+
+    @property
+    def location(self) -> Optional[str]:
+        """Get the location from metadata"""
+        return self.metadata.get('location') if self.metadata else None
+
+    @location.setter
+    def location(self, value: Optional[str]):
+        """Set the location in metadata"""
+        if self.metadata is None:
+            self.metadata = {}
+        if value is not None:
+            self.metadata['location'] = value
+        elif 'location' in self.metadata:
+            del self.metadata['location']
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
-            "name": self.name,
             "metadata": self.metadata or {}
         }
 
@@ -36,12 +66,18 @@ class Message:
         if data.get("timestamp"):
             timestamp = datetime.fromisoformat(data["timestamp"])
 
+        # Handle backward compatibility: if 'name' exists as separate field, move to metadata
+        metadata = data.get("metadata", {}).copy() if data.get("metadata") else {}
+        
+        # Backward compatibility: migrate old 'name' field to metadata
+        if "name" in data and data["name"] is not None:
+            metadata["name"] = data["name"]
+
         return cls(
             role=data["role"],
             content=data["content"],
             timestamp=timestamp,
-            name=data.get("name"),
-            metadata=data.get("metadata")
+            metadata=metadata if metadata else None
         )
 
 
