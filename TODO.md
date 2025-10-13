@@ -12,6 +12,12 @@ Do not pay attention to this.
 
 uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000 --reload
 
+qwen3-coder:30b
+gpt-oss:20b
+gpt-oss:120b
+qwen3:4b-instruct-2507-q4_K_M
+gemma3n:e4b
+cogito:3b
 
 time python -m abstractllm.apps.extractor /Users/albou/projects/promptons/examples/docs/christmas_carol_ebook_chapter_1.txt --provider lmstudio --model bytedance/seed-oss-36b --timeout 3600
 

@@ -24,7 +24,7 @@ Quick Start:
     print(response.content)
 """
 
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 
 from .core.factory import create_llm
 from .core.session import BasicSession
