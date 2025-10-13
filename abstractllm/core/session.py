@@ -58,9 +58,36 @@ class BasicSession:
         if system_prompt:
             self.add_message(MessageRole.SYSTEM.value, system_prompt)
 
-    def add_message(self, role: str, content: str) -> Message:
-        """Add a message to conversation history"""
-        message = Message(role=role, content=content)
+    def add_message(self, role: str, content: str, name: Optional[str] = None, 
+                   location: Optional[str] = None, **metadata_kwargs) -> Message:
+        """
+        Add a message to conversation history.
+        
+        Args:
+            role: Message role (user, assistant, system, tool)
+            content: Message content
+            name: Username for the message. Defaults to "user" for user messages, None for others
+            location: Location information (geographical, contextual, etc.)
+            **metadata_kwargs: Additional metadata fields
+        
+        Returns:
+            Message: The created message with timestamp and metadata
+        """
+        # Set default username for user messages if not specified
+        if name is None and role == 'user':
+            name = "user"
+        
+        # Build metadata
+        metadata = {}
+        if name is not None:
+            metadata['name'] = name
+        if location is not None:
+            metadata['location'] = location
+        
+        # Add any additional metadata
+        metadata.update(metadata_kwargs)
+            
+        message = Message(role=role, content=content, metadata=metadata if metadata else None)
         self.messages.append(message)
         return message
 
@@ -81,8 +108,20 @@ class BasicSession:
         else:
             self.messages = []
 
-    def generate(self, prompt: str, **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
-        """Generate response using provider"""
+    def generate(self, prompt: str, username: Optional[str] = None, 
+                location: Optional[str] = None, **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        """
+        Generate response using provider.
+        
+        Args:
+            prompt: User input prompt
+            username: Optional username for the message (defaults to "user")
+            location: Optional location information for the message
+            **kwargs: Additional arguments passed to provider
+            
+        Returns:
+            GenerateResponse or Iterator[GenerateResponse]: Response from the provider
+        """
         if not self.provider:
             raise ValueError("No provider configured")
 
@@ -93,8 +132,8 @@ class BasicSession:
             # Replace current session with compacted version
             self._replace_with_compacted(compacted)
 
-        # Add user message
-        self.add_message('user', prompt)
+        # Add user message with optional custom username and location
+        self.add_message('user', prompt, name=username, location=location)
 
         # Format messages for provider (exclude the current user message since provider will add it)
         messages = self._format_messages_for_provider_excluding_current()
@@ -160,28 +199,99 @@ class BasicSession:
         ]
 
     def save(self, filepath: Union[str, Path]):
-        """Save session to file"""
-        data = {
-            "id": self.id,
-            "created_at": self.created_at.isoformat(),
-            "system_prompt": self.system_prompt,
-            "messages": [m.to_dict() for m in self.messages]
-        }
-
+        """
+        Save session to file with complete metadata preservation.
+        
+        Args:
+            filepath: Path to save the session file
+            
+        Note:
+            Provider and tools are not serialized as they may contain non-serializable
+            elements. They should be re-registered when loading the session.
+        """
+        data = self.to_dict()
+        
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
 
     @classmethod
-    def load(cls, filepath: Union[str, Path]) -> 'BasicSession':
-        """Load session from file"""
+    def load(cls, filepath: Union[str, Path], provider: Optional[AbstractLLMInterface] = None,
+             tools: Optional[List[Callable]] = None) -> 'BasicSession':
+        """
+        Load session from file with complete metadata restoration.
+        
+        Args:
+            filepath: Path to the session file
+            provider: LLM provider to use (must be provided separately)
+            tools: Tools to register (must be provided separately)
+            
+        Returns:
+            BasicSession: Loaded session with all metadata preserved
+            
+        Note:
+            Provider and tools must be provided separately as they are not serialized.
+        """
         with open(filepath, 'r') as f:
             data = json.load(f)
 
-        session = cls(system_prompt=data.get("system_prompt"))
+        return cls.from_dict(data, provider=provider, tools=tools)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert session to dictionary for complete serialization.
+        
+        Returns:
+            Dict containing all session data including metadata, settings, and messages
+        """
+        return {
+            "id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "system_prompt": self.system_prompt,
+            "messages": [m.to_dict() for m in self.messages],
+            "auto_compact": self.auto_compact,
+            "auto_compact_threshold": self.auto_compact_threshold,
+            "original_session": self._original_session,
+            "tools_count": len(self.tools) if self.tools else 0,
+            "provider_type": self.provider.__class__.__name__ if self.provider else None,
+            # Note: We don't serialize the actual provider or tools objects as they may contain
+            # non-serializable elements like functions. These should be re-registered on load.
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], provider: Optional[AbstractLLMInterface] = None, 
+                  tools: Optional[List[Callable]] = None) -> 'BasicSession':
+        """
+        Create session from dictionary data.
+        
+        Args:
+            data: Dictionary containing session data
+            provider: LLM provider to use (must be provided separately)
+            tools: Tools to register (must be provided separately)
+            
+        Returns:
+            BasicSession: Reconstructed session
+        """
+        # Create session with basic parameters
+        session = cls(
+            provider=provider,
+            system_prompt=None,  # We'll restore messages manually to avoid duplicates
+            tools=tools,
+            auto_compact=data.get("auto_compact", False),
+            auto_compact_threshold=data.get("auto_compact_threshold", 6000)
+        )
+        
+        # Restore session metadata
         session.id = data["id"]
         session.created_at = datetime.fromisoformat(data["created_at"])
-        session.messages = [Message.from_dict(m) for m in data["messages"]]
-
+        session.system_prompt = data.get("system_prompt")
+        session._original_session = data.get("original_session")
+        
+        # Clear any auto-added messages and restore from data
+        session.messages = []
+        for msg_data in data.get("messages", []):
+            message = Message.from_dict(msg_data)
+            session.messages.append(message)
+            
         return session
 
     def _register_tools(self, tools: List[Callable]) -> List:
