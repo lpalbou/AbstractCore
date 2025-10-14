@@ -570,23 +570,24 @@ a:hover {
     align-items: center;
     gap: var(--spacing-2);
     padding: var(--spacing-2) var(--spacing-3);
-    background-color: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background-color: var(--primary-color);
+    border: 1px solid var(--primary-color);
     border-radius: var(--radius-md);
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--text-inverse);
     font-size: var(--font-size-sm);
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     transition: all var(--transition-fast);
     white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
 
 .copy-button:hover {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+    background-color: var(--secondary-color);
+    color: var(--text-inverse);
+    border-color: var(--secondary-color);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 4px 16px rgba(147, 51, 234, 0.4);
 }
 
 .copy-button:active {
@@ -615,7 +616,7 @@ a:hover {
 
 /* Architecture Page Specific Styles */
 .architecture-diagram {
-    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    background: var(--background-secondary);
     border: 2px solid var(--border-color);
     border-radius: 1rem;
     padding: 3rem;
@@ -723,7 +724,8 @@ a:hover {
 
 /* Flow Steps */
 .interactive-flow {
-    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    background: var(--background-secondary);
+    border: 2px solid var(--border-color);
     border-radius: 1rem;
     padding: 3rem;
     margin: 3rem 0;

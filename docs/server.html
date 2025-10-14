@@ -322,8 +322,8 @@ gemini-cli --model "ollama/qwen3-coder:30b" "Review this project"</code></pre>
                     </div>
                 </div>
                 
-                <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0;">🔧 Tool Call Format Configuration</h3>
+                <div style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--text-primary);">🔧 Tool Call Format Configuration</h3>
                     <div class="code-block">
                         <pre><code class="language-bash"># Set format for your CLI
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=qwen3    # Codex CLI
@@ -426,9 +426,9 @@ grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl</code></pre>
                     </div>
                 </div>
                 
-                <div style="background: linear-gradient(135deg, #e0f2fe, #b3e5fc); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0;">📊 Interactive Documentation</h3>
-                    <p style="margin: 0;">Visit while server is running:</p>
+                <div style="background: var(--info-bg); border: 2px solid var(--info-text); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--info-text);">📊 Interactive Documentation</h3>
+                    <p style="margin: 0; color: var(--info-text);">Visit while server is running:</p>
                     <ul style="margin: 1rem 0 0 0;">
                         <li><strong>Swagger UI:</strong> <code>http://localhost:8000/docs</code></li>
                         <li><strong>ReDoc:</strong> <code>http://localhost:8000/redoc</code></li>
