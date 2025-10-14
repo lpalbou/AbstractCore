@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [2.3.5] - 2025-10-14
+## [2.3.6] - 2025-01-21
+
+### Fixed
+
+- **ModuleNotFoundError for abstractllm.exceptions**: Added backward compatibility alias `Authentication = AuthenticationError` to resolve import errors when transitioning from AbstractLLM to AbstractCore
+- **UTF-8 encoding issues**: Fixed non-ASCII character handling in main module for proper Python 3 support
+- **Processing module dependencies**: Ensured core dependencies (`pydantic`, `httpx`, `tiktoken`) are properly available for CLI tools
+
+### Technical
+
+- Added `Authentication` alias in `abstractllm/exceptions/__init__.py` for backward compatibility
+- Fixed encoding declaration in `abstractllm/__init__.py`
+- Maintained processing module as core functionality (not optional)
+
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 
@@ -43,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ✅ Backward compatibility: All existing functionality preserved  
 ✅ Error handling: Clear messages for unsupported streaming + hybrid combination
 
-## [2.3.4] - 2025-10-14
+## [2.3.6] - 2025-01-21
 
 ### Added
 
@@ -107,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Increased Discoverability**: SEO-optimized website improves project visibility and accessibility
 - **Comprehensive Tool Documentation**: Complete coverage of tool calling system with practical examples and architecture details
 
-## [2.3.3] - 2025-10-14
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 
@@ -119,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Technical**: Set `onnxruntime.set_default_logger_severity(3)` to suppress warnings that don't affect performance or quality
 
 
-## [2.3.2] - 2025-10-14
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 
@@ -188,7 +202,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ✅ Defensive tool parameter handling prevents type errors  
 ✅ Backward compatibility maintained for existing session files
 
-## [2.3.1] - 2025-10-13
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 
@@ -264,7 +278,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ✅ `gemma3n:e4b` with wrong field names now parsed correctly  
 ✅ All existing models continue to work without regression
 
-## [2.3.0] - 2025-10-12
+## [2.3.6] - 2025-01-21
 
 ### Major Changes
 
@@ -415,7 +429,7 @@ Server API endpoints remain compatible. New features:
 - Use `docs/README.md` as navigation hub
 - Reference `prerequisites.md` instead of deleted `providers.md`
 
-## [2.2.8] - 2025-10-11
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 - **CRITICAL: Streaming Tool Call Tag Rewriting**: Fixed broken tag rewriting in streaming mode
@@ -477,7 +491,7 @@ Server API endpoints remain compatible. New features:
 - Added comprehensive examples demonstrating unified streaming capabilities
 - Enhanced performance and architectural notes
 
-## [2.2.7] - 2025-10-11
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 - **Streaming Tool Output Consistency**: Fixed inconsistent formatting between streaming and non-streaming tool execution
@@ -501,7 +515,7 @@ Server API endpoints remain compatible. New features:
   - Reduced complexity while maintaining backward compatibility
   - All changes made to base provider - no provider-specific modifications needed
 
-## [2.2.6] - 2024-12-19
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 - **Native Tool Metadata Preservation**: Enhanced metadata (tags, when_to_use, examples) now preserved in native tool calls
@@ -517,7 +531,7 @@ Server API endpoints remain compatible. New features:
 - **Architecture Model Checks**: Updated test results documentation with latest fixes and improvements
 - **Tool Metadata Usage**: Documented how enhanced metadata is handled in both prompted and native tool calling
 
-## [2.2.5] - 2025-10-10
+## [2.3.6] - 2025-01-21
 
 ### Enhanced
 - **Unified Token Parameter Strategy**: Improved token management with helper methods and comprehensive validation
@@ -542,7 +556,7 @@ Server API endpoints remain compatible. New features:
 
 This release focuses on improving the developer experience with AbstractLLM's unified token parameter approach, providing better guidance and validation while maintaining full backward compatibility.
 
-## [2.2.4] - 2025-10-10
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 - **ONNX Optimization and Warning Management**: Improved embedding performance and user experience
@@ -558,7 +572,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
 - Enhanced `_load_model()` with multi-layer fallback strategy and clear logging
 - Zero breaking changes - all improvements are additive with sensible defaults
 
-## [2.2.3] - 2025-10-09
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 - **Installation Package [all] Extra**: Fixed `pip install abstractcore[all]` to truly install ALL modules
@@ -575,7 +589,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
 - **Development Ready**: Includes all testing frameworks (pytest-cov, responses), code tools (black, mypy, ruff), and documentation tools (mkdocs)
 - **Verified Configuration**: All referenced extras exist and are properly defined with no circular dependencies
 
-## [2.2.2] - 2025-10-09
+## [2.3.6] - 2025-01-21
 
 ### Added
 - **LLM-as-a-Judge**: Production-ready objective evaluation with structured assessments
@@ -609,7 +623,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
 - **Console script integration**: Simple `judge` command available after package installation (matches `extractor`, `summarizer`)
 - **Full backward compatibility**: All existing functionality preserved, optional features clearly marked
 
-## [2.2.1] - 2025-10-09
+## [2.3.6] - 2025-01-21
 
 ### Enhanced
 - **Timeout Configuration**: Unified timeout management across all components
@@ -655,7 +669,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
   - Validated provider setup links point to correct sections (#openai-setup, #anthropic-setup, etc.)
   - Ensured consistent documentation structure across all guides
 
-## [2.2.0] - 2025-10-01
+## [2.3.6] - 2025-01-21
 
 ### Added
 - **Agentic CLI Compatibility** (In Progress): Initial support for Codex, Gemini CLI, and Crush
@@ -761,7 +775,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
   - Kept only production-ready documentation
   - Repository now 50% smaller and more maintainable
 
-## [2.1.6] - 2025-09-26
+## [2.3.6] - 2025-01-21
 
 ### Added
 - **Similarity Matrix & Clustering**: SOTA vectorized similarity computation and automatic text clustering
@@ -839,7 +853,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
   - Alternative provider examples (OpenAI, Anthropic, other Ollama models)
   - Graceful failure with actionable guidance instead of cryptic errors
 
-## [2.1.5] - 2025-09-26
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 - **Package Structure**: Made processing module a core dependency (no longer optional import)
@@ -847,7 +861,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
   - Processing module is now always included with AbstractCore
   - Added `processing` extra for explicit dependency management
 
-## [2.1.4] - 2025-09-26
+## [2.3.6] - 2025-01-21
 
 ### Added
 - **CLI System Prompt Management**: New `/system [prompt]` command for controlling AI behavior
@@ -944,7 +958,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
   - Updated documentation to explain the automatic override behavior
   - Ensures intuitive tool behavior for LLMs and users specifying line ranges
 
-## [2.1.3] - 2025-09-25
+## [2.3.6] - 2025-01-21
 
 ### Added
 - **Comprehensive Timeout Configuration**: Full timeout management system across all components
@@ -984,7 +998,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
 - Updated API documentation with timeout parameter descriptions
 - Added session-level timeout configuration examples
 
-## [2.1.2] - 2025-09-25
+## [2.3.6] - 2025-01-21
 
 ### Added
 - **Enhanced Web Search Tool**: Complete web search functionality using DuckDuckGo with real web results
@@ -1040,7 +1054,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
 - Corrected server deployment instructions
 - Added comprehensive web search usage examples
 
-## [2.1.1] - 2025-09-24
+## [2.3.6] - 2025-01-21
 
 ### Fixed
 - Fixed embedding test failures caused by outdated model configurations
@@ -1058,7 +1072,7 @@ This release focuses on improving the developer experience with AbstractLLM's un
 - Updated test assertions to be more robust and less brittle for semantic search results
 - Improved mock patching strategy for better test isolation
 
-## [2.1.0] - 2025-09-23
+## [2.3.6] - 2025-01-21
 
 ### Added
 - Vector Embeddings support with SOTA open-source models

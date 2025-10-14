@@ -23,6 +23,10 @@ class AuthenticationError(ProviderError):
     pass
 
 
+# Alias for backward compatibility with old AbstractLLM
+Authentication = AuthenticationError
+
+
 class RateLimitError(ProviderError):
     """Rate limit exceeded"""
     pass
@@ -100,3 +104,22 @@ def format_model_error(provider: str, invalid_model: str, available_models: list
             message += f"\n⚠️  Could not fetch available models for {provider}.\n"
 
     return message.rstrip()
+
+
+# Export all exceptions for easy importing
+__all__ = [
+    'AbstractLLMError',
+    'ProviderError', 
+    'ProviderAPIError',
+    'AuthenticationError',
+    'Authentication',  # Backward compatibility alias
+    'RateLimitError',
+    'InvalidRequestError',
+    'UnsupportedFeatureError',
+    'FileProcessingError',
+    'ToolExecutionError',
+    'SessionError',
+    'ConfigurationError',
+    'ModelNotFoundError',
+    'format_model_error'
+]
