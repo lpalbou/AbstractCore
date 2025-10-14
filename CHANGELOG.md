@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.3.5] - 2025-10-14
+
+### Fixed
+
+#### CRITICAL: Tools + Structured Output Compatibility
+- **Problem**: AbstractCore's `tools` and `response_model` parameters were mutually exclusive, preventing users from combining function calling with structured output validation
+- **Root Cause**: `StructuredOutputHandler` bypassed normal tool execution flow and tried to validate tool call JSON against Pydantic model
+- **Solution**: Implemented sequential execution pattern - tools execute first, then structured output uses results as context
+- **Impact**: Enables sophisticated LLM applications requiring both function calling and structured output validation
+- **Usage**: `llm.generate(tools=[func], response_model=Model, execute_tools=True)` now works seamlessly
+- **Limitation**: Streaming not supported in hybrid mode (clear error message provided)
+
+#### Enhanced BaseProvider Interface
+- **Added**: `generate()` method to BaseProvider implementing AbstractLLMInterface
+- **Fixed**: Proper delegation from `generate()` to `generate_with_telemetry()` with full parameter passthrough
+- **Impact**: Ensures consistent API behavior across all provider implementations
+
+### Technical
+
+#### Implementation Details
+- Added `_handle_tools_with_structured_output()` method with sequential execution strategy
+- Modified `generate_with_telemetry()` to detect and route hybrid requests appropriately
+- Enhanced prompt engineering to inject tool execution results into structured output context
+- Maintained full backward compatibility for single-mode usage (tools-only or structured-only)
+
+#### Files Modified
+- `abstractllm/providers/base.py`: Added hybrid handling logic and generate() method implementation
+- Sequential execution: Tool execution → Context enhancement → Structured output generation
+- Clean error handling with descriptive messages for unsupported combinations
+
+#### Test Results
+✅ Tools-only mode: Works correctly  
+✅ Structured output-only mode: Works correctly  
+✅ **NEW**: Hybrid mode (tools + structured output): Now works correctly  
+✅ Backward compatibility: All existing functionality preserved  
+✅ Error handling: Clear messages for unsupported streaming + hybrid combination
+
 ## [2.3.4] - 2025-10-14
 
 ### Added
