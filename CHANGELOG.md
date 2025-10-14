@@ -6,6 +6,70 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.3.4] - 2025-10-14
+
+### Added
+
+#### State-of-the-Art GitHub Pages Website
+- **Professional Website**: Created comprehensive GitHub Pages website at `https://lpalbou.github.io/AbstractCore/`
+- **Modern UI/UX**: Responsive design with dark/light theme toggle, smooth animations, and mobile-first approach
+- **Interactive Features**: Code block copy functionality, smooth scrolling navigation, and dynamic theme switching
+- **Provider Showcase**: Visual display of all supported LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace)
+- **SEO Optimization**: Complete sitemap.xml, robots.txt, and meta tags for search engine visibility
+- **LLM Integration**: Added `llms.txt` and `llms-full.txt` files for enhanced LLM compatibility and content discovery
+
+#### Comprehensive Tool Calling Documentation
+- **New Documentation**: Created `docs/tool-calling.md` with complete coverage of the tool calling system
+- **Rich Decorator Examples**: Documented the full capabilities of the `@tool` decorator including metadata injection
+- **Architecture-Aware Formatting**: Explained how tool definitions adapt to different model architectures (Qwen, LLaMA, Gemma)
+- **Tool Syntax Rewriting**: Integrated comprehensive documentation of Tag Rewriter and Syntax Rewriter systems
+- **Real-World Examples**: Showcased actual tools from `common_tools.py` with full metadata and system prompt integration
+
+### Enhanced
+
+#### Documentation Consolidation and Cleanup
+- **Professional Tone**: Removed pretentious language, excessive emojis, and marketing hype from all documentation
+- **Consolidated Content**: Merged `tool-syntax-rewriting.md` into comprehensive `tool-calling.md` documentation
+- **Fixed Cross-References**: Updated all internal links in README.md, docs/README.md, and getting-started.md
+- **Consistent Styling**: Standardized documentation format and removed redundant content
+- **HTML Documentation**: Created HTML versions of all documentation for the GitHub Pages website
+
+#### Website Architecture
+- **Static Site Generation**: Pure HTML/CSS/JavaScript implementation for maximum performance and compatibility
+- **Asset Organization**: Structured asset directory with optimized SVG logos and provider icons
+- **GitHub Pages Optimization**: Added `.nojekyll` file and proper CNAME configuration for custom domains
+- **Documentation Integration**: Seamless integration between website and documentation with consistent navigation
+
+### Technical
+
+#### Files Added
+- `index.html`: Main landing page with hero section, features showcase, and provider display
+- `assets/css/main.css`: Comprehensive styling with CSS variables for theming and responsive design
+- `assets/js/main.js`: Interactive functionality including theme switching and mobile navigation
+- `llms.txt`: Concise LLM-friendly project overview with key documentation links
+- `llms-full.txt`: Complete documentation content aggregated for LLM consumption
+- `docs/tool-calling.html`: HTML version of comprehensive tool calling documentation
+- `robots.txt` and `sitemap.xml`: SEO optimization files for search engine discovery
+
+#### Documentation Updates
+- Enhanced `docs/tool-calling.md` with complete `@tool` decorator capabilities and real-world examples
+- Updated README.md, docs/README.md, and docs/getting-started.md with professional tone and correct links
+- Removed redundant `docs/tool-syntax-rewriting.md` after content integration
+- Fixed all cross-references and internal navigation links
+
+#### GitHub Pages Deployment
+- Created clean `gh-pages` branch with optimized website content
+- Implemented proper GitHub Pages configuration with SEO optimization
+- Added comprehensive LLM compatibility files for enhanced discoverability
+- Structured deployment ready for custom domain configuration
+
+### Impact
+- **Enhanced Developer Experience**: Professional website provides clear project overview and easy navigation
+- **Improved Documentation Quality**: Consolidated, professional documentation without redundancy or pretentious language
+- **Better LLM Integration**: Structured `llms.txt` files enable better LLM understanding and interaction with the project
+- **Increased Discoverability**: SEO-optimized website improves project visibility and accessibility
+- **Comprehensive Tool Documentation**: Complete coverage of tool calling system with practical examples and architecture details
+
 ## [2.3.3] - 2025-10-14
 
 ### Fixed
