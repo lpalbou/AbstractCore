@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AbstractCore - Unified LLM Provider Interface</title>
+    <meta name="description" content="A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.">
+    <meta name="keywords" content="LLM, AI, Python, OpenAI, Anthropic, Ollama, Machine Learning, API">
+    <meta name="author" content="AbstractCore Team">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://lpalbou.github.io/AbstractCore/">
+    <meta property="og:title" content="AbstractCore - Unified LLM Provider Interface">
+    <meta property="og:description" content="A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.">
+    <meta property="og:image" content="https://lpalbou.github.io/AbstractCore/assets/og-image.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://lpalbou.github.io/AbstractCore/">
+    <meta property="twitter:title" content="AbstractCore - Unified LLM Provider Interface">
+    <meta property="twitter:description" content="A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.">
+    <meta property="twitter:image" content="https://lpalbou.github.io/AbstractCore/assets/og-image.png">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="assets/css/main.css">
+    
+    <!-- Prism.js for syntax highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    
+    <!-- Analytics -->
+    <script defer data-domain="lpalbou.github.io" src="https://plausible.io/js/script.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="#" class="brand-link">
+                    <img src="assets/logo.svg" alt="AbstractCore" class="brand-logo">
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#quickstart" class="nav-link">Quick Start</a>
+                <a href="#docs" class="nav-link">Documentation</a>
+                <a href="#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="gradient-text">Unified LLM Interface</span>
+                    <br>Write once, run everywhere
+                </h1>
+                <p class="hero-description">
+                    A powerful Python library providing seamless interaction with all major LLM providers. 
+                    Switch between OpenAI, Anthropic, Ollama, and more with identical code.
+                </p>
+                
+                <div class="hero-actions">
+                    <a href="#quickstart" class="btn btn-primary">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                        </svg>
+                        Quick Start
+                    </a>
+                    <a href="https://github.com/lpalbou/AbstractCore" class="btn btn-secondary" target="_blank">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                        </svg>
+                        View on GitHub
+                    </a>
+                </div>
+
+                <div class="hero-stats">
+                    <div class="stat">
+                        <div class="stat-number">6+</div>
+                        <div class="stat-label">Providers</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">100%</div>
+                        <div class="stat-label">Test Coverage</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">MIT</div>
+                        <div class="stat-label">License</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="hero-code">
+                <div class="code-window">
+                    <div class="code-header">
+                        <div class="code-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <div class="code-title">example.py</div>
+                    </div>
+                    <div class="code-content">
+                        <pre><code class="language-python">from abstractllm import create_llm
+
+# Works with any provider - just change the name
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate("What is the capital of France?")
+print(response.content)
+
+# Switch providers with zero code changes
+llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("ollama", model="qwen3-coder:30b")
+
+# Same interface, same results ✨</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Why Choose AbstractCore?</h2>
+                <p class="section-description">
+                    Production-ready LLM infrastructure with everything you need to build reliable AI applications.
+                </p>
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                            <path d="M2 17l10 5 10-5"/>
+                            <path d="M2 12l10 5 10-5"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Provider Agnostic</h3>
+                    <p class="feature-description">
+                        Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, and HuggingFace with identical code.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 12l2 2 4-4"/>
+                            <path d="M21 12c-1 0-3-1-3-3s2-3 3-3 3 1 3 3-2 3-3 3"/>
+                            <path d="M3 12c1 0 3-1 3-3s-2-3-3-3-3 1-3 3 2 3 3 3"/>
+                            <path d="M3 12h6m6 0h6"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Production Ready</h3>
+                    <p class="feature-description">
+                        Built-in retry logic, circuit breakers, comprehensive error handling, and event-driven observability.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Universal Tools</h3>
+                    <p class="feature-description">
+                        Consistent tool calling across ALL providers, even those without native support. Works everywhere.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Type Safe</h3>
+                    <p class="feature-description">
+                        Full Pydantic integration for structured outputs with automatic validation and retry on failures.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/>
+                            <path d="M8 21v-4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4"/>
+                            <path d="M9 7V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Local & Cloud</h3>
+                    <p class="feature-description">
+                        Run models locally for privacy and cost savings, or use cloud APIs for maximum performance.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            <polyline points="7.5,4.21 12,6.81 16.5,4.21"/>
+                            <polyline points="7.5,19.79 7.5,14.6 3,12"/>
+                            <polyline points="21,12 16.5,14.6 16.5,19.79"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Streaming Support</h3>
+                    <p class="feature-description">
+                        Real-time token generation with proper tool call handling. Unified streaming across all providers.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start Section -->
+    <section id="quickstart" class="quickstart">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Get Started in Minutes</h2>
+                <p class="section-description">
+                    Install AbstractCore and make your first LLM call in under 5 minutes.
+                </p>
+            </div>
+            
+            <div class="quickstart-content">
+                <div class="quickstart-steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3 class="step-title">Install</h3>
+                            <p class="step-description">Install AbstractCore with your preferred providers</p>
+                            <div class="code-block">
+                                <pre><code class="language-bash"># Install everything
+pip install abstractcore[all]
+
+# Or install specific providers
+pip install abstractcore[openai]
+pip install abstractcore[anthropic]</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3 class="step-title">Configure</h3>
+                            <p class="step-description">Set up your API keys or local providers</p>
+                            <div class="code-block">
+                                <pre><code class="language-bash"># For cloud providers
+export OPENAI_API_KEY="your-key-here"
+export ANTHROPIC_API_KEY="your-key-here"
+
+# For local providers (no keys needed)
+# Install Ollama, LMStudio, or MLX</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3 class="step-title">Code</h3>
+                            <p class="step-description">Start building with the unified interface</p>
+                            <div class="code-block">
+                                <pre><code class="language-python">from abstractllm import create_llm
+
+# Create LLM instance
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Generate response
+response = llm.generate("Hello, world!")
+print(response.content)</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="quickstart-demo">
+                    <div class="demo-tabs">
+                        <button class="tab-button active" data-tab="basic">Basic Usage</button>
+                        <button class="tab-button" data-tab="tools">Tool Calling</button>
+                        <button class="tab-button" data-tab="structured">Structured Output</button>
+                        <button class="tab-button" data-tab="streaming">Streaming</button>
+                    </div>
+                    
+                    <div class="demo-content">
+                        <div class="demo-panel active" id="basic">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">basic_usage.py</div>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from abstractllm import create_llm
+
+# Works with any provider
+providers = ["openai", "anthropic", "ollama"]
+
+for provider in providers:
+    llm = create_llm(provider)
+    response = llm.generate("What is Python?")
+    print(f"{provider}: {response.content[:50]}...")
+
+# Same code, different providers! 🚀</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="demo-panel" id="tools">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">tool_calling.py</div>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from abstractllm import create_llm, tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Weather in {city}: 72°F, Sunny"
+
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate(
+    "What's the weather in Paris?",
+    tools=[get_weather]
+)
+print(response.content)
+# Output: The weather in Paris is 72°F and sunny!</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="demo-panel" id="structured">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">structured_output.py</div>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from pydantic import BaseModel
+from abstractllm import create_llm
+
+class Person(BaseModel):
+    name: str
+    age: int
+    occupation: str
+
+llm = create_llm("openai", model="gpt-4o-mini")
+person = llm.generate(
+    "Extract: John Doe is 25 and works as a developer",
+    response_model=Person
+)
+
+print(f"{person.name}, {person.age}, {person.occupation}")
+# Output: John Doe, 25, developer</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="demo-panel" id="streaming">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">streaming.py</div>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from abstractllm import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+print("AI: ", end="", flush=True)
+for chunk in llm.generate("Write a haiku about coding", stream=True):
+    print(chunk.content, end="", flush=True)
+print()
+
+# Real-time streaming across all providers! ⚡</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Providers Section -->
+    <section class="providers">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Supported Providers</h2>
+                <p class="section-description">
+                    One interface for all major LLM providers. Switch between them with a single line change.
+                </p>
+            </div>
+            
+            <div class="providers-grid">
+                <div class="provider-card">
+                    <div class="provider-logo">
+                        <img src="assets/providers/openai.svg" alt="OpenAI">
+                    </div>
+                    <h3 class="provider-name">OpenAI</h3>
+                    <p class="provider-description">GPT-4, GPT-3.5, and more</p>
+                    <div class="provider-status">
+                        <span class="status-badge status-full">✅ Full Support</span>
+                    </div>
+                </div>
+                
+                <div class="provider-card">
+                    <div class="provider-logo">
+                        <img src="assets/providers/anthropic.svg" alt="Anthropic">
+                    </div>
+                    <h3 class="provider-name">Anthropic</h3>
+                    <p class="provider-description">Claude 3.5, Claude 3, and more</p>
+                    <div class="provider-status">
+                        <span class="status-badge status-full">✅ Full Support</span>
+                    </div>
+                </div>
+                
+                <div class="provider-card">
+                    <div class="provider-logo">
+                        <img src="assets/providers/ollama.svg" alt="Ollama">
+                    </div>
+                    <h3 class="provider-name">Ollama</h3>
+                    <p class="provider-description">Local models, privacy-first</p>
+                    <div class="provider-status">
+                        <span class="status-badge status-full">✅ Full Support</span>
+                    </div>
+                </div>
+                
+                <div class="provider-card">
+                    <div class="provider-logo">
+                        <img src="assets/providers/lmstudio.svg" alt="LMStudio">
+                    </div>
+                    <h3 class="provider-name">LMStudio</h3>
+                    <p class="provider-description">Local inference server</p>
+                    <div class="provider-status">
+                        <span class="status-badge status-full">✅ Full Support</span>
+                    </div>
+                </div>
+                
+                <div class="provider-card">
+                    <div class="provider-logo">
+                        <img src="assets/providers/mlx.svg" alt="MLX">
+                    </div>
+                    <h3 class="provider-name">MLX</h3>
+                    <p class="provider-description">Apple Silicon optimized</p>
+                    <div class="provider-status">
+                        <span class="status-badge status-full">✅ Full Support</span>
+                    </div>
+                </div>
+                
+                <div class="provider-card">
+                    <div class="provider-logo">
+                        <img src="assets/providers/huggingface.svg" alt="HuggingFace">
+                    </div>
+                    <h3 class="provider-name">HuggingFace</h3>
+                    <p class="provider-description">Open source models</p>
+                    <div class="provider-status">
+                        <span class="status-badge status-full">✅ Full Support</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Documentation Section -->
+    <section id="docs" class="documentation">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Comprehensive Documentation</h2>
+                <p class="section-description">
+                    Everything you need to build production-ready LLM applications.
+                </p>
+            </div>
+            
+            <div class="docs-grid">
+                <div class="doc-category">
+                    <h3 class="doc-category-title">🚀 Getting Started</h3>
+                    <div class="doc-links">
+                        <a href="docs/getting-started.html" class="doc-link">
+                            <span class="doc-title">Quick Start Guide</span>
+                            <span class="doc-description">5-minute setup and first LLM call</span>
+                        </a>
+                        <a href="docs/prerequisites.html" class="doc-link">
+                            <span class="doc-title">Prerequisites & Setup</span>
+                            <span class="doc-description">Install and configure providers</span>
+                        </a>
+                        <a href="docs/troubleshooting.html" class="doc-link">
+                            <span class="doc-title">Troubleshooting</span>
+                            <span class="doc-description">Fix common issues quickly</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="doc-category">
+                    <h3 class="doc-category-title">📚 Core Library</h3>
+                    <div class="doc-links">
+                        <a href="docs/api-reference.html" class="doc-link">
+                            <span class="doc-title">Python API Reference</span>
+                            <span class="doc-description">Complete API documentation</span>
+                        </a>
+                        <a href="docs/session.html" class="doc-link">
+                            <span class="doc-title">Session Management</span>
+                            <span class="doc-description">Persistent conversations</span>
+                        </a>
+                        <a href="docs/embeddings.html" class="doc-link">
+                            <span class="doc-title">Embeddings Guide</span>
+                            <span class="doc-description">Semantic search and RAG</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="doc-category">
+                    <h3 class="doc-category-title">🌐 Server & API</h3>
+                    <div class="doc-links">
+                        <a href="docs/server.html" class="doc-link">
+                            <span class="doc-title">HTTP Server Guide</span>
+                            <span class="doc-description">OpenAI-compatible REST API</span>
+                        </a>
+                        <a href="docs/tool-syntax-rewriting.html" class="doc-link">
+                            <span class="doc-title">Tool Syntax Rewriting</span>
+                            <span class="doc-description">Agentic CLI compatibility</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="doc-category">
+                    <h3 class="doc-category-title">🔧 Advanced</h3>
+                    <div class="doc-links">
+                        <a href="docs/architecture.html" class="doc-link">
+                            <span class="doc-title">Architecture Overview</span>
+                            <span class="doc-description">System design and components</span>
+                        </a>
+                        <a href="docs/capabilities.html" class="doc-link">
+                            <span class="doc-title">Capabilities</span>
+                            <span class="doc-description">What AbstractCore can do</span>
+                        </a>
+                        <a href="docs/internal-cli.html" class="doc-link">
+                            <span class="doc-title">Internal CLI</span>
+                            <span class="doc-description">Built-in testing tool</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Examples Section -->
+    <section id="examples" class="examples">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Real-World Examples</h2>
+                <p class="section-description">
+                    Learn from practical examples and use cases.
+                </p>
+            </div>
+            
+            <div class="examples-grid">
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Provider Flexibility</h3>
+                        <span class="example-badge">Core Feature</span>
+                    </div>
+                    <p class="example-description">
+                        Switch between providers with identical code. Perfect for development vs production environments.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python"># Development (free, local)
+llm_dev = create_llm("ollama", model="qwen3:4b")
+
+# Production (high quality, cloud)
+llm_prod = create_llm("openai", model="gpt-4o-mini")
+
+# Same interface, different capabilities</code></pre>
+                    </div>
+                    <a href="docs/examples.html#provider-flexibility" class="example-link">View Full Example →</a>
+                </div>
+                
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">RAG with Embeddings</h3>
+                        <span class="example-badge">Advanced</span>
+                    </div>
+                    <p class="example-description">
+                        Build retrieval-augmented generation systems with built-in embedding support.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
+
+embedder = EmbeddingManager()
+docs_embeddings = embedder.embed_batch(documents)
+
+# Find most similar document
+query_embedding = embedder.embed("user query")
+similarity = embedder.compute_similarity(query, docs[0])</code></pre>
+                    </div>
+                    <a href="docs/examples.html#rag-embeddings" class="example-link">View Full Example →</a>
+                </div>
+                
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Universal API Server</h3>
+                        <span class="example-badge">Server</span>
+                    </div>
+                    <p class="example-description">
+                        Deploy an OpenAI-compatible API server that works with all providers.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-bash"># Start server
+uvicorn abstractllm.server.app:app --port 8000
+
+# Use with any OpenAI client
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -d '{"model": "ollama/qwen3-coder:30b", ...}'</code></pre>
+                    </div>
+                    <a href="docs/examples.html#api-server" class="example-link">View Full Example →</a>
+                </div>
+            </div>
+            
+            <div class="examples-cta">
+                <a href="docs/examples.html" class="btn btn-primary">
+                    View All Examples
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14"/>
+                        <path d="M12 5l7 7-7 7"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <div class="footer-brand">
+                        <img src="assets/logo.svg" alt="AbstractCore" class="footer-logo">
+                        <span class="footer-brand-text">AbstractCore</span>
+                    </div>
+                    <p class="footer-description">
+                        Unified LLM provider interface for Python. Write once, run everywhere.
+                    </p>
+                    <div class="footer-social">
+                        <a href="https://github.com/lpalbou/AbstractCore" class="social-link" target="_blank" aria-label="GitHub">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="footer-section">
+                    <h4 class="footer-title">Documentation</h4>
+                    <ul class="footer-links">
+                        <li><a href="docs/getting-started.html">Getting Started</a></li>
+                        <li><a href="docs/api-reference.html">API Reference</a></li>
+                        <li><a href="docs/examples.html">Examples</a></li>
+                        <li><a href="docs/troubleshooting.html">Troubleshooting</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-section">
+                    <h4 class="footer-title">Resources</h4>
+                    <ul class="footer-links">
+                        <li><a href="https://github.com/lpalbou/AbstractCore" target="_blank">GitHub Repository</a></li>
+                        <li><a href="https://github.com/lpalbou/AbstractCore/issues" target="_blank">Report Issues</a></li>
+                        <li><a href="https://github.com/lpalbou/AbstractCore/discussions" target="_blank">Discussions</a></li>
+                        <li><a href="llms.txt">LLMs.txt</a></li>
+                    </ul>
+                </div>
+                
+                <div class="footer-section">
+                    <h4 class="footer-title">Community</h4>
+                    <ul class="footer-links">
+                        <li><a href="docs/contributing.html">Contributing</a></li>
+                        <li><a href="docs/changelog.html">Changelog</a></li>
+                        <li><a href="docs/acknowledgements.html">Acknowledgements</a></li>
+                        <li><a href="https://github.com/lpalbou/AbstractCore/blob/main/LICENSE" target="_blank">MIT License</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="footer-bottom">
+                <div class="footer-copyright">
+                    <p>&copy; 2025 AbstractCore. Licensed under MIT License.</p>
+                </div>
+                <div class="footer-meta">
+                    <span>Made with ❤️ for the AI community</span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="assets/js/main.js"></script>
+</body>
+</html>

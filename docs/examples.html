@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Examples - AbstractCore</title>
+    <meta name="description" content="Real-world examples and use cases for AbstractCore. Learn from practical implementations.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="../index.html" class="brand-link">
+                    <img src="../assets/logo.svg" alt="AbstractCore" class="brand-logo">
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="../index.html#features" class="nav-link">Features</a>
+                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
+                <a href="../index.html#docs" class="nav-link">Documentation</a>
+                <a href="../index.html#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1000px;">
+            <div class="doc-header" style="margin-bottom: 3rem; text-align: center;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Real-World Examples</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Learn from practical examples and use cases. All examples work across any provider.
+                </p>
+            </div>
+
+            <div class="examples-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 2rem;">
+                
+                <!-- Provider Flexibility Example -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Provider Flexibility</h3>
+                        <span class="example-badge">Core Feature</span>
+                    </div>
+                    <p class="example-description">
+                        Switch between providers with identical code. Perfect for development vs production environments.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python"># Development (free, local)
+llm_dev = create_llm("ollama", model="qwen3:4b")
+
+# Production (high quality, cloud)
+llm_prod = create_llm("openai", model="gpt-4o-mini")
+
+# Same interface, different capabilities
+def ask_question(llm, question):
+    return llm.generate(question)
+
+# Works with any provider
+dev_answer = ask_question(llm_dev, "What is Python?")
+prod_answer = ask_question(llm_prod, "What is Python?")</code></pre>
+                    </div>
+                </div>
+
+                <!-- RAG Example -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">RAG with Embeddings</h3>
+                        <span class="example-badge">Advanced</span>
+                    </div>
+                    <p class="example-description">
+                        Build retrieval-augmented generation systems with built-in embedding support.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
+from abstractllm import create_llm
+
+# Initialize components
+embedder = EmbeddingManager()
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Documents to search
+documents = [
+    "Python is great for data science and machine learning.",
+    "JavaScript powers modern web applications.",
+    "Rust ensures memory safety without garbage collection."
+]
+
+# Create embeddings
+doc_embeddings = embedder.embed_batch(documents)
+
+# User query
+query = "Tell me about web development"
+query_embedding = embedder.embed(query)
+
+# Find most similar document
+similarities = [
+    embedder.compute_similarity(query_embedding, doc_emb)
+    for doc_emb in doc_embeddings
+]
+
+best_doc_idx = similarities.index(max(similarities))
+context = documents[best_doc_idx]
+
+# Generate response with context
+response = llm.generate(
+    f"Context: {context}\n\nQuestion: {query}\n\nAnswer:"
+)
+print(response.content)</code></pre>
+                    </div>
+                </div>
+
+                <!-- Tool Calling Example -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Advanced Tool Calling</h3>
+                        <span class="example-badge">Tools</span>
+                    </div>
+                    <p class="example-description">
+                        Create sophisticated tool-enabled applications that work across all providers.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractllm import create_llm, tool
+import requests
+import json
+
+@tool
+def search_web(query: str) -> str:
+    """Search the web for information."""
+    # Simplified example - use actual search API
+    return f"Search results for '{query}': [relevant information]"
+
+@tool
+def save_to_file(filename: str, content: str) -> str:
+    """Save content to a file."""
+    with open(filename, 'w') as f:
+        f.write(content)
+    return f"Saved content to {filename}"
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    # Simplified example - use actual weather API
+    return f"Weather in {city}: 72°F, sunny"
+
+# Create LLM with tools
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+
+# Complex multi-tool request
+response = llm.generate(
+    """
+    I need you to:
+    1. Search for information about Python web frameworks
+    2. Get the weather in San Francisco
+    3. Save a summary to a file called 'research.txt'
+    
+    Please complete these tasks in order.
+    """,
+    tools=[search_web, get_weather, save_to_file]
+)
+
+print(response.content)</code></pre>
+                    </div>
+                </div>
+
+                <!-- Structured Output Example -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Complex Structured Output</h3>
+                        <span class="example-badge">Type Safe</span>
+                    </div>
+                    <p class="example-description">
+                        Extract complex structured data with automatic validation and retry.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from pydantic import BaseModel, Field
+from typing import List, Optional
+from abstractllm import create_llm
+
+class Address(BaseModel):
+    street: str
+    city: str
+    state: str
+    zip_code: str
+
+class Person(BaseModel):
+    name: str
+    age: int = Field(gt=0, le=150)
+    email: Optional[str] = None
+    address: Address
+    skills: List[str]
+
+class Company(BaseModel):
+    name: str
+    employees: List[Person]
+    founded_year: int
+    headquarters: Address
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Extract complex nested data
+company_data = """
+TechCorp was founded in 2010 and is headquartered at 
+123 Tech Street, San Francisco, CA 94105. 
+
+Employees:
+- John Doe, 30, john@techcorp.com, lives at 456 Oak Ave, 
+  Palo Alto, CA 94301. Skills: Python, JavaScript, React.
+- Jane Smith, 28, jane@techcorp.com, lives at 789 Pine St, 
+  Mountain View, CA 94041. Skills: Go, Kubernetes, Docker.
+"""
+
+company = llm.generate(
+    f"Extract company information: {company_data}",
+    response_model=Company
+)
+
+print(f"Company: {company.name}")
+print(f"Founded: {company.founded_year}")
+print(f"Employees: {len(company.employees)}")
+for emp in company.employees:
+    print(f"  - {emp.name}, {emp.age}, {emp.address.city}")
+    print(f"    Skills: {', '.join(emp.skills)}")</code></pre>
+                    </div>
+                </div>
+
+                <!-- Streaming Example -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Real-Time Streaming</h3>
+                        <span class="example-badge">Streaming</span>
+                    </div>
+                    <p class="example-description">
+                        Build interactive applications with real-time streaming responses.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractllm import create_llm, tool
+import time
+
+@tool
+def get_system_time() -> str:
+    """Get the current system time."""
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+def interactive_chat():
+    llm = create_llm("openai", model="gpt-4o-mini")
+    
+    print("🤖 AI Assistant (type 'quit' to exit)")
+    print("=" * 40)
+    
+    while True:
+        user_input = input("\n👤 You: ")
+        if user_input.lower() == 'quit':
+            break
+            
+        print("🤖 AI: ", end="", flush=True)
+        
+        # Stream response with tool support
+        for chunk in llm.generate(
+            user_input,
+            tools=[get_system_time],
+            stream=True
+        ):
+            print(chunk.content, end="", flush=True)
+            
+            # Handle tool calls during streaming
+            if chunk.tool_calls:
+                print("\n🛠️  [Tool executed]", flush=True)
+                print("🤖 AI: ", end="", flush=True)
+        
+        print()  # New line after response
+
+# Run the interactive chat
+if __name__ == "__main__":
+    interactive_chat()</code></pre>
+                    </div>
+                </div>
+
+                <!-- Session Management Example -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Session Management</h3>
+                        <span class="example-badge">Memory</span>
+                    </div>
+                    <p class="example-description">
+                        Build applications with persistent conversation memory and analytics.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractllm import create_llm, BasicSession
+import json
+
+def create_tutoring_session():
+    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    
+    # Create session with system prompt
+    session = BasicSession(
+        provider=llm,
+        system_prompt="""
+        You are a helpful Python programming tutor. 
+        Remember the student's progress and adapt your 
+        teaching style to their level.
+        """
+    )
+    
+    # Simulate a tutoring conversation
+    topics = [
+        "I'm new to Python. Can you explain variables?",
+        "How do I create a list?",
+        "What's the difference between a list and a tuple?",
+        "Can you give me a practice exercise?",
+        "I'm confused about the exercise. Can you help?"
+    ]
+    
+    for i, topic in enumerate(topics, 1):
+        print(f"\n--- Session {i} ---")
+        print(f"Student: {topic}")
+        
+        response = session.generate(topic)
+        print(f"Tutor: {response.content[:100]}...")
+        
+        # Add metadata to track progress
+        session.add_message(
+            'user', 
+            topic, 
+            lesson_number=i,
+            topic_category="python_basics"
+        )
+    
+    # Save session with analytics
+    session.save(
+        'tutoring_session.json',
+        summary=True,      # Generate conversation summary
+        assessment=True,   # Assess learning progress
+        facts=True        # Extract key facts learned
+    )
+    
+    print("\n📊 Session saved with analytics!")
+    
+    # Load and continue session later
+    loaded_session = BasicSession.load(
+        'tutoring_session.json', 
+        provider=llm
+    )
+    
+    # Continue conversation
+    followup = loaded_session.generate(
+        "Can you summarize what we've covered so far?"
+    )
+    print(f"\nSummary: {followup.content}")
+
+if __name__ == "__main__":
+    create_tutoring_session()</code></pre>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- More Examples Section -->
+            <div style="margin-top: 4rem; text-align: center;">
+                <h2>More Examples</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+                    Find more examples in the GitHub repository
+                </p>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
+                        <h4 style="margin: 0 0 0.5rem 0;">🚀 Progressive Examples</h4>
+                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Step-by-step learning path</p>
+                        <a href="https://github.com/lpalbou/AbstractCore/tree/main/examples/progressive" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
+                        <h4 style="margin: 0 0 0.5rem 0;">🏭 Production Examples</h4>
+                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Enterprise deployment patterns</p>
+                        <a href="https://github.com/lpalbou/AbstractCore/tree/main/examples/example_06_production" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
+                        <h4 style="margin: 0 0 0.5rem 0;">🔧 Complete RAG</h4>
+                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Full RAG implementation</p>
+                        <a href="https://github.com/lpalbou/AbstractCore/blob/main/examples/complete_rag_example.py" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
