@@ -495,19 +495,6 @@ a:hover {
     filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));
 }
 
-.brand-text::before {
-    content: 'AbstractCore';
-    position: absolute;
-    top: 0;
-    left: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.4));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    opacity: 0;
-    animation: glossyShine 3s ease-in-out infinite;
-    pointer-events: none;
-}
 
 .brand-text::after {
     content: '';
@@ -542,16 +529,6 @@ a:hover {
     }
 }
 
-@keyframes glossyShine {
-    0%, 90%, 100% {
-        opacity: 0;
-        transform: translateX(-100%);
-    }
-    10%, 80% {
-        opacity: 0.6;
-        transform: translateX(100%);
-    }
-}
 
 .brand-link:hover .brand-text::after {
     width: 100%;
