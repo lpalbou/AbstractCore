@@ -493,7 +493,7 @@ a:hover {
     letter-spacing: -0.025em;
     animation: textGlow 4s ease-in-out infinite, gradientFlow 6s ease-in-out infinite;
     filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));
-    transform: translateY(1px);
+    transform: translateY(3px);
 }
 
 
