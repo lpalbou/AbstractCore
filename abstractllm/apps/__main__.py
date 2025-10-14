@@ -8,10 +8,12 @@ Usage:
 Available apps:
     summarizer    - Document summarization tool
     extractor     - Entity and relationship extraction tool
+    judge         - Text evaluation and scoring tool
 
 Examples:
     python -m abstractllm.apps summarizer document.txt
     python -m abstractllm.apps extractor report.txt --format json-ld
+    python -m abstractllm.apps judge essay.txt --criteria clarity,accuracy
     python -m abstractllm.apps <app> --help
 """
 
@@ -36,9 +38,14 @@ def main():
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         from .extractor import main as extractor_main
         extractor_main()
+    elif app_name == "judge":
+        # Remove the app name from sys.argv and run judge
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        from .judge import main as judge_main
+        judge_main()
     else:
         print(f"Unknown app: {app_name}")
-        print("\nAvailable apps: summarizer, extractor")
+        print("\nAvailable apps: summarizer, extractor, judge")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -762,8 +762,8 @@ class EmbeddingManager:
     def estimate_tokens(self, text: str) -> int:
         """Estimate the number of tokens in the text for embedding usage calculations.
 
-        This provides a rough estimate based on text length, suitable for usage tracking.
-        For embeddings, this is mainly used for billing/quota calculations.
+        This provides accurate estimation using centralized token utilities,
+        suitable for usage tracking and billing/quota calculations.
 
         Args:
             text: Text to estimate tokens for
@@ -771,13 +771,10 @@ class EmbeddingManager:
         Returns:
             Estimated number of tokens
         """
-        if not text:
-            return 0
-
-        # Simple heuristic: roughly 4 characters per token for most languages
-        # This is consistent with OpenAI's embedding token estimation
-        estimated_tokens = max(1, len(text) // 4)
-        return estimated_tokens
+        from ..utils.token_utils import TokenUtils
+        # Use the model name if available for more accurate estimation
+        model_name = getattr(self, 'model_name', None)
+        return TokenUtils.estimate_tokens(text, model_name)
 
     def compute_similarity(self, text1: str, text2: str) -> float:
         """Compute cosine similarity between two texts.

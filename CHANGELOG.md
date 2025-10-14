@@ -20,8 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed encoding declaration in `abstractllm/__init__.py`
 - Maintained processing module as core functionality (not optional)
 
-## [2.3.6] - 2025-01-21
-
 ### Fixed
 
 #### CRITICAL: Tools + Structured Output Compatibility
@@ -698,11 +696,10 @@ This release focuses on improving the developer experience with AbstractLLM's un
   - JSON-LD, JSON, and YAML output formats for knowledge graphs
   - CLI application: `extractor <file>` with focus areas, entity filters, and extraction styles
   - Chunked processing for large documents with configurable chunk sizes
-  - Console scripts: `extractor` and `abstractllm-extractor`
+  - Console script: `extractor`
 
 - **Summarizer CLI Enhancements**: Production-ready text summarization application
   - Console script: `summarizer` for easy command-line access (no module path needed)
-  - Console alias: `abstractllm-summarizer` for explicit namespace
   - Comprehensive parameter support: chunk size, provider/model selection, output format
   - Multiple summary styles: structured, narrative, objective, analytical, executive
   - Configurable extraction depth: brief, standard, detailed, comprehensive
