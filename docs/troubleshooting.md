@@ -42,6 +42,11 @@ Understanding common pitfalls helps prevent issues before they occur.
    - *Quick Fix*: Enable "Status: Running" toggle in LM Studio GUI
    - See: [LM Studio Server Not Enabled](#issue-lm-studio-server-not-enabled)
 
+5. **📏 Context Length Too Small (LM Studio/Ollama)**
+   - *Symptom*: 400 Bad Request, truncated responses, errors with long inputs
+   - *Quick Fix*: Set "Default Context Length" to "Model Maximum" in LM Studio
+   - See: [Context Length Too Small](#issue-context-length-too-small-400-bad-request-truncated-responses)
+
 ### Common Mistake Patterns
 
 #### Mistake: Missing or Incorrect API Keys
@@ -661,6 +666,49 @@ curl http://localhost:1234/v1/models
 # If still failing, check LM Studio logs for any error messages
 ```
 
+**Issue: Context Length Too Small (400 Bad Request, Truncated Responses)**
+```bash
+# Problem: LLM returns 400 Bad Request, truncated output, or errors with long inputs
+# Root Cause: Insufficient context length configured for the model or server
+
+# Solution 1: Increase Default Context Length (RECOMMENDED)
+# This is the most robust way to ensure all models use maximum available context
+# 1. Open LM Studio application
+# 2. Go to "App Settings" → "General" tab
+# 3. Find "Model Defaults" → "Default Context Length"
+# 4. Set dropdown to "Model Maximum" (or highest available value like 131072)
+# 5. Restart LM Studio server for changes to take effect
+
+# Solution 2: Increase Context Length per Model (Alternative)
+# This method applies context length setting to a specific model
+# 1. Open LM Studio application
+# 2. Go to "My Models" tab
+# 3. Select the specific model you are using
+# 4. Look for "Context Length" slider/input (usually under "Load" or "Context" tab)
+# 5. Adjust slider to maximum value (e.g., 131072 tokens)
+# 6. Reload the model for changes to take effect
+
+# Solution 3: Increase Context Length via API Request (Advanced)
+# For Ollama, or if you need to override settings for LM Studio via API
+# For Ollama:
+ollama run <model_name> -c <context_length>
+# Example: ollama run llama2 -c 4096
+
+# For LM Studio via API (often handled automatically by AbstractLLM):
+# Include in request payload:
+# {
+#   "model": "your-model-name",
+#   "prompt": "Your long prompt here...",
+#   "options": {
+#     "num_ctx": 4096  # Or your desired context length
+#   }
+# }
+
+# Verification:
+# After adjusting, test with a long prompt that previously failed
+# Check server logs for any warnings or errors related to context
+```
+
 ---
 
 ## Performance Issues
@@ -847,6 +895,7 @@ cat debug_report.txt
 | `Authentication Error` | Invalid API key | Check API key environment variable |
 | `Connection refused` | Service not running | Start Ollama/LMStudio/server |
 | `LM Studio connection failed` | LM Studio server not enabled | Enable "Status: Running" toggle in LM Studio GUI |
+| `400 Bad Request` (LM Studio) | Context length too small | Increase Default Context Length to "Model Maximum" in LM Studio |
 | `Model not found` | Model unavailable | Pull model or check name |
 | `Rate limit exceeded` | Too many requests | Wait or upgrade plan |
 | `Timeout` | Request took too long | Use smaller model or increase timeout |
