@@ -252,7 +252,7 @@ a:hover {
     color: var(--text-primary);
 }
 
-/* Dynamic CSS Logo */
+/* Enhanced Dynamic CSS Logo with SOTA UX */
 .logo-abstract {
     position: relative;
     width: 2.5rem;
@@ -260,16 +260,72 @@ a:hover {
     display: flex;
     align-items: center;
     justify-content: center;
+    perspective: 1000px;
 }
 
 .logo-circle {
     width: 1.5rem;
     height: 1.5rem;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    background: linear-gradient(135deg, #3b82f6, #10b981, #6366f1);
+    background-size: 200% 200%;
     position: relative;
-    animation: pulse 2s ease-in-out infinite;
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    animation: vibrantPulse 3s ease-in-out infinite, gradientShift 4s ease-in-out infinite;
+    box-shadow: 
+        0 0 20px rgba(59, 130, 246, 0.4),
+        0 0 40px rgba(16, 185, 129, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+}
+
+.logo-circle::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(from 0deg, transparent, rgba(59, 130, 246, 0.3), transparent);
+    animation: rotate 2s linear infinite;
+    border-radius: 50%;
+}
+
+.orbit-container {
+    position: absolute;
+    width: 3rem;
+    height: 3rem;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.orbit-dot {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #60a5fa, #3b82f6);
+    box-shadow: 
+        0 0 8px rgba(96, 165, 250, 0.8),
+        0 0 16px rgba(59, 130, 246, 0.4);
+    animation: bloom 1.5s ease-in-out infinite;
+}
+
+.orbit-dot-1 {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    animation: orbit1 3s linear infinite, bloom 1.5s ease-in-out infinite;
+}
+
+.orbit-dot-2 {
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    animation: orbit2 3s linear infinite reverse, bloom 1.8s ease-in-out infinite;
+    animation-delay: -1.5s, -0.7s;
 }
 
 .logo-lines {
@@ -281,13 +337,27 @@ a:hover {
     justify-content: space-around;
     align-items: flex-end;
     padding: 0.25rem;
+    z-index: 1;
 }
 
 .logo-line {
     height: 2px;
-    background: linear-gradient(90deg, var(--primary-color), transparent);
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.8), rgba(16, 185, 129, 0.6), transparent);
     border-radius: 1px;
-    animation: expand 3s ease-in-out infinite;
+    animation: dataFlow 2.5s ease-in-out infinite;
+    position: relative;
+    overflow: hidden;
+}
+
+.logo-line::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+    animation: shimmer 3s ease-in-out infinite;
 }
 
 .logo-line:nth-child(1) {
@@ -295,35 +365,118 @@ a:hover {
     animation-delay: 0s;
 }
 
+.logo-line:nth-child(1)::before {
+    animation-delay: 0.5s;
+}
+
 .logo-line:nth-child(2) {
     width: 1rem;
-    animation-delay: 0.5s;
+    animation-delay: 0.3s;
+}
+
+.logo-line:nth-child(2)::before {
+    animation-delay: 0.8s;
 }
 
 .logo-line:nth-child(3) {
     width: 0.6rem;
-    animation-delay: 1s;
+    animation-delay: 0.6s;
 }
 
-@keyframes pulse {
+.logo-line:nth-child(3)::before {
+    animation-delay: 1.1s;
+}
+
+/* Enhanced Keyframes */
+@keyframes vibrantPulse {
     0%, 100% {
-        transform: scale(1);
-        box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        transform: scale(1) rotateY(0deg);
+        box-shadow: 
+            0 0 20px rgba(59, 130, 246, 0.4),
+            0 0 40px rgba(16, 185, 129, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.3);
     }
     50% {
-        transform: scale(1.1);
-        box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+        transform: scale(1.08) rotateY(5deg);
+        box-shadow: 
+            0 0 30px rgba(59, 130, 246, 0.6),
+            0 0 60px rgba(16, 185, 129, 0.4),
+            0 0 80px rgba(99, 102, 241, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.4);
     }
 }
 
-@keyframes expand {
+@keyframes gradientShift {
+    0%, 100% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes orbit1 {
+    0% {
+        transform: translateX(-50%) rotate(0deg) translateX(1.5rem) rotate(0deg);
+    }
+    100% {
+        transform: translateX(-50%) rotate(360deg) translateX(1.5rem) rotate(-360deg);
+    }
+}
+
+@keyframes orbit2 {
+    0% {
+        transform: translateY(-50%) rotate(0deg) translateY(1.5rem) rotate(0deg);
+    }
+    100% {
+        transform: translateY(-50%) rotate(360deg) translateY(1.5rem) rotate(-360deg);
+    }
+}
+
+@keyframes bloom {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.8;
+        box-shadow: 
+            0 0 8px rgba(96, 165, 250, 0.8),
+            0 0 16px rgba(59, 130, 246, 0.4);
+    }
+    50% {
+        transform: scale(1.4);
+        opacity: 1;
+        box-shadow: 
+            0 0 12px rgba(96, 165, 250, 1),
+            0 0 24px rgba(59, 130, 246, 0.6),
+            0 0 36px rgba(16, 185, 129, 0.3);
+    }
+}
+
+@keyframes dataFlow {
     0%, 100% {
         transform: scaleX(1);
         opacity: 0.7;
     }
     50% {
-        transform: scaleX(1.2);
+        transform: scaleX(1.3);
         opacity: 1;
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        left: -100%;
+    }
+    100% {
+        left: 100%;
     }
 }
 
@@ -331,12 +484,29 @@ a:hover {
     font-size: 1.375rem;
     font-weight: 800;
     color: var(--text-primary);
-    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    background: linear-gradient(135deg, #3b82f6, #10b981, #6366f1, #f59e0b);
+    background-size: 300% 300%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
     position: relative;
     letter-spacing: -0.025em;
+    animation: textGlow 4s ease-in-out infinite, gradientFlow 6s ease-in-out infinite;
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));
+}
+
+.brand-text::before {
+    content: 'AbstractCore';
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.4));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    opacity: 0;
+    animation: glossyShine 3s ease-in-out infinite;
+    pointer-events: none;
 }
 
 .brand-text::after {
@@ -350,16 +520,59 @@ a:hover {
     transition: width 0.3s ease;
 }
 
+/* Enhanced Text Animation Keyframes */
+@keyframes textGlow {
+    0%, 100% {
+        filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.3));
+    }
+    50% {
+        filter: drop-shadow(0 0 16px rgba(59, 130, 246, 0.6)) drop-shadow(0 0 24px rgba(16, 185, 129, 0.3));
+    }
+}
+
+@keyframes gradientFlow {
+    0%, 100% {
+        background-position: 0% 50%;
+    }
+    33% {
+        background-position: 50% 0%;
+    }
+    66% {
+        background-position: 100% 50%;
+    }
+}
+
+@keyframes glossyShine {
+    0%, 90%, 100% {
+        opacity: 0;
+        transform: translateX(-100%);
+    }
+    10%, 80% {
+        opacity: 0.6;
+        transform: translateX(100%);
+    }
+}
+
 .brand-link:hover .brand-text::after {
     width: 100%;
 }
 
 .brand-link:hover .logo-circle {
-    animation-duration: 1s;
+    animation-duration: 1.5s;
+    transform: scale(1.1);
 }
 
 .brand-link:hover .logo-line {
-    animation-duration: 1.5s;
+    animation-duration: 1s;
+}
+
+.brand-link:hover .orbit-dot {
+    animation-duration: 1s, 0.8s;
+}
+
+.brand-link:hover .brand-text {
+    animation-duration: 2s, 3s;
+    filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.8)) drop-shadow(0 0 30px rgba(16, 185, 129, 0.4));
 }
 
 /* Legacy support for SVG logo */
