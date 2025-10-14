@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Embeddings - AbstractCore</title>
+    <meta name="description" content="SOTA embedding models for semantic search, RAG applications, and similarity computation with AbstractCore.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="../index.html" class="brand-link">
+                    <div class="brand-logo">
+                        <div class="logo-abstract">
+                            <div class="logo-circle"></div>
+                            <div class="logo-lines">
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="../index.html#features" class="nav-link">Features</a>
+                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
+                <a href="../index.html#docs" class="nav-link">Documentation</a>
+                <a href="../index.html#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.30.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1000px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Vector Embeddings</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    SOTA embedding models for semantic search, RAG applications, and similarity computation.
+                </p>
+            </div>
+
+            <div class="doc-content">
+                <section id="overview">
+                    <h2>Overview</h2>
+                    <p>AbstractCore provides a unified interface to state-of-the-art embedding models across multiple providers. Generate high-quality vector embeddings for semantic search, retrieval-augmented generation (RAG), and similarity analysis.</p>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Supported Providers</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                            <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem;">
+                                <strong>HuggingFace</strong><br>
+                                <small>Open-source models, local processing</small>
+                            </div>
+                            <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem;">
+                                <strong>Ollama</strong><br>
+                                <small>Local embedding models</small>
+                            </div>
+                            <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem;">
+                                <strong>LMStudio</strong><br>
+                                <small>GUI-based local models</small>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="quick-start">
+                    <h2>Quick Start</h2>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
+
+# Create embedding manager (HuggingFace by default)
+embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
+
+# Generate single embedding
+text = "AbstractCore is a unified LLM interface"
+embedding = embedder.embed(text)
+print(f"Embedding dimension: {len(embedding)}")
+
+# Generate batch embeddings
+texts = [
+    "Machine learning is fascinating",
+    "AI models are getting better",
+    "Python is great for data science"
+]
+embeddings = embedder.embed_batch(texts)
+print(f"Generated {len(embeddings)} embeddings")
+
+# Compute similarity
+similarity = embedder.compute_similarity(
+    "Machine learning",
+    "Artificial intelligence"
+)
+print(f"Similarity: {similarity:.3f}")</code></pre>
+                    </div>
+                </section>
+
+                <section id="providers">
+                    <h2>Provider Configuration</h2>
+                    
+                    <h3>HuggingFace (Default)</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># HuggingFace provider (default)
+embedder = EmbeddingManager(
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    provider="huggingface"  # Optional, default
+)
+
+# Popular HuggingFace models
+models = [
+    "sentence-transformers/all-MiniLM-L6-v2",  # Fast, good quality
+    "sentence-transformers/all-mpnet-base-v2", # Higher quality
+    "BAAI/bge-large-en-v1.5",                 # SOTA English
+    "intfloat/multilingual-e5-large"          # Multilingual
+]</code></pre>
+                    </div>
+
+                    <h3>Ollama Provider</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Ollama provider
+embedder = EmbeddingManager(
+    model="granite-embedding:278m",
+    provider="ollama"
+)
+
+# First, download the model
+# ollama pull granite-embedding:278m
+
+# Popular Ollama embedding models
+models = [
+    "granite-embedding:278m",     # IBM Granite
+    "nomic-embed-text",          # Nomic AI
+    "mxbai-embed-large"          # MixedBread AI
+]</code></pre>
+                    </div>
+
+                    <h3>LMStudio Provider</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># LMStudio provider
+embedder = EmbeddingManager(
+    model="text-embedding-all-minilm-l6-v2-embedding",
+    provider="lmstudio",
+    base_url="http://localhost:1234"  # LMStudio server
+)
+
+# Make sure LMStudio is running with an embedding model loaded</code></pre>
+                    </div>
+                </section>
+
+                <section id="semantic-search">
+                    <h2>Semantic Search</h2>
+                    
+                    <h3>Basic Semantic Search</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
+
+# Create embedder
+embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
+
+# Document collection
+documents = [
+    "Python is a programming language",
+    "Machine learning uses algorithms to learn patterns",
+    "Natural language processing analyzes text",
+    "Deep learning is a subset of machine learning",
+    "JavaScript is used for web development"
+]
+
+# Generate embeddings for all documents
+doc_embeddings = embedder.embed_batch(documents)
+
+# Search query
+query = "What is ML?"
+query_embedding = embedder.embed(query)
+
+# Find most similar documents
+similarities = []
+for i, doc_emb in enumerate(doc_embeddings):
+    similarity = embedder.compute_similarity_vectors(query_embedding, doc_emb)
+    similarities.append((i, similarity, documents[i]))
+
+# Sort by similarity
+similarities.sort(key=lambda x: x[1], reverse=True)
+
+print("Search results:")
+for rank, (idx, score, doc) in enumerate(similarities[:3], 1):
+    print(f"{rank}. {doc} (score: {score:.3f})")</code></pre>
+                    </div>
+
+                    <h3>Advanced Semantic Search</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">import numpy as np
+from typing import List, Tuple
+
+class SemanticSearchEngine:
+    def __init__(self, model: str = "sentence-transformers/all-MiniLM-L6-v2"):
+        self.embedder = EmbeddingManager(model=model)
+        self.documents = []
+        self.embeddings = []
+    
+    def add_documents(self, docs: List[str]):
+        """Add documents to the search index."""
+        self.documents.extend(docs)
+        new_embeddings = self.embedder.embed_batch(docs)
+        self.embeddings.extend(new_embeddings)
+    
+    def search(self, query: str, top_k: int = 5) -> List[Tuple[str, float]]:
+        """Search for similar documents."""
+        query_embedding = self.embedder.embed(query)
+        
+        similarities = []
+        for i, doc_embedding in enumerate(self.embeddings):
+            similarity = self.embedder.compute_similarity_vectors(
+                query_embedding, doc_embedding
+            )
+            similarities.append((self.documents[i], similarity))
+        
+        # Sort by similarity and return top_k
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        return similarities[:top_k]
+
+# Usage
+search_engine = SemanticSearchEngine()
+search_engine.add_documents([
+    "AbstractCore provides unified LLM access",
+    "Python is great for machine learning",
+    "Vector embeddings enable semantic search",
+    "RAG combines retrieval with generation"
+])
+
+results = search_engine.search("How to use LLMs?", top_k=2)
+for doc, score in results:
+    print(f"{doc} (score: {score:.3f})")</code></pre>
+                    </div>
+                </section>
+
+                <section id="rag-applications">
+                    <h2>RAG Applications</h2>
+                    
+                    <h3>Simple RAG System</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm import create_llm
+from abstractllm.embeddings import EmbeddingManager
+
+class SimpleRAG:
+    def __init__(self, llm_provider="openai", llm_model="gpt-4o-mini"):
+        self.llm = create_llm(llm_provider, model=llm_model)
+        self.embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
+        self.knowledge_base = []
+        self.embeddings = []
+    
+    def add_knowledge(self, documents: List[str]):
+        """Add documents to knowledge base."""
+        self.knowledge_base.extend(documents)
+        new_embeddings = self.embedder.embed_batch(documents)
+        self.embeddings.extend(new_embeddings)
+    
+    def retrieve(self, query: str, top_k: int = 3) -> List[str]:
+        """Retrieve relevant documents."""
+        query_embedding = self.embedder.embed(query)
+        
+        similarities = []
+        for i, doc_embedding in enumerate(self.embeddings):
+            similarity = self.embedder.compute_similarity_vectors(
+                query_embedding, doc_embedding
+            )
+            similarities.append((i, similarity))
+        
+        # Get top_k most similar documents
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        return [self.knowledge_base[i] for i, _ in similarities[:top_k]]
+    
+    def generate(self, query: str) -> str:
+        """Generate answer using retrieved context."""
+        # Retrieve relevant documents
+        context_docs = self.retrieve(query)
+        context = "\n\n".join(context_docs)
+        
+        # Create prompt with context
+        prompt = f"""Based on the following context, answer the question.
+
+Context:
+{context}
+
+Question: {query}
+
+Answer:"""
+        
+        response = self.llm.generate(prompt)
+        return response.content
+
+# Usage
+rag = SimpleRAG()
+
+# Add knowledge
+rag.add_knowledge([
+    "AbstractCore is a Python library for unified LLM access.",
+    "It supports OpenAI, Anthropic, Ollama, MLX, and LMStudio.",
+    "AbstractCore provides tool calling across all providers.",
+    "The library includes session management and embeddings."
+])
+
+# Ask questions
+answer = rag.generate("What providers does AbstractCore support?")
+print(answer)</code></pre>
+                    </div>
+                </section>
+
+                <section id="similarity-clustering">
+                    <h2>Similarity & Clustering</h2>
+                    
+                    <h3>Similarity Matrix</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Compute similarity matrix
+texts = [
+    "Machine learning algorithms",
+    "Deep learning networks", 
+    "Natural language processing",
+    "Computer vision systems",
+    "Web development frameworks"
+]
+
+# Generate embeddings
+embeddings = embedder.embed_batch(texts)
+
+# Compute similarity matrix
+similarity_matrix = embedder.compute_similarities_matrix(embeddings, embeddings)
+
+print("Similarity Matrix:")
+for i, text1 in enumerate(texts):
+    for j, text2 in enumerate(texts):
+        if i <= j:  # Only show upper triangle
+            similarity = similarity_matrix[i][j]
+            print(f"{text1[:20]}... vs {text2[:20]}...: {similarity:.3f}")
+    print()</code></pre>
+                    </div>
+
+                    <h3>Automatic Clustering</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Find similar clusters
+texts = [
+    "Python programming language",
+    "JavaScript for web development", 
+    "Machine learning with Python",
+    "Deep learning algorithms",
+    "React JavaScript framework",
+    "Neural networks and AI",
+    "Web development with JS",
+    "Python data science tools"
+]
+
+embeddings = embedder.embed_batch(texts)
+
+# Find clusters with similarity threshold
+clusters = embedder.find_similar_clusters(
+    texts, 
+    embeddings, 
+    threshold=0.7  # Similarity threshold
+)
+
+print("Discovered clusters:")
+for i, cluster in enumerate(clusters):
+    print(f"Cluster {i+1}:")
+    for text in cluster:
+        print(f"  - {text}")
+    print()</code></pre>
+                    </div>
+                </section>
+
+                <section id="performance">
+                    <h2>Performance Optimization</h2>
+                    
+                    <h3>Caching</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Enable caching for better performance
+embedder = EmbeddingManager(
+    model="sentence-transformers/all-MiniLM-L6-v2",
+    cache_dir="./embedding_cache",  # Custom cache directory
+    use_cache=True  # Enable caching (default)
+)
+
+# Embeddings are automatically cached
+embedding1 = embedder.embed("This text will be cached")
+embedding2 = embedder.embed("This text will be cached")  # Retrieved from cache
+
+# Clear cache if needed
+embedder.clear_cache()</code></pre>
+                    </div>
+
+                    <h3>Batch Processing</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Process large batches efficiently
+large_text_collection = [f"Document {i}" for i in range(1000)]
+
+# Process in batches for memory efficiency
+batch_size = 32
+all_embeddings = []
+
+for i in range(0, len(large_text_collection), batch_size):
+    batch = large_text_collection[i:i+batch_size]
+    batch_embeddings = embedder.embed_batch(batch)
+    all_embeddings.extend(batch_embeddings)
+    
+    print(f"Processed {min(i+batch_size, len(large_text_collection))}/{len(large_text_collection)} documents")
+
+print(f"Generated {len(all_embeddings)} embeddings")</code></pre>
+                    </div>
+
+                    <h3>Model Comparison</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Compare different models
+models = [
+    "sentence-transformers/all-MiniLM-L6-v2",  # Fast, lightweight
+    "sentence-transformers/all-mpnet-base-v2", # Better quality
+    "BAAI/bge-large-en-v1.5"                  # SOTA performance
+]
+
+test_texts = ["Machine learning", "Artificial intelligence"]
+
+for model_name in models:
+    embedder = EmbeddingManager(model=model_name)
+    
+    # Time the embedding generation
+    import time
+    start = time.time()
+    embeddings = embedder.embed_batch(test_texts)
+    duration = time.time() - start
+    
+    print(f"Model: {model_name}")
+    print(f"Dimension: {len(embeddings[0])}")
+    print(f"Time: {duration:.3f}s")
+    print(f"Speed: {len(test_texts)/duration:.1f} texts/sec")
+    print()</code></pre>
+                    </div>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Learn the basics of AbstractCore</p>
+                        </a>
+                        
+                        <a href="prerequisites.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Prerequisites</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Setup embedding providers</p>
+                        </a>
+                        
+                        <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">RAG and search examples</p>
+                        </a>
+                        
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete embedding API docs</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

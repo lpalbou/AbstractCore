@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prerequisites & Setup - AbstractCore</title>
+    <meta name="description" content="Complete setup guide for AbstractCore with all LLM providers - OpenAI, Anthropic, Ollama, MLX, LMStudio, and HuggingFace.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="../index.html" class="brand-link">
+                    <div class="brand-logo">
+                        <div class="logo-abstract">
+                            <div class="logo-circle"></div>
+                            <div class="logo-lines">
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="../index.html#features" class="nav-link">Features</a>
+                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
+                <a href="../index.html#docs" class="nav-link">Documentation</a>
+                <a href="../index.html#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1000px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Prerequisites & Setup Guide</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Complete setup guide for AbstractCore with all LLM providers. Choose the provider(s) that best fit your needs - you can use multiple providers in the same application.
+                </p>
+            </div>
+
+            <!-- Quick Decision Guide -->
+            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem; color: white;">
+                <h2 style="margin: 0 0 1.5rem 0;">Quick Decision Guide</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1rem; border-radius: 0.5rem;">
+                        <strong>Want to get started immediately?</strong><br>
+                        <a href="#openai-setup" style="color: #fbbf24;">OpenAI Setup</a> (requires API key, costs ~$0.001-0.01 per request)
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1rem; border-radius: 0.5rem;">
+                        <strong>Want free local models?</strong><br>
+                        <a href="#ollama-setup" style="color: #fbbf24;">Ollama Setup</a> (free, runs on your machine)
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1rem; border-radius: 0.5rem;">
+                        <strong>Have Apple Silicon Mac?</strong><br>
+                        <a href="#mlx-setup" style="color: #fbbf24;">MLX Setup</a> (optimized for M1/M2/M3 chips)
+                    </div>
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1rem; border-radius: 0.5rem;">
+                        <strong>Want a GUI for local models?</strong><br>
+                        <a href="#lmstudio-setup" style="color: #fbbf24;">LMStudio Setup</a> (easiest local setup)
+                    </div>
+                </div>
+            </div>
+
+            <div class="doc-content">
+                <section id="core-installation">
+                    <h2>Core Installation</h2>
+                    <p>First, install AbstractCore with your preferred providers:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Option 1: Start with cloud providers (fastest setup)
+pip install abstractcore[openai,anthropic]
+
+# Option 2: Local models only (free, no API keys needed)
+pip install abstractcore[ollama,mlx]
+
+# Option 3: Everything (recommended for development)
+pip install abstractcore[all]
+
+# Option 4: Minimal install (add providers as needed)
+pip install abstractcore</code></pre>
+                    </div>
+                </section>
+
+                <section id="openai-setup">
+                    <h2>OpenAI Setup</h2>
+                    <p>OpenAI provides the most reliable and fastest models, including GPT-4 and GPT-3.5.</p>
+                    
+                    <h3>1. Get API Key</h3>
+                    <ol>
+                        <li>Visit <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI API Keys</a></li>
+                        <li>Create a new API key</li>
+                        <li>Copy the key (starts with <code>sk-</code>)</li>
+                    </ol>
+
+                    <h3>2. Set Environment Variable</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Linux/macOS
+export OPENAI_API_KEY="sk-your-key-here"
+
+# Windows
+set OPENAI_API_KEY=sk-your-key-here</code></pre>
+                    </div>
+
+                    <h3>3. Test Connection</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate("Hello, world!")
+print(response.content)</code></pre>
+                    </div>
+                </section>
+
+                <section id="anthropic-setup">
+                    <h2>Anthropic Setup</h2>
+                    <p>Anthropic's Claude models are excellent for reasoning and analysis tasks.</p>
+                    
+                    <h3>1. Get API Key</h3>
+                    <ol>
+                        <li>Visit <a href="https://console.anthropic.com/" target="_blank">Anthropic Console</a></li>
+                        <li>Create an API key</li>
+                        <li>Copy the key</li>
+                    </ol>
+
+                    <h3>2. Set Environment Variable</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Linux/macOS
+export ANTHROPIC_API_KEY="your-key-here"
+
+# Windows
+set ANTHROPIC_API_KEY=your-key-here</code></pre>
+                    </div>
+
+                    <h3>3. Test Connection</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm import create_llm
+
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate("Hello, world!")
+print(response.content)</code></pre>
+                    </div>
+                </section>
+
+                <section id="ollama-setup">
+                    <h2>Ollama Setup</h2>
+                    <p>Ollama provides free local models that run entirely on your machine.</p>
+                    
+                    <h3>1. Install Ollama</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># macOS
+brew install ollama
+
+# Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Windows
+# Download from https://ollama.ai/download</code></pre>
+                    </div>
+
+                    <h3>2. Start Ollama Service</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash">ollama serve</code></pre>
+                    </div>
+
+                    <h3>3. Download a Model</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Recommended models
+ollama pull qwen3:4b-instruct-2507-q4_K_M  # Fast, good quality
+ollama pull qwen3-coder:30b                 # Best for coding
+ollama pull granite3.3:2b                   # Lightweight</code></pre>
+                    </div>
+
+                    <h3>4. Test Connection</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm import create_llm
+
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+response = llm.generate("Hello, world!")
+print(response.content)</code></pre>
+                    </div>
+                </section>
+
+                <section id="mlx-setup">
+                    <h2>MLX Setup (Apple Silicon)</h2>
+                    <p>MLX provides optimized models for Apple Silicon Macs (M1/M2/M3/M4).</p>
+                    
+                    <h3>1. Install MLX</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install abstractcore[mlx]</code></pre>
+                    </div>
+
+                    <h3>2. Download a Model</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Models are downloaded automatically on first use
+from abstractllm import create_llm
+
+llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
+response = llm.generate("Hello, world!")
+print(response.content)</code></pre>
+                    </div>
+                </section>
+
+                <section id="lmstudio-setup">
+                    <h2>LMStudio Setup</h2>
+                    <p>LMStudio provides a user-friendly GUI for running local models.</p>
+                    
+                    <h3>1. Install LMStudio</h3>
+                    <ol>
+                        <li>Download from <a href="https://lmstudio.ai/" target="_blank">lmstudio.ai</a></li>
+                        <li>Install and launch the application</li>
+                        <li>Download a model through the GUI</li>
+                    </ol>
+
+                    <h3>2. Start Local Server</h3>
+                    <ol>
+                        <li>In LMStudio, go to "Local Server" tab</li>
+                        <li>Select your model</li>
+                        <li>Click "Start Server"</li>
+                        <li>Note the server URL (usually http://localhost:1234)</li>
+                    </ol>
+
+                    <h3>3. Test Connection</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm import create_llm
+
+llm = create_llm("lmstudio", model="your-model-name")
+response = llm.generate("Hello, world!")
+print(response.content)</code></pre>
+                    </div>
+                </section>
+
+                <section id="huggingface-setup">
+                    <h2>HuggingFace Setup</h2>
+                    <p>Access thousands of open-source models through HuggingFace.</p>
+                    
+                    <h3>1. Install Dependencies</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install abstractcore[huggingface]</code></pre>
+                    </div>
+
+                    <h3>2. Optional: Set HF Token</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># For private/gated models
+export HUGGINGFACE_API_TOKEN="your-token-here"</code></pre>
+                    </div>
+
+                    <h3>3. Test Connection</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm import create_llm
+
+llm = create_llm("huggingface", model="microsoft/DialoGPT-medium")
+response = llm.generate("Hello, world!")
+print(response.content)</code></pre>
+                    </div>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Next Steps</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Learn the basics and create your first LLM application</p>
+                        </a>
+                        
+                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool support across all providers</p>
+                        </a>
+                        
+                        <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world usage examples and patterns</p>
+                        </a>
+                        
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API documentation</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

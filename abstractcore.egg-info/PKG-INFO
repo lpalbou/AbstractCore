@@ -1,0 +1,421 @@
+Metadata-Version: 2.4
+Name: abstractcore
+Version: 2.3.5
+Summary: Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management
+Author: Laurent-Philippe Albou
+Maintainer: Laurent-Philippe Albou
+License: MIT
+Project-URL: Homepage, https://lpalbou.github.io/AbstractCore
+Project-URL: Documentation, https://github.com/lpalbou/AbstractCore#readme
+Project-URL: Repository, https://github.com/lpalbou/AbstractCore
+Project-URL: Bug Tracker, https://github.com/lpalbou/AbstractCore/issues
+Project-URL: Changelog, https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md
+Keywords: llm,openai,anthropic,ollama,lmstudio,huggingface,mlx,ai,machine-learning,natural-language-processing,tool-calling,streaming
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Internet :: WWW/HTTP :: HTTP Servers
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pydantic<3.0.0,>=2.0.0
+Requires-Dist: httpx<1.0.0,>=0.24.0
+Requires-Dist: tiktoken<1.0.0,>=0.5.0
+Provides-Extra: openai
+Requires-Dist: openai<2.0.0,>=1.0.0; extra == "openai"
+Provides-Extra: anthropic
+Requires-Dist: anthropic<1.0.0,>=0.25.0; extra == "anthropic"
+Provides-Extra: ollama
+Provides-Extra: lmstudio
+Provides-Extra: huggingface
+Requires-Dist: transformers<5.0.0,>=4.30.0; extra == "huggingface"
+Requires-Dist: torch<3.0.0,>=1.12.0; extra == "huggingface"
+Requires-Dist: llama-cpp-python<1.0.0,>=0.2.0; extra == "huggingface"
+Provides-Extra: mlx
+Requires-Dist: mlx<1.0.0,>=0.15.0; extra == "mlx"
+Requires-Dist: mlx-lm<1.0.0,>=0.15.0; extra == "mlx"
+Provides-Extra: embeddings
+Requires-Dist: sentence-transformers<4.0.0,>=2.7.0; extra == "embeddings"
+Requires-Dist: numpy<2.0.0,>=1.20.0; extra == "embeddings"
+Provides-Extra: processing
+Provides-Extra: api-providers
+Requires-Dist: abstractcore[anthropic,openai]; extra == "api-providers"
+Provides-Extra: local-providers
+Requires-Dist: abstractcore[lmstudio,mlx,ollama]; extra == "local-providers"
+Provides-Extra: heavy-providers
+Requires-Dist: abstractcore[huggingface]; extra == "heavy-providers"
+Provides-Extra: all-providers
+Requires-Dist: abstractcore[anthropic,embeddings,huggingface,lmstudio,mlx,ollama,openai]; extra == "all-providers"
+Provides-Extra: all
+Requires-Dist: abstractcore[anthropic,dev,docs,embeddings,huggingface,lmstudio,mlx,ollama,openai,processing,server,test]; extra == "all"
+Provides-Extra: lightweight
+Requires-Dist: abstractcore[anthropic,embeddings,lmstudio,ollama,openai,processing,server]; extra == "lightweight"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: pytest-mock>=3.10.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: isort>=5.12.0; extra == "dev"
+Requires-Dist: mypy>=1.5.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: pre-commit>=3.0.0; extra == "dev"
+Provides-Extra: server
+Requires-Dist: fastapi<1.0.0,>=0.100.0; extra == "server"
+Requires-Dist: uvicorn[standard]<1.0.0,>=0.23.0; extra == "server"
+Requires-Dist: sse-starlette<2.0.0,>=1.6.0; extra == "server"
+Provides-Extra: test
+Requires-Dist: pytest>=7.0.0; extra == "test"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "test"
+Requires-Dist: pytest-mock>=3.10.0; extra == "test"
+Requires-Dist: pytest-cov>=4.0.0; extra == "test"
+Requires-Dist: responses>=0.23.0; extra == "test"
+Requires-Dist: httpx>=0.24.0; extra == "test"
+Provides-Extra: docs
+Requires-Dist: mkdocs>=1.5.0; extra == "docs"
+Requires-Dist: mkdocs-material>=9.0.0; extra == "docs"
+Requires-Dist: mkdocstrings[python]>=0.22.0; extra == "docs"
+Requires-Dist: mkdocs-autorefs>=0.4.0; extra == "docs"
+Provides-Extra: full-dev
+Requires-Dist: abstractllm[all-providers,dev,docs,test]; extra == "full-dev"
+Dynamic: license-file
+
+# AbstractCore
+
+A unified Python library for interaction with multiple Large Language Model (LLM) providers.
+
+**Write once, run everywhere.**
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install abstractcore[all]
+```
+
+### Basic Usage
+
+```python
+from abstractllm import create_llm
+
+# Works with any provider - just change the provider name
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate("What is the capital of France?")
+print(response.content)
+```
+
+### Tool Calling
+
+```python
+from abstractllm import create_llm, tool
+
+@tool
+def get_current_weather(city: str):
+    """Fetch current weather for a given city."""
+    return f"Weather in {city}: 72°F, Sunny"
+
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate(
+    "What's the weather like in San Francisco?",
+    tools=[get_current_weather]
+)
+print(response.content)
+```
+
+### Session Management
+
+```python
+from abstractllm import BasicSession, create_llm
+
+# Create a persistent conversation session
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(llm, system_prompt="You are a helpful assistant.")
+
+# Add messages with metadata
+session.add_message('user', 'Hello!', name='alice', location='Paris')
+response = session.generate('What is Python?', name='bob')
+
+# Save complete conversation with optional analytics
+session.save('conversation.json')  # Basic save
+session.save('analyzed.json', summary=True, assessment=True, facts=True)  # With analytics
+
+# Load and continue conversation
+loaded_session = BasicSession.load('conversation.json', provider=llm)
+```
+
+[Learn more about Session](docs/session.md)
+
+## Key Features
+
+- **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
+- **Unified Tools**: Consistent tool calling across all providers
+- **Session Management**: Persistent conversations with metadata, analytics, and complete serialization
+- **Structured Responses**: Clean, predictable output formats with Pydantic
+- **Streaming Support**: Real-time token generation for interactive experiences
+- **Embeddings**: Built-in support for semantic search and RAG applications
+- **Universal Server**: Optional OpenAI-compatible API server
+
+## Supported Providers
+
+| Provider | Status | Setup |
+|----------|--------|-------|
+| **OpenAI** | Full | [Get API key](docs/prerequisites.md#openai-setup) |
+| **Anthropic** | Full | [Get API key](docs/prerequisites.md#anthropic-setup) |
+| **Ollama** | Full | [Install guide](docs/prerequisites.md#ollama-setup) |
+| **LMStudio** | Full | [Install guide](docs/prerequisites.md#lmstudio-setup) |
+| **MLX** | Full | [Setup guide](docs/prerequisites.md#mlx-setup) |
+| **HuggingFace** | Full | [Setup guide](docs/prerequisites.md#huggingface-setup) |
+
+## Server Mode (Optional HTTP REST API)
+
+AbstractCore is **primarily a Python library**. The server is an **optional component** that provides OpenAI-compatible HTTP endpoints:
+
+```bash
+# Install with server support
+pip install abstractcore[server]
+
+# Start the server
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+```
+
+Use with any OpenAI-compatible client:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+**Server Features:**
+- OpenAI-compatible REST endpoints (`/v1/chat/completions`, `/v1/embeddings`, etc.)
+- Multi-provider support through one HTTP API
+- Agentic CLI integration (Codex, Crush, Gemini CLI)
+- Streaming responses
+- Tool call format conversion
+- Interactive API docs at `/docs`
+
+**When to use the server:**
+- Integrating with existing OpenAI-compatible tools
+- Using agentic CLIs (Codex, Crush, Gemini CLI)
+- Building web applications that need HTTP API
+- Multi-language access (not just Python)
+
+## Internal CLI (Optional Interactive Testing Tool)
+
+AbstractCore includes a **built-in CLI** for interactive testing, development, and conversation management. This is an internal testing tool, distinct from external agentic CLIs.
+
+```bash
+# Start interactive CLI
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+
+# With streaming enabled
+python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --stream
+
+# Single prompt execution
+python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest --prompt "What is Python?"
+```
+
+**Key Features:**
+- Interactive REPL with conversation history
+- Chat history compaction and management
+- Fact extraction from conversations
+- Conversation quality evaluation (LLM-as-a-judge)
+- Tool call testing and debugging
+- System prompt management
+- Multiple provider support
+
+**Popular Commands:**
+- `/compact` - Compress chat history while preserving context
+- `/facts [file]` - Extract structured facts from conversation
+- `/judge` - Evaluate conversation quality with feedback
+- `/history [n]` - View conversation history
+- `/stream` - Toggle real-time streaming
+- `/system [prompt]` - Show or change system prompt
+- `/status` - Show current provider, model, and capabilities
+
+**Full Documentation:** [Internal CLI Guide](docs/internal-cli.md)
+
+**When to use the CLI:**
+- Interactive development and testing
+- Debugging tool calls and provider behavior
+- Conversation management experiments
+- Quick prototyping with different models
+- Learning AbstractCore capabilities
+
+## Documentation
+
+**📚 Complete Documentation:** [docs/](docs/) - Full documentation index and navigation guide
+
+### Getting Started
+- **[Prerequisites & Setup](docs/prerequisites.md)** - Install and configure providers (OpenAI, Anthropic, Ollama, etc.)
+- **[Getting Started Guide](docs/getting-started.md)** - 5-minute quick start with core concepts
+- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+
+### Core Library (Python)
+- **[Python API Reference](docs/api-reference.md)** - Complete Python API documentation
+- **[Session Management](docs/session.md)** - Persistent conversations, serialization, and analytics
+- **[Embeddings Guide](docs/embeddings.md)** - Semantic search, RAG, and vector embeddings
+- **[Code Examples](examples/)** - Working examples for all features
+- **[Capabilities](docs/capabilities.md)** - What AbstractCore can and cannot do
+
+### Server (Optional HTTP REST API)
+- **[Server Documentation](docs/server.md)** - Complete server setup, API reference, and deployment
+
+### Architecture & Advanced
+- **[Architecture](docs/architecture.md)** - System design and architecture overview
+- **[Tool Calling](docs/tool-calling.md)** - Universal tool system and format conversion
+
+## Use Cases
+
+### 1. Provider Flexibility
+
+```python
+# Same code works with any provider
+providers = ["openai", "anthropic", "ollama"]
+
+for provider in providers:
+    llm = create_llm(provider, model="gpt-4o-mini")  # Auto-selects appropriate model
+    response = llm.generate("Hello!")
+```
+
+### 2. Local Development, Cloud Production
+
+```python
+# Development (free, local)
+llm_dev = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+
+# Production (high quality, cloud)
+llm_prod = create_llm("openai", model="gpt-4o-mini")
+```
+
+### 3. Embeddings & RAG
+
+```python
+from abstractllm.embeddings import EmbeddingManager
+
+# Create embeddings for semantic search
+embedder = EmbeddingManager()
+docs_embeddings = embedder.embed_batch([
+    "Python is great for data science",
+    "JavaScript powers the web",
+    "Rust ensures memory safety"
+])
+
+# Find most similar document
+query_embedding = embedder.embed("Tell me about web development")
+similarity = embedder.compute_similarity(query, docs[0])
+```
+
+[Learn more about Embeddings](docs/embeddings.md)
+
+### 4. Structured Output
+
+```python
+from pydantic import BaseModel
+
+class MovieReview(BaseModel):
+    title: str
+    rating: int  # 1-5
+    summary: str
+
+llm = create_llm("openai", model="gpt-4o-mini")
+review = llm.generate(
+    "Review the movie Inception",
+    response_model=MovieReview
+)
+print(f"{review.title}: {review.rating}/5")
+```
+
+### 5. Universal API Server
+
+```bash
+# Start server once
+uvicorn abstractllm.server.app:app --port 8000
+
+# Use with any OpenAI client
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Write a Python function"}]
+  }'
+```
+
+## Why AbstractCore?
+
+- **Unified Interface**: One API for all LLM providers  
+- **Production Ready**: Robust error handling, retries, timeouts  
+- **Type Safe**: Full Pydantic integration for structured outputs  
+- **Local & Cloud**: Run models locally or use cloud APIs  
+- **Tool Calling**: Consistent function calling across providers  
+- **Streaming**: Real-time responses for interactive applications  
+- **Embeddings**: Built-in vector embeddings for RAG  
+- **Server Mode**: Optional OpenAI-compatible API server  
+- **Well Documented**: Comprehensive guides and examples  
+
+## Installation Options
+
+```bash
+# Minimal core
+pip install abstractcore
+
+# With specific providers
+pip install abstractcore[openai]
+pip install abstractcore[anthropic]
+pip install abstractcore[ollama]
+
+# With server support
+pip install abstractcore[server]
+
+# With embeddings
+pip install abstractcore[embeddings]
+
+# Everything
+pip install abstractcore[all]
+```
+
+## Testing Status
+
+All tests passing as of October 12th, 2025.
+
+**Test Environment:**
+- Hardware: MacBook Pro (14-inch, Nov 2024)
+- Chip: Apple M4 Max
+- Memory: 128 GB
+- Python: 3.12.2
+
+## Quick Links
+
+- **[📚 Documentation Index](docs/)** - Complete documentation navigation guide
+- **[Getting Started](docs/getting-started.md)** - 5-minute quick start
+- **[⚙️ Prerequisites](docs/prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, etc.)
+- **[📖 Python API](docs/api-reference.md)** - Complete Python API reference
+- **[🌐 Server Guide](docs/server.md)** - HTTP API server setup
+- **[🔧 Troubleshooting](docs/troubleshooting.md)** - Fix common issues
+- **[💻 Examples](examples/)** - Working code examples
+- **[🐛 Issues](https://github.com/lpalbou/AbstractCore/issues)** - Report bugs
+- **[💬 Discussions](https://github.com/lpalbou/AbstractCore/discussions)** - Get help
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+**AbstractCore** - One interface, all LLM providers. Focus on building, not managing API differences.
