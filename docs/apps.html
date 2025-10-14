@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLI Applications - AbstractCore</title>
+    <meta name="description" content="Production-ready CLI applications: summarizer, extractor, and judge. Direct terminal usage without Python programming.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="../index.html" class="brand-link">
+                    <img src="../assets/logo.svg" alt="AbstractCore" class="brand-logo">
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="../index.html#features" class="nav-link">Features</a>
+                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
+                <a href="../index.html#docs" class="nav-link">Documentation</a>
+                <a href="../index.html#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1300px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">CLI Applications</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Production-ready terminal applications for document processing, knowledge extraction, and text evaluation.
+                </p>
+            </div>
+
+            <!-- Overview Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Overview</h2>
+                <p style="margin-bottom: 1.5rem; font-size: 1.1rem; line-height: 1.7;">
+                    AbstractCore includes three production-ready CLI applications that work directly from the terminal without any Python programming. 
+                    These tools provide immediate access to advanced LLM capabilities for common text processing tasks.
+                </p>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-top: 2rem;">
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="color: var(--accent-color); margin-bottom: 1rem;">📄 Summarizer</h3>
+                        <p style="margin-bottom: 1rem;">Intelligent document summarization with multiple styles and lengths</p>
+                        <code style="background: var(--bg-tertiary); padding: 0.5rem; border-radius: 6px; font-size: 0.9rem;">summarizer document.pdf --style=executive</code>
+                    </div>
+                    
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="color: var(--accent-color); margin-bottom: 1rem;">🔍 Extractor</h3>
+                        <p style="margin-bottom: 1rem;">Knowledge graph extraction with multiple output formats</p>
+                        <code style="background: var(--bg-tertiary); padding: 0.5rem; border-radius: 6px; font-size: 0.9rem;">extractor report.txt --format=json-ld</code>
+                    </div>
+                    
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="color: var(--accent-color); margin-bottom: 1rem;">⚖️ Judge</h3>
+                        <p style="margin-bottom: 1rem;">Text evaluation and scoring with customizable criteria</p>
+                        <code style="background: var(--bg-tertiary); padding: 0.5rem; border-radius: 6px; font-size: 0.9rem;">judge essay.txt --criteria=clarity,accuracy</code>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Installation Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Installation & Setup</h2>
+                <p style="margin-bottom: 1.5rem;">Apps are automatically available after installing AbstractCore:</p>
+                
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 1.5rem;"><code class="language-bash"># Install with all features
+pip install abstractcore[all]
+
+# Apps are immediately available
+summarizer --help
+extractor --help
+judge --help</code></pre>
+            </section>
+
+            <!-- Usage Methods Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Usage Methods</h2>
+                <p style="margin-bottom: 1.5rem;">Each application can be used in three different ways:</p>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px;">
+                        <h3 style="color: var(--success-color); margin-bottom: 1rem;">✅ Direct Commands (Recommended)</h3>
+                        <pre style="background: var(--bg-tertiary); padding: 1rem; border-radius: 8px; font-size: 0.9rem;"><code>summarizer document.txt
+extractor report.pdf
+judge essay.md</code></pre>
+                    </div>
+                    
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px;">
+                        <h3 style="color: var(--warning-color); margin-bottom: 1rem;">🐍 Python Module</h3>
+                        <pre style="background: var(--bg-tertiary); padding: 1rem; border-radius: 8px; font-size: 0.9rem;"><code>python -m abstractllm.apps.summarizer document.txt
+python -m abstractllm.apps.extractor report.pdf
+python -m abstractllm.apps.judge essay.md</code></pre>
+                    </div>
+                    
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px;">
+                        <h3 style="color: var(--info-color); margin-bottom: 1rem;">🏷️ Prefixed Commands</h3>
+                        <pre style="background: var(--bg-tertiary); padding: 1rem; border-radius: 8px; font-size: 0.9rem;"><code>abstractllm-summarizer document.txt
+abstractllm-extractor report.pdf
+abstractllm-judge essay.md</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Summarizer Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">📄 Summarizer</h2>
+                <p style="margin-bottom: 1.5rem;">Intelligent document summarization with multiple styles and lengths.</p>
+                
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Quick Examples</h3>
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Basic summarization
+summarizer document.pdf
+
+# Executive summary with brief length
+summarizer report.txt --style=executive --length=brief --output=summary.txt
+
+# Technical focus with detailed analysis
+summarizer spec.md --focus="implementation details" --style=analytical --length=detailed
+
+# Large document with custom chunking
+summarizer large_manual.txt --chunk-size=15000 --verbose</code></pre>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Key Parameters</h3>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
+                        <thead>
+                            <tr style="background: var(--bg-secondary);">
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Parameter</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Options</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Default</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--style</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">structured, narrative, objective, analytical, executive, conversational</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">structured</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Summary presentation style</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--length</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">brief, standard, detailed, comprehensive</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">standard</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Summary length and depth</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--focus</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Any text</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">None</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Specific focus area for summarization</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--output</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">File path</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Console</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Output file path</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Extractor Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">🔍 Extractor</h2>
+                <p style="margin-bottom: 1.5rem;">Knowledge graph extraction with multiple output formats and entity types.</p>
+                
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Quick Examples</h3>
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Basic knowledge graph extraction
+extractor document.pdf
+
+# Focus on specific domain with detailed extraction
+extractor tech_report.pdf --focus=technology --length=detailed --format=json-ld
+
+# Extract specific entity types only
+extractor article.txt --entity-types=person,organization,location --output=entities.jsonld
+
+# High-quality extraction with multiple iterations
+extractor research_paper.pdf --iterate=3 --length=comprehensive --verbose
+
+# Fast extraction for large documents
+extractor large_doc.txt --mode=fast --minified --output=kg_fast.jsonld</code></pre>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Key Parameters</h3>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
+                        <thead>
+                            <tr style="background: var(--bg-secondary);">
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Parameter</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Options</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Default</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--format</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">json-ld, triples, json, yaml</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">json-ld</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Output format</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--entity-types</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">person,organization,location,technology,etc.</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">All types</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Entity types to focus on</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--mode</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">fast, balanced, thorough</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">balanced</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Extraction mode</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--iterate</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">1-10</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">1</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Number of refinement iterations</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Entity Types</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>person</strong> - People and individuals
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>organization</strong> - Companies, institutions
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>location</strong> - Places, cities, countries
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>technology</strong> - Software, hardware, systems
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>concept</strong> - Abstract concepts, ideas
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>event</strong> - Occurrences, meetings
+                    </div>
+                </div>
+            </section>
+
+            <!-- Judge Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">⚖️ Judge</h2>
+                <p style="margin-bottom: 1.5rem;">Text evaluation and scoring with customizable criteria and contexts.</p>
+                
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Quick Examples</h3>
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Basic text evaluation
+judge essay.txt
+
+# Code review with specific criteria
+judge code.py --context="code review" --criteria=clarity,soundness --format=plain
+
+# Academic writing evaluation
+judge paper.md --context="academic writing" --criteria=clarity,accuracy,coherence --verbose
+
+# Custom criteria evaluation
+judge proposal.txt --custom-criteria=has_examples,covers_risks --output=assessment.json
+
+# Multiple files evaluation
+judge file1.py file2.py file3.py --context="code review" --format=json</code></pre>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Key Parameters</h3>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
+                        <thead>
+                            <tr style="background: var(--bg-secondary);">
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Parameter</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Options</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Default</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--context</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Any text</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">None</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Evaluation context (e.g., "code review")</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--criteria</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">clarity,soundness,effectiveness,etc.</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Default set</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Standard evaluation criteria</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--custom-criteria</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Custom comma-separated list</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">None</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Custom evaluation criteria</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--format</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">json, plain, yaml</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">json</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Output format</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Available Criteria</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>clarity</strong> - Clear and understandable
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>soundness</strong> - Logically sound and valid
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>effectiveness</strong> - Achieves intended purpose
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>completeness</strong> - Covers all necessary aspects
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>coherence</strong> - Well-structured and logical
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <strong>innovation</strong> - Novel and creative approach
+                    </div>
+                </div>
+            </section>
+
+            <!-- Common Parameters Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Common Parameters</h2>
+                <p style="margin-bottom: 1.5rem;">Parameters available across all three applications:</p>
+                
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
+                        <thead>
+                            <tr style="background: var(--bg-secondary);">
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Parameter</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Description</th>
+                                <th style="padding: 1rem; text-align: left; border: 1px solid var(--border-color);">Example</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--provider</code> + <code>--model</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Use different LLM providers</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--provider=openai --model=gpt-4o-mini</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--output</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Save results to file</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--output=results.txt</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--verbose</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">Show detailed progress</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--verbose</code></td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--timeout</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);">HTTP timeout (seconds)</td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--timeout=600</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Links Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Complete Documentation</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 1rem;">📄 Summarizer</h3>
+                        <p style="margin-bottom: 1rem;">Complete guide with advanced usage patterns and Python API</p>
+                        <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-summarizer.md" 
+                           style="color: var(--accent-color); text-decoration: none; font-weight: 500;">
+                           View Full Documentation →
+                        </a>
+                    </div>
+                    
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 1rem;">🔍 Extractor</h3>
+                        <p style="margin-bottom: 1rem;">Comprehensive knowledge graph extraction guide with examples</p>
+                        <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-extractor.md" 
+                           style="color: var(--accent-color); text-decoration: none; font-weight: 500;">
+                           View Full Documentation →
+                        </a>
+                    </div>
+                    
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 1rem;">⚖️ Judge</h3>
+                        <p style="margin-bottom: 1rem;">Complete evaluation guide with LLM-as-a-judge best practices</p>
+                        <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-judge.md" 
+                           style="color: var(--accent-color); text-decoration: none; font-weight: 500;">
+                           View Full Documentation →
+                        </a>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer style="background: var(--bg-secondary); border-top: 1px solid var(--border-color); padding: 2rem 0; margin-top: 4rem;">
+        <div class="container" style="text-align: center;">
+            <p style="color: var(--text-secondary);">
+                © 2025 AbstractCore. Licensed under MIT. 
+                <a href="https://github.com/lpalbou/AbstractCore" style="color: var(--accent-color);">View on GitHub</a>
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
