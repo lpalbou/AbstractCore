@@ -1,0 +1,157 @@
+# AbstractCore - Unified LLM Provider Interface
+
+> AbstractCore is a powerful Python library providing a unified interface to all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with production-grade features including tool calling, streaming, session management, and embeddings.
+
+## Quick Start
+
+- [Installation Guide](https://lpalbou.github.io/AbstractCore/#quickstart): Install AbstractCore with provider-specific dependencies
+- [5-Minute Getting Started](https://lpalbou.github.io/AbstractCore/docs/getting-started.html): Basic setup and first LLM call with any provider
+- [Prerequisites & Setup](https://lpalbou.github.io/AbstractCore/docs/prerequisites.html): Configure API keys and local providers (Ollama, MLX, etc.)
+
+## Core Library Features
+
+- [Python API Reference](https://lpalbou.github.io/AbstractCore/docs/api-reference.html): Complete API documentation with examples for all methods
+- [Provider Support](https://lpalbou.github.io/AbstractCore/#providers): OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with unified interface
+- [Tool Calling Guide](https://lpalbou.github.io/AbstractCore/docs/getting-started.html#3-tool-calling-llm-with-superpowers): Function calling with @tool decorator across all providers
+- [Session Management](https://lpalbou.github.io/AbstractCore/docs/session.html): Persistent conversations with metadata, analytics, and serialization
+- [Streaming Support](https://lpalbou.github.io/AbstractCore/docs/api-reference.html#streaming-unified-2025-implementation): Real-time token generation with unified strategy
+- [Structured Output](https://lpalbou.github.io/AbstractCore/docs/getting-started.html#2-structured-output-game-changer): Pydantic model validation with automatic retries
+- [Embeddings System](https://lpalbou.github.io/AbstractCore/docs/embeddings.html): SOTA embedding models for semantic search and RAG applications
+
+## Server & Integration
+
+- [HTTP Server Guide](https://lpalbou.github.io/AbstractCore/docs/server.html): OpenAI-compatible REST API server for multi-language access
+- [Agentic CLI Integration](https://lpalbou.github.io/AbstractCore/docs/server.html): Codex, Crush, Gemini CLI compatibility
+- [Tool Syntax Rewriting](https://lpalbou.github.io/AbstractCore/docs/tool-syntax-rewriting.html): Format conversion for external CLI tools
+
+## Advanced Features
+
+- [Event System](https://lpalbou.github.io/AbstractCore/docs/api-reference.html#event-system): Monitor costs, performance, and tool executions
+- [Retry Configuration](https://lpalbou.github.io/AbstractCore/docs/api-reference.html#retry-configuration): Circuit breakers, exponential backoff, jitter
+- [Error Handling](https://lpalbou.github.io/AbstractCore/docs/api-reference.html#exceptions): Comprehensive exception hierarchy for robust applications
+- [Architecture Overview](https://lpalbou.github.io/AbstractCore/docs/architecture.html): System design and component interactions
+
+## Working Examples
+
+- [Basic Examples](https://lpalbou.github.io/AbstractCore/docs/examples.html#basic): Step-by-step progression from simple to advanced usage
+- [Complete RAG Example](https://lpalbou.github.io/AbstractCore/docs/examples.html#rag): Full retrieval-augmented generation implementation
+- [Embeddings Demos](https://lpalbou.github.io/AbstractCore/docs/examples.html#embeddings): Semantic search and similarity computation
+- [Streaming Examples](https://lpalbou.github.io/AbstractCore/docs/examples.html#streaming): Real-time vs batch processing patterns
+- [Tool Usage Examples](https://lpalbou.github.io/AbstractCore/docs/examples.html#tools): Complex tool calling scenarios
+- [Production Patterns](https://lpalbou.github.io/AbstractCore/docs/examples.html#production): Enterprise-ready deployment examples
+
+## Internal CLI Tool
+
+- [Internal CLI Guide](https://lpalbou.github.io/AbstractCore/docs/internal-cli.html): Interactive testing tool with conversation management
+- [Built-in Tools](https://lpalbou.github.io/AbstractCore/docs/getting-started.html#built-in-tools): File operations, web search, system commands
+- [Chat Management](https://lpalbou.github.io/AbstractCore/docs/internal-cli.html): History compaction, fact extraction, quality evaluation
+
+## Use Cases & Patterns
+
+- [Provider Flexibility](https://lpalbou.github.io/AbstractCore/#examples): Switch between providers with identical code
+- [Local Development](https://lpalbou.github.io/AbstractCore/#examples): Free local models for development, cloud for production
+- [Multi-Provider Setup](https://lpalbou.github.io/AbstractCore/docs/api-reference.html#multi-provider-setup): Route requests based on task complexity
+- [Production Monitoring](https://lpalbou.github.io/AbstractCore/docs/api-reference.html#production-monitoring): Cost tracking, performance monitoring, error handling
+
+## Documentation & Support
+
+- [Complete Documentation Index](https://lpalbou.github.io/AbstractCore/docs/): Full navigation guide to all documentation
+- [Troubleshooting Guide](https://lpalbou.github.io/AbstractCore/docs/troubleshooting.html): Common issues and solutions
+- [Capabilities Reference](https://lpalbou.github.io/AbstractCore/docs/capabilities.html): What AbstractCore can and cannot do
+- [Comparison Guide](https://lpalbou.github.io/AbstractCore/docs/comparison.html): How AbstractCore compares to alternatives
+- [Contributing Guidelines](https://lpalbou.github.io/AbstractCore/docs/contributing.html): How to contribute to the project
+
+## Installation Options
+
+```bash
+# Minimal core
+pip install abstractcore
+
+# With specific providers
+pip install abstractcore[openai]
+pip install abstractcore[anthropic]
+pip install abstractcore[ollama]
+
+# With server support
+pip install abstractcore[server]
+
+# With embeddings
+pip install abstractcore[embeddings]
+
+# Everything
+pip install abstractcore[all]
+```
+
+## Key Differentiators
+
+- **Provider Agnostic**: Same code works with any LLM provider
+- **Production Ready**: Robust error handling, retries, circuit breakers
+- **Type Safe**: Full Pydantic integration for structured outputs
+- **Local & Cloud**: Support for both local models and cloud APIs
+- **Unified Streaming**: Consistent streaming across all providers
+- **Tool Calling**: Function calling with automatic format conversion
+- **Session Management**: Persistent conversations with analytics
+- **Embeddings**: Built-in SOTA embedding models for RAG
+- **Server Mode**: Optional OpenAI-compatible HTTP API
+- **Well Documented**: Comprehensive guides and working examples
+
+## Quick Code Examples
+
+### Basic Usage
+```python
+from abstractllm import create_llm
+
+# Works with any provider
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate("What is the capital of France?")
+print(response.content)
+```
+
+### Tool Calling
+```python
+from abstractllm import create_llm, tool
+
+@tool
+def get_weather(city: str):
+    """Get current weather for a city."""
+    return f"Weather in {city}: 72°F, Sunny"
+
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate(
+    "What's the weather in Paris?",
+    tools=[get_weather]
+)
+```
+
+### Structured Output
+```python
+from pydantic import BaseModel
+
+class Person(BaseModel):
+    name: str
+    age: int
+
+person = llm.generate(
+    "Extract: John Doe is 25 years old",
+    response_model=Person
+)
+print(f"{person.name}, age {person.age}")
+```
+
+### Session Management
+```python
+from abstractllm import BasicSession
+
+session = BasicSession(llm, system_prompt="You are a helpful assistant.")
+response1 = session.generate("My name is Alice")
+response2 = session.generate("What's my name?")  # Remembers context
+session.save("conversation.json")
+```
+
+## Repository Information
+
+- **GitHub**: https://github.com/lpalbou/AbstractCore
+- **License**: MIT
+- **Python**: 3.9+
+- **Status**: Production Ready (v2.3.3)
+- **Testing**: All tests passing on Apple M4 Max, Python 3.12.2

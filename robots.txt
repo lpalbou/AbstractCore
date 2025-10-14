@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# LLM-friendly files
+Allow: /llms.txt
+Allow: /llms-full.txt
+
+# Sitemap
+Sitemap: https://lpalbou.github.io/AbstractCore/sitemap.xml

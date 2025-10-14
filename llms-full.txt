@@ -1,0 +1,1103 @@
+# AbstractCore - Complete Documentation
+
+Source: https://github.com/lpalbou/AbstractCore
+
+AbstractCore is a unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.
+
+## Quick Start Guide
+
+Source: https://lpalbou.github.io/AbstractCore/docs/getting-started.html
+
+This guide will get you up and running with AbstractCore in 5 minutes. You'll learn how to install it, make your first LLM call, and explore the key features.
+
+### Prerequisites
+
+- Python 3.9 or higher
+- pip package manager
+- (Optional) API keys for cloud providers
+
+### Installation
+
+#### Option 1: Start with a Cloud Provider (Recommended)
+
+If you have an API key for OpenAI or Anthropic:
+
+```bash
+# For OpenAI
+pip install abstractcore[openai]
+export OPENAI_API_KEY="your-api-key-here"
+
+# For Anthropic
+pip install abstractcore[anthropic]
+export ANTHROPIC_API_KEY="your-api-key-here"
+```
+
+#### Option 2: Start with Local Models (No API keys needed)
+
+For privacy or cost reasons:
+
+```bash
+# Install Ollama first
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+
+# Then install AbstractCore
+pip install abstractcore
+```
+
+#### Option 3: Install Everything
+
+```bash
+pip install abstractcore[all]
+```
+
+### Your First Program
+
+Create a file called `first_llm.py`:
+
+```python
+from abstractllm import create_llm
+
+# Choose your provider (uncomment one):
+llm = create_llm("openai", model="gpt-4o-mini")        # Cloud
+# llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Cloud
+# llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")   # Local
+
+# Generate your first response
+response = llm.generate("What is the capital of France?")
+print(response.content)
+```
+
+Run it:
+
+```bash
+python first_llm.py
+# Output: The capital of France is Paris.
+```
+
+🎉 Congratulations! You've made your first AbstractCore LLM call.
+
+### Core Concepts (5-Minute Tour)
+
+#### 1. Providers and Models
+
+AbstractCore supports multiple providers with the same interface:
+
+```python
+from abstractllm import create_llm
+
+# Same interface, different providers
+openai_llm = create_llm("openai", model="gpt-4o-mini")
+claude_llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+local_llm = create_llm("ollama", model="qwen3-coder:30b")
+
+question = "Explain Python list comprehensions"
+
+# All work the same way
+for name, llm in [("OpenAI", openai_llm), ("Claude", claude_llm), ("Ollama", local_llm)]:
+    response = llm.generate(question)
+    print(f"{name}: {response.content[:50]}...")
+```
+
+#### 2. Structured Output (Game Changer)
+
+Instead of parsing strings, get typed objects directly:
+
+```python
+from pydantic import BaseModel
+from abstractllm import create_llm
+
+class MovieReview(BaseModel):
+    title: str
+    rating: int  # 1-5 stars
+    summary: str
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Get structured data automatically
+review = llm.generate(
+    "Review the movie Inception",
+    response_model=MovieReview
+)
+
+print(f"Title: {review.title}")
+print(f"Rating: {review.rating}/5")
+print(f"Summary: {review.summary}")
+```
+
+No more string parsing! AbstractCore handles JSON validation and retries automatically.
+
+#### 3. Tool Calling (LLM with Superpowers)
+
+Let your LLM call functions with the `@tool` decorator:
+
+```python
+from abstractllm import create_llm, tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a specified city."""
+    # In a real scenario, you'd call an actual weather API
+    return f"The weather in {city} is sunny, 72°F"
+
+@tool
+def calculate(expression: str) -> float:
+    """Perform a mathematical calculation."""
+    try:
+        result = eval(expression)  # Simplified for demo - don't use eval in production!
+        return result
+    except Exception:
+        return float('nan')  # Return NaN for invalid calculations
+
+# Instantiate the LLM
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Automatically extract tool definitions from decorated functions
+response = llm.generate(
+    "What's the weather in Tokyo and what's 15 * 23?",
+    tools=[get_weather, calculate]  # Pass tool functions directly
+)
+
+print(response.content)
+# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
+```
+
+#### 4. Streaming (Real-Time Responses)
+
+Show responses as they're generated:
+
+```python
+from abstractllm import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+print("AI: ", end="", flush=True)
+for chunk in llm.generate("Write a haiku about programming", stream=True):
+    print(chunk.content, end="", flush=True)
+print("\n")
+# Output appears word by word in real-time
+```
+
+#### 5. Conversations with Memory
+
+Maintain context across multiple turns:
+
+```python
+from abstractllm import create_llm, BasicSession
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(provider=llm, system_prompt="You are a helpful coding tutor.")
+
+# First exchange
+response1 = session.generate("My name is Alex and I'm learning Python.")
+print("AI:", response1.content)
+
+# Second exchange - remembers context
+response2 = session.generate("What's my name and what am I learning?")
+print("AI:", response2.content)
+# Output: Your name is Alex and you're learning Python.
+```
+
+## API Reference
+
+Source: https://lpalbou.github.io/AbstractCore/docs/api-reference.html
+
+Complete reference for the AbstractCore API. All examples work across any provider.
+
+### Core Functions
+
+#### create_llm()
+
+Creates an LLM provider instance.
+
+```python
+def create_llm(
+    provider: str,
+    model: Optional[str] = None,
+    retry_config: Optional[RetryConfig] = None,
+    **kwargs
+) -> AbstractLLMInterface
+```
+
+**Parameters:**
+- `provider` (str): Provider name ("openai", "anthropic", "ollama", "mlx", "lmstudio", "huggingface")
+- `model` (str, optional): Model name. If not provided, uses provider default
+- `retry_config` (RetryConfig, optional): Custom retry configuration
+- `**kwargs`: Provider-specific parameters
+
+**Provider-specific parameters:**
+- `api_key` (str): API key for cloud providers
+- `base_url` (str): Custom endpoint URL
+- `temperature` (float): Sampling temperature (0-2)
+- `max_tokens` (int): Maximum output tokens
+- `timeout` (int): Request timeout in seconds
+- `top_p` (float): Nucleus sampling parameter
+
+**Returns:** AbstractLLMInterface instance
+
+**Example:**
+```python
+from abstractllm import create_llm
+
+# Basic usage
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# With configuration
+llm = create_llm(
+    "anthropic",
+    model="claude-3-5-haiku-latest",
+    temperature=0.7,
+    max_tokens=1000,
+    timeout=30
+)
+
+# Local provider
+llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:11434")
+```
+
+### Classes
+
+#### AbstractLLMInterface
+
+Base interface for all LLM providers. All providers implement this interface.
+
+##### generate()
+
+Generate text response from the LLM.
+
+```python
+def generate(
+    self,
+    prompt: str,
+    messages: Optional[List[Dict]] = None,
+    system_prompt: Optional[str] = None,
+    tools: Optional[List[Dict]] = None,
+    response_model: Optional[BaseModel] = None,
+    retry_strategy: Optional[Retry] = None,
+    stream: bool = False,
+    **kwargs
+) -> Union[GenerateResponse, Iterator[GenerateResponse]]
+```
+
+**Parameters:**
+- `prompt` (str): Text prompt to generate from
+- `messages` (List[Dict], optional): Conversation messages in OpenAI format
+- `system_prompt` (str, optional): System prompt to set context
+- `tools` (List[Dict], optional): Tools the LLM can call
+- `response_model` (BaseModel, optional): Pydantic model for structured output
+- `retry_strategy` (Retry, optional): Custom retry strategy for structured output
+- `stream` (bool): Enable streaming response
+- `**kwargs`: Additional generation parameters
+
+**Returns:**
+- If `stream=False`: GenerateResponse
+- If `stream=True`: Iterator[GenerateResponse]
+
+#### GenerateResponse
+
+Response object from LLM generation.
+
+```python
+@dataclass
+class GenerateResponse:
+    content: Optional[str]
+    raw_response: Any
+    model: Optional[str]
+    finish_reason: Optional[str]
+    usage: Optional[Dict[str, int]]
+    tool_calls: Optional[List[Dict]]
+    metadata: Optional[Dict]
+```
+
+**Attributes:**
+- `content` (str): Generated text content
+- `raw_response` (Any): Raw provider response
+- `model` (str): Model used for generation
+- `finish_reason` (str): Why generation stopped ("stop", "length", "tool_calls")
+- `usage` (Dict): Token usage information
+- `tool_calls` (List[Dict]): Tools called by the LLM
+- `metadata` (Dict): Additional metadata
+
+#### BasicSession
+
+Manages conversation context and history.
+
+```python
+class BasicSession:
+    def __init__(
+        self,
+        provider: AbstractLLMInterface,
+        system_prompt: Optional[str] = None
+    ):
+```
+
+**Parameters:**
+- `provider` (AbstractLLMInterface): LLM provider instance
+- `system_prompt` (str, optional): System prompt for the conversation
+
+**Methods:**
+
+##### generate()
+```python
+def generate(self, prompt: str, **kwargs) -> GenerateResponse
+```
+Generate response and add to conversation history.
+
+##### add_message()
+```python
+def add_message(self, role: str, content: str, **metadata) -> Message
+```
+Add message to conversation history.
+
+##### save()
+```python
+def save(self, filepath: Path) -> None
+```
+Save session to JSON file.
+
+##### load()
+```python
+@classmethod
+def load(cls, filepath: Path, provider: AbstractLLMInterface) -> "BasicSession"
+```
+Load session from JSON file.
+
+## Capabilities
+
+Source: https://lpalbou.github.io/AbstractCore/docs/capabilities.html
+
+This document clearly explains what AbstractCore **can and cannot do**, helping you understand when to use it and when to look elsewhere.
+
+### What AbstractCore IS
+
+AbstractCore is **production-ready LLM infrastructure**. It provides a unified, reliable interface to language models with essential features built-in.
+
+#### Core Philosophy
+- **Infrastructure, not application logic**
+- **Reliability over features**
+- **Simplicity over complexity**
+- **Provider agnostic**
+
+### ✅ What AbstractCore Does Exceptionally Well
+
+#### 1. Universal LLM Provider Interface
+
+**What it does**: Provides identical APIs across all major LLM providers.
+
+```python
+# Same code works with any provider
+def ask_llm(provider_name, question):
+    llm = create_llm(provider_name, model="default")
+    return llm.generate(question)
+
+# All of these work identically
+ask_llm("openai", "What is Python?")
+ask_llm("anthropic", "What is Python?")
+ask_llm("ollama", "What is Python?")
+```
+
+**Why it's exceptional**: No other library provides truly universal tool calling, streaming, and structured output across all providers.
+
+#### 2. Production-Grade Reliability
+
+**What it does**: Handles failures gracefully with retry logic, circuit breakers, and comprehensive error handling.
+
+- **Automatic retries** with exponential backoff for rate limits and network errors
+- **Circuit breakers** prevent cascade failures when providers go down
+- **Smart error classification** - retries recoverable errors, fails fast on auth errors
+- **Event system** for monitoring and alerting
+
+**Why it's exceptional**: Built for production from day one, not research or prototypes.
+
+#### 3. Universal Tool Calling
+
+**What it does**: Tools work consistently across ALL providers, even those without native tool support.
+
+```python
+tools = [{"name": "get_weather", "description": "Get weather", ...}]
+
+# Works with providers that have native tool support
+openai_response = openai_llm.generate("Weather in Paris?", tools=tools)
+
+# Also works with providers that don't (via intelligent prompting)
+ollama_response = ollama_llm.generate("Weather in Paris?", tools=tools)
+```
+
+**Why it's exceptional**: Most libraries only support OpenAI-style tools. AbstractCore makes ANY model work with tools.
+
+#### 4. Tool Call Tag Rewriting for Agentic CLI Compatibility
+
+**What it does**: Automatically rewrites tool call tags to match different agentic CLI requirements in real-time.
+
+```python
+# Rewrite tool calls for different CLIs
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# For Codex CLI (Qwen3 format)
+response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="qwen3")
+# Output: <|tool_call|>{"name": "get_weather", "arguments": {"location": "Paris"}}</|tool_call|>
+
+# For Crush CLI (LLaMA3 format)  
+response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="llama3")
+# Output: <function_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</function_call>
+
+# For Gemini CLI (XML format)
+response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
+# Output: <tool_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</tool_call>
+```
+
+**Why it's exceptional**: Seamless compatibility with any agentic CLI without code changes.
+
+#### 5. Structured Output with Automatic Retry
+
+**What it does**: Gets typed Python objects from LLMs with automatic validation and retry on failures.
+
+```python
+class Product(BaseModel):
+    name: str
+    price: float
+
+# Automatically retries with error feedback if validation fails
+product = llm.generate(
+    "Extract: Gaming laptop for $1200",
+    response_model=Product
+)
+```
+
+**Why it's exceptional**: Built-in validation retry means higher success rates and less manual error handling.
+
+#### 6. Streaming with Tool Support
+
+**What it does**: Real-time response streaming that properly handles tool calls.
+
+```python
+# Streams content in real-time, executes tools at the end
+for chunk in llm.generate("Tell me about Paris weather", tools=tools, stream=True):
+    print(chunk.content, end="", flush=True)
+```
+
+**Why it's exceptional**: Most streaming implementations break with tool calls. AbstractCore handles both correctly.
+
+#### 7. Event-Driven Observability
+
+**What it does**: Comprehensive events for monitoring, debugging, and control.
+
+```python
+# Monitor costs in real-time
+def cost_monitor(event):
+    if event.cost_usd > 0.10:
+        alert(f"High cost request: ${event.cost_usd}")
+
+on_global(EventType.AFTER_GENERATE, cost_monitor)
+```
+
+**Why it's exceptional**: Production-grade observability built-in, not bolted-on.
+
+### ❌ What AbstractCore Does NOT Do
+
+Understanding limitations is crucial for choosing the right tool.
+
+#### 1. RAG Pipelines (Use Specialized Tools)
+
+**What AbstractCore provides**: Vector embeddings via `EmbeddingManager`
+**What it doesn't provide**: Document chunking, vector databases, retrieval strategies
+
+```python
+# AbstractCore gives you this
+from abstractllm.embeddings import EmbeddingManager
+embedder = EmbeddingManager()
+similarity = embedder.compute_similarity("query", "document")
+
+# You need to build this yourself
+def rag_pipeline(query, documents):
+    # 1. Chunk documents - YOU implement
+    # 2. Store in vector DB - YOU implement
+    # 3. Retrieve relevant chunks - YOU implement
+    # 4. Construct prompt - YOU implement
+    return llm.generate(prompt)
+```
+
+**Better alternatives**:
+- **[LlamaIndex](https://github.com/run-llama/llama_index)** - Full RAG framework
+- **[LangChain](https://github.com/langchain-ai/langchain)** - RAG components and chains
+
+#### 2. Complex Agent Workflows (Use Agent Frameworks)
+
+**What AbstractCore provides**: Single LLM calls with tool execution
+**What it doesn't provide**: Multi-step agent reasoning, planning, memory persistence
+
+```python
+# AbstractCore is great for this
+response = llm.generate("What's 2+2?", tools=[calculator_tool])
+
+# AbstractCore is NOT for this
+def complex_agent():
+    # 1. Plan multi-step solution - NOT provided
+    # 2. Execute steps with memory - NOT provided
+    # 3. Reflect and re-plan - NOT provided
+    # 4. Persist agent state - NOT provided
+    pass
+```
+
+**Better alternatives**:
+- **[AbstractAgent](https://github.com/lpalbou/AbstractAgent)** - Built on AbstractCore
+- **[LangGraph](https://github.com/langchain-ai/langgraph)** - Agent orchestration
+- **[AutoGPT](https://github.com/Significant-Gravitas/AutoGPT)** - Autonomous agents
+
+### When to Choose AbstractCore
+
+#### ✅ Choose AbstractCore When You Need:
+
+1. **Reliable LLM Infrastructure**
+   - Production-ready error handling and retry logic
+   - Consistent interface across different providers
+   - Built-in monitoring and observability
+
+2. **Provider Flexibility**
+   - Easy switching between OpenAI, Anthropic, Ollama, etc.
+   - Provider-agnostic code that runs anywhere
+   - Local and cloud provider support
+
+3. **Universal Tool Calling**
+   - Tools that work across ALL providers
+   - Consistent tool execution regardless of native support
+   - Event-driven tool control and monitoring
+
+4. **Structured Output Reliability**
+   - Type-safe responses with automatic validation
+   - Built-in retry logic for validation failures
+   - Production-grade error handling
+
+5. **Streaming with Tools**
+   - Real-time responses that handle tools correctly
+   - Proper streaming implementation across providers
+
+#### ❌ Don't Choose AbstractCore When You Need:
+
+1. **Full RAG Frameworks** → Use LlamaIndex or LangChain
+2. **Complex Agent Workflows** → Use AbstractAgent or LangGraph
+3. **Advanced Memory Systems** → Use AbstractMemory or Mem0
+4. **Prompt Template Management** → Use Jinja2 or LangChain Prompts
+5. **Model Training/Fine-tuning** → Use Transformers or Axolotl
+6. **Multi-Agent Systems** → Use CrewAI or AutoGen
+
+## Architecture
+
+Source: https://lpalbou.github.io/AbstractCore/docs/architecture.html
+
+AbstractCore provides a unified interface to all major LLM providers with production-grade reliability. This document explains how it works internally and why it's designed this way.
+
+### System Overview
+
+AbstractCore operates as both a Python library and an optional HTTP server:
+
+```
+[Your Application] → [AbstractCore API] → [Provider Interface] → [Event System]
+                                                             → [Tool System]
+                                                             → [Retry System]
+                                                             → [Provider Implementations]
+
+[HTTP Clients] → [AbstractCore Server] → [AbstractCore API]
+
+Provider Implementations:
+- OpenAI Provider → OpenAI API
+- Anthropic Provider → Anthropic API
+- Ollama Provider → Ollama Server
+- MLX Provider → MLX Models
+- LMStudio Provider → LMStudio Server
+- HuggingFace Provider → HuggingFace Models
+```
+
+### Design Principles
+
+#### 1. Provider Abstraction
+**Goal**: Same interface for all providers
+**Implementation**: Common interface with provider-specific implementations
+
+#### 2. Production Reliability
+**Goal**: Handle real-world failures gracefully
+**Implementation**: Built-in retry logic, circuit breakers, comprehensive error handling
+
+#### 3. Universal Tool Support
+**Goal**: Tools work everywhere, even with providers that don't support them natively
+**Implementation**: Native support where available, intelligent prompting as fallback
+
+#### 4. Simplicity Over Features
+**Goal**: Clean, focused API that's easy to understand
+**Implementation**: Minimal core with clear extension points
+
+#### 5. Optional HTTP Access
+**Goal**: Flexible deployment as library or server
+**Implementation**: OpenAI-compatible REST API built on core library
+
+### Core Components
+
+#### 1. Factory Pattern (`create_llm`)
+
+The main entry point uses the factory pattern for clean provider instantiation:
+
+```python
+from abstractllm import create_llm
+
+# Factory creates the right provider with proper configuration
+llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7)
+```
+
+#### 2. Provider Interface
+
+All providers implement `AbstractLLMInterface`:
+
+```python
+class AbstractLLMInterface(ABC):
+    @abstractmethod
+    def generate(self, prompt: str, **kwargs) -> GenerateResponse:
+        """Generate response from LLM"""
+
+    @abstractmethod
+    def get_capabilities(self) -> List[str]:
+        """Get provider capabilities"""
+
+    def unload(self) -> None:
+        """Unload model from memory (local providers)"""
+```
+
+This ensures:
+- **Consistency**: Same methods across all providers
+- **Reliability**: Standardized error handling
+- **Extensibility**: Easy to add new providers
+- **Memory Management**: Explicit control over model lifecycle
+
+##### Memory Management
+
+The `unload()` method provides explicit memory management for local providers:
+
+- **Local Providers** (Ollama, MLX, HuggingFace, LMStudio): Actually unloads models from memory
+- **API Providers** (OpenAI, Anthropic): No-op, safe to call but has no effect
+
+```python
+# Load model, use it, then free memory
+llm = create_llm("ollama", model="large-model")
+response = llm.generate("Hello")
+llm.unload()  # Explicitly free memory
+del llm
+```
+
+This is critical for:
+- Test suites that load multiple models sequentially
+- Memory-constrained environments (<32GB RAM)
+- Production systems serving different models sequentially
+
+#### 3. Tool System Architecture
+
+The tool system provides universal tool execution across all providers:
+
+**Tool Execution Flow**:
+
+1. **Tool Detection**: Parse tool calls from LLM response
+2. **Event Emission**: Emit `TOOL_STARTED` (preventable)
+3. **Local Execution**: Execute tools in AbstractCore (not by provider)
+4. **Result Collection**: Gather results and error information
+5. **Event Emission**: Emit `TOOL_COMPLETED` with results
+6. **Response Integration**: Append tool results to original response
+
+##### Tool Call Tag Rewriting System
+
+AbstractCore includes a sophisticated tag rewriting system that enables compatibility with any agentic CLI:
+
+**Supported Formats**:
+- **Default (Qwen3)**: `<|tool_call|>...JSON...</|tool_call|>` - Compatible with Codex CLI
+- **LLaMA3**: `<function_call>...JSON...</function_call>` - Compatible with Crush CLI
+- **XML**: `<tool_call>...JSON...</tool_call>` - Compatible with Gemini CLI
+- **Gemma**: ````tool_code...JSON...```` - Compatible with Gemma models
+- **Custom**: Any user-defined format (e.g., `[TOOL]...JSON...[/TOOL]`)
+
+**Real-Time Integration**:
+- **Streaming Compatible**: Works seamlessly with unified streaming architecture
+- **Zero Latency**: No additional processing delays
+- **Universal Detection**: Automatically detects source format from any model
+- **Graceful Fallback**: Returns original content if rewriting fails
+
+#### 4. Retry and Reliability System
+
+Production-grade error handling with multiple layers:
+
+**Retry Configuration**:
+
+```python
+from abstractllm import create_llm
+from abstractllm.core.retry import RetryConfig
+
+config = RetryConfig(
+    max_attempts=3,           # Try up to 3 times
+    initial_delay=1.0,        # Start with 1 second delay
+    max_delay=60.0,           # Cap at 1 minute
+    use_jitter=True,          # Add randomness
+    failure_threshold=5,      # Circuit breaker after 5 failures
+    recovery_timeout=60.0     # Test recovery after 1 minute
+)
+
+llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
+```
+
+#### 5. Event System
+
+Comprehensive observability and control through events:
+
+```python
+from abstractllm.events import EventType, on_global
+
+# Cost monitoring
+def monitor_costs(event):
+    if event.cost_usd and event.cost_usd > 0.10:
+        alert(f"High cost request: ${event.cost_usd}")
+
+# Security control
+def prevent_dangerous_tools(event):
+    for call in event.data.get('tool_calls', []):
+        if call.name in ['delete_file', 'system_command']:
+            event.prevent()  # Stop tool execution
+
+# Performance tracking
+def track_performance(event):
+    if event.duration_ms > 10000:
+        log(f"Slow request: {event.duration_ms}ms")
+
+on_global(EventType.GENERATION_COMPLETED, monitor_costs)
+on_global(EventType.TOOL_STARTED, prevent_dangerous_tools)
+on_global(EventType.GENERATION_COMPLETED, track_performance)
+```
+
+#### 6. Structured Output System with Streaming Integration
+
+Type-safe responses with automatic validation, retry, and unified streaming:
+
+##### Unified Streaming Architecture
+
+AbstractCore's streaming system provides high-performance, character-by-character streaming with real-time tool detection:
+
+**Key Features**:
+
+1. **Unified Streaming Strategy**
+   - Single consistent approach across all providers
+   - First chunk delivery in <10ms
+   - Minimal code complexity
+
+2. **Incremental Tool Detection**
+   - Real-time tool call detection during streaming
+   - Immediate tool execution without buffering
+   - Handles partial tool calls across chunk boundaries
+
+3. **Character-by-Character Streaming**
+   - Handles micro-chunking from providers (22+ tiny chunks per tool call)
+   - Intelligent buffering for partial tool calls
+   - Robust parsing with auto-repair for malformed JSON
+
+4. **Tool Call Tag Rewriting Integration**
+   - Real-time format conversion during streaming
+   - Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)
+   - Zero buffering overhead for tag conversion
+
+**Streaming with Tag Rewriting Example**:
+```python
+# Real-time streaming with automatic tool call format conversion
+for chunk in llm.generate(
+    "Create a Python function and analyze it",
+    stream=True,
+    tools=[code_analysis_tool],
+    tool_call_tags="llama3"  # Convert to Crush CLI format
+):
+    # Immediate character-by-character output
+    print(chunk.content, end="", flush=True)
+
+    # Tool calls detected and executed mid-stream
+    if chunk.tool_calls:
+        for tool_call in chunk.tool_calls:
+            result = tool_call.execute()
+            print(f"\n🛠️ Tool executed: {result}")
+
+# Output format: <function_call>{"name": "analyze_code"}...</function_call>
+```
+
+**Performance Characteristics**:
+- **First Chunk Latency**: <10ms across all providers
+- **Tool Detection Overhead**: <1ms per chunk
+- **Memory Efficiency**: Linear, bounded growth
+- **Character-by-Character Support**: Handles extreme micro-chunking
+- **Tag Rewriting**: Zero additional latency
+
+##### Automatic Error Feedback
+
+When validation fails, AbstractCore provides detailed feedback to the LLM:
+
+```python
+# If LLM returns invalid data, AbstractCore automatically retries with:
+"""
+IMPORTANT: Your previous response had validation errors:
+• Field 'age': Age must be positive (got -25)
+• Field 'email': Invalid email format
+
+Please correct these errors and provide valid JSON.
+"""
+```
+
+#### 7. Session Management
+
+Simple conversation memory without complexity:
+
+```python
+from abstractllm import create_llm, BasicSession
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(
+    provider=llm,
+    system_prompt="You are a helpful coding tutor."
+)
+
+# Multi-turn conversation with memory
+response1 = session.generate("My name is Alice")
+response2 = session.generate("What's my name?")  # Remembers context
+
+# Save and load sessions
+session.save("conversation.json")
+loaded_session = BasicSession.load("conversation.json", provider=llm)
+```
+
+#### 8. Server Architecture (Optional Component)
+
+The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
+
+**Architecture Layers**:
+
+1. **HTTP Layer**: FastAPI-based REST API with request validation
+2. **Translation Layer**: Converts HTTP requests to AbstractCore library calls
+3. **Core Layer**: Uses the full AbstractCore provider system
+4. **Response Layer**: Transforms responses to OpenAI-compatible format
+
+**Key Capabilities**:
+
+- **OpenAI Compatibility**: Drop-in replacement for OpenAI API clients
+- **Universal Provider Access**: Single API for all providers (OpenAI, Anthropic, Ollama, etc.)
+- **Format Conversion**: Automatic tool call format conversion for agentic CLIs
+- **Streaming Support**: Server-sent events for real-time responses
+- **Model Discovery**: Dynamic model listing across all providers
+- **Embedding Support**: Multi-provider embedding generation (HuggingFace, Ollama, LMStudio)
+
+**Server Features**:
+
+- **Automatic Retry**: Built-in retry logic from core library
+- **Event System**: Full observability through events
+- **Debug Logging**: Comprehensive request/response logging
+- **Health Checks**: `/health` endpoint for monitoring
+- **Interactive Docs**: Auto-generated Swagger UI at `/docs`
+- **Multi-Worker Support**: Production deployment with multiple workers
+
+### Architecture Benefits
+
+#### 1. Provider Agnostic
+- **Same code works everywhere**: Switch providers by changing one line
+- **No vendor lock-in**: Easy migration between cloud and local providers
+- **Consistent behavior**: Tools, streaming, structured output work identically
+
+#### 2. Production Ready
+- **Automatic reliability**: Built-in retry logic and circuit breakers
+- **Comprehensive observability**: Events for every operation
+- **Error handling**: Proper error classification and handling
+
+#### 3. Extensible
+- **Event system**: Hook into any operation
+- **Tool system**: Add new tools easily
+- **Provider system**: Add new providers with minimal code
+
+#### 4. Performance Optimized
+- **Lazy loading**: Providers loaded only when needed
+- **Connection pooling**: Reuse HTTP connections
+- **Efficient parsing**: Optimized JSON and tool parsing
+
+### Performance Characteristics
+
+#### Memory Usage
+- **Core**: ~15MB base memory
+- **Per Provider**: ~2-5MB additional
+- **Scaling**: Linear with number of concurrent requests
+
+#### Latency Overhead
+- **Provider abstraction**: ~1-2ms overhead
+- **Event system**: ~0.5ms per event
+- **Tool parsing**: ~1-5ms depending on complexity
+- **Retry logic**: Only on failures
+
+#### Throughput
+- **Single instance**: 100+ requests/second
+- **Bottleneck**: Usually the LLM provider, not AbstractCore
+- **Scaling**: Horizontal scaling through multiple instances
+
+### Security Considerations
+
+#### 1. Tool Execution Safety
+- **Local execution**: Tools run in AbstractCore, not by providers
+- **Event prevention**: Stop dangerous tools before execution
+- **Input validation**: Validate tool parameters
+
+#### 2. API Key Management
+- **Environment variables**: Secure key storage
+- **No logging**: Keys never appear in logs
+- **Provider isolation**: Keys scoped to specific providers
+
+#### 3. Data Privacy
+- **Local options**: Support for local providers (Ollama, MLX)
+- **No data retention**: AbstractCore doesn't store conversation data
+- **Transparent processing**: All operations are observable through events
+
+## Installation Options
+
+```bash
+# Minimal core
+pip install abstractcore
+
+# With specific providers
+pip install abstractcore[openai]
+pip install abstractcore[anthropic]
+pip install abstractcore[ollama]
+
+# With server support
+pip install abstractcore[server]
+
+# With embeddings
+pip install abstractcore[embeddings]
+
+# Everything
+pip install abstractcore[all]
+```
+
+## Supported Providers
+
+| Provider | Status | Setup |
+|----------|--------|-------|
+| **OpenAI** | ✅ Full | Get API key from OpenAI |
+| **Anthropic** | ✅ Full | Get API key from Anthropic |
+| **Ollama** | ✅ Full | Install Ollama locally |
+| **LMStudio** | ✅ Full | Install LMStudio locally |
+| **MLX** | ✅ Full | Apple Silicon only |
+| **HuggingFace** | ✅ Full | Local model execution |
+
+## Key Features
+
+- **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
+- **Unified Tools**: Consistent tool calling across all providers
+- **Session Management**: Persistent conversations with metadata, analytics, and complete serialization
+- **Structured Responses**: Clean, predictable output formats with Pydantic
+- **Streaming Support**: Real-time token generation for interactive experiences
+- **Embeddings**: Built-in support for semantic search and RAG applications
+- **Universal Server**: Optional OpenAI-compatible API server
+
+## Use Cases
+
+### 1. Provider Flexibility
+
+```python
+# Same code works with any provider
+providers = ["openai", "anthropic", "ollama"]
+
+for provider in providers:
+    llm = create_llm(provider, model="gpt-4o-mini")  # Auto-selects appropriate model
+    response = llm.generate("Hello!")
+```
+
+### 2. Local Development, Cloud Production
+
+```python
+# Development (free, local)
+llm_dev = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+
+# Production (high quality, cloud)
+llm_prod = create_llm("openai", model="gpt-4o-mini")
+```
+
+### 3. Embeddings & RAG
+
+```python
+from abstractllm.embeddings import EmbeddingManager
+
+# Create embeddings for semantic search
+embedder = EmbeddingManager()
+docs_embeddings = embedder.embed_batch([
+    "Python is great for data science",
+    "JavaScript powers the web",
+    "Rust ensures memory safety"
+])
+
+# Find most similar document
+query_embedding = embedder.embed("Tell me about web development")
+similarity = embedder.compute_similarity(query, docs[0])
+```
+
+### 4. Structured Output
+
+```python
+from pydantic import BaseModel
+
+class MovieReview(BaseModel):
+    title: str
+    rating: int  # 1-5
+    summary: str
+
+llm = create_llm("openai", model="gpt-4o-mini")
+review = llm.generate(
+    "Review the movie Inception",
+    response_model=MovieReview
+)
+print(f"{review.title}: {review.rating}/5")
+```
+
+### 5. Universal API Server
+
+```bash
+# Start server once
+uvicorn abstractllm.server.app:app --port 8000
+
+# Use with any OpenAI client
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Write a Python function"}]
+  }'
+```
+
+## Why AbstractCore?
+
+✅ **Unified Interface**: One API for all LLM providers  
+✅ **Production Ready**: Robust error handling, retries, timeouts  
+✅ **Type Safe**: Full Pydantic integration for structured outputs  
+✅ **Local & Cloud**: Run models locally or use cloud APIs  
+✅ **Tool Calling**: Consistent function calling across providers  
+✅ **Streaming**: Real-time responses for better UX  
+✅ **Embeddings**: Built-in vector embeddings for RAG  
+✅ **Server Mode**: Optional OpenAI-compatible API server  
+✅ **Well Documented**: Comprehensive guides and examples  
+
+## Testing Status
+
+All tests passing as of October 12th, 2025.
+
+**Test Environment:**
+- Hardware: MacBook Pro (14-inch, Nov 2024)
+- Chip: Apple M4 Max
+- Memory: 128 GB
+- Python: 3.12.2
+
+## Repository Information
+
+- **GitHub**: https://github.com/lpalbou/AbstractCore
+- **License**: MIT
+- **Python**: 3.9+
+- **Status**: Production Ready (v2.3.3)
+- **Version**: 2.3.3
+
+## Contributing
+
+We welcome contributions! See CONTRIBUTING.md for guidelines.
+
+---
+
+**AbstractCore** - One interface, all LLM providers. Focus on building, not managing API differences. 🚀
