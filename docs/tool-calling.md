@@ -1,6 +1,6 @@
 # Tool Calling System
 
-AbstractCore provides a universal tool calling system that works across **all** LLM providers, even those without native tool support. This is one of AbstractCore's most powerful features.
+AbstractCore provides a universal tool calling system that works across all LLM providers, even those without native tool support.
 
 ## Table of Contents
 
@@ -88,9 +88,9 @@ def create_user(name: str, age: int, is_admin: bool = False) -> str:
     return f"Created user: {user_data}"
 ```
 
-### Enhanced Metadata (The Real Power!)
+### Enhanced Metadata
 
-AbstractCore's `@tool` decorator supports rich metadata that gets **automatically injected into system prompts** for prompted models and passed to native APIs. This is what makes AbstractCore's tool system so powerful:
+The `@tool` decorator supports rich metadata that gets automatically injected into system prompts for prompted models and passed to native APIs:
 
 ```python
 @tool(
@@ -127,15 +127,15 @@ def search_database(query: str, table: str = "users") -> str:
     return f"Searching {table} for: {query}"
 ```
 
-**🎯 How This Metadata is Used:**
+**How This Metadata is Used:**
 - **Prompted Models**: All metadata is injected into the system prompt to guide the LLM
 - **Native APIs**: Metadata is passed through to the provider's tool API
 - **Examples**: Shown in the system prompt with proper formatting for each architecture
 - **Tags & when_to_use**: Help the LLM understand context and appropriate usage
 
-### Real-World Example from AbstractCore
+### Real-World Example
 
-Here's an actual example from AbstractCore's codebase showing the full power of the enhanced `@tool` decorator:
+Here's an example from AbstractCore's codebase showing the enhanced `@tool` decorator:
 
 ```python
 @tool(
@@ -204,7 +204,7 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
     # Implementation here...
 ```
 
-**🔄 How This Gets Transformed**
+**How This Gets Transformed**
 
 When you use this tool with a prompted model (like Ollama), AbstractCore automatically generates a system prompt like this:
 
@@ -239,7 +239,7 @@ To use a tool, respond with this EXACT format:
 
 ## Universal Tool Support
 
-AbstractCore's tool system works across **all** providers through two mechanisms:
+AbstractCore's tool system works across all providers through two mechanisms:
 
 ### 1. Native Tool Support
 
@@ -335,7 +335,7 @@ AbstractCore automatically detects model architecture and uses the appropriate t
 | **OpenAI/Anthropic** | Native API tool calls | Structured JSON in API response |
 | **XML-based** | `<tool_call>...JSON...</tool_call>` | `<tool_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</tool_call>` |
 
-**🎯 Key Point:** You never need to worry about these formats! AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.
+**Note:** AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.
 
 ### Local Execution
 
@@ -548,8 +548,6 @@ def expensive_calculation(input_data: str) -> str:
 
 ## Tool Syntax Rewriting
 
-> **Seamless Tool Call Format Conversion Across Models and Environments**
-
 AbstractCore provides comprehensive tool call format conversion for compatibility with different agentic CLIs and environments. This system works at two levels:
 
 ### Core Library (Python API) - Tag Rewriter
@@ -739,7 +737,7 @@ Both systems detect and convert from these formats:
 
 **Syntax Rewriter (Server)**
 - **Conversion Time**: <10ms per response
-- **Batch Support**: ✅ Handles multiple tool calls
+- **Batch Support**: Handles multiple tool calls
 - **Memory**: O(n) where n = content length
 - **Caching**: Pattern compilation cached
 
