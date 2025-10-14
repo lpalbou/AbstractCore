@@ -478,7 +478,7 @@ del llm
 - **Website**: https://lpalbou.github.io/AbstractCore/
 - **License**: MIT
 - **Python**: 3.9+
-- **Status**: Production Ready (v2.3.4)
+- **Status**: Production Ready (v2.3.5)
 - **Package**: Available on PyPI as `abstractcore`
 
 ## Key Differentiators

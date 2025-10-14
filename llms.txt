@@ -211,7 +211,7 @@ del llm
 - **GitHub**: https://github.com/lpalbou/AbstractCore
 - **License**: MIT
 - **Python**: 3.9+
-- **Status**: Production Ready (v2.3.3)
+- **Status**: Production Ready (v2.3.5)
 - **Testing**: All tests passing on Apple M4 Max, Python 3.12.2
 - **Package**: Available on PyPI as `abstractcore`
 
