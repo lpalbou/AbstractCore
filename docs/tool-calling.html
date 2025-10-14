@@ -53,6 +53,51 @@
                 </p>
             </div>
 
+            <!-- Navigation Schema -->
+            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
+                <h2 style="margin: 0 0 1.5rem 0;">🔄 How Tool Calling Works</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
+                        <h3 style="margin: 0 0 1rem 0;">A) Tool Detection</h3>
+                        <p style="margin: 0; font-size: 0.9rem;">AbstractCore automatically detects different tool call syntaxes:</p>
+                        <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
+                            <li>Qwen3: <code>&lt;|tool_call|&gt;...&lt;/|tool_call|&gt;</code></li>
+                            <li>LLaMA3: <code>&lt;function_call&gt;...&lt;/function_call&gt;</code></li>
+                            <li>XML: <code>&lt;tool_call&gt;...&lt;/tool_call&gt;</code></li>
+                            <li>OpenAI/Anthropic: Native API calls</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
+                        <h3 style="margin: 0 0 1rem 0;">B) Real-Time Rewriting</h3>
+                        <p style="margin: 0; font-size: 0.9rem;">Convert tool calls to specific formats for agent compatibility:</p>
+                        <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
+                            <li><code>tool_call_tags="qwen3"</code> → Codex CLI</li>
+                            <li><code>tool_call_tags="llama3"</code> → Crush CLI</li>
+                            <li><code>tool_call_tags="xml"</code> → Gemini CLI</li>
+                            <li>Auto-detection for optimal format</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
+                        <h3 style="margin: 0 0 1rem 0;">C) Optional Execution</h3>
+                        <p style="margin: 0; font-size: 0.9rem;">Choose whether AbstractCore executes tools locally:</p>
+                        <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
+                            <li><code>execute_tools=true</code> → Local execution</li>
+                            <li><code>execute_tools=false</code> → Agent handles it</li>
+                            <li>Event system for security control</li>
+                            <li>Error handling and validation</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(255, 255, 255, 0.1); border-radius: 0.5rem;">
+                    <p style="margin: 0; text-align: center; font-weight: 500;">
+                        🎯 <strong>Key Insight:</strong> One tool definition works everywhere - AbstractCore handles all the complexity of different formats and execution models automatically.
+                    </p>
+                </div>
+            </div>
+
             <!-- Table of Contents -->
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;">
                 <h2 style="margin: 0 0 1rem 0;">Table of Contents</h2>
