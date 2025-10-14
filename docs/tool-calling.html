@@ -151,23 +151,157 @@ def create_user(name: str, age: int, is_admin: bool = False) -> str:
     return f"Created user: {user_data}"</code></pre>
                     </div>
 
-                    <h3>Enhanced Metadata</h3>
-                    <p>You can provide additional metadata to help the LLM understand when and how to use tools:</p>
+                    <h3>Enhanced Metadata (The Real Power!)</h3>
+                    <p>AbstractCore's `@tool` decorator supports rich metadata that gets <strong>automatically injected into system prompts</strong> for prompted models and passed to native APIs. This is what makes AbstractCore's tool system so powerful:</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">@tool
+                        <pre><code class="language-python">@tool(
+    description="Search the database for records matching the query",
+    tags=["database", "search", "query"],
+    when_to_use="When the user asks for specific data from the database or wants to find records",
+    examples=[
+        {
+            "description": "Find all users named John",
+            "arguments": {
+                "query": "name=John",
+                "table": "users"
+            }
+        },
+        {
+            "description": "Search for products under $50",
+            "arguments": {
+                "query": "price<50", 
+                "table": "products"
+            }
+        },
+        {
+            "description": "Find recent orders",
+            "arguments": {
+                "query": "date>2025-01-01",
+                "table": "orders"
+            }
+        }
+    ]
+)
 def search_database(query: str, table: str = "users") -> str:
-    """Search the database for records matching the query.
-    
-    This tool should be used when the user asks for specific data
-    from the database or wants to find records.
-    
-    Examples:
-    - "Find all users named John" -> query="name=John", table="users"
-    - "Search for products under $50" -> query="price<50", table="products"
-    """
+    """Search the database for records matching the query."""
     # Implementation here
     return f"Searching {table} for: {query}"</code></pre>
+                    </div>
+                    
+                    <div style="background: var(--background-tertiary); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
+                        <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">🎯 How This Metadata is Used:</h4>
+                        <ul style="margin: 0;">
+                            <li><strong>Prompted Models</strong>: All metadata is injected into the system prompt to guide the LLM</li>
+                            <li><strong>Native APIs</strong>: Metadata is passed through to the provider's tool API</li>
+                            <li><strong>Examples</strong>: Shown in the system prompt with proper formatting for each architecture</li>
+                            <li><strong>Tags & when_to_use</strong>: Help the LLM understand context and appropriate usage</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="real-world-example">
+                    <h2>Real-World Example from AbstractCore</h2>
+                    <p>Here's an actual example from AbstractCore's codebase showing the full power of the enhanced `@tool` decorator:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">@tool(
+    description="Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)",
+    tags=["file", "directory", "listing", "filesystem"],
+    when_to_use="When you need to find files by their names, paths, or file extensions (NOT for searching file contents)",
+    examples=[
+        {
+            "description": "List all files in current directory",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "*"
+            }
+        },
+        {
+            "description": "Find all Python files recursively",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "*.py",
+                "recursive": True
+            }
+        },
+        {
+            "description": "Find all files with 'test' in filename (case-insensitive)",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "*test*",
+                "recursive": True
+            }
+        },
+        {
+            "description": "Find multiple file types using | separator",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "*.py|*.js|*.md",
+                "recursive": True
+            }
+        },
+        {
+            "description": "Complex multiple patterns - documentation, tests, and config files",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "README*|*test*|config.*|*.yml",
+                "recursive": True
+            }
+        }
+    ]
+)
+def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = False, include_hidden: bool = False, head_limit: Optional[int] = 50) -> str:
+    """
+    List files and directories in a specified directory with pattern matching (case-insensitive).
+
+    IMPORTANT: Use 'directory_path' parameter (not 'file_path') to specify the directory to list.
+
+    Args:
+        directory_path: Path to the directory to list files from (default: "." for current directory)
+        pattern: Glob pattern(s) to match files. Use "|" to separate multiple patterns (default: "*")
+        recursive: Whether to search recursively in subdirectories (default: False)
+        include_hidden: Whether to include hidden files/directories starting with '.' (default: False)
+        head_limit: Maximum number of files to return (default: 50, None for unlimited)
+
+    Returns:
+        Formatted string with file and directory listings or error message.
+        When head_limit is applied, shows "showing X of Y files" in the header.
+    """
+    # Implementation here...</code></pre>
+                    </div>
+                    
+                    <div style="background: linear-gradient(135deg, #e3f2fd, #f3e5f5); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: #1565c0;">🔄 How This Gets Transformed</h3>
+                        <p style="margin: 0 0 1rem 0;">When you use this tool with a prompted model (like Ollama), AbstractCore automatically generates a system prompt like this:</p>
+                        
+                        <div style="background: #fff; padding: 1rem; border-radius: 0.5rem; font-family: monospace; font-size: 0.875rem; border-left: 4px solid #1565c0;">
+                            <strong>You are a helpful AI assistant with access to the following tools:</strong><br><br>
+                            
+                            <strong>**list_files**</strong>: Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)<br>
+                            • <strong>When to use</strong>: When you need to find files by their names, paths, or file extensions (NOT for searching file contents)<br>
+                            • <strong>Tags</strong>: file, directory, listing, filesystem<br>
+                            • <strong>Parameters</strong>: {"directory_path": {"type": "string", "default": "."}, "pattern": {"type": "string", "default": "*"}, ...}<br><br>
+                            
+                            <strong>To use a tool, respond with this EXACT format:</strong><br>
+                            &lt;|tool_call|&gt;<br>
+                            {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}<br>
+                            &lt;/|tool_call|&gt;<br><br>
+                            
+                            <strong>**EXAMPLES:**</strong><br><br>
+                            <strong>**list_files Examples:**</strong><br>
+                            1. List all files in current directory:<br>
+                            &lt;|tool_call|&gt;<br>
+                            {"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*"}}<br>
+                            &lt;/|tool_call|&gt;<br><br>
+                            
+                            2. Find all Python files recursively:<br>
+                            &lt;|tool_call|&gt;<br>
+                            {"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*.py", "recursive": true}}<br>
+                            &lt;/|tool_call|&gt;<br><br>
+                            
+                            <em>... and 3 more examples with proper formatting ...</em>
+                        </div>
                     </div>
                 </section>
 
@@ -215,14 +349,33 @@ response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                         </ol>
                     </div>
 
-                    <h3>Tool Call Detection</h3>
-                    <p>AbstractCore automatically detects tool calls in various formats:</p>
+                    <h3>Architecture-Aware Tool Call Detection</h3>
+                    <p>AbstractCore automatically detects model architecture and uses the appropriate tool call format:</p>
                     
-                    <div class="code-block">
-                        <pre><code class="language-python"># Different formats automatically detected:
-# Qwen3: <|tool_call|>{"name": "get_weather", "arguments": {"city": "Paris"}}</|tool_call|>
-# LLaMA3: <function_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</function_call>
-# OpenAI: Structured JSON in API response</code></pre>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 2rem 0;">
+                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
+                            <h4 style="margin: 0 0 0.5rem 0;">Qwen3 Architecture</h4>
+                            <code>&lt;|tool_call|&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/|tool_call|&gt;</code>
+                        </div>
+                        
+                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
+                            <h4 style="margin: 0 0 0.5rem 0;">LLaMA3 Architecture</h4>
+                            <code>&lt;function_call&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/function_call&gt;</code>
+                        </div>
+                        
+                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
+                            <h4 style="margin: 0 0 0.5rem 0;">OpenAI/Anthropic</h4>
+                            <code>Native API tool calls (structured JSON)</code>
+                        </div>
+                        
+                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
+                            <h4 style="margin: 0 0 0.5rem 0;">XML-based Models</h4>
+                            <code>&lt;tool_call&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/tool_call&gt;</code>
+                        </div>
+                    </div>
+                    
+                    <div style="background: var(--background-tertiary); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
+                        <p style="margin: 0;"><strong>🎯 Key Point:</strong> You never need to worry about these formats! AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.</p>
                     </div>
 
                     <h3>Local Execution</h3>
