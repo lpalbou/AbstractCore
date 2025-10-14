@@ -1,0 +1,7 @@
+[console_scripts]
+abstractllm-extractor = abstractllm.apps.extractor:main
+abstractllm-judge = abstractllm.apps.judge:main
+abstractllm-summarizer = abstractllm.apps.summarizer:main
+extractor = abstractllm.apps.extractor:main
+judge = abstractllm.apps.judge:main
+summarizer = abstractllm.apps.summarizer:main

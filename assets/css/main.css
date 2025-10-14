@@ -187,9 +187,10 @@ a:hover {
     top: 0;
     left: 0;
     right: 0;
-    background-color: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
+    background-color: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(15px);
     border-bottom: 1px solid var(--border-light);
+    box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
     z-index: 1000;
     transition: all var(--transition-fast);
 }
@@ -217,15 +218,120 @@ a:hover {
     color: var(--text-primary);
 }
 
-.brand-logo {
-    width: 2rem;
-    height: 2rem;
+/* Dynamic CSS Logo */
+.logo-abstract {
+    position: relative;
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logo-circle {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    position: relative;
+    animation: pulse 2s ease-in-out infinite;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.logo-lines {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    align-items: flex-end;
+    padding: 0.25rem;
+}
+
+.logo-line {
+    height: 2px;
+    background: linear-gradient(90deg, var(--primary-color), transparent);
+    border-radius: 1px;
+    animation: expand 3s ease-in-out infinite;
+}
+
+.logo-line:nth-child(1) {
+    width: 0.8rem;
+    animation-delay: 0s;
+}
+
+.logo-line:nth-child(2) {
+    width: 1rem;
+    animation-delay: 0.5s;
+}
+
+.logo-line:nth-child(3) {
+    width: 0.6rem;
+    animation-delay: 1s;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    }
+    50% {
+        transform: scale(1.1);
+        box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+    }
+}
+
+@keyframes expand {
+    0%, 100% {
+        transform: scaleX(1);
+        opacity: 0.7;
+    }
+    50% {
+        transform: scaleX(1.2);
+        opacity: 1;
+    }
 }
 
 .brand-text {
-    font-size: var(--font-size-xl);
-    font-weight: 700;
+    font-size: 1.375rem;
+    font-weight: 800;
     color: var(--text-primary);
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    position: relative;
+    letter-spacing: -0.025em;
+}
+
+.brand-text::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    transition: width 0.3s ease;
+}
+
+.brand-link:hover .brand-text::after {
+    width: 100%;
+}
+
+.brand-link:hover .logo-circle {
+    animation-duration: 1s;
+}
+
+.brand-link:hover .logo-line {
+    animation-duration: 1.5s;
+}
+
+/* Legacy support for SVG logo */
+.brand-logo {
+    width: 2rem;
+    height: 2rem;
 }
 
 .nav-menu {

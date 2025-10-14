@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Management - AbstractCore</title>
+    <meta name="description" content="Comprehensive guide to AbstractCore's session management system with persistent conversations, analytics, and serialization.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="../index.html" class="brand-link">
+                    <div class="brand-logo">
+                        <div class="logo-abstract">
+                            <div class="logo-circle"></div>
+                            <div class="logo-lines">
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="../index.html#features" class="nav-link">Features</a>
+                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
+                <a href="../index.html#docs" class="nav-link">Documentation</a>
+                <a href="../index.html#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1000px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Session Management</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Persistent conversations with metadata, analytics, and complete serialization support.
+                </p>
+            </div>
+
+            <div class="doc-content">
+                <section id="overview">
+                    <h2>Overview</h2>
+                    <p>AbstractCore's session management system provides persistent conversations that maintain context across multiple interactions. Sessions can be saved, loaded, and analyzed with built-in analytics.</p>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Key Features</h3>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><strong>Persistent Conversations</strong>: Maintain context across sessions</li>
+                            <li><strong>Complete Serialization</strong>: Save/load entire session state</li>
+                            <li><strong>Built-in Analytics</strong>: Generate summaries, assessments, and fact extraction</li>
+                            <li><strong>Metadata Support</strong>: Rich metadata including location, timestamps, and custom fields</li>
+                            <li><strong>Tool Integration</strong>: Full support for tool calling within sessions</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="basic-usage">
+                    <h2>Basic Usage</h2>
+                    
+                    <h3>Creating a Session</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm import create_llm, BasicSession
+
+# Create LLM provider
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Create session with system prompt
+session = BasicSession(
+    llm=llm,
+    system_prompt="You are a helpful AI assistant specializing in Python development."
+)
+
+# Start conversation
+response1 = session.generate("Hello, I'm working on a Python project.")
+print(response1.content)
+
+# Context is maintained
+response2 = session.generate("Can you help me with error handling?")
+print(response2.content)</code></pre>
+                    </div>
+
+                    <h3>Session with Tools</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm.tools import tool
+
+@tool
+def get_current_time() -> str:
+    """Get the current time."""
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+# Create session with tools
+session = BasicSession(
+    llm=llm,
+    system_prompt="You are a helpful assistant with access to tools.",
+    tools=[get_current_time]
+)
+
+response = session.generate("What time is it?")
+print(response.content)</code></pre>
+                    </div>
+                </section>
+
+                <section id="serialization">
+                    <h2>Session Serialization</h2>
+                    
+                    <h3>Saving Sessions</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Basic save
+session.save("my_conversation.json")
+
+# Save with analytics
+session.save(
+    "my_conversation.json",
+    summary=True,      # Generate conversation summary
+    assessment=True,   # Generate quality assessment
+    facts=True        # Extract key facts
+)
+
+# Save with custom metadata
+session.save(
+    "my_conversation.json",
+    metadata={
+        "project": "Python Tutorial",
+        "user_level": "beginner",
+        "session_type": "coding_help"
+    }
+)</code></pre>
+                    </div>
+
+                    <h3>Loading Sessions</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Load existing session
+loaded_session = BasicSession.load("my_conversation.json")
+
+# Continue conversation
+response = loaded_session.generate("Let's continue where we left off.")
+print(response.content)
+
+# Access session metadata
+print(f"Session created: {loaded_session.created_at}")
+print(f"Message count: {len(loaded_session.messages)}")
+print(f"Provider: {loaded_session.provider_name}")
+print(f"Model: {loaded_session.model_name}")</code></pre>
+                    </div>
+                </section>
+
+                <section id="analytics">
+                    <h2>Session Analytics</h2>
+                    
+                    <h3>Generate Summary</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Generate conversation summary
+summary = session.generate_summary()
+print("Summary:", summary.summary)
+print("Key topics:", summary.key_topics)
+print("Participant count:", summary.participant_count)</code></pre>
+                    </div>
+
+                    <h3>Quality Assessment</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Generate quality assessment
+assessment = session.generate_assessment()
+print("Overall score:", assessment.overall_score)
+print("Helpfulness:", assessment.helpfulness_score)
+print("Accuracy:", assessment.accuracy_score)
+print("Clarity:", assessment.clarity_score)
+print("Feedback:", assessment.feedback)</code></pre>
+                    </div>
+
+                    <h3>Fact Extraction</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Extract key facts
+facts = session.extract_facts()
+for fact in facts.facts:
+    print(f"- {fact.content} (confidence: {fact.confidence})")
+    print(f"  Category: {fact.category}")
+    print(f"  Source: {fact.source_message_index}")
+    print()</code></pre>
+                    </div>
+                </section>
+
+                <section id="metadata">
+                    <h2>Message Metadata</h2>
+                    
+                    <h3>Adding Metadata to Messages</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Add message with metadata
+session.add_message(
+    role="user",
+    content="Hello from New York!",
+    name="Alice",
+    location="New York, NY",
+    metadata={
+        "device": "mobile",
+        "app_version": "1.2.3",
+        "user_id": "user_123"
+    }
+)
+
+# Generate response
+response = session.generate("How's the weather there?")
+
+# Access message metadata
+for message in session.messages:
+    if message.metadata:
+        print(f"Message from {message.name} in {message.location}")
+        print(f"Device: {message.metadata.get('device', 'unknown')}")
+        print(f"Content: {message.content}")
+        print()</code></pre>
+                    </div>
+
+                    <h3>Location-Aware Conversations</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Set user location for context
+session.add_message(
+    role="user",
+    content="What's a good restaurant nearby?",
+    location="San Francisco, CA"
+)
+
+response = session.generate()
+# Assistant can use location context in response</code></pre>
+                    </div>
+                </section>
+
+                <section id="advanced-features">
+                    <h2>Advanced Features</h2>
+                    
+                    <h3>Session Configuration</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Advanced session configuration
+session = BasicSession(
+    llm=llm,
+    system_prompt="You are a helpful assistant.",
+    max_context_messages=20,  # Limit context window
+    auto_save=True,          # Auto-save after each interaction
+    auto_save_path="auto_save.json",
+    metadata={
+        "session_type": "customer_support",
+        "priority": "high"
+    }
+)</code></pre>
+                    </div>
+
+                    <h3>Session Events</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm.events import EventType, on_global
+
+def log_session_activity(event):
+    """Log all session activities."""
+    print(f"Session event: {event.event_type}")
+    print(f"Session ID: {event.data.get('session_id')}")
+    print(f"Message count: {event.data.get('message_count')}")
+
+# Subscribe to session events
+on_global(EventType.GENERATION_COMPLETED, log_session_activity)</code></pre>
+                    </div>
+
+                    <h3>Batch Processing</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Process multiple sessions
+session_files = ["session1.json", "session2.json", "session3.json"]
+
+for file_path in session_files:
+    session = BasicSession.load(file_path)
+    
+    # Generate analytics for each session
+    summary = session.generate_summary()
+    assessment = session.generate_assessment()
+    
+    print(f"Session: {file_path}")
+    print(f"Summary: {summary.summary}")
+    print(f"Quality Score: {assessment.overall_score}")
+    print("-" * 50)</code></pre>
+                    </div>
+                </section>
+
+                <section id="session-schema">
+                    <h2>Session File Format</h2>
+                    
+                    <p>Sessions are saved in a structured JSON format with complete state preservation:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-json">{
+  "format_version": "session-archive/v1",
+  "created_at": "2025-01-14T10:30:00Z",
+  "updated_at": "2025-01-14T10:45:00Z",
+  "provider_name": "OpenAIProvider",
+  "model_name": "gpt-4o-mini",
+  "system_prompt": "You are a helpful assistant.",
+  "parameters": {
+    "max_tokens": 16384,
+    "temperature": 0.7
+  },
+  "tools": [...],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello!",
+      "timestamp": "2025-01-14T10:30:00Z",
+      "metadata": {
+        "name": "Alice",
+        "location": "New York, NY"
+      }
+    }
+  ],
+  "analytics": {
+    "summary": {...},
+    "assessment": {...},
+    "facts": {...}
+  },
+  "metadata": {
+    "session_type": "conversation",
+    "total_messages": 5,
+    "total_tokens": 1250
+  }
+}</code></pre>
+                    </div>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Learn the basics of AbstractCore</p>
+                        </a>
+                        
+                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Use tools within sessions</p>
+                        </a>
+                        
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API documentation</p>
+                        </a>
+                        
+                        <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Session usage examples</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
