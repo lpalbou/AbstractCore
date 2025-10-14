@@ -763,9 +763,10 @@ a:hover {
 }
 
 .flow-step p {
-    color: var(--text-secondary);
+    color: var(--text-primary);
     margin: 0;
     line-height: 1.6;
+    font-weight: 500;
 }
 
 .flow-step::after {
@@ -861,19 +862,22 @@ a:hover {
 .performance-card {
     padding: 2rem;
     border-radius: 0.75rem;
-    border: 1px solid var(--border-color);
+    border: 2px solid var(--border-color);
+    background: var(--background);
     transition: all 0.3s ease;
 }
 
 .performance-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    border-color: var(--primary-color);
 }
 
 .performance-card h3 {
     margin: 0 0 1rem 0;
     font-size: 1.25rem;
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
 .performance-card ul {
@@ -884,7 +888,8 @@ a:hover {
 
 .performance-card li {
     margin: 0.5rem 0;
-    color: var(--text-secondary);
+    color: var(--text-primary);
+    font-weight: 500;
 }
 
 /* Responsive Design */

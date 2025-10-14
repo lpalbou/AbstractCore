@@ -126,7 +126,8 @@
         
         .interactive-flow {
             position: relative;
-            background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+            background: var(--background-secondary);
+            border: 2px solid var(--border-color);
             border-radius: 0.75rem;
             padding: 2rem;
             margin: 2rem 0;
@@ -449,33 +450,33 @@ response = llm.generate("Hello, world!")</code></pre>
                     </div>
                 </div>
                 
-                <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3>🔄 Tool Call Format Conversion</h3>
-                    <p>AbstractCore automatically converts between different tool call formats:</p>
+                <div style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="color: var(--text-primary); margin: 0 0 1rem 0;">🔄 Tool Call Format Conversion</h3>
+                    <p style="color: var(--text-secondary);">AbstractCore automatically converts between different tool call formats:</p>
                     
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0;">
-                        <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
-                            <h4>Qwen3 Format</h4>
-                            <code>&lt;|tool_call|&gt;...&lt;/|tool_call|&gt;</code>
-                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Compatible with Codex CLI</p>
+                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 1rem; border-radius: 0.5rem;">
+                            <h4 style="color: var(--text-primary); margin: 0 0 0.5rem 0;">Qwen3 Format</h4>
+                            <code style="color: var(--primary-color);">&lt;|tool_call|&gt;...&lt;/|tool_call|&gt;</code>
+                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);">Compatible with Codex CLI</p>
                         </div>
                         
-                        <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
-                            <h4>LLaMA3 Format</h4>
-                            <code>&lt;function_call&gt;...&lt;/function_call&gt;</code>
-                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Compatible with Crush CLI</p>
+                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 1rem; border-radius: 0.5rem;">
+                            <h4 style="color: var(--text-primary); margin: 0 0 0.5rem 0;">LLaMA3 Format</h4>
+                            <code style="color: var(--primary-color);">&lt;function_call&gt;...&lt;/function_call&gt;</code>
+                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);">Compatible with Crush CLI</p>
                         </div>
                         
-                        <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
-                            <h4>XML Format</h4>
-                            <code>&lt;tool_call&gt;...&lt;/tool_call&gt;</code>
-                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Compatible with Gemini CLI</p>
+                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 1rem; border-radius: 0.5rem;">
+                            <h4 style="color: var(--text-primary); margin: 0 0 0.5rem 0;">XML Format</h4>
+                            <code style="color: var(--primary-color);">&lt;tool_call&gt;...&lt;/tool_call&gt;</code>
+                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);">Compatible with Gemini CLI</p>
                         </div>
                         
-                        <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
-                            <h4>Custom Format</h4>
-                            <code>[TOOL]...JSON...[/TOOL]</code>
-                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">User-defined formats</p>
+                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 1rem; border-radius: 0.5rem;">
+                            <h4 style="color: var(--text-primary); margin: 0 0 0.5rem 0;">Custom Format</h4>
+                            <code style="color: var(--primary-color);">[TOOL]...JSON...[/TOOL]</code>
+                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);">User-defined formats</p>
                         </div>
                     </div>
                 </div>
