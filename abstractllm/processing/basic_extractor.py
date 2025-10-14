@@ -107,7 +107,8 @@ class BasicExtractor:
         _ = entity_types  # Reserved for future entity type filtering
         _ = style  # Reserved for future style customization
 
-        if len(text) > self.max_chunk_size:
+        # Use token-aware chunking for better accuracy
+        if self._should_chunk_by_tokens(text):
             result = self._extract_long_document(text, domain_focus, length)
         else:
             result = self._extract_single_chunk(text, domain_focus, length)
@@ -531,7 +532,8 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
         """
         logger.info("Starting extraction refinement")
 
-        if len(text) > self.max_chunk_size:
+        # Use token-aware chunking for better accuracy
+        if self._should_chunk_by_tokens(text):
             return self._refine_long_document(text, previous_extraction, domain_focus, length)
         else:
             return self._refine_single_chunk(text, previous_extraction, domain_focus, length)
@@ -775,6 +777,32 @@ CRITICAL: ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
         logger.info("Long document refinement completed")
         return current_extraction
 
+    def _should_chunk_by_tokens(self, text: str) -> bool:
+        """
+        Determine if text should be chunked based on token count.
+        
+        Uses centralized TokenUtils for accurate token estimation.
+        Falls back to character count if model information unavailable.
+        """
+        from ..utils.token_utils import TokenUtils
+        
+        # Get model name from LLM if available
+        model_name = None
+        if self.llm and hasattr(self.llm, 'model'):
+            model_name = self.llm.model
+            
+        # Estimate tokens using centralized utility
+        estimated_tokens = TokenUtils.estimate_tokens(text, model_name)
+        
+        # Use a conservative token limit (leaving room for prompt overhead)
+        # Most models have 16k+ context, so 6k tokens for input text is safe
+        token_limit = 6000
+        
+        if estimated_tokens > token_limit:
+            return True
+            
+        # Fallback to character-based check for very long texts
+        return len(text) > self.max_chunk_size
 
     def _format_output(self, jsonld_result: dict, output_format: str) -> dict:
         """

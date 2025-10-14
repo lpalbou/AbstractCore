@@ -436,7 +436,7 @@ If the AI is calling tools unnecessarily (like the example where it called `list
 - **Compaction Model**: Uses `gemma3:1b` for fast, local processing
 - **Preservation**: Keeps last 6 messages (3 exchanges) by default
 - **Fallback**: If `gemma3:1b` unavailable, uses current provider
-- **Token Estimation**: Provides rough token count estimates
+- **Token Estimation**: Provides accurate token count estimates using centralized TokenUtils
 - **Message Types**: Distinguishes between system, user, and assistant messages
 
 ### Error Handling

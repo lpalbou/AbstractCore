@@ -747,8 +747,11 @@ async def create_embeddings(request: EmbeddingRequest):
                 "index": i
             })
 
-        # Calculate usage (rough estimate)
-        total_tokens = sum(embedder.estimate_tokens(text) for text in inputs)
+        # Calculate usage using centralized token utilities
+        # Calculate total tokens using centralized utility
+        from ..utils.token_utils import TokenUtils
+        model_name = getattr(embedder, 'model_name', None)
+        total_tokens = sum(TokenUtils.estimate_tokens(text, model_name) for text in inputs)
 
         response = {
             "object": "list",

@@ -344,7 +344,10 @@ def telemetry_and_observability():
             response = llm.generate(prompt)
             # Simulate some token usage for mock provider
             if not response.usage:
-                response.usage = {"total_tokens": len(prompt.split()) * 10}
+                # Use centralized token estimation for mock usage
+                from abstractllm.utils.token_utils import TokenUtils
+                estimated_tokens = TokenUtils.estimate_tokens(prompt) + TokenUtils.estimate_tokens(response.content or "")
+                response.usage = {"total_tokens": estimated_tokens}
         except Exception as e:
             print(f"   Error: {e}")
 

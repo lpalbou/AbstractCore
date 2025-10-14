@@ -85,7 +85,7 @@ def session_management_patterns():
     # Context window management
     print("\n📊 Context Window Management:")
     print(f"   • Total messages: {len(session.messages)}")
-    print(f"   • Estimated tokens: ~{len(str(session.messages)) * 0.25:.0f}")
+    print(f"   • Estimated tokens: ~{session.get_token_estimate()}")
     print(f"   • Max context: {llm.max_tokens if hasattr(llm, 'max_tokens') else 'N/A'}")
 
     # Truncation strategies
@@ -401,7 +401,10 @@ def event_driven_architecture():
             response = llm.generate(prompt)
             # Simulate token usage
             if not response.usage:
-                response.usage = {"total_tokens": len(prompt.split()) * 10}
+                # Use centralized token estimation for mock usage
+                from abstractllm.utils.token_utils import TokenUtils
+                estimated_tokens = TokenUtils.estimate_tokens(prompt) + TokenUtils.estimate_tokens(response.content or "")
+                response.usage = {"total_tokens": estimated_tokens}
         except Exception as e:
             print(f"      Error: {e}")
 

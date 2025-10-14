@@ -219,12 +219,22 @@ class MLXProvider(BaseProvider):
             content=generated,
             model=self.model,
             finish_reason="stop",
-            usage={
-                "prompt_tokens": len(prompt.split()),
-                "completion_tokens": len(generated.split()),
-                "total_tokens": len(prompt.split()) + len(generated.split())
-            }
+            usage=self._calculate_usage(prompt, generated)
         )
+
+    def _calculate_usage(self, prompt: str, response: str) -> Dict[str, int]:
+        """Calculate token usage using centralized token utilities."""
+        from ..utils.token_utils import TokenUtils
+        
+        prompt_tokens = TokenUtils.estimate_tokens(prompt, self.model)
+        completion_tokens = TokenUtils.estimate_tokens(response, self.model)
+        total_tokens = prompt_tokens + completion_tokens
+        
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens
+        }
 
     def _stream_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Generate real streaming response using MLX stream_generate with tool tag rewriting support"""
