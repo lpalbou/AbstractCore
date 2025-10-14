@@ -6,6 +6,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.3.6] - 2025-10-14
+
+### Fixed
+
+#### Documentation: Missing Apps Coverage
+- **Problem**: Built-in CLI applications (summarizer, extractor, judge) were poorly documented and not mentioned in main README.md
+- **Root Cause**: Apps functionality was buried in specialized documentation sections with no direct terminal usage examples
+- **Solution**: Comprehensive documentation overhaul with prominent apps coverage
+- **Impact**: Users can now easily discover and use production-ready CLI tools without Python programming
+
+#### Enhanced Apps Documentation
+- **Added**: Major "Built-in Applications (Ready-to-Use CLI Tools)" section to README.md
+- **Added**: Direct terminal usage examples for all three apps (`summarizer`, `extractor`, `judge`)
+- **Added**: Comprehensive parameter documentation with all available options
+- **Added**: Alternative usage methods (direct commands, Python module, prefixed commands)
+- **Fixed**: Missing judge app in `__main__.py` launcher
+- **Enhanced**: All app documentation files with "Quick CLI Usage" sections
+
+#### Centralized Token Utilities
+- **Added**: New `abstractllm/utils/token_utils.py` module for centralized token counting and management
+- **Consolidated**: Token-related utilities from scattered locations into single module
+- **Enhanced**: Consistent token counting across all components
+- **Impact**: Better token management and cost estimation capabilities
+
+### Technical
+
+#### Documentation Structure Improvements
+- **README.md**: Added apps section with parameter tables and usage examples
+- **docs/README.md**: Promoted apps to major section "🛠️ Built-in Applications (CLI Tools)"
+- **docs/apps/basic-summarizer.md**: Added CLI section with direct terminal usage
+- **docs/apps/basic-extractor.md**: Enhanced CLI documentation with alternative methods
+- **docs/apps/basic-judge.md**: Improved CLI section with comprehensive examples
+- **abstractllm/apps/__main__.py**: Fixed to include all three apps (summarizer, extractor, judge)
+
+#### CLI Applications Coverage
+- **Documented**: All 6 CLI entry points from pyproject.toml
+  - Direct commands: `summarizer`, `extractor`, `judge`
+  - Prefixed commands: `abstractllm-summarizer`, `abstractllm-extractor`, `abstractllm-judge`
+- **Parameter Documentation**: Complete coverage of all CLI parameters with options, defaults, and descriptions
+- **Usage Examples**: Realistic examples showing actual parameter usage for common scenarios
+
+#### Files Modified
+- `README.md`: Added comprehensive apps section with parameter documentation
+- `docs/README.md`: Enhanced apps visibility and navigation
+- `docs/apps/basic-summarizer.md`: Added CLI interface section
+- `docs/apps/basic-extractor.md`: Enhanced CLI documentation
+- `docs/apps/basic-judge.md`: Improved CLI examples
+- `abstractllm/apps/__main__.py`: Fixed missing judge app support
+- `abstractllm/utils/token_utils.py`: New centralized token utilities module
+
+#### Impact
+✅ **Discoverability**: Apps now prominently featured in main documentation  
+✅ **Usability**: Clear direct terminal usage without Python knowledge required  
+✅ **Completeness**: All parameters documented with practical examples  
+✅ **Consistency**: Unified documentation structure across all three apps  
+✅ **Accessibility**: Multiple usage methods for different user preferences
+
 ## [2.3.5] - 2025-10-14
 
 ### Fixed

@@ -195,8 +195,9 @@ class AbstractLLMInterface(ABC):
         """
         warnings = []
 
-        # Rough token estimation (approximately 4 characters per token for English)
-        estimated_input_tokens = len(input_text) // 4
+        # Use centralized token estimation for accuracy
+        from ..utils.token_utils import TokenUtils
+        estimated_input_tokens = TokenUtils.estimate_tokens(input_text, self.model)
 
         # Add safety margin
         input_with_margin = int(estimated_input_tokens * (1 + safety_margin))
@@ -298,7 +299,7 @@ class AbstractLLMInterface(ABC):
 
     def estimate_tokens(self, text: str) -> int:
         """
-        Rough estimation of token count for given text.
+        Estimate token count for given text using centralized token utilities.
 
         Args:
             text: Text to estimate tokens for
@@ -307,29 +308,11 @@ class AbstractLLMInterface(ABC):
             Estimated token count
 
         Note:
-            This is a rough approximation (~4 chars per token for English).
-            For precise counts, use provider-specific tokenizers.
+            Uses the centralized TokenUtils for accurate, model-aware estimation.
+            For precise counts with tiktoken, use count_tokens_precise().
         """
-        if not text:
-            return 0
-
-        # Basic estimation: ~4 characters per token for English
-        # This varies by language and tokenizer, but gives a reasonable baseline
-        base_estimate = len(text) // 4
-
-        # Adjust for whitespace and punctuation density
-        # More spaces/punctuation = fewer tokens per character
-        whitespace_ratio = len([c for c in text if c.isspace()]) / len(text) if text else 0
-        punct_ratio = len([c for c in text if not c.isalnum() and not c.isspace()]) / len(text) if text else 0
-
-        # Adjust estimate based on content type
-        adjustment_factor = 1.0
-        if whitespace_ratio > 0.2:  # Very spaced out text
-            adjustment_factor = 0.8
-        elif punct_ratio > 0.1:  # Heavy punctuation
-            adjustment_factor = 0.9
-
-        return max(1, int(base_estimate * adjustment_factor))
+        from ..utils.token_utils import TokenUtils
+        return TokenUtils.estimate_tokens(text, self.model)
 
     def get_token_configuration_summary(self) -> str:
         """

@@ -165,6 +165,122 @@ python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-la
 - Quick prototyping with different models
 - Learning AbstractCore capabilities
 
+## Built-in Applications (Ready-to-Use CLI Tools)
+
+AbstractCore includes **three specialized command-line applications** for common LLM tasks. These are production-ready tools that can be used directly from the terminal without any Python programming.
+
+### Available Applications
+
+| Application | Purpose | Direct Command |
+|-------------|---------|----------------|
+| **Summarizer** | Document summarization | `summarizer` or `abstractllm-summarizer` |
+| **Extractor** | Entity and relationship extraction | `extractor` or `abstractllm-extractor` |
+| **Judge** | Text evaluation and scoring | `judge` or `abstractllm-judge` |
+
+### Quick Usage Examples
+
+```bash
+# Document summarization with different styles and lengths
+summarizer document.pdf --style=executive --length=brief
+summarizer report.txt --focus="technical details" --output=summary.txt
+summarizer large_doc.txt --chunk-size=15000 --provider=openai --model=gpt-4o-mini
+
+# Entity extraction with various formats and options
+extractor research_paper.pdf --format=json-ld --focus=technology
+extractor article.txt --entity-types=person,organization,location --output=entities.jsonld
+extractor doc.txt --iterate=3 --mode=thorough --verbose
+
+# Text evaluation with custom criteria and contexts
+judge essay.txt --criteria=clarity,accuracy,coherence --context="academic writing"
+judge code.py --context="code review" --format=plain --verbose
+judge proposal.md --custom-criteria=has_examples,covers_risks --output=assessment.json
+```
+
+### Installation & Setup
+
+Apps are automatically available after installing AbstractCore:
+
+```bash
+# Install with all features
+pip install abstractcore[all]
+
+# Apps are immediately available
+summarizer --help
+extractor --help  
+judge --help
+```
+
+### Alternative Usage Methods
+
+```bash
+# Method 1: Direct commands (recommended)
+summarizer document.txt
+extractor report.pdf
+judge essay.md
+
+# Method 2: Via Python module
+python -m abstractllm.apps summarizer document.txt
+python -m abstractllm.apps extractor report.pdf
+python -m abstractllm.apps judge essay.md
+
+# Method 3: Prefixed commands
+abstractllm-summarizer document.txt
+abstractllm-extractor report.pdf
+abstractllm-judge essay.md
+```
+
+### Key Parameters
+
+**Common Parameters (all apps):**
+- `--provider` + `--model` - Use different LLM providers (OpenAI, Anthropic, Ollama, etc.)
+- `--output` - Save results to file instead of console
+- `--verbose` - Show detailed progress information
+- `--timeout` - HTTP timeout for LLM requests (default: 300s)
+
+**Summarizer Parameters:**
+- `--style` - Summary style: `structured`, `narrative`, `objective`, `analytical`, `executive`, `conversational`
+- `--length` - Summary length: `brief`, `standard`, `detailed`, `comprehensive`
+- `--focus` - Specific focus area for summarization
+- `--chunk-size` - Chunk size for large documents (1000-32000, default: 8000)
+
+**Extractor Parameters:**
+- `--format` - Output format: `json-ld`, `triples`, `json`, `yaml`
+- `--entity-types` - Focus on specific entities: `person,organization,location,technology,etc.`
+- `--mode` - Extraction mode: `fast`, `balanced`, `thorough`
+- `--iterate` - Number of refinement iterations (1-10, default: 1)
+- `--minified` - Output compact JSON without indentation
+
+**Judge Parameters:**
+- `--context` - Evaluation context (e.g., "code review", "academic writing")
+- `--criteria` - Standard criteria: `clarity,soundness,effectiveness,etc.`
+- `--custom-criteria` - Custom evaluation criteria
+- `--format` - Output format: `json`, `plain`, `yaml`
+- `--include-criteria` - Include detailed criteria explanations
+
+### Key Features
+
+- **Provider Agnostic**: Works with any configured LLM provider (OpenAI, Anthropic, Ollama, etc.)
+- **Multiple Formats**: Support for PDF, TXT, MD, DOCX, and more
+- **Flexible Output**: JSON, JSON-LD, YAML, plain text formats
+- **Batch Processing**: Process multiple files at once
+- **Configurable**: Custom prompts, criteria, and evaluation rubrics
+- **Production Ready**: Robust error handling and logging
+
+### Full Documentation
+
+Each application has comprehensive documentation with examples and advanced usage:
+
+- **[Summarizer Guide](docs/apps/basic-summarizer.md)** - Document summarization with multiple strategies
+- **[Extractor Guide](docs/apps/basic-extractor.md)** - Entity and relationship extraction
+- **[Judge Guide](docs/apps/basic-judge.md)** - Text evaluation and scoring systems
+
+**When to use the apps:**
+- Processing documents without writing code
+- Batch text analysis workflows
+- Quick prototyping of text processing pipelines
+- Integration with shell scripts and automation
+- Standardized text processing tasks
+
 ## Documentation
 
 **📚 Complete Documentation:** [docs/](docs/) - Full documentation index and navigation guide

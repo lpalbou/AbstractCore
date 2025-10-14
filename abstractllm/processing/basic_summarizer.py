@@ -153,7 +153,8 @@ class BasicSummarizer:
             >>> print(f"Confidence: {result.confidence:.2f}")
         """
         # Handle long documents through chunking
-        if len(text) > self.max_chunk_size:
+        # Use token-aware chunking for better accuracy
+        if self._should_chunk_by_tokens(text):
             return self._summarize_long_document(text, focus, style, length)
         else:
             return self._summarize_single_chunk(text, focus, style, length)
@@ -291,6 +292,33 @@ class BasicSummarizer:
             word_count_original=actual_original_words,
             word_count_summary=actual_summary_words
         )
+
+    def _should_chunk_by_tokens(self, text: str) -> bool:
+        """
+        Determine if text should be chunked based on token count.
+        
+        Uses centralized TokenUtils for accurate token estimation.
+        Falls back to character count if model information unavailable.
+        """
+        from ..utils.token_utils import TokenUtils
+        
+        # Get model name from LLM if available
+        model_name = None
+        if self.llm and hasattr(self.llm, 'model'):
+            model_name = self.llm.model
+            
+        # Estimate tokens using centralized utility
+        estimated_tokens = TokenUtils.estimate_tokens(text, model_name)
+        
+        # Use a conservative token limit (leaving room for prompt overhead)
+        # Most models have 16k+ context, so 6k tokens for input text is safe
+        token_limit = 6000
+        
+        if estimated_tokens > token_limit:
+            return True
+            
+        # Fallback to character-based check for very long texts
+        return len(text) > self.max_chunk_size
 
     def _split_text_into_chunks(self, text: str, overlap: int = 200) -> List[str]:
         """Split text into overlapping chunks"""

@@ -50,13 +50,36 @@ Complete navigation guide for AbstractCore documentation.
   - Agentic CLI integration (Codex, Crush, Gemini CLI)
   - Deployment (Docker, production, cloud)
 
+## 🛠️ Built-in Applications (CLI Tools)
+
+**AbstractCore includes three production-ready command-line applications for common LLM tasks.**
+
+### Quick Start with Apps
+
+```bash
+# Install and use immediately
+pip install abstractcore[all]
+
+# Direct terminal usage (no Python code needed)
+summarizer document.pdf --provider openai --model gpt-4o-mini
+extractor research_paper.pdf --format json-ld --provider anthropic  
+judge essay.txt --criteria clarity,accuracy --provider ollama
+```
+
+### Application Documentation
+
+- **[Summarizer Guide](apps/basic-summarizer.md)** - Document summarization with multiple strategies
+- **[Extractor Guide](apps/basic-extractor.md)** - Entity and relationship extraction from text
+- **[Judge Guide](apps/basic-judge.md)** - Text evaluation and scoring systems
+
+**Key Features:**
+- **Direct CLI usage**: `summarizer`, `extractor`, `judge` commands
+- **Provider agnostic**: Works with any configured LLM provider
+- **Multiple formats**: PDF, TXT, MD, DOCX support
+- **Batch processing**: Handle multiple files at once
+- **Production ready**: Robust error handling and logging
+
 ## 🔧 Specialized Topics
-
-### Application Guides
-
-- **[Extractor](apps/basic-extractor.md)** - Extract structured data from text
-- **[Judge](apps/basic-judge.md)** - Evaluate and score text
-- **[Summarizer](apps/basic-summarizer.md)** - Generate summaries
 
 ### Architecture & Design
 
@@ -95,12 +118,14 @@ docs/
 ├── Server (Optional HTTP REST API)/
 │   └── server.md               # Complete server documentation ⭐
 │
+├── Built-in Applications (CLI Tools)/
+│   ├── apps/                   # Production-ready CLI applications
+│   │   ├── basic-summarizer.md     # Document summarization
+│   │   ├── basic-extractor.md      # Entity/relationship extraction
+│   │   └── basic-judge.md          # Text evaluation and scoring
+│
 ├── Specialized/
-│   ├── apps/                   # Built-in applications
-│   │   ├── basic-extractor.md      # Data extraction
-│   │   ├── basic-judge.md          # Text evaluation
-│   │   └── basic-summarizer.md     # Summarization
-│   ├── internal-cli.md         # Built-in CLI tool
+│   ├── internal-cli.md         # Interactive CLI tool for development
 │   ├── architecture.md         # System architecture
 │   ├── comparison.md           # vs alternatives
 │   └── chat-compaction.md      # History management
@@ -121,6 +146,12 @@ docs/
 - Install AbstractCore → [Prerequisites](prerequisites.md)
 - Make my first LLM call → [Getting Started](getting-started.md)
 - Fix installation issues → [Troubleshooting](troubleshooting.md#installation-issues)
+
+**Use Built-in Apps (CLI Tools):**
+- Summarize documents → [Summarizer Guide](apps/basic-summarizer.md)
+- Extract entities → [Extractor Guide](apps/basic-extractor.md)  
+- Evaluate text → [Judge Guide](apps/basic-judge.md)
+- Quick start → `pip install abstractcore[all]` then `summarizer --help`
 
 **Use Core Library (Python):**
 - Switch between providers → [Getting Started](getting-started.md#providers-and-models)
@@ -177,8 +208,9 @@ docs/
 ### For Beginners
 1. [Prerequisites](prerequisites.md) - Setup
 2. [Getting Started](getting-started.md) - Learn basics
-3. [Examples](examples.md) - See real code
-4. [Troubleshooting](troubleshooting.md) - Fix issues
+3. [Built-in Apps](apps/) - Use CLI tools immediately
+4. [Examples](examples.md) - See real code
+5. [Troubleshooting](troubleshooting.md) - Fix issues
 
 ### For Server/API Users
 1. [Server Documentation](server.md) - Setup server and learn API endpoints

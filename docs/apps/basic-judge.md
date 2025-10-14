@@ -280,6 +280,35 @@ judge file1.py file2.py file3.py --context="code review" --exclude-global
 
 The `judge` CLI provides comprehensive evaluation capabilities for files and direct text input.
 
+### Quick CLI Usage
+
+```bash
+# Simple usage (after pip install abstractcore[all])
+judge "This code is well-structured and efficient."
+
+# Evaluate single file with context
+judge document.py --context="code review"
+
+# Multiple files with specific criteria
+judge file1.py file2.py file3.py --context="code review" --criteria=clarity,soundness
+
+# Custom output format and file
+judge proposal.txt --format=plain --output=assessment.txt
+```
+
+### Alternative Usage Methods
+
+```bash
+# Method 1: Direct command (recommended after installation)
+judge document.txt --context="code review"
+
+# Method 2: Via Python module (always works)
+python -m abstractllm.apps.judge document.txt --context="code review"
+
+# Method 3: Prefixed command (alternative direct command)
+abstractllm-judge document.txt --context="code review"
+```
+
 ### Basic Usage
 
 ```bash
@@ -300,9 +329,6 @@ judge proposal.txt --output=assessment.json
 
 # Multiple files with wildcard patterns
 judge src/*.py --context="Python code review" --format=json --output=review.json
-
-# Alternative: use full module path
-python -m abstractllm.apps.judge document.py --context="code review"
 ```
 
 ### Advanced Options

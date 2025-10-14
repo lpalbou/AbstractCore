@@ -201,53 +201,116 @@ facts = llm.generate(facts_prompt)  # Works reliably with local models
 
 ## Command Line Interface
 
-The `extractor` CLI processes files and outputs knowledge graphs in various formats:
+The `extractor` CLI provides direct terminal access for knowledge graph extraction without any Python programming.
+
+### Quick CLI Usage
+
+```bash
+# Simple usage (after pip install abstractcore[all])
+extractor document.pdf
+
+# With specific format and focus
+extractor report.txt --format=triples --focus=technology
+
+# Extract specific entity types
+extractor data.md --entity-types=person,organization --output=entities.jsonld
+
+# High-quality extraction with iterations
+extractor doc.txt --iterate=3 --length=detailed --verbose
+```
+
+### Alternative Usage Methods
+
+```bash
+# Method 1: Direct command (recommended after installation)
+extractor document.txt --format=triples
+
+# Method 2: Via Python module (always works)
+python -m abstractllm.apps.extractor document.txt --format=triples
+
+# Method 3: Prefixed command (alternative direct command)
+abstractllm-extractor document.txt --format=triples
+```
 
 ### Basic Usage
 
 ```bash
 # Extract from file (default: JSON-LD)
-python -m abstractllm.apps.extractor document.txt
+extractor document.txt
+# OR: python -m abstractllm.apps.extractor document.txt
 
 # Specify output format
-python -m abstractllm.apps.extractor document.txt --format=triples
+extractor document.txt --format=triples
+# OR: python -m abstractllm.apps.extractor document.txt --format=triples
 
 # Save to file
-python -m abstractllm.apps.extractor document.txt --output=knowledge_graph.jsonld
+extractor document.txt --output=knowledge_graph.jsonld
+# OR: python -m abstractllm.apps.extractor document.txt --output=knowledge_graph.jsonld
 ```
 
 ### Advanced Options
 
 ```bash
 # Domain-focused extraction
-python -m abstractllm.apps.extractor tech_report.txt --focus=technology --length=detailed
+extractor tech_report.txt --focus=technology --length=detailed
+# OR: python -m abstractllm.apps.extractor tech_report.txt --focus=technology --length=detailed
 
 # Custom provider and model
-python -m abstractllm.apps.extractor document.txt --provider=openai --model=gpt-4o-mini
+extractor document.txt --provider=openai --model=gpt-4o-mini
+# OR: python -m abstractllm.apps.extractor document.txt --provider=openai --model=gpt-4o-mini
 
 # Minified output for storage
-python -m abstractllm.apps.extractor document.txt --format=json-ld --minified
+extractor document.txt --format=json-ld --minified
+# OR: python -m abstractllm.apps.extractor document.txt --format=json-ld --minified
 
 # Iterative refinement for quality
-python -m abstractllm.apps.extractor document.txt --iterate=3 --verbose
+extractor document.txt --iterate=3 --verbose
+# OR: python -m abstractllm.apps.extractor document.txt --iterate=3 --verbose
 ```
 
 ### CLI Parameters
 
-| Parameter | Description | Choices/Default |
-|-----------|-------------|-----------------|
-| `file_path` | Input file path | Required |
-| `--format` | Output format | `json-ld` (default), `triples`, `json`, `yaml` |
-| `--focus` | Domain focus | e.g., "technology", "business", "medical" |
-| `--length` | Extraction depth | `brief` (default), `standard`, `detailed`, `comprehensive` |
-| `--style` | Extraction style | `structured` (default), `focused`, `minimal`, `comprehensive` |
-| `--entity-types` | Entity types to focus on | Comma-separated list |
-| `--output` | Output file path | Console if not provided |
-| `--provider` | LLM provider | `ollama`, `openai`, `anthropic`, etc. |
-| `--model` | LLM model | Provider-specific model name |
-| `--minified` | Compact output | Flag (no indentation) |
-| `--iterate` | Refinement iterations | 1-5 (default: 1) |
-| `--verbose` | Detailed progress | Flag |
+| Parameter | Options | Default | Description |
+|-----------|---------|---------|-------------|
+| `file_path` | Any text file | Required | Path to the file to extract from |
+| `--focus` | Any text | None | Specific focus area (e.g., "technology", "business") |
+| `--style` | `structured`, `focused`, `minimal`, `comprehensive` | `structured` | Extraction style |
+| `--length` | `brief`, `standard`, `detailed`, `comprehensive` | `brief` | Extraction depth |
+| `--entity-types` | Comma-separated list | All types | Entity types to focus on |
+| `--similarity-threshold` | 0.0-1.0 | 0.85 | Similarity threshold for deduplication |
+| `--format` | `json-ld`, `triples`, `json`, `yaml` | `json-ld` | Output format |
+| `--output` | File path | Console | Output file path |
+| `--chunk-size` | 1000-32000 | 6000 | Chunk size in characters |
+| `--provider` | `openai`, `anthropic`, `ollama`, etc. | `ollama` | LLM provider |
+| `--model` | Provider-specific | `qwen3:4b-instruct-2507-q4_K_M` | LLM model |
+| `--no-embeddings` | Flag | False | Disable semantic deduplication |
+| `--mode` | `fast`, `balanced`, `thorough` | `balanced` | Extraction mode |
+| `--fast` | Flag | False | Legacy flag (use --mode=fast instead) |
+| `--iterate` | 1-10 | 1 | Number of refinement iterations |
+| `--minified` | Flag | False | Output minified JSON |
+| `--verbose` | Flag | False | Show detailed progress |
+| `--timeout` | Seconds | 300 | HTTP timeout for LLM requests |
+
+### Entity Types
+
+Available entity types for `--entity-types` parameter:
+- `person` - People and individuals
+- `organization` - Companies, institutions, groups  
+- `location` - Places, cities, countries, addresses
+- `concept` - Abstract concepts, ideas, theories
+- `event` - Occurrences, meetings, incidents
+- `technology` - Software, hardware, technical systems
+- `product` - Products, services, offerings
+- `date` - Temporal references, dates, times
+- `other` - Miscellaneous entities
+
+### Performance Modes
+
+| Mode | Speed | Quality | Description |
+|------|-------|---------|-------------|
+| `fast` | 2-4x faster | Good | Skip verification, larger chunks, no embeddings |
+| `balanced` | Standard | High | Default mode with verification (default) |
+| `thorough` | Slower | Highest | Maximum quality with multiple checks |
 
 ### Output Format Examples
 

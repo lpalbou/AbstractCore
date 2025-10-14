@@ -55,8 +55,22 @@ class MockProvider(BaseProvider):
             content=content,
             model=self.model,
             finish_reason="stop",
-            usage={"prompt_tokens": len(prompt.split()), "completion_tokens": 10, "total_tokens": len(prompt.split()) + 10}
+            usage=self._calculate_mock_usage(prompt, content)
         )
+
+    def _calculate_mock_usage(self, prompt: str, response: str) -> Dict[str, int]:
+        """Calculate mock token usage using centralized token utilities."""
+        from ..utils.token_utils import TokenUtils
+        
+        prompt_tokens = TokenUtils.estimate_tokens(prompt, self.model)
+        completion_tokens = TokenUtils.estimate_tokens(response, self.model)
+        total_tokens = prompt_tokens + completion_tokens
+        
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens, 
+            "total_tokens": total_tokens
+        }
 
     def _stream_response(self, prompt: str) -> Iterator[GenerateResponse]:
         """Generate streaming mock responses"""
