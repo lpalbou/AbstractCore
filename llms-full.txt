@@ -26,7 +26,7 @@ AbstractCore is a Python library providing a unified interface to all major LLM 
 - **Structured Output**: Pydantic model validation with automatic retries
 - **Embeddings**: SOTA embedding models for semantic search and RAG
 - **Event System**: Monitor costs, performance, and tool executions
-- **Built-in Apps**: Summarizer, extractor, and judge applications
+- **Built-in CLI Apps**: Production-ready terminal applications (`summarizer`, `extractor`, `judge`) with comprehensive parameter support
 - **HTTP Server**: OpenAI-compatible REST API
 - **Production Ready**: Robust error handling, retries, circuit breakers
 
@@ -323,43 +323,61 @@ embeddings = embedder.embed_batch(["Hello", "World", "AI"])
 similarity = embedder.compute_similarity("Hello", "Hi there")
 ```
 
-### Built-in Processing Apps
+### Built-in CLI Applications
 
-#### BasicSummarizer
+AbstractCore includes three production-ready CLI applications that work directly from the terminal:
 
-Intelligent text summarization with multiple styles:
+#### Direct Terminal Usage
 
-```python
-from abstractllm import BasicSummarizer, SummaryStyle
+```bash
+# Document summarization with multiple styles and lengths
+summarizer document.pdf --style=executive --length=brief --output=summary.txt
+summarizer report.txt --focus="technical details" --chunk-size=15000 --verbose
 
-summarizer = BasicSummarizer("openai", model="gpt-4o-mini")
-summary = summarizer.summarize(
-    long_text, 
-    style=SummaryStyle.BULLET_POINTS,
-    max_length=200
-)
+# Knowledge graph extraction with various formats
+extractor research_paper.pdf --format=json-ld --focus=technology --iterate=3
+extractor article.txt --entity-types=person,organization,location --output=entities.jsonld
+
+# Text evaluation with custom criteria and contexts
+judge essay.txt --criteria=clarity,accuracy,coherence --context="academic writing"
+judge code.py --context="code review" --format=plain --verbose
 ```
 
-#### BasicExtractor
+#### Alternative Usage Methods
 
-Extract structured data from unstructured text:
+```bash
+# Method 1: Direct commands (recommended)
+summarizer document.txt --style=executive
+extractor report.pdf --format=triples
+judge essay.md --criteria=soundness
 
-```python
-from abstractllm import BasicExtractor
+# Method 2: Via Python module
+python -m abstractllm.apps.summarizer document.txt --style=executive
+python -m abstractllm.apps.extractor report.pdf --format=triples
+python -m abstractllm.apps.judge essay.md --criteria=soundness
 
-extractor = BasicExtractor("anthropic", model="claude-3-5-haiku-latest")
-data = extractor.extract(text, target_schema=Person)
+# Method 3: Prefixed commands
+abstractllm-summarizer document.txt --style=executive
+abstractllm-extractor report.pdf --format=triples
+abstractllm-judge essay.md --criteria=soundness
 ```
 
-#### BasicJudge
-
-Evaluate and score text quality:
+#### Python API (for programmatic use)
 
 ```python
-from abstractllm import BasicJudge
+from abstractllm.processing import BasicSummarizer, BasicExtractor, BasicJudge
 
-judge = BasicJudge("openai", model="gpt-4o-mini")
-assessment = judge.evaluate(text, criteria=["clarity", "accuracy", "completeness"])
+# Intelligent summarization
+summarizer = BasicSummarizer()
+summary = summarizer.summarize(long_text, style="executive", length="brief")
+
+# Knowledge graph extraction
+extractor = BasicExtractor()
+kg = extractor.extract(text, domain_focus="technology", output_format="jsonld")
+
+# Text evaluation
+judge = BasicJudge()
+assessment = judge.evaluate(text, context="code review", criteria=["clarity", "soundness"])
 ```
 
 ### Event System
@@ -436,11 +454,12 @@ del llm
 - **Embeddings System**: SOTA embedding models for semantic search and RAG applications
 - **Architecture Overview**: System design and component interactions
 
-### Built-in Applications
+### Built-in CLI Applications
 
-- **BasicSummarizer**: Intelligent text summarization with multiple styles and lengths
-- **BasicExtractor**: Extract structured data from unstructured text
-- **BasicJudge**: Evaluate and score text quality with customizable criteria
+- **Summarizer CLI**: Direct terminal document summarization (`summarizer document.pdf --style=executive`)
+- **Extractor CLI**: Knowledge graph extraction (`extractor report.txt --format=json-ld --focus=technology`)
+- **Judge CLI**: Text evaluation and scoring (`judge essay.txt --criteria=clarity,accuracy --context="academic writing"`)
+- **CLI Usage Guide**: Complete parameter reference with all available options and usage examples
 
 ### Server & Integration
 
@@ -453,7 +472,7 @@ del llm
 - **Event System**: Monitor costs, performance, and tool executions with preventable events
 - **Retry Configuration**: Circuit breakers, exponential backoff, jitter for production reliability
 - **Error Handling**: Comprehensive exception hierarchy for robust applications
-- **Token Management**: Unified token vocabulary across all providers
+- **Token Management**: Centralized token counting, cost estimation, and management utilities (`abstractllm.utils.token_utils`)
 
 ### Examples and Patterns
 

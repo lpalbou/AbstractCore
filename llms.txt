@@ -18,11 +18,12 @@
 - [Structured Output](https://github.com/lpalbou/AbstractCore/blob/main/docs/getting-started.md): Pydantic model validation with automatic retries
 - [Embeddings System](https://github.com/lpalbou/AbstractCore/blob/main/docs/embeddings.md): SOTA embedding models for semantic search and RAG applications
 
-## Built-in Processing Apps
+## Built-in CLI Applications
 
-- [BasicSummarizer](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-summarizer.md): Intelligent text summarization with multiple styles and lengths
-- [BasicExtractor](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-extractor.md): Extract structured data from unstructured text
-- [BasicJudge](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-judge.md): Evaluate and score text quality with customizable criteria
+- [Summarizer CLI](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-summarizer.md): Direct terminal & programmatic document summarization (`summarizer document.pdf --style=executive`)
+- [Extractor CLI](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-extractor.md): Direct terminal & programmatic Knowledge graph extraction (`extractor report.txt --format=json-ld --focus=technology`)
+- [Judge CLI](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-judge.md): Direct terminal & programmatic Text evaluation and scoring (`judge essay.txt --criteria=clarity,accuracy --context="academic writing"`)
+- [CLI Usage Guide](https://github.com/lpalbou/AbstractCore#built-in-applications-ready-to-use-cli-tools): Complete parameter reference and usage examples
 
 ## Server & Integration
 
@@ -36,7 +37,7 @@
 - [Retry Configuration](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/core/retry.py): Circuit breakers, exponential backoff, jitter for production reliability
 - [Error Handling](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/exceptions/__init__.py): Comprehensive exception hierarchy for robust applications
 - [Architecture Overview](https://github.com/lpalbou/AbstractCore/blob/main/docs/architecture.md): System design and component interactions
-- [Token Management](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/core/enums.py): Unified token vocabulary across all providers
+- [Token Management](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/utils/token_utils.py): Centralized token counting, cost estimation, and management utilities
 
 ## Working Examples
 
@@ -98,7 +99,7 @@ pip install abstractcore[all]
 - **Unified Streaming**: Consistent streaming across all providers with tool support
 - **Universal Tool Calling**: @tool decorator works across ALL providers with format conversion
 - **Session Management**: Persistent conversations with analytics and complete serialization
-- **Built-in Apps**: Ready-to-use summarizer, extractor, and judge applications
+- **Built-in CLI Apps**: Production-ready terminal applications (`summarizer`, `extractor`, `judge`) with comprehensive parameter support
 - **Embeddings**: Built-in SOTA embedding models for RAG applications
 - **Server Mode**: Optional OpenAI-compatible HTTP API with agentic CLI support
 - **Well Documented**: Comprehensive guides and working examples
@@ -163,21 +164,34 @@ response2 = session.generate("What's my name?")  # Remembers context
 session.save("conversation.json", summary=True, assessment=True, facts=True)
 ```
 
-### Built-in Processing Apps
+### Built-in CLI Applications
+```bash
+# Direct terminal usage (no Python code needed)
+summarizer document.pdf --style=executive --length=brief --output=summary.txt
+extractor report.txt --format=json-ld --entity-types=person,organization --focus=technology
+judge essay.txt --criteria=clarity,accuracy,coherence --context="academic writing" --format=plain
+
+# Alternative: Python module approach
+python -m abstractllm.apps.summarizer document.pdf --style=executive
+python -m abstractllm.apps.extractor report.txt --format=triples --verbose
+python -m abstractllm.apps.judge essay.txt --criteria=soundness --output=assessment.json
+```
+
+### Built-in Processing Apps (Python API)
 ```python
-from abstractllm import BasicSummarizer, BasicExtractor, SummaryStyle
+from abstractllm.processing import BasicSummarizer, BasicExtractor, BasicJudge
 
 # Intelligent summarization
-summarizer = BasicSummarizer("openai", model="gpt-4o-mini")
-summary = summarizer.summarize(
-    long_text, 
-    style=SummaryStyle.BULLET_POINTS,
-    max_length=200
-)
+summarizer = BasicSummarizer()
+summary = summarizer.summarize(long_text, style="executive", length="brief")
 
-# Structured data extraction
-extractor = BasicExtractor("anthropic", model="claude-3-5-haiku-latest")
-data = extractor.extract(text, target_schema=Person)
+# Knowledge graph extraction
+extractor = BasicExtractor()
+kg = extractor.extract(text, domain_focus="technology", output_format="jsonld")
+
+# Text evaluation
+judge = BasicJudge()
+assessment = judge.evaluate(text, context="code review", criteria=["clarity", "soundness"])
 ```
 
 ### Event System for Production Monitoring
@@ -211,7 +225,7 @@ del llm
 - **GitHub**: https://github.com/lpalbou/AbstractCore
 - **License**: MIT
 - **Python**: 3.9+
-- **Status**: Production Ready (v2.3.5)
+- **Status**: Production Ready (v2.3.6)
 - **Testing**: All tests passing on Apple M4 Max, Python 3.12.2
 - **Package**: Available on PyPI as `abstractcore`
 
