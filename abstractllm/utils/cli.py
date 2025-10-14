@@ -25,7 +25,7 @@ import sys
 import time
 
 from .. import create_llm, BasicSession
-from ..tools.common_tools import list_files, read_file, write_file, execute_command
+from ..tools.common_tools import list_files, read_file, write_file, execute_command, search_files
 from ..processing import BasicExtractor, BasicJudge
 
 
@@ -61,16 +61,24 @@ class SimpleCLI:
         self.session = BasicSession(
             self.provider,
             system_prompt="You are a helpful AI assistant.",
-            tools=[list_files, read_file, write_file, execute_command]
+            tools=[list_files, read_file, write_file, execute_command, search_files]
         )
 
         # Only show banner in interactive mode
         if show_banner:
-            print(f"🚀 AbstractLLM CLI - {provider}:{model}")
-            print(f"Stream: {'ON' if stream else 'OFF'} | Debug: {'ON' if debug else 'OFF'}")
-            print("Commands: /help /quit /clear /stream /debug /status /history [n] /model <spec> /compact /facts [file] /judge /system [prompt] /save <file> /load <file>")
-            print("Tools: list_files, read_file, write_file, execute_command")
-            print("=" * 60)
+            print("=" * 70)
+            print("🚀 AbstractLLM CLI - Interactive LLM Interface".center(70))
+            print("=" * 70)
+            print(f"🤖 Provider: {provider}")
+            print(f"📝 Model: {model}")
+            print(f"🌊 Streaming: {'ON' if stream else 'OFF'} | 🐛 Debug: {'ON' if debug else 'OFF'}")
+            print()
+            print("💬 Quick Commands: /help /save /load /status /history /quit")
+            print("🛠️  Available Tools: list_files, search_files, read_file, write_file, execute_command")
+            print()
+            print("💡 Type '/help' for comprehensive command guide")
+            print("💡 Ask questions naturally or use tools: 'What files are here?'")
+            print("=" * 70)
 
     def handle_command(self, user_input: str) -> bool:
         """Handle commands. Returns True if command processed, False otherwise."""
@@ -84,23 +92,75 @@ class SimpleCLI:
             sys.exit(0)
 
         elif cmd == 'help':
-            print("\n📖 Commands:")
-            print("  /help - Show this help")
-            print("  /quit - Exit")
-            print("  /clear - Clear history")
-            print("  /stream - Toggle streaming")
-            print("  /debug - Toggle CLI debug mode (timing, auto-detection info)")
-            print("  /status - Show current provider, model, capabilities, and token usage")
-            print("  /history [n] - Show conversation history or last n interactions")
-            print("  /model <provider:model> - Change model")
-            print("  /compact - Compact chat history using gemma3:1b-it-qat-it-qat")
-            print("  /facts [file] - Extract facts from conversation history")
-            print("  /judge - Evaluate conversation quality and provide feedback")
-            print("  /system [prompt] - Show or change system prompt")
-            print("  /save <file> - Save current session to file (preserves all metadata)")
-            print("  /load <file> - Load session from file (replaces current session)")
-            print("  /tooltag <opening_tag> <closing_tag> - Test tool call tag rewriting")
-            print("\n🛠️ Tools: list_files, read_file, write_file, execute_command\n")
+            print("\n" + "=" * 70)
+            print("🚀 AbstractLLM CLI - Interactive LLM Interface".center(70))
+            print("=" * 70)
+            
+            print("\n📖 CORE COMMANDS")
+            print("─" * 50)
+            print("  /help                    Show this comprehensive help")
+            print("  /quit                    Exit the CLI")
+            print("  /clear                   Clear conversation history")
+            print("  /status                  Show system status and capabilities")
+            
+            print("\n💬 CONVERSATION MANAGEMENT")
+            print("─" * 50)
+            print("  /history [n]             Show conversation history")
+            print("                           • /history        - Show all messages")
+            print("                           • /history 5      - Show last 5 interactions")
+            print("  /compact                 Compress chat history using local model")
+            print("  /system [prompt]         View or change system prompt")
+            print("                           • /system         - Show current prompt")
+            print("                           • /system <text>  - Set new prompt")
+            
+            print("\n💾 SESSION PERSISTENCE")
+            print("─" * 50)
+            print("  /save <file> [options]   Save session with optional analytics")
+            print("                           • /save chat.json")
+            print("                           • /save analyzed --summary --assessment --facts")
+            print("                           Options:")
+            print("                             --summary     Generate conversation summary")
+            print("                             --assessment  Evaluate conversation quality")
+            print("                             --facts       Extract knowledge as facts")
+            print("  /load <file>             Load saved session (replaces current)")
+            print("                           • /load chat.json")
+            
+            print("\n📊 ANALYTICS & INSIGHTS")
+            print("─" * 50)
+            print("  /facts [file]            Extract facts from conversation")
+            print("                           • /facts          - Display in chat")
+            print("                           • /facts data     - Save as data.jsonld")
+            print("  /judge                   Evaluate conversation quality")
+            
+            print("\n⚙️  CONFIGURATION")
+            print("─" * 50)
+            print("  /model <provider:model>  Switch LLM provider/model")
+            print("                           • /model openai:gpt-4o-mini")
+            print("                           • /model anthropic:claude-3-5-haiku")
+            print("  /stream                  Toggle streaming mode on/off")
+            print("  /debug                   Toggle debug info (timing, detection)")
+            
+            print("\n🛠️ AVAILABLE TOOLS")
+            print("─" * 50)
+            print("  The assistant can use these tools automatically:")
+            print("  • list_files             List directory contents")
+            print("  • search_files           Search for text patterns inside files")
+            print("  • read_file              Read file contents")
+            print("  • write_file             Create or modify files")
+            print("  • execute_command        Run shell commands")
+            
+            print("\n💡 TIPS & EXAMPLES")
+            print("─" * 50)
+            print("  • Ask questions naturally: 'What files are in this directory?'")
+            print("  • Search inside files: 'Find all TODO comments in Python files'")
+            print("  • Request file operations: 'Read the README.md file'")
+            print("  • Save important conversations: '/save project_discussion --summary'")
+            print("  • Switch models for different tasks: '/model ollama:qwen3-coder:30b'")
+            print("  • Use /status to check token usage and model capabilities")
+            
+            print("\n" + "=" * 70)
+            print("Type any message to start chatting, or use commands above".center(70))
+            print("=" * 70 + "\n")
 
         elif cmd == 'clear':
             self.session.clear_history(keep_system=True)
@@ -145,7 +205,7 @@ class SimpleCLI:
                 self.session = BasicSession(
                     self.provider,
                     system_prompt="You are a helpful AI assistant.",
-                    tools=[list_files, read_file, write_file, execute_command]
+                    tools=[list_files, read_file, write_file, execute_command, search_files]
                 )
                 print("✅ Model switched")
             except Exception as e:
@@ -182,14 +242,20 @@ class SimpleCLI:
                     self.handle_system_show()
 
         elif cmd.startswith('save'):
-            # Parse /save <file> command
+            # Parse /save <file> [--summary] [--assessment] [--facts] command
             parts = cmd.split()
-            if len(parts) != 2:
-                print("❓ Usage: /save <filename>")
+            if len(parts) < 2:
+                print("❓ Usage: /save <filename> [--summary] [--assessment] [--facts]")
                 print("   Example: /save my_conversation.json")
+                print("   Example: /save analyzed_session --summary --assessment --facts")
             else:
                 filename = parts[1]
-                self.handle_save(filename)
+                options = {
+                    'summary': '--summary' in parts,
+                    'assessment': '--assessment' in parts,
+                    'facts': '--facts' in parts
+                }
+                self.handle_save(filename, **options)
 
         elif cmd.startswith('load'):
             # Parse /load <file> command
@@ -596,8 +662,8 @@ class SimpleCLI:
         print(f"📝 Old: {old_prompt[:100]}{'...' if len(old_prompt) > 100 else ''}")
         print(f"📝 New: {new_prompt[:100]}{'...' if len(new_prompt) > 100 else ''}")
 
-    def handle_save(self, filename: str):
-        """Handle /save <file> command - save current session to file"""
+    def handle_save(self, filename: str, summary: bool = False, assessment: bool = False, facts: bool = False):
+        """Handle /save <file> command - save current session to file with optional analytics"""
         try:
             # Ensure .json extension for consistency
             if not filename.endswith('.json'):
@@ -609,6 +675,36 @@ class SimpleCLI:
             messages = self.session.get_messages()
             tokens = self.session.get_token_estimate()
             
+            # Generate optional analytics if requested
+            analytics_generated = []
+            
+            if summary:
+                print("   🔄 Generating summary...")
+                try:
+                    self.session.generate_summary(focus="key discussion points")
+                    analytics_generated.append("summary")
+                    print("   ✅ Summary generated")
+                except Exception as e:
+                    print(f"   ⚠️  Summary generation failed: {e}")
+            
+            if assessment:
+                print("   🔄 Generating assessment...")
+                try:
+                    self.session.generate_assessment()
+                    analytics_generated.append("assessment")
+                    print("   ✅ Assessment generated")
+                except Exception as e:
+                    print(f"   ⚠️  Assessment generation failed: {e}")
+            
+            if facts:
+                print("   🔄 Extracting facts...")
+                try:
+                    self.session.extract_facts()
+                    analytics_generated.append("facts")
+                    print("   ✅ Facts extracted")
+                except Exception as e:
+                    print(f"   ⚠️  Fact extraction failed: {e}")
+            
             # Save using enhanced serialization
             self.session.save(filename)
             
@@ -618,6 +714,9 @@ class SimpleCLI:
             print(f"   🔢 Tokens: ~{tokens:,}")
             print(f"   🤖 Provider: {self.provider_name}:{self.model_name}")
             print(f"   ⚙️  Settings: auto_compact={self.session.auto_compact}")
+            
+            if analytics_generated:
+                print(f"   📊 Analytics: {', '.join(analytics_generated)}")
             
             # Note about provider restoration
             print(f"   💡 Note: Provider and tools will need to be specified when loading")
@@ -648,8 +747,8 @@ class SimpleCLI:
             old_tokens = self.session.get_token_estimate()
             
             # Load session with current provider and tools
-            from ..tools.common_tools import list_files, read_file, write_file, execute_command
-            tools = [list_files, read_file, write_file, execute_command]
+            from ..tools.common_tools import list_files, read_file, write_file, execute_command, search_files
+            tools = [list_files, read_file, write_file, execute_command, search_files]
             
             loaded_session = BasicSession.load(filename, provider=self.provider, tools=tools)
             
@@ -757,7 +856,7 @@ class SimpleCLI:
 
         # Available tools
         print("\n🛠️ Available Tools:")
-        tools = ["list_files", "read_file", "write_file", "execute_command"]
+        tools = ["list_files", "search_files", "read_file", "write_file", "execute_command"]
         for i, tool in enumerate(tools, 1):
             print(f"   {i}. {tool}")
 
@@ -954,7 +1053,7 @@ class SimpleCLI:
             return clean_content, tool_calls
 
     def _execute_tool_calls(self, tool_calls):
-        """Execute a list of tool call dictionaries."""
+        """Execute a list of tool call dictionaries and add results to session history."""
         if not tool_calls:
             return
         
@@ -964,6 +1063,7 @@ class SimpleCLI:
         # Available tools mapping
         available_tools = {
             "list_files": list_files,
+            "search_files": search_files,
             "read_file": read_file,
             "write_file": write_file,
             "execute_command": execute_command
@@ -975,7 +1075,13 @@ class SimpleCLI:
                 tool_args = tool_data.get("arguments", {})
                 
                 if tool_name not in available_tools:
-                    print(f"❌ Unknown tool: {tool_name}")
+                    error_msg = f"❌ Unknown tool: {tool_name}"
+                    print(error_msg)
+                    # Add error as tool message to session
+                    self.session.add_message('tool', error_msg, 
+                                           call_id=tool_data.get("call_id"),
+                                           status="error",
+                                           tool_name=tool_name)
                     continue
                 
                 # Display tool call for transparency (only in interactive mode)
@@ -988,16 +1094,46 @@ class SimpleCLI:
                 # Execute the tool
                 tool_function = available_tools[tool_name]
                 
-                if tool_args:
-                    result = tool_function(**tool_args)
-                else:
-                    result = tool_function()
-                
-                # In single-prompt mode, just print the result cleanly
-                if self.single_prompt_mode:
-                    print(result)
-                else:
-                    print(f"✅ {result}")
+                start_time = time.time()
+                try:
+                    if tool_args:
+                        result = tool_function(**tool_args)
+                    else:
+                        result = tool_function()
+                    
+                    execution_time = (time.time() - start_time) * 1000  # Convert to ms
+                    
+                    # Add successful tool result to session history
+                    self.session.add_message('tool', str(result),
+                                           call_id=tool_data.get("call_id"),
+                                           status="ok",
+                                           duration_ms=execution_time,
+                                           tool_name=tool_name,
+                                           tool_arguments=tool_args)
+                    
+                    # In single-prompt mode, just print the result cleanly
+                    if self.single_prompt_mode:
+                        print(result)
+                    else:
+                        print(f"✅ {result}")
+                        
+                except Exception as tool_error:
+                    execution_time = (time.time() - start_time) * 1000
+                    error_msg = f"Tool execution failed: {str(tool_error)}"
+                    
+                    # Add failed tool result to session history
+                    self.session.add_message('tool', error_msg,
+                                           call_id=tool_data.get("call_id"),
+                                           status="error",
+                                           duration_ms=execution_time,
+                                           tool_name=tool_name,
+                                           tool_arguments=tool_args,
+                                           stderr=str(tool_error))
+                    
+                    print(f"❌ {error_msg}")
+                    if self.debug_mode:
+                        import traceback
+                        traceback.print_exc()
                 
             except Exception as e:
                 print(f"❌ Tool execution failed: {e}")
@@ -1052,23 +1188,19 @@ Examples:
   python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-20241022
   python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b --prompt "What is Python?"
 
-Commands:
-  /help - Show help
-  /quit - Exit
-  /clear - Clear history
-  /stream - Toggle streaming
-  /debug - Toggle CLI debug mode (timing, auto-detection)
-  /status - Show current status (provider, model, capabilities, tokens)
-  /history [n] - Show conversation history or last n interactions
-  /model <provider:model> - Change model
-  /compact - Compact chat history using gemma3:1b-it-qat
-  /facts [file] - Extract facts from conversation history
-  /judge - Evaluate conversation quality and provide feedback
-  /system [prompt] - Show or change system prompt
-  /save <file> - Save current session to file (preserves all metadata)
-  /load <file> - Load session from file (replaces current session)
+Key Commands:
+  /help                           Show comprehensive command guide
+  /save <file> [--summary --assessment --facts]  Save session with analytics
+  /load <file>                    Load saved session
+  /status                         Show system status and capabilities
+  /history [n]                    Show conversation history
+  /model <provider:model>         Switch LLM provider/model
+  /compact                        Compress chat history
+  /facts [file]                   Extract knowledge facts
+  /judge                          Evaluate conversation quality
+  /system [prompt]                View/change system prompt
 
-Tools: list_files, read_file, write_file, execute_command
+Tools: list_files, search_files, read_file, write_file, execute_command
 
 Note: This is a basic demonstrator with limited capabilities. For production
 use cases requiring advanced reasoning, ReAct patterns, or complex tool chains,

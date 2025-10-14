@@ -18,6 +18,7 @@ Complete navigation guide for AbstractCore documentation.
 
 - **[Getting Started](getting-started.md)** - Quick start, core concepts, common patterns
 - **[Prerequisites](prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- **[Session Management](session.md)** - Persistent conversations, serialization, and analytics
 - **[Embeddings](embeddings.md)** - Vector embeddings, semantic search, RAG applications
 - **[Examples](examples.md)** - Real-world use cases and code samples
 

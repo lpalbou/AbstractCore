@@ -114,6 +114,13 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         list_files(pattern="*TEST*", recursive=True) - Finds test files recursively (case-insensitive)
     """
     try:
+        # Convert head_limit to int if it's a string (defensive programming)
+        if isinstance(head_limit, str):
+            try:
+                head_limit = int(head_limit)
+            except ValueError:
+                head_limit = 50  # fallback to default
+        
         directory = Path(directory_path)
 
         if not directory.exists():
@@ -241,11 +248,10 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
             }
         },
         {
-            "description": "Show content for specific patterns (limited results)",
+            "description": "Show content for specific patterns (default behavior)",
             "arguments": {
                 "pattern": "generate.*tools|create_react_cycle",
                 "path": "abstractllm/session.py",
-                "output_mode": "content",
                 "head_limit": 5
             }
         }
@@ -254,7 +260,7 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
 def search_files(
     pattern: str,
     path: str = ".",
-    output_mode: str = "files_with_matches",
+    output_mode: str = "content",
     head_limit: Optional[int] = 20,
     file_pattern: str = "*",
     case_sensitive: bool = False,
@@ -271,7 +277,7 @@ def search_files(
     Args:
         pattern: Regular expression pattern to search for
         path: File or directory path to search in (default: current directory)
-        output_mode: Output format - "files_with_matches" (show file paths with line numbers), "content" (show matching lines), "count" (show match counts) (default: "files_with_matches")
+        output_mode: Output format - "content" (show matching lines), "files_with_matches" (show file paths with line numbers), "count" (show match counts) (default: "content")
         head_limit: Limit output to first N entries (default: 20)
         file_pattern: Glob pattern(s) for files to search. Use "|" to separate multiple patterns (default: "*" for all files)
         case_sensitive: Whether search should be case sensitive (default: False)
@@ -281,14 +287,21 @@ def search_files(
         Search results in the specified format or error message
 
     Examples:
-        search_files("generate.*react|create_react_cycle", "abstractllm/session.py")  # Returns file paths with line numbers (default)
-        search_files("def.*search", ".", file_pattern="*.py")  # Search Python files only
-        search_files("import.*re", ".", file_pattern="*.py|*.js")  # Search Python and JavaScript files
-        search_files("TODO|FIXME", ".", file_pattern="*.py|*.md|*.txt")  # Find TODO/FIXME in multiple file types
-        search_files("import.*re", ".", "content", 10)  # Show content with 10 match limit
+        search_files("generate.*react|create_react_cycle", "abstractllm/session.py")  # Returns matching lines with content (default)
+        search_files("def.*search", ".", file_pattern="*.py")  # Search Python files only, show content
+        search_files("import.*re", ".", file_pattern="*.py|*.js")  # Search Python and JavaScript files, show content
+        search_files("TODO|FIXME", ".", file_pattern="*.py|*.md|*.txt")  # Find TODO/FIXME in multiple file types, show content
+        search_files("import.*re", ".", "files_with_matches")  # Show file paths with line numbers instead of content
         search_files("pattern", ".", "count")  # Count matches per file
     """
     try:
+        # Convert head_limit to int if it's a string (defensive programming)
+        if isinstance(head_limit, str):
+            try:
+                head_limit = int(head_limit)
+            except ValueError:
+                head_limit = 20  # fallback to default
+        
         search_path = Path(path)
 
         # Compile regex pattern
@@ -395,87 +408,97 @@ def search_files(
         files_with_matches = []  # Will store (file_path, [line_numbers]) tuples
         match_counts = {}
         total_matches = 0
+        global_content_lines_added = 0  # Track content lines across all files
 
         for file_path in files_to_search:
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     if multiline:
+                        # For multiline mode, we need to read the full content
+                        # But we'll be more efficient about extracting matching lines
                         content = f.read()
                         matches = list(regex_pattern.finditer(content))
 
                         if matches:
-                            # Collect line numbers for files_with_matches mode
+                            # Pre-split content into lines for efficiency
+                            lines = content.splitlines()
+                            
+                            # Collect line numbers and prepare content efficiently
                             line_numbers = []
+                            file_header_added = False
+                            
                             for match in matches:
                                 line_num = content[:match.start()].count('\n') + 1
                                 line_numbers.append(line_num)
+                                
+                                if output_mode == "content":
+                                    # Check global head_limit before adding any content
+                                    if head_limit and global_content_lines_added >= head_limit:
+                                        break
+                                        
+                                    # Add file header only once and only if we're showing content
+                                    if not file_header_added:
+                                        results.append(f"\n📄 {file_path}:")
+                                        file_header_added = True
+                                    
+                                    # Get only the specific matching line (efficient)
+                                    if line_num <= len(lines):
+                                        full_line = lines[line_num - 1]
+                                        results.append(f"    Line {line_num}: {full_line}")
+                                        global_content_lines_added += 1
+                                        
+                                        # Check global head_limit after adding content
+                                        if head_limit and global_content_lines_added >= head_limit:
+                                            break
 
                             files_with_matches.append((str(file_path), line_numbers))
                             match_counts[str(file_path)] = len(matches)
                             total_matches += len(matches)
-
-                            if output_mode == "content":
-                                results.append(f"\n📄 {file_path}:")
-
-                                # Convert content to lines for line number calculation
-                                lines = content.splitlines()
-                                for match in matches:
-                                    # Find line number for match
-                                    line_num = content[:match.start()].count('\n') + 1
-
-                                    # Get the matched text
-                                    matched_text = match.group()
-                                    # If multiline match, show first line only
-                                    if '\n' in matched_text:
-                                        matched_text = matched_text.split('\n')[0] + "..."
-
-                                    # Get the full line containing the match start
-                                    if line_num <= len(lines):
-                                        full_line = lines[line_num - 1]
-                                        results.append(f"    Line {line_num}: {full_line}")
-
-                                    # Apply head_limit for content mode
-                                    if head_limit and len([r for r in results if r.startswith("    Line")]) >= head_limit:
-                                        break
                     else:
+                        # Non-multiline mode: process line by line (more efficient)
                         lines = f.readlines()
-                        file_matches = []
-
+                        matching_lines = []
+                        line_numbers = []
+                        file_header_added = False
+                        
                         for line_num, line in enumerate(lines, 1):
                             line_content = line.rstrip()
                             matches = list(regex_pattern.finditer(line_content))
 
                             if matches:
-                                file_matches.extend(matches)
+                                line_numbers.append(line_num)
+                                matching_lines.extend(matches)
+                                
+                                # For content mode, add lines as we find them (more efficient)
                                 if output_mode == "content":
-                                    results.append(f"    Line {line_num}: {line_content}")
-
-                        if file_matches:
-                            # Collect line numbers for files_with_matches mode
-                            line_numbers = []
-                            for line_num, line in enumerate(lines, 1):
-                                line_content = line.rstrip()
-                                if regex_pattern.search(line_content):
-                                    line_numbers.append(line_num)
-
-                            files_with_matches.append((str(file_path), line_numbers))
-                            match_counts[str(file_path)] = len(file_matches)
-                            total_matches += len(file_matches)
-
-                            if output_mode == "content" and file_matches:
-                                # Insert file header before the lines we just added
-                                file_header_position = len(results) - len(file_matches)
-                                results.insert(file_header_position, f"\n📄 {file_path}:")
-
-                                # Apply head_limit for content mode
-                                if head_limit:
-                                    content_lines = [r for r in results if r.startswith("    Line")]
-                                    if len(content_lines) >= head_limit:
+                                    # Check global head_limit before adding any content
+                                    if head_limit and global_content_lines_added >= head_limit:
                                         break
+                                        
+                                    # Add file header only once when we find the first match
+                                    if not file_header_added:
+                                        results.append(f"\n📄 {file_path}:")
+                                        file_header_added = True
+                                    
+                                    results.append(f"    Line {line_num}: {line_content}")
+                                    global_content_lines_added += 1
+                                    
+                                    # Check global head_limit after adding content
+                                    if head_limit and global_content_lines_added >= head_limit:
+                                        break
+
+                        if matching_lines:
+                            files_with_matches.append((str(file_path), line_numbers))
+                            match_counts[str(file_path)] = len(matching_lines)
+                            total_matches += len(matching_lines)
 
             except Exception as e:
                 if output_mode == "content":
                     results.append(f"\n⚠️  Error reading {file_path}: {str(e)}")
+            
+            # Break out of file loop if we've reached the global head_limit
+            if head_limit and output_mode == "content" and global_content_lines_added >= head_limit:
+                break
 
         # Format output based on mode
         if output_mode == "files_with_matches":
@@ -491,15 +514,11 @@ def search_files(
                 formatted_results = [header]
 
                 for file_path, line_numbers in files_with_matches:
-                    # Format line numbers nicely
+                    # Format line numbers - show ALL line numbers since that's the main value of this mode
                     if len(line_numbers) == 1:
                         line_info = f"line {line_numbers[0]}"
-                    elif len(line_numbers) <= 5:
-                        line_info = f"lines {', '.join(map(str, line_numbers))}"
                     else:
-                        # Show first few line numbers and total count
-                        first_lines = ', '.join(map(str, line_numbers[:3]))
-                        line_info = f"lines {first_lines}... ({len(line_numbers)} total)"
+                        line_info = f"lines {', '.join(map(str, line_numbers))}"
 
                     formatted_results.append(f"{file_path} ({line_info})")
 
@@ -570,7 +589,12 @@ def search_files(
                     final_results = trimmed_results
                     final_results.append(f"\n... (showing first {head_limit} matches)")
 
-            return header + "\n" + "\n".join(final_results)
+            # Add truncation notice if we hit the head_limit
+            result_text = header + "\n" + "\n".join(final_results)
+            if head_limit and global_content_lines_added >= head_limit:
+                result_text += f"\n\n... (showing first {head_limit} matches)"
+            
+            return result_text
 
     except Exception as e:
         return f"Error performing search: {str(e)}"

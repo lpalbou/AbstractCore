@@ -1,0 +1,308 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://abstractcore.dev/schemas/session-archive/v1",
+  "title": "AbstractCore Session Archive",
+  "description": "Complete serialization schema for AbstractCore conversation sessions",
+  "type": "object",
+  "required": ["schema_version", "session", "messages"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "session-archive/v1",
+      "description": "Schema version for compatibility and migration"
+    },
+    "session": {
+      "type": "object",
+      "required": ["id", "created_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique session identifier"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of session creation"
+        },
+        "provider": {
+          "type": ["string", "null"],
+          "description": "LLM provider name (openai, anthropic, ollama, etc.)"
+        },
+        "model": {
+          "type": ["string", "null"],
+          "description": "Model name used for this session"
+        },
+        "model_params": {
+          "type": ["object", "null"],
+          "description": "Model parameters used (temperature, max_tokens, etc.)",
+          "properties": {
+            "temperature": { "type": "number" },
+            "max_tokens": { "type": "integer" },
+            "max_output_tokens": { "type": "integer" },
+            "top_p": { "type": "number" },
+            "top_k": { "type": "integer" },
+            "frequency_penalty": { "type": "number" },
+            "presence_penalty": { "type": "number" }
+          },
+          "additionalProperties": true
+        },
+        "system_prompt": {
+          "type": ["string", "null"],
+          "description": "System prompt that guides assistant behavior"
+        },
+        "tool_registry": {
+          "type": "array",
+          "description": "Available tools with their schemas (declarative only)",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Tool name"
+              },
+              "description": {
+                "type": "string",
+                "description": "Tool description"
+              },
+              "json_schema": {
+                "type": "object",
+                "description": "JSON schema for tool parameters"
+              }
+            }
+          }
+        },
+        "settings": {
+          "type": "object",
+          "description": "Session configuration settings",
+          "properties": {
+            "auto_compact": { "type": "boolean" },
+            "auto_compact_threshold": { "type": "integer" }
+          },
+          "additionalProperties": true
+        },
+        "summary": {
+          "type": ["object", "null"],
+          "description": "Optional conversation summary",
+          "properties": {
+            "created_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When the summary was generated"
+            },
+            "preserve_recent": {
+              "type": "integer",
+              "description": "Number of recent messages preserved during compaction"
+            },
+            "focus": {
+              "type": ["string", "null"],
+              "description": "Summary focus (e.g., 'technical decisions')"
+            },
+            "text": {
+              "type": "string",
+              "description": "The actual summary content"
+            },
+            "metrics": {
+              "type": "object",
+              "description": "Compression and generation metrics",
+              "properties": {
+                "tokens_before": { "type": "integer" },
+                "tokens_after": { "type": "integer" },
+                "compression_ratio": { "type": "number" },
+                "generation_time_ms": { "type": "number" }
+              }
+            }
+          },
+          "required": ["created_at", "text"]
+        },
+        "assessment": {
+          "type": ["object", "null"],
+          "description": "Optional conversation quality assessment",
+          "properties": {
+            "created_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When the assessment was generated"
+            },
+            "criteria": {
+              "type": "object",
+              "description": "Evaluation criteria used",
+              "properties": {
+                "clarity": { "type": "boolean" },
+                "coherence": { "type": "boolean" },
+                "relevance": { "type": "boolean" },
+                "completeness": { "type": "boolean" },
+                "actionability": { "type": "boolean" }
+              },
+              "additionalProperties": true
+            },
+            "overall_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 5,
+              "description": "Overall quality score (0-5)"
+            },
+            "judge_summary": {
+              "type": "string",
+              "description": "Brief assessment summary"
+            },
+            "strengths": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Identified conversation strengths"
+            },
+            "actionable_feedback": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Suggestions for improvement"
+            },
+            "reasoning": {
+              "type": ["string", "null"],
+              "description": "Detailed reasoning for the assessment"
+            }
+          },
+          "required": ["created_at", "overall_score"]
+        },
+        "facts": {
+          "type": ["object", "null"],
+          "description": "Optional extracted facts and knowledge",
+          "properties": {
+            "extracted_at": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When facts were extracted"
+            },
+            "simple_triples": {
+              "type": "array",
+              "description": "Array of [subject, predicate, object] fact triples",
+              "items": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "jsonld": {
+              "type": ["object", "null"],
+              "description": "Optional JSON-LD structured data"
+            },
+            "statistics": {
+              "type": "object",
+              "description": "Extraction statistics",
+              "properties": {
+                "entities_count": { "type": "integer" },
+                "relationships_count": { "type": "integer" },
+                "extraction_time_ms": { "type": "number" }
+              }
+            }
+          },
+          "required": ["extracted_at"]
+        }
+      }
+    },
+    "messages": {
+      "type": "array",
+      "description": "Complete ordered conversation history",
+      "items": {
+        "type": "object",
+        "required": ["role", "content", "timestamp"],
+        "properties": {
+          "id": {
+            "type": ["string", "null"],
+            "description": "Unique message identifier"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["user", "assistant", "system", "tool"],
+            "description": "Message role in the conversation"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the message was created"
+          },
+          "content": {
+            "type": "string",
+            "description": "Message content"
+          },
+          "metadata": {
+            "type": ["object", "null"],
+            "description": "Additional message context and data",
+            "properties": {
+              "name": {
+                "type": ["string", "null"],
+                "description": "Username (defaults to 'user' for user messages)"
+              },
+              "location": {
+                "type": ["string", "null"],
+                "description": "Geographic or contextual location"
+              },
+              "requested_tool_calls": {
+                "type": "array",
+                "description": "Tool calls requested by assistant (for assistant messages)",
+                "items": {
+                  "type": "object",
+                  "required": ["call_id", "name", "arguments"],
+                  "properties": {
+                    "call_id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "arguments": { "type": "object" }
+                  }
+                }
+              },
+              "call_id": {
+                "type": ["string", "null"],
+                "description": "Tool call ID (for tool messages)"
+              },
+              "status": {
+                "type": ["string", "null"],
+                "enum": ["ok", "error", "timeout"],
+                "description": "Tool execution status (for tool messages)"
+              },
+              "duration_ms": {
+                "type": ["number", "null"],
+                "description": "Tool execution duration in milliseconds"
+              },
+              "stderr": {
+                "type": ["string", "null"],
+                "description": "Tool execution error output"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "usage_stats": {
+      "type": ["object", "null"],
+      "description": "Token usage and cost statistics",
+      "properties": {
+        "total_tokens": { "type": "integer" },
+        "by_message_id": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "cost_estimate": {
+          "type": "object",
+          "properties": {
+            "currency": { "type": "string" },
+            "amount": { "type": "number" }
+          }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "Session lifecycle events",
+      "items": {
+        "type": "object",
+        "required": ["type", "at"],
+        "properties": {
+          "type": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "data": { "type": "object" }
+        }
+      }
+    }
+  }
+}
