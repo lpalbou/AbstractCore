@@ -334,6 +334,24 @@ print(response.content)</code></pre>
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">basic_usage.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractllm import create_llm
+
+# Works with any provider
+providers = [&quot;openai&quot;, &quot;anthropic&quot;, &quot;ollama&quot;]
+
+for provider in providers:
+    llm = create_llm(provider)
+    response = llm.generate(&quot;What is Python?&quot;)
+    print(f&quot;{provider}: {response.content[:50]}...&quot;)
+
+# Same code, different providers! 🚀">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
                                 </div>
                                 <div class="code-content">
                                     <pre><code class="language-python">from abstractllm import create_llm
@@ -360,6 +378,27 @@ for provider in providers:
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">tool_calling.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractllm import create_llm, tool
+
+@tool
+def get_weather(city: str) -&gt; str:
+    &quot;&quot;&quot;Get current weather for a city.&quot;&quot;&quot;
+    return f&quot;Weather in {city}: 72°F, Sunny&quot;
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+response = llm.generate(
+    &quot;What's the weather in Paris?&quot;,
+    tools=[get_weather]
+)
+print(response.content)
+# Output: The weather in Paris is 72°F and sunny!">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
                                 </div>
                                 <div class="code-content">
                                     <pre><code class="language-python">from abstractllm import create_llm, tool
@@ -389,6 +428,29 @@ print(response.content)
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">structured_output.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from pydantic import BaseModel
+from abstractllm import create_llm
+
+class Person(BaseModel):
+    name: str
+    age: int
+    occupation: str
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+person = llm.generate(
+    &quot;Extract: John Doe is 25 and works as a developer&quot;,
+    response_model=Person
+)
+
+print(f&quot;{person.name}, {person.age}, {person.occupation}&quot;)
+# Output: John Doe, 25, developer">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
                                 </div>
                                 <div class="code-content">
                                     <pre><code class="language-python">from pydantic import BaseModel
@@ -420,6 +482,23 @@ print(f"{person.name}, {person.age}, {person.occupation}")
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">streaming.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractllm import create_llm
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+
+print(&quot;AI: &quot;, end=&quot;&quot;, flush=True)
+for chunk in llm.generate(&quot;Write a haiku about coding&quot;, stream=True):
+    print(chunk.content, end=&quot;&quot;, flush=True)
+print()
+
+# Real-time streaming across all providers! ⚡">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
                                 </div>
                                 <div class="code-content">
                                     <pre><code class="language-python">from abstractllm import create_llm

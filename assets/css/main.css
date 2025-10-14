@@ -524,6 +524,54 @@ a:hover {
     border-bottom: 1px solid #404040;
 }
 
+.copy-button {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: var(--radius-md);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.copy-button:hover {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.copy-button:active {
+    transform: translateY(0);
+}
+
+.copy-button svg {
+    width: 14px;
+    height: 14px;
+    transition: transform var(--transition-fast);
+}
+
+.copy-button:hover svg {
+    transform: scale(1.1);
+}
+
+.copy-button.copied {
+    background-color: var(--secondary-color);
+    color: white;
+    border-color: var(--secondary-color);
+}
+
+.copy-button.copied svg {
+    transform: scale(1.1);
+}
+
 .code-dots {
     display: flex;
     gap: var(--spacing-2);
