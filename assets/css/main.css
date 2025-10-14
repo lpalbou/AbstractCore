@@ -27,16 +27,16 @@
     /* Typography */
     --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
-    --font-size-xs: 0.75rem;
-    --font-size-sm: 0.875rem;
-    --font-size-base: 1rem;
-    --font-size-lg: 1.125rem;
-    --font-size-xl: 1.25rem;
-    --font-size-2xl: 1.5rem;
-    --font-size-3xl: 1.875rem;
-    --font-size-4xl: 2.25rem;
-    --font-size-5xl: 3rem;
-    --font-size-6xl: 3.75rem;
+    --font-size-xs: 0.875rem;
+    --font-size-sm: 1rem;
+    --font-size-base: 1.125rem;
+    --font-size-lg: 1.25rem;
+    --font-size-xl: 1.375rem;
+    --font-size-2xl: 1.625rem;
+    --font-size-3xl: 2rem;
+    --font-size-4xl: 2.5rem;
+    --font-size-5xl: 3.25rem;
+    --font-size-6xl: 4rem;
     
     /* Spacing */
     --spacing-1: 0.25rem;
@@ -156,6 +156,8 @@ h6 { font-size: var(--font-size-base); }
 p {
     margin-bottom: var(--spacing-4);
     color: var(--text-secondary);
+    font-size: var(--font-size-base);
+    line-height: 1.6;
 }
 
 a {
@@ -950,8 +952,8 @@ a:hover {
 .code-content pre {
     margin: 0;
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    line-height: 1.5;
+    font-size: var(--font-size-base);
+    line-height: 1.6;
 }
 
 @media (max-width: 1024px) {
@@ -1139,8 +1141,8 @@ section {
     margin: 0;
     overflow-x: auto;
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    line-height: 1.5;
+    font-size: var(--font-size-base);
+    line-height: 1.6;
 }
 
 .quickstart-demo {
@@ -1421,8 +1423,8 @@ section {
     margin: 0;
     overflow-x: auto;
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    line-height: 1.4;
+    font-size: var(--font-size-base);
+    line-height: 1.6;
 }
 
 .example-link {
