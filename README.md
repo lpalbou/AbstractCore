@@ -1,6 +1,6 @@
 # AbstractCore
 
-A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers.
+A unified Python library for interaction with multiple Large Language Model (LLM) providers.
 
 **Write once, run everywhere.**
 
@@ -78,12 +78,12 @@ loaded_session = BasicSession.load('conversation.json', provider=llm)
 
 | Provider | Status | Setup |
 |----------|--------|-------|
-| **OpenAI** | ✅ Full | [Get API key](docs/prerequisites.md#openai-setup) |
-| **Anthropic** | ✅ Full | [Get API key](docs/prerequisites.md#anthropic-setup) |
-| **Ollama** | ✅ Full | [Install guide](docs/prerequisites.md#ollama-setup) |
-| **LMStudio** | ✅ Full | [Install guide](docs/prerequisites.md#lmstudio-setup) |
-| **MLX** | ✅ Full | [Setup guide](docs/prerequisites.md#mlx-setup) |
-| **HuggingFace** | ✅ Full | [Setup guide](docs/prerequisites.md#huggingface-setup) |
+| **OpenAI** | Full | [Get API key](docs/prerequisites.md#openai-setup) |
+| **Anthropic** | Full | [Get API key](docs/prerequisites.md#anthropic-setup) |
+| **Ollama** | Full | [Install guide](docs/prerequisites.md#ollama-setup) |
+| **LMStudio** | Full | [Install guide](docs/prerequisites.md#lmstudio-setup) |
+| **MLX** | Full | [Setup guide](docs/prerequisites.md#mlx-setup) |
+| **HuggingFace** | Full | [Setup guide](docs/prerequisites.md#huggingface-setup) |
 
 ## Server Mode (Optional HTTP REST API)
 
@@ -186,7 +186,7 @@ python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-la
 
 ### Architecture & Advanced
 - **[Architecture](docs/architecture.md)** - System design and architecture overview
-- **[Tool Syntax Rewriting](docs/tool-syntax-rewriting.md)** - Format conversion for agentic CLIs
+- **[Tool Calling](docs/tool-calling.md)** - Universal tool system and format conversion
 
 ## Use Cases
 
@@ -266,15 +266,15 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 ## Why AbstractCore?
 
-✅ **Unified Interface**: One API for all LLM providers  
-✅ **Production Ready**: Robust error handling, retries, timeouts  
-✅ **Type Safe**: Full Pydantic integration for structured outputs  
-✅ **Local & Cloud**: Run models locally or use cloud APIs  
-✅ **Tool Calling**: Consistent function calling across providers  
-✅ **Streaming**: Real-time responses for better UX  
-✅ **Embeddings**: Built-in vector embeddings for RAG  
-✅ **Server Mode**: Optional OpenAI-compatible API server  
-✅ **Well Documented**: Comprehensive guides and examples  
+- **Unified Interface**: One API for all LLM providers  
+- **Production Ready**: Robust error handling, retries, timeouts  
+- **Type Safe**: Full Pydantic integration for structured outputs  
+- **Local & Cloud**: Run models locally or use cloud APIs  
+- **Tool Calling**: Consistent function calling across providers  
+- **Streaming**: Real-time responses for interactive applications  
+- **Embeddings**: Built-in vector embeddings for RAG  
+- **Server Mode**: Optional OpenAI-compatible API server  
+- **Well Documented**: Comprehensive guides and examples  
 
 ## Installation Options
 
@@ -310,7 +310,7 @@ All tests passing as of October 12th, 2025.
 ## Quick Links
 
 - **[📚 Documentation Index](docs/)** - Complete documentation navigation guide
-- **[🚀 Getting Started](docs/getting-started.md)** - 5-minute quick start
+- **[Getting Started](docs/getting-started.md)** - 5-minute quick start
 - **[⚙️ Prerequisites](docs/prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, etc.)
 - **[📖 Python API](docs/api-reference.md)** - Complete Python API reference
 - **[🌐 Server Guide](docs/server.md)** - HTTP API server setup
@@ -329,4 +329,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**AbstractCore** - One interface, all LLM providers. Focus on building, not managing API differences. 🚀
+**AbstractCore** - One interface, all LLM providers. Focus on building, not managing API differences.

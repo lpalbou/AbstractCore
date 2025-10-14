@@ -2,7 +2,7 @@
 
 Complete navigation guide for AbstractCore documentation.
 
-## 🚀 Getting Started
+## Getting Started
 
 **New to AbstractCore? Start here:**
 
@@ -33,7 +33,7 @@ Complete navigation guide for AbstractCore documentation.
 
 ### Advanced Topics
 
-- **[Tool Call Syntax Rewriting](tool-syntax-rewriting.md)** - Tool format conversion for agentic CLIs
+- **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
 - **[Internal CLI](internal-cli.md)** - Built-in CLI tool for testing and exploration
 
 ## 🌐 Server (Optional HTTP REST API)
@@ -109,7 +109,7 @@ docs/
     └── README.md               # Superseded documentation
 ```
 
-**⭐ Key Distinction:**
+**Key Distinction:**
 - **`api-reference.md`** = Python library API (functions, classes)
 - **`server.md`** = HTTP REST API (endpoints, requests)
 
@@ -201,13 +201,13 @@ docs/
 
 | Document | Type | Status | Last Updated |
 |----------|------|--------|--------------|
-| README.md | Overview | ✅ Updated | Oct 12, 2025 |
-| getting-started.md | Core Library | ✅ Current | Oct 12, 2025 |
-| prerequisites.md | Core Library | ✅ Current | Oct 12, 2025 |
-| api-reference.md | Python API | ✅ Current | Oct 12, 2025 |
-| embeddings.md | Core Library | ✅ Current | Oct 12, 2025 |
-| server.md | Server + REST API | ✅ Consolidated | Oct 12, 2025 |
-| troubleshooting.md | Core + Server | ✅ Consolidated | Oct 12, 2025 |
+| README.md | Overview | Updated | Oct 12, 2025 |
+| getting-started.md | Core Library | Current | Oct 12, 2025 |
+| prerequisites.md | Core Library | Current | Oct 12, 2025 |
+| api-reference.md | Python API | Current | Oct 12, 2025 |
+| embeddings.md | Core Library | Current | Oct 12, 2025 |
+| server.md | Server + REST API | Consolidated | Oct 12, 2025 |
+| troubleshooting.md | Core + Server | Consolidated | Oct 12, 2025 |
 
 **All documents cross-referenced and up-to-date as of October 12, 2025.**
 
@@ -217,5 +217,5 @@ docs/
 
 ---
 
-**Start your journey:** [Prerequisites](prerequisites.md) → [Getting Started](getting-started.md) → Build amazing things! 🚀
+**Start your journey:** [Prerequisites](prerequisites.md) → [Getting Started](getting-started.md) → Build your applications!
 

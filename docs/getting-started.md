@@ -67,7 +67,7 @@ python first_llm.py
 # Output: The capital of France is Paris.
 ```
 
-**🎉 Congratulations!** You've made your first AbstractCore LLM call.
+**Congratulations!** You've made your first AbstractCore LLM call.
 
 ## Core Concepts (5-Minute Tour)
 
@@ -91,7 +91,7 @@ for name, llm in [("OpenAI", openai_llm), ("Claude", claude_llm), ("Ollama", loc
     print(f"{name}: {response.content[:50]}...")
 ```
 
-### 2. Structured Output (Game Changer)
+### 2. Structured Output
 
 Instead of parsing strings, get typed objects directly:
 
@@ -119,7 +119,7 @@ print(f"Summary: {review.summary}")
 
 **No more string parsing!** AbstractCore handles JSON validation and retries automatically.
 
-### 3. Tool Calling (LLM with Superpowers)
+### 3. Tool Calling
 
 Let your LLM call functions with the `@tool` decorator:
 
@@ -397,7 +397,7 @@ AbstractCore includes a comprehensive set of tools for file operations, web sear
 Now that you have the basics:
 
 1. **[Explore Examples](examples.md)** - Real-world use cases and patterns
-2. **[Tool Call Syntax Rewriting](tool-syntax-rewriting.md)** - Format conversion for agentic CLI compatibility
+2. **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
 3. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
 4. **[Provider Setup](prerequisites.md)** - Detailed provider configuration
 5. **[Use Internal CLI](internal-cli.md)** - Built-in testing CLI with advanced features
@@ -414,6 +414,6 @@ Now that you have the basics:
 
 ---
 
-**You're ready to build with AbstractCore!** 🚀
+**You're ready to build with AbstractCore!**
 
 The key insight: AbstractCore gives you **the same simple interface** across all LLM providers, with **production-grade reliability** built-in. Focus on building your application, not managing API differences.
