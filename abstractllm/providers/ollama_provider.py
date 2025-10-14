@@ -141,8 +141,11 @@ class OllamaProvider(BaseProvider):
             json_schema = response_model.model_json_schema()
             payload["format"] = json_schema
 
-        # Use chat format if messages provided
-        if messages:
+        # Use chat format by default (recommended by Ollama docs), especially when tools are present
+        # Only use generate format for very simple cases without tools or messages
+        use_chat_format = tools is not None or messages is not None or True  # Default to chat
+
+        if use_chat_format:
             payload["messages"] = []
 
             # Add system message if provided
@@ -153,8 +156,9 @@ class OllamaProvider(BaseProvider):
                 })
 
             # Add conversation history (converted to Ollama-compatible format)
-            converted_messages = self._convert_messages_for_ollama(messages)
-            payload["messages"].extend(converted_messages)
+            if messages:
+                converted_messages = self._convert_messages_for_ollama(messages)
+                payload["messages"].extend(converted_messages)
 
             # Add current prompt as user message (only if non-empty)
             # When using messages array, prompt should be empty or already in messages
@@ -166,7 +170,7 @@ class OllamaProvider(BaseProvider):
 
             endpoint = "/api/chat"
         else:
-            # Use generate format for single prompt
+            # Use generate format for single prompt (legacy fallback)
             full_prompt = prompt
             if effective_system_prompt:
                 full_prompt = f"{effective_system_prompt}\n\n{prompt}"
