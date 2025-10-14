@@ -355,11 +355,6 @@ judge essay.md --criteria=soundness
 python -m abstractllm.apps.summarizer document.txt --style=executive
 python -m abstractllm.apps.extractor report.pdf --format=triples
 python -m abstractllm.apps.judge essay.md --criteria=soundness
-
-# Method 3: Prefixed commands
-abstractllm-summarizer document.txt --style=executive
-abstractllm-extractor report.pdf --format=triples
-abstractllm-judge essay.md --criteria=soundness
 ```
 
 #### Python API (for programmatic use)
