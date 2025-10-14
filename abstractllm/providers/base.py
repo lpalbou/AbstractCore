@@ -227,6 +227,22 @@ class BaseProvider(AbstractLLMInterface, ABC):
                     "Install with: pip install pydantic>=2.0.0"
                 )
 
+            # Handle hybrid case: tools + structured output
+            if tools is not None:
+                return self._handle_tools_with_structured_output(
+                    prompt=prompt,
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                    response_model=response_model,
+                    retry_strategy=retry_strategy,
+                    tool_call_tags=tool_call_tags,
+                    execute_tools=execute_tools,
+                    stream=stream,
+                    **kwargs
+                )
+
+            # Standard structured output (no tools)
             from ..structured import StructuredOutputHandler
             handler = StructuredOutputHandler(retry_strategy=retry_strategy)
             return handler.generate_structured(
@@ -235,7 +251,7 @@ class BaseProvider(AbstractLLMInterface, ABC):
                 response_model=response_model,
                 messages=messages,
                 system_prompt=system_prompt,
-                tools=tools,
+                tools=None,  # No tools in this path
                 stream=stream,
                 **kwargs
             )
@@ -825,3 +841,139 @@ class BaseProvider(AbstractLLMInterface, ABC):
 
         # Return original response if rewriting fails
         return response
+
+    def _handle_tools_with_structured_output(self,
+                                           prompt: str,
+                                           messages: Optional[List[Dict[str, str]]] = None,
+                                           system_prompt: Optional[str] = None,
+                                           tools: Optional[List] = None,
+                                           response_model: Optional[Type[BaseModel]] = None,
+                                           retry_strategy=None,
+                                           tool_call_tags: Optional[str] = None,
+                                           execute_tools: Optional[bool] = None,
+                                           stream: bool = False,
+                                           **kwargs) -> BaseModel:
+        """
+        Handle the hybrid case: tools + structured output.
+        
+        Strategy: Sequential execution
+        1. First, generate response with tools (may include tool calls)
+        2. If tool calls are generated, execute them
+        3. Then generate structured output using tool results as context
+        
+        Args:
+            prompt: Input prompt
+            messages: Optional message history
+            system_prompt: Optional system prompt
+            tools: List of available tools
+            response_model: Pydantic model for structured output
+            retry_strategy: Optional retry strategy for structured output
+            tool_call_tags: Optional tool call tag format
+            execute_tools: Whether to execute tools automatically
+            stream: Whether to use streaming (not supported for hybrid mode)
+            **kwargs: Additional parameters
+            
+        Returns:
+            Validated instance of response_model
+            
+        Raises:
+            ValueError: If streaming is requested (not supported for hybrid mode)
+        """
+        if stream:
+            raise ValueError(
+                "Streaming is not supported when combining tools with structured output. "
+                "Please use either stream=True OR response_model, but not both."
+            )
+            
+        # Step 1: Generate response with tools (normal tool execution flow)
+        self.logger.info("Hybrid mode: Executing tools first, then structured output",
+                        model=self.model,
+                        response_model=response_model.__name__,
+                        num_tools=len(tools) if tools else 0)
+        
+        # Force tool execution for hybrid mode
+        should_execute_tools = execute_tools if execute_tools is not None else True
+        
+        # Generate response with tools using the normal flow (without response_model)
+        tool_response = self.generate_with_telemetry(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            stream=False,  # Never stream in hybrid mode
+            response_model=None,  # No structured output in first pass
+            tool_call_tags=tool_call_tags,
+            execute_tools=should_execute_tools,
+            **kwargs
+        )
+        
+        # Step 2: Generate structured output using tool results as context
+        # Create enhanced prompt with tool execution context
+        if hasattr(tool_response, 'content') and tool_response.content:
+            enhanced_prompt = f"""{prompt}
+
+Based on the following tool execution results:
+{tool_response.content}
+
+Please provide a structured response."""
+        else:
+            enhanced_prompt = prompt
+            
+        self.logger.info("Hybrid mode: Generating structured output with tool context",
+                        model=self.model,
+                        response_model=response_model.__name__,
+                        has_tool_context=bool(hasattr(tool_response, 'content') and tool_response.content))
+        
+        # Generate structured output using the enhanced prompt
+        from ..structured import StructuredOutputHandler
+        handler = StructuredOutputHandler(retry_strategy=retry_strategy)
+        
+        structured_result = handler.generate_structured(
+            provider=self,
+            prompt=enhanced_prompt,
+            response_model=response_model,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=None,  # No tools in structured output pass
+            stream=False,
+            **kwargs
+        )
+        
+        self.logger.info("Hybrid mode: Successfully completed tools + structured output",
+                        model=self.model,
+                        response_model=response_model.__name__,
+                        success=True)
+        
+        return structured_result
+
+    def generate(self,
+                prompt: str,
+                messages: Optional[List[Dict[str, str]]] = None,
+                system_prompt: Optional[str] = None,
+                tools: Optional[List[Dict[str, Any]]] = None,
+                stream: bool = False,
+                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
+        """
+        Generate response from the LLM.
+        
+        This method implements the AbstractLLMInterface and delegates to generate_with_telemetry.
+        
+        Args:
+            prompt: The input prompt
+            messages: Optional conversation history
+            system_prompt: Optional system prompt
+            tools: Optional list of available tools
+            stream: Whether to stream the response
+            **kwargs: Additional provider-specific parameters (including response_model)
+            
+        Returns:
+            GenerateResponse, iterator of GenerateResponse for streaming, or BaseModel for structured output
+        """
+        return self.generate_with_telemetry(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            stream=stream,
+            **kwargs
+        )
