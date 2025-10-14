@@ -894,6 +894,14 @@ a:hover {
     font-weight: 500;
 }
 
+/* Force code font size overrides for Prism.js and other libraries */
+pre[class*="language-"] code,
+code[class*="language-"],
+.token {
+    font-size: 0.75rem !important;
+    font-family: var(--font-mono) !important;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .system-overview {
@@ -1418,13 +1426,15 @@ section {
     overflow: hidden;
 }
 
-.example-code pre {
+.example-code pre,
+.example-code pre code,
+.example-code code {
     padding: var(--spacing-4);
     margin: 0;
     overflow-x: auto;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
-    line-height: 1.5;
+    font-family: var(--font-mono) !important;
+    font-size: 0.75rem !important;
+    line-height: 1.5 !important;
 }
 
 .example-link {
