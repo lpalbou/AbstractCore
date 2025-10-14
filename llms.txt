@@ -18,7 +18,7 @@
 - [Structured Output](https://github.com/lpalbou/AbstractCore/blob/main/docs/getting-started.md): Pydantic model validation with automatic retries
 - [Embeddings System](https://github.com/lpalbou/AbstractCore/blob/main/docs/embeddings.md): SOTA embedding models for semantic search and RAG applications
 
-## Built-in CLI Applications
+## Built-in Processing Apps & CLI Applications
 
 - [Summarizer CLI](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-summarizer.md): Direct terminal & programmatic document summarization (`summarizer document.pdf --style=executive`)
 - [Extractor CLI](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-extractor.md): Direct terminal & programmatic Knowledge graph extraction (`extractor report.txt --format=json-ld --focus=technology`)
