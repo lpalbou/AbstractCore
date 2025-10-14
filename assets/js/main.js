@@ -326,6 +326,70 @@ if ('serviceWorker' in navigator) {
     });
 }
 
+// Copy code functionality for demo tabs
+function copyCode(button) {
+    const code = button.getAttribute('data-code');
+    
+    if (!code) return;
+    
+    // Decode HTML entities
+    const decodedCode = code
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+    
+    navigator.clipboard.writeText(decodedCode).then(() => {
+        // Update button appearance
+        const originalText = button.innerHTML;
+        button.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 6L9 17l-5-5"></path>
+            </svg>
+            Copied!
+        `;
+        button.classList.add('copied');
+        
+        // Reset after 2 seconds
+        setTimeout(() => {
+            button.innerHTML = originalText;
+            button.classList.remove('copied');
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy code:', err);
+        
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = decodedCode;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        try {
+            document.execCommand('copy');
+            button.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 6L9 17l-5-5"></path>
+                </svg>
+                Copied!
+            `;
+            button.classList.add('copied');
+            
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.classList.remove('copied');
+            }, 2000);
+        } catch (fallbackErr) {
+            console.error('Fallback copy failed:', fallbackErr);
+        }
+        
+        document.body.removeChild(textArea);
+    });
+}
+
 // Export functions for potential use in other scripts
 window.AbstractCore = {
     initNavigation,
@@ -333,6 +397,10 @@ window.AbstractCore = {
     initScrollAnimations,
     initSmoothScrolling,
     initCodeCopy,
+    copyCode,
     debounce,
     throttle
 };
+
+// Make copyCode globally available
+window.copyCode = copyCode;
