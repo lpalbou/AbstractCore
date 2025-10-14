@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture Overview - AbstractCore</title>
+    <meta name="description" content="Interactive architecture overview of AbstractCore's system design, components, and data flow.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <style>
+        .architecture-diagram {
+            background: var(--background-secondary);
+            border-radius: 0.75rem;
+            padding: 2rem;
+            margin: 2rem 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .component {
+            background: var(--background);
+            border: 2px solid var(--border-light);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 0.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .component:hover {
+            border-color: var(--primary-color);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.15);
+        }
+        
+        .component.active {
+            border-color: var(--primary-color);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(147, 51, 234, 0.1));
+        }
+        
+        .component-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 0 0 0.5rem 0;
+        }
+        
+        .component-description {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+        
+        .flow-arrow {
+            position: absolute;
+            width: 2px;
+            background: linear-gradient(to bottom, var(--primary-color), var(--secondary-color));
+            opacity: 0.6;
+            transition: opacity 0.3s ease;
+        }
+        
+        .flow-arrow.active {
+            opacity: 1;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .detail-panel {
+            background: var(--background);
+            border: 1px solid var(--border-light);
+            border-radius: 0.75rem;
+            padding: 2rem;
+            margin: 2rem 0;
+            display: none;
+            animation: slideIn 0.3s ease;
+        }
+        
+        .detail-panel.active {
+            display: block;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .system-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+        
+        .provider-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .provider-item {
+            background: var(--background-secondary);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .provider-item:hover {
+            background: var(--primary-color);
+            color: white;
+            transform: scale(1.05);
+        }
+        
+        .interactive-flow {
+            position: relative;
+            background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+            border-radius: 0.75rem;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+        
+        .flow-step {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .flow-step:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+        
+        .flow-step.active {
+            border-color: var(--primary-color);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(147, 51, 234, 0.05));
+        }
+        
+        .flow-step::after {
+            content: '↓';
+            position: absolute;
+            bottom: -1.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.5rem;
+            color: var(--primary-color);
+            opacity: 0.6;
+        }
+        
+        .flow-step:last-child::after {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="../index.html" class="brand-link">
+                    <div class="brand-logo">
+                        <div class="logo-abstract">
+                            <div class="logo-circle"></div>
+                            <div class="logo-lines">
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="../index.html#features" class="nav-link">Features</a>
+                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
+                <a href="../index.html#docs" class="nav-link">Documentation</a>
+                <a href="../index.html#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1200px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Architecture Overview</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Interactive exploration of AbstractCore's system design, components, and data flow.
+                    Click on components to learn more about how they work together.
+                </p>
+            </div>
+
+            <!-- System Overview -->
+            <section style="margin-bottom: 4rem;">
+                <h2>🏗️ System Overview</h2>
+                <p>AbstractCore operates as both a Python library and an optional HTTP server:</p>
+                
+                <div class="architecture-diagram">
+                    <div class="system-overview">
+                        <div class="component" data-component="app">
+                            <h3 class="component-title">Your Application</h3>
+                            <p class="component-description">Python code using AbstractCore</p>
+                        </div>
+                        
+                        <div class="component" data-component="http">
+                            <h3 class="component-title">HTTP Clients</h3>
+                            <p class="component-description">REST API consumers</p>
+                        </div>
+                        
+                        <div class="component" data-component="core">
+                            <h3 class="component-title">AbstractCore API</h3>
+                            <p class="component-description">Unified interface layer</p>
+                        </div>
+                        
+                        <div class="component" data-component="server">
+                            <h3 class="component-title">AbstractCore Server</h3>
+                            <p class="component-description">OpenAI-compatible REST API</p>
+                        </div>
+                        
+                        <div class="component" data-component="providers">
+                            <h3 class="component-title">Provider Interface</h3>
+                            <p class="component-description">Common abstraction layer</p>
+                        </div>
+                        
+                        <div class="component" data-component="systems">
+                            <h3 class="component-title">Core Systems</h3>
+                            <p class="component-description">Events, Tools, Retry, Streaming</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Component Details -->
+            <div id="component-details">
+                <div class="detail-panel" id="detail-app">
+                    <h3>🚀 Your Application</h3>
+                    <p>Your Python application uses AbstractCore through the simple factory pattern:</p>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractllm import create_llm
+
+# Factory creates the right provider
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate("Hello, world!")</code></pre>
+                    </div>
+                    <p><strong>Benefits:</strong> Same interface for all providers, automatic reliability, built-in tool support.</p>
+                </div>
+                
+                <div class="detail-panel" id="detail-http">
+                    <h3>🌐 HTTP Clients</h3>
+                    <p>Any HTTP client can use AbstractCore through the OpenAI-compatible REST API:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}'</code></pre>
+                    </div>
+                    <p><strong>Benefits:</strong> Drop-in OpenAI replacement, universal provider access, tool call format conversion.</p>
+                </div>
+                
+                <div class="detail-panel" id="detail-core">
+                    <h3>🎯 AbstractCore API</h3>
+                    <p>The unified interface that provides consistent behavior across all providers:</p>
+                    <ul>
+                        <li><strong>Provider Abstraction:</strong> Same methods for all LLM providers</li>
+                        <li><strong>Universal Tools:</strong> Tools work everywhere, even without native support</li>
+                        <li><strong>Streaming:</strong> Unified streaming with real-time tool detection</li>
+                        <li><strong>Structured Output:</strong> Type-safe responses with automatic validation</li>
+                    </ul>
+                </div>
+                
+                <div class="detail-panel" id="detail-server">
+                    <h3>🖥️ AbstractCore Server</h3>
+                    <p>FastAPI-based HTTP server providing OpenAI-compatible endpoints:</p>
+                    <ul>
+                        <li><code>/v1/chat/completions</code> - Chat completions with streaming</li>
+                        <li><code>/v1/embeddings</code> - Multi-provider embeddings</li>
+                        <li><code>/v1/models</code> - Dynamic model discovery</li>
+                        <li><code>/providers</code> - Provider status and capabilities</li>
+                    </ul>
+                </div>
+                
+                <div class="detail-panel" id="detail-providers">
+                    <h3>🔌 Provider Interface</h3>
+                    <p>Common abstraction layer ensuring consistent behavior:</p>
+                    <div class="provider-grid">
+                        <div class="provider-item">OpenAI</div>
+                        <div class="provider-item">Anthropic</div>
+                        <div class="provider-item">Ollama</div>
+                        <div class="provider-item">MLX</div>
+                        <div class="provider-item">LMStudio</div>
+                        <div class="provider-item">HuggingFace</div>
+                    </div>
+                    <p><strong>Features:</strong> Memory management, capability detection, unified error handling.</p>
+                </div>
+                
+                <div class="detail-panel" id="detail-systems">
+                    <h3>⚙️ Core Systems</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
+                            <h4>Event System</h4>
+                            <p>Observability and control through comprehensive events</p>
+                        </div>
+                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
+                            <h4>Tool System</h4>
+                            <p>Universal tool execution with format conversion</p>
+                        </div>
+                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
+                            <h4>Retry System</h4>
+                            <p>Production-grade reliability with circuit breakers</p>
+                        </div>
+                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
+                            <h4>Streaming</h4>
+                            <p>Unified streaming with real-time tool detection</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Request Lifecycle -->
+            <section style="margin-bottom: 4rem;">
+                <h2>🔄 Request Lifecycle</h2>
+                <p>Click on each step to see how requests flow through the system:</p>
+                
+                <div class="interactive-flow">
+                    <div class="flow-step" data-step="1">
+                        <h3>1. Request Initiation</h3>
+                        <p>Your app calls <code>llm.generate()</code> or HTTP client sends request</p>
+                    </div>
+                    
+                    <div class="flow-step" data-step="2">
+                        <h3>2. Event Emission</h3>
+                        <p>System emits <code>GENERATION_STARTED</code> event for monitoring</p>
+                    </div>
+                    
+                    <div class="flow-step" data-step="3">
+                        <h3>3. Provider Call</h3>
+                        <p>Request routed to appropriate provider with retry logic</p>
+                    </div>
+                    
+                    <div class="flow-step" data-step="4">
+                        <h3>4. Tool Detection</h3>
+                        <p>Response parsed for tool calls using architecture-specific patterns</p>
+                    </div>
+                    
+                    <div class="flow-step" data-step="5">
+                        <h3>5. Tool Execution</h3>
+                        <p>Tools executed locally with security controls and error handling</p>
+                    </div>
+                    
+                    <div class="flow-step" data-step="6">
+                        <h3>6. Response Assembly</h3>
+                        <p>Final response assembled with tool results and metadata</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tool System Architecture -->
+            <section style="margin-bottom: 4rem;">
+                <h2>🛠️ Tool System Architecture</h2>
+                
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3>Universal Tool Support</h3>
+                    <p>AbstractCore provides tool calling across all providers through two mechanisms:</p>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
+                        <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; border-left: 4px solid var(--primary-color);">
+                            <h4>Native Tool Support</h4>
+                            <p>For providers with native tool APIs (OpenAI, Anthropic)</p>
+                            <ul>
+                                <li>Direct API integration</li>
+                                <li>Optimal performance</li>
+                                <li>Full feature support</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; border-left: 4px solid var(--secondary-color);">
+                            <h4>Intelligent Prompting</h4>
+                            <p>For providers without native support (Ollama, MLX, LMStudio)</p>
+                            <ul>
+                                <li>Automatic prompt injection</li>
+                                <li>Architecture-aware formatting</li>
+                                <li>Format conversion support</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3>🔄 Tool Call Format Conversion</h3>
+                    <p>AbstractCore automatically converts between different tool call formats:</p>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0;">
+                        <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+                            <h4>Qwen3 Format</h4>
+                            <code>&lt;|tool_call|&gt;...&lt;/|tool_call|&gt;</code>
+                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Compatible with Codex CLI</p>
+                        </div>
+                        
+                        <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+                            <h4>LLaMA3 Format</h4>
+                            <code>&lt;function_call&gt;...&lt;/function_call&gt;</code>
+                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Compatible with Crush CLI</p>
+                        </div>
+                        
+                        <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+                            <h4>XML Format</h4>
+                            <code>&lt;tool_call&gt;...&lt;/tool_call&gt;</code>
+                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">Compatible with Gemini CLI</p>
+                        </div>
+                        
+                        <div style="background: white; padding: 1rem; border-radius: 0.5rem;">
+                            <h4>Custom Format</h4>
+                            <code>[TOOL]...JSON...[/TOOL]</code>
+                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem;">User-defined formats</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Design Principles -->
+            <section style="margin-bottom: 4rem;">
+                <h2>🎯 Design Principles</h2>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
+                        <h3 style="color: var(--primary-color);">Provider Abstraction</h3>
+                        <p><strong>Goal:</strong> Same interface for all providers</p>
+                        <p><strong>Implementation:</strong> Common interface with provider-specific implementations</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
+                        <h3 style="color: var(--secondary-color);">Production Reliability</h3>
+                        <p><strong>Goal:</strong> Handle real-world failures gracefully</p>
+                        <p><strong>Implementation:</strong> Built-in retry logic, circuit breakers, comprehensive error handling</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
+                        <h3 style="color: var(--primary-color);">Universal Tool Support</h3>
+                        <p><strong>Goal:</strong> Tools work everywhere</p>
+                        <p><strong>Implementation:</strong> Native support where available, intelligent prompting as fallback</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
+                        <h3 style="color: var(--secondary-color);">Simplicity Over Features</h3>
+                        <p><strong>Goal:</strong> Clean, focused API</p>
+                        <p><strong>Implementation:</strong> Minimal core with clear extension points</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Characteristics -->
+            <section style="margin-bottom: 4rem;">
+                <h2>⚡ Performance Characteristics</h2>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                    <div style="background: linear-gradient(135deg, #dcfce7, #bbf7d0); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3>Memory Usage</h3>
+                        <ul style="margin: 0;">
+                            <li><strong>Core:</strong> ~15MB base</li>
+                            <li><strong>Per Provider:</strong> ~2-5MB</li>
+                            <li><strong>Scaling:</strong> Linear with requests</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="background: linear-gradient(135deg, #dbeafe, #bfdbfe); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3>Latency Overhead</h3>
+                        <ul style="margin: 0;">
+                            <li><strong>Provider abstraction:</strong> ~1-2ms</li>
+                            <li><strong>Event system:</strong> ~0.5ms per event</li>
+                            <li><strong>Tool parsing:</strong> ~1-5ms</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3>Throughput</h3>
+                        <ul style="margin: 0;">
+                            <li><strong>Single instance:</strong> 100+ req/sec</li>
+                            <li><strong>Bottleneck:</strong> Usually the LLM provider</li>
+                            <li><strong>Scaling:</strong> Horizontal scaling</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Related Documentation -->
+            <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                    <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
+                    </a>
+                    
+                    <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API docs</p>
+                    </a>
+                    
+                    <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
+                    </a>
+                    
+                    <a href="capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Capabilities</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">What AbstractCore can do</p>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="../assets/js/main.js"></script>
+    <script>
+        // Interactive architecture functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Component interaction
+            const components = document.querySelectorAll('.component');
+            const detailPanels = document.querySelectorAll('.detail-panel');
+            
+            components.forEach(component => {
+                component.addEventListener('click', function() {
+                    const componentType = this.dataset.component;
+                    
+                    // Remove active class from all components and panels
+                    components.forEach(c => c.classList.remove('active'));
+                    detailPanels.forEach(p => p.classList.remove('active'));
+                    
+                    // Add active class to clicked component
+                    this.classList.add('active');
+                    
+                    // Show corresponding detail panel
+                    const detailPanel = document.getElementById(`detail-${componentType}`);
+                    if (detailPanel) {
+                        detailPanel.classList.add('active');
+                    }
+                });
+            });
+            
+            // Flow step interaction
+            const flowSteps = document.querySelectorAll('.flow-step');
+            
+            flowSteps.forEach(step => {
+                step.addEventListener('click', function() {
+                    // Remove active class from all steps
+                    flowSteps.forEach(s => s.classList.remove('active'));
+                    
+                    // Add active class to clicked step
+                    this.classList.add('active');
+                    
+                    // Add visual feedback
+                    this.style.transform = 'scale(1.02)';
+                    setTimeout(() => {
+                        this.style.transform = '';
+                    }, 200);
+                });
+            });
+            
+            // Provider item hover effects
+            const providerItems = document.querySelectorAll('.provider-item');
+            
+            providerItems.forEach(item => {
+                item.addEventListener('click', function() {
+                    // Add click animation
+                    this.style.transform = 'scale(1.1) rotate(5deg)';
+                    setTimeout(() => {
+                        this.style.transform = '';
+                    }, 300);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

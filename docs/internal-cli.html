@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Internal CLI - AbstractCore</title>
+    <meta name="description" content="Built-in CLI tool for testing, demonstration, and interactive conversations with AbstractCore.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="../index.html" class="brand-link">
+                    <div class="brand-logo">
+                        <div class="logo-abstract">
+                            <div class="logo-circle"></div>
+                            <div class="logo-lines">
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="../index.html#features" class="nav-link">Features</a>
+                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
+                <a href="../index.html#docs" class="nav-link">Documentation</a>
+                <a href="../index.html#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1000px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Internal CLI</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Built-in CLI tool for testing, demonstration, and interactive conversations with AbstractCore.
+                    This is AbstractCore's internal testing CLI, not to be confused with external agentic CLIs.
+                </p>
+            </div>
+
+            <!-- Quick Start -->
+            <section style="margin-bottom: 3rem;">
+                <h2>🚀 Quick Start</h2>
+                <p>Start the internal CLI with any provider:</p>
+                
+                <div class="code-block">
+                    <pre><code class="language-bash"># Start the internal CLI
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+
+# Or with any provider
+python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini
+python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest
+
+# With streaming enabled
+python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b --stream</code></pre>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <p style="margin: 0;"><strong>💡 Note:</strong> Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)? See the <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/server.md" target="_blank" style="color: #92400e;">Server Documentation</a> for complete setup guides.</p>
+                </div>
+            </section>
+
+            <!-- Commands Overview -->
+            <section style="margin-bottom: 3rem;">
+                <h2>⚡ Available Commands</h2>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">/compact</h3>
+                        <p style="margin: 0 0 1rem 0;">Compress chat history while preserving context</p>
+                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/compact</code>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">/facts</h3>
+                        <p style="margin: 0 0 1rem 0;">Extract facts from conversation as structured data</p>
+                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/facts [file]</code>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">/judge</h3>
+                        <p style="margin: 0 0 1rem 0;">Evaluate conversation quality using LLM-as-a-judge</p>
+                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/judge</code>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">/stream</h3>
+                        <p style="margin: 0 0 1rem 0;">Toggle real-time streaming of responses</p>
+                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/stream</code>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">/history</h3>
+                        <p style="margin: 0 0 1rem 0;">Show conversation history without truncation</p>
+                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/history [n]</code>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">/system</h3>
+                        <p style="margin: 0 0 1rem 0;">Manage system prompt that guides AI behavior</p>
+                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/system [prompt]</code>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Detailed Command Documentation -->
+            <section style="margin-bottom: 3rem;">
+                <h2>📚 Command Details</h2>
+                
+                <!-- Compact Command -->
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">🗜️ /compact - Chat History Compaction</h3>
+                    <p>Compacts your chat history using the fast local <code>gemma3:1b</code> model to create a summary while preserving recent exchanges.</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-bash"># In the CLI
+/compact
+
+# Output example:
+🗜️  Compacting chat history...
+   Before: 15 messages (~450 tokens)
+   Using gemma3:1b for compaction...
+✅ Compaction completed in 3.2s
+   After: 5 messages (~280 tokens)
+   Structure:
+   1. ⚙️  System prompt
+   2. 📚 Conversation summary (1,200 chars)
+   3. 👤 How do I handle errors in Python?
+   4. 🤖 You can use try/except blocks...
+   5. 👤 What about logging?</code></pre>
+                    </div>
+                    
+                    <p><strong>When to use:</strong></p>
+                    <ul>
+                        <li>Long conversations that slow down responses</li>
+                        <li>When you want to preserve context but reduce memory usage</li>
+                        <li>Before switching to a different topic</li>
+                    </ul>
+                </div>
+                
+                <!-- Judge Command -->
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">⚖️ /judge - Conversation Quality Evaluation</h3>
+                    <p>Evaluates the quality and interest of the current discussion using LLM-as-a-judge. This demonstrates objective assessment capabilities with constructive feedback.</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-bash"># In the CLI
+/judge
+
+# Output example:
+⚖️  Evaluating conversation quality...
+   Analyzing 450 characters of conversation...
+✅ Evaluation completed in 35.2s
+
+📊 Overall Discussion Quality: 4/5
+
+📈 Quality Dimensions:
+   Clarity      : 5/5
+   Coherence    : 4/5
+   Actionability: 3/5
+   Relevance    : 5/5
+   Completeness : 4/5
+   Soundness    : 4/5
+   Simplicity   : 5/5
+
+✅ Conversation Strengths:
+   • The discussion maintains clear focus and addresses questions directly
+   • Explanations are well-structured and easy to follow
+   • Technical concepts are explained in accessible language
+
+💡 Suggestions for Better Discussions:
+   • Include more specific examples to illustrate key points
+   • Add actionable next steps or recommendations where appropriate
+   • Consider exploring alternative approaches or edge cases</code></pre>
+                    </div>
+                    
+                    <p><strong>When to use:</strong></p>
+                    <ul>
+                        <li>Get objective feedback on discussion quality</li>
+                        <li>Understand strengths and areas for improvement</li>
+                        <li>Demonstrate LLM-as-a-judge evaluation capabilities</li>
+                        <li>Practice critical assessment and constructive feedback</li>
+                    </ul>
+                </div>
+                
+                <!-- Facts Command -->
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">🔍 /facts - Extract Structured Facts</h3>
+                    <p>Extracts facts from your conversation history as simple triples (subject-predicate-object). Display them in chat or save as structured JSON-LD.</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Display facts in chat
+/facts
+
+# Output example:
+🔍 Extracting facts from conversation history...
+   Processing 415 characters of conversation...
+✅ Fact extraction completed in 4.5s
+
+📋 Facts extracted from conversation:
+==================================================
+ 1. OpenAI creates GPT-4
+ 2. Microsoft Copilot uses GPT-4
+ 3. Google develops TensorFlow
+==================================================
+📊 Found 3 entities and 2 relationships
+
+# Save to JSON-LD file
+/facts myconversation
+
+# Output example:
+🔍 Extracting facts from conversation history...
+   Processing 415 characters of conversation...
+✅ Fact extraction completed in 3.3s
+💾 Facts saved to myconversation.jsonld
+📊 Saved 3 entities and 2 relationships as JSON-LD</code></pre>
+                    </div>
+                    
+                    <p><strong>When to use:</strong></p>
+                    <ul>
+                        <li>Extract key information discussed in the conversation</li>
+                        <li>Create structured knowledge from chat sessions</li>
+                        <li>Document facts for later reference or analysis</li>
+                        <li>Generate semantic data for knowledge graphs</li>
+                    </ul>
+                </div>
+                
+                <!-- Tool Tag Testing -->
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">🏷️ /tooltag - Test Tool Call Tag Rewriting</h3>
+                    <p>Test tool call tag rewriting with custom tags to verify compatibility with different agentic CLIs.</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Test LLaMA3 format (Crush CLI)
+/tooltag '<function_call>' '</function_call>'
+
+# Test XML format (Gemini CLI)
+/tooltag '<tool_call>' '</tool_call>'
+
+# Test Qwen3 format (Codex CLI)
+/tooltag '<|tool_call|>' '</|tool_call|>'
+
+# Test custom format
+/tooltag '<my_tool>' '</my_tool>'</code></pre>
+                    </div>
+                    
+                    <p><strong>When to use:</strong></p>
+                    <ul>
+                        <li>Test compatibility with specific agentic CLIs</li>
+                        <li>Verify tool call tag rewriting works correctly</li>
+                        <li>Debug tool call format issues</li>
+                        <li>Compare different tag formats side by side</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Usage Examples -->
+            <section style="margin-bottom: 3rem;">
+                <h2>💡 Usage Examples</h2>
+                
+                <div style="background: linear-gradient(135deg, #e0f2fe, #b3e5fc); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Complete Workflow Example</h3>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Start CLI with a model that supports auto-compaction
+python -m abstractllm.utils.cli --provider ollama --model gemma3:1b
+
+# Have a long conversation...
+👤 You: What is Python?
+🤖 Assistant: Python is a high-level programming language...
+
+👤 You: What about data types?
+🤖 Assistant: Python has several built-in data types...
+
+# Check history
+👤 You: /history 2
+
+# Change system prompt for specific task
+👤 You: /system You are an expert Python tutor focused on data science.
+
+# Compact when needed
+👤 You: /compact
+
+# Extract facts from the conversation
+👤 You: /facts
+
+# Continue conversation with preserved context
+👤 You: Can you explain more about functions?
+🤖 Assistant: [Responds as Python tutor, refers to previous context]</code></pre>
+                    </div>
+                </div>
+                
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Controlling Tool Usage</h3>
+                    <p>If the AI is calling tools unnecessarily, you can control this behavior:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Check current system prompt to understand behavior
+👤 You: /system
+
+# Update to prevent unnecessary tool calls
+👤 You: /system You are a helpful AI assistant. Only use tools when explicitly requested by the user or when necessary to answer a specific question. Do not demonstrate tool capabilities unprompted.
+
+# Now the AI will be less likely to call tools unnecessarily
+👤 You: Who are you?
+🤖 Assistant: I am an AI assistant. [No tool calls]</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Best Practices -->
+            <section style="margin-bottom: 3rem;">
+                <h2>✅ Best Practices</h2>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Regular History Checks</h3>
+                        <p style="margin: 0;">Use <code>/history n</code> to review recent context and understand conversation flow.</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">Strategic Compaction</h3>
+                        <p style="margin: 0;">Use <code>/compact</code> when conversation becomes slow, you've covered multiple topics, or before switching contexts.</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">System Prompt Control</h3>
+                        <p style="margin: 0;">Use <code>/system</code> to adapt AI behavior for different tasks and prevent unwanted tool calls.</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">Context Verification</h3>
+                        <p style="margin: 0;">After compaction, use <code>/history</code> to verify preserved context and summary quality.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Technical Details -->
+            <section style="margin-bottom: 3rem;">
+                <h2>🔧 Technical Details</h2>
+                
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <ul>
+                        <li><strong>Compaction Model:</strong> Uses <code>gemma3:1b</code> for fast, local processing</li>
+                        <li><strong>Preservation:</strong> Keeps last 6 messages (3 exchanges) by default</li>
+                        <li><strong>Fallback:</strong> If <code>gemma3:1b</code> unavailable, uses current provider</li>
+                        <li><strong>Token Estimation:</strong> Provides rough token count estimates</li>
+                        <li><strong>Message Types:</strong> Distinguishes between system, user, and assistant messages</li>
+                        <li><strong>Error Handling:</strong> Gracefully handles various scenarios with helpful messages</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Related Documentation -->
+            <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                    <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
+                    </a>
+                    
+                    <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/server.md" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;" target="_blank">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Server Guide</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">External agentic CLI integration</p>
+                    </a>
+                    
+                    <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
+                    </a>
+                    
+                    <a href="troubleshooting.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Troubleshooting</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Common issues and solutions</p>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
