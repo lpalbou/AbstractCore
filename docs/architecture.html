@@ -223,39 +223,73 @@
 
             <!-- System Overview -->
             <section style="margin-bottom: 4rem;">
-                <h2>🏗️ System Overview</h2>
-                <p>AbstractCore operates as both a Python library and an optional HTTP server:</p>
+                <h2 style="color: var(--text-primary); font-size: 2rem; margin-bottom: 1.5rem;">🏗️ System Overview</h2>
+                <p style="color: var(--text-secondary); font-size: 1.125rem; margin-bottom: 2rem;">AbstractCore operates as both a Python library and an optional HTTP server. Click on components to explore their functionality:</p>
                 
                 <div class="architecture-diagram">
-                    <div class="system-overview">
+                    <!-- Top Layer: Client Applications -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem; position: relative;">
                         <div class="component" data-component="app">
-                            <h3 class="component-title">Your Application</h3>
-                            <p class="component-description">Python code using AbstractCore</p>
+                            <h3 class="component-title">🐍 Your Python App</h3>
+                            <p class="component-description">Direct library integration</p>
                         </div>
                         
                         <div class="component" data-component="http">
-                            <h3 class="component-title">HTTP Clients</h3>
+                            <h3 class="component-title">🌐 HTTP Clients</h3>
                             <p class="component-description">REST API consumers</p>
                         </div>
                         
+                        <!-- Arrow pointing down -->
+                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 25%; height: 40px;"></div>
+                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 75%; height: 40px;"></div>
+                    </div>
+                    
+                    <!-- Middle Layer: AbstractCore Components -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 3rem 0; position: relative;">
                         <div class="component" data-component="core">
-                            <h3 class="component-title">AbstractCore API</h3>
+                            <h3 class="component-title">🎯 AbstractCore API</h3>
                             <p class="component-description">Unified interface layer</p>
                         </div>
                         
                         <div class="component" data-component="server">
-                            <h3 class="component-title">AbstractCore Server</h3>
+                            <h3 class="component-title">🖥️ AbstractCore Server</h3>
                             <p class="component-description">OpenAI-compatible REST API</p>
                         </div>
                         
+                        <!-- Horizontal arrow connecting core and server -->
+                        <div class="diagram-arrow arrow-horizontal" style="top: 50%; right: -70px;"></div>
+                        
+                        <!-- Arrows pointing down -->
+                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 25%; height: 40px;"></div>
+                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 75%; height: 40px;"></div>
+                    </div>
+                    
+                    <!-- Core Systems Layer -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 3rem 0; position: relative;">
                         <div class="component" data-component="providers">
-                            <h3 class="component-title">Provider Interface</h3>
+                            <h3 class="component-title">🔌 Provider Interface</h3>
                             <p class="component-description">Common abstraction layer</p>
                         </div>
                         
                         <div class="component" data-component="systems">
-                            <h3 class="component-title">Core Systems</h3>
+                            <h3 class="component-title">⚙️ Core Systems</h3>
                             <p class="component-description">Events, Tools, Retry, Streaming</p>
+                        </div>
+                        
+                        <!-- Arrow pointing down -->
+                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 50%; height: 40px;"></div>
+                    </div>
+                    
+                    <!-- Bottom Layer: LLM Providers -->
+                    <div style="margin-top: 3rem;">
+                        <h4 style="text-align: center; color: var(--text-primary); margin-bottom: 1.5rem; font-size: 1.25rem;">🤖 LLM Providers</h4>
+                        <div class="provider-grid">
+                            <div class="provider-item">OpenAI</div>
+                            <div class="provider-item">Anthropic</div>
+                            <div class="provider-item">Ollama</div>
+                            <div class="provider-item">MLX</div>
+                            <div class="provider-item">LMStudio</div>
+                            <div class="provider-item">HuggingFace</div>
                         </div>
                     </div>
                 </div>
@@ -480,30 +514,30 @@ response = llm.generate("Hello, world!")</code></pre>
 
             <!-- Performance Characteristics -->
             <section style="margin-bottom: 4rem;">
-                <h2>⚡ Performance Characteristics</h2>
+                <h2 style="color: var(--text-primary); font-size: 2rem; margin-bottom: 1.5rem;">⚡ Performance Characteristics</h2>
                 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; margin: 2rem 0;">
-                    <div style="background: linear-gradient(135deg, #dcfce7, #bbf7d0); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3>Memory Usage</h3>
-                        <ul style="margin: 0;">
+                <div class="performance-grid">
+                    <div class="performance-card" style="background: var(--success-bg); border-color: var(--success-text);">
+                        <h3 style="color: var(--success-text);">💾 Memory Usage</h3>
+                        <ul style="color: var(--success-text);">
                             <li><strong>Core:</strong> ~15MB base</li>
                             <li><strong>Per Provider:</strong> ~2-5MB</li>
                             <li><strong>Scaling:</strong> Linear with requests</li>
                         </ul>
                     </div>
                     
-                    <div style="background: linear-gradient(135deg, #dbeafe, #bfdbfe); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3>Latency Overhead</h3>
-                        <ul style="margin: 0;">
+                    <div class="performance-card" style="background: var(--info-bg); border-color: var(--info-text);">
+                        <h3 style="color: var(--info-text);">⚡ Latency Overhead</h3>
+                        <ul style="color: var(--info-text);">
                             <li><strong>Provider abstraction:</strong> ~1-2ms</li>
                             <li><strong>Event system:</strong> ~0.5ms per event</li>
                             <li><strong>Tool parsing:</strong> ~1-5ms</li>
                         </ul>
                     </div>
                     
-                    <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3>Throughput</h3>
-                        <ul style="margin: 0;">
+                    <div class="performance-card" style="background: var(--warning-bg); border-color: var(--warning-text);">
+                        <h3 style="color: var(--warning-text);">🚀 Throughput</h3>
+                        <ul style="color: var(--warning-text);">
                             <li><strong>Single instance:</strong> 100+ req/sec</li>
                             <li><strong>Bottleneck:</strong> Usually the LLM provider</li>
                             <li><strong>Scaling:</strong> Horizontal scaling</li>
