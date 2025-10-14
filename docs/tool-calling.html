@@ -151,8 +151,8 @@ def create_user(name: str, age: int, is_admin: bool = False) -> str:
     return f"Created user: {user_data}"</code></pre>
                     </div>
 
-                    <h3>Enhanced Metadata (The Real Power!)</h3>
-                    <p>AbstractCore's `@tool` decorator supports rich metadata that gets <strong>automatically injected into system prompts</strong> for prompted models and passed to native APIs. This is what makes AbstractCore's tool system so powerful:</p>
+                    <h3>Enhanced Metadata</h3>
+                    <p>The <code>@tool</code> decorator supports rich metadata that gets automatically injected into system prompts for prompted models and passed to native APIs:</p>
                     
                     <div class="code-block">
                         <pre><code class="language-python">@tool(
