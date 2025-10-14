@@ -6,6 +6,75 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.3.2] - 2025-10-14
+
+### Fixed
+
+#### Critical Ollama Endpoint Selection Bug
+- **Problem**: Ollama provider was generating excessively verbose responses (1000+ characters for simple questions like "What is 2+2?")
+- **Root Cause**: Provider incorrectly used `/api/generate` endpoint for all requests, including tool-enabled conversations
+- **Solution**: Updated endpoint selection logic to use `/api/chat` by default, following Ollama's API design recommendations
+- **Impact**: Reduced response length from 977+ characters to 15 characters for simple queries, eliminated "infinite text" generation issue
+- **Technical**: Modified `_generate_internal()` method to use `use_chat_format = tools is not None or messages is not None or True` for proper endpoint routing
+
+#### Session Serialization Parameter Consistency
+- **Problem**: Inconsistent parameter naming between `session.add_message()` using `name` and `session.generate()` using `username`
+- **Root Cause**: Parameter standardization was incomplete during metadata redesign
+- **Solution**: Standardized both methods to use `name` parameter, aligning with `session_schema.json` specification
+- **Impact**: Consistent API across session methods, improved developer experience
+
+#### Tool Execution Results in Live Sessions
+- **Problem**: Tool execution results were missing from chat history during live CLI sessions but appeared after session reload
+- **Root Cause**: Tool results were not being added to session message history during execution
+- **Solution**: Modified `_execute_tool_calls()` in CLI to explicitly add `role="tool"` messages with execution metadata
+- **Impact**: Tool results now immediately available to assistant during conversation, consistent behavior between live and serialized sessions
+
+#### Common Tools Defensive Programming
+- **Problem**: `list_files` and `search_files` tools failed with type errors when `head_limit` parameter was passed as string
+- **Root Cause**: LLM-generated tool calls sometimes provided numeric parameters as strings
+- **Solution**: Added defensive type conversion with fallback to default values on `ValueError`
+- **Impact**: Improved tool reliability and error handling
+
+### Enhanced
+
+#### Comprehensive Session Management System
+- **Session Serialization**: Complete session state preservation including provider, model, parameters, system prompt, tool registry, and conversation history
+- **Optional Analytics**: Added `generate_summary()`, `generate_assessment()`, and `extract_facts()` methods for session-level insights
+- **Versioned Schema**: Implemented `session-archive/v1` format with JSON schema validation in `abstractllm/assets/session_schema.json`
+- **CLI Integration**: Added `/save <file> [--summary] [--assessment] [--facts]` and `/load <file>` commands with optional analytics generation
+- **Backward Compatibility**: Graceful handling of legacy session formats during load operations
+
+#### Enhanced CLI User Experience
+- **Improved Help System**: Comprehensive, aesthetically pleasing help text with detailed command documentation and usage examples
+- **Tool Integration**: Added `search_files` tool to CLI with full documentation and status reporting
+- **Better Banner**: Informative startup banner with quick commands and available tools overview
+- **Parameter Documentation**: Clear documentation of `/save` command options and usage patterns
+
+#### Metadata System Redesign
+- **Extensible Metadata**: Moved `name` field into `metadata` dictionary for better extensibility
+- **Location Support**: Added `location` property backed by `metadata['location']` for geographical context
+- **Property-Based Access**: Clean API with `message.name` and `message.location` properties while maintaining metadata flexibility
+- **Backward Compatibility**: Automatic migration of legacy `name` field to `metadata['name']` during deserialization
+
+### Technical
+
+#### Files Modified
+- `abstractllm/providers/ollama_provider.py`: Fixed endpoint selection logic to use `/api/chat` by default
+- `abstractllm/core/session.py`: Enhanced serialization, standardized parameter naming, added analytics methods
+- `abstractllm/core/types.py`: Redesigned metadata system with property-based access
+- `abstractllm/utils/cli.py`: Improved help system, added tool integration, enhanced save/load commands
+- `abstractllm/tools/common_tools.py`: Added defensive programming for parameter type handling
+- `abstractllm/assets/session_schema.json`: Created comprehensive JSON schema for session validation
+- `docs/session.md`: New documentation explaining session management and serialization benefits
+
+#### Test Results
+✅ Ollama responses now concise (15 chars vs 977+ chars previously)  
+✅ Session serialization preserves complete state including analytics  
+✅ Tool execution results properly integrated into live chat history  
+✅ Parameter consistency across all session methods  
+✅ Defensive tool parameter handling prevents type errors  
+✅ Backward compatibility maintained for existing session files
+
 ## [2.3.1] - 2025-10-13
 
 ### Fixed
