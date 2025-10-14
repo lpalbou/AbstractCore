@@ -952,7 +952,7 @@ a:hover {
 .code-content pre {
     margin: 0;
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: 0.75rem;
     line-height: 1.5;
 }
 
@@ -1141,7 +1141,7 @@ section {
     margin: 0;
     overflow-x: auto;
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: 0.75rem;
     line-height: 1.5;
 }
 
@@ -1423,7 +1423,7 @@ section {
     margin: 0;
     overflow-x: auto;
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: 0.75rem;
     line-height: 1.5;
 }
 
