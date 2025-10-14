@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "abstractcore"
-version = "2.3.3"
+version = "2.3.5"
 description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
 readme = "README.md"
 license = {text = "MIT"}
@@ -52,7 +52,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/lpalbou/AbstractCore"
+Homepage = "https://lpalbou.github.io/AbstractCore"
 Documentation = "https://github.com/lpalbou/AbstractCore#readme"
 Repository = "https://github.com/lpalbou/AbstractCore"
 "Bug Tracker" = "https://github.com/lpalbou/AbstractCore/issues"
