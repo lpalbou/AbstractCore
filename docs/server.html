@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTTP Server Guide - AbstractCore</title>
+    <meta name="description" content="Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <a href="../index.html" class="brand-link">
+                    <div class="brand-logo">
+                        <div class="logo-abstract">
+                            <div class="logo-circle"></div>
+                            <div class="logo-lines">
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                                <div class="logo-line"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="brand-text">AbstractCore</span>
+                </a>
+            </div>
+            
+            <div class="nav-menu" id="nav-menu">
+                <a href="../index.html#features" class="nav-link">Features</a>
+                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
+                <a href="../index.html#docs" class="nav-link">Documentation</a>
+                <a href="../index.html#examples" class="nav-link">Examples</a>
+                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
+                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+            
+            <div class="nav-toggle" id="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1000px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">HTTP Server Guide</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.
+                </p>
+            </div>
+
+            <!-- Quick Start -->
+            <section style="margin-bottom: 3rem;">
+                <h2>🚀 Quick Start (2 minutes)</h2>
+                
+                <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Install and Run</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Install
+pip install abstractcore[server]
+
+# Start server
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Test
+curl http://localhost:8000/health
+# Response: {"status":"healthy"}</code></pre>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0;">First Request (cURL)</h3>
+                        <div class="code-block">
+                            <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0;">First Request (Python)</h3>
+                        <div class="code-block">
+                            <pre><code class="language-python">from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8000/v1", 
+    api_key="unused"
+)
+
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration -->
+            <section style="margin-bottom: 3rem;">
+                <h2>⚙️ Configuration</h2>
+                
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Environment Variables</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Provider API keys
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Local providers
+export OLLAMA_HOST="http://localhost:11434"
+export LMSTUDIO_HOST="http://localhost:1234"
+
+# Default settings
+export ABSTRACTCORE_DEFAULT_PROVIDER=openai
+export ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
+
+# Debug mode
+export ABSTRACTCORE_DEBUG=true</code></pre>
+                    </div>
+                </div>
+                
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Startup Options</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Development with auto-reload
+uvicorn abstractllm.server.app:app --reload
+
+# Production with multiple workers
+uvicorn abstractllm.server.app:app --workers 4
+
+# Custom port
+uvicorn abstractllm.server.app:app --port 3000</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- API Endpoints -->
+            <section style="margin-bottom: 3rem;">
+                <h2>🌐 API Endpoints</h2>
+                
+                <!-- Chat Completions -->
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">POST /v1/chat/completions</h3>
+                    <p>Standard OpenAI-compatible endpoint. Works with all providers.</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-json">{
+  "model": "provider/model-name",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant"},
+    {"role": "user", "content": "Hello!"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 1000,
+  "stream": false
+}</code></pre>
+                    </div>
+                    
+                    <p><strong>Key Parameters:</strong></p>
+                    <ul>
+                        <li><code>model</code> (required): Format <code>"provider/model-name"</code> (e.g., <code>"openai/gpt-4o-mini"</code>)</li>
+                        <li><code>messages</code> (required): Array of message objects</li>
+                        <li><code>stream</code> (optional): Enable streaming responses</li>
+                        <li><code>tools</code> (optional): Tools for function calling</li>
+                        <li><code>temperature</code>, <code>max_tokens</code>, <code>top_p</code>: Standard LLM parameters</li>
+                    </ul>
+                    
+                    <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                        <h4 style="margin: 0 0 0.5rem 0;">Streaming Example</h4>
+                        <div class="code-block">
+                            <pre><code class="language-python">from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+
+stream = client.chat.completions.create(
+    model="ollama/qwen3-coder:30b",
+    messages=[{"role": "user", "content": "Write a story"}],
+    stream=True
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)</code></pre>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Embeddings -->
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">POST /v1/embeddings</h3>
+                    <p>Generate embedding vectors for semantic search, RAG, and similarity analysis.</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-json">{
+  "input": "Text to embed",
+  "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+}</code></pre>
+                    </div>
+                    
+                    <p><strong>Supported Providers:</strong></p>
+                    <ul>
+                        <li><strong>HuggingFace:</strong> Local models with ONNX acceleration</li>
+                        <li><strong>Ollama:</strong> <code>ollama/granite-embedding:278m</code>, etc.</li>
+                        <li><strong>LMStudio:</strong> Any loaded embedding model</li>
+                    </ul>
+                    
+                    <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                        <h4 style="margin: 0 0 0.5rem 0;">Batch Embedding</h4>
+                        <div class="code-block">
+                            <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": ["text 1", "text 2", "text 3"],
+    "model": "ollama/granite-embedding:278m"
+  }'</code></pre>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Other Endpoints -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">GET /v1/models</h3>
+                        <p style="margin: 0 0 1rem 0;">List all available models from configured providers.</p>
+                        <div class="code-block">
+                            <pre><code class="language-bash"># All models
+curl http://localhost:8000/v1/models
+
+# Ollama models only
+curl http://localhost:8000/v1/models?provider=ollama</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">GET /providers</h3>
+                        <p style="margin: 0 0 1rem 0;">List all available providers and their status.</p>
+                        <div class="code-block">
+                            <pre><code class="language-bash">curl http://localhost:8000/providers</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">GET /health</h3>
+                        <p style="margin: 0 0 1rem 0;">Server health check for monitoring.</p>
+                        <div class="code-block">
+                            <pre><code class="language-bash">curl http://localhost:8000/health
+# Response: {"status":"healthy"}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Agentic CLI Integration -->
+            <section style="margin-bottom: 3rem;">
+                <h2>🤖 Agentic CLI Integration</h2>
+                <p>Use AbstractCore server with agentic CLI tools like Codex, Crush, and Gemini CLI.</p>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">Codex CLI</h3>
+                        <div class="code-block">
+                            <pre><code class="language-bash"># Setup
+export OPENAI_BASE_URL="http://localhost:8000/v1"
+export OPENAI_API_KEY="unused"
+export ABSTRACTCORE_API_KEY="unused"
+
+# Use with any model
+codex --model "ollama/qwen3-coder:30b" "Write a factorial function"</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">Crush CLI (LLaMA3 format)</h3>
+                        <div class="code-block">
+                            <pre><code class="language-bash"># Configure server
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Configure CLI
+export OPENAI_BASE_URL="http://localhost:8000/v1"
+export OPENAI_API_KEY="unused"
+
+# Use
+crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
+                        <h3 style="margin: 0 0 1rem 0;">Gemini CLI (XML format)</h3>
+                        <div class="code-block">
+                            <pre><code class="language-bash"># Configure server
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+
+# Configure CLI
+export OPENAI_BASE_URL="http://localhost:8000/v1"
+export OPENAI_API_KEY="unused"
+
+# Use
+gemini-cli --model "ollama/qwen3-coder:30b" "Review this project"</code></pre>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">🔧 Tool Call Format Configuration</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Set format for your CLI
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=qwen3    # Codex CLI
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3   # Crush CLI
+export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml      # Gemini CLI
+
+# Control tool execution
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=true   # Server executes
+export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Deployment -->
+            <section style="margin-bottom: 3rem;">
+                <h2>🚀 Deployment</h2>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0;">Docker</h3>
+                        <div class="code-block">
+                            <pre><code class="language-dockerfile">FROM python:3.9-slim
+
+RUN pip install abstractcore[server]
+
+ENV ABSTRACTCORE_DEFAULT_PROVIDER=openai
+ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
+
+EXPOSE 8000
+
+CMD ["uvicorn", "abstractllm.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]</code></pre>
+                        </div>
+                        
+                        <div class="code-block">
+                            <pre><code class="language-bash">docker build -t abstractcore-server .
+docker run -p 8000:8000 -e OPENAI_API_KEY=$OPENAI_API_KEY abstractcore-server</code></pre>
+                        </div>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0;">Production with Gunicorn</h3>
+                        <div class="code-block">
+                            <pre><code class="language-bash">pip install gunicorn
+
+gunicorn abstractllm.server.app:app \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --workers 4 \
+  --bind 0.0.0.0:8000</code></pre>
+                        </div>
+                        
+                        <h4 style="margin: 1rem 0 0.5rem 0;">Docker Compose</h4>
+                        <div class="code-block">
+                            <pre><code class="language-yaml">version: '3.8'
+
+services:
+  abstractcore:
+    image: abstractcore-server:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    restart: unless-stopped</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Debug and Monitoring -->
+            <section style="margin-bottom: 3rem;">
+                <h2>🔍 Debug and Monitoring</h2>
+                
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Enable Debug Logging</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash">export ABSTRACTCORE_DEBUG=true
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000</code></pre>
+                    </div>
+                    
+                    <p><strong>Log Files:</strong></p>
+                    <ul>
+                        <li><code>logs/abstractllm_TIMESTAMP.log</code> - Structured events</li>
+                        <li><code>logs/YYYYMMDD-payloads.jsonl</code> - Full request bodies</li>
+                        <li><code>logs/verbatim_TIMESTAMP.jsonl</code> - Complete I/O</li>
+                    </ul>
+                    
+                    <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0;">
+                        <h4 style="margin: 0 0 0.5rem 0;">Useful Commands</h4>
+                        <div class="code-block">
+                            <pre><code class="language-bash"># Find errors
+grep '"level": "error"' logs/abstractllm_*.log
+
+# Track token usage
+cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
+  awk '{sum+=$1} END {print "Total:", sum}'
+
+# Monitor specific model
+grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl</code></pre>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #e0f2fe, #b3e5fc); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">📊 Interactive Documentation</h3>
+                    <p style="margin: 0;">Visit while server is running:</p>
+                    <ul style="margin: 1rem 0 0 0;">
+                        <li><strong>Swagger UI:</strong> <code>http://localhost:8000/docs</code></li>
+                        <li><strong>ReDoc:</strong> <code>http://localhost:8000/redoc</code></li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Common Patterns -->
+            <section style="margin-bottom: 3rem;">
+                <h2>💡 Common Patterns</h2>
+                
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Multi-Provider Fallback</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">import requests
+
+providers = [
+    "ollama/qwen3-coder:30b",
+    "openai/gpt-4o-mini",
+    "anthropic/claude-3-5-haiku-latest"
+]
+
+def generate_with_fallback(prompt):
+    for model in providers:
+        try:
+            response = requests.post(
+                "http://localhost:8000/v1/chat/completions",
+                json={"model": model, "messages": [{"role": "user", "content": prompt}]},
+                timeout=30
+            )
+            if response.status_code == 200:
+                return response.json()
+        except Exception:
+            continue
+    raise Exception("All providers failed")</code></pre>
+                    </div>
+                </div>
+                
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Local Model Gateway</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3-coder:30b
+
+# Use via AbstractCore server
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Write a Python function"}]
+  }'</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Why AbstractCore Server -->
+            <section style="margin-bottom: 3rem;">
+                <h2>🌟 Why AbstractCore Server?</h2>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">✅ Universal</h3>
+                        <p style="margin: 0;">One API for all providers</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">✅ OpenAI Compatible</h3>
+                        <p style="margin: 0;">Drop-in replacement</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">✅ Simple</h3>
+                        <p style="margin: 0;">Clean, focused endpoints</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">✅ Fast</h3>
+                        <p style="margin: 0;">Lightweight, high-performance</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">✅ Debuggable</h3>
+                        <p style="margin: 0;">Comprehensive logging</p>
+                    </div>
+                    
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">✅ CLI Ready</h3>
+                        <p style="margin: 0;">Codex, Gemini CLI, Crush support</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Related Documentation -->
+            <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                    <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Core library quick start</p>
+                    </a>
+                    
+                    <a href="architecture.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Architecture</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">System architecture including server</p>
+                    </a>
+                    
+                    <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Core library API</p>
+                    </a>
+                    
+                    <a href="troubleshooting.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Troubleshooting</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Common issues and solutions</p>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
