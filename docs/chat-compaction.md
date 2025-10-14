@@ -259,7 +259,7 @@ else:
 ### Token Estimation
 
 The built-in token estimation uses a simple heuristic:
-- **1 token ≈ 4 characters** for English text
+- **Smart token estimation** using centralized TokenUtils with model-aware counting
 - Useful for quick estimates
 - For precise counts, use provider-specific tokenizers
 

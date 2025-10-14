@@ -591,11 +591,24 @@ class BasicSession:
 
     def get_token_estimate(self) -> int:
         """
-        Estimate token count for current conversation.
-        Rough estimate: 1 token ≈ 4 characters for English text.
+        Estimate token count for current conversation using centralized utilities.
+        
+        Returns:
+            Estimated total token count for all messages in the session
         """
-        total_chars = sum(len(msg.content) for msg in self.messages)
-        return total_chars // 4
+        from ..utils.token_utils import TokenUtils
+        
+        # Get model name from provider if available
+        model_name = None
+        if self.provider and hasattr(self.provider, 'model'):
+            model_name = self.provider.model
+            
+        # Calculate tokens for all messages
+        total_tokens = 0
+        for msg in self.messages:
+            total_tokens += TokenUtils.estimate_tokens(msg.content, model_name)
+            
+        return total_tokens
 
     def should_compact(self, token_limit: int = 8000) -> bool:
         """
@@ -716,13 +729,31 @@ class BasicSession:
             "text": summary_result.summary,
             "metrics": {
                 "tokens_before": original_tokens,
-                "tokens_after": len(summary_result.summary) // 4,  # Rough estimate
-                "compression_ratio": original_tokens / (len(summary_result.summary) // 4) if summary_result.summary else 1.0,
+                "tokens_after": self._estimate_tokens_for_summary(summary_result.summary),
+                "compression_ratio": self._calculate_compression_ratio(original_tokens, summary_result.summary),
                 "generation_time_ms": duration_ms
             }
         }
         
         return self.summary
+
+    def _estimate_tokens_for_summary(self, summary_text: Optional[str]) -> int:
+        """Helper method to estimate tokens for summary text."""
+        if not summary_text:
+            return 0
+        from ..utils.token_utils import TokenUtils
+        # Get model name from provider if available, otherwise use default
+        model_name = None
+        if self.provider and hasattr(self.provider, 'model'):
+            model_name = self.provider.model
+        return TokenUtils.estimate_tokens(summary_text, model_name)
+    
+    def _calculate_compression_ratio(self, original_tokens: int, summary_text: Optional[str]) -> float:
+        """Helper method to calculate compression ratio."""
+        if not summary_text:
+            return 1.0
+        summary_tokens = self._estimate_tokens_for_summary(summary_text)
+        return original_tokens / summary_tokens if summary_tokens > 0 else 1.0
 
     def generate_assessment(self, criteria: Optional[Dict[str, bool]] = None) -> Dict[str, Any]:
         """

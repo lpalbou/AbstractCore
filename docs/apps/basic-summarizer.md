@@ -41,6 +41,97 @@ print(result.summary)
 print(f"Confidence: {result.confidence:.2f}")
 ```
 
+## Command Line Interface
+
+The `summarizer` CLI provides direct terminal access for document summarization without any Python programming.
+
+### Quick CLI Usage
+
+```bash
+# Simple usage (after pip install abstractcore[all])
+summarizer document.pdf
+
+# With specific style and length
+summarizer report.txt --style=executive --length=brief
+
+# Focus on specific aspects
+summarizer data.md --focus="technical details" --output=summary.txt
+
+# Use different provider
+summarizer large.txt --provider=openai --model=gpt-4o-mini --verbose
+```
+
+### CLI Parameters
+
+| Parameter | Options | Default | Description |
+|-----------|---------|---------|-------------|
+| `file_path` | Any text file | Required | Path to the file to summarize |
+| `--style` | `structured`, `narrative`, `objective`, `analytical`, `executive`, `conversational` | `structured` | Summary presentation style |
+| `--length` | `brief`, `standard`, `detailed`, `comprehensive` | `standard` | Summary length and depth |
+| `--focus` | Any text | None | Specific focus area for summarization |
+| `--output` | File path | Console | Output file path (prints to console if not provided) |
+| `--chunk-size` | 1000-32000 | 8000 | Chunk size in characters for large documents |
+| `--provider` | `openai`, `anthropic`, `ollama`, etc. | `ollama` | LLM provider (requires --model) |
+| `--model` | Provider-specific | `gemma3:1b-it-qat` | LLM model (requires --provider) |
+| `--verbose` | Flag | False | Show detailed progress information |
+
+### CLI Examples
+
+```bash
+# Basic document summarization
+summarizer document.pdf
+summarizer report.txt --verbose
+
+# Executive summary for business documents
+summarizer quarterly_report.pdf --style=executive --length=brief --output=exec_summary.txt
+
+# Technical focus with detailed analysis
+summarizer technical_spec.md --focus="implementation details" --style=analytical --length=detailed
+
+# Large document processing with custom chunking
+summarizer large_manual.txt --chunk-size=15000 --verbose
+
+# Using cloud providers for highest quality
+summarizer important_doc.pdf --provider=openai --model=gpt-4o-mini --style=executive
+
+# Batch processing with shell scripting
+for file in *.pdf; do
+    summarizer "$file" --style=structured --output="${file%.pdf}_summary.txt"
+done
+```
+
+### Alternative Usage Methods
+
+```bash
+# Method 1: Direct command (recommended after installation)
+summarizer document.txt --style=executive
+
+# Method 2: Via Python module (always works)
+python -m abstractllm.apps.summarizer document.txt --style=executive
+
+# Method 3: Prefixed command (alternative direct command)
+abstractllm-summarizer document.txt --style=executive
+```
+
+### Supported File Types
+
+The CLI supports most text-based file formats:
+- `.txt`, `.md`, `.py`, `.js`, `.html`, `.json`, `.csv`
+- Most other text-based files
+
+### Default Model Setup
+
+The CLI uses `gemma3:1b-it-qat` by default for fast, cost-effective processing:
+
+```bash
+# Install Ollama: https://ollama.com/
+# Download the default model
+ollama pull gemma3:1b-it-qat
+
+# Then use directly
+summarizer document.txt
+```
+
 ## Configuration Options
 
 ### Summary Styles

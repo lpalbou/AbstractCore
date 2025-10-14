@@ -453,8 +453,9 @@ class OllamaProvider(BaseProvider):
                 result = response.json()
                 embedding = result.get("embedding", [])
                 
-                # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
-                estimated_tokens = max(1, len(text) // 4)
+                # Use centralized token estimation for accuracy
+                from ..utils.token_utils import TokenUtils
+                estimated_tokens = TokenUtils.estimate_tokens(text, self.model)
                 total_tokens += estimated_tokens
                 
                 embeddings_data.append({
