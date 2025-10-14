@@ -62,6 +62,8 @@ session.save('analyzed.json', summary=True, assessment=True, facts=True)  # With
 loaded_session = BasicSession.load('conversation.json', provider=llm)
 ```
 
+[Learn more about Session](docs/session.md)
+
 ## Key Features
 
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
@@ -226,6 +228,8 @@ docs_embeddings = embedder.embed_batch([
 query_embedding = embedder.embed("Tell me about web development")
 similarity = embedder.compute_similarity(query, docs[0])
 ```
+
+[Learn more about Embeddings](docs/embeddings.md)
 
 ### 4. Structured Output
 
