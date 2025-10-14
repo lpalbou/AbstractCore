@@ -12,7 +12,7 @@
 
 - [Python API Reference](https://github.com/lpalbou/AbstractCore/blob/main/docs/api-reference.md): Complete API documentation with examples for all methods
 - [Provider Support](https://github.com/lpalbou/AbstractCore#supported-providers): OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with unified interface
-- [Tool Calling System](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/tools/__init__.py): Universal @tool decorator and tool system across all providers
+- [Tool Calling System](https://lpalbou.github.io/AbstractCore/docs/tool-calling.html): Universal @tool decorator and tool system across all providers
 - [Session Management](https://github.com/lpalbou/AbstractCore/blob/main/docs/session.md): Persistent conversations with metadata, analytics, and serialization
 - [Streaming Support](https://github.com/lpalbou/AbstractCore/blob/main/docs/api-reference.md): Real-time token generation with unified strategy
 - [Structured Output](https://github.com/lpalbou/AbstractCore/blob/main/docs/getting-started.md): Pydantic model validation with automatic retries

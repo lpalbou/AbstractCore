@@ -1,184 +1,159 @@
 # AbstractCore - Complete Documentation
 
-Source: https://github.com/lpalbou/AbstractCore
+This file contains the complete documentation for AbstractCore, a unified Python library providing a consistent interface to all major LLM providers.
 
-AbstractCore is a unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.
+## Table of Contents
 
-## Library Overview
+1. [Project Overview](#project-overview)
+2. [Installation](#installation)
+3. [Getting Started](#getting-started)
+4. [Tool Calling System](#tool-calling-system)
+5. [Core Features](#core-features)
+6. [Documentation Index](#documentation-index)
 
-AbstractCore provides production-ready LLM infrastructure with a unified interface across all major providers. The library is built around several core principles:
+---
 
-- **Provider Agnostic**: Same code works with OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
-- **Production Ready**: Built-in retry logic, circuit breakers, comprehensive error handling
-- **Universal Tool Support**: Tools work everywhere, even with providers that don't support them natively
-- **Type Safe**: Full Pydantic integration for structured outputs with automatic validation
-- **Event-Driven**: Comprehensive observability and control through events
+## Project Overview
 
-## Installation Options
+AbstractCore is a Python library providing a unified interface to all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with production-grade features including tool calling, streaming, session management, and embeddings.
+
+### Key Features
+
+- **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
+- **Tool Calling**: Universal @tool decorator works across ALL providers
+- **Streaming**: Real-time responses for interactive applications
+- **Session Management**: Persistent conversations with metadata
+- **Structured Output**: Pydantic model validation with automatic retries
+- **Embeddings**: SOTA embedding models for semantic search and RAG
+- **Event System**: Monitor costs, performance, and tool executions
+- **Built-in Apps**: Summarizer, extractor, and judge applications
+- **HTTP Server**: OpenAI-compatible REST API
+- **Production Ready**: Robust error handling, retries, circuit breakers
+
+### Supported Providers
+
+| Provider | Status | Features |
+|----------|--------|----------|
+| OpenAI | Native tool calls, streaming, structured output |
+| Anthropic | Native tool calls, streaming, structured output |
+| Ollama | Prompted tool calls, streaming, local models |
+| LMStudio | Prompted tool calls, streaming, local models |
+| MLX | Prompted tool calls, streaming, Apple Silicon |
+| HuggingFace | Prompted tool calls, streaming, open models |
+
+---
+
+## Installation
+
+### Basic Installation
 
 ```bash
-# Minimal core
 pip install abstractcore
+```
 
-# With specific providers
+### Provider-Specific Installation
+
+```bash
+# OpenAI
 pip install abstractcore[openai]
+
+# Anthropic
 pip install abstractcore[anthropic]
+
+# Ollama (local models)
 pip install abstractcore[ollama]
 
-# With server support
+# LMStudio (local models)
+pip install abstractcore[lmstudio]
+
+# MLX (Apple Silicon)
+pip install abstractcore[mlx]
+
+# HuggingFace
+pip install abstractcore[huggingface]
+
+# Server support
 pip install abstractcore[server]
 
-# With embeddings
+# Embeddings
 pip install abstractcore[embeddings]
 
 # Everything
 pip install abstractcore[all]
 ```
 
-## Quick Start Guide
+---
 
-### Prerequisites
+## Getting Started
 
-- Python 3.9 or higher
-- pip package manager
-- (Optional) API keys for cloud providers
-
-### Your First Program
+### Quick Start
 
 ```python
 from abstractllm import create_llm
 
-# Choose your provider (works identically across all):
-llm = create_llm("openai", model="gpt-4o-mini")        # Cloud
-# llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Cloud
-# llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")   # Local
-
-# Generate your first response
-response = llm.generate("What is the capital of France?")
-print(response.content)
-# Output: The capital of France is Paris.
-```
-
-## Core API Reference
-
-### Factory Pattern - create_llm()
-
-The main entry point uses the factory pattern for clean provider instantiation:
-
-```python
-def create_llm(
-    provider: str,
-    model: Optional[str] = None,
-    retry_config: Optional[RetryConfig] = None,
-    **kwargs
-) -> AbstractLLMInterface
-```
-
-**Parameters:**
-- `provider` (str): Provider name ("openai", "anthropic", "ollama", "mlx", "lmstudio", "huggingface")
-- `model` (str, optional): Model name. If not provided, uses provider default
-- `retry_config` (RetryConfig, optional): Custom retry configuration
-- `**kwargs`: Provider-specific parameters
-
-**Provider-specific parameters:**
-- `api_key` (str): API key for cloud providers
-- `base_url` (str): Custom endpoint URL
-- `temperature` (float): Sampling temperature (0-2)
-- `max_tokens` (int): Maximum output tokens (unified across providers)
-- `max_output_tokens` (int): Reserve tokens for output (unified parameter)
-- `timeout` (int): Request timeout in seconds
-- `top_p` (float): Nucleus sampling parameter
-
-**Example:**
-```python
-from abstractllm import create_llm
-
-# Basic usage
+# Create any provider using the factory pattern
 llm = create_llm("openai", model="gpt-4o-mini")
 
-# With unified token management
-llm = create_llm(
-    "anthropic",
-    model="claude-3-5-haiku-latest",
-    temperature=0.7,
-    max_tokens=8000,        # Total budget
-    max_output_tokens=2000, # Reserve for output
-    timeout=30
+# Generate a response
+response = llm.generate("What is the capital of France?")
+print(response.content)
+```
+
+### Provider Examples
+
+```python
+# OpenAI
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Anthropic
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+
+# Ollama (local)
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+
+# LMStudio (local)
+llm = create_llm("lmstudio", model="qwen3-coder:30b")
+
+# MLX (Apple Silicon)
+llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
+```
+
+### Streaming
+
+```python
+# Stream responses in real-time
+for chunk in llm.generate("Tell me a story", stream=True):
+    print(chunk.content, end="", flush=True)
+```
+
+### Structured Output
+
+```python
+from pydantic import BaseModel
+
+class Person(BaseModel):
+    name: str
+    age: int
+    occupation: str
+
+# Automatic validation and retry on failures
+person = llm.generate(
+    "Extract: John Doe is a 30-year-old software engineer",
+    response_model=Person
 )
 
-# Local provider
-llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:11434")
+print(f"{person.name}, {person.age}, {person.occupation}")
 ```
 
-### AbstractLLMInterface
+---
 
-All providers implement this unified interface:
+## Tool Calling System
 
-```python
-class AbstractLLMInterface(ABC):
-    @abstractmethod
-    def generate(self, prompt: str, **kwargs) -> GenerateResponse:
-        """Generate response from LLM"""
+AbstractCore provides a universal tool calling system that works across all LLM providers, even those without native tool support.
 
-    @abstractmethod
-    def get_capabilities(self) -> List[str]:
-        """Get provider capabilities"""
+### The @tool Decorator
 
-    def unload(self) -> None:
-        """Unload model from memory (local providers)"""
-```
-
-#### generate() Method
-
-The core method for LLM interaction:
-
-```python
-def generate(
-    self,
-    prompt: str,
-    messages: Optional[List[Dict]] = None,
-    system_prompt: Optional[str] = None,
-    tools: Optional[List[Callable]] = None,
-    response_model: Optional[BaseModel] = None,
-    retry_strategy: Optional[Retry] = None,
-    stream: bool = False,
-    **kwargs
-) -> Union[GenerateResponse, Iterator[GenerateResponse]]
-```
-
-**Parameters:**
-- `prompt` (str): Text prompt to generate from
-- `messages` (List[Dict], optional): Conversation messages in OpenAI format
-- `system_prompt` (str, optional): System prompt to set context
-- `tools` (List[Callable], optional): Functions the LLM can call (using @tool decorator)
-- `response_model` (BaseModel, optional): Pydantic model for structured output
-- `retry_strategy` (Retry, optional): Custom retry strategy for structured output
-- `stream` (bool): Enable streaming response
-- `**kwargs`: Additional generation parameters
-
-### GenerateResponse
-
-Response object from LLM generation:
-
-```python
-@dataclass
-class GenerateResponse:
-    content: Optional[str]          # Generated text content
-    raw_response: Any              # Raw provider response
-    model: Optional[str]           # Model used for generation
-    finish_reason: Optional[str]   # Why generation stopped
-    usage: Optional[Dict[str, int]] # Token usage information
-    tool_calls: Optional[List[Dict]] # Tools called by the LLM
-    metadata: Optional[Dict]       # Additional metadata
-```
-
-## Universal Tool System
-
-AbstractCore's tool system works across ALL providers, even those without native tool support.
-
-### @tool Decorator
-
-The primary way to create tools:
+The `@tool` decorator is the primary way to create tools in AbstractCore:
 
 ```python
 from abstractllm import create_llm, tool
@@ -186,7 +161,6 @@ from abstractllm import create_llm, tool
 @tool
 def get_weather(city: str) -> str:
     """Get current weather for a specified city."""
-    # In a real scenario, you'd call an actual weather API
     return f"The weather in {city} is sunny, 72°F"
 
 @tool
@@ -202,573 +176,325 @@ def calculate(expression: str) -> float:
 llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate(
     "What's the weather in Tokyo and what's 15 * 23?",
-    tools=[get_weather, calculate]  # Pass functions directly
+    tools=[get_weather, calculate]
 )
-print(response.content)
-# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
 ```
 
-### Tool Execution Flow
+### Enhanced Metadata
 
-1. **Tool Detection**: Parse tool calls from LLM response
-2. **Event Emission**: Emit `TOOL_STARTED` (preventable)
-3. **Local Execution**: Execute tools in AbstractCore (not by provider)
-4. **Result Collection**: Gather results and error information
-5. **Event Emission**: Emit `TOOL_COMPLETED` with results
-6. **Response Integration**: Append tool results to original response
-
-### Tool Call Format Rewriting
-
-AbstractCore automatically converts between different tool call formats:
-
-- **Qwen3**: `<|tool_call|>...JSON...</|tool_call|>`
-- **LLaMA3**: `<function_call>...JSON...</function_call>`
-- **XML**: `<tool_call>...JSON...</tool_call>`
-- **Gemma**: ````tool_code...JSON...````
-- **OpenAI**: Structured JSON in API response
-
-This enables seamless compatibility with agentic CLIs like Codex, Crush, and Gemini CLI.
-
-## Structured Output System
-
-Type-safe responses with automatic validation and retry:
+The `@tool` decorator supports rich metadata that gets automatically injected into system prompts:
 
 ```python
-from pydantic import BaseModel, Field
-from typing import List, Optional
-from abstractllm import create_llm
-
-class Address(BaseModel):
-    street: str
-    city: str
-    state: str
-    zip_code: str
-
-class Person(BaseModel):
-    name: str
-    age: int = Field(gt=0, le=150)
-    email: Optional[str] = None
-    address: Address
-    skills: List[str]
-
-llm = create_llm("openai", model="gpt-4o-mini")
-
-# Automatic validation and retry on failures
-person = llm.generate(
-    "Extract person info: John Doe, 30, john@example.com, lives at 123 Main St, Anytown, CA 12345. Skills: Python, JavaScript, React.",
-    response_model=Person
+@tool(
+    description="Search the database for records matching the query",
+    tags=["database", "search", "query"],
+    when_to_use="When the user asks for specific data from the database",
+    examples=[
+        {
+            "description": "Find all users named John",
+            "arguments": {
+                "query": "name=John",
+                "table": "users"
+            }
+        }
+    ]
 )
-
-print(f"Name: {person.name}")
-print(f"Age: {person.age}")
-print(f"Address: {person.address.street}, {person.address.city}")
-print(f"Skills: {', '.join(person.skills)}")
+def search_database(query: str, table: str = "users") -> str:
+    """Search the database for records matching the query."""
+    return f"Searching {table} for: {query}"
 ```
 
-### Automatic Error Feedback
+### Universal Tool Support
 
-When validation fails, AbstractCore provides detailed feedback to the LLM:
+AbstractCore's tool system works across all providers through two mechanisms:
 
-```
-IMPORTANT: Your previous response had validation errors:
-• Field 'age': Age must be positive (got -25)
-• Field 'email': Invalid email format
+1. **Native Tool Support**: For providers with native tool APIs (OpenAI, Anthropic)
+2. **Intelligent Prompting**: For providers without native tool support (Ollama, MLX, LMStudio)
 
-Please correct these errors and provide valid JSON.
-```
+AbstractCore automatically:
+- Detects the model architecture (Qwen3, LLaMA3, etc.)
+- Formats tools with examples into system prompt
+- Parses tool calls from response using appropriate format
+- Executes tools locally and returns results
 
-## Session Management
+### Architecture-Aware Tool Call Detection
 
-Persistent conversations with memory and analytics:
+| Architecture | Format | Example |
+|-------------|--------|---------|
+| **Qwen3** | `<|tool_call|>...JSON...</|tool_call|>` | `<|tool_call|>{"name": "get_weather", "arguments": {"city": "Paris"}}</|tool_call|>` |
+| **LLaMA3** | `<function_call>...JSON...</function_call>` | `<function_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</function_call>` |
+| **OpenAI/Anthropic** | Native API tool calls | Structured JSON in API response |
+| **XML-based** | `<tool_call>...JSON...</tool_call>` | `<tool_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</tool_call>` |
+
+### Tool Chaining
+
+Tools can call other tools or return data that triggers additional tool calls:
 
 ```python
-from abstractllm import create_llm, BasicSession
-
-llm = create_llm("openai", model="gpt-4o-mini")
-session = BasicSession(
-    provider=llm,
-    system_prompt="You are a helpful coding tutor."
-)
-
-# Multi-turn conversation with memory
-response1 = session.generate("My name is Alice and I'm learning Python.")
-print("AI:", response1.content)
-
-# Remembers context
-response2 = session.generate("What's my name and what am I learning?")
-print("AI:", response2.content)
-# Output: Your name is Alice and you're learning Python.
-
-# Add metadata to messages
-session.add_message(
-    'user', 
-    'Can you explain functions?', 
-    lesson_number=2,
-    topic_category="python_basics"
-)
-
-# Save with analytics
-session.save(
-    'tutoring_session.json',
-    summary=True,      # Generate conversation summary
-    assessment=True,   # Assess learning progress
-    facts=True        # Extract key facts learned
-)
-
-# Load and continue later
-loaded_session = BasicSession.load('tutoring_session.json', provider=llm)
-```
-
-## Streaming Support
-
-Real-time token generation with tool support:
-
-```python
-from abstractllm import create_llm, tool
+@tool
+def get_user_location(user_id: str) -> str:
+    """Get the location of a user."""
+    locations = {"user123": "Paris", "user456": "Tokyo"}
+    return locations.get(user_id, "Unknown")
 
 @tool
-def get_system_time() -> str:
-    """Get the current system time."""
-    import time
-    return time.strftime("%Y-%m-%d %H:%M:%S")
+def get_weather(city: str) -> str:
+    """Get weather for a city."""
+    return f"Weather in {city}: 72°F, sunny"
 
-llm = create_llm("openai", model="gpt-4o-mini")
-
-print("AI: ", end="", flush=True)
-for chunk in llm.generate(
-    "Write a haiku about programming and tell me the current time",
-    tools=[get_system_time],
-    stream=True
-):
-    print(chunk.content, end="", flush=True)
-    
-    # Handle tool calls during streaming
-    if chunk.tool_calls:
-        print("\n🛠️ [Tool executed]", flush=True)
-        print("AI: ", end="", flush=True)
-
-print()  # New line after response
+# LLM can chain these tools:
+response = llm.generate(
+    "What's the weather like for user123?",
+    tools=[get_user_location, get_weather]
+)
+# LLM will first call get_user_location, then get_weather with the result
 ```
 
-## Built-in Processing Apps
+### Tool Syntax Rewriting
 
-AbstractCore includes ready-to-use applications built on the core infrastructure:
+AbstractCore provides comprehensive tool call format conversion for compatibility with different agentic CLIs:
 
-### BasicSummarizer
+```python
+# Custom tag configuration
+llm = create_llm(
+    "ollama",
+    model="qwen3-coder:30b",
+    tool_call_tags="mytag"  # Becomes: <mytag>...JSON...</mytag>
+)
+
+# Predefined CLI formats
+from abstractllm.tools.tag_rewriter import create_tag_rewriter
+
+# Codex CLI
+rewriter = create_tag_rewriter("codex")  # Qwen3 format
+
+# Crush CLI  
+rewriter = create_tag_rewriter("crush")  # LLaMA3 format
+
+# Gemini CLI
+rewriter = create_tag_rewriter("gemini")  # XML format
+```
+
+---
+
+## Core Features
+
+### Session Management
+
+Persistent conversations with metadata and analytics:
+
+```python
+from abstractllm import BasicSession, create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(llm, system_prompt="You are a helpful assistant.")
+
+response1 = session.generate("My name is Alice")
+response2 = session.generate("What's my name?")  # Remembers context
+
+# Save with analytics
+session.save("conversation.json", summary=True, assessment=True, facts=True)
+
+# Load session
+loaded_session = BasicSession.load("conversation.json")
+```
+
+### Embeddings
+
+SOTA embedding models for semantic search and RAG applications:
+
+```python
+from abstractllm.embeddings import EmbeddingManager
+
+# HuggingFace (default)
+embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
+
+# Ollama
+embedder = EmbeddingManager(model="granite-embedding:278m", provider="ollama")
+
+# LMStudio
+embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", provider="lmstudio")
+
+# Generate embeddings
+embedding = embedder.embed("Hello world")
+embeddings = embedder.embed_batch(["Hello", "World", "AI"])
+
+# Similarity computation
+similarity = embedder.compute_similarity("Hello", "Hi there")
+```
+
+### Built-in Processing Apps
+
+#### BasicSummarizer
 
 Intelligent text summarization with multiple styles:
 
 ```python
-from abstractllm import BasicSummarizer, SummaryStyle, SummaryLength
+from abstractllm import BasicSummarizer, SummaryStyle
 
 summarizer = BasicSummarizer("openai", model="gpt-4o-mini")
-
-# Different summary styles
 summary = summarizer.summarize(
-    long_text,
+    long_text, 
     style=SummaryStyle.BULLET_POINTS,
-    length=SummaryLength.MEDIUM,
     max_length=200
 )
-
-print("Summary:", summary.content)
-print("Key points:", summary.key_points)
-print("Word count:", summary.word_count)
 ```
 
-### BasicExtractor
+#### BasicExtractor
 
 Extract structured data from unstructured text:
 
 ```python
 from abstractllm import BasicExtractor
-from pydantic import BaseModel
-
-class CompanyInfo(BaseModel):
-    name: str
-    founded_year: int
-    employees: int
-    headquarters: str
 
 extractor = BasicExtractor("anthropic", model="claude-3-5-haiku-latest")
-
-text = "TechCorp was founded in 2010 and has 500 employees. It's headquartered in San Francisco."
-
-company = extractor.extract(text, target_schema=CompanyInfo)
-print(f"Company: {company.name}, Founded: {company.founded_year}")
+data = extractor.extract(text, target_schema=Person)
 ```
 
-### BasicJudge
+#### BasicJudge
 
 Evaluate and score text quality:
 
 ```python
-from abstractllm import BasicJudge, JudgmentCriteria, create_judge
+from abstractllm import BasicJudge
 
-# Create judge with custom criteria
-judge = create_judge(
-    provider="openai",
-    model="gpt-4o-mini",
-    criteria=[
-        JudgmentCriteria.ACCURACY,
-        JudgmentCriteria.CLARITY,
-        JudgmentCriteria.COMPLETENESS
-    ]
-)
-
-assessment = judge.evaluate(
-    text="Python is a programming language.",
-    context="Explain what Python is for beginners"
-)
-
-print(f"Overall Score: {assessment.overall_score}/10")
-print(f"Accuracy: {assessment.scores['accuracy']}/10")
-print(f"Feedback: {assessment.feedback}")
+judge = BasicJudge("openai", model="gpt-4o-mini")
+assessment = judge.evaluate(text, criteria=["clarity", "accuracy", "completeness"])
 ```
 
-## Event System
+### Event System
 
-Comprehensive observability and control:
+Monitor and control tool execution through events:
 
 ```python
 from abstractllm.events import EventType, on_global
 
-# Cost monitoring
-def monitor_costs(event):
+def cost_monitor(event):
     if event.cost_usd and event.cost_usd > 0.10:
         alert(f"High cost request: ${event.cost_usd}")
 
-# Security control
 def prevent_dangerous_tools(event):
     for call in event.data.get('tool_calls', []):
         if call.name in ['delete_file', 'system_command']:
-            event.prevent()  # Stop tool execution
+            event.prevent()  # Stop execution
 
-# Performance tracking
-def track_performance(event):
-    if event.duration_ms > 10000:
-        log(f"Slow request: {event.duration_ms}ms")
-
-# Register event handlers
-on_global(EventType.GENERATION_COMPLETED, monitor_costs)
+on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 on_global(EventType.TOOL_STARTED, prevent_dangerous_tools)
-on_global(EventType.GENERATION_COMPLETED, track_performance)
 ```
 
-## Embeddings System
+### HTTP Server
 
-Built-in support for semantic search and RAG:
+OpenAI-compatible REST API server:
 
-```python
-from abstractllm.embeddings import EmbeddingManager
-from abstractllm import create_llm
+```bash
+# Start server
+python -m abstractllm.server.app
 
-# Initialize components
-embedder = EmbeddingManager()
-llm = create_llm("openai", model="gpt-4o-mini")
-
-# Documents to search
-documents = [
-    "Python is great for data science and machine learning.",
-    "JavaScript powers modern web applications.",
-    "Rust ensures memory safety without garbage collection."
-]
-
-# Create embeddings
-doc_embeddings = embedder.embed_batch(documents)
-
-# User query
-query = "Tell me about web development"
-query_embedding = embedder.embed(query)
-
-# Find most similar document
-similarities = [
-    embedder.compute_similarity(query_embedding, doc_emb)
-    for doc_emb in doc_embeddings
-]
-
-best_doc_idx = similarities.index(max(similarities))
-context = documents[best_doc_idx]
-
-# Generate response with context
-response = llm.generate(
-    f"Context: {context}\n\nQuestion: {query}\n\nAnswer:"
-)
-print(response.content)
+# Or with uvicorn
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
 ```
 
-## Retry and Reliability System
-
-Production-grade error handling:
-
 ```python
-from abstractllm import create_llm
-from abstractllm.core.retry import RetryConfig
+import openai
 
-config = RetryConfig(
-    max_attempts=3,           # Try up to 3 times
-    initial_delay=1.0,        # Start with 1 second delay
-    max_delay=60.0,           # Cap at 1 minute
-    use_jitter=True,          # Add randomness
-    failure_threshold=5,      # Circuit breaker after 5 failures
-    recovery_timeout=60.0     # Test recovery after 1 minute
+# Point to AbstractCore server
+client = openai.OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="not-needed"
 )
 
-llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
+# Works with any model via AbstractCore
+response = client.chat.completions.create(
+    model="ollama/qwen3-coder:30b",  # Non-OpenAI model
+    messages=[{"role": "user", "content": "Hello!"}],
+    tools=[...]
+)
 ```
 
-## Memory Management
+### Memory Management
 
-Explicit memory control for local providers:
+For local providers, explicit memory management:
 
 ```python
-# Local providers support memory management
+# Explicit memory management for local models
 llm = create_llm("ollama", model="large-model")
 response = llm.generate("Hello")
-
-# Explicitly free memory
-llm.unload()  # Unloads model from memory
+llm.unload()  # Free memory
 del llm
-
-# API providers (OpenAI, Anthropic) - unload() is safe but no-op
-api_llm = create_llm("openai", model="gpt-4o-mini")
-api_llm.unload()  # Safe to call, but has no effect
 ```
 
-## Server Mode (Optional HTTP REST API)
+---
 
-Transform AbstractCore into an OpenAI-compatible API server:
+## Documentation Index
 
-### Quick Start
+### Core Documentation
 
-```bash
-# Install with server support
-pip install abstractcore[server]
+- **Getting Started**: Quick setup and first LLM call with any provider
+- **API Reference**: Complete API documentation with examples for all methods
+- **Tool Calling System**: Universal @tool decorator and tool system across all providers
+- **Session Management**: Persistent conversations with metadata, analytics, and serialization
+- **Embeddings System**: SOTA embedding models for semantic search and RAG applications
+- **Architecture Overview**: System design and component interactions
 
-# Start server
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+### Built-in Applications
 
-# Test
-curl http://localhost:8000/health
-# Response: {"status":"healthy"}
-```
+- **BasicSummarizer**: Intelligent text summarization with multiple styles and lengths
+- **BasicExtractor**: Extract structured data from unstructured text
+- **BasicJudge**: Evaluate and score text quality with customizable criteria
 
-### Use with OpenAI Client
+### Server & Integration
 
-```python
-from openai import OpenAI
+- **HTTP Server Guide**: OpenAI-compatible REST API server for multi-language access
+- **Agentic CLI Integration**: Codex, Crush, Gemini CLI compatibility
+- **Tool Syntax Rewriting**: Real-time format conversion for external CLI tools
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+### Advanced Features
 
-response = client.chat.completions.create(
-    model="anthropic/claude-3-5-haiku-latest",  # Any provider/model
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-print(response.choices[0].message.content)
-```
+- **Event System**: Monitor costs, performance, and tool executions with preventable events
+- **Retry Configuration**: Circuit breakers, exponential backoff, jitter for production reliability
+- **Error Handling**: Comprehensive exception hierarchy for robust applications
+- **Token Management**: Unified token vocabulary across all providers
 
-### Server Features
+### Examples and Patterns
 
-- **OpenAI Compatibility**: Drop-in replacement for OpenAI API clients
-- **Universal Provider Access**: Single API for all providers
-- **Format Conversion**: Automatic tool call format conversion for agentic CLIs
-- **Streaming Support**: Server-sent events for real-time responses
-- **Model Discovery**: Dynamic model listing across all providers
-- **Embedding Support**: Multi-provider embedding generation
+- **Progressive Examples**: Step-by-step learning from basic to advanced usage
+- **Complete RAG Example**: Full retrieval-augmented generation implementation
+- **Embeddings Demos**: Semantic search and similarity computation
+- **Streaming Examples**: Real-time vs batch processing patterns
+- **Tool Usage Examples**: Complex tool calling scenarios
+- **Production Patterns**: Enterprise-ready deployment examples
 
-## Internal CLI Tool
+### Support and Troubleshooting
 
-Interactive testing and development tool:
+- **Troubleshooting Guide**: Common issues and solutions
+- **Capabilities Reference**: What AbstractCore can and cannot do
+- **Contributing Guidelines**: How to contribute to the project
 
-```bash
-# Start interactive CLI
-python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
-
-# With streaming enabled
-python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --stream
-
-# Single prompt execution
-python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest --prompt "What is Python?"
-```
-
-### CLI Features
-
-- Interactive REPL with conversation history
-- Chat history compaction and management
-- Fact extraction from conversations
-- Conversation quality evaluation (LLM-as-a-judge)
-- Tool call testing and debugging
-- System prompt management
-- Multiple provider support
-
-### Popular Commands
-
-- `/compact` - Compress chat history while preserving context
-- `/facts [file]` - Extract structured facts from conversation
-- `/judge` - Evaluate conversation quality with feedback
-- `/history [n]` - View conversation history
-- `/stream` - Toggle real-time streaming
-- `/system [prompt]` - Show or change system prompt
-- `/status` - Show current provider, model, and capabilities
-
-## Architecture Overview
-
-AbstractCore is built around several key architectural patterns:
-
-### 1. Factory Pattern
-The `create_llm()` function uses the factory pattern to instantiate the correct provider based on the provider name.
-
-### 2. Provider Abstraction
-All providers implement the same `AbstractLLMInterface`, ensuring consistent behavior across different LLM services.
-
-### 3. Event-Driven Architecture
-Every operation emits events, allowing for comprehensive monitoring and control.
-
-### 4. Universal Tool System
-Tools are executed locally in AbstractCore, not by the providers, ensuring consistent behavior.
-
-### 5. Streaming Architecture
-Unified streaming strategy across all providers with real-time tool detection and execution.
-
-## Supported Providers
-
-| Provider | Status | Setup |
-|----------|--------|-------|
-| **OpenAI** | ✅ Full | Get API key from OpenAI |
-| **Anthropic** | ✅ Full | Get API key from Anthropic |
-| **Ollama** | ✅ Full | Install Ollama locally |
-| **LMStudio** | ✅ Full | Install LMStudio locally |
-| **MLX** | ✅ Full | Apple Silicon only |
-| **HuggingFace** | ✅ Full | Local model execution |
-
-## Use Cases and Patterns
-
-### 1. Provider Flexibility
-
-```python
-# Same code works with any provider
-providers = ["openai", "anthropic", "ollama"]
-
-for provider in providers:
-    llm = create_llm(provider, model="default")
-    response = llm.generate("Hello!")
-    print(f"{provider}: {response.content}")
-```
-
-### 2. Local Development, Cloud Production
-
-```python
-import os
-
-# Choose provider based on environment
-if os.getenv("ENVIRONMENT") == "production":
-    llm = create_llm("openai", model="gpt-4o-mini")  # High quality, cloud
-else:
-    llm = create_llm("ollama", model="qwen3:4b")     # Free, local
-```
-
-### 3. Multi-Provider Setup
-
-```python
-# Route requests based on task complexity
-def get_llm_for_task(task_complexity):
-    if task_complexity == "simple":
-        return create_llm("ollama", model="qwen3:4b")
-    elif task_complexity == "medium":
-        return create_llm("openai", model="gpt-4o-mini")
-    else:
-        return create_llm("anthropic", model="claude-3-5-haiku-latest")
-```
-
-## Error Handling
-
-Comprehensive exception hierarchy:
-
-```python
-from abstractllm.exceptions import (
-    ModelNotFoundError,
-    ProviderAPIError,
-    AuthenticationError,
-    RateLimitError,
-    TimeoutError
-)
-
-try:
-    response = llm.generate("Hello")
-except AuthenticationError:
-    print("Invalid API key")
-except RateLimitError:
-    print("Rate limit exceeded, retrying...")
-except ModelNotFoundError:
-    print("Model not available")
-except ProviderAPIError as e:
-    print(f"Provider error: {e}")
-```
-
-## Performance Characteristics
-
-### Memory Usage
-- **Core**: ~15MB base memory
-- **Per Provider**: ~2-5MB additional
-- **Scaling**: Linear with number of concurrent requests
-
-### Latency Overhead
-- **Provider abstraction**: ~1-2ms overhead
-- **Event system**: ~0.5ms per event
-- **Tool parsing**: ~1-5ms depending on complexity
-- **Retry logic**: Only on failures
-
-### Throughput
-- **Single instance**: 100+ requests/second
-- **Bottleneck**: Usually the LLM provider, not AbstractCore
-- **Scaling**: Horizontal scaling through multiple instances
-
-## Security Considerations
-
-### 1. Tool Execution Safety
-- **Local execution**: Tools run in AbstractCore, not by providers
-- **Event prevention**: Stop dangerous tools before execution
-- **Input validation**: Validate tool parameters
-
-### 2. API Key Management
-- **Environment variables**: Secure key storage
-- **No logging**: Keys never appear in logs
-- **Provider isolation**: Keys scoped to specific providers
-
-### 3. Data Privacy
-- **Local options**: Support for local providers (Ollama, MLX)
-- **No data retention**: AbstractCore doesn't store conversation data
-- **Transparent processing**: All operations are observable through events
-
-## What AbstractCore Does NOT Do
-
-Understanding limitations is crucial for choosing the right tool:
-
-### 1. RAG Pipelines
-AbstractCore provides embeddings but not full RAG infrastructure. Use LlamaIndex or LangChain for complete RAG systems.
-
-### 2. Complex Agent Workflows
-AbstractCore handles single LLM calls with tools, not multi-step agent reasoning. Use AbstractAgent or LangGraph for complex agents.
-
-### 3. Advanced Memory Systems
-BasicSession provides simple conversation memory. Use specialized memory systems for complex memory management.
-
-### 4. Model Training/Fine-tuning
-AbstractCore is for inference only. Use Transformers or Axolotl for training.
+---
 
 ## Repository Information
 
 - **GitHub**: https://github.com/lpalbou/AbstractCore
+- **Website**: https://lpalbou.github.io/AbstractCore/
 - **License**: MIT
 - **Python**: 3.9+
-- **Status**: Production Ready (v2.3.3)
+- **Status**: Production Ready (v2.3.4)
 - **Package**: Available on PyPI as `abstractcore`
-- **Testing**: All tests passing on Apple M4 Max, Python 3.12.2
 
-## Contributing
+## Key Differentiators
 
-We welcome contributions! See CONTRIBUTING.md for guidelines.
+- **Provider Agnostic**: Same code works with any LLM provider via factory pattern
+- **Production Ready**: Robust error handling, retries, circuit breakers, event system
+- **Type Safe**: Full Pydantic integration for structured outputs with automatic retries
+- **Local & Cloud**: Support for both local models and cloud APIs with memory management
+- **Unified Streaming**: Consistent streaming across all providers with tool support
+- **Universal Tool Calling**: @tool decorator works across ALL providers with format conversion
+- **Session Management**: Persistent conversations with analytics and complete serialization
+- **Built-in Apps**: Ready-to-use summarizer, extractor, and judge applications
+- **Embeddings**: Built-in SOTA embedding models for RAG applications
+- **Server Mode**: Optional OpenAI-compatible HTTP API with agentic CLI support
+- **Well Documented**: Comprehensive guides and working examples
 
 ---
 
-**AbstractCore** - One interface, all LLM providers. Focus on building, not managing API differences. 🚀
+This documentation provides a complete overview of AbstractCore's capabilities. For the latest updates and detailed examples, visit the GitHub repository and website.
