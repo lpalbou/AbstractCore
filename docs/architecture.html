@@ -129,16 +129,16 @@
             background: var(--background-secondary);
             border: 2px solid var(--border-color);
             border-radius: 0.75rem;
-            padding: 2rem;
-            margin: 2rem 0;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
         }
         
         .flow-step {
             background: var(--background);
             border: 2px solid var(--border-color);
             border-radius: 0.5rem;
-            padding: 1.5rem;
-            margin: 1rem 0;
+            padding: 1rem;
+            margin: 0.75rem 0;
             cursor: pointer;
             transition: all 0.3s ease;
             position: relative;
@@ -172,15 +172,17 @@
         
         .flow-step h3 {
             color: var(--text-primary);
-            margin: 0 0 0.5rem 0;
+            margin: 0 0 0.25rem 0;
             font-weight: 600;
+            font-size: 1.1rem;
         }
         
         .flow-step p {
             color: var(--text-primary);
             margin: 0;
-            line-height: 1.6;
+            line-height: 1.4;
             font-weight: 500;
+            font-size: 0.9rem;
         }
     </style>
 </head>
@@ -243,33 +245,33 @@
                 
                 <div class="architecture-diagram">
                     <!-- Top Layer: Client Applications -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem; position: relative;">
-                        <div class="component" data-component="app">
-                            <h3 class="component-title">🐍 Your Python App</h3>
-                            <p class="component-description">Direct library integration</p>
-                        </div>
-                        
-                        <div class="component" data-component="http">
-                            <h3 class="component-title">🌐 HTTP Clients</h3>
-                            <p class="component-description">REST API consumers</p>
-                        </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; position: relative;">
+                <div class="component" data-component="app" onclick="showComponentDetails('app')">
+                    <h3 class="component-title">🐍 Your Python App</h3>
+                    <p class="component-description">Direct library integration</p>
+                </div>
+                
+                <div class="component" data-component="http" onclick="showComponentDetails('http')">
+                    <h3 class="component-title">🌐 HTTP Clients</h3>
+                    <p class="component-description">REST API consumers</p>
+                </div>
                         
                         <!-- Arrow pointing down -->
                         <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 25%; height: 40px;"></div>
                         <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 75%; height: 40px;"></div>
                     </div>
                     
-                    <!-- Middle Layer: AbstractCore Components -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 3rem 0; position: relative;">
-                        <div class="component" data-component="core">
-                            <h3 class="component-title">🎯 AbstractCore API</h3>
-                            <p class="component-description">Unified interface layer</p>
-                        </div>
-                        
-                        <div class="component" data-component="server">
-                            <h3 class="component-title">🖥️ AbstractCore Server</h3>
-                            <p class="component-description">OpenAI-compatible REST API</p>
-                        </div>
+            <!-- Middle Layer: AbstractCore Components -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 2rem 0; position: relative;">
+                <div class="component" data-component="core" onclick="showComponentDetails('core')">
+                    <h3 class="component-title">🎯 AbstractCore API</h3>
+                    <p class="component-description">Unified interface layer</p>
+                </div>
+                
+                <div class="component" data-component="server" onclick="showComponentDetails('server')">
+                    <h3 class="component-title">🖥️ AbstractCore Server</h3>
+                    <p class="component-description">OpenAI-compatible REST API</p>
+                </div>
                         
                         <!-- Horizontal arrow connecting core and server -->
                         <div class="diagram-arrow arrow-horizontal" style="top: 50%; right: -70px;"></div>
@@ -464,33 +466,33 @@ response = llm.generate("Hello, world!")</code></pre>
                     </div>
                 </div>
                 
-                <div style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="color: var(--text-primary); margin: 0 0 1rem 0;">🔄 Tool Call Format Conversion</h3>
-                    <p style="color: var(--text-secondary);">AbstractCore automatically converts between different tool call formats:</p>
+                <div style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
+                    <h3 style="color: var(--text-primary); margin: 0 0 0.75rem 0;">🔄 Tool Call Format Conversion</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 1rem;">AbstractCore automatically converts between different tool call formats:</p>
                     
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0;">
-                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 1rem; border-radius: 0.5rem;">
-                            <h4 style="color: var(--text-primary); margin: 0 0 0.5rem 0;">Qwen3 Format</h4>
-                            <code style="color: var(--primary-color);">&lt;|tool_call|&gt;...&lt;/|tool_call|&gt;</code>
-                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);">Compatible with Codex CLI</p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin: 0.75rem 0;">
+                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 0.75rem; border-radius: 0.5rem;">
+                            <h4 style="color: var(--text-primary); margin: 0 0 0.25rem 0; font-size: 0.95rem;">Qwen3 Format</h4>
+                            <code style="color: var(--primary-color); font-size: 0.8rem;">&lt;|tool_call|&gt;...&lt;/|tool_call|&gt;</code>
+                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">Compatible with Codex CLI</p>
                         </div>
                         
-                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 1rem; border-radius: 0.5rem;">
-                            <h4 style="color: var(--text-primary); margin: 0 0 0.5rem 0;">LLaMA3 Format</h4>
-                            <code style="color: var(--primary-color);">&lt;function_call&gt;...&lt;/function_call&gt;</code>
-                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);">Compatible with Crush CLI</p>
+                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 0.75rem; border-radius: 0.5rem;">
+                            <h4 style="color: var(--text-primary); margin: 0 0 0.25rem 0; font-size: 0.95rem;">LLaMA3 Format</h4>
+                            <code style="color: var(--primary-color); font-size: 0.8rem;">&lt;function_call&gt;...&lt;/function_call&gt;</code>
+                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">Compatible with Crush CLI</p>
                         </div>
                         
-                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 1rem; border-radius: 0.5rem;">
-                            <h4 style="color: var(--text-primary); margin: 0 0 0.5rem 0;">XML Format</h4>
-                            <code style="color: var(--primary-color);">&lt;tool_call&gt;...&lt;/tool_call&gt;</code>
-                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);">Compatible with Gemini CLI</p>
+                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 0.75rem; border-radius: 0.5rem;">
+                            <h4 style="color: var(--text-primary); margin: 0 0 0.25rem 0; font-size: 0.95rem;">XML Format</h4>
+                            <code style="color: var(--primary-color); font-size: 0.8rem;">&lt;tool_call&gt;...&lt;/tool_call&gt;</code>
+                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">Compatible with Gemini CLI</p>
                         </div>
                         
-                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 1rem; border-radius: 0.5rem;">
-                            <h4 style="color: var(--text-primary); margin: 0 0 0.5rem 0;">Custom Format</h4>
-                            <code style="color: var(--primary-color);">[TOOL]...JSON...[/TOOL]</code>
-                            <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: var(--text-secondary);">User-defined formats</p>
+                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 0.75rem; border-radius: 0.5rem;">
+                            <h4 style="color: var(--text-primary); margin: 0 0 0.25rem 0; font-size: 0.95rem;">Custom Format</h4>
+                            <code style="color: var(--primary-color); font-size: 0.8rem;">[TOOL]...JSON...[/TOOL]</code>
+                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">User-defined formats</p>
                         </div>
                     </div>
                 </div>
@@ -635,6 +637,26 @@ response = llm.generate("Hello, world!")</code></pre>
                     }, 200);
                 });
             });
+            
+            // Component interaction function
+            window.showComponentDetails = function(componentType) {
+                // Remove active class from all components
+                document.querySelectorAll('.component').forEach(c => c.classList.remove('active'));
+                
+                // Add active class to clicked component
+                const component = document.querySelector(`[data-component="${componentType}"]`);
+                if (component) {
+                    component.classList.add('active');
+                    
+                    // Add visual feedback
+                    component.style.transform = 'scale(1.05)';
+                    setTimeout(() => {
+                        component.style.transform = '';
+                    }, 300);
+                }
+                
+                console.log('Component clicked:', componentType);
+            };
             
             // Provider item hover effects
             const providerItems = document.querySelectorAll('.provider-item');
