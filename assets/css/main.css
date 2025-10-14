@@ -66,17 +66,44 @@
     --transition-slow: 350ms ease;
 }
 
+/* Enhanced color system for better contrast */
+:root {
+    /* High contrast colors */
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-muted: #6b7280;
+    --text-inverse: #ffffff;
+    --background: #ffffff;
+    --background-secondary: #f8fafc;
+    --background-tertiary: #e2e8f0;
+    --background-dark: #1e293b;
+    --border-color: #d1d5db;
+    --border-light: #e5e7eb;
+    
+    /* Status colors with proper contrast */
+    --success-bg: #dcfce7;
+    --success-text: #166534;
+    --warning-bg: #fef3c7;
+    --warning-text: #92400e;
+    --info-bg: #dbeafe;
+    --info-text: #1e40af;
+    --error-bg: #fecaca;
+    --error-text: #dc2626;
+}
+
 /* Dark mode variables */
 @media (prefers-color-scheme: dark) {
     :root {
-        --text-primary: #f9fafb;
-        --text-secondary: #d1d5db;
-        --text-muted: #9ca3af;
-        --background: #111827;
-        --background-secondary: #1f2937;
-        --background-tertiary: #374151;
-        --border-color: #374151;
-        --border-light: #4b5563;
+        --text-primary: #f8fafc;
+        --text-secondary: #cbd5e1;
+        --text-muted: #94a3b8;
+        --text-inverse: #111827;
+        --background: #0f172a;
+        --background-secondary: #1e293b;
+        --background-tertiary: #334155;
+        --background-dark: #020617;
+        --border-color: #475569;
+        --border-light: #334155;
     }
 }
 
@@ -568,8 +595,309 @@ a:hover {
     border-color: var(--secondary-color);
 }
 
-.copy-button.copied svg {
-    transform: scale(1.1);
+        .copy-button.copied svg {
+            transform: scale(1.1);
+        }
+
+/* Architecture Page Specific Styles */
+.architecture-diagram {
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    border: 2px solid var(--border-color);
+    border-radius: 1rem;
+    padding: 3rem;
+    margin: 3rem 0;
+    position: relative;
+    overflow: visible;
+}
+
+.system-overview {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    margin: 2rem 0;
+    position: relative;
+}
+
+.component {
+    background: var(--background);
+    border: 2px solid var(--border-color);
+    border-radius: 0.75rem;
+    padding: 2rem;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+}
+
+.component:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 20px 25px -5px rgba(59, 130, 246, 0.1), 0 10px 10px -5px rgba(59, 130, 246, 0.04);
+}
+
+.component.active {
+    border-color: var(--primary-color);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(147, 51, 234, 0.05));
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.component-title {
+    font-weight: 700;
+    font-size: 1.125rem;
+    color: var(--text-primary);
+    margin: 0 0 0.5rem 0;
+}
+
+.component-description {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Diagram Arrows */
+.diagram-arrow {
+    position: absolute;
+    z-index: 10;
+    pointer-events: none;
+}
+
+.arrow-horizontal {
+    width: 60px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.arrow-horizontal::after {
+    content: '';
+    position: absolute;
+    right: -8px;
+    top: -4px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid var(--secondary-color);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+}
+
+.arrow-vertical {
+    width: 2px;
+    height: 60px;
+    background: linear-gradient(180deg, var(--primary-color), var(--secondary-color));
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.arrow-vertical::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: -4px;
+    width: 0;
+    height: 0;
+    border-top: 8px solid var(--secondary-color);
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+}
+
+/* Flow Steps */
+.interactive-flow {
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    border-radius: 1rem;
+    padding: 3rem;
+    margin: 3rem 0;
+    position: relative;
+}
+
+.flow-step {
+    background: var(--background);
+    border: 2px solid var(--border-color);
+    border-radius: 0.75rem;
+    padding: 2rem;
+    margin: 1.5rem 0;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.flow-step:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.15);
+    transform: translateX(8px);
+}
+
+.flow-step.active {
+    border-color: var(--primary-color);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(147, 51, 234, 0.05));
+    transform: translateX(12px) scale(1.02);
+}
+
+.flow-step h3 {
+    color: var(--text-primary);
+    margin: 0 0 0.5rem 0;
+    font-weight: 600;
+}
+
+.flow-step p {
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.6;
+}
+
+.flow-step::after {
+    content: '↓';
+    position: absolute;
+    bottom: -2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.5rem;
+    color: var(--primary-color);
+    opacity: 0.7;
+    font-weight: bold;
+}
+
+.flow-step:last-child::after {
+    display: none;
+}
+
+/* Detail Panels */
+.detail-panel {
+    background: var(--background);
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    padding: 2rem;
+    margin: 2rem 0;
+    display: none;
+    animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.detail-panel.active {
+    display: block;
+}
+
+.detail-panel h3 {
+    color: var(--text-primary);
+    margin: 0 0 1rem 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.detail-panel p {
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin: 0 0 1rem 0;
+}
+
+.detail-panel ul {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    padding-left: 1.5rem;
+}
+
+.detail-panel li {
+    margin: 0.5rem 0;
+}
+
+/* Provider Grid */
+.provider-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.provider-item {
+    background: var(--background-secondary);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    border: 1px solid var(--border-light);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.provider-item:hover {
+    background: var(--primary-color);
+    color: var(--text-inverse);
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.25);
+}
+
+/* Performance Cards */
+.performance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+    margin: 2rem 0;
+}
+
+.performance-card {
+    padding: 2rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border-color);
+    transition: all 0.3s ease;
+}
+
+.performance-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.performance-card h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.performance-card ul {
+    margin: 0;
+    padding-left: 1.5rem;
+    line-height: 1.6;
+}
+
+.performance-card li {
+    margin: 0.5rem 0;
+    color: var(--text-secondary);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .system-overview {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    
+    .component {
+        padding: 1.5rem;
+        min-height: 100px;
+    }
+    
+    .architecture-diagram,
+    .interactive-flow {
+        padding: 2rem;
+        margin: 2rem 0;
+    }
+    
+    .flow-step {
+        padding: 1.5rem;
+        margin: 1rem 0;
+    }
+    
+    .performance-grid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
 }
 
 .code-dots {
