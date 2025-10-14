@@ -134,14 +134,15 @@
         }
         
         .flow-step {
-            background: white;
-            border: 2px solid #e2e8f0;
+            background: var(--background);
+            border: 2px solid var(--border-color);
             border-radius: 0.5rem;
             padding: 1.5rem;
             margin: 1rem 0;
             cursor: pointer;
             transition: all 0.3s ease;
             position: relative;
+            color: var(--text-primary);
         }
         
         .flow-step:hover {
@@ -167,6 +168,19 @@
         
         .flow-step:last-child::after {
             display: none;
+        }
+        
+        .flow-step h3 {
+            color: var(--text-primary);
+            margin: 0 0 0.5rem 0;
+            font-weight: 600;
+        }
+        
+        .flow-step p {
+            color: var(--text-primary);
+            margin: 0;
+            line-height: 1.6;
+            font-weight: 500;
         }
     </style>
 </head>
@@ -518,27 +532,27 @@ response = llm.generate("Hello, world!")</code></pre>
                 <h2 style="color: var(--text-primary); font-size: 2rem; margin-bottom: 1.5rem;">⚡ Performance Characteristics</h2>
                 
                 <div class="performance-grid">
-                    <div class="performance-card" style="background: var(--success-bg); border-color: var(--success-text);">
+                    <div class="performance-card" style="background: var(--background); border: 2px solid var(--success-text);">
                         <h3 style="color: var(--success-text);">💾 Memory Usage</h3>
-                        <ul style="color: var(--success-text);">
+                        <ul style="color: var(--text-primary);">
                             <li><strong>Core:</strong> ~15MB base</li>
                             <li><strong>Per Provider:</strong> ~2-5MB</li>
                             <li><strong>Scaling:</strong> Linear with requests</li>
                         </ul>
                     </div>
                     
-                    <div class="performance-card" style="background: var(--info-bg); border-color: var(--info-text);">
+                    <div class="performance-card" style="background: var(--background); border: 2px solid var(--info-text);">
                         <h3 style="color: var(--info-text);">⚡ Latency Overhead</h3>
-                        <ul style="color: var(--info-text);">
+                        <ul style="color: var(--text-primary);">
                             <li><strong>Provider abstraction:</strong> ~1-2ms</li>
                             <li><strong>Event system:</strong> ~0.5ms per event</li>
                             <li><strong>Tool parsing:</strong> ~1-5ms</li>
                         </ul>
                     </div>
                     
-                    <div class="performance-card" style="background: var(--warning-bg); border-color: var(--warning-text);">
+                    <div class="performance-card" style="background: var(--background); border: 2px solid var(--warning-text);">
                         <h3 style="color: var(--warning-text);">🚀 Throughput</h3>
-                        <ul style="color: var(--warning-text);">
+                        <ul style="color: var(--text-primary);">
                             <li><strong>Single instance:</strong> 100+ req/sec</li>
                             <li><strong>Bottleneck:</strong> Usually the LLM provider</li>
                             <li><strong>Scaling:</strong> Horizontal scaling</li>
