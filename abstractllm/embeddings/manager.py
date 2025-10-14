@@ -39,7 +39,13 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def _suppress_onnx_warnings():
-    """Temporarily suppress known harmless ONNX and sentence-transformers warnings."""
+    """Temporarily suppress known harmless ONNX and sentence-transformers warnings.
+    
+    This suppresses the CoreML and node assignment warnings commonly seen on macOS.
+    These warnings are informational only and don't impact performance or quality.
+    
+    To enable verbose ONNX logging for debugging, set: ABSTRACTLLM_ONNX_VERBOSE=1
+    """
     with warnings.catch_warnings():
         # Suppress PyTorch ONNX registration warnings (harmless in PyTorch 2.8+)
         warnings.filterwarnings(
@@ -60,6 +66,22 @@ def _suppress_onnx_warnings():
         # Suppress ONNX Runtime provider warnings (these are system-level logs)
         # Note: CoreML warnings are logged directly to stderr by ONNX Runtime,
         # not through Python's warning system, so they're harder to suppress
+        
+        # Suppress ONNX Runtime warnings at the source
+        try:
+            import onnxruntime as ort
+            import os
+            
+            # Allow users to enable verbose ONNX logging for debugging
+            # Set ABSTRACTLLM_ONNX_VERBOSE=1 to see ONNX warnings for debugging
+            if os.environ.get("ABSTRACTLLM_ONNX_VERBOSE", "0") != "1":
+                # Suppress the CoreML and node assignment warnings you may see on macOS
+                # These are harmless informational messages that don't affect performance or quality:
+                # - CoreML partitioning warnings: Normal behavior when model ops aren't all CoreML-compatible
+                # - Node assignment warnings: ONNX Runtime intelligently assigns ops to best execution provider
+                ort.set_default_logger_severity(3)  # Error level - suppresses warnings
+        except ImportError:
+            pass  # ONNX Runtime not available
 
         yield
 
