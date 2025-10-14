@@ -304,9 +304,6 @@ judge document.txt --context="code review"
 
 # Method 2: Via Python module (always works)
 python -m abstractllm.apps.judge document.txt --context="code review"
-
-# Method 3: Prefixed command (alternative direct command)
-abstractllm-judge document.txt --context="code review"
 ```
 
 ### Basic Usage

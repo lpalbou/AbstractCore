@@ -227,9 +227,6 @@ extractor document.txt --format=triples
 
 # Method 2: Via Python module (always works)
 python -m abstractllm.apps.extractor document.txt --format=triples
-
-# Method 3: Prefixed command (alternative direct command)
-abstractllm-extractor document.txt --format=triples
 ```
 
 ### Basic Usage

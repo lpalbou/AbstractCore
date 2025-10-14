@@ -173,9 +173,9 @@ AbstractCore includes **three specialized command-line applications** for common
 
 | Application | Purpose | Direct Command |
 |-------------|---------|----------------|
-| **Summarizer** | Document summarization | `summarizer` or `abstractllm-summarizer` |
-| **Extractor** | Entity and relationship extraction | `extractor` or `abstractllm-extractor` |
-| **Judge** | Text evaluation and scoring | `judge` or `abstractllm-judge` |
+| **Summarizer** | Document summarization | `summarizer` |
+| **Extractor** | Entity and relationship extraction | `extractor` |
+| **Judge** | Text evaluation and scoring | `judge` |
 
 ### Quick Usage Examples
 
@@ -222,11 +222,6 @@ judge essay.md
 python -m abstractllm.apps summarizer document.txt
 python -m abstractllm.apps extractor report.pdf
 python -m abstractllm.apps judge essay.md
-
-# Method 3: Prefixed commands
-abstractllm-summarizer document.txt
-abstractllm-extractor report.pdf
-abstractllm-judge essay.md
 ```
 
 ### Key Parameters

@@ -41,9 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **abstractllm/apps/__main__.py**: Fixed to include all three apps (summarizer, extractor, judge)
 
 #### CLI Applications Coverage
-- **Documented**: All 6 CLI entry points from pyproject.toml
+- **Documented**: CLI entry points from pyproject.toml
   - Direct commands: `summarizer`, `extractor`, `judge`
-  - Prefixed commands: `abstractllm-summarizer`, `abstractllm-extractor`, `abstractllm-judge`
 - **Parameter Documentation**: Complete coverage of all CLI parameters with options, defaults, and descriptions
 - **Usage Examples**: Realistic examples showing actual parameter usage for common scenarios
 
@@ -741,11 +740,10 @@ This release focuses on improving the developer experience with AbstractLLM's un
   - JSON-LD, JSON, and YAML output formats for knowledge graphs
   - CLI application: `extractor <file>` with focus areas, entity filters, and extraction styles
   - Chunked processing for large documents with configurable chunk sizes
-  - Console scripts: `extractor` and `abstractllm-extractor`
+  - Console script: `extractor`
 
 - **Summarizer CLI Enhancements**: Production-ready text summarization application
   - Console script: `summarizer` for easy command-line access (no module path needed)
-  - Console alias: `abstractllm-summarizer` for explicit namespace
   - Comprehensive parameter support: chunk size, provider/model selection, output format
   - Multiple summary styles: structured, narrative, objective, analytical, executive
   - Configurable extraction depth: brief, standard, detailed, comprehensive
