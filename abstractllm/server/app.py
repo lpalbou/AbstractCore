@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from ..core.factory import create_llm
 from ..utils.structured_logging import get_logger, configure_logging
+from ..utils.version import __version__
 # Removed simple_model_discovery import - now using provider methods directly
 from ..tools.syntax_rewriter import (
     ToolCallSyntaxRewriter,
@@ -54,7 +55,7 @@ configure_logging(
 app = FastAPI(
     title="AbstractCore Server",
     description="Universal LLM Gateway with Multi-Agent Tool Call Syntax Support",
-    version="2.0.0"
+    version=__version__
 )
 
 app.add_middleware(
@@ -67,7 +68,7 @@ app.add_middleware(
 
 # Get logger
 logger = get_logger("server")
-logger.info("🚀 AbstractCore Server Starting", version="2.0.0", debug_mode=debug_mode)
+logger.info("🚀 AbstractCore Server Starting", version=__version__, debug_mode=debug_mode)
 
 # ============================================================================
 # Model Type Detection
@@ -455,7 +456,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "version": "2.0.0",
+        "version": __version__,
         "features": [
             "multi-agent-syntax-support",
             "auto-format-detection",

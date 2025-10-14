@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 AbstractLLM - Unified interface to all LLM providers with essential infrastructure.
 
@@ -24,7 +25,7 @@ Quick Start:
     print(response.content)
 """
 
-__version__ = "2.3.5"
+from .utils.version import __version__
 
 from .core.factory import create_llm
 from .core.session import BasicSession
@@ -39,7 +40,7 @@ try:
 except ImportError:
     _has_embeddings = False
 
-# Processing module (core functionality - always available)
+# Processing module (core functionality)
 from .processing import BasicSummarizer, SummaryStyle, SummaryLength, BasicExtractor
 _has_processing = True
 
@@ -59,5 +60,5 @@ __all__ = [
 if _has_embeddings:
     __all__.append('EmbeddingManager')
 
-# Processing is always available now
+# Processing is core functionality
 __all__.extend(['BasicSummarizer', 'SummaryStyle', 'SummaryLength', 'BasicExtractor'])

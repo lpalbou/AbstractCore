@@ -37,6 +37,11 @@ Understanding common pitfalls helps prevent issues before they occur.
    - *Quick Fix*: Install provider-specific packages with `pip install abstractcore[provider]`
    - See: [ModuleNotFoundError](#issue-modulenotfounderror)
 
+4. **🖥️ LM Studio Server Not Enabled**
+   - *Symptom*: Connection refused, no response from LM Studio
+   - *Quick Fix*: Enable "Status: Running" toggle in LM Studio GUI
+   - See: [LM Studio Server Not Enabled](#issue-lm-studio-server-not-enabled)
+
 ### Common Mistake Patterns
 
 #### Mistake: Missing or Incorrect API Keys
@@ -641,6 +646,21 @@ curl http://localhost:1234/v1/models
 # Check port number in LMStudio (usually 1234)
 ```
 
+**Issue: LM Studio Server Not Enabled**
+```bash
+# CRITICAL: Ensure LM Studio server is enabled in the GUI
+# 1. Open LM Studio application
+# 2. Look for "Status: Running" toggle switch in the interface
+# 3. Make sure the toggle is switched to "ON" (green background, white handle on right)
+# 4. If the toggle shows "OFF", click it to enable the server
+# 5. Verify the server is running by checking the status indicator
+
+# Test server availability
+curl http://localhost:1234/v1/models
+
+# If still failing, check LM Studio logs for any error messages
+```
+
 ---
 
 ## Performance Issues
@@ -826,6 +846,7 @@ cat debug_report.txt
 | `ModuleNotFoundError` | Package not installed | `pip install abstractcore[all]` |
 | `Authentication Error` | Invalid API key | Check API key environment variable |
 | `Connection refused` | Service not running | Start Ollama/LMStudio/server |
+| `LM Studio connection failed` | LM Studio server not enabled | Enable "Status: Running" toggle in LM Studio GUI |
 | `Model not found` | Model unavailable | Pull model or check name |
 | `Rate limit exceeded` | Too many requests | Wait or upgrade plan |
 | `Timeout` | Request took too long | Use smaller model or increase timeout |
