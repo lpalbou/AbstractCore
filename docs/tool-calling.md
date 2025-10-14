@@ -88,24 +88,153 @@ def create_user(name: str, age: int, is_admin: bool = False) -> str:
     return f"Created user: {user_data}"
 ```
 
-### Enhanced Metadata
+### Enhanced Metadata (The Real Power!)
 
-You can provide additional metadata to help the LLM understand when and how to use tools:
+AbstractCore's `@tool` decorator supports rich metadata that gets **automatically injected into system prompts** for prompted models and passed to native APIs. This is what makes AbstractCore's tool system so powerful:
 
 ```python
-@tool
+@tool(
+    description="Search the database for records matching the query",
+    tags=["database", "search", "query"],
+    when_to_use="When the user asks for specific data from the database or wants to find records",
+    examples=[
+        {
+            "description": "Find all users named John",
+            "arguments": {
+                "query": "name=John",
+                "table": "users"
+            }
+        },
+        {
+            "description": "Search for products under $50",
+            "arguments": {
+                "query": "price<50", 
+                "table": "products"
+            }
+        },
+        {
+            "description": "Find recent orders",
+            "arguments": {
+                "query": "date>2025-01-01",
+                "table": "orders"
+            }
+        }
+    ]
+)
 def search_database(query: str, table: str = "users") -> str:
-    """Search the database for records matching the query.
-    
-    This tool should be used when the user asks for specific data
-    from the database or wants to find records.
-    
-    Examples:
-    - "Find all users named John" -> query="name=John", table="users"
-    - "Search for products under $50" -> query="price<50", table="products"
-    """
+    """Search the database for records matching the query."""
     # Implementation here
     return f"Searching {table} for: {query}"
+```
+
+**🎯 How This Metadata is Used:**
+- **Prompted Models**: All metadata is injected into the system prompt to guide the LLM
+- **Native APIs**: Metadata is passed through to the provider's tool API
+- **Examples**: Shown in the system prompt with proper formatting for each architecture
+- **Tags & when_to_use**: Help the LLM understand context and appropriate usage
+
+### Real-World Example from AbstractCore
+
+Here's an actual example from AbstractCore's codebase showing the full power of the enhanced `@tool` decorator:
+
+```python
+@tool(
+    description="Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)",
+    tags=["file", "directory", "listing", "filesystem"],
+    when_to_use="When you need to find files by their names, paths, or file extensions (NOT for searching file contents)",
+    examples=[
+        {
+            "description": "List all files in current directory",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "*"
+            }
+        },
+        {
+            "description": "Find all Python files recursively",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "*.py",
+                "recursive": True
+            }
+        },
+        {
+            "description": "Find all files with 'test' in filename (case-insensitive)",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "*test*",
+                "recursive": True
+            }
+        },
+        {
+            "description": "Find multiple file types using | separator",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "*.py|*.js|*.md",
+                "recursive": True
+            }
+        },
+        {
+            "description": "Complex multiple patterns - documentation, tests, and config files",
+            "arguments": {
+                "directory_path": ".",
+                "pattern": "README*|*test*|config.*|*.yml",
+                "recursive": True
+            }
+        }
+    ]
+)
+def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = False, include_hidden: bool = False, head_limit: Optional[int] = 50) -> str:
+    """
+    List files and directories in a specified directory with pattern matching (case-insensitive).
+
+    IMPORTANT: Use 'directory_path' parameter (not 'file_path') to specify the directory to list.
+
+    Args:
+        directory_path: Path to the directory to list files from (default: "." for current directory)
+        pattern: Glob pattern(s) to match files. Use "|" to separate multiple patterns (default: "*")
+        recursive: Whether to search recursively in subdirectories (default: False)
+        include_hidden: Whether to include hidden files/directories starting with '.' (default: False)
+        head_limit: Maximum number of files to return (default: 50, None for unlimited)
+
+    Returns:
+        Formatted string with file and directory listings or error message.
+        When head_limit is applied, shows "showing X of Y files" in the header.
+    """
+    # Implementation here...
+```
+
+**🔄 How This Gets Transformed**
+
+When you use this tool with a prompted model (like Ollama), AbstractCore automatically generates a system prompt like this:
+
+```
+You are a helpful AI assistant with access to the following tools:
+
+**list_files**: Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)
+• When to use: When you need to find files by their names, paths, or file extensions (NOT for searching file contents)
+• Tags: file, directory, listing, filesystem
+• Parameters: {"directory_path": {"type": "string", "default": "."}, "pattern": {"type": "string", "default": "*"}, ...}
+
+To use a tool, respond with this EXACT format:
+<|tool_call|>
+{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
+</|tool_call|>
+
+**EXAMPLES:**
+
+**list_files Examples:**
+1. List all files in current directory:
+<|tool_call|>
+{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*"}}
+</|tool_call|>
+
+2. Find all Python files recursively:
+<|tool_call|>
+{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*.py", "recursive": true}}
+</|tool_call|>
+
+... and 3 more examples with proper formatting ...
 ```
 
 ## Universal Tool Support
@@ -130,7 +259,11 @@ For providers without native tool support (Ollama, MLX, LMStudio):
 # Ollama without native tool support - AbstractCore handles this automatically
 llm = create_llm("ollama", model="qwen3-coder:30b")
 response = llm.generate("What's the weather?", tools=[get_weather])
-# AbstractCore automatically adds tool descriptions to the prompt
+# AbstractCore automatically:
+# 1. Detects the model architecture (Qwen3)
+# 2. Formats tools with examples into system prompt
+# 3. Parses tool calls from response using <|tool_call|> format
+# 4. Executes tools locally and returns results
 ```
 
 ## Tool Definition
@@ -191,16 +324,18 @@ def complex_tool(
 6. **Event system emits** `TOOL_COMPLETED` with results
 7. **Results integrated** into the final response
 
-### Tool Call Detection
+### Architecture-Aware Tool Call Detection
 
-AbstractCore automatically detects tool calls in various formats:
+AbstractCore automatically detects model architecture and uses the appropriate tool call format:
 
-```python
-# Different formats automatically detected:
-# Qwen3: <|tool_call|>{"name": "get_weather", "arguments": {"city": "Paris"}}</|tool_call|>
-# LLaMA3: <function_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</function_call>
-# OpenAI: Structured JSON in API response
-```
+| Architecture | Format | Example |
+|-------------|--------|---------|
+| **Qwen3** | `<|tool_call|>...JSON...</|tool_call|>` | `<|tool_call|>{"name": "get_weather", "arguments": {"city": "Paris"}}</|tool_call|>` |
+| **LLaMA3** | `<function_call>...JSON...</function_call>` | `<function_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</function_call>` |
+| **OpenAI/Anthropic** | Native API tool calls | Structured JSON in API response |
+| **XML-based** | `<tool_call>...JSON...</tool_call>` | `<tool_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</tool_call>` |
+
+**🎯 Key Point:** You never need to worry about these formats! AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.
 
 ### Local Execution
 
@@ -413,33 +548,200 @@ def expensive_calculation(input_data: str) -> str:
 
 ## Tool Syntax Rewriting
 
-AbstractCore can rewrite tool call formats for compatibility with different agentic CLIs:
+> **Seamless Tool Call Format Conversion Across Models and Environments**
+
+AbstractCore provides comprehensive tool call format conversion for compatibility with different agentic CLIs and environments. This system works at two levels:
+
+### Core Library (Python API) - Tag Rewriter
+
+Used when calling LLMs directly via Python. Handles real-time tag rewriting for streaming responses.
+
+#### Quick Start
 
 ```python
-# For Codex CLI (Qwen3 format)
-response = llm.generate(
-    "What's the weather?", 
-    tools=[get_weather],
-    tool_call_tags="qwen3"
-)
-# Output: <|tool_call|>{"name": "get_weather", "arguments": {"city": "Paris"}}</|tool_call|>
+from abstractllm import create_llm
 
-# For Crush CLI (LLaMA3 format)
-response = llm.generate(
-    "What's the weather?", 
-    tools=[get_weather],
-    tool_call_tags="llama3"
-)
-# Output: <function_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</function_call>
+# Automatic format detection and conversion
+llm = create_llm("ollama", model="qwen3-coder:30b")
 
-# For Gemini CLI (XML format)
 response = llm.generate(
-    "What's the weather?", 
-    tools=[get_weather],
-    tool_call_tags="xml"
+    "What's the weather in Paris?",
+    tools=[get_weather]
 )
-# Output: <tool_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</tool_call>
+
+# Tool calls automatically normalized
+print(response.tool_calls)
 ```
+
+#### Custom Tag Configuration
+
+For specific agentic CLI requirements:
+
+```python
+from abstractllm import create_llm
+
+# Option 1: Simple tag name (auto-formatted with angle brackets)
+llm = create_llm(
+    "ollama",
+    model="qwen3-coder:30b",
+    tool_call_tags="mytag"  # Becomes: <mytag>...JSON...</mytag>
+)
+
+# Option 2: Exact tag control (comma-separated, no auto-formatting)
+llm = create_llm(
+    "ollama", 
+    model="qwen3-coder:30b",
+    tool_call_tags="ojlk,dfsd"  # Becomes: ojlk...JSON...dfsd (exact)
+)
+
+# Option 3: ToolCallTags object for full control
+from abstractllm.tools.tag_rewriter import ToolCallTags
+
+custom_tags = ToolCallTags(
+    start_tag="<custom_tool>",
+    end_tag="</custom_tool>",
+    preserve_json=True,
+    auto_format=False  # Use tags exactly as specified
+)
+
+llm = create_llm(
+    "ollama",
+    model="qwen3-coder:30b",
+    tool_call_tags=custom_tags
+)
+```
+
+#### Predefined CLI Formats
+
+Built-in support for popular agentic CLIs:
+
+```python
+from abstractllm.tools.tag_rewriter import create_tag_rewriter
+
+# Codex CLI
+rewriter = create_tag_rewriter("codex")  # Qwen3 format
+
+# Crush CLI  
+rewriter = create_tag_rewriter("crush")  # LLaMA3 format
+
+# Gemini CLI
+rewriter = create_tag_rewriter("gemini")  # XML format
+
+# Available: "qwen3", "llama3", "xml", "gemma", "codex", "crush", "gemini", "openai", "anthropic"
+```
+
+#### Streaming Support
+
+Tag rewriting works seamlessly with streaming:
+
+```python
+for chunk in llm.generate(
+    "List files in my project",
+    tools=[list_files_tool],
+    stream=True
+):
+    print(chunk.content, end="")
+    
+    # Tool calls converted in real-time
+    if chunk.tool_calls:
+        for tool_call in chunk.tool_calls:
+            result = execute_tool(tool_call)
+```
+
+### Server (REST API) - Syntax Rewriter
+
+Used by the AbstractCore server to convert tool call formats for HTTP API clients.
+
+#### Agent Format Parameter
+
+Specify the target format explicitly:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3-coder:30b",
+    "messages": [{"role": "user", "content": "Get weather in Paris"}],
+    "tools": [...],
+    "agent_format": "codex"
+  }'
+```
+
+**Supported agent_format values:**
+- `"passthrough"` - No conversion (OpenAI models)
+- `"openai"` - OpenAI format
+- `"codex"` - Codex CLI format
+- `"qwen3"` - Qwen3 format
+- `"llama3"` - LLaMA3 format
+- `"gemma"` - Gemma format
+- `"xml"` - XML format
+
+#### Automatic Format Detection
+
+The server auto-detects format based on:
+
+1. **Custom Headers**: `X-Agent-Type: codex`
+2. **User Agent**: Detects Codex and other CLIs
+3. **Model Name**: Matches model patterns (qwen → qwen3, llama → llama3)
+4. **Default**: OpenAI format for maximum compatibility
+
+```bash
+# Using custom header
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-Agent-Type: codex" \
+  -H "Content-Type: application/json" \
+  -d '{...}'
+```
+
+#### OpenAI Format Conversion
+
+For OpenAI-compatible clients:
+
+```python
+import openai
+
+# Point to AbstractCore server
+client = openai.OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="not-needed"
+)
+
+# Works with any model via AbstractCore
+response = client.chat.completions.create(
+    model="ollama/qwen3-coder:30b",  # Non-OpenAI model
+    messages=[{"role": "user", "content": "What's the weather?"}],
+    tools=[...]
+)
+
+# Tool calls automatically in OpenAI format
+print(response.choices[0].message.tool_calls)
+```
+
+### Supported Input Formats
+
+Both systems detect and convert from these formats:
+
+| Model Family | Input Format | Example |
+|-------------|--------------|---------|
+| Qwen3 | `<|tool_call|>...JSON...</|tool_call|>` | Qwen3-Coder, Qwen3-Chat |
+| LLaMA3 | `<function_call>...JSON...</function_call>` | LLaMA3, Mistral |
+| Gemma | `` `tool_code...JSON...` `` | Gemma-2, CodeGemma |
+| XML | `<tool_call>...JSON...</tool_call>` | Claude, custom |
+| OpenAI | Structured API response | GPT-4, GPT-3.5 |
+
+### Performance Characteristics
+
+**Tag Rewriter (Core Library)**
+- **First Chunk Latency**: <5ms
+- **Conversion Overhead**: <1ms per chunk
+- **Memory**: Constant, O(1)
+- **Streaming**: Real-time, zero buffering for simple tags
+
+**Syntax Rewriter (Server)**
+- **Conversion Time**: <10ms per response
+- **Batch Support**: ✅ Handles multiple tool calls
+- **Memory**: O(n) where n = content length
+- **Caching**: Pattern compilation cached
 
 ## Event System Integration
 
@@ -624,6 +926,7 @@ See the [examples directory](../examples/) for comprehensive tool usage examples
 ## Related Documentation
 
 - [API Reference](api-reference.md) - Complete API documentation
-- [Tool Syntax Rewriting](tool-syntax-rewriting.md) - Format conversion details
 - [Event System](api-reference.md#event-system) - Event-driven tool control
 - [Architecture](architecture.md) - System design and tool execution flow
+- [Server Guide](server.md) - HTTP server and REST API
+- [Getting Started](getting-started.md) - Quick start guide
