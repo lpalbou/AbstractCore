@@ -44,6 +44,11 @@ class BasicSession:
         self.auto_compact = auto_compact
         self.auto_compact_threshold = auto_compact_threshold
         self._original_session = None  # Track if this is a compacted session
+        
+        # Optional analytics fields
+        self.summary = None
+        self.assessment = None
+        self.facts = None
 
         # Apply timeout configurations to provider if specified and provider exists
         if self.provider and hasattr(self.provider, 'set_timeout'):
@@ -61,7 +66,15 @@ class BasicSession:
     def add_message(self, role: str, content: str, name: Optional[str] = None, 
                    location: Optional[str] = None, **metadata_kwargs) -> Message:
         """
-        Add a message to conversation history.
+        Add a message to conversation history manually.
+        
+        Use this method when you need to:
+        - Add system messages
+        - Add tool messages  
+        - Manually construct conversation history
+        - Add messages without triggering LLM generation
+        
+        For normal user interactions, use generate() instead.
         
         Args:
             role: Message role (user, assistant, system, tool)
@@ -72,6 +85,16 @@ class BasicSession:
         
         Returns:
             Message: The created message with timestamp and metadata
+        
+        Example:
+            # Add a system message
+            session.add_message('system', 'You are a helpful assistant.')
+            
+            # Add a user message manually (without LLM response)
+            session.add_message('user', 'Hello!', name='alice')
+            
+            # For normal chat, use generate() instead:
+            # response = session.generate('Hello!', name='alice')
         """
         # Set default username for user messages if not specified
         if name is None and role == 'user':
@@ -108,19 +131,36 @@ class BasicSession:
         else:
             self.messages = []
 
-    def generate(self, prompt: str, username: Optional[str] = None, 
+    def generate(self, prompt: str, name: Optional[str] = None, 
                 location: Optional[str] = None, **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
-        Generate response using provider.
+        Generate LLM response for user input (recommended method for normal chat).
+        
+        This is the main method for conversational interactions. It:
+        1. Adds your message to conversation history
+        2. Calls the LLM provider to generate a response
+        3. Adds the assistant's response to history
+        4. Returns the response
         
         Args:
             prompt: User input prompt
-            username: Optional username for the message (defaults to "user")
+            name: Optional username for the message (defaults to "user")
             location: Optional location information for the message
-            **kwargs: Additional arguments passed to provider
+            **kwargs: Additional arguments passed to provider (stream, tools, etc.)
             
         Returns:
             GenerateResponse or Iterator[GenerateResponse]: Response from the provider
+            
+        Example:
+            # Normal chat interaction
+            response = session.generate('What is Python?', name='alice')
+            
+            # With location context
+            response = session.generate('What time is it?', name='bob', location='Paris')
+            
+            # With streaming
+            for chunk in session.generate('Tell me a story', stream=True):
+                print(chunk.content, end='')
         """
         if not self.provider:
             raise ValueError("No provider configured")
@@ -132,8 +172,8 @@ class BasicSession:
             # Replace current session with compacted version
             self._replace_with_compacted(compacted)
 
-        # Add user message with optional custom username and location
-        self.add_message('user', prompt, name=username, location=location)
+        # Add user message with optional custom name and location
+        self.add_message('user', prompt, name=name, location=location)
 
         # Format messages for provider (exclude the current user message since provider will add it)
         messages = self._format_messages_for_provider_excluding_current()
@@ -238,30 +278,57 @@ class BasicSession:
 
     def to_dict(self) -> Dict[str, Any]:
         """
-        Convert session to dictionary for complete serialization.
+        Convert session to dictionary using the session-archive/v1 schema.
         
         Returns:
-            Dict containing all session data including metadata, settings, and messages
+            Dict containing complete session archive with versioned schema
         """
-        return {
+        # Build tool registry (declarative schemas only)
+        tool_registry = []
+        if self.tools:
+            for tool in self.tools:
+                tool_entry = {"name": tool.name}
+                if hasattr(tool, 'description') and tool.description:
+                    tool_entry["description"] = tool.description
+                if hasattr(tool, 'json_schema') and tool.json_schema:
+                    tool_entry["json_schema"] = tool.json_schema
+                tool_registry.append(tool_entry)
+        
+        # Build session object
+        session_data = {
             "id": self.id,
             "created_at": self.created_at.isoformat(),
+            "provider": self.provider.__class__.__name__.replace('Provider', '').lower() if self.provider else None,
+            "model": getattr(self.provider, 'model', None) if self.provider else None,
+            "model_params": getattr(self.provider, 'model_params', None) if self.provider else None,
             "system_prompt": self.system_prompt,
-            "messages": [m.to_dict() for m in self.messages],
-            "auto_compact": self.auto_compact,
-            "auto_compact_threshold": self.auto_compact_threshold,
-            "original_session": self._original_session,
-            "tools_count": len(self.tools) if self.tools else 0,
-            "provider_type": self.provider.__class__.__name__ if self.provider else None,
-            # Note: We don't serialize the actual provider or tools objects as they may contain
-            # non-serializable elements like functions. These should be re-registered on load.
+            "tool_registry": tool_registry if tool_registry else None,
+            "settings": {
+                "auto_compact": self.auto_compact,
+                "auto_compact_threshold": self.auto_compact_threshold
+            }
+        }
+        
+        # Add optional analytics if present
+        if self.summary:
+            session_data["summary"] = self.summary
+        if self.assessment:
+            session_data["assessment"] = self.assessment
+        if self.facts:
+            session_data["facts"] = self.facts
+        
+        # Return complete archive
+        return {
+            "schema_version": "session-archive/v1",
+            "session": session_data,
+            "messages": [m.to_dict() for m in self.messages]
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], provider: Optional[AbstractLLMInterface] = None, 
                   tools: Optional[List[Callable]] = None) -> 'BasicSession':
         """
-        Create session from dictionary data.
+        Create session from dictionary data (supports both new archive format and legacy format).
         
         Args:
             data: Dictionary containing session data
@@ -271,24 +338,44 @@ class BasicSession:
         Returns:
             BasicSession: Reconstructed session
         """
+        # Detect format: new archive format has schema_version and nested session
+        if "schema_version" in data and "session" in data:
+            # New archive format
+            session_data = data["session"]
+            messages_data = data.get("messages", [])
+        else:
+            # Legacy format - data is the session object directly
+            session_data = data
+            messages_data = data.get("messages", [])
+        
+        # Extract settings
+        settings = session_data.get("settings", {})
+        auto_compact = settings.get("auto_compact", session_data.get("auto_compact", False))
+        auto_compact_threshold = settings.get("auto_compact_threshold", session_data.get("auto_compact_threshold", 6000))
+        
         # Create session with basic parameters
         session = cls(
             provider=provider,
             system_prompt=None,  # We'll restore messages manually to avoid duplicates
             tools=tools,
-            auto_compact=data.get("auto_compact", False),
-            auto_compact_threshold=data.get("auto_compact_threshold", 6000)
+            auto_compact=auto_compact,
+            auto_compact_threshold=auto_compact_threshold
         )
         
         # Restore session metadata
-        session.id = data["id"]
-        session.created_at = datetime.fromisoformat(data["created_at"])
-        session.system_prompt = data.get("system_prompt")
-        session._original_session = data.get("original_session")
+        session.id = session_data["id"]
+        session.created_at = datetime.fromisoformat(session_data["created_at"])
+        session.system_prompt = session_data.get("system_prompt")
+        session._original_session = session_data.get("original_session")
+        
+        # Restore optional analytics
+        session.summary = session_data.get("summary")
+        session.assessment = session_data.get("assessment")
+        session.facts = session_data.get("facts")
         
         # Clear any auto-added messages and restore from data
         session.messages = []
-        for msg_data in data.get("messages", []):
+        for msg_data in messages_data:
             message = Message.from_dict(msg_data)
             session.messages.append(message)
             
@@ -573,3 +660,177 @@ class BasicSession:
         self._replace_with_compacted(compacted)
 
         print(f"✅ Session compacted: {len(compacted.messages)} messages, ~{compacted.get_token_estimate()} tokens")
+
+    def generate_summary(self, preserve_recent: int = 6, focus: Optional[str] = None, 
+                        compact_provider: Optional[AbstractLLMInterface] = None) -> Dict[str, Any]:
+        """
+        Generate a summary of the entire conversation and store it in session.summary.
+        
+        Args:
+            preserve_recent: Number of recent messages to preserve in analysis
+            focus: Optional focus for summarization
+            compact_provider: Optional provider for summarization
+            
+        Returns:
+            Dict containing the generated summary
+        """
+        if not self.messages:
+            return {}
+            
+        start_time = datetime.now()
+        original_tokens = self.get_token_estimate()
+        
+        # Use compact provider or fall back to session provider
+        summarizer_provider = compact_provider or self.provider
+        if not summarizer_provider:
+            raise ValueError("No provider available for summarization")
+        
+        try:
+            from ..processing import BasicSummarizer
+        except ImportError:
+            raise ImportError("BasicSummarizer not available")
+        
+        # Create summarizer
+        summarizer = BasicSummarizer(summarizer_provider)
+        
+        # Convert messages to dict format for summarizer
+        conversation_messages = [msg for msg in self.messages if msg.role != 'system']
+        message_dicts = [{"role": msg.role, "content": msg.content} for msg in conversation_messages]
+        
+        # Generate summary
+        summary_result = summarizer.summarize_chat_history(
+            messages=message_dicts,
+            preserve_recent=preserve_recent,
+            focus=focus
+        )
+        
+        # Calculate metrics
+        end_time = datetime.now()
+        duration_ms = (end_time - start_time).total_seconds() * 1000
+        
+        # Store summary in session
+        self.summary = {
+            "created_at": start_time.isoformat(),
+            "preserve_recent": preserve_recent,
+            "focus": focus,
+            "text": summary_result.summary,
+            "metrics": {
+                "tokens_before": original_tokens,
+                "tokens_after": len(summary_result.summary) // 4,  # Rough estimate
+                "compression_ratio": original_tokens / (len(summary_result.summary) // 4) if summary_result.summary else 1.0,
+                "generation_time_ms": duration_ms
+            }
+        }
+        
+        return self.summary
+
+    def generate_assessment(self, criteria: Optional[Dict[str, bool]] = None) -> Dict[str, Any]:
+        """
+        Generate a quality assessment of the entire conversation and store it in session.assessment.
+        
+        Args:
+            criteria: Optional criteria for assessment
+            
+        Returns:
+            Dict containing the generated assessment
+        """
+        if not self.messages:
+            return {}
+            
+        start_time = datetime.now()
+        
+        if not self.provider:
+            raise ValueError("No provider available for assessment")
+        
+        try:
+            from ..processing import BasicJudge
+            from ..processing.basic_judge import JudgmentCriteria
+        except ImportError:
+            raise ImportError("BasicJudge not available")
+        
+        # Default criteria if not provided
+        if criteria is None:
+            criteria = {
+                "clarity": True,
+                "coherence": True,
+                "relevance": True,
+                "completeness": True,
+                "actionability": True
+            }
+        
+        # Create judge
+        judge = BasicJudge(self.provider)
+        
+        # Format conversation for assessment
+        conversation_messages = [msg for msg in self.messages if msg.role != 'system']
+        conversation_text = "\n\n".join([
+            f"{msg.role.title()}: {msg.content}" for msg in conversation_messages
+        ])
+        
+        # Create criteria object
+        judge_criteria = JudgmentCriteria(**criteria)
+        
+        # Generate assessment
+        assessment_result = judge.evaluate(
+            content=conversation_text,
+            context="conversation quality assessment",
+            criteria=judge_criteria
+        )
+        
+        # Store assessment in session
+        self.assessment = {
+            "created_at": start_time.isoformat(),
+            "criteria": criteria,
+            "overall_score": assessment_result.get('overall_score', 0),
+            "judge_summary": assessment_result.get('judge_summary', ''),
+            "strengths": assessment_result.get('strengths', []),
+            "actionable_feedback": assessment_result.get('actionable_feedback', []),
+            "reasoning": assessment_result.get('reasoning', '')
+        }
+        
+        return self.assessment
+
+    def extract_facts(self, output_format: str = "triples") -> Dict[str, Any]:
+        """
+        Extract facts from the entire conversation and store them in session.facts.
+        
+        Args:
+            output_format: Format for fact extraction ("triples" or "jsonld")
+            
+        Returns:
+            Dict containing the extracted facts
+        """
+        if not self.messages:
+            return {}
+            
+        start_time = datetime.now()
+        
+        if not self.provider:
+            raise ValueError("No provider available for fact extraction")
+        
+        try:
+            from ..processing import BasicExtractor
+        except ImportError:
+            raise ImportError("BasicExtractor not available")
+        
+        # Create extractor
+        extractor = BasicExtractor(self.provider)
+        
+        # Format conversation for extraction
+        conversation_messages = [msg for msg in self.messages if msg.role != 'system']
+        conversation_text = "\n\n".join([
+            f"{msg.role.title()}: {msg.content}" for msg in conversation_messages
+        ])
+        
+        # Extract facts
+        extraction_result = extractor.extract(conversation_text, output_format=output_format)
+        
+        # Store facts in session
+        self.facts = {
+            "extracted_at": start_time.isoformat(),
+            "simple_triples": extraction_result.get("simple_triples", []),
+            "jsonld": extraction_result.get("@graph") if output_format == "jsonld" else None,
+            "statistics": extraction_result.get("statistics", {})
+        }
+        
+        return self.facts

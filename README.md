@@ -41,10 +41,32 @@ response = llm.generate(
 print(response.content)
 ```
 
+### Session Management
+
+```python
+from abstractllm import BasicSession, create_llm
+
+# Create a persistent conversation session
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(llm, system_prompt="You are a helpful assistant.")
+
+# Add messages with metadata
+session.add_message('user', 'Hello!', name='alice', location='Paris')
+response = session.generate('What is Python?', name='bob')
+
+# Save complete conversation with optional analytics
+session.save('conversation.json')  # Basic save
+session.save('analyzed.json', summary=True, assessment=True, facts=True)  # With analytics
+
+# Load and continue conversation
+loaded_session = BasicSession.load('conversation.json', provider=llm)
+```
+
 ## Key Features
 
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
 - **Unified Tools**: Consistent tool calling across all providers
+- **Session Management**: Persistent conversations with metadata, analytics, and complete serialization
 - **Structured Responses**: Clean, predictable output formats with Pydantic
 - **Streaming Support**: Real-time token generation for interactive experiences
 - **Embeddings**: Built-in support for semantic search and RAG applications
@@ -152,6 +174,7 @@ python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-la
 
 ### Core Library (Python)
 - **[Python API Reference](docs/api-reference.md)** - Complete Python API documentation
+- **[Session Management](docs/session.md)** - Persistent conversations, serialization, and analytics
 - **[Embeddings Guide](docs/embeddings.md)** - Semantic search, RAG, and vector embeddings
 - **[Code Examples](examples/)** - Working examples for all features
 - **[Capabilities](docs/capabilities.md)** - What AbstractCore can and cannot do
