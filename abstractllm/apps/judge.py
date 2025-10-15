@@ -8,7 +8,7 @@ Usage:
 Options:
     --context <context>             Evaluation context description (e.g., "code review", "documentation assessment")
     --criteria <criteria>           Comma-separated criteria to evaluate (clarity,simplicity,actionability,soundness,innovation,effectiveness,relevance,completeness,coherence)
-    --custom-criteria <criteria>    Comma-separated custom criteria (e.g., "has_examples,covers_edge_cases")
+    --focus <focus>                  Specific focus areas for evaluation (e.g., "technical accuracy,performance,security")
     --reference <file_or_text>      Reference content for comparison-based evaluation
     --format <format>               Output format (json, yaml, plain, default: json)
     --output <output>               Output file path (optional, prints to console if not provided)
@@ -34,7 +34,7 @@ Examples:
     python -m abstractllm.apps.judge docs/*.md --context "documentation review" --criteria clarity,completeness
 
     # Other options
-    python -m abstractllm.apps.judge proposal.md --custom-criteria has_examples,addresses_concerns --output assessment.json
+    python -m abstractllm.apps.judge proposal.md --focus "technical accuracy,completeness,examples" --output assessment.json
     python -m abstractllm.apps.judge content.txt --reference ideal_solution.txt --format plain --verbose
     python -m abstractllm.apps.judge text.md --provider openai --model gpt-4o-mini --temperature 0.05
 """
@@ -257,7 +257,7 @@ Examples:
   # Single file or text
   python -m abstractllm.apps.judge "This code is well-structured."
   python -m abstractllm.apps.judge document.py --context "code review" --criteria clarity,soundness
-  python -m abstractllm.apps.judge proposal.md --custom-criteria has_examples --output assessment.json
+  python -m abstractllm.apps.judge proposal.md --focus "technical accuracy,examples" --output assessment.json
 
   # Multiple files (evaluated sequentially)
   python -m abstractllm.apps.judge file1.py file2.py file3.py --context "code review" --format json
@@ -300,8 +300,8 @@ Default model setup:
     )
 
     parser.add_argument(
-        '--custom-criteria',
-        help='Comma-separated custom criteria (e.g., "has_examples,covers_edge_cases")'
+        '--focus',
+        help='Specific focus areas for evaluation (e.g., "technical accuracy,performance,security")'
     )
 
     parser.add_argument(
@@ -444,7 +444,7 @@ Default model setup:
 
         # Parse criteria
         criteria_list = parse_criteria_list(args.criteria)
-        custom_criteria = parse_criteria_list(args.custom_criteria)
+        focus = args.focus
         judgment_criteria = build_judgment_criteria(criteria_list)
 
         # Initialize judge
@@ -498,7 +498,7 @@ Default model setup:
                     file_paths=single_input,
                     context=args.context,
                     criteria=judgment_criteria,
-                    custom_criteria=custom_criteria,
+                    focus=focus,
                     reference=reference,
                     include_criteria=args.include_criteria,
                     exclude_global=args.exclude_global
@@ -509,7 +509,7 @@ Default model setup:
                     content=single_input,
                     context=args.context,
                     criteria=judgment_criteria,
-                    custom_criteria=custom_criteria,
+                    focus=focus,
                     reference=reference,
                     include_criteria=args.include_criteria
                 )
@@ -519,7 +519,7 @@ Default model setup:
                 file_paths=file_or_text,
                 context=args.context,
                 criteria=judgment_criteria,
-                custom_criteria=custom_criteria,
+                focus=focus,
                 reference=reference,
                 include_criteria=args.include_criteria,
                 exclude_global=args.exclude_global
