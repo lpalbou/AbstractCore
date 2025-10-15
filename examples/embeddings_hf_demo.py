@@ -10,10 +10,10 @@ All models run locally with no external API dependencies.
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import abstractllm
+# Add parent directory to path to import abstractcore
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 
 def main():

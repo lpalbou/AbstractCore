@@ -2,7 +2,7 @@
 
 ## Overview
 
-The AbstractLLM Core streaming architecture represents a breakthrough in real-time language model interaction, providing a unified, performant, and flexible approach to streaming tool calls and content.
+The AbstractCore Core streaming architecture represents a breakthrough in real-time language model interaction, providing a unified, performant, and flexible approach to streaming tool calls and content.
 
 > **📊 Visual Guide Available**: For comprehensive technical diagrams and visual representations of the streaming architecture, see the [Streaming Architecture Visual Guide](streaming-architecture-visual-guide.md).
 

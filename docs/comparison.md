@@ -37,7 +37,7 @@ response = completion(model="gpt-4", messages=[{"role": "user", "content": "Hell
 #### When to choose AbstractCore:
 ```python
 # AbstractCore for production features
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")
 
@@ -90,7 +90,7 @@ response = agent.run("What's the weather?")
 
 **AbstractCore approach:**
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Simple and direct
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -125,7 +125,7 @@ workflow.set_entry_point("agent")
 
 # AbstractAgent - simpler agent creation
 from abstract_agent import Agent
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 agent = Agent(
     llm=create_llm("openai", model="gpt-4o-mini"),
@@ -161,8 +161,8 @@ query_engine = index.as_query_engine()
 response = query_engine.query("What is the main topic?")
 
 # AbstractCore - you build the pipeline
-from abstractllm import create_llm
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore import create_llm
+from abstractcore.embeddings import EmbeddingManager
 
 embedder = EmbeddingManager()
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -194,7 +194,7 @@ print(response.choices[0].message.content)
 
 **After (AbstractCore):**
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-3.5-turbo")
 response = llm.generate("Hello")
@@ -216,7 +216,7 @@ response = llm([HumanMessage(content="Hello")])
 
 **After (AbstractCore):**
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-3.5-turbo")
 response = llm.generate("Hello")
@@ -240,7 +240,7 @@ print(response.choices[0].message.content)
 
 **After (AbstractCore):**
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-3.5-turbo")
 response = llm.generate("Hello")
@@ -362,7 +362,7 @@ Many projects benefit from combining tools:
 ```python
 # Use LlamaIndex for RAG, AbstractCore for LLM calls
 from llama_index import VectorStoreIndex
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 index = VectorStoreIndex.from_documents(docs)
 relevant_docs = index.similarity_search(query)
@@ -374,7 +374,7 @@ response = llm.generate(f"Context: {relevant_docs}\nQuestion: {query}")
 ### AbstractCore + Custom Agents
 ```python
 # Use AbstractCore for reliable LLM calls in your agent
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 class MyAgent:
     def __init__(self):
@@ -391,7 +391,7 @@ class MyAgent:
 ```python
 # Use LangChain for prompts, AbstractCore for execution
 from langchain.prompts import PromptTemplate
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 template = PromptTemplate.from_template("Translate {text} to {language}")
 llm = create_llm("openai", model="gpt-4o-mini")

@@ -13,9 +13,9 @@ from io import StringIO
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from abstractllm import create_llm
-from abstractllm.providers.huggingface_provider import HuggingFaceProvider
-from abstractllm.exceptions import ModelNotFoundError
+from abstractcore import create_llm
+from abstractcore.providers.huggingface_provider import HuggingFaceProvider
+from abstractcore.exceptions import ModelNotFoundError
 
 
 # Test model - using a known GGUF model in HF cache

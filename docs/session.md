@@ -189,7 +189,7 @@ This approach:
 ### Basic Session Persistence
 
 ```python
-from abstractllm import BasicSession, create_llm
+from abstractcore import BasicSession, create_llm
 
 # Create and use session
 provider = create_llm("openai", model="gpt-4o-mini")
@@ -238,7 +238,7 @@ windowed = session.get_window(
 
 ## Schema Reference
 
-The complete JSON schema is available at: `abstractllm/assets/session_schema.json`
+The complete JSON schema is available at: `abstractcore/assets/session_schema.json`
 
 This schema can be used for:
 - Validation of serialized sessions

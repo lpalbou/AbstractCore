@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document provides comprehensive visual diagrams of AbstractLLM Core's Unified Streaming Architecture, showing the sophisticated data flow, state management, and performance characteristics that enable real-time tool execution with <10ms first chunk latency.
+This document provides comprehensive visual diagrams of AbstractCore Core's Unified Streaming Architecture, showing the sophisticated data flow, state management, and performance characteristics that enable real-time tool execution with <10ms first chunk latency.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ graph TB
         API[API Server]
     end
 
-    subgraph "AbstractLLM Core"
+    subgraph "AbstractCore Core"
         BP[BaseProvider]
         USP[UnifiedStreamProcessor]
         ITD[IncrementalToolDetector]
@@ -85,7 +85,7 @@ graph TB
         └───────────────┼───────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                   ABSTRACTLLM CORE                          │
+│                   ABSTRACTCORE                          │
 │                                                             │
 │  ┌──────────────┐    Streaming Pipeline                    │
 │  │BaseProvider  │─────────────────────────┐                │
@@ -779,9 +779,9 @@ The implementation offers a single streaming path that handles multiple scenario
 ## Quick Reference
 
 ### File Locations
-- **Main Implementation**: `/abstractllm/providers/streaming.py`
-- **Base Integration**: `/abstractllm/providers/base.py`
-- **Tag Rewriter**: `/abstractllm/tools/tag_rewriter.py`
+- **Main Implementation**: `/abstractcore/providers/streaming.py`
+- **Base Integration**: `/abstractcore/providers/base.py`
+- **Tag Rewriter**: `/abstractcore/tools/tag_rewriter.py`
 - **Tests**: `/tests/test_unified_streaming.py`
 
 ### Key Configuration

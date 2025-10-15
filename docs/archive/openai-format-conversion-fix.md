@@ -209,7 +209,7 @@ Updated tests:
 ## Files Modified
 
 ### Core Implementation
-1. **`abstractllm/providers/streaming.py`**
+1. **`abstractcore/providers/streaming.py`**
    - Added `convert_to_openai_json` flag
    - Implemented `_convert_to_openai_format()` method
    - Updated `_initialize_default_rewriter()` logic
@@ -239,7 +239,7 @@ Updated tests:
 
 ```bash
 # Run manual validation script
-cd /Users/albou/projects/abstractllm_core
+cd /Users/albou/projects/abstractcore_project
 python tests/test_openai_conversion_manual.py
 
 # Expected output:
@@ -264,7 +264,7 @@ pytest tests/test_environment_variable_tool_call_tags.py -v
 ```bash
 # Start server with OpenAI format
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=openai
-python -m abstractllm.server
+python -m abstractcore.server
 
 # Test with curl
 curl -X POST http://localhost:8000/v1/chat/completions \

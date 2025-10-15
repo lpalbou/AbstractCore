@@ -7,10 +7,10 @@ import os
 import json
 import time
 from typing import Dict, Any, List
-from abstractllm import create_llm, BasicSession
-from abstractllm.tools.core import ToolDefinition
-from abstractllm.tools import register_tool, clear_registry
-from abstractllm.tools.parser import detect_tool_calls
+from abstractcore import create_llm, BasicSession
+from abstractcore.tools.core import ToolDefinition
+from abstractcore.tools import register_tool, clear_registry
+from abstractcore.tools.parser import detect_tool_calls
 
 
 def list_files(directory: str = ".") -> str:

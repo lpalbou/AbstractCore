@@ -48,7 +48,7 @@ pip install abstractcore[all]
 Create a file called `first_llm.py`:
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Choose your provider (uncomment one):
 llm = create_llm("openai", model="gpt-4o-mini")        # Cloud
@@ -76,7 +76,7 @@ python first_llm.py
 AbstractCore supports multiple providers with the same interface:
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Same interface, different providers
 openai_llm = create_llm("openai", model="gpt-4o-mini")
@@ -97,7 +97,7 @@ Instead of parsing strings, get typed objects directly:
 
 ```python
 from pydantic import BaseModel
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 class MovieReview(BaseModel):
     title: str
@@ -124,8 +124,8 @@ print(f"Summary: {review.summary}")
 Let your LLM call functions with the `@tool` decorator:
 
 ```python
-from abstractllm import create_llm, tool
-from abstractllm.tool import ToolDefinition
+from abstractcore import create_llm, tool
+from abstractcore.tool import ToolDefinition
 
 # Simple way to create tools: Use @tool decorator
 @tool
@@ -175,7 +175,7 @@ print(weather_tool.description)  # "Get current weather for a specified city."
 Show responses as they're generated:
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")
 
@@ -191,7 +191,7 @@ print("\n")
 Maintain context across multiple turns:
 
 ```python
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 
 llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(provider=llm, system_prompt="You are a helpful coding tutor.")
@@ -245,8 +245,8 @@ llm = create_llm("mlx", model="mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit")
 ### Pattern 1: Error Handling
 
 ```python
-from abstractllm import create_llm
-from abstractllm.exceptions import ProviderAPIError, RateLimitError
+from abstractcore import create_llm
+from abstractcore.exceptions import ProviderAPIError, RateLimitError
 
 llm = create_llm("openai", model="gpt-4o-mini")
 
@@ -262,7 +262,7 @@ except ProviderAPIError as e:
 ### Pattern 2: Provider Fallback
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 providers = [
     ("openai", "gpt-4o-mini"),
@@ -286,7 +286,7 @@ response = generate_with_fallback("Hello world")
 ### Pattern 3: Configuration
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 llm = create_llm(
     "openai",
@@ -352,13 +352,13 @@ For quick testing and exploration, AbstractCore includes a basic CLI tool:
 
 ```bash
 # Interactive chat with any provider
-python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 
 # Quick one-off questions
-python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --prompt "What is Python?"
+python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini --prompt "What is Python?"
 
 # With streaming mode for real-time responses
-python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest --stream
+python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest --stream
 
 # With web search capabilities
 # Try: "search for today's AI news" or "find recent Python tutorials"
@@ -388,7 +388,7 @@ AbstractCore includes a comprehensive set of tools for file operations, web sear
 - **`execute_command`** - Execute shell commands safely with security controls and platform detection
 - **`web_search`** - Search the web with DuckDuckGo (no API key required, supports time filtering!)
 
-**For detailed tool documentation and examples, see:** [`abstractllm/tools/common_tools.py`](../abstractllm/tools/common_tools.py)
+**For detailed tool documentation and examples, see:** [`abstractcore/tools/common_tools.py`](../abstractcore/tools/common_tools.py)
 
 > **Note**: This CLI is a basic demonstrator. For production applications requiring complex reasoning or advanced agent behaviors, build custom solutions using the AbstractCore framework directly.
 

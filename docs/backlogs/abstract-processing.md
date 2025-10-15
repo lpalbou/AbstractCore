@@ -222,7 +222,7 @@ abstractprocessing/
 
 #### 1. Structured Output Integration
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 from abstractprocessing.extraction import ChainOfVerification
 from pydantic import BaseModel
 
@@ -240,7 +240,7 @@ facts = extractor.extract(text, response_model=FactSchema)
 
 #### 2. Event System Integration
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 def monitor_processing(event):
     if event.type == EventType.AFTER_GENERATE:
@@ -266,7 +266,7 @@ summarizer = ChainOfDensity(llm_openai)  # or llm_claude, llm_local
 
 #### 4. Retry System Benefits
 ```python
-from abstractllm.core.retry import RetryConfig
+from abstractcore.core.retry import RetryConfig
 
 # Inherit robust retry behavior
 config = RetryConfig(max_attempts=3, initial_delay=1.0)
@@ -279,7 +279,7 @@ facts = extractor.extract(text)  # Automatically retries on failures
 
 #### 5. Session Integration
 ```python
-from abstractllm import BasicSession
+from abstractcore import BasicSession
 
 session = BasicSession(llm, system_prompt="You are a fact extraction expert")
 
@@ -291,7 +291,7 @@ facts2 = extractor.extract(document2)  # Remembers previous context
 
 #### 6. Embedding System Integration
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 from abstractprocessing.processing import SemanticChunker
 
 # Use AbstractCore embeddings for semantic chunking
@@ -307,7 +307,7 @@ chunks = chunker.chunk_by_similarity(long_text, similarity_threshold=0.7)
 ## Dependencies Strategy
 
 ### Core Dependencies (Required)
-- `abstractllm` (AbstractCore) - Only dependency needed!
+- `abstractcore` (AbstractCore) - Only dependency needed!
 
 ### Optional Enhancement Libraries (When Truly Needed)
 
@@ -344,7 +344,7 @@ chunking = [
 
 ### Simple Usage (Zero Configuration)
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 from abstractprocessing import QuickSummarizer, QuickExtractor
 
 llm = create_llm("openai", model="gpt-4o-mini")

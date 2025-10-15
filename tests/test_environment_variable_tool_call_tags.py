@@ -7,7 +7,7 @@ and edge cases to ensure the environment variable works correctly.
 
 import pytest
 from unittest.mock import Mock
-from abstractllm.providers.streaming import UnifiedStreamProcessor
+from abstractcore.providers.streaming import UnifiedStreamProcessor
 
 
 class TestEnvironmentVariableToolCallTags:
@@ -349,7 +349,7 @@ class TestEnvironmentVariableStreamingIntegration:
 
     def create_mock_response_stream(self, content_chunks):
         """Create a mock response stream for testing"""
-        from abstractllm.core.types import GenerateResponse
+        from abstractcore.core.types import GenerateResponse
         for chunk in content_chunks:
             yield GenerateResponse(content=chunk, model="test-model")
 

@@ -1,4 +1,4 @@
-# AbstractLLM Core: Production Deployment
+# AbstractCore Core: Production Deployment
 
 ## What You'll Learn
 
@@ -24,16 +24,16 @@ This final example demonstrates a complete production setup:
 ### Key Code Snippet
 
 ```python
-from abstractllm import AbstractLLM
-from abstractllm.telemetry import TelemetryManager
-from abstractllm.config import ProductionConfig
+from abstractcore import create_llm
+from abstractcore.telemetry import TelemetryManager
+from abstractcore.config import ProductionConfig
 
 class EnterpriseAISystem:
     def __init__(self):
         self.config = ProductionConfig.load()
         self.telemetry = TelemetryManager(self.config)
 
-        self.llm = AbstractLLM(
+        self.llm = create_llm(
             provider=self.config.provider,
             model=self.config.model,
             telemetry=self.telemetry
@@ -60,6 +60,6 @@ class EnterpriseAISystem:
 
 ### Conclusion
 
-You've completed the AbstractLLM Core learning journey! 🎉
+You've completed the AbstractCore Core learning journey! 🎉
 
 Congratulations on mastering advanced AI integration techniques.

@@ -12,11 +12,11 @@ from typing import Dict, Any, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from abstractllm import create_llm, BasicSession
-from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
-from abstractllm.utils import configure_logging, get_logger
-from abstractllm.architectures import detect_architecture
-from abstractllm.events import EventType, EventEmitter
+from abstractcore import create_llm, BasicSession
+from abstractcore.tools.common_tools import list_files, search_files, read_file, write_file, web_search
+from abstractcore.utils import configure_logging, get_logger
+from abstractcore.architectures import detect_architecture
+from abstractcore.events import EventType, EventEmitter
 
 
 class ComprehensiveProviderTest:
@@ -248,7 +248,7 @@ class ComprehensiveProviderTest:
         """Test 5: Verify telemetry has COMPLETE observability with VERBATIM"""
         print(f"\n[TEST 5] Telemetry and observability verification")
 
-        telemetry_file = Path(f"/tmp/abstractllm_{self.provider_name}_final.jsonl")
+        telemetry_file = Path(f"/tmp/abstractcore_{self.provider_name}_final.jsonl")
 
         if not telemetry_file.exists():
             print(f"❌ No telemetry file")
@@ -425,7 +425,7 @@ def main():
     # Check telemetry files
     print("\nTelemetry Files Created:")
     for provider in ["ollama", "mlx", "openai", "anthropic"]:
-        file_path = Path(f"/tmp/abstractllm_{provider}_final.jsonl")
+        file_path = Path(f"/tmp/abstractcore_{provider}_final.jsonl")
         if file_path.exists():
             size = file_path.stat().st_size
             with open(file_path, 'r') as f:

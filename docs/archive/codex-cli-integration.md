@@ -17,7 +17,7 @@ AbstractCore provides seamless integration with Codex CLI, enabling powerful AI-
 
 ```bash
 # Start server with default configuration
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 ### 2. Configure Environment Variables
@@ -88,7 +88,7 @@ codex --model "ollama/qwen3-coder:30b" \
 ```bash
 # Optional: Set default tool call format at server start
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
-uvicorn abstractllm.server.app:app
+uvicorn abstractcore.server.app:app
 
 # Or set per-request
 codex --model "ollama/qwen3-coder:30b" \
@@ -103,10 +103,10 @@ codex --model "ollama/qwen3-coder:30b" \
 ```bash
 # Start server with comprehensive logging
 export ABSTRACTCORE_DEBUG=true
-uvicorn abstractllm.server.app:app
+uvicorn abstractcore.server.app:app
 
 # Check logs in real-time
-tail -f logs/abstractllm_*.log
+tail -f logs/abstractcore_*.log
 ```
 
 ## Performance Tuning

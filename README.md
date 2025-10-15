@@ -15,7 +15,7 @@ pip install abstractcore[all]
 ### Basic Usage
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Works with any provider - just change the provider name
 llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
@@ -26,7 +26,7 @@ print(response.content)
 ### Tool Calling
 
 ```python
-from abstractllm import create_llm, tool
+from abstractcore import create_llm, tool
 
 @tool
 def get_current_weather(city: str):
@@ -44,7 +44,7 @@ print(response.content)
 ### Session Management
 
 ```python
-from abstractllm import BasicSession, create_llm
+from abstractcore import BasicSession, create_llm
 
 # Create a persistent conversation session
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -94,7 +94,7 @@ AbstractCore is **primarily a Python library**. The server is an **optional comp
 pip install abstractcore[server]
 
 # Start the server
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 Use with any OpenAI-compatible client:
@@ -129,13 +129,13 @@ AbstractCore includes a **built-in CLI** for interactive testing, development, a
 
 ```bash
 # Start interactive CLI
-python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 
 # With streaming enabled
-python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini --stream
+python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini --stream
 
 # Single prompt execution
-python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest --prompt "What is Python?"
+python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest --prompt "What is Python?"
 ```
 
 **Key Features:**
@@ -219,9 +219,9 @@ extractor report.pdf
 judge essay.md
 
 # Method 2: Via Python module
-python -m abstractllm.apps summarizer document.txt
-python -m abstractllm.apps extractor report.pdf
-python -m abstractllm.apps judge essay.md
+python -m abstractcore.apps summarizer document.txt
+python -m abstractcore.apps extractor report.pdf
+python -m abstractcore.apps judge essay.md
 ```
 
 ### Key Parameters
@@ -325,7 +325,7 @@ llm_prod = create_llm("openai", model="gpt-4o-mini")
 ### 3. Embeddings & RAG
 
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 # Create embeddings for semantic search
 embedder = EmbeddingManager()
@@ -364,7 +364,7 @@ print(f"{review.title}: {review.rating}/5")
 
 ```bash
 # Start server once
-uvicorn abstractllm.server.app:app --port 8000
+uvicorn abstractcore.server.app:app --port 8000
 
 # Use with any OpenAI client
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -441,3 +441,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ---
 
 **AbstractCore** - One interface, all LLM providers. Focus on building, not managing API differences.
+
+---
+
+> **Migration Note**: This project was previously known as "AbstractLLM" and has been completely rebranded to "AbstractCore" as of version 2.4.0. See [CHANGELOG.md](CHANGELOG.md) for migration details.

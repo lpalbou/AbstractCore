@@ -8,8 +8,8 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from abstractllm.embeddings.models import get_model_config, get_default_model, list_available_models
-from abstractllm.embeddings.manager import EmbeddingManager
+from abstractcore.embeddings.models import get_model_config, get_default_model, list_available_models
+from abstractcore.embeddings.manager import EmbeddingManager
 
 
 class TestEmbeddingModels:
@@ -57,7 +57,7 @@ class TestEmbeddingManagerBasic:
 
     def test_init_fails_without_sentence_transformers(self):
         """Test that initialization fails when sentence-transformers is not available."""
-        with patch('abstractllm.embeddings.manager.sentence_transformers', None):
+        with patch('abstractcore.embeddings.manager.sentence_transformers', None):
             with pytest.raises(ImportError, match="sentence-transformers is required"):
                 EmbeddingManager(cache_dir=self.cache_dir)
 

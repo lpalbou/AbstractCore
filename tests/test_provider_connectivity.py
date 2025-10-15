@@ -5,7 +5,7 @@ Fast smoke tests to verify providers can be created.
 
 import pytest
 import os
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 
 class TestProviderConnectivity:

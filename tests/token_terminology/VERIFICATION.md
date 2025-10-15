@@ -18,8 +18,8 @@ python -m pytest tests/token_terminology/test_max_tokens_migration.py -v
 ```bash
 source .venv/bin/activate
 python -c "
-from abstractllm.architectures import get_model_capabilities, get_context_limits
-from abstractllm.providers.openai_provider import OpenAIProvider
+from abstractcore.architectures import get_model_capabilities, get_context_limits
+from abstractcore.providers.openai_provider import OpenAIProvider
 
 caps = get_model_capabilities('gpt-4')
 limits = get_context_limits('gpt-4')
@@ -37,8 +37,8 @@ print(f'  ✅ All values should be 128000')
 ```bash
 source .venv/bin/activate
 python -c "
-from abstractllm.architectures import get_model_capabilities, get_context_limits
-from abstractllm.providers.ollama_provider import OllamaProvider
+from abstractcore.architectures import get_model_capabilities, get_context_limits
+from abstractcore.providers.ollama_provider import OllamaProvider
 
 # Test alias resolution
 alias = 'qwen/qwen3-next-80b'
@@ -56,7 +56,7 @@ print(f'  ✅ Should be 262144 (alias resolved correctly)')
 ```bash
 source .venv/bin/activate
 python -c "
-from abstractllm.providers.ollama_provider import OllamaProvider
+from abstractcore.providers.ollama_provider import OllamaProvider
 
 provider = OllamaProvider('qwen3-coder:30b')
 
@@ -75,13 +75,13 @@ print(f'  ✅ max_tokens should be 32768')
 
 #### Check for context_length (should be 0)
 ```bash
-grep -r "context_length" abstractllm/assets/model_capabilities.json
+grep -r "context_length" abstractcore/assets/model_capabilities.json
 # Expected: No output (0 matches)
 ```
 
 #### Count max_tokens occurrences (should be 85+)
 ```bash
-grep -o "max_tokens" abstractllm/assets/model_capabilities.json | wc -l
+grep -o "max_tokens" abstractcore/assets/model_capabilities.json | wc -l
 # Expected: 86 (85 models + 1 in default_capabilities)
 ```
 
@@ -91,13 +91,13 @@ grep -o "max_tokens" abstractllm/assets/model_capabilities.json | wc -l
 
 #### Check detection.py
 ```bash
-grep -i "context_length" abstractllm/architectures/detection.py
+grep -i "context_length" abstractcore/architectures/detection.py
 # Expected: No output (0 matches)
 ```
 
 #### Check base.py
 ```bash
-grep -i "context_length" abstractllm/providers/base.py | grep -v "^#"
+grep -i "context_length" abstractcore/providers/base.py | grep -v "^#"
 # Expected: No output (0 active code references)
 ```
 
@@ -112,7 +112,7 @@ python -c "
 import json
 from pathlib import Path
 
-with open('abstractllm/assets/model_capabilities.json', 'r') as f:
+with open('abstractcore/assets/model_capabilities.json', 'r') as f:
     data = json.load(f)
 
 models = data.get('models', {})
@@ -145,8 +145,8 @@ python -m pytest tests/integration/test_system_integration.py::TestJSONCapabilit
 ```bash
 source .venv/bin/activate
 python -c "
-from abstractllm.architectures import detect_architecture, get_model_capabilities, get_context_limits
-from abstractllm.providers.openai_provider import OpenAIProvider
+from abstractcore.architectures import detect_architecture, get_model_capabilities, get_context_limits
+from abstractcore.providers.openai_provider import OpenAIProvider
 
 # Test that all existing APIs still work
 model = 'gpt-4'
@@ -198,7 +198,7 @@ print(f'   - max_output_tokens: {limits[\"max_output_tokens\"]}')
 Use this checklist to manually verify the migration:
 
 ### ✅ JSON Verification
-- [ ] Open `abstractllm/assets/model_capabilities.json`
+- [ ] Open `abstractcore/assets/model_capabilities.json`
 - [ ] Search for "context_length" → Should find 0 matches
 - [ ] Search for "max_tokens" → Should find 86 matches (85 models + 1 default)
 - [ ] Verify sample models:
@@ -207,10 +207,10 @@ Use this checklist to manually verify the migration:
   - [ ] llama-3.1-8b: `"max_tokens": 128000`
 
 ### ✅ Code Verification
-- [ ] Open `abstractllm/architectures/detection.py`
+- [ ] Open `abstractcore/architectures/detection.py`
   - [ ] Line 255-256: Function returns `"max_tokens"` key
   - [ ] No references to `context_length`
-- [ ] Open `abstractllm/providers/base.py`
+- [ ] Open `abstractcore/providers/base.py`
   - [ ] Provider initialization uses `max_tokens`
   - [ ] No active references to `context_length`
 
@@ -243,7 +243,7 @@ grep -n "context_length" <file>  # Shows line numbers
 ### Issue: Provider has wrong max_tokens
 **Solution**: Verify model name matches JSON exactly
 ```python
-from abstractllm.architectures import get_model_capabilities
+from abstractcore.architectures import get_model_capabilities
 caps = get_model_capabilities('your-model-name')
 print(caps.get('max_tokens'))  # Should show the correct value
 ```
@@ -251,7 +251,7 @@ print(caps.get('max_tokens'))  # Should show the correct value
 ### Issue: Unknown model gets wrong default
 **Solution**: Check default_capabilities in JSON
 ```bash
-grep -A 5 "default_capabilities" abstractllm/assets/model_capabilities.json
+grep -A 5 "default_capabilities" abstractcore/assets/model_capabilities.json
 # Should show: "max_tokens": 16384
 ```
 
@@ -260,17 +260,17 @@ grep -A 5 "default_capabilities" abstractllm/assets/model_capabilities.json
 ## Files to Review
 
 ### Primary Files Modified
-1. `/Users/albou/projects/abstractllm_core/abstractllm/assets/model_capabilities.json`
-2. `/Users/albou/projects/abstractllm_core/abstractllm/architectures/detection.py`
-3. `/Users/albou/projects/abstractllm_core/abstractllm/providers/base.py`
-4. `/Users/albou/projects/abstractllm_core/abstractllm/utils/cli.py`
-5. `/Users/albou/projects/abstractllm_core/tests/integration/test_system_integration.py`
+1. `/Users/albou/projects/abstractcore_core/abstractcore/assets/model_capabilities.json`
+2. `/Users/albou/projects/abstractcore_core/abstractcore/architectures/detection.py`
+3. `/Users/albou/projects/abstractcore_core/abstractcore/providers/base.py`
+4. `/Users/albou/projects/abstractcore_core/abstractcore/utils/cli.py`
+5. `/Users/albou/projects/abstractcore_core/tests/integration/test_system_integration.py`
 
 ### Test Files Created
-1. `/Users/albou/projects/abstractllm_core/tests/token_terminology/test_max_tokens_migration.py`
-2. `/Users/albou/projects/abstractllm_core/tests/token_terminology/TEST_REPORT.md`
-3. `/Users/albou/projects/abstractllm_core/tests/token_terminology/SUMMARY.md`
-4. `/Users/albou/projects/abstractllm_core/tests/token_terminology/VERIFICATION.md` (this file)
+1. `/Users/albou/projects/abstractcore_core/tests/token_terminology/test_max_tokens_migration.py`
+2. `/Users/albou/projects/abstractcore_core/tests/token_terminology/TEST_REPORT.md`
+3. `/Users/albou/projects/abstractcore_core/tests/token_terminology/SUMMARY.md`
+4. `/Users/albou/projects/abstractcore_core/tests/token_terminology/VERIFICATION.md` (this file)
 
 ---
 
@@ -282,11 +282,11 @@ Run this single command to verify the migration:
 source .venv/bin/activate && python -c "
 import json
 from pathlib import Path
-from abstractllm.architectures import get_context_limits
-from abstractllm.providers.openai_provider import OpenAIProvider
+from abstractcore.architectures import get_context_limits
+from abstractcore.providers.openai_provider import OpenAIProvider
 
 # Load JSON
-with open('abstractllm/assets/model_capabilities.json') as f:
+with open('abstractcore/assets/model_capabilities.json') as f:
     data = json.load(f)
 
 # Check all models have max_tokens

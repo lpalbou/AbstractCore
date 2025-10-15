@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Matrix Operations Demo - Advanced similarity and clustering with AbstractLLM
+Matrix Operations Demo - Advanced similarity and clustering with AbstractCore
 ===========================================================================
 
 Demonstrates the new SOTA similarity matrix computation and clustering capabilities.
@@ -16,7 +16,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 
 def demo_similarity_matrix():
@@ -266,7 +266,7 @@ def demo_performance_optimization():
 
 def main():
     """Run all demos."""
-    print("🚀 AbstractLLM Matrix Operations & Clustering Demo")
+    print("🚀 AbstractCore Matrix Operations & Clustering Demo")
     print("=" * 70)
 
     try:

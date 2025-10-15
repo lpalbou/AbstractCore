@@ -3,7 +3,7 @@
 Example 3: Tool Calling & Tag Rewriting - Universal Tool Support
 =================================================================
 
-This example demonstrates AbstractLLM's sophisticated tool calling system:
+This example demonstrates AbstractCore's sophisticated tool calling system:
 - Universal tool support across all models
 - Custom tool call tag rewriting
 - Tool execution and result handling
@@ -15,8 +15,8 @@ Technical Architecture Highlights:
 - IncrementalToolDetector for streaming
 - Tool registry pattern for management
 
-Required: pip install abstractllm
-Optional: pip install abstractllm[ollama] for local models with tools
+Required: pip install abstractcore
+Optional: pip install abstractcore[ollama] for local models with tools
 """
 
 import os
@@ -29,8 +29,8 @@ import logging
 # Add project root to path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from abstractllm import create_llm
-from abstractllm.tools import (
+from abstractcore import create_llm
+from abstractcore.tools import (
     ToolDefinition,
     UniversalToolHandler,
     ToolRegistry,
@@ -38,7 +38,7 @@ from abstractllm.tools import (
     execute_tools,
     tool,
 )
-from abstractllm.tools.tag_rewriter import ToolCallTagRewriter, ToolCallTags
+from abstractcore.tools.tag_rewriter import ToolCallTagRewriter, ToolCallTags
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -140,7 +140,7 @@ Weather in {city}:
 
 def basic_tool_calling():
     """
-    Demonstrates basic tool calling with AbstractLLM.
+    Demonstrates basic tool calling with AbstractCore.
 
     Architecture Notes:
     - Tools are defined using the @tool decorator
@@ -315,7 +315,7 @@ def streaming_with_tool_detection():
     print("Streaming with Tool Detection")
     print("=" * 70)
 
-    from abstractllm.providers.streaming import IncrementalToolDetector
+    from abstractcore.providers.streaming import IncrementalToolDetector
 
     # Create detector with tag preservation
     detector = IncrementalToolDetector(
@@ -510,8 +510,8 @@ def unified_streaming_with_tools():
     print("Unified Streaming with Tool Support")
     print("=" * 70)
 
-    from abstractllm.providers.streaming import UnifiedStreamProcessor
-    from abstractllm.core.types import GenerateResponse
+    from abstractcore.providers.streaming import UnifiedStreamProcessor
+    from abstractcore.core.types import GenerateResponse
 
     # Create processor with custom tool tags
     processor = UnifiedStreamProcessor(
@@ -588,7 +588,7 @@ def main():
     Main entry point - demonstrates tool calling capabilities.
     """
     print("\n" + "🔧 " * 20)
-    print(" AbstractLLM Core - Example 3: Tool Calling & Tag Rewriting")
+    print(" AbstractCore Core - Example 3: Tool Calling & Tag Rewriting")
     print("🔧 " * 20)
 
     # Run all demonstrations

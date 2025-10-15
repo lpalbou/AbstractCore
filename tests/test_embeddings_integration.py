@@ -10,8 +10,8 @@ from pathlib import Path
 import numpy as np
 from unittest.mock import patch
 
-from abstractllm.embeddings import EmbeddingManager
-from abstractllm import create_llm
+from abstractcore.embeddings import EmbeddingManager
+from abstractcore import create_llm
 
 
 @pytest.mark.integration
@@ -200,7 +200,7 @@ class TestLLMEmbeddingIntegration:
             )
 
             # Mock LLM (don't actually call APIs in tests)
-            with patch('abstractllm.create_llm') as mock_create_llm:
+            with patch('abstractcore.create_llm') as mock_create_llm:
                 mock_llm = mock_create_llm.return_value
                 mock_llm.generate.return_value = "Mock response"
 

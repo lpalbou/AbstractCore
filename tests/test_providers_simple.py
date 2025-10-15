@@ -5,7 +5,7 @@ Simple test of all local providers using correct model names.
 import pytest
 import os
 import time
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 
 
 class TestProvidersSimple:

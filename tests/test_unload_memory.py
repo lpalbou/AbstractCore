@@ -8,7 +8,7 @@ enabling explicit memory management in long-running tests and applications.
 import pytest
 import gc
 from pathlib import Path
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 
 class TestModelUnloading:

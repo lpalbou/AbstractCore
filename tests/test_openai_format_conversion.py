@@ -8,8 +8,8 @@ to OpenAI's structured JSON format.
 
 import pytest
 import json
-from abstractllm.providers.streaming import UnifiedStreamProcessor
-from abstractllm.core.types import GenerateResponse
+from abstractcore.providers.streaming import UnifiedStreamProcessor
+from abstractcore.core.types import GenerateResponse
 
 
 class TestOpenAIFormatConversion:

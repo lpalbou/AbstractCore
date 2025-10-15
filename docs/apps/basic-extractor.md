@@ -5,7 +5,7 @@ BasicExtractor is a production-ready tool for extracting structured knowledge gr
 ## Quick Start
 
 ```python
-from abstractllm.processing import BasicExtractor
+from abstractcore.processing import BasicExtractor
 
 # Initialize with default model (Ollama qwen3:4b-instruct-2507-q4_K_M)
 extractor = BasicExtractor()
@@ -145,7 +145,7 @@ result = extractor.extract("Apple acquired Siri in 2010", output_format="jsonld_
 class BasicExtractor:
     def __init__(
         self,
-        llm: Optional[AbstractLLMInterface] = None,
+        llm: Optional[AbstractCoreInterface] = None,
         max_chunk_size: int = 8000
     )
 
@@ -179,8 +179,8 @@ class BasicExtractor:
 ### Custom LLM Provider
 
 ```python
-from abstractllm import create_llm
-from abstractllm.processing import BasicExtractor
+from abstractcore import create_llm
+from abstractcore.processing import BasicExtractor
 
 # RECOMMENDED: Use cloud providers for complex JSON-LD extraction
 llm = create_llm("openai", model="gpt-4o-mini")  # Best for production
@@ -226,7 +226,7 @@ extractor doc.txt --iterate=3 --length=detailed --verbose
 extractor document.txt --format triples
 
 # Method 2: Via Python module (always works)
-python -m abstractllm.apps.extractor document.txt --format triples
+python -m abstractcore.apps.extractor document.txt --format triples
 ```
 
 ### Basic Usage
@@ -234,15 +234,15 @@ python -m abstractllm.apps.extractor document.txt --format triples
 ```bash
 # Extract from file (default: JSON-LD)
 extractor document.txt
-# OR: python -m abstractllm.apps.extractor document.txt
+# OR: python -m abstractcore.apps.extractor document.txt
 
 # Specify output format
 extractor document.txt --format triples
-# OR: python -m abstractllm.apps.extractor document.txt --format triples
+# OR: python -m abstractcore.apps.extractor document.txt --format triples
 
 # Save to file
 extractor document.txt --output knowledge_graph.jsonld
-# OR: python -m abstractllm.apps.extractor document.txt --output knowledge_graph.jsonld
+# OR: python -m abstractcore.apps.extractor document.txt --output knowledge_graph.jsonld
 ```
 
 ### Advanced Options
@@ -250,19 +250,19 @@ extractor document.txt --output knowledge_graph.jsonld
 ```bash
 # Domain-focused extraction
 extractor tech_report.txt --focus technology --length detailed
-# OR: python -m abstractllm.apps.extractor tech_report.txt --focus technology --length detailed
+# OR: python -m abstractcore.apps.extractor tech_report.txt --focus technology --length detailed
 
 # Custom provider and model
 extractor document.txt --provider openai --model gpt-4o-mini
-# OR: python -m abstractllm.apps.extractor document.txt --provider openai --model gpt-4o-mini
+# OR: python -m abstractcore.apps.extractor document.txt --provider openai --model gpt-4o-mini
 
 # Minified output for storage
 extractor document.txt --format json-ld --minified
-# OR: python -m abstractllm.apps.extractor document.txt --format json-ld --minified
+# OR: python -m abstractcore.apps.extractor document.txt --format json-ld --minified
 
 # Iterative refinement for quality
 extractor document.txt --iterate 3 --verbose
-# OR: python -m abstractllm.apps.extractor document.txt --iterate 3 --verbose
+# OR: python -m abstractcore.apps.extractor document.txt --iterate 3 --verbose
 ```
 
 ### CLI Parameters
@@ -313,7 +313,7 @@ Available entity types for `--entity-types` parameter:
 
 **Simple triples (no --verbose):**
 ```bash
-python -m abstractllm.apps.extractor doc.txt --format triples
+python -m abstractcore.apps.extractor doc.txt --format triples
 # Output:
 # Google creates TensorFlow
 # Microsoft uses TensorFlow
@@ -322,13 +322,13 @@ python -m abstractllm.apps.extractor doc.txt --format triples
 
 **Detailed triples (with --verbose):**
 ```bash
-python -m abstractllm.apps.extractor doc.txt --format triples --verbose
+python -m abstractcore.apps.extractor doc.txt --format triples --verbose
 # Output: JSON with entities, relationships, confidence scores, statistics
 ```
 
 **Minified JSON-LD:**
 ```bash
-python -m abstractllm.apps.extractor doc.txt --format json-ld --minified
+python -m abstractcore.apps.extractor doc.txt --format json-ld --minified
 # Output: {"@context":{"s":"https://schema.org/"},"@graph":[...]}
 ```
 
@@ -345,7 +345,7 @@ OpenAI's GPT models use transformer architecture developed by Google Research.
 
 **Command:**
 ```bash
-python -m abstractllm.apps.extractor tech.txt --focus technology --length detailed --format triples --verbose
+python -m abstractcore.apps.extractor tech.txt --focus technology --length detailed --format triples --verbose
 ```
 
 **Expected Output:**
@@ -371,7 +371,7 @@ python -m abstractllm.apps.extractor tech.txt --focus technology --length detail
 
 **Python API:**
 ```python
-from abstractllm.processing import BasicExtractor
+from abstractcore.processing import BasicExtractor
 
 extractor = BasicExtractor()
 
@@ -401,7 +401,7 @@ print(f"Found {len(entities)} entities and {len(relationships)} relationships")
 **Command:**
 ```bash
 # Process academic paper with comprehensive extraction
-python -m abstractllm.apps.extractor research_paper.pdf \
+python -m abstractcore.apps.extractor research_paper.pdf \
   --focus "research" \
   --length comprehensive \
   --iterate 2 \
@@ -479,16 +479,16 @@ llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")  # 4GB, balanc
 **For Higher Quality:**
 ```bash
 # Use iterative refinement (finds missing entities)
-python -m abstractllm.apps.extractor doc.txt --iterate 3 --length detailed
+python -m abstractcore.apps.extractor doc.txt --iterate 3 --length detailed
 
 # Use better models
-python -m abstractllm.apps.extractor doc.txt --provider openai --model gpt-4o-mini
+python -m abstractcore.apps.extractor doc.txt --provider openai --model gpt-4o-mini
 ```
 
 **For Faster Processing:**
 ```bash
 # Use brief extraction with fast models
-python -m abstractllm.apps.extractor doc.txt --length brief --fast
+python -m abstractcore.apps.extractor doc.txt --length brief --fast
 ```
 
 ## Schema & Ontology
@@ -609,22 +609,22 @@ The extractor supports flexible timeout configuration for different use cases:
 ### Default Behavior (Unlimited Timeout)
 ```bash
 # Runs as long as needed - recommended for large documents or complex models
-python -m abstractllm.apps.extractor document.txt
+python -m abstractcore.apps.extractor document.txt
 ```
 
 ### Custom Timeout
 ```bash
 # Set specific timeout (useful for production environments)
-python -m abstractllm.apps.extractor document.txt --timeout 600  # 10 minutes
-python -m abstractllm.apps.extractor document.txt --timeout 1800 # 30 minutes
+python -m abstractcore.apps.extractor document.txt --timeout 600  # 10 minutes
+python -m abstractcore.apps.extractor document.txt --timeout 1800 # 30 minutes
 
 # Explicit unlimited timeout
-python -m abstractllm.apps.extractor document.txt --timeout none
+python -m abstractcore.apps.extractor document.txt --timeout none
 ```
 
 ### Programmatic Usage
 ```python
-from abstractllm.processing import BasicExtractor
+from abstractcore.processing import BasicExtractor
 
 # Unlimited timeout (default)
 extractor = BasicExtractor()
@@ -647,7 +647,7 @@ extractor = BasicExtractor(timeout=None)
 ### Web Application
 ```python
 from flask import Flask, request, jsonify
-from abstractllm.processing import BasicExtractor
+from abstractcore.processing import BasicExtractor
 
 app = Flask(__name__)
 extractor = BasicExtractor()
@@ -664,7 +664,7 @@ def extract_knowledge():
 ### Data Pipeline
 ```python
 import pandas as pd
-from abstractllm.processing import BasicExtractor
+from abstractcore.processing import BasicExtractor
 
 def process_documents(file_paths):
     extractor = BasicExtractor()

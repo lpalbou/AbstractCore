@@ -1,4 +1,4 @@
-# AbstractLLM Core: Streaming and Real-Time Interactions
+# AbstractCore Core: Streaming and Real-Time Interactions
 
 ## What You'll Learn
 
@@ -23,14 +23,14 @@ This example explores advanced streaming capabilities:
 ### Key Code Snippet
 
 ```python
-from abstractllm import AbstractLLM, tool
+from abstractcore import create_llm, tool
 
 @tool
 def get_current_time() -> str:
     """Retrieve the current system time"""
     return datetime.now().isoformat()
 
-llm = AbstractLLM(
+llm = create_llm(
     provider='ollama',
     model='llama3',
     streaming=True,

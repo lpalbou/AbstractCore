@@ -8,11 +8,11 @@ import json
 import time
 from pathlib import Path
 import tempfile
-from abstractllm import create_llm, BasicSession
-from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
-from abstractllm.utils import configure_logging, get_logger
-from abstractllm.events import EventType
-from abstractllm.architectures import detect_architecture
+from abstractcore import create_llm, BasicSession
+from abstractcore.tools.common_tools import list_files, search_files, read_file, write_file, web_search
+from abstractcore.utils import configure_logging, get_logger
+from abstractcore.events import EventType
+from abstractcore.architectures import detect_architecture
 
 
 class TestIntegratedFunctionality:
@@ -307,7 +307,7 @@ class TestIntegratedFunctionality:
 
     def test_event_system(self):
         """Test the event system functionality."""
-        from abstractllm.events import on_global, emit_global, GlobalEventBus
+        from abstractcore.events import on_global, emit_global, GlobalEventBus
 
         # Clear any previous handlers
         GlobalEventBus.clear()

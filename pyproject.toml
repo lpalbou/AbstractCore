@@ -59,12 +59,12 @@ Repository = "https://github.com/lpalbou/AbstractCore"
 Changelog = "https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md"
 
 [project.scripts]
-summarizer = "abstractllm.apps.summarizer:main"
-abstractllm-summarizer = "abstractllm.apps.summarizer:main"
-extractor = "abstractllm.apps.extractor:main"
-abstractllm-extractor = "abstractllm.apps.extractor:main"
-judge = "abstractllm.apps.judge:main"
-abstractllm-judge = "abstractllm.apps.judge:main"
+summarizer = "abstractcore.apps.summarizer:main"
+abstractcore-summarizer = "abstractcore.apps.summarizer:main"
+extractor = "abstractcore.apps.extractor:main"
+abstractcore-extractor = "abstractcore.apps.extractor:main"
+judge = "abstractcore.apps.judge:main"
+abstractcore-judge = "abstractcore.apps.judge:main"
 
 [project.optional-dependencies]
 # Individual providers
@@ -169,18 +169,18 @@ docs = [
 
 # Complete development environment
 full-dev = [
-    "abstractllm[all-providers,dev,test,docs]",
+    "abstractcore[all-providers,dev,test,docs]",
 ]
 
 
 [tool.setuptools]
-packages = ["abstractllm", "abstractllm.core", "abstractllm.providers", "abstractllm.tools", "abstractllm.structured", "abstractllm.events", "abstractllm.embeddings", "abstractllm.architectures", "abstractllm.utils", "abstractllm.assets", "abstractllm.server", "abstractllm.apps", "abstractllm.processing"]
+packages = ["abstractcore", "abstractcore.core", "abstractcore.providers", "abstractcore.tools", "abstractcore.structured", "abstractcore.events", "abstractcore.embeddings", "abstractcore.architectures", "abstractcore.utils", "abstractcore.assets", "abstractcore.server", "abstractcore.apps", "abstractcore.processing"]
 
 [tool.setuptools.dynamic]
-version = {attr = "abstractllm.utils.version.__version__"}
+version = {attr = "abstractcore.utils.version.__version__"}
 
 [tool.setuptools.package-data]
-abstractllm = [
+abstractcore = [
     "assets/*.json",
     "py.typed",
 ]
@@ -209,7 +209,7 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 100
-known_first_party = ["abstractllm"]
+known_first_party = ["abstractcore"]
 
 # MyPy configuration
 [tool.mypy]
@@ -279,7 +279,7 @@ markers = [
 
 # Coverage configuration
 [tool.coverage.run]
-source = ["abstractllm"]
+source = ["abstractcore"]
 omit = [
     "*/tests/*",
     "*/test_*",

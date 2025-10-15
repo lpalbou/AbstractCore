@@ -278,8 +278,8 @@ The unified streaming solution is **ready for production deployment** and provid
 
 ---
 
-**Test Suite Location**: `/Users/albou/projects/abstractllm_core/tests/test_unified_streaming.py`
-**Implementation Location**: `/Users/albou/projects/abstractllm_core/abstractllm/providers/streaming.py`
+**Test Suite Location**: `/Users/albou/projects/abstractcore_core/tests/test_unified_streaming.py`
+**Implementation Location**: `/Users/albou/projects/abstractcore_core/abstractcore/providers/streaming.py`
 **Lines of Test Code**: ~800 (including documentation)
 **Test Execution Time**: ~2.3 seconds
 **Total Tests**: 38 tests

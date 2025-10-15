@@ -4,9 +4,9 @@ Unit tests for BasicSession - the core conversation manager.
 
 import pytest
 from datetime import datetime
-from abstractllm.core.session import BasicSession
-from abstractllm.core.types import Message
-from abstractllm.providers.mock_provider import MockProvider
+from abstractcore.core.session import BasicSession
+from abstractcore.core.types import Message
+from abstractcore.providers.mock_provider import MockProvider
 
 
 class TestBasicSession:

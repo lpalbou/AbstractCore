@@ -6,8 +6,8 @@ Focus on tool call detection, not execution (that's for agents).
 import pytest
 import os
 import json
-from abstractllm import create_llm
-from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
+from abstractcore import create_llm
+from abstractcore.tools.common_tools import list_files, search_files, read_file, write_file, web_search
 
 
 class TestProviderToolDetection:

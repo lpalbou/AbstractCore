@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import time
 
-from abstractllm.embeddings import EmbeddingManager, get_model_config, list_available_models
+from abstractcore.embeddings import EmbeddingManager, get_model_config, list_available_models
 
 
 @pytest.mark.integration

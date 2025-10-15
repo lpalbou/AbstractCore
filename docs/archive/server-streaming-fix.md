@@ -2,7 +2,7 @@
 
 ## Problem Summary
 
-The AbstractLLM server had **duplicate tool detection logic** that was causing inconsistent behavior, particularly with the `<function_call>` format used by LLaMA models. This was breaking Codex CLI integration.
+The AbstractCore server had **duplicate tool detection logic** that was causing inconsistent behavior, particularly with the `<function_call>` format used by LLaMA models. This was breaking Codex CLI integration.
 
 ### Root Cause
 

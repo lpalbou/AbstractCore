@@ -25,12 +25,12 @@ import numpy as np
 from typing import List, Dict, Any
 from pathlib import Path
 
-# Add parent directory to path to import abstractllm
+# Add parent directory to path to import abstractcore
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from abstractllm.embeddings import EmbeddingManager
-from abstractllm.embeddings.models import list_available_models, get_model_config
+from abstractcore.embeddings import EmbeddingManager
+from abstractcore.embeddings.models import list_available_models, get_model_config
 
 
 # ============================================================================

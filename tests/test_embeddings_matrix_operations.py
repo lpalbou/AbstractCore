@@ -9,7 +9,7 @@ import shutil
 import numpy as np
 from pathlib import Path
 
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 
 class TestEmbeddingMatrixOperations:

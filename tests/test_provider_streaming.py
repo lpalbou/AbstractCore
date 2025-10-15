@@ -7,9 +7,9 @@ import pytest
 import os
 import time
 from typing import Iterator
-from abstractllm import create_llm
-from abstractllm.core.types import GenerateResponse
-from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
+from abstractcore import create_llm
+from abstractcore.core.types import GenerateResponse
+from abstractcore.tools.common_tools import list_files, search_files, read_file, write_file, web_search
 
 
 class TestProviderStreaming:

@@ -67,21 +67,21 @@ pip install pytest black isort mypy
 
 AbstractCore uses a **dual-version system** for reliable version management:
 
-1. **Source of Truth**: `abstractllm/utils/version.py` contains the static version string
+1. **Source of Truth**: `abstractcore/utils/version.py` contains the static version string
 2. **Build System**: `pyproject.toml` uses dynamic versioning to read from the version file
 3. **Manual Sync Required**: Both files must be updated when releasing new versions
 
 **For Release Maintainers:**
 ```bash
 # 1. Update the version in version.py
-# Edit abstractllm/utils/version.py:
+# Edit abstractcore/utils/version.py:
 __version__ = "2.3.8"  # Update this line
 
 # 2. The pyproject.toml automatically reads from version.py during build
 # No manual update needed in pyproject.toml
 
 # 3. Verify version consistency
-python -c "import abstractllm; print(f'Version: {abstractllm.__version__}')"
+python -c "import abstractcore; print(f'Version: {abstractcore.__version__}')"
 
 # 4. Build and test
 python -m build --wheel
@@ -117,7 +117,7 @@ python -m build --wheel
 - **Provider bug fixes**: Fix provider-specific issues
 
 ### 🛠️ Tool System
-- **New common tools**: Add useful tools to `abstractllm/tools/common_tools.py`
+- **New common tools**: Add useful tools to `abstractcore/tools/common_tools.py`
 - **Tool improvements**: Better error handling, validation, examples
 - **Architecture support**: Tool calling for new model architectures
 
@@ -140,7 +140,7 @@ python -m build --wheel
 ## Code Organization
 
 ```
-abstractllm/
+abstractcore/
 ├── core/           # Core interfaces and base classes
 ├── providers/      # LLM provider implementations
 ├── tools/          # Tool calling system

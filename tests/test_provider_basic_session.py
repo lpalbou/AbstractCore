@@ -5,7 +5,7 @@ Tests that providers can maintain conversation context across multiple messages.
 
 import pytest
 import os
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 
 
 class TestProviderBasicSession:
@@ -72,7 +72,7 @@ class TestProviderBasicSession:
             session = BasicSession(provider=provider, system_prompt="You are a helpful assistant.")
 
             # Test conversation
-            resp1 = session.generate("I'm working on a Python project called AbstractLLM.")
+            resp1 = session.generate("I'm working on a Python project called AbstractCore.")
             assert resp1 is not None
             assert resp1.content is not None
 

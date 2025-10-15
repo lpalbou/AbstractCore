@@ -96,9 +96,9 @@ python -m pytest tests/integration/test_system_integration.py -v
 
 ## Files
 
-- **Test Suite**: `/Users/albou/projects/abstractllm_core/tests/token_terminology/test_max_tokens_migration.py`
-- **Full Report**: `/Users/albou/projects/abstractllm_core/tests/token_terminology/TEST_REPORT.md`
-- **This Summary**: `/Users/albou/projects/abstractllm_core/tests/token_terminology/SUMMARY.md`
+- **Test Suite**: `/Users/albou/projects/abstractcore_core/tests/token_terminology/test_max_tokens_migration.py`
+- **Full Report**: `/Users/albou/projects/abstractcore_core/tests/token_terminology/TEST_REPORT.md`
+- **This Summary**: `/Users/albou/projects/abstractcore_core/tests/token_terminology/SUMMARY.md`
 
 ---
 

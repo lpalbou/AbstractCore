@@ -6,7 +6,7 @@ A production-grade server that unlocks the full power of AbstractCore, going bey
 
 Core Implementation (Phase 1)
 
-1. Create abstractllm/server/ module:
+1. Create abstractcore/server/ module:
 - app.py - FastAPI application with OpenAI-compatible endpoints
 - models.py - Request/response Pydantic models
 - router.py - Intelligent request routing system
@@ -66,12 +66,12 @@ Advanced Features (Phase 2)
 Implementation Details
 
 Files to Create:
-1. abstractllm/server/app.py (400 lines) - Main FastAPI app
-2. abstractllm/server/models.py (200 lines) - OpenAI-compatible models
-3. abstractllm/server/router.py (300 lines) - Intelligent routing
-4. abstractllm/server/middleware.py (150 lines) - Auth & monitoring
-5. abstractllm/server/websocket.py (200 lines) - Real-time features
-6. abstractllm/server/cli.py (100 lines) - Server CLI commands
+1. abstractcore/server/app.py (400 lines) - Main FastAPI app
+2. abstractcore/server/models.py (200 lines) - OpenAI-compatible models
+3. abstractcore/server/router.py (300 lines) - Intelligent routing
+4. abstractcore/server/middleware.py (150 lines) - Auth & monitoring
+5. abstractcore/server/websocket.py (200 lines) - Real-time features
+6. abstractcore/server/cli.py (100 lines) - Server CLI commands
 7. tests/server/ - Comprehensive server tests
 
 Dependencies to Add:

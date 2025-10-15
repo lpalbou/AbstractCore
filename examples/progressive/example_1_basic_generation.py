@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Example 1: Basic Generation - Your First AbstractLLM Experience
+Example 1: Basic Generation - Your First AbstractCore Experience
 ================================================================
 
-This example demonstrates the fundamental concepts of AbstractLLM Core:
+This example demonstrates the fundamental concepts of AbstractCore Core:
 - Creating an LLM instance with any provider
 - Basic text generation
 - Understanding the unified interface
@@ -14,8 +14,8 @@ Technical Architecture Highlights:
 - Unified token parameter system
 - Consistent response structure across providers
 
-Required: pip install abstractllm
-Optional: pip install abstractllm[ollama] for local models
+Required: pip install abstractcore
+Optional: pip install abstractcore[ollama] for local models
 """
 
 import os
@@ -26,8 +26,8 @@ import logging
 # Add project root to path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from abstractllm import create_llm, GenerateResponse
-from abstractllm.exceptions import ModelNotFoundError, ProviderAPIError
+from abstractcore import create_llm, GenerateResponse
+from abstractcore.exceptions import ModelNotFoundError, ProviderAPIError
 
 # Configure logging to see what's happening under the hood
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 def basic_generation_example():
     """
-    Demonstrates the simplest AbstractLLM usage pattern.
+    Demonstrates the simplest AbstractCore usage pattern.
 
     Architecture Notes:
     - create_llm() is the universal factory function
@@ -118,7 +118,7 @@ def provider_switching_demo():
     Demonstrates seamless provider switching - same code, different backends.
 
     Architecture Notes:
-    - Provider abstraction is core to AbstractLLM's design
+    - Provider abstraction is core to AbstractCore's design
     - Switch providers without changing application code
     - Enables A/B testing, fallbacks, and multi-provider strategies
     """
@@ -203,7 +203,7 @@ def error_handling_patterns():
         try:
             print(f"   Trying {provider}...")
             llm = create_llm(provider, model)
-            response = llm.generate("Say 'Hello, AbstractLLM!'")
+            response = llm.generate("Say 'Hello, AbstractCore!'")
             print(f"   ✅ Success with {provider}: {response.content}")
             break
         except Exception as e:
@@ -213,7 +213,7 @@ def error_handling_patterns():
 
 def token_management_insights():
     """
-    Deep dive into AbstractLLM's unified token management system.
+    Deep dive into AbstractCore's unified token management system.
 
     Architecture Notes:
     - Unified vocabulary: max_tokens, max_output_tokens, max_input_tokens
@@ -272,11 +272,11 @@ def main():
     """
     Main entry point - runs all examples in sequence.
 
-    This demonstrates the progressive complexity of AbstractLLM,
+    This demonstrates the progressive complexity of AbstractCore,
     from simple generation to advanced architectural patterns.
     """
     print("\n" + "🚀 " * 20)
-    print(" AbstractLLM Core - Example 1: Basic Generation")
+    print(" AbstractCore Core - Example 1: Basic Generation")
     print("🚀 " * 20)
 
     # Run examples in order of increasing complexity
@@ -289,7 +289,7 @@ def main():
     print("\n" + "=" * 70)
     print("✅ Example 1 Complete!")
     print("\nKey Takeaways:")
-    print("• AbstractLLM provides a unified interface to all LLM providers")
+    print("• AbstractCore provides a unified interface to all LLM providers")
     print("• Same code works with OpenAI, Anthropic, Ollama, and more")
     print("• Consistent token management and response structure")
     print("• Production-ready error handling and fallback patterns")

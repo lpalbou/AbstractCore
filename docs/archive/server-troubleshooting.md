@@ -42,14 +42,14 @@ curl: (7) Failed to connect to localhost port 8000: Connection refused
 **Solution:**
 ```bash
 # Check if server is running
-ps aux | grep abstractllm
+ps aux | grep abstractcore
 
 # Check if port is in use
 lsof -i :8000
 netstat -an | grep 8000
 
 # Start server if not running
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 ### Issue 3: Model Not Found
@@ -85,8 +85,8 @@ export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml     # For Gemini CLI
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=qwen3   # Default
 
 # Restart server with new configuration
-pkill -f "abstractllm.server.app"
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+pkill -f "abstractcore.server.app"
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 ### Issue 5: Slow Response Times
@@ -117,18 +117,18 @@ vm_stat  # macOS
 export ABSTRACTCORE_DEBUG=true
 
 # Step 2: Restart server
-pkill -f "abstractllm.server.app"
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+pkill -f "abstractcore.server.app"
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Step 3: Monitor logs in real-time
-tail -f logs/abstractllm_*.log
+tail -f logs/abstractcore_*.log
 ```
 
 ### Understanding Log Files
 
 | Log File | Purpose | What to Look For |
 |----------|---------|-------------------|
-| `logs/abstractllm_TIMESTAMP.log` | Structured events | Errors, warnings, request flow |
+| `logs/abstractcore_TIMESTAMP.log` | Structured events | Errors, warnings, request flow |
 | `logs/YYYYMMDD-payloads.jsonl` | Full requests | Exact parameters sent |
 | `logs/verbatim_TIMESTAMP.jsonl` | Complete I/O | Full prompts and responses |
 
@@ -136,10 +136,10 @@ tail -f logs/abstractllm_*.log
 
 ```bash
 # Find all errors
-grep '"level": "error"' logs/abstractllm_*.log | jq -r '.event + " | " + .error'
+grep '"level": "error"' logs/abstractcore_*.log | jq -r '.event + " | " + .error'
 
 # Track specific request
-grep "req_abc123" logs/abstractllm_*.log
+grep "req_abc123" logs/abstractcore_*.log
 
 # Monitor tool call processing
 grep "tool_call" logs/verbatim_*.jsonl | jq '.response'
@@ -171,7 +171,7 @@ export ABSTRACTCORE_API_KEY="unused"  # Often forgotten!
 codex --model "lmstudio" "test"
 
 # Check logs for connection attempts
-tail -f logs/abstractllm_*.log | grep "Codex"
+tail -f logs/abstractcore_*.log | grep "Codex"
 ```
 
 ### Crush CLI Issues
@@ -183,8 +183,8 @@ export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
 
 # Restart server
-pkill -f "abstractllm.server.app"
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+pkill -f "abstractcore.server.app"
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Test Crush
 crush --model "anthropic/claude-3-5-haiku-latest" "test"
@@ -199,8 +199,8 @@ export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
 
 # Restart and test
-pkill -f "abstractllm.server.app"
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+pkill -f "abstractcore.server.app"
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 gemini-cli --model "ollama/qwen3-coder:30b" "test"
 ```
 
@@ -292,8 +292,8 @@ while true; do vm_stat | head; sleep 1; done  # macOS
 
 ```bash
 # Monitor CPU usage
-top -p $(pgrep -f abstractllm)  # Linux
-top -pid $(pgrep -f abstractllm)  # macOS
+top -p $(pgrep -f abstractcore)  # Linux
+top -pid $(pgrep -f abstractcore)  # macOS
 
 # Check if GPU is being used (if available)
 nvidia-smi  # NVIDIA GPUs
@@ -320,7 +320,7 @@ echo $HTTPS_PROXY
 
 ```bash
 # 1. Kill all processes
-pkill -f "abstractllm"
+pkill -f "abstractcore"
 pkill -f "uvicorn"
 
 # 2. Clear all logs
@@ -333,7 +333,7 @@ unset ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS
 
 # 4. Fresh start
 pip install --upgrade abstractcore[server]
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 ### Debug Information Collection
@@ -357,7 +357,7 @@ curl http://localhost:8000/health >> debug_report.txt 2>&1
 curl http://localhost:8000/v1/models >> debug_report.txt 2>&1
 
 echo "=== Recent Errors ===" >> debug_report.txt
-grep '"level": "error"' logs/abstractllm_*.log | tail -20 >> debug_report.txt
+grep '"level": "error"' logs/abstractcore_*.log | tail -20 >> debug_report.txt
 
 echo "Debug report saved to debug_report.txt"
 ```
@@ -368,7 +368,7 @@ Before going to production, ensure:
 
 - [ ] **Server starts without errors**
   ```bash
-  uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+  uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
   ```
 
 - [ ] **Health check passes**
@@ -418,8 +418,8 @@ Before going to production, ensure:
 
 If you're still stuck:
 
-1. **Check existing issues**: [GitHub Issues](https://github.com/abstractllm/core/issues)
-2. **Join community**: [Discord Server](https://discord.abstractllm.ai)
+1. **Check existing issues**: [GitHub Issues](https://github.com/abstractcore/core/issues)
+2. **Join community**: [Discord Server](https://discord.abstractcore.ai)
 3. **Read detailed docs**:
    - [Configuration Guide](server-configuration.md)
    - [Tool Call Tag Rewriting](tool-syntax-rewriting.md)

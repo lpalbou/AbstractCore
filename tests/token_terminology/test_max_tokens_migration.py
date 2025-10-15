@@ -2,7 +2,7 @@
 Comprehensive tests for max_tokens terminology migration.
 
 This test suite validates the complete migration from 'context_length' to 'max_tokens'
-across all components of the AbstractLLM Core system.
+across all components of the AbstractCore system.
 
 Test Structure:
 - Layer 1: Foundation Tests - Basic functionality with new terminology
@@ -16,15 +16,15 @@ import json
 from pathlib import Path
 from typing import Dict, Any
 
-from abstractllm.architectures import (
+from abstractcore.architectures import (
     get_model_capabilities,
     get_context_limits,
     detect_architecture
 )
-from abstractllm.architectures.detection import resolve_model_alias
-from abstractllm.providers.ollama_provider import OllamaProvider
-from abstractllm.providers.openai_provider import OpenAIProvider
-from abstractllm.providers.base import BaseProvider
+from abstractcore.architectures.detection import resolve_model_alias
+from abstractcore.providers.ollama_provider import OllamaProvider
+from abstractcore.providers.openai_provider import OpenAIProvider
+from abstractcore.providers.base import BaseProvider
 
 
 class TestLayer1Foundation:
@@ -32,7 +32,7 @@ class TestLayer1Foundation:
 
     def test_max_tokens_field_in_json(self):
         """Test that model_capabilities.json uses 'max_tokens' field"""
-        json_path = Path(__file__).parent.parent.parent / "abstractllm" / "assets" / "model_capabilities.json"
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
 
         with open(json_path, 'r') as f:
             data = json.load(f)
@@ -53,7 +53,7 @@ class TestLayer1Foundation:
 
     def test_no_context_length_in_json(self):
         """Test that 'context_length' field has been removed from JSON"""
-        json_path = Path(__file__).parent.parent.parent / "abstractllm" / "assets" / "model_capabilities.json"
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
 
         with open(json_path, 'r') as f:
             content = f.read()
@@ -78,7 +78,7 @@ class TestLayer1Foundation:
 
     def test_default_capabilities_has_max_tokens(self):
         """Test that default capabilities include max_tokens"""
-        json_path = Path(__file__).parent.parent.parent / "abstractllm" / "assets" / "model_capabilities.json"
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
 
         with open(json_path, 'r') as f:
             data = json.load(f)
@@ -136,7 +136,7 @@ class TestLayer2Integration:
 
     def test_detection_get_context_limits_integration(self):
         """Test detection.py get_context_limits() function integration"""
-        from abstractllm.architectures.detection import get_context_limits
+        from abstractcore.architectures.detection import get_context_limits
 
         # Test with various models
         test_models = [
@@ -163,7 +163,7 @@ class TestLayer2Integration:
     def test_alias_resolution_preserves_max_tokens(self):
         """Test that alias resolution correctly resolves to canonical model with max_tokens"""
         # qwen/qwen3-next-80b should resolve to qwen3-next-80b-a3b
-        json_path = Path(__file__).parent.parent.parent / "abstractllm" / "assets" / "model_capabilities.json"
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
 
         with open(json_path, 'r') as f:
             data = json.load(f)
@@ -184,7 +184,7 @@ class TestLayer2Integration:
     def test_cli_auto_detection_uses_max_tokens(self):
         """Test that CLI auto-detection logic uses max_tokens"""
         # This tests the updated logic in cli.py
-        from abstractllm.architectures.detection import get_context_limits
+        from abstractcore.architectures.detection import get_context_limits
 
         # Simulate CLI auto-detection for a model
         model = 'qwen3-coder:30b'
@@ -202,7 +202,7 @@ class TestLayer3Stress:
 
     def test_all_models_have_max_tokens(self):
         """Test that ALL 85+ models in JSON have max_tokens field"""
-        json_path = Path(__file__).parent.parent.parent / "abstractllm" / "assets" / "model_capabilities.json"
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
 
         with open(json_path, 'r') as f:
             data = json.load(f)
@@ -229,7 +229,7 @@ class TestLayer3Stress:
 
     def test_all_models_no_context_length(self):
         """Test that NO model has the deprecated 'context_length' field"""
-        json_path = Path(__file__).parent.parent.parent / "abstractllm" / "assets" / "model_capabilities.json"
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
 
         with open(json_path, 'r') as f:
             data = json.load(f)
@@ -247,7 +247,7 @@ class TestLayer3Stress:
 
     def test_max_tokens_reasonable_values(self):
         """Test that max_tokens values are within reasonable ranges"""
-        json_path = Path(__file__).parent.parent.parent / "abstractllm" / "assets" / "model_capabilities.json"
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
 
         with open(json_path, 'r') as f:
             data = json.load(f)
@@ -282,7 +282,7 @@ class TestLayer3Stress:
 
     def test_complex_alias_patterns(self):
         """Test that complex alias patterns resolve correctly with max_tokens"""
-        json_path = Path(__file__).parent.parent.parent / "abstractllm" / "assets" / "model_capabilities.json"
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
 
         with open(json_path, 'r') as f:
             data = json.load(f)
@@ -437,7 +437,7 @@ class TestCodeSearchValidation:
 
     def test_no_context_length_in_detection_py(self):
         """Verify detection.py doesn't reference context_length"""
-        detection_file = Path(__file__).parent.parent.parent / "abstractllm" / "architectures" / "detection.py"
+        detection_file = Path(__file__).parent.parent.parent / "abstractcore" / "architectures" / "detection.py"
 
         with open(detection_file, 'r') as f:
             content = f.read()
@@ -449,7 +449,7 @@ class TestCodeSearchValidation:
 
     def test_no_context_length_in_base_provider(self):
         """Verify base.py provider doesn't reference context_length"""
-        base_file = Path(__file__).parent.parent.parent / "abstractllm" / "providers" / "base.py"
+        base_file = Path(__file__).parent.parent.parent / "abstractcore" / "providers" / "base.py"
 
         with open(base_file, 'r') as f:
             content = f.read()

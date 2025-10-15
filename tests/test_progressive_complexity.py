@@ -12,7 +12,7 @@ from typing import List, Optional, Dict
 from enum import Enum
 import json
 import os
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 
 # Level 1: Flat JSON (1 level)

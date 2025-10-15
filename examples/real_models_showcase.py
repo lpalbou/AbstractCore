@@ -3,7 +3,7 @@
 Real SOTA Models Showcase
 =========================
 
-Demonstrates the latest SOTA embedding models available in AbstractLLM Core:
+Demonstrates the latest SOTA embedding models available in AbstractCore Core:
 - Google EmbeddingGemma (300M params, multilingual)
 - IBM Granite (278M params, enterprise-grade)
 - Performance comparison and real-world usage
@@ -20,12 +20,12 @@ import tempfile
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from abstractllm.embeddings import EmbeddingManager, get_model_config, list_available_models
+from abstractcore.embeddings import EmbeddingManager, get_model_config, list_available_models
 
 
 def demo_model_overview():
     """Overview of available SOTA models."""
-    print("🚀 AbstractLLM Core - SOTA Embedding Models")
+    print("🚀 AbstractCore Core - SOTA Embedding Models")
     print("=" * 70)
 
     print("\n📋 Available Models:")
@@ -291,13 +291,13 @@ def demo_real_world_rag():
             print("Setting up RAG system with EmbeddingGemma...")
             embedder = EmbeddingManager(model="embeddinggemma", cache_dir=temp_dir)
 
-            # Knowledge base about AbstractLLM
+            # Knowledge base about AbstractCore
             knowledge_base = [
-                "AbstractLLM Core provides a unified interface to multiple LLM providers including OpenAI, Anthropic, Ollama, and local models.",
-                "The embeddings system in AbstractLLM uses state-of-the-art models like Google EmbeddingGemma and IBM Granite for semantic search.",
+                "AbstractCore Core provides a unified interface to multiple LLM providers including OpenAI, Anthropic, Ollama, and local models.",
+                "The embeddings system in AbstractCore uses state-of-the-art models like Google EmbeddingGemma and IBM Granite for semantic search.",
                 "Vector embeddings convert text into high-dimensional numerical representations that capture semantic meaning and enable similarity search.",
                 "RAG (Retrieval-Augmented Generation) combines information retrieval with language generation to provide more accurate and contextual responses.",
-                "AbstractLLM Core includes production features like automatic retry logic, comprehensive event systems, and structured output validation.",
+                "AbstractCore Core includes production features like automatic retry logic, comprehensive event systems, and structured output validation.",
                 "The library supports streaming responses, tool calling, and session management for building complex AI applications.",
                 "Performance optimizations include ONNX backend support, Matryoshka dimension truncation, and intelligent caching mechanisms."
             ]
@@ -306,7 +306,7 @@ def demo_real_world_rag():
 
             # Real user questions
             questions = [
-                "What LLM providers does AbstractLLM support?",
+                "What LLM providers does AbstractCore support?",
                 "What embedding models are available?",
                 "How do vector embeddings work?",
                 "What is RAG and why is it useful?",

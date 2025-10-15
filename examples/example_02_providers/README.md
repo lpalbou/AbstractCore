@@ -1,4 +1,4 @@
-# AbstractLLM Core: Provider Deep Dive
+# AbstractCore Core: Provider Deep Dive
 
 ## What You'll Learn
 
@@ -8,14 +8,14 @@
 
 ### Learning Objectives
 
-1. Understand provider diversity in AbstractLLM
+1. Understand provider diversity in AbstractCore
 2. Compare and configure different providers
 3. Handle provider-specific configurations
 4. Implement dynamic provider selection
 
 ### Example Walkthrough
 
-This example showcases the flexibility of AbstractLLM Core by demonstrating:
+This example showcases the flexibility of AbstractCore Core by demonstrating:
 - Multiple provider initialization
 - Provider-specific parameter tuning
 - Comparative model generation
@@ -23,17 +23,17 @@ This example showcases the flexibility of AbstractLLM Core by demonstrating:
 ### Key Code Snippet
 
 ```python
-from abstractllm import AbstractLLM
+from abstractcore import create_llm
 
 # Ollama Provider
-ollama_llm = AbstractLLM(
+ollama_llm = create_llm(
     provider='ollama',
     model='llama3',
     temperature=0.7
 )
 
 # OpenAI Provider
-openai_llm = AbstractLLM(
+openai_llm = create_llm(
     provider='openai',
     model='gpt-4',
     max_tokens=150

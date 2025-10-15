@@ -16,8 +16,8 @@ import shutil
 from pathlib import Path
 import time
 
-from abstractllm.embeddings import EmbeddingManager, get_model_config
-from abstractllm import create_llm
+from abstractcore.embeddings import EmbeddingManager, get_model_config
+from abstractcore import create_llm
 
 
 @pytest.mark.integration
@@ -294,16 +294,16 @@ class TestRealLLMIntegration:
 
             # Real knowledge base
             knowledge_base = [
-                "AbstractLLM Core provides a unified interface to multiple LLM providers including OpenAI, Anthropic, and local models like Ollama.",
-                "The embeddings system in AbstractLLM uses SOTA models like EmbeddingGemma and Granite for semantic search and RAG applications.",
+                "AbstractCore provides a unified interface to multiple LLM providers including OpenAI, Anthropic, and local models like Ollama.",
+                "The embeddings system in AbstractCore uses SOTA models like EmbeddingGemma and Granite for semantic search and RAG applications.",
                 "Vector embeddings enable semantic similarity search by converting text into high-dimensional numerical representations.",
                 "RAG (Retrieval-Augmented Generation) combines information retrieval with language generation for more accurate responses.",
-                "AbstractLLM Core includes production features like retry logic, event systems, and structured output validation."
+                "AbstractCore includes production features like retry logic, event systems, and structured output validation."
             ]
 
             # Real user questions
             questions = [
-                "What providers does AbstractLLM support?",
+                "What providers does AbstractCore support?",
                 "What embedding models are available?",
                 "How do vector embeddings work?",
                 "What is RAG and how does it work?",

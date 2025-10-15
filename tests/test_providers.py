@@ -8,8 +8,8 @@ import os
 import json
 import time
 from typing import Dict, Any, List, Optional
-from abstractllm import create_llm, BasicSession
-from abstractllm.core.types import GenerateResponse
+from abstractcore import create_llm, BasicSession
+from abstractcore.core.types import GenerateResponse
 
 
 class TestProviders:

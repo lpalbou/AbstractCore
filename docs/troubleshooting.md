@@ -83,7 +83,7 @@ Understanding common pitfalls helps prevent issues before they occur.
 
 **Solution:**
 ```python
-from abstractllm import create_llm, tool
+from abstractcore import create_llm, tool
 
 # Use @tool decorator for automatic tool definition
 @tool
@@ -119,8 +119,8 @@ response = llm.generate(
 
 **Solution:**
 ```python
-from abstractllm import create_llm
-from abstractllm.exceptions import ProviderAPIError, RateLimitError
+from abstractcore import create_llm
+from abstractcore.exceptions import ProviderAPIError, RateLimitError
 
 providers = [
     ("openai", "gpt-4o-mini"),
@@ -189,7 +189,7 @@ response = llm.generate(
 **Solution:**
 ```python
 import os
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Best practice: Load from environment
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
@@ -222,7 +222,7 @@ python --version  # Should be 3.9+
 pip show abstractcore
 
 # Test core library
-python -c "from abstractllm import create_llm; print('✓ Core library OK')"
+python -c "from abstractcore import create_llm; print('✓ Core library OK')"
 
 # Test server (if installed)
 curl http://localhost:8000/health  # Should return {"status":"healthy"}
@@ -236,7 +236,7 @@ curl http://localhost:8000/health  # Should return {"status":"healthy"}
 
 **Symptoms:**
 ```
-ModuleNotFoundError: No module named 'abstractllm'
+ModuleNotFoundError: No module named .abstractcore.
 ModuleNotFoundError: No module named 'openai'
 ```
 
@@ -313,7 +313,7 @@ source ~/.bashrc
 # Anthropic: starts with "sk-ant-"
 
 # Test authentication
-python -c "from abstractllm import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)"
+python -c "from abstractcore import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)"
 ```
 
 ### Issue: Model Not Found
@@ -415,7 +415,7 @@ unset HTTPS_PROXY
 **Solutions:**
 
 ```python
-from abstractllm import create_llm, tool
+from abstractcore import create_llm, tool
 
 # Ensure @tool decorator is used
 @tool
@@ -458,7 +458,7 @@ netstat -ano | findstr :8000  # Windows
 kill -9 $(lsof -t -i:8000)  # Linux/Mac
 
 # Use different port
-uvicorn abstractllm.server.app:app --port 3000
+uvicorn abstractcore.server.app:app --port 3000
 ```
 
 ### Issue: ABSTRACTCORE_API_KEY Error
@@ -499,11 +499,11 @@ echo $ABSTRACTCORE_API_KEY
 curl http://localhost:8000/health
 
 # Check server logs
-tail -f logs/abstractllm_*.log
+tail -f logs/abstractcore_*.log
 
 # Enable debug mode
 export ABSTRACTCORE_DEBUG=true
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Test with simple request
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -552,20 +552,20 @@ curl http://localhost:1234/v1/models  # Should return models
 # Set correct tool format for your CLI
 
 # For Codex CLI (qwen3 format - default)
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # For Crush CLI (llama3 format)
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # For Gemini CLI (xml format)
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Restart server after changing environment variables
-pkill -f "abstractllm.server.app"
+pkill -f "abstractcore.server.app"
 ```
 
 ---
@@ -694,7 +694,7 @@ curl http://localhost:1234/v1/models
 ollama run <model_name> -c <context_length>
 # Example: ollama run llama2 -c 4096
 
-# For LM Studio via API (often handled automatically by AbstractLLM):
+# For LM Studio via API (often handled automatically by AbstractCore):
 # Include in request payload:
 # {
 #   "model": "your-model-name",
@@ -718,7 +718,7 @@ ollama run <model_name> -c <context_length>
 **Diagnosis:**
 ```bash
 # Time a request
-time python -c "from abstractllm import create_llm; llm = create_llm('ollama', model='qwen3:4b-instruct-2507-q4_K_M'); print(llm.generate('test').content)"
+time python -c "from abstractcore import create_llm; llm = create_llm('ollama', model='qwen3:4b-instruct-2507-q4_K_M'); print(llm.generate('test').content)"
 ```
 
 **Solutions:**
@@ -817,7 +817,7 @@ Follow these best practices to avoid issues:
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-from abstractllm import create_llm
+from abstractcore import create_llm
 llm = create_llm("openai", model="gpt-4o-mini")
 ```
 
@@ -827,20 +827,20 @@ llm = create_llm("openai", model="gpt-4o-mini")
 export ABSTRACTCORE_DEBUG=true
 
 # Start with debug logging
-uvicorn abstractllm.server.app:app --log-level debug
+uvicorn abstractcore.server.app:app --log-level debug
 
 # Monitor logs
-tail -f logs/abstractllm_*.log
+tail -f logs/abstractcore_*.log
 ```
 
 ### Analyze Logs
 
 ```bash
 # Find errors
-grep '"level": "error"' logs/abstractllm_*.log
+grep '"level": "error"' logs/abstractcore_*.log
 
 # Track specific request
-grep "req_abc123" logs/abstractllm_*.log
+grep "req_abc123" logs/abstractcore_*.log
 
 # Monitor latency
 cat logs/verbatim_*.jsonl | jq '.metadata.latency_ms'
@@ -854,7 +854,7 @@ cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
 
 ```python
 # Test provider directly
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 try:
     llm = create_llm("openai", model="gpt-4o-mini")
@@ -879,7 +879,7 @@ echo "=== Environment ===" >> debug_report.txt
 env | grep -E "ABSTRACT|OPENAI|ANTHROPIC|OLLAMA" >> debug_report.txt
 
 echo "=== Tests ===" >> debug_report.txt
-python -c "from abstractllm import create_llm; print('Core library: OK')" >> debug_report.txt 2>&1
+python -c "from abstractcore import create_llm; print('Core library: OK')" >> debug_report.txt 2>&1
 curl http://localhost:8000/health >> debug_report.txt 2>&1
 
 cat debug_report.txt

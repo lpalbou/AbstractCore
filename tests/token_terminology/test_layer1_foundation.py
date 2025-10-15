@@ -11,11 +11,11 @@ Tests the fundamental changes to token terminology:
 import pytest
 import json
 from pathlib import Path
-from abstractllm.architectures import (
+from abstractcore.architectures import (
     get_model_capabilities,
     get_context_limits
 )
-from abstractllm.architectures.detection import resolve_model_alias, _load_json_assets
+from abstractcore.architectures.detection import resolve_model_alias, _load_json_assets
 
 
 class TestModelCapabilitiesJSON:
@@ -24,7 +24,7 @@ class TestModelCapabilitiesJSON:
     def test_json_uses_max_tokens_not_context_length(self):
         """Verify all models in JSON use max_tokens instead of context_length."""
         # Load the JSON file directly
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -44,7 +44,7 @@ class TestModelCapabilitiesJSON:
 
     def test_default_capabilities_use_max_tokens(self):
         """Verify default_capabilities in JSON uses max_tokens."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -82,7 +82,7 @@ class TestAliasResolution:
         _load_json_assets()
 
         # Load the JSON to get models dict
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -95,7 +95,7 @@ class TestAliasResolution:
 
     def test_alias_resolves_to_canonical(self):
         """Test that aliases resolve to their canonical names."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -123,7 +123,7 @@ class TestAliasResolution:
 
     def test_qwen_alias_resolution(self):
         """Test specific qwen3-next-80b alias resolution."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -141,7 +141,7 @@ class TestAliasResolution:
 
     def test_unknown_model_returns_original_name(self):
         """Test that unknown models return their original name."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -221,7 +221,7 @@ class TestNoContextLengthReferences:
 
     def test_json_has_no_context_length(self):
         """Verify model_capabilities.json has no context_length references."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -234,7 +234,7 @@ class TestNoContextLengthReferences:
     def test_detection_py_uses_max_tokens(self):
         """Verify detection.py get_context_limits returns max_tokens."""
         # Import and check the function
-        from abstractllm.architectures.detection import get_context_limits
+        from abstractcore.architectures.detection import get_context_limits
 
         # Check function source doesn't reference context_length
         import inspect
@@ -245,7 +245,7 @@ class TestNoContextLengthReferences:
 
     def test_base_provider_uses_max_tokens(self):
         """Verify BaseProvider uses max_tokens terminology."""
-        from abstractllm.providers.base import BaseProvider
+        from abstractcore.providers.base import BaseProvider
         import inspect
 
         # Check _get_default_context_window method
@@ -260,7 +260,7 @@ class TestAllModelsHaveMaxTokens:
 
     def test_all_models_count(self):
         """Verify we have approximately 85 models in the JSON."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -275,7 +275,7 @@ class TestAllModelsHaveMaxTokens:
 
     def test_all_models_have_valid_max_tokens(self):
         """Verify every model has a valid max_tokens value."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:

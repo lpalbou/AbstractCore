@@ -2,7 +2,7 @@
 
 ## Overview
 
-AbstractLLM Core's Unified Streaming Architecture provides a single streaming implementation that works across different models and tool call formats, simplifying streaming interactions.
+AbstractCore Core's Unified Streaming Architecture provides a single streaming implementation that works across different models and tool call formats, simplifying streaming interactions.
 
 > **📊 Visual Documentation**: For detailed architectural diagrams, data flow visualizations, and performance charts, see the comprehensive [Streaming Architecture Visual Guide](streaming-architecture-visual-guide.md).
 

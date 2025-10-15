@@ -3,7 +3,7 @@
 Example 5: Server & Agentic CLI Integration - Building Powerful AI Systems
 ==========================================================================
 
-This example demonstrates AbstractLLM's server and CLI capabilities:
+This example demonstrates AbstractCore's server and CLI capabilities:
 - OpenAI-compatible server implementation
 - Agentic CLI with real-time streaming
 - Integration with tools like Codex CLI
@@ -15,8 +15,8 @@ Technical Architecture Highlights:
 - CLI with interactive tool execution
 - Server-side provider management
 
-Required: pip install abstractllm[server]
-Optional: pip install abstractllm[ollama] for local model server
+Required: pip install abstractcore[server]
+Optional: pip install abstractcore[ollama] for local model server
 """
 
 import os
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 def server_architecture_overview():
     """
-    Explains the AbstractLLM server architecture.
+    Explains the AbstractCore server architecture.
 
     Architecture Notes:
     - FastAPI-based for high performance
@@ -47,13 +47,13 @@ def server_architecture_overview():
     - Streaming and WebSocket support
     """
     print("=" * 70)
-    print("EXAMPLE 5: AbstractLLM Server Architecture")
+    print("EXAMPLE 5: AbstractCore Server Architecture")
     print("=" * 70)
 
     print("\n🏗️ Server Architecture:")
     print("""
     ┌─────────────────────────────────────────────┐
-    │         AbstractLLM Server (FastAPI)        │
+    │         AbstractCore Server (FastAPI)        │
     ├─────────────────────────────────────────────┤
     │                                             │
     │  /v1/chat/completions  ◄─── OpenAI Format  │
@@ -83,7 +83,7 @@ def server_architecture_overview():
 
 def starting_the_server():
     """
-    Demonstrates how to start the AbstractLLM server.
+    Demonstrates how to start the AbstractCore server.
 
     Architecture Notes:
     - Simple CLI command to start
@@ -91,7 +91,7 @@ def starting_the_server():
     - Auto-discovers available providers
     """
     print("\n" + "=" * 70)
-    print("Starting the AbstractLLM Server")
+    print("Starting the AbstractCore Server")
     print("=" * 70)
 
     print("\n🚀 Server Startup Commands:")
@@ -99,7 +99,7 @@ def starting_the_server():
     # Basic startup
     print("\n1️⃣ Basic Server Start:")
     print("   ```bash")
-    print("   python -m abstractllm.server")
+    print("   python -m abstractcore.server")
     print("   ```")
     print("   • Runs on http://localhost:8000")
     print("   • Auto-detects available providers")
@@ -107,7 +107,7 @@ def starting_the_server():
     # Custom configuration
     print("\n2️⃣ Custom Configuration:")
     print("   ```bash")
-    print("   python -m abstractllm.server \\")
+    print("   python -m abstractcore.server \\")
     print("     --host 0.0.0.0 \\")
     print("     --port 8080 \\")
     print("     --reload")
@@ -119,16 +119,16 @@ def starting_the_server():
     print("   export OPENAI_API_KEY='your-key'")
     print("   export ANTHROPIC_API_KEY='your-key'")
     print("   export OLLAMA_BASE_URL='http://localhost:11434'")
-    print("   python -m abstractllm.server")
+    print("   python -m abstractcore.server")
     print("   ```")
 
     # Docker deployment
     print("\n4️⃣ Docker Deployment:")
     print("   ```dockerfile")
     print("   FROM python:3.10-slim")
-    print("   RUN pip install abstractllm[server]")
+    print("   RUN pip install abstractcore[server]")
     print("   EXPOSE 8000")
-    print("   CMD [\"python\", \"-m\", \"abstractllm.server\"]")
+    print("   CMD [\"python\", \"-m\", \"abstractcore.server\"]")
     print("   ```")
 
     print("\n📊 Server Endpoints:")
@@ -157,14 +157,14 @@ def openai_compatibility_demo():
     print("OpenAI API Compatibility")
     print("=" * 70)
 
-    print("\n🔄 Using OpenAI Python Client with AbstractLLM Server:")
+    print("\n🔄 Using OpenAI Python Client with AbstractCore Server:")
 
     # Example 1: OpenAI client configuration
     print("\n1️⃣ Configure OpenAI Client:")
     print("   ```python")
     print("   from openai import OpenAI")
     print("   ")
-    print("   # Point to AbstractLLM server")
+    print("   # Point to AbstractCore server")
     print("   client = OpenAI(")
     print("       base_url=\"http://localhost:8000/ollama/v1\",")
     print("       api_key=\"not-needed\"  # For local providers")
@@ -217,12 +217,12 @@ def agentic_cli_demonstration():
     print("Agentic CLI Features")
     print("=" * 70)
 
-    print("\n🤖 AbstractLLM CLI - Interactive AI Assistant:")
+    print("\n🤖 AbstractCore CLI - Interactive AI Assistant:")
 
     # CLI startup
     print("\n1️⃣ Starting the CLI:")
     print("   ```bash")
-    print("   python -m abstractllm.utils.cli \\")
+    print("   python -m abstractcore.utils.cli \\")
     print("     --provider ollama \\")
     print("     --model qwen3-coder:30b \\")
     print("     --stream")
@@ -247,7 +247,7 @@ def agentic_cli_demonstration():
     print("\n3️⃣ Example Interactive Session:")
     print("""
    ┌─────────────────────────────────────────┐
-   │  AbstractLLM CLI v2.2.4                 │
+   │  AbstractCore CLI v2.2.4                 │
    │  Model: qwen3-coder:30b                 │
    │  Provider: ollama                       │
    │  Streaming: ✅ Enabled                  │
@@ -288,7 +288,7 @@ def codex_cli_integration():
     Demonstrates integration with Codex CLI.
 
     Architecture Notes:
-    - AbstractLLM as backend for Codex
+    - AbstractCore as backend for Codex
     - Seamless tool execution
     - Real-time streaming support
     """
@@ -296,13 +296,13 @@ def codex_cli_integration():
     print("Codex CLI Integration")
     print("=" * 70)
 
-    print("\n🔧 Using AbstractLLM with Codex CLI:")
+    print("\n🔧 Using AbstractCore with Codex CLI:")
 
     # Configuration
-    print("\n1️⃣ Configure Codex to Use AbstractLLM Server:")
+    print("\n1️⃣ Configure Codex to Use AbstractCore Server:")
     print("   ```bash")
-    print("   # Start AbstractLLM server")
-    print("   python -m abstractllm.server &")
+    print("   # Start AbstractCore server")
+    print("   python -m abstractcore.server &")
     print("   ")
     print("   # Configure Codex")
     print("   export CODEX_API_BASE='http://localhost:8000/ollama/v1'")
@@ -310,10 +310,10 @@ def codex_cli_integration():
     print("   ```")
 
     # Codex workflow
-    print("\n2️⃣ Codex Workflow with AbstractLLM:")
+    print("\n2️⃣ Codex Workflow with AbstractCore:")
     print("""
    ┌────────────┐     ┌─────────────────┐     ┌──────────────┐
-   │  Codex CLI │────►│ AbstractLLM     │────►│ Ollama/Local │
+   │  Codex CLI │────►│ AbstractCore     │────►│ Ollama/Local │
    │            │◄────│ Server          │◄────│ Model        │
    └────────────┘     └─────────────────┘     └──────────────┘
          │                     │                      │
@@ -363,7 +363,7 @@ def multi_provider_deployment():
                 ┌──────────────┼──────────────┐
                 │              │              │
          ┌──────▼─────┐ ┌─────▼──────┐ ┌────▼──────┐
-         │ AbstractLLM│ │ AbstractLLM│ │AbstractLLM│
+         │ AbstractCore│ │ AbstractCore│ │AbstractCore│
          │  Server 1  │ │  Server 2  │ │ Server 3  │
          └──────┬─────┘ └─────┬──────┘ └────┬──────┘
                 │              │              │
@@ -378,7 +378,7 @@ def multi_provider_deployment():
     # Configuration example
     print("\n📝 Multi-Provider Configuration:")
     print("   ```yaml")
-    print("   # abstractllm-config.yaml")
+    print("   # abstractcore-config.yaml")
     print("   providers:")
     print("     - name: openai")
     print("       priority: 1")
@@ -563,10 +563,10 @@ def example_server_client_code():
 ```python
 # server.py
 from fastapi import FastAPI
-from abstractllm import create_llm
-from abstractllm.server import create_app
+from abstractcore import create_llm
+from abstractcore.server import create_app
 
-# Create FastAPI app with AbstractLLM
+# Create FastAPI app with AbstractCore
 app = create_app()
 
 # Custom endpoint example
@@ -587,7 +587,7 @@ if __name__ == "__main__":
 import httpx
 import json
 
-class AbstractLLMClient:
+class AbstractCoreClient:
     def __init__(self, base_url="http://localhost:8000"):
         self.base_url = base_url
         self.client = httpx.Client(timeout=30.0)
@@ -611,7 +611,7 @@ class AbstractLLMClient:
             return response.json()
 
 # Usage
-client = AbstractLLMClient()
+client = AbstractCoreClient()
 
 # Non-streaming
 response = client.chat(
@@ -639,7 +639,7 @@ def main():
     Main entry point - demonstrates server and CLI integration.
     """
     print("\n" + "🌐 " * 20)
-    print(" AbstractLLM Core - Example 5: Server & Agentic CLI")
+    print(" AbstractCore Core - Example 5: Server & Agentic CLI")
     print("🌐 " * 20)
 
     # Run all demonstrations

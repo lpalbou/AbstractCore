@@ -3,7 +3,7 @@
 Example 2: Provider Configuration - Advanced Setup & Retry Strategies
 =====================================================================
 
-This example demonstrates AbstractLLM's sophisticated provider configuration:
+This example demonstrates AbstractCore's sophisticated provider configuration:
 - Provider-specific configurations
 - Retry strategies and circuit breakers
 - Telemetry and observability
@@ -15,8 +15,8 @@ Technical Architecture Highlights:
 - Event-driven telemetry system
 - Provider capability detection
 
-Required: pip install abstractllm
-Optional: pip install abstractllm[openai,anthropic,ollama] for all providers
+Required: pip install abstractcore
+Optional: pip install abstractcore[openai,anthropic,ollama] for all providers
 """
 
 import os
@@ -29,10 +29,10 @@ import logging
 # Add project root to path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from abstractllm import create_llm
-from abstractllm.core.retry import RetryConfig
-from abstractllm.events import EventType, subscribe, unsubscribe_all
-from abstractllm.exceptions import ProviderAPIError, RateLimitError, AuthenticationError
+from abstractcore import create_llm
+from abstractcore.core.retry import RetryConfig
+from abstractcore.events import EventType, subscribe, unsubscribe_all
+from abstractcore.exceptions import ProviderAPIError, RateLimitError, AuthenticationError
 
 # Configure structured logging
 logging.basicConfig(
@@ -122,7 +122,7 @@ def advanced_provider_configuration():
 
 def retry_strategies_demo():
     """
-    Demonstrates AbstractLLM's sophisticated retry strategies.
+    Demonstrates AbstractCore's sophisticated retry strategies.
 
     Architecture Notes:
     - Exponential backoff prevents API hammering
@@ -279,7 +279,7 @@ def circuit_breaker_pattern():
 
 def telemetry_and_observability():
     """
-    Demonstrates AbstractLLM's event system for observability.
+    Demonstrates AbstractCore's event system for observability.
 
     Architecture Notes:
     - Event-driven architecture for decoupled monitoring
@@ -345,7 +345,7 @@ def telemetry_and_observability():
             # Simulate some token usage for mock provider
             if not response.usage:
                 # Use centralized token estimation for mock usage
-                from abstractllm.utils.token_utils import TokenUtils
+                from abstractcore.utils.token_utils import TokenUtils
                 estimated_tokens = TokenUtils.estimate_tokens(prompt) + TokenUtils.estimate_tokens(response.content or "")
                 response.usage = {"total_tokens": estimated_tokens}
         except Exception as e:
@@ -381,7 +381,7 @@ def performance_optimization_techniques():
 
     # Technique 1: Connection Pooling
     print("\n🚀 Technique 1: Connection Pooling")
-    print("   AbstractLLM providers automatically manage connection pools")
+    print("   AbstractCore providers automatically manage connection pools")
 
     # Demonstrate connection reuse
     llm = create_llm("mock", "mock-model")
@@ -487,7 +487,7 @@ def provider_capability_detection():
 
     Architecture Notes:
     - Providers advertise their capabilities
-    - AbstractLLM adapts behavior based on capabilities
+    - AbstractCore adapts behavior based on capabilities
     - Graceful degradation for unsupported features
     """
     print("\n" + "=" * 70)
@@ -533,7 +533,7 @@ def main():
     Main entry point - demonstrates advanced provider configuration.
     """
     print("\n" + "🔧 " * 20)
-    print(" AbstractLLM Core - Example 2: Provider Configuration")
+    print(" AbstractCore Core - Example 2: Provider Configuration")
     print("🔧 " * 20)
 
     # Run all demonstrations

@@ -156,7 +156,7 @@ Understanding limitations is crucial for choosing the right tool.
 
 ```python
 # AbstractCore gives you this
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 embedder = EmbeddingManager()
 similarity = embedder.compute_similarity("query", "document")
 

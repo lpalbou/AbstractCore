@@ -4,7 +4,7 @@ Complete RAG Application Example
 ===============================
 
 This example demonstrates a complete Retrieval-Augmented Generation (RAG)
-application using AbstractLLM Core embeddings with a mock LLM.
+application using AbstractCore Core embeddings with a mock LLM.
 
 This is a real, working example you can adapt for production use.
 """
@@ -16,8 +16,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from abstractllm.embeddings import EmbeddingManager
-from abstractllm import create_llm
+from abstractcore.embeddings import EmbeddingManager
+from abstractcore import create_llm
 
 
 class SimpleRAGSystem:

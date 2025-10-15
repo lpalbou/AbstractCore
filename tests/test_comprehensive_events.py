@@ -2,7 +2,7 @@
 Comprehensive tests for the enhanced event system.
 
 This module tests all the new event types and comprehensive event functionality
-across the entire AbstractLLM library.
+across the entire AbstractCore library.
 """
 
 import pytest
@@ -10,15 +10,15 @@ import json
 from typing import List, Dict, Any
 from unittest.mock import Mock, patch
 
-from abstractllm import create_llm
-from abstractllm.events import (
+from abstractcore import create_llm
+from abstractcore.events import (
     EventType, Event, EventEmitter, GlobalEventBus,
     EventLogger, PerformanceTracker,
     create_generation_event, create_tool_event, create_structured_output_event,
     emit_global, on_global
 )
-from abstractllm.tools import ToolDefinition, ToolCall, execute_tool, clear_registry, register_tool
-from abstractllm.core.types import GenerateResponse
+from abstractcore.tools import ToolDefinition, ToolCall, execute_tool, clear_registry, register_tool
+from abstractcore.core.types import GenerateResponse
 
 
 class EventCapture:

@@ -10,7 +10,7 @@ import json
 import uuid
 from unittest.mock import patch
 
-from abstractllm.tools.syntax_rewriter import (
+from abstractcore.tools.syntax_rewriter import (
     ToolCallSyntaxRewriter,
     SyntaxFormat,
     CustomFormatConfig,
@@ -20,7 +20,7 @@ from abstractllm.tools.syntax_rewriter import (
     create_passthrough_rewriter,
     create_custom_rewriter
 )
-from abstractllm.tools.core import ToolCall
+from abstractcore.tools.core import ToolCall
 
 
 class TestSyntaxRewriter:
@@ -112,7 +112,7 @@ Done!
         rewriter = ToolCallSyntaxRewriter(SyntaxFormat.QWEN3, model_name="qwen3-coder")
 
         # Mock parse_tool_calls to return our sample tool call
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [self.sample_tool_call]
 
             result = rewriter.rewrite_content(self.sample_content_llama)
@@ -130,7 +130,7 @@ Done!
         """Test conversion to LLaMA3 format."""
         rewriter = ToolCallSyntaxRewriter(SyntaxFormat.LLAMA3, model_name="llama3")
 
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [self.sample_tool_call]
 
             result = rewriter.rewrite_content(self.sample_content_qwen)
@@ -148,7 +148,7 @@ Done!
         """Test conversion to Gemma format."""
         rewriter = ToolCallSyntaxRewriter(SyntaxFormat.GEMMA, model_name="gemma")
 
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [self.sample_tool_call]
 
             result = rewriter.rewrite_content(self.sample_content_qwen)
@@ -162,7 +162,7 @@ Done!
         """Test conversion to XML format."""
         rewriter = ToolCallSyntaxRewriter(SyntaxFormat.XML, model_name="claude")
 
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [self.sample_tool_call]
 
             result = rewriter.rewrite_content(self.sample_content_qwen)
@@ -181,7 +181,7 @@ Done!
         )
         rewriter = ToolCallSyntaxRewriter(SyntaxFormat.CUSTOM, custom_config=config)
 
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [self.sample_tool_call]
 
             result = rewriter.rewrite_content(self.sample_content_qwen)
@@ -200,7 +200,7 @@ Done!
         )
         rewriter = ToolCallSyntaxRewriter(SyntaxFormat.CUSTOM, custom_config=config)
 
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [self.sample_tool_call]
 
             result = rewriter.rewrite_content(self.sample_content_qwen)
@@ -221,7 +221,7 @@ Done!
 
         rewriter = ToolCallSyntaxRewriter(SyntaxFormat.QWEN3)
 
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [tool_call_1, tool_call_2]
 
             result = rewriter.rewrite_content("Some content with tools")
@@ -245,7 +245,7 @@ Done!
         rewriter = ToolCallSyntaxRewriter(SyntaxFormat.QWEN3)
         content = "This is just regular text without any tool calls."
 
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = []
 
             result = rewriter.rewrite_content(content)
@@ -430,7 +430,7 @@ class TestPatternRemoval:
 
         # Mock to return a tool call that will be processed
         test_tool_call = ToolCall(name="test", arguments={})
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [test_tool_call]
 
             result = rewriter.rewrite_content(content)
@@ -455,7 +455,7 @@ class TestPatternRemoval:
 
         # Mock to return a tool call that will be processed
         test_tool_call = ToolCall(name="test", arguments={})
-        with patch('abstractllm.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
+        with patch('abstractcore.tools.syntax_rewriter.parse_tool_calls') as mock_parse:
             mock_parse.return_value = [test_tool_call]
 
             result = rewriter.rewrite_content(content)

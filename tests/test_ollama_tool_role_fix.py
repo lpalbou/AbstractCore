@@ -6,7 +6,7 @@ Based on bug report: ollama-report-tool-role.md
 """
 
 import pytest
-from abstractllm.providers.ollama_provider import OllamaProvider
+from abstractcore.providers.ollama_provider import OllamaProvider
 
 
 class TestOllamaToolRoleConversion:

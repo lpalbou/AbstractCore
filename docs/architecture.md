@@ -84,7 +84,7 @@ graph LR
 ```
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Factory creates the right provider with proper configuration
 llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7)
@@ -92,10 +92,10 @@ llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7)
 
 ### 2. Provider Interface
 
-All providers implement `AbstractLLMInterface`:
+All providers implement `AbstractCoreInterface`:
 
 ```python
-class AbstractLLMInterface(ABC):
+class AbstractCoreInterface(ABC):
     @abstractmethod
     def generate(self, prompt: str, **kwargs) -> GenerateResponse:
         """Generate response from LLM"""
@@ -305,8 +305,8 @@ graph TD
 #### Retry Configuration
 
 ```python
-from abstractllm import create_llm
-from abstractllm.core.retry import RetryConfig
+from abstractcore import create_llm
+from abstractcore.core.retry import RetryConfig
 
 config = RetryConfig(
     max_attempts=3,           # Try up to 3 times
@@ -350,7 +350,7 @@ graph TD
 #### Event Types and Use Cases
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 # Cost monitoring
 def monitor_costs(event):
@@ -626,7 +626,7 @@ AbstractCore is designed to be extended:
 ### Adding a New Provider
 
 ```python
-from abstractllm.providers.base import BaseProvider
+from abstractcore.providers.base import BaseProvider
 
 class MyProvider(BaseProvider):
     def generate(self, prompt: str, **kwargs) -> GenerateResponse:
@@ -640,7 +640,7 @@ class MyProvider(BaseProvider):
 ### Adding Custom Events
 
 ```python
-from abstractllm.events import EventType, emit_global
+from abstractcore.events import EventType, emit_global
 
 class EventType(Enum):  # Extend the enum
     CUSTOM_EVENT = "custom_event"
@@ -652,7 +652,7 @@ emit_global(EventType.CUSTOM_EVENT, data={"custom": "data"})
 ### Adding Tools
 
 ```python
-from abstractllm.tools import register_tool
+from abstractcore.tools import register_tool
 
 @register_tool
 def my_custom_tool(param: str) -> str:

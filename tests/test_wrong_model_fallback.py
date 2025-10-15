@@ -6,8 +6,8 @@ This test ensures that all providers show real available models when given inval
 
 import pytest
 import os
-from abstractllm import create_llm
-from abstractllm.exceptions import ModelNotFoundError, AuthenticationError, ProviderAPIError
+from abstractcore import create_llm
+from abstractcore.exceptions import ModelNotFoundError, AuthenticationError, ProviderAPIError
 
 
 class TestWrongModelFallback:
