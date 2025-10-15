@@ -89,6 +89,12 @@ If no configuration is provided, the component uses these defaults:
         { text: 'Documentation', href: '#docs' },
         { text: 'Examples', href: '#examples' },
         { 
+            text: 'PyPI', 
+            href: 'https://pypi.org/project/abstractcore/',
+            target: '_blank',
+            icon: 'pypi'
+        },
+        { 
             text: 'GitHub', 
             href: 'https://github.com/lpalbou/AbstractCore',
             target: '_blank',
@@ -152,9 +158,13 @@ The logo animation and styling is defined in the `getNavbarCSS()` method. To upd
 ### Adding New Icons
 To add support for new icons:
 
-1. Add the icon SVG to the `getGitHubIcon()` method (or create a new method)
-2. Update the menu item generation logic to handle the new icon type
+1. Create a new method like `getPyPIIcon()` or `getGitHubIcon()`
+2. Update the menu item generation logic in `getMenuItemsHTML()` to handle the new icon type
 3. Test across all pages
+
+**Supported Icons:**
+- `github`: GitHub logo
+- `pypi`: PyPI logo
 
 ### Changing Default Menu Items
 To change the default menu items:

@@ -16,6 +16,12 @@ class AbstractCoreNavbar {
                 { text: 'Documentation', href: '#docs' },
                 { text: 'Examples', href: '#examples' },
                 { 
+                    text: 'PyPI', 
+                    href: 'https://pypi.org/project/abstractcore/',
+                    target: '_blank',
+                    icon: 'pypi'
+                },
+                { 
                     text: 'GitHub', 
                     href: 'https://github.com/lpalbou/AbstractCore',
                     target: '_blank',
@@ -32,9 +38,13 @@ class AbstractCoreNavbar {
         const logoHref = this.config.basePath ? `${this.config.basePath}index.html` : '#';
         
         return `
-            <a href="${logoHref}" class="logo-link">
-                <div class="logo-container">
+            <a href="${logoHref}" class="brand-link">
+                <div class="logo-abstract">
                     <div class="logo-circle"></div>
+                    <div class="orbit-container">
+                        <div class="orbit-dot orbit-dot-1"></div>
+                        <div class="orbit-dot orbit-dot-2"></div>
+                    </div>
                     <div class="logo-lines">
                         <div class="logo-line"></div>
                         <div class="logo-line"></div>
@@ -58,6 +68,17 @@ class AbstractCoreNavbar {
     }
 
     /**
+     * Generate PyPI icon SVG
+     */
+    getPyPIIcon() {
+        return `
+            <svg class="pypi-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm-1.5 6h3c.825 0 1.5.675 1.5 1.5v3c0 .825-.675 1.5-1.5 1.5H12v1.5h3V15H9V7.5c0-.825.675-1.5 1.5-1.5zm0 1.5v3h3v-3h-3z"/>
+            </svg>
+        `;
+    }
+
+    /**
      * Generate menu items HTML
      */
     getMenuItemsHTML() {
@@ -67,7 +88,12 @@ class AbstractCoreNavbar {
                 : `${this.config.basePath}${item.href}`;
             
             const target = item.target ? `target="${item.target}"` : '';
-            const icon = item.icon === 'github' ? this.getGitHubIcon() : '';
+            let icon = '';
+            if (item.icon === 'github') {
+                icon = this.getGitHubIcon();
+            } else if (item.icon === 'pypi') {
+                icon = this.getPyPIIcon();
+            }
             
             return `
                 <a href="${href}" class="nav-link" ${target}>
@@ -104,185 +130,14 @@ class AbstractCoreNavbar {
     }
 
     /**
-     * Get the CSS styles for the navbar
+     * Get the CSS styles for the navbar (uses existing main.css styles)
      */
     getNavbarCSS() {
         return `
-            .navbar {
-                background: rgba(15, 23, 42, 0.95);
-                backdrop-filter: blur(10px);
-                border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-                position: fixed;
-                top: 0;
-                width: 100%;
-                z-index: 1000;
-                transition: all 0.3s ease;
-            }
-
-            .nav-container {
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 0 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                height: 70px;
-            }
-
-            .nav-brand {
-                display: flex;
-                align-items: center;
-            }
-
-            .logo-link {
-                display: flex;
-                align-items: center;
-                text-decoration: none;
-                color: inherit;
-            }
-
-            .logo-container {
-                position: relative;
-                width: 40px;
-                height: 40px;
-                margin-right: 12px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            .logo-circle {
-                width: 32px;
-                height: 32px;
-                border-radius: 50%;
-                background: linear-gradient(135deg, #06b6d4, #3b82f6);
-                position: relative;
-                animation: pulse 2s ease-in-out infinite;
-            }
-
-            .logo-lines {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                width: 16px;
-                height: 16px;
-            }
-
-            .logo-line {
-                width: 100%;
-                height: 2px;
-                background: white;
-                margin: 2px 0;
-                border-radius: 1px;
-                animation: float 3s ease-in-out infinite;
-            }
-
-            .logo-line:nth-child(2) {
-                animation-delay: 0.5s;
-            }
-
-            .logo-line:nth-child(3) {
-                animation-delay: 1s;
-            }
-
-            .brand-text {
-                font-size: 1.5rem;
-                font-weight: 700;
-                background: linear-gradient(135deg, #06b6d4, #3b82f6);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-            }
-
-            .nav-menu {
-                display: flex;
-                align-items: center;
-                gap: 2rem;
-            }
-
-            .nav-link {
-                color: #e2e8f0;
-                text-decoration: none;
-                font-weight: 500;
-                transition: all 0.3s ease;
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-                padding: 0.5rem 1rem;
-                border-radius: 0.5rem;
-            }
-
-            .nav-link:hover {
-                color: #06b6d4;
-                background: rgba(6, 182, 212, 0.1);
-            }
-
-            .github-icon {
-                width: 20px;
-                height: 20px;
-            }
-
-            .nav-toggle {
-                display: none;
-                flex-direction: column;
-                cursor: pointer;
-            }
-
-            .bar {
-                width: 25px;
-                height: 3px;
-                background: #e2e8f0;
-                margin: 3px 0;
-                transition: 0.3s;
-                border-radius: 2px;
-            }
-
-            @keyframes pulse {
-                0%, 100% { transform: scale(1); }
-                50% { transform: scale(1.05); }
-            }
-
-            @keyframes float {
-                0%, 100% { transform: translateY(0px); }
-                50% { transform: translateY(-2px); }
-            }
-
-            @media (max-width: 768px) {
-                .nav-menu {
-                    position: fixed;
-                    left: -100%;
-                    top: 70px;
-                    flex-direction: column;
-                    background: rgba(15, 23, 42, 0.98);
-                    width: 100%;
-                    text-align: center;
-                    transition: 0.3s;
-                    box-shadow: 0 10px 27px rgba(0, 0, 0, 0.05);
-                    backdrop-filter: blur(10px);
-                    padding: 2rem 0;
-                    gap: 1rem;
-                }
-
-                .nav-menu.active {
-                    left: 0;
-                }
-
-                .nav-toggle {
-                    display: flex;
-                }
-
-                .nav-toggle.active .bar:nth-child(2) {
-                    opacity: 0;
-                }
-
-                .nav-toggle.active .bar:nth-child(1) {
-                    transform: translateY(8px) rotate(45deg);
-                }
-
-                .nav-toggle.active .bar:nth-child(3) {
-                    transform: translateY(-8px) rotate(-45deg);
-                }
+            /* Additional PyPI icon styles */
+            .pypi-icon {
+                width: 1.25rem;
+                height: 1.25rem;
             }
         `;
     }
