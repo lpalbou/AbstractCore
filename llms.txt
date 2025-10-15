@@ -217,4 +217,4 @@ judge code.py --focus "error handling, performance" --temperature 0.05
 - **PyPI**: `pip install abstractcore[all]`
 - **License**: MIT | **Python**: 3.9+ | **Status**: Production Ready
 
-**Complete Documentation**: [llms-full.txt](https://lpalbou.github.io/AbstractCore/llms-full.txt)
+**Complete Documentation**: [llms-full.txt](https://www.abstractcore.ai/llms-full.txt)

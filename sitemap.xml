@@ -19,13 +19,13 @@
         <priority>0.8</priority>
     </url>
     <url>
-        <loc>https://lpalbou.github.io/AbstractCore/llms.txt</loc>
+        <loc>https://www.abstractcore.ai/llms.txt</loc>
         <lastmod>2025-01-14</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.7</priority>
     </url>
     <url>
-        <loc>https://lpalbou.github.io/AbstractCore/llms-full.txt</loc>
+        <loc>https://www.abstractcore.ai/llms-full.txt</loc>
         <lastmod>2025-10-14</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.7</priority>
