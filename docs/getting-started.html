@@ -59,34 +59,62 @@
 
                 <h2>Installation</h2>
                 
-                <h3>Option 1: Start with a Cloud Provider (Recommended)</h3>
-                <p>If you have an API key for OpenAI or Anthropic:</p>
-                
+                <h3>Basic Installation</h3>
                 <div class="code-block">
-                    <pre><code class="language-bash"># For OpenAI
-pip install abstractcore[openai]
-export OPENAI_API_KEY="your-api-key-here"
-
-# For Anthropic
-pip install abstractcore[anthropic]
-export ANTHROPIC_API_KEY="your-api-key-here"</code></pre>
+                    <pre><code class="language-bash">pip install abstractcore</code></pre>
                 </div>
 
-                <h3>Option 2: Start with Local Models (No API keys needed)</h3>
-                <p>For privacy or cost reasons:</p>
+                <h3>Provider-Specific Installation</h3>
+                <p>Choose based on which LLM providers you want to use:</p>
                 
                 <div class="code-block">
-                    <pre><code class="language-bash"># Install Ollama first
+                    <pre><code class="language-bash"># OpenAI
+pip install abstractcore[openai]
+
+# Anthropic
+pip install abstractcore[anthropic]
+
+# Ollama (local models)
+pip install abstractcore[ollama]
+
+# LMStudio (local models)
+pip install abstractcore[lmstudio]
+
+# MLX (Apple Silicon)
+pip install abstractcore[mlx]
+
+# HuggingFace
+pip install abstractcore[huggingface]
+
+# Server support
+pip install abstractcore[server]
+
+# Embeddings
+pip install abstractcore[embeddings]
+
+# Everything
+pip install abstractcore[all]</code></pre>
+                </div>
+
+                <h3>Quick Setup Examples</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1.5rem 0;">
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h4 style="margin: 0 0 1rem 0; color: var(--accent-color);">Cloud Provider</h4>
+                        <div class="code-block">
+                            <pre><code class="language-bash"># OpenAI setup
+pip install abstractcore[openai]
+export OPENAI_API_KEY="your-key-here"</code></pre>
+                        </div>
+                    </div>
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                        <h4 style="margin: 0 0 1rem 0; color: var(--accent-color);">Local Models</h4>
+                        <div class="code-block">
+                            <pre><code class="language-bash"># Ollama setup
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen3:4b-instruct-2507-q4_K_M
-
-# Then install AbstractCore
-pip install abstractcore</code></pre>
-                </div>
-
-                <h3>Option 3: Install Everything</h3>
-                <div class="code-block">
-                    <pre><code class="language-bash">pip install abstractcore[all]</code></pre>
+pip install abstractcore[ollama]</code></pre>
+                        </div>
+                    </div>
                 </div>
 
                 <h2>Your First Program</h2>
