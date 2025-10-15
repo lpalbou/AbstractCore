@@ -4,12 +4,13 @@ This file contains the complete documentation for AbstractCore, a unified Python
 
 ## Table of Contents
 
-1. [Project Overview](#project-overview)
-2. [Installation](#installation)
-3. [Getting Started](#getting-started)
-4. [Tool Calling System](#tool-calling-system)
-5. [Core Features](#core-features)
-6. [Documentation Index](#documentation-index)
+1. [Project Overview](#project-overview) - What AbstractCore does and supported providers
+2. [Installation](#installation) - Quick setup with provider-specific options
+3. [Getting Started](#getting-started) - Essential code examples and patterns
+4. [Built-in CLI Applications](#built-in-cli-applications) - Ready-to-use terminal tools
+5. [Debug & Advanced Features](#debug-capabilities-and-self-healing-json) - Troubleshooting and performance
+6. [Complete CLI Parameters](#complete-cli-parameters-reference) - All available options
+7. [Documentation Index](#documentation-index) - Links to detailed guides
 
 ---
 
@@ -32,14 +33,14 @@ AbstractCore is a Python library providing a unified interface to all major LLM 
 
 ### Supported Providers
 
-| Provider | Status | Features |
-|----------|--------|----------|
-| OpenAI | Native tool calls, streaming, structured output |
-| Anthropic | Native tool calls, streaming, structured output |
-| Ollama | Prompted tool calls, streaming, local models |
-| LMStudio | Prompted tool calls, streaming, local models |
-| MLX | Prompted tool calls, streaming, Apple Silicon |
-| HuggingFace | Prompted tool calls, streaming, open models |
+| Provider | Features |
+|----------|----------|
+| **OpenAI** | Native tool calls, streaming, structured output |
+| **Anthropic** | Native tool calls, streaming, structured output |
+| **Ollama** | Prompted tool calls, streaming, local models |
+| **LMStudio** | Prompted tool calls, streaming, local models |
+| **MLX** | Prompted tool calls, streaming, Apple Silicon |
+| **HuggingFace** | Prompted tool calls, streaming, open models |
 
 ---
 
@@ -86,74 +87,53 @@ pip install abstractcore[all]
 
 ## Getting Started
 
-### Quick Start
+### Essential Patterns
 
 ```python
-from abstractllm import create_llm
-
-# Create any provider using the factory pattern
-llm = create_llm("openai", model="gpt-4o-mini")
-
-# Generate a response
-response = llm.generate("What is the capital of France?")
-print(response.content)
-```
-
-### Provider Examples
-
-```python
-# OpenAI
-llm = create_llm("openai", model="gpt-4o-mini")
-
-# Anthropic
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
-
-# Ollama (local)
-llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
-
-# LMStudio (local)
-llm = create_llm("lmstudio", model="qwen3-coder:30b")
-
-# MLX (Apple Silicon)
-llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
-```
-
-### Streaming
-
-```python
-# Stream responses in real-time
-for chunk in llm.generate("Tell me a story", stream=True):
-    print(chunk.content, end="", flush=True)
-```
-
-### Structured Output
-
-```python
+from abstractllm import create_llm, tool
 from pydantic import BaseModel
 
+# 1. Basic Usage - Works with any provider
+llm = create_llm("openai", model="gpt-4o-mini")  # or "anthropic", "ollama", etc.
+response = llm.generate("What is the capital of France?")
+print(response.content)
+
+# 2. Universal Tool Calling
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Weather in {city}: 72°F, Sunny"
+
+response = llm.generate("What's the weather in Paris?", tools=[get_weather])
+
+# 3. Structured Output
 class Person(BaseModel):
     name: str
     age: int
-    occupation: str
 
-# Automatic validation and retry on failures
-person = llm.generate(
-    "Extract: John Doe is a 30-year-old software engineer",
-    response_model=Person
-)
+person = llm.generate("Extract: John Doe is 25", response_model=Person)
+print(f"{person.name}, age {person.age}")
+```
 
-print(f"{person.name}, {person.age}, {person.occupation}")
+### Additional Patterns
+
+```python
+# Streaming responses
+for chunk in llm.generate("Tell me a story", stream=True):
+    print(chunk.content, end="", flush=True)
+
+# Session management with memory
+from abstractllm import BasicSession
+session = BasicSession(llm, system_prompt="You are a helpful assistant.")
+session.add_message('user', 'My name is Alice')
+response = session.generate('What is my name?')  # Remembers context
 ```
 
 ---
 
-## Tool Calling System
+## Universal Tool Calling
 
-AbstractCore provides a universal tool calling system that works across all LLM providers, even those without native tool support.
-
-### The @tool Decorator
-
-The `@tool` decorator is the primary way to create tools in AbstractCore:
+Works across **ALL** providers - even those without native tool support.
 
 ```python
 from abstractllm import create_llm, tool
@@ -161,19 +141,15 @@ from abstractllm import create_llm, tool
 @tool
 def get_weather(city: str) -> str:
     """Get current weather for a specified city."""
-    return f"The weather in {city} is sunny, 72°F"
+    return f"Weather in {city}: 72°F, Sunny"
 
 @tool
 def calculate(expression: str) -> float:
-    """Perform a mathematical calculation."""
-    try:
-        result = eval(expression)  # Simplified for demo
-        return result
-    except Exception:
-        return float('nan')
+    """Perform mathematical calculations."""
+    return eval(expression)  # Simplified for demo
 
-# Works with ANY provider
-llm = create_llm("openai", model="gpt-4o-mini")
+# Works with ANY provider - OpenAI, Anthropic, Ollama, etc.
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
 response = llm.generate(
     "What's the weather in Tokyo and what's 15 * 23?",
     tools=[get_weather, calculate]
@@ -323,58 +299,6 @@ embeddings = embedder.embed_batch(["Hello", "World", "AI"])
 similarity = embedder.compute_similarity("Hello", "Hi there")
 ```
 
-### Built-in CLI Applications
-
-AbstractCore includes three production-ready CLI applications that work directly from the terminal:
-
-#### Direct Terminal Usage
-
-```bash
-# Document summarization with multiple styles and lengths
-summarizer document.pdf --style=executive --length=brief --output=summary.txt
-summarizer report.txt --focus="technical details" --chunk-size=15000 --verbose
-
-# Knowledge graph extraction with various formats
-extractor research_paper.pdf --format=json-ld --focus=technology --iterate=3
-extractor article.txt --entity-types=person,organization,location --output=entities.jsonld
-
-# Text evaluation with custom criteria and contexts
-judge essay.txt --criteria=clarity,accuracy,coherence --context="academic writing"
-judge code.py --context="code review" --format=plain --verbose
-```
-
-#### Alternative Usage Methods
-
-```bash
-# Method 1: Direct commands (recommended)
-summarizer document.txt --style=executive
-extractor report.pdf --format=triples
-judge essay.md --criteria=soundness
-
-# Method 2: Via Python module
-python -m abstractllm.apps.summarizer document.txt --style=executive
-python -m abstractllm.apps.extractor report.pdf --format=triples
-python -m abstractllm.apps.judge essay.md --criteria=soundness
-```
-
-#### Python API (for programmatic use)
-
-```python
-from abstractllm.processing import BasicSummarizer, BasicExtractor, BasicJudge
-
-# Intelligent summarization
-summarizer = BasicSummarizer()
-summary = summarizer.summarize(long_text, style="executive", length="brief")
-
-# Knowledge graph extraction
-extractor = BasicExtractor()
-kg = extractor.extract(text, domain_focus="technology", output_format="jsonld")
-
-# Text evaluation
-judge = BasicJudge()
-assessment = judge.evaluate(text, context="code review", criteria=["clarity", "soundness"])
-```
-
 ### Event System
 
 Monitor and control tool execution through events:
@@ -395,35 +319,6 @@ on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 on_global(EventType.TOOL_STARTED, prevent_dangerous_tools)
 ```
 
-### HTTP Server
-
-OpenAI-compatible REST API server:
-
-```bash
-# Start server
-python -m abstractllm.server.app
-
-# Or with uvicorn
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
-```
-
-```python
-import openai
-
-# Point to AbstractCore server
-client = openai.OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="not-needed"
-)
-
-# Works with any model via AbstractCore
-response = client.chat.completions.create(
-    model="ollama/qwen3-coder:30b",  # Non-OpenAI model
-    messages=[{"role": "user", "content": "Hello!"}],
-    tools=[...]
-)
-```
-
 ### Memory Management
 
 For local providers, explicit memory management:
@@ -436,79 +331,201 @@ llm.unload()  # Free memory
 del llm
 ```
 
+## Built-in CLI Applications
+
+Three production-ready terminal tools - no Python code required:
+
+### Quick Examples
+
+```bash
+# Document summarization with multiple styles and lengths
+summarizer document.pdf --style executive --length brief --output summary.txt
+summarizer report.txt --focus "technical details" --chunk-size 15000 --verbose
+
+# Knowledge graph extraction with various formats and modes
+extractor research_paper.pdf --format json-ld --focus technology --iterate 3 --mode thorough
+extractor article.txt --entity-types person,organization,location --output entities.jsonld --minified
+extractor large_doc.txt --mode fast --no-embeddings --timeout 600 --max-tokens 32000
+
+# Text evaluation with focus areas and debug capabilities
+judge essay.txt --criteria clarity,accuracy,coherence --context "academic writing" --include-criteria
+judge code.py --context "code review" --format plain --verbose --debug
+judge README.md --focus "technical accuracy,examples" --temperature 0.05 --max-output-tokens 8000
+```
+
+### Alternative Methods
+
+```bash
+# Method 1: Direct commands (recommended)
+summarizer document.txt --style executive
+extractor report.pdf --format triples
+judge essay.md --criteria soundness
+
+# Method 2: Via Python module
+python -m abstractllm.apps.summarizer document.txt --style executive
+python -m abstractllm.apps.extractor report.pdf --format triples
+python -m abstractllm.apps.judge essay.md --criteria soundness
+```
+
+### Python API
+
+```python
+from abstractllm.processing import BasicSummarizer, BasicExtractor, BasicJudge
+
+# Use programmatically
+summarizer = BasicSummarizer()
+summary = summarizer.summarize(text, style="executive", length="brief")
+
+extractor = BasicExtractor()
+kg = extractor.extract(text, output_format="jsonld")
+
+judge = BasicJudge()
+assessment = judge.evaluate(text, context="code review", focus="error handling")
+```
+
+---
+
+## HTTP Server (Optional)
+
+OpenAI-compatible REST API:
+
+```bash
+# Start server
+uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+```
+
+```python
+# Use with any OpenAI-compatible client
+import openai
+client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+response = client.chat.completions.create(
+    model="ollama/qwen3-coder:30b",  # Route to any provider
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+## Debug Capabilities and Self-Healing JSON
+
+Robust debugging and error recovery features:
+
+```bash
+# Debug raw LLM responses for troubleshooting
+judge document.txt --debug --provider lmstudio --model qwen/qwen3-next-80b
+
+# Automatic JSON self-repair handles truncated/malformed responses
+# Uses self_fixes.py for intelligent error recovery
+# Increased token limits prevent truncation: max_tokens=32k, max_output_tokens=8k
+
+# Focus areas for targeted evaluation (new --focus parameter)
+judge README.md --focus "architectural diagrams, technical comparisons" --debug
+```
+
+**Key Features:**
+- **Self-Healing JSON**: Automatically repairs truncated or malformed JSON responses
+- **Debug Mode**: `--debug` flag shows raw LLM responses for troubleshooting
+- **Focus Areas**: `--focus` parameter for targeted evaluation (replaces `--custom-criteria`)
+- **Increased Token Limits**: Default `max_tokens=32000`, `max_output_tokens=8000` prevent truncation
+- **Consistent CLI Syntax**: All apps use space syntax (`--param value`) for consistency
+
+### Complete CLI Parameters Reference
+
+#### Extractor Parameters
+```bash
+# Core parameters
+--focus FOCUS                    # Specific focus area (e.g., "technology", "business")
+--format {json-ld,triples,json,yaml}  # Output format
+--entity-types TYPES             # Comma-separated types (person,organization,location,etc.)
+--output OUTPUT                  # Output file path
+
+# Performance & Quality
+--mode {fast,balanced,thorough}  # Extraction mode (balanced=default)
+--iterate N                      # Refinement iterations (default: 1)
+--similarity-threshold 0.0-1.0   # Entity deduplication threshold (default: 0.85)
+--no-embeddings                  # Disable semantic deduplication
+--minified                       # Compact JSON output
+
+# LLM Configuration
+--provider PROVIDER --model MODEL  # Custom LLM provider/model
+--max-tokens 32000               # Context window (default: 32000)
+--max-output-tokens 8000         # Output tokens (default: 8000)
+--timeout 300                    # HTTP timeout seconds (default: 300)
+--chunk-size 8000                # Chunk size for large files
+```
+
+#### Judge Parameters
+```bash
+# Evaluation Configuration
+--criteria CRITERIA              # Standard criteria (clarity,soundness,etc.)
+--focus FOCUS                    # Primary focus areas for evaluation
+--context CONTEXT                # Evaluation context description
+--reference FILE_OR_TEXT         # Reference content for comparison
+
+# Output & Debug
+--format {json,plain,yaml}       # Output format (default: json)
+--debug                          # Show raw LLM responses
+--include-criteria               # Include detailed criteria explanations
+--exclude-global                 # Skip global assessment for multiple files
+
+# LLM Configuration  
+--temperature 0.1                # Evaluation consistency (default: 0.1)
+--max-tokens 32000               # Context window (default: 32000)
+--max-output-tokens 8000         # Output tokens (default: 8000)
+--timeout 300                    # HTTP timeout seconds
+```
+
+#### Summarizer Parameters
+```bash
+# Content Configuration
+--style {structured,narrative,objective,analytical,executive,conversational}
+--length {brief,standard,detailed,comprehensive}
+--focus FOCUS                    # Specific focus area
+--chunk-size 8000                # Chunk size for large files (max: 32000)
+
+# Output & Performance
+--output OUTPUT                  # Output file path
+--max-tokens 32000               # Context window (default: 32000)
+--max-output-tokens 8000         # Output tokens (default: 8000)
+--verbose                        # Show detailed progress
+```
+
 ---
 
 ## Documentation Index
 
-### Core Documentation
+### Essential Guides
+- **[Getting Started](docs/getting-started.md)**: 5-minute setup and first LLM call
+- **[API Reference](docs/api-reference.md)**: Complete Python API with examples
+- **[Tool Calling](docs/tool-calling.md)**: Universal @tool decorator system
+- **[Session Management](docs/session.md)**: Persistent conversations with analytics
 
-- **Getting Started**: Quick setup and first LLM call with any provider
-- **API Reference**: Complete API documentation with examples for all methods
-- **Tool Calling System**: Universal @tool decorator and tool system across all providers
-- **Session Management**: Persistent conversations with metadata, analytics, and serialization
-- **Embeddings System**: SOTA embedding models for semantic search and RAG applications
-- **Architecture Overview**: System design and component interactions
+### CLI Applications
+- **[Summarizer](docs/apps/basic-summarizer.md)**: Document summarization (`summarizer doc.pdf`)
+- **[Extractor](docs/apps/basic-extractor.md)**: Knowledge graph extraction (`extractor report.txt`)
+- **[Judge](docs/apps/basic-judge.md)**: Text evaluation (`judge essay.txt`)
 
-### Built-in CLI Applications
-
-- **Summarizer CLI**: Direct terminal document summarization (`summarizer document.pdf --style=executive`)
-- **Extractor CLI**: Knowledge graph extraction (`extractor report.txt --format=json-ld --focus=technology`)
-- **Judge CLI**: Text evaluation and scoring (`judge essay.txt --criteria=clarity,accuracy --context="academic writing"`)
-- **CLI Usage Guide**: Complete parameter reference with all available options and usage examples
-
-### Server & Integration
-
-- **HTTP Server Guide**: OpenAI-compatible REST API server for multi-language access
-- **Agentic CLI Integration**: Codex, Crush, Gemini CLI compatibility
-- **Tool Syntax Rewriting**: Real-time format conversion for external CLI tools
-
-### Advanced Features
-
-- **Event System**: Monitor costs, performance, and tool executions with preventable events
-- **Retry Configuration**: Circuit breakers, exponential backoff, jitter for production reliability
+### Advanced Topics
+- **[Server Guide](docs/server.md)**: OpenAI-compatible HTTP API
+- **[Embeddings](docs/embeddings.md)**: Semantic search and RAG
+- **[Architecture](docs/architecture.md)**: System design overview
 - **Error Handling**: Comprehensive exception hierarchy for robust applications
 - **Token Management**: Centralized token counting, cost estimation, and management utilities (`abstractllm.utils.token_utils`)
 
-### Examples and Patterns
-
-- **Progressive Examples**: Step-by-step learning from basic to advanced usage
-- **Complete RAG Example**: Full retrieval-augmented generation implementation
-- **Embeddings Demos**: Semantic search and similarity computation
-- **Streaming Examples**: Real-time vs batch processing patterns
-- **Tool Usage Examples**: Complex tool calling scenarios
-- **Production Patterns**: Enterprise-ready deployment examples
-
-### Support and Troubleshooting
-
-- **Troubleshooting Guide**: Common issues and solutions
-- **Capabilities Reference**: What AbstractCore can and cannot do
-- **Contributing Guidelines**: How to contribute to the project
+### Examples & Support
+- **[Examples](examples/)**: Progressive tutorials and real-world patterns
+- **[Troubleshooting](docs/troubleshooting.md)**: Common issues and solutions
+- **[GitHub Issues](https://github.com/lpalbou/AbstractCore/issues)**: Report bugs and get help
 
 ---
 
-## Repository Information
+## Quick Links
 
 - **GitHub**: https://github.com/lpalbou/AbstractCore
-- **Website**: https://lpalbou.github.io/AbstractCore/
-- **License**: MIT
-- **Python**: 3.9+
-- **Status**: Production Ready (v2.3.5)
-- **Package**: Available on PyPI as `abstractcore`
+- **PyPI**: `pip install abstractcore[all]`
+- **License**: MIT | **Python**: 3.9+ | **Status**: Production Ready
 
-## Key Differentiators
-
-- **Provider Agnostic**: Same code works with any LLM provider via factory pattern
-- **Production Ready**: Robust error handling, retries, circuit breakers, event system
-- **Type Safe**: Full Pydantic integration for structured outputs with automatic retries
-- **Local & Cloud**: Support for both local models and cloud APIs with memory management
-- **Unified Streaming**: Consistent streaming across all providers with tool support
-- **Universal Tool Calling**: @tool decorator works across ALL providers with format conversion
-- **Session Management**: Persistent conversations with analytics and complete serialization
-- **Built-in Apps**: Ready-to-use summarizer, extractor, and judge applications
-- **Embeddings**: Built-in SOTA embedding models for RAG applications
-- **Server Mode**: Optional OpenAI-compatible HTTP API with agentic CLI support
-- **Well Documented**: Comprehensive guides and working examples
-
----
-
-This documentation provides a complete overview of AbstractCore's capabilities. For the latest updates and detailed examples, visit the GitHub repository and website.
+**Why AbstractCore?**
+- **Write once, run everywhere**: Same code works with any LLM provider
+- **Production ready**: Built-in error handling, retries, and monitoring
+- **Universal tool calling**: @tool decorator works across ALL providers
+- **Built-in apps**: Ready-to-use CLI tools (summarizer, extractor, judge)
+- **Debug capabilities**: Self-healing JSON and `--debug` mode for troubleshooting
