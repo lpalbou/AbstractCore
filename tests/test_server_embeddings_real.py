@@ -8,7 +8,7 @@ Tests the /{provider}/v1/embeddings endpoints with real embeddings.
 import pytest
 from fastapi.testclient import TestClient
 import numpy as np
-from abstractllm.server.app import app
+from abstractcore.server.app import app
 
 client = TestClient(app)
 

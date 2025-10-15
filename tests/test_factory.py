@@ -3,8 +3,8 @@ Test the factory function.
 """
 
 import pytest
-from abstractllm import create_llm
-from abstractllm.providers.mock_provider import MockProvider
+from abstractcore import create_llm
+from abstractcore.providers.mock_provider import MockProvider
 
 
 class TestFactory:

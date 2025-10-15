@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import numpy as np
 
-from abstractllm.embeddings import EmbeddingManager, EmbeddingModelConfig, get_model_config
+from abstractcore.embeddings import EmbeddingManager, EmbeddingModelConfig, get_model_config
 
 
 class TestEmbeddingModels:
@@ -125,7 +125,7 @@ class TestEmbeddingGeneration:
         """Clean up test environment."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_embed_single_text(self, mock_st):
         """Test embedding a single text."""
         mock_model = MagicMock()
@@ -140,7 +140,7 @@ class TestEmbeddingGeneration:
         assert len(embedding) == 768
         assert all(isinstance(x, float) for x in embedding)
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_embed_empty_text(self, mock_st):
         """Test embedding empty text."""
         mock_model = MagicMock()
@@ -154,7 +154,7 @@ class TestEmbeddingGeneration:
         assert len(embedding) == 768
         assert all(x == 0.0 for x in embedding)
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_embed_batch(self, mock_st):
         """Test batch embedding."""
         mock_model = MagicMock()
@@ -170,7 +170,7 @@ class TestEmbeddingGeneration:
         assert all(len(emb) == 768 for emb in embeddings)
         assert all(isinstance(emb, list) for emb in embeddings)
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_matryoshka_truncation(self, mock_st):
         """Test Matryoshka dimension truncation."""
         mock_model = MagicMock()
@@ -188,7 +188,7 @@ class TestEmbeddingGeneration:
         assert len(embedding) == 256
         assert manager.get_dimension() == 256
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_caching_behavior(self, mock_st):
         """Test caching behavior."""
         mock_model = MagicMock()
@@ -210,7 +210,7 @@ class TestEmbeddingGeneration:
         # Results should be identical
         assert embedding1 == embedding2
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_similarity_computation(self, mock_st):
         """Test similarity computation."""
         mock_model = MagicMock()
@@ -241,7 +241,7 @@ class TestCacheOperations:
         """Clean up test environment."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_persistent_cache_save_load(self, mock_st):
         """Test persistent cache save and load."""
         mock_model = MagicMock()
@@ -261,7 +261,7 @@ class TestCacheOperations:
         # Should get same result from cache
         assert embedding1 == embedding2
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_cache_stats(self, mock_st):
         """Test cache statistics."""
         mock_model = MagicMock()
@@ -278,7 +278,7 @@ class TestCacheOperations:
         assert "embedding_dimension" in stats
         assert stats["embedding_dimension"] == 768
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_clear_cache(self, mock_st):
         """Test cache clearing."""
         mock_model = MagicMock()
@@ -314,7 +314,7 @@ class TestEventIntegration:
         """Clean up test environment."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_event_emission(self, mock_st):
         """Test that events are emitted correctly."""
         mock_model = MagicMock()
@@ -322,14 +322,14 @@ class TestEventIntegration:
         mock_model.encode.return_value = np.random.random(768)
         mock_st.SentenceTransformer.return_value = mock_model
 
-        with patch('abstractllm.embeddings.manager.emit_global') as mock_emit:
+        with patch('abstractcore.embeddings.manager.emit_global') as mock_emit:
             manager = EmbeddingManager(cache_dir=self.cache_dir)
             manager.embed("Test text")
 
             # Should emit embedding_generated event
             mock_emit.assert_called()
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_no_events_fallback(self, mock_st):
         """Test graceful handling when events are not available."""
         mock_model = MagicMock()
@@ -338,7 +338,7 @@ class TestEventIntegration:
         mock_st.SentenceTransformer.return_value = mock_model
 
         # Mock import error for events
-        with patch('abstractllm.embeddings.manager.emit_global', side_effect=ImportError):
+        with patch('abstractcore.embeddings.manager.emit_global', side_effect=ImportError):
             manager = EmbeddingManager(cache_dir=self.cache_dir)
             # Should still work without events
             embedding = manager.embed("Test text")
@@ -357,7 +357,7 @@ class TestErrorHandling:
         """Clean up test environment."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_model_loading_failure(self, mock_st):
         """Test handling of model loading failure."""
         mock_st.SentenceTransformer.side_effect = Exception("Model not found")
@@ -365,7 +365,7 @@ class TestErrorHandling:
         with pytest.raises(Exception, match="Model not found"):
             EmbeddingManager(cache_dir=self.cache_dir)
 
-    @patch('abstractllm.embeddings.manager.sentence_transformers')
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
     def test_encoding_failure_fallback(self, mock_st):
         """Test fallback to zero vector on encoding failure."""
         mock_model = MagicMock()
@@ -382,7 +382,7 @@ class TestErrorHandling:
 
     def test_missing_sentence_transformers(self):
         """Test error when sentence-transformers is not available."""
-        with patch('abstractllm.embeddings.manager.sentence_transformers', None):
+        with patch('abstractcore.embeddings.manager.sentence_transformers', None):
             with pytest.raises(ImportError, match="sentence-transformers is required"):
                 EmbeddingManager(cache_dir=self.cache_dir)
 

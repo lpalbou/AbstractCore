@@ -11,8 +11,8 @@ import tempfile
 import shutil
 from pathlib import Path
 
-from abstractllm.embeddings import EmbeddingManager
-from abstractllm import create_llm
+from abstractcore.embeddings import EmbeddingManager
+from abstractcore import create_llm
 
 
 @pytest.mark.integration
@@ -164,7 +164,7 @@ Based on the provided context, please answer the question:"""
     def test_event_system_integration(self):
         """Test that embeddings work with the existing event system."""
         try:
-            from abstractllm.events import EventType, on_global
+            from abstractcore.events import EventType, on_global
 
             # Track embedding events
             events_captured = []
@@ -198,7 +198,7 @@ Based on the provided context, please answer the question:"""
             pass  # Test completed successfully
 
         except ImportError as e:
-            if "abstractllm.events" in str(e):
+            if "abstractcore.events" in str(e):
                 print("⚠️  Event system not available, skipping event tests")
                 pass  # Test completed successfully
             elif "sentence-transformers" in str(e):
@@ -214,7 +214,7 @@ Based on the provided context, please answer the question:"""
     def test_session_integration(self):
         """Test embeddings with session management."""
         try:
-            from abstractllm import BasicSession
+            from abstractcore import BasicSession
 
             # Create components
             embedder = EmbeddingManager(

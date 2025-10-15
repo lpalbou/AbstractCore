@@ -23,7 +23,7 @@ pip install abstractcore[server]
 ## Step 2: Start Server (10 seconds)
 
 ```bash
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 You should see:
@@ -163,7 +163,7 @@ crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"
 
 ```bash
 # Start server
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Test endpoints
 curl http://localhost:8000/health

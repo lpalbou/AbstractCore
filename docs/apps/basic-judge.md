@@ -5,7 +5,7 @@ BasicJudge is a production-ready LLM-as-a-judge tool for objective evaluation an
 ## Quick Start
 
 ```python
-from abstractllm.processing import BasicJudge
+from abstractcore.processing import BasicJudge
 
 # Initialize with default model (Ollama qwen3:4b-instruct-2507-q4_K_M)
 judge = BasicJudge()
@@ -106,7 +106,7 @@ Each evaluation returns a structured assessment with:
 class BasicJudge:
     def __init__(
         self,
-        llm: Optional[AbstractLLMInterface] = None,
+        llm: Optional[AbstractCoreInterface] = None,
         temperature: float = 0.1  # Low temperature for consistent evaluation
     )
 
@@ -161,7 +161,7 @@ class BasicJudge:
 ### JudgmentCriteria Configuration
 
 ```python
-from abstractllm.processing import JudgmentCriteria
+from abstractcore.processing import JudgmentCriteria
 
 # Enable specific criteria only
 criteria = JudgmentCriteria(
@@ -180,8 +180,8 @@ criteria = JudgmentCriteria(
 ### Custom LLM Provider
 
 ```python
-from abstractllm import create_llm
-from abstractllm.processing import BasicJudge, create_judge
+from abstractcore import create_llm
+from abstractcore.processing import BasicJudge, create_judge
 
 # RECOMMENDED: Use cloud providers for best evaluation quality
 llm = create_llm("openai", model="gpt-4o-mini", temperature=0.1)
@@ -199,7 +199,7 @@ judge = create_judge("ollama", model="qwen3-coder:30b", temperature=0.1)
 BasicJudge can evaluate multiple files sequentially to avoid context overflow:
 
 ```python
-from abstractllm.processing import BasicJudge, JudgmentCriteria
+from abstractcore.processing import BasicJudge, JudgmentCriteria
 
 judge = BasicJudge()
 
@@ -231,7 +231,7 @@ except ValueError as e:
 When evaluating multiple files, BasicJudge automatically generates a global assessment that synthesizes all individual evaluations:
 
 ```python
-from abstractllm.processing import BasicJudge
+from abstractcore.processing import BasicJudge
 
 judge = BasicJudge()
 
@@ -303,7 +303,7 @@ judge proposal.txt --format plain --output assessment.txt
 judge document.txt --context "code review"
 
 # Method 2: Via Python module (always works)
-python -m abstractllm.apps.judge document.txt --context "code review"
+python -m abstractcore.apps.judge document.txt --context "code review"
 ```
 
 ### Basic Usage
@@ -372,25 +372,25 @@ judge large_doc.md --verbose
 
 **JSON Format (default):**
 ```bash
-python -m abstractllm.apps.judge content.txt --format json
+python -m abstractcore.apps.judge content.txt --format json
 # Output: Structured JSON with scores, feedback, and reasoning
 ```
 
 **Plain Text Format:**
 ```bash
-python -m abstractllm.apps.judge content.txt --format plain
+python -m abstractcore.apps.judge content.txt --format plain
 # Output: Human-readable assessment report
 ```
 
 **Filtered Criteria:**
 ```bash
-python -m abstractllm.apps.judge code.py --criteria clarity,soundness,effectiveness
+python -m abstractcore.apps.judge code.py --criteria clarity,soundness,effectiveness
 # Output: Only evaluates specified criteria
 ```
 
 **Enhanced Assessment with Criteria Details:**
 ```bash
-python -m abstractllm.apps.judge content.txt --include-criteria --format plain
+python -m abstractcore.apps.judge content.txt --include-criteria --format plain
 # Output: Includes judge's summary, source reference, and detailed criteria explanations
 ```
 
@@ -464,7 +464,7 @@ judge "def calculate_total..." --context "code review" --criteria clarity,soundn
 
 **Python API:**
 ```python
-from abstractllm.processing import BasicJudge, JudgmentCriteria
+from abstractcore.processing import BasicJudge, JudgmentCriteria
 
 judge = BasicJudge()
 
@@ -515,7 +515,7 @@ judge src/*.py tests/*.py \
 
 **Python API for Multiple Files:**
 ```python
-from abstractllm.processing import BasicJudge
+from abstractcore.processing import BasicJudge
 import glob
 
 judge = BasicJudge()
@@ -680,7 +680,7 @@ Each assessment includes transparent reasoning showing:
 ### Content Management System
 
 ```python
-from abstractllm.processing import BasicJudge
+from abstractcore.processing import BasicJudge
 
 def evaluate_article(article_content):
     judge = BasicJudge()
@@ -811,22 +811,22 @@ The judge supports flexible timeout configuration for different evaluation scena
 ### Default Behavior (Unlimited Timeout)
 ```bash
 # Runs as long as needed - recommended for complex evaluations
-python -m abstractllm.apps.judge document.txt
+python -m abstractcore.apps.judge document.txt
 ```
 
 ### Custom Timeout
 ```bash
 # Set specific timeout (useful for production environments)
-python -m abstractllm.apps.judge document.txt --timeout 300   # 5 minutes
-python -m abstractllm.apps.judge document.txt --timeout 900   # 15 minutes
+python -m abstractcore.apps.judge document.txt --timeout 300   # 5 minutes
+python -m abstractcore.apps.judge document.txt --timeout 900   # 15 minutes
 
 # Explicit unlimited timeout
-python -m abstractllm.apps.judge document.txt --timeout none
+python -m abstractcore.apps.judge document.txt --timeout none
 ```
 
 ### Programmatic Usage
 ```python
-from abstractllm.processing import BasicJudge
+from abstractcore.processing import BasicJudge
 
 # Unlimited timeout (default)
 judge = BasicJudge()

@@ -6,7 +6,7 @@ tool tag rewriting from tool execution. The fix ensures that when custom
 tags are provided, AbstractCore rewrites tags but does NOT execute tools,
 allowing the CLI/agent to handle execution.
 
-Architectural Fix Location: abstractllm/providers/base.py line 323
+Architectural Fix Location: abstractcore/providers/base.py line 323
 Key Logic: actual_execute_tools = should_execute_tools and not bool(tool_call_tags)
 
 Test Layers:
@@ -21,12 +21,12 @@ All tests use real implementations per CLAUDE.md - NO MOCKING
 import pytest
 import time
 from typing import List, Dict, Any, Iterator
-from abstractllm import create_llm
-from abstractllm.core.types import GenerateResponse
-from abstractllm.tools.core import ToolDefinition, ToolCall, tool
-from abstractllm.tools.registry import register_tool, clear_registry
-from abstractllm.providers.streaming import UnifiedStreamProcessor
-from abstractllm.providers.base import BaseProvider
+from abstractcore import create_llm
+from abstractcore.core.types import GenerateResponse
+from abstractcore.tools.core import ToolDefinition, ToolCall, tool
+from abstractcore.tools.registry import register_tool, clear_registry
+from abstractcore.providers.streaming import UnifiedStreamProcessor
+from abstractcore.providers.base import BaseProvider
 
 
 # ============================================================================
@@ -152,7 +152,7 @@ class TestBasicSeparationLogic:
 
     def test_detector_rewrite_tags_flag(self):
         """Test that detector's rewrite_tags flag is set based on tag_rewriter presence"""
-        from abstractllm.providers.streaming import IncrementalToolDetector
+        from abstractcore.providers.streaming import IncrementalToolDetector
 
         # With rewrite_tags=True, detector preserves tool calls
         detector_rewrite = IncrementalToolDetector(
@@ -242,7 +242,7 @@ class TestStreamingIntegration:
 
     def test_streaming_tag_rewriting_preserves_tool_calls(self):
         """Test that tag rewriting preserves tool calls in content for rewriting"""
-        from abstractllm.providers.streaming import IncrementalToolDetector
+        from abstractcore.providers.streaming import IncrementalToolDetector
 
         # Detector with rewrite_tags=True should preserve tool calls
         detector = IncrementalToolDetector(
@@ -275,7 +275,7 @@ class TestStreamingIntegration:
 
     def test_streaming_no_tag_rewriting_removes_tool_calls(self):
         """Test that without tag rewriting, tool calls are removed from streamable content"""
-        from abstractllm.providers.streaming import IncrementalToolDetector
+        from abstractcore.providers.streaming import IncrementalToolDetector
 
         # Detector with rewrite_tags=False should remove tool calls
         detector = IncrementalToolDetector(
@@ -836,7 +836,7 @@ class TestValidationSummary:
         print("✓ PASSED: Processor initialization correct")
 
         # Validation 5: Detector initialization
-        from abstractllm.providers.streaming import IncrementalToolDetector
+        from abstractcore.providers.streaming import IncrementalToolDetector
         detector_rewrite = IncrementalToolDetector(model_name="test", rewrite_tags=True)
         assert detector_rewrite.rewrite_tags == True, "✗ FAILED: Detector should preserve tool calls"
         print("✓ PASSED: Detector initialization correct")

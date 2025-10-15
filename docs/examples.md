@@ -18,7 +18,7 @@ This guide shows real-world use cases for AbstractCore with complete, copy-paste
 ### Simple Q&A
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Works with any provider
 llm = create_llm("openai", model="gpt-4o-mini")  # or "anthropic", "ollama"...
@@ -30,7 +30,7 @@ print(response.content)
 ### Multiple Providers Comparison
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 providers = [
     ("openai", "gpt-4o-mini"),
@@ -53,7 +53,7 @@ for provider_name, model in providers:
 ### Provider Fallback
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 def generate_with_fallback(prompt, **kwargs):
     """Try multiple providers until one works."""
@@ -83,7 +83,7 @@ print(response.content)
 ### Weather Tool
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 import requests
 
 def get_weather(city: str, units: str = "metric") -> str:
@@ -134,7 +134,7 @@ print(response.content)
 ### Calculator Tool
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 import math
 
 def calculate(expression: str) -> str:
@@ -199,7 +199,7 @@ print(response.content)
 ### File Operations Tool
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 from pathlib import Path
 import os
 
@@ -279,7 +279,7 @@ Tool call syntax rewriting enables AbstractCore to work seamlessly with any agen
 ### Codex CLI Integration (Default Format)
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Define tools (standard JSON format)
 weather_tool = {
@@ -405,7 +405,7 @@ print(response.content)
 ### Session-Based Format Configuration
 
 ```python
-from abstractllm import BasicSession
+from abstractcore import BasicSession
 
 # Configure format once for entire session
 llm = create_llm("openai", model="gpt-4o-mini", tool_call_tags="llama3")
@@ -430,7 +430,7 @@ session.generate("List files in documents", tools=[{
 ### Production Monitoring with Events
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 # Monitor tool usage across different formats
 def log_tool_calls(event):
@@ -460,7 +460,7 @@ for format_name in ["qwen3", "llama3", "xml"]:
 ### User Profile Extraction
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
@@ -509,7 +509,7 @@ print(f"Interests: {', '.join(user.interests)}")
 ### Product Catalog Extraction
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 from pydantic import BaseModel, field_validator
 from typing import List
 from enum import Enum
@@ -571,7 +571,7 @@ for product in catalog.products:
 ### Code Review Analysis
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 from pydantic import BaseModel
 from typing import List
 from enum import Enum
@@ -637,7 +637,7 @@ for rec in review.recommendations:
 
 ```python
 # Real-time streaming works identically across ALL providers
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 
@@ -653,7 +653,7 @@ print("\n")
 ### Advanced Streaming with Progress and Performance Tracking
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 import time
 
 def streaming_with_insights(prompt):
@@ -693,7 +693,7 @@ streaming_with_insights("Explain quantum computing in simple terms")
 ### Real-Time Streaming with Tools (Unified Implementation)
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 from datetime import datetime
 
 def get_current_time() -> str:
@@ -757,7 +757,7 @@ print("\n")  # Newline after streaming
 ### Performance-Optimized Streaming
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 import time
 
 def compare_providers(prompt):
@@ -810,7 +810,7 @@ compare_providers("Write a creative short story about artificial intelligence")
 ### Basic Conversation
 
 ```python
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 
 llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(
@@ -839,7 +839,7 @@ print(f"Total messages in conversation: {len(session.messages)}")
 ### Session Persistence
 
 ```python
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 from pathlib import Path
 
 # Create and use session
@@ -871,7 +871,7 @@ session_file.unlink()  # Delete the file
 ### Context Management
 
 ```python
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 
 def create_coding_assistant():
     """Create a specialized coding assistant session."""
@@ -907,9 +907,9 @@ print(f"After clearing: {len(assistant.messages)} messages")  # Just system prom
 ### Retry and Error Handling
 
 ```python
-from abstractllm import create_llm
-from abstractllm.core.retry import RetryConfig
-from abstractllm.exceptions import ProviderAPIError, RateLimitError
+from abstractcore import create_llm
+from abstractcore.core.retry import RetryConfig
+from abstractcore.exceptions import ProviderAPIError, RateLimitError
 import logging
 
 # Configure logging
@@ -966,8 +966,8 @@ except Exception as e:
 ### Cost Monitoring
 
 ```python
-from abstractllm import create_llm
-from abstractllm.events import EventType, on_global
+from abstractcore import create_llm
+from abstractcore.events import EventType, on_global
 from datetime import datetime
 import json
 
@@ -1029,7 +1029,7 @@ print(f"Average per request: ${report['average_cost']:.4f}")
 ### Load Balancing
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 import random
 import time
 from typing import List, Tuple
@@ -1101,7 +1101,7 @@ for i in range(5):
 ```python
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 from typing import Optional
 import uuid
 
@@ -1164,7 +1164,7 @@ if __name__ == "__main__":
 
 ```python
 import gradio as gr
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 from typing import List, Tuple
 
 class ChatInterface:
@@ -1233,7 +1233,7 @@ if __name__ == "__main__":
 
 ```python
 # Cell 1: Setup
-from abstractllm import create_llm
+from abstractcore import create_llm
 from IPython.display import display, Markdown, HTML
 import json
 
@@ -1292,7 +1292,7 @@ for i, step in enumerate(plan.learning_steps, 1):
 ```python
 import discord
 from discord.ext import commands
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 import asyncio
 
 # Bot setup

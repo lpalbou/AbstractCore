@@ -17,13 +17,13 @@ Tests are organized by complexity:
 import pytest
 import time
 from typing import Iterator, List
-from abstractllm.providers.streaming import (
+from abstractcore.providers.streaming import (
     IncrementalToolDetector,
     UnifiedStreamProcessor,
     ToolDetectionState
 )
-from abstractllm.core.types import GenerateResponse
-from abstractllm.tools.core import ToolCall, ToolDefinition
+from abstractcore.core.types import GenerateResponse
+from abstractcore.tools.core import ToolCall, ToolDefinition
 
 
 # ============================================================================
@@ -494,7 +494,7 @@ class TestRegressionValidation:
         def test_tool(x: int) -> int:
             return x * 2
 
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(test_tool)
 
         tool_def = ToolDefinition.from_function(test_tool).to_dict()

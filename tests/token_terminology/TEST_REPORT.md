@@ -1,6 +1,6 @@
 # Token Terminology Migration Test Report
 **Date:** 2025-10-11
-**Test Engineer:** AbstractLLM Advanced Test Engineering Specialist
+**Test Engineer:** AbstractCore Advanced Test Engineering Specialist
 **Migration:** `context_length` → `max_tokens`
 
 ---
@@ -52,9 +52,9 @@
 | `test_cli_auto_detection_uses_max_tokens` | ✅ PASS | CLI auto-detection correctly uses `max_tokens` for context window |
 
 **Integration Points Validated:**
-- ✅ `abstractllm/architectures/detection.py` - `get_context_limits()` function
-- ✅ `abstractllm/providers/base.py` - `_get_default_context_window()` method
-- ✅ `abstractllm/utils/cli.py` - Auto-detection logic
+- ✅ `abstractcore/architectures/detection.py` - `get_context_limits()` function
+- ✅ `abstractcore/providers/base.py` - `_get_default_context_window()` method
+- ✅ `abstractcore/utils/cli.py` - Auto-detection logic
 - ✅ Alias resolution system maintains `max_tokens` integrity
 
 ---
@@ -133,9 +133,9 @@ OllamaProvider('llama-3.1-8b').max_tokens    # 128000 ✓
 | `test_no_context_length_in_base_provider` | ✅ PASS | `base.py` contains zero active references to `context_length` |
 
 **Code Search Results:**
-- ✅ `abstractllm/assets/model_capabilities.json`: 0 occurrences of `context_length`
-- ✅ `abstractllm/architectures/detection.py`: 0 occurrences of `context_length`
-- ✅ `abstractllm/providers/base.py`: 0 active occurrences of `context_length`
+- ✅ `abstractcore/assets/model_capabilities.json`: 0 occurrences of `context_length`
+- ✅ `abstractcore/architectures/detection.py`: 0 occurrences of `context_length`
+- ✅ `abstractcore/providers/base.py`: 0 active occurrences of `context_length`
 
 ---
 
@@ -279,7 +279,7 @@ OllamaProvider('llama-3.1-8b').max_tokens    # 128000 ✓
 - **Python**: 3.12.2
 - **Pytest**: 8.4.2
 - **Virtual Environment**: `.venv/bin/python`
-- **Working Directory**: `/Users/albou/projects/abstractllm_core`
+- **Working Directory**: `/Users/albou/projects/abstractcore_core`
 
 ### Test Execution
 ```bash
@@ -288,9 +288,9 @@ python -m pytest tests/token_terminology/test_max_tokens_migration.py -v
 ```
 
 ### Dependencies Tested
-- `abstractllm.architectures`: Detection and capabilities system
-- `abstractllm.providers`: Base provider and specific implementations
-- `abstractllm.assets`: Model capabilities JSON
+- `abstractcore.architectures`: Detection and capabilities system
+- `abstractcore.providers`: Base provider and specific implementations
+- `abstractcore.assets`: Model capabilities JSON
 
 ---
 
@@ -323,8 +323,8 @@ The token terminology migration from `context_length` to `max_tokens` is **compl
 ## Test Artifacts
 
 ### Test Files Created
-- `/Users/albou/projects/abstractllm_core/tests/token_terminology/test_max_tokens_migration.py` (25 tests)
-- `/Users/albou/projects/abstractllm_core/tests/token_terminology/TEST_REPORT.md` (this report)
+- `/Users/albou/projects/abstractcore_core/tests/token_terminology/test_max_tokens_migration.py` (25 tests)
+- `/Users/albou/projects/abstractcore_core/tests/token_terminology/TEST_REPORT.md` (this report)
 
 ### Test Results
 ```
@@ -339,10 +339,10 @@ tests/token_terminology/test_max_tokens_migration.py ................... [ 76%]
 ```
 
 ### Files Validated
-- ✅ `abstractllm/assets/model_capabilities.json` (85 models)
-- ✅ `abstractllm/architectures/detection.py` (get_context_limits function)
-- ✅ `abstractllm/providers/base.py` (provider initialization)
-- ✅ `abstractllm/utils/cli.py` (auto-detection logic)
+- ✅ `abstractcore/assets/model_capabilities.json` (85 models)
+- ✅ `abstractcore/architectures/detection.py` (get_context_limits function)
+- ✅ `abstractcore/providers/base.py` (provider initialization)
+- ✅ `abstractcore/utils/cli.py` (auto-detection logic)
 - ✅ `tests/integration/test_system_integration.py` (integration tests)
 - ✅ `docs/architecture-model-detection.md` (documentation)
 

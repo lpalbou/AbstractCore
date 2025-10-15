@@ -12,10 +12,10 @@ from typing import Dict, Any, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from abstractllm import create_llm, BasicSession
-from abstractllm.tools.common_tools import list_files, search_files, read_file, write_file, web_search
-from abstractllm.utils import configure_logging, get_logger
-from abstractllm.events import EventType, GlobalEventBus
+from abstractcore import create_llm, BasicSession
+from abstractcore.tools.common_tools import list_files, search_files, read_file, write_file, web_search
+from abstractcore.utils import configure_logging, get_logger
+from abstractcore.events import EventType, GlobalEventBus
 
 
 class ProviderTestSuite:

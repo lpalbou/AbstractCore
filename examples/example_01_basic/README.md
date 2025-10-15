@@ -1,14 +1,14 @@
-# AbstractLLM Core: Basic Introduction
+# AbstractCore Core: Basic Introduction
 
 ## What You'll Learn
 
-- 🌟 Initialize AbstractLLM Core
+- 🌟 Initialize AbstractCore Core
 - 📝 Configure basic text generation
 - 🔍 Understand core library concepts
 
 ### Learning Objectives
 
-1. Import AbstractLLM library
+1. Import AbstractCore library
 2. Select and configure a basic model
 3. Generate simple text responses
 4. Explore basic configuration options
@@ -21,7 +21,7 @@
 
 ### Example Walkthrough
 
-This example demonstrates the simplest way to use AbstractLLM Core. You'll learn how to:
+This example demonstrates the simplest way to use AbstractCore Core. You'll learn how to:
 - Set up a basic text generation environment
 - Make your first API call
 - Handle basic configurations
@@ -30,7 +30,7 @@ This example demonstrates the simplest way to use AbstractLLM Core. You'll learn
 
 ```bash
 # Ensure you have the required dependencies
-pip install abstractllm ollama
+pip install abstractcore ollama
 
 # Verify Ollama is running
 ollama serve
@@ -39,10 +39,10 @@ ollama serve
 ### Code Example
 
 ```python
-from abstractllm import AbstractLLM
+from abstractcore import create_llm
 
 # Initialize a basic model
-llm = AbstractLLM(provider='ollama', model='llama3')
+llm = create_llm(provider='ollama', model='llama3')
 
 # Generate a simple response
 response = llm.generate("Tell me a short joke.")
@@ -59,7 +59,7 @@ A typical AI-generated humorous response about a programmer walking into a bar.
 
 ```python
 # Advanced configuration example
-llm = AbstractLLM(
+llm = create_llm(
     provider='ollama',
     model='llama3',
     max_tokens=100,      # Limit response length
@@ -73,7 +73,7 @@ llm = AbstractLLM(
 #### Common Issues
 - **Model Not Found**: Ensure the model is installed via `ollama pull llama3`
 - **Connection Error**: Verify Ollama is running (`ollama serve`)
-- **Dependency Problems**: Use `pip install -U abstractllm ollama`
+- **Dependency Problems**: Use `pip install -U abstractcore ollama`
 
 #### Debugging Tips
 - Check Ollama logs: `ollama logs`
@@ -94,7 +94,7 @@ llm = AbstractLLM(
 
 ### Reference Documentation
 
-- [AbstractLLM Core Documentation](/docs/getting-started.md)
+- [AbstractCore Core Documentation](/docs/getting-started.md)
 - [Provider Configuration](/docs/prerequisites.md)
 - [Troubleshooting Guide](/docs/troubleshooting.md)
 
@@ -104,7 +104,7 @@ After completing this example, move to `example_02_providers` to explore more ad
 
 ### Contribute & Feedback
 
-- Found an issue? [Open an Issue](https://github.com/your-org/abstractllm_core/issues)
+- Found an issue? [Open an Issue](https://github.com/your-org/abstractcore/issues)
 - Want to improve the example? Submit a pull request!
 
 ---

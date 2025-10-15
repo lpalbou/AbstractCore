@@ -2,7 +2,7 @@
 
 **Report Date**: 2025-10-11 06:54:13
 **Feature Tested**: Tool Execution Separation Architecture
-**Architectural Fix Location**: `abstractllm/providers/base.py` line 323
+**Architectural Fix Location**: `abstractcore/providers/base.py` line 323
 **Test Suite**: `tests/test_tool_execution_separation.py`
 
 ---

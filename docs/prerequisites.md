@@ -62,7 +62,7 @@ echo 'OPENAI_API_KEY=sk-your-actual-api-key-here' > .env
 #### 3. Test Setup
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Test with GPT-4o-mini (fastest, cheapest)
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -103,7 +103,7 @@ echo 'ANTHROPIC_API_KEY=sk-ant-your-actual-api-key-here' > .env
 #### 3. Test Setup
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Test with Claude 3.5 Haiku (fast, cost-effective)
 llm = create_llm("anthropic", model="claude-3-5-haiku-20241022")
@@ -167,7 +167,7 @@ ollama pull granite3.3:2b        # 1.5GB - Good general purpose
 #### 4. Test Setup
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Test with a fast model
 llm = create_llm("ollama", model="gemma3:1b")
@@ -204,7 +204,7 @@ pip install abstractcore[mlx]
 MLX models are automatically downloaded when first used. Popular options:
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Models are auto-downloaded on first use
 llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")  # 4.2GB
@@ -215,7 +215,7 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")      #
 #### 3. Test Setup
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Test with a good balance model
 llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
@@ -260,7 +260,7 @@ print(response.content)
 #### 4. Test Setup
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # LMStudio runs on localhost:1234 by default
 llm = create_llm("lmstudio", base_url="http://localhost:1234")
@@ -295,7 +295,7 @@ export HUGGINGFACE_TOKEN="hf_your-token-here"
 #### 3. Test Setup
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Use a small model for testing (auto-downloads)
 llm = create_llm("huggingface", model="microsoft/DialoGPT-medium")
@@ -312,7 +312,7 @@ print(response.content)
 
 ### Common Issues
 
-#### "No module named 'abstractllm'"
+#### "No module named .abstractcore."
 ```bash
 # Make sure you installed AbstractCore
 pip install abstractcore
@@ -395,7 +395,7 @@ Save this as `test_setup.py` and run it to test all your providers:
 """Test script for AbstractCore providers"""
 
 import os
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 def test_provider(provider_name, model, **kwargs):
     """Test a specific provider"""

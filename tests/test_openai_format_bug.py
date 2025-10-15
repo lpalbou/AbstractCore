@@ -7,8 +7,8 @@ the arguments field as a JSON string (with escaped quotes) rather than a JSON ob
 
 import json
 import pytest
-from abstractllm.providers.streaming import UnifiedStreamProcessor
-from abstractllm.core.types import GenerateResponse
+from abstractcore.providers.streaming import UnifiedStreamProcessor
+from abstractcore.core.types import GenerateResponse
 
 
 def test_openai_format_arguments_as_json_string():

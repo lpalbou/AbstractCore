@@ -2,7 +2,7 @@
 CRITICAL VALIDATION TEST SUITE: Streaming + Tool Execution Fix
 =================================================================
 
-This suite validates the critical fix in abstractllm/providers/streaming.py:
+This suite validates the critical fix in abstractcore/providers/streaming.py:
 - Line 125: Changed `streamable_content = chunk_content` to `streamable_content = ""`
 - Lines 148-155: Added proper content gating with 50-char buffer
 
@@ -18,13 +18,13 @@ All tests use REAL implementations per CLAUDE.md - NO MOCKING
 import pytest
 import time
 from typing import Iterator, List
-from abstractllm.providers.streaming import (
+from abstractcore.providers.streaming import (
     IncrementalToolDetector,
     UnifiedStreamProcessor,
     ToolDetectionState
 )
-from abstractllm.core.types import GenerateResponse
-from abstractllm.tools.core import ToolCall, ToolDefinition
+from abstractcore.core.types import GenerateResponse
+from abstractcore.tools.core import ToolCall, ToolDefinition
 
 
 # ============================================================================
@@ -229,11 +229,11 @@ class TestToolExecution:
         def read_file(path: str) -> str:
             """Mock file reading for test"""
             if path == "README.md":
-                return "# AbstractLLM Core\n\nThis is a test file."
+                return "# AbstractCore\n\nThis is a test file."
             return f"File not found: {path}"
 
         # Register tool
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(read_file)
 
         tool_def = ToolDefinition.from_function(read_file).to_dict()
@@ -277,7 +277,7 @@ class TestToolExecution:
             return value * 2
 
         # Register tools
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(tool1)
         register_tool(tool2)
 
@@ -327,7 +327,7 @@ class TestToolExecution:
                 return f"Error: {e}"
 
         # Register tool
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(calculate)
 
         tool_def = ToolDefinition.from_function(calculate).to_dict()
@@ -646,7 +646,7 @@ class TestProductionReadiness:
             return x * 2
 
         # Register tool
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(test_tool)
 
         tool_def = ToolDefinition.from_function(test_tool).to_dict()

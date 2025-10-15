@@ -5,6 +5,66 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2025-10-15
+
+### Breaking Changes
+- **Complete Rebranding**: Comprehensive rename from "AbstractLLM" to "AbstractCore" throughout the entire project
+  - **Package Name**: Internal package `abstractllm/` → `abstractcore/` to align with published package name
+  - **Product Name**: "AbstractLLM Core" → "AbstractCore" in all documentation and branding
+  - **Import statements**: All `from abstractcore import ...` must become `from abstractcore import ...`
+  - **Console scripts**: Entry points changed from `abstractllm.apps.*` to `abstractcore.apps.*`
+  - **Interface names**: `AbstractLLMInterface` → `AbstractCoreInterface`, `AbstractLLMError` → `AbstractCoreError`
+  - **Environment variables**: `ABSTRACTLLM_*` → `ABSTRACTCORE_*` (e.g., `ABSTRACTCORE_ONNX_VERBOSE`)
+  - **Cache directories**: `~/.abstractllm/` → `~/.abstractcore/`
+  - **Log files**: `abstractllm_*.log` → `abstractcore_*.log`
+  - **Module paths**: All absolute imports updated throughout codebase
+  - **Impact**: This affects all users - complete migration required from AbstractLLM to AbstractCore branding
+  
+### Migration Guide
+To migrate from 2.3.x to 2.4.0, update all references to AbstractLLM:
+
+**1. Import Statements:**
+```python
+# Before (2.3.x)
+from abstractcore import create_llm
+from abstractllm.processing import BasicSummarizer
+from abstractllm.embeddings import EmbeddingManager
+
+# After (2.4.0+)
+from abstractcore import create_llm
+from abstractcore.processing import BasicSummarizer  
+from abstractcore.embeddings import EmbeddingManager
+```
+
+**2. Interface Names:**
+```python
+# Before (2.3.x) 
+from abstractllm.core.interface import AbstractLLMInterface
+
+# After (2.4.0+)
+from abstractcore.core.interface import AbstractCoreInterface
+```
+
+**3. Environment Variables:**
+```bash
+# Before (2.3.x)
+export ABSTRACTLLM_ONNX_VERBOSE=1
+
+# After (2.4.0+)
+export ABSTRACTCORE_ONNX_VERBOSE=1
+```
+
+**4. Console Scripts:**
+Console scripts remain the same (both `summarizer` and `abstractcore-summarizer` work), but internal module paths have changed to `abstractcore.apps.*`.
+
+### Technical
+- **Directory Structure**: Renamed main package directory from `abstractllm/` to `abstractcore/`
+- **Configuration Updates**: Updated `pyproject.toml` with new package names, console scripts, and version paths
+- **Build System**: Cleaned and regenerated all build artifacts with correct package structure
+- **Documentation**: Updated all code examples, CLI usage, and module references across documentation
+- **Examples**: Updated all example files with new import statements
+- **Tests**: Updated all test imports and references throughout test suite
+
 ## [2.3.9] - 2025-10-25
 ### Fixed
 - **Timeout Handling**: Comprehensive timeout parameter handling across all providers
@@ -75,7 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Limitation**: Streaming not supported in hybrid mode (clear error message provided)
 
 #### Enhanced BaseProvider Interface
-- **Added**: `generate()` method to BaseProvider implementing AbstractLLMInterface
+- **Added**: `generate()` method to BaseProvider implementing AbstractCoreInterface
 - **Fixed**: Proper delegation from `generate()` to `generate_with_telemetry()` with full parameter passthrough
 - **Impact**: Ensures consistent API behavior across all provider implementations
 
@@ -88,7 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Maintained full backward compatibility for single-mode usage (tools-only or structured-only)
 
 #### Files Modified
-- `abstractllm/providers/base.py`: Added hybrid handling logic and generate() method implementation
+- `abstractcore/providers/base.py`: Added hybrid handling logic and generate() method implementation
 - Sequential execution: Tool execution → Context enhancement → Structured output generation
 - Clean error handling with descriptive messages for unsupported combinations
 
@@ -208,7 +268,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Comprehensive Session Management System
 - **Session Serialization**: Complete session state preservation including provider, model, parameters, system prompt, tool registry, and conversation history
 - **Optional Analytics**: Added `generate_summary()`, `generate_assessment()`, and `extract_facts()` methods for session-level insights
-- **Versioned Schema**: Implemented `session-archive/v1` format with JSON schema validation in `abstractllm/assets/session_schema.json`
+- **Versioned Schema**: Implemented `session-archive/v1` format with JSON schema validation in `abstractcore/assets/session_schema.json`
 - **CLI Integration**: Added `/save <file> [--summary] [--assessment] [--facts]` and `/load <file>` commands with optional analytics generation
 - **Backward Compatibility**: Graceful handling of legacy session formats during load operations
 
@@ -227,12 +287,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Technical
 
 #### Files Modified
-- `abstractllm/providers/ollama_provider.py`: Fixed endpoint selection logic to use `/api/chat` by default
-- `abstractllm/core/session.py`: Enhanced serialization, standardized parameter naming, added analytics methods
-- `abstractllm/core/types.py`: Redesigned metadata system with property-based access
-- `abstractllm/utils/cli.py`: Improved help system, added tool integration, enhanced save/load commands
-- `abstractllm/tools/common_tools.py`: Added defensive programming for parameter type handling
-- `abstractllm/assets/session_schema.json`: Created comprehensive JSON schema for session validation
+- `abstractcore/providers/ollama_provider.py`: Fixed endpoint selection logic to use `/api/chat` by default
+- `abstractcore/core/session.py`: Enhanced serialization, standardized parameter naming, added analytics methods
+- `abstractcore/core/types.py`: Redesigned metadata system with property-based access
+- `abstractcore/utils/cli.py`: Improved help system, added tool integration, enhanced save/load commands
+- `abstractcore/tools/common_tools.py`: Added defensive programming for parameter type handling
+- `abstractcore/assets/session_schema.json`: Created comprehensive JSON schema for session validation
 - `docs/session.md`: New documentation explaining session management and serialization benefits
 
 #### Test Results
@@ -248,7 +308,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Major Changes
 
 #### Server Simplification and Enhancement
-- Simplified server implementation in `abstractllm/server/app.py` (reduced from ~4000 to ~1500 lines)
+- Simplified server implementation in `abstractcore/server/app.py` (reduced from ~4000 to ~1500 lines)
 - Removed complex model discovery in favor of direct provider queries
 - Added comprehensive endpoint documentation with OpenAI-style descriptions
 - Enhanced request/response models with detailed parameter descriptions and examples
@@ -370,7 +430,7 @@ If you were using embeddings, no changes needed. The default behavior remains Hu
 
 To use other providers:
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 # HuggingFace (default, unchanged)
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")

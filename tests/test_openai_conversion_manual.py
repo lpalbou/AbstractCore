@@ -9,9 +9,9 @@ This script demonstrates that the fix works correctly:
 
 import json
 import sys
-sys.path.insert(0, '/Users/albou/projects/abstractllm_core')
+sys.path.insert(0, '/Users/albou/projects/abstractcore_core')
 
-from abstractllm.providers.streaming import UnifiedStreamProcessor
+from abstractcore.providers.streaming import UnifiedStreamProcessor
 
 
 def test_openai_conversion():

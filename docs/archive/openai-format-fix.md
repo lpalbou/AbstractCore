@@ -27,7 +27,7 @@ Note: The `arguments` field contains a **JSON string** with properly escaped quo
 
 ### What Was Happening
 
-In `/Users/albou/projects/abstractllm_core/abstractllm/server/app.py`, lines 1946 and 2023 had fallback logic using `str()`:
+In `/Users/albou/projects/abstractcore_project/abstractcore/server/app.py`, lines 1946 and 2023 had fallback logic using `str()`:
 
 ```python
 # WRONG - Falls back to Python str() representation
@@ -56,9 +56,9 @@ This would cause JSON parsing failures in downstream systems.
 
 ### Where the Bug Existed
 
-1. **`/Users/albou/projects/abstractllm_core/abstractllm/server/app.py`** - Line 1946 (streaming response)
-2. **`/Users/albou/projects/abstractllm_core/abstractllm/server/app.py`** - Line 2023 (non-streaming response)
-3. **`/Users/albou/projects/abstractllm_core/abstractllm/server/app_fixed.py`** - Line 70 (example code)
+1. **`/Users/albou/projects/abstractcore_project/abstractcore/server/app.py`** - Line 1946 (streaming response)
+2. **`/Users/albou/projects/abstractcore_project/abstractcore/server/app.py`** - Line 2023 (non-streaming response)
+3. **`/Users/albou/projects/abstractcore_project/abstractcore/server/app_fixed.py`** - Line 70 (example code)
 
 ### Why It Was Wrong
 
@@ -76,7 +76,7 @@ While the `ToolCall` dataclass specifies `arguments: Dict[str, Any]`, defensive 
 
 ### Why streaming.py Was Correct
 
-The file `/Users/albou/projects/abstractllm_core/abstractllm/providers/streaming.py` at line 668 was already correct:
+The file `/Users/albou/projects/abstractcore_project/abstractcore/providers/streaming.py` at line 668 was already correct:
 
 ```python
 "arguments": json.dumps(tool_data.get("arguments", {}))
@@ -110,15 +110,15 @@ This handles all cases correctly:
 
 ### Files Modified
 
-1. ✅ `/Users/albou/projects/abstractllm_core/abstractllm/server/app.py` - Line 1946
-2. ✅ `/Users/albou/projects/abstractllm_core/abstractllm/server/app.py` - Line 2023
-3. ✅ `/Users/albou/projects/abstractllm_core/abstractllm/server/app_fixed.py` - Line 70
+1. ✅ `/Users/albou/projects/abstractcore_project/abstractcore/server/app.py` - Line 1946
+2. ✅ `/Users/albou/projects/abstractcore_project/abstractcore/server/app.py` - Line 2023
+3. ✅ `/Users/albou/projects/abstractcore_project/abstractcore/server/app_fixed.py` - Line 70
 
 ## Verification
 
 ### Test Cases Created
 
-**File**: `/Users/albou/projects/abstractllm_core/tests/test_openai_format_bug.py`
+**File**: `/Users/albou/projects/abstractcore_project/tests/test_openai_format_bug.py`
 
 Comprehensive test suite covering:
 
@@ -146,7 +146,7 @@ Comprehensive test suite covering:
 ### How to Run Tests
 
 ```bash
-cd /Users/albou/projects/abstractllm_core
+cd /Users/albou/projects/abstractcore_project
 source .venv/bin/activate
 python -m pytest tests/test_openai_format_bug.py -v -s
 ```
@@ -159,8 +159,8 @@ You can verify the fix manually:
 
 ```python
 import json
-from abstractllm.providers.streaming import UnifiedStreamProcessor
-from abstractllm.core.types import GenerateResponse
+from abstractcore.providers.streaming import UnifiedStreamProcessor
+from abstractcore.core.types import GenerateResponse
 
 # Create processor with OpenAI format
 processor = UnifiedStreamProcessor(
@@ -252,18 +252,18 @@ parsed_args = json.loads(arguments_str)  # Should not raise
 
 ### Correct Implementation (Reference)
 
-- ✅ `/Users/albou/projects/abstractllm_core/abstractllm/providers/streaming.py` (line 668)
+- ✅ `/Users/albou/projects/abstractcore_project/abstractcore/providers/streaming.py` (line 668)
   - Already uses `json.dumps()` correctly
 
 ### Fixed Files
 
-- ✅ `/Users/albou/projects/abstractllm_core/abstractllm/server/app.py` (lines 1946, 2023)
-- ✅ `/Users/albou/projects/abstractllm_core/abstractllm/server/app_fixed.py` (line 70)
+- ✅ `/Users/albou/projects/abstractcore_project/abstractcore/server/app.py` (lines 1946, 2023)
+- ✅ `/Users/albou/projects/abstractcore_project/abstractcore/server/app_fixed.py` (line 70)
 
 ### Test Files
 
-- 📝 `/Users/albou/projects/abstractllm_core/tests/test_openai_format_bug.py`
-- 📝 `/Users/albou/projects/abstractllm_core/test_json_encoding.py` (demonstration)
+- 📝 `/Users/albou/projects/abstractcore_project/tests/test_openai_format_bug.py`
+- 📝 `/Users/albou/projects/abstractcore_project/test_json_encoding.py` (demonstration)
 
 ## Conclusion
 

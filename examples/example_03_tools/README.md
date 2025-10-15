@@ -1,4 +1,4 @@
-# AbstractLLM Core: Tools and Function Calling
+# AbstractCore Core: Tools and Function Calling
 
 ## What You'll Learn
 
@@ -23,7 +23,7 @@ This example demonstrates advanced interaction capabilities:
 ### Key Code Snippet
 
 ```python
-from abstractllm import AbstractLLM, tool
+from abstractcore import create_llm, tool
 
 # Custom tools
 @tool
@@ -37,7 +37,7 @@ def calculate_math(expression: str) -> float:
     return eval(expression)
 
 # Multi-tool workflow
-llm = AbstractLLM(
+llm = create_llm(
     provider='ollama',
     model='phi3',
     tools=[search_web, calculate_math]

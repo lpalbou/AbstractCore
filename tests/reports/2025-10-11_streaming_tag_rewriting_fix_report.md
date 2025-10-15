@@ -114,14 +114,14 @@ All progressive complexity tests pass:
 
 ### Files Modified
 
-1. **`abstractllm/providers/streaming.py`** (COMPLETELY REFACTORED)
+1. **`abstractcore/providers/streaming.py`** (COMPLETELY REFACTORED)
    - Replaced state-based detector with simpler accumulator approach
    - Added `rewrite_tags` parameter to preserve tool calls
    - Implemented intelligent buffering for partial tool calls
    - Changed from streaming rewriter to direct rewriter
    - **Lines changed**: ~200 (major refactor)
 
-2. **`abstractllm/providers/streaming_v2.py`** (NEW - Development Version)
+2. **`abstractcore/providers/streaming_v2.py`** (NEW - Development Version)
    - V2 implementation used for development and validation
    - Will be kept as reference implementation
 
@@ -305,7 +305,7 @@ Input tool call format: <|tool_call|>...JSON...</|tool_call|>
 Expected output format: ojlk...JSON...dfsd
 
 Actual output:
-I will list the files for you.ojlk{"name": "list_files", "arguments": {"directory_path": "abstractllm"}}dfsd
+I will list the files for you.ojlk{"name": "list_files", "arguments": {"directory_path": "abstractcore"}}dfsd
 ===================================
 
 ✅ USER SCENARIO VALIDATION PASSED!

@@ -83,7 +83,7 @@ The server now outputs tool calls in the standard OpenAI format:
 
 ## Files Modified
 
-1. **`abstractllm/server/app.py`**
+1. **`abstractcore/server/app.py`**
    - Lines 1893-1989: Added universal tool call detection in streaming
    - Lines 2055-2117: Added universal tool call detection in non-streaming
 
@@ -93,7 +93,7 @@ The server now outputs tool calls in the standard OpenAI format:
 
 ```bash
 # Start the server
-python -m abstractllm.server
+python -m abstractcore.server
 
 # Run the test script
 chmod +x test_manual_tool_conversion.sh
@@ -104,7 +104,7 @@ chmod +x test_manual_tool_conversion.sh
 
 ```bash
 # Start the server
-python -m abstractllm.server
+python -m abstractcore.server
 
 # Run the Python test
 python test_server_tool_conversion.py

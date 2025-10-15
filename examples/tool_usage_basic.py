@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Basic Tool Usage Examples for AbstractLLM Core
+Basic Tool Usage Examples for AbstractCore Core
 
 This example demonstrates how to use tools with different providers
 in both streaming and non-streaming modes.
@@ -10,8 +10,8 @@ import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from abstractllm import AbstractLLM
-from abstractllm.events import EventType
+from abstractcore import create_llm
+from abstractcore.events import EventType
 
 # Example tool definitions
 EXAMPLE_TOOLS = [
@@ -92,7 +92,7 @@ def basic_tool_usage_non_streaming():
 
         try:
             # Initialize provider
-            llm = AbstractLLM(provider=provider_name, model=model)
+            llm = create_llm(provider=provider_name, model=model)
 
             # Simple tool usage
             response = llm.generate(
@@ -118,7 +118,7 @@ def basic_tool_usage_streaming():
 
     try:
         # Use Ollama for streaming example (commonly available)
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         print("Streaming response with tool calls:")
         print("Content: ", end="", flush=True)
@@ -146,7 +146,7 @@ def tool_usage_with_event_handling():
     print_separator("Tool Usage with Event Handling")
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         # Track tool executions
         tool_executions = []
@@ -198,7 +198,7 @@ def multiple_tool_calls_example():
     print_separator("Multiple Tool Calls Example")
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         response = llm.generate(
             prompt="""Please help me with the following tasks:
@@ -225,7 +225,7 @@ def conversational_tool_usage():
     print_separator("Conversational Tool Usage")
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         # First turn
         response1 = llm.generate(
@@ -258,9 +258,9 @@ def conversational_tool_usage():
 
 def main():
     """Run all examples"""
-    print("AbstractLLM Core - Tool Usage Examples")
+    print("AbstractCore Core - Tool Usage Examples")
     print("=====================================")
-    print("This script demonstrates various ways to use tools with AbstractLLM Core.")
+    print("This script demonstrates various ways to use tools with AbstractCore Core.")
     print("Note: Some examples may fail if providers are not configured.")
 
     # Run all examples

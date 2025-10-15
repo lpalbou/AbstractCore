@@ -90,7 +90,7 @@ pip install abstractcore[all]
 ### Essential Patterns
 
 ```python
-from abstractllm import create_llm, tool
+from abstractcore import create_llm, tool
 from pydantic import BaseModel
 
 # 1. Basic Usage - Works with any provider
@@ -123,7 +123,7 @@ for chunk in llm.generate("Tell me a story", stream=True):
     print(chunk.content, end="", flush=True)
 
 # Session management with memory
-from abstractllm import BasicSession
+from abstractcore import BasicSession
 session = BasicSession(llm, system_prompt="You are a helpful assistant.")
 session.add_message('user', 'My name is Alice')
 response = session.generate('What is my name?')  # Remembers context
@@ -136,7 +136,7 @@ response = session.generate('What is my name?')  # Remembers context
 Works across **ALL** providers - even those without native tool support.
 
 ```python
-from abstractllm import create_llm, tool
+from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -> str:
@@ -239,7 +239,7 @@ llm = create_llm(
 )
 
 # Predefined CLI formats
-from abstractllm.tools.tag_rewriter import create_tag_rewriter
+from abstractcore.tools.tag_rewriter import create_tag_rewriter
 
 # Codex CLI
 rewriter = create_tag_rewriter("codex")  # Qwen3 format
@@ -260,7 +260,7 @@ rewriter = create_tag_rewriter("gemini")  # XML format
 Persistent conversations with metadata and analytics:
 
 ```python
-from abstractllm import BasicSession, create_llm
+from abstractcore import BasicSession, create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(llm, system_prompt="You are a helpful assistant.")
@@ -280,7 +280,7 @@ loaded_session = BasicSession.load("conversation.json")
 SOTA embedding models for semantic search and RAG applications:
 
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 # HuggingFace (default)
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
@@ -304,7 +304,7 @@ similarity = embedder.compute_similarity("Hello", "Hi there")
 Monitor and control tool execution through events:
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 def cost_monitor(event):
     if event.cost_usd and event.cost_usd > 0.10:
@@ -362,15 +362,15 @@ extractor report.pdf --format triples
 judge essay.md --criteria soundness
 
 # Method 2: Via Python module
-python -m abstractllm.apps.summarizer document.txt --style executive
-python -m abstractllm.apps.extractor report.pdf --format triples
-python -m abstractllm.apps.judge essay.md --criteria soundness
+python -m abstractcore.apps.summarizer document.txt --style executive
+python -m abstractcore.apps.extractor report.pdf --format triples
+python -m abstractcore.apps.judge essay.md --criteria soundness
 ```
 
 ### Python API
 
 ```python
-from abstractllm.processing import BasicSummarizer, BasicExtractor, BasicJudge
+from abstractcore.processing import BasicSummarizer, BasicExtractor, BasicJudge
 
 # Use programmatically
 summarizer = BasicSummarizer()
@@ -391,7 +391,7 @@ OpenAI-compatible REST API:
 
 ```bash
 # Start server
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 ```python
@@ -508,7 +508,7 @@ judge README.md --focus "architectural diagrams, technical comparisons" --debug
 - **[Embeddings](docs/embeddings.md)**: Semantic search and RAG
 - **[Architecture](docs/architecture.md)**: System design overview
 - **Error Handling**: Comprehensive exception hierarchy for robust applications
-- **Token Management**: Centralized token counting, cost estimation, and management utilities (`abstractllm.utils.token_utils`)
+- **Token Management**: Centralized token counting, cost estimation, and management utilities (`abstractcore.utils.token_utils`)
 
 ### Examples & Support
 - **[Examples](examples/)**: Progressive tutorials and real-world patterns

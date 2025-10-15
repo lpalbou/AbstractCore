@@ -7,9 +7,9 @@ scenarios, ensuring parity with non-streaming tag rewriting functionality.
 
 import pytest
 from typing import Iterator
-from abstractllm.providers.streaming import UnifiedStreamProcessor, IncrementalToolDetector
-from abstractllm.core.types import GenerateResponse
-from abstractllm.tools.tag_rewriter import ToolCallTags, ToolCallTagRewriter
+from abstractcore.providers.streaming import UnifiedStreamProcessor, IncrementalToolDetector
+from abstractcore.core.types import GenerateResponse
+from abstractcore.tools.tag_rewriter import ToolCallTags, ToolCallTagRewriter
 
 
 class TestStreamingTagRewritingInitialization:
@@ -91,7 +91,7 @@ class TestStreamingTagRewritingBasic:
         )
 
         # Simulate a complete tool call in one chunk
-        content = '<|tool_call|>{"name": "list_files", "arguments": {"directory_path": "abstractllm"}}</|tool_call|>'
+        content = '<|tool_call|>{"name": "list_files", "arguments": {"directory_path": "abstractcore"}}</|tool_call|>'
 
         # Create mock response stream
         def mock_stream():
@@ -166,7 +166,7 @@ class TestStreamingTagRewritingSplitChunks:
 
         # Split the tool call into two chunks
         chunk1 = '<|tool_call|>{"name": "list_files", '
-        chunk2 = '"arguments": {"directory_path": "abstractllm"}}</|tool_call|>'
+        chunk2 = '"arguments": {"directory_path": "abstractcore"}}</|tool_call|>'
 
         def mock_stream():
             yield GenerateResponse(content=chunk1, model="test-model")
@@ -181,7 +181,7 @@ class TestStreamingTagRewritingSplitChunks:
 
         # Should contain the complete JSON
         assert '"name": "list_files"' in full_output
-        assert '"directory_path": "abstractllm"' in full_output
+        assert '"directory_path": "abstractcore"' in full_output
 
     def test_split_at_tag_boundary(self):
         """Test rewriting when split happens at tag boundaries."""
@@ -471,7 +471,7 @@ class TestStreamingTagRewritingRealWorldScenarios:
         )
 
         # Simulated LLM response with tool call
-        content = 'I will list the files for you.<|tool_call|>{"name": "list_files", "arguments": {"directory_path": "abstractllm"}}</|tool_call|>'
+        content = 'I will list the files for you.<|tool_call|>{"name": "list_files", "arguments": {"directory_path": "abstractcore"}}</|tool_call|>'
 
         def mock_stream():
             # Simulate character-by-character streaming like real LLM
@@ -492,7 +492,7 @@ class TestStreamingTagRewritingRealWorldScenarios:
 
         # Must contain the tool call content
         assert '"name": "list_files"' in full_output
-        assert '"directory_path": "abstractllm"' in full_output
+        assert '"directory_path": "abstractcore"' in full_output
 
     def test_agentic_workflow_with_custom_tags(self):
         """Test agentic CLI workflow with custom tag format."""

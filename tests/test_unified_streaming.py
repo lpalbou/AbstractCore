@@ -13,13 +13,13 @@ All tests use real implementations per CLAUDE.md - NO MOCKING
 import pytest
 import time
 from typing import Iterator, List, Dict, Any
-from abstractllm.providers.streaming import (
+from abstractcore.providers.streaming import (
     IncrementalToolDetector,
     UnifiedStreamProcessor,
     ToolDetectionState
 )
-from abstractllm.core.types import GenerateResponse
-from abstractllm.tools.core import ToolCall, ToolDefinition, ToolResult
+from abstractcore.core.types import GenerateResponse
+from abstractcore.tools.core import ToolCall, ToolDefinition, ToolResult
 
 
 # ============================================================================
@@ -343,7 +343,7 @@ class TestUnifiedStreamProcessor:
             return value * 2
 
         # Register tool for execution
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(test_tool)
 
         tool_def = ToolDefinition.from_function(test_tool)
@@ -386,7 +386,7 @@ class TestUnifiedStreamProcessor:
             return x * 2
 
         # Register tools
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(tool1)
         register_tool(tool2)
 
@@ -485,7 +485,7 @@ class TestProviderIntegration:
     def test_unified_streaming_replaces_dual_mode(self):
         """Verify unified streaming is used instead of dual-mode approach"""
         # Read the base provider implementation
-        with open('/Users/albou/projects/abstractllm_core/abstractllm/providers/base.py', 'r') as f:
+        with open('/Users/albou/projects/abstractcore_core/abstractcore/providers/base.py', 'r') as f:
             base_provider_code = f.read()
 
         # Verify UnifiedStreamProcessor is imported and used
@@ -498,7 +498,7 @@ class TestProviderIntegration:
 
     def test_streaming_implementation_uses_unified_processor(self):
         """Test that streaming implementation uses UnifiedStreamProcessor"""
-        with open('/Users/albou/projects/abstractllm_core/abstractllm/providers/base.py', 'r') as f:
+        with open('/Users/albou/projects/abstractcore_core/abstractcore/providers/base.py', 'r') as f:
             content = f.read()
 
         # Check for unified streaming pattern
@@ -506,7 +506,7 @@ class TestProviderIntegration:
 
     def test_stream_processor_receives_correct_parameters(self):
         """Test that UnifiedStreamProcessor receives correct initialization params"""
-        with open('/Users/albou/projects/abstractllm_core/abstractllm/providers/base.py', 'r') as f:
+        with open('/Users/albou/projects/abstractcore_core/abstractcore/providers/base.py', 'r') as f:
             content = f.read()
 
         # Verify processor initialization includes required params
@@ -562,7 +562,7 @@ class TestEndToEndStreaming:
             return x * 2
 
         # Register tool
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(timed_tool)
 
         tool_def = ToolDefinition.from_function(timed_tool).to_dict()
@@ -614,7 +614,7 @@ class TestEndToEndStreaming:
                 return f"Error: {e}"
 
         # Register tool
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(calculator)
 
         tool_def = ToolDefinition.from_function(calculator).to_dict()
@@ -713,7 +713,7 @@ class TestEndToEndStreaming:
             return "executed"
 
         # Register tool
-        from abstractllm.tools.registry import register_tool, clear_registry
+        from abstractcore.tools.registry import register_tool, clear_registry
         register_tool(test_tool)
 
         tool_def = ToolDefinition.from_function(test_tool).to_dict()

@@ -9,10 +9,10 @@ Tests integration points:
 """
 
 import pytest
-from abstractllm.providers.base import BaseProvider
-from abstractllm.providers.openai_provider import OpenAIProvider
-from abstractllm.providers.ollama_provider import OllamaProvider
-from abstractllm.architectures import get_context_limits, get_model_capabilities
+from abstractcore.providers.base import BaseProvider
+from abstractcore.providers.openai_provider import OpenAIProvider
+from abstractcore.providers.ollama_provider import OllamaProvider
+from abstractcore.architectures import get_context_limits, get_model_capabilities
 
 
 class TestProviderInitialization:
@@ -274,7 +274,7 @@ class TestBackwardCompatibility:
             "GPT-4 provider should have max_tokens=128000"
 
     def test_interface_methods_still_work(self):
-        """Test AbstractLLM interface methods still work."""
+        """Test AbstractCore interface methods still work."""
         provider = OpenAIProvider("gpt-4")
 
         # Should have core interface methods

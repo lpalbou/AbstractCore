@@ -8,8 +8,8 @@ import os
 import json
 import time
 from typing import List, Dict, Any
-from abstractllm import create_llm
-from abstractllm.core.types import GenerateResponse
+from abstractcore import create_llm
+from abstractcore.core.types import GenerateResponse
 
 
 # Test models as specified by user

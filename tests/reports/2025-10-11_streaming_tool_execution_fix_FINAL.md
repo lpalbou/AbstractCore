@@ -337,7 +337,7 @@ if self.current_pattern['json_required'] and len(self.current_tool_content) > 50
 
 ### Primary Implementation Files
 
-#### 1. `/Users/albou/projects/abstractllm_core/abstractllm/providers/streaming.py`
+#### 1. `/Users/albou/projects/abstractcore_core/abstractcore/providers/streaming.py`
 **Lines Modified**: 123-175 (53 lines)
 
 **Changes**:
@@ -348,7 +348,7 @@ if self.current_pattern['json_required'] and len(self.current_tool_content) > 50
 
 **Risk Assessment**: LOW - Isolated changes, clear logic
 
-#### 2. `/Users/albou/projects/abstractllm_core/tests/test_critical_streaming_tool_fix.py`
+#### 2. `/Users/albou/projects/abstractcore_core/tests/test_critical_streaming_tool_fix.py`
 **Lines Added**: 700+ lines (new file)
 
 **Purpose**: Comprehensive validation suite for streaming + tool execution fix

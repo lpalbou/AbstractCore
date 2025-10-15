@@ -7,8 +7,8 @@ those exact tags in streaming mode.
 """
 
 import pytest
-from abstractllm.providers.streaming import UnifiedStreamProcessor
-from abstractllm.core.types import GenerateResponse
+from abstractcore.providers.streaming import UnifiedStreamProcessor
+from abstractcore.core.types import GenerateResponse
 
 
 def test_user_exact_tooltag_scenario():
@@ -30,7 +30,7 @@ def test_user_exact_tooltag_scenario():
     )
 
     # Simulated LLM streaming response with Qwen format tool call
-    full_content = 'I will list the files for you.<|tool_call|>{"name": "list_files", "arguments": {"directory_path": "abstractllm"}}</|tool_call|>'
+    full_content = 'I will list the files for you.<|tool_call|>{"name": "list_files", "arguments": {"directory_path": "abstractcore"}}</|tool_call|>'
 
     def realistic_stream():
         """Simulate realistic character-by-character streaming."""
@@ -58,7 +58,7 @@ def test_user_exact_tooltag_scenario():
 
     # Tool call JSON content must be preserved
     assert '"name": "list_files"' in full_output, "Tool call content lost"
-    assert '"directory_path": "abstractllm"' in full_output, "Tool call arguments lost"
+    assert '"directory_path": "abstractcore"' in full_output, "Tool call arguments lost"
 
     # Leading text must be preserved
     assert "I will list the files for you" in full_output, "Leading text lost"

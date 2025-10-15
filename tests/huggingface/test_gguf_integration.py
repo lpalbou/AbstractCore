@@ -1,5 +1,5 @@
 """
-Integration tests for GGUF models in the AbstractLLM ecosystem
+Integration tests for GGUF models in the AbstractCore ecosystem
 """
 import pytest
 import os
@@ -9,7 +9,7 @@ from pathlib import Path
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 
 TEST_GGUF_MODEL = "unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"

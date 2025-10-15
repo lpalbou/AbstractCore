@@ -9,8 +9,8 @@ import shutil
 from pathlib import Path
 import numpy as np
 
-from abstractllm.embeddings import EmbeddingManager
-from abstractllm import create_llm
+from abstractcore.embeddings import EmbeddingManager
+from abstractcore import create_llm
 
 
 @pytest.mark.integration

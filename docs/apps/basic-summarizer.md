@@ -23,8 +23,8 @@ ollama pull gemma3:1b-it-qat
 ```
 
 ```python
-from abstractllm import create_llm
-from abstractllm.processing import BasicSummarizer, SummaryStyle, SummaryLength
+from abstractcore import create_llm
+from abstractcore.processing import BasicSummarizer, SummaryStyle, SummaryLength
 
 # Recommended: Fast local model for cost-effective processing
 llm = create_llm("ollama", model="gemma3:1b-it-qat")
@@ -107,7 +107,7 @@ done
 summarizer document.txt --style executive
 
 # Method 2: Via Python module (always works)
-python -m abstractllm.apps.summarizer document.txt --style executive
+python -m abstractcore.apps.summarizer document.txt --style executive
 ```
 
 ### Supported File Types
@@ -136,7 +136,7 @@ summarizer document.txt
 Control how the summary is presented:
 
 ```python
-from abstractllm.processing import SummaryStyle
+from abstractcore.processing import SummaryStyle
 
 # Available styles
 SummaryStyle.STRUCTURED     # Bullet points, clear sections
@@ -152,7 +152,7 @@ SummaryStyle.CONVERSATIONAL # Chat history preservation with context
 Control the detail level:
 
 ```python
-from abstractllm.processing import SummaryLength
+from abstractcore.processing import SummaryLength
 
 # Available lengths
 SummaryLength.BRIEF         # 2-3 sentences, key point only
@@ -296,7 +296,7 @@ print(result.summary)
 Monitor summarization progress with AbstractCore's event system:
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 def monitor_summarization(event):
     if event.type == EventType.BEFORE_GENERATE:
@@ -315,7 +315,7 @@ result = summarizer.summarize(text)
 Built-in reliability through AbstractCore:
 
 ```python
-from abstractllm.core.retry import RetryConfig
+from abstractcore.core.retry import RetryConfig
 
 # Configure retry behavior
 config = RetryConfig(max_attempts=3, initial_delay=1.0)
@@ -408,22 +408,22 @@ The summarizer supports flexible timeout configuration for different document pr
 ### Default Behavior (Unlimited Timeout)
 ```bash
 # Runs as long as needed - recommended for large documents
-python -m abstractllm.apps.summarizer document.txt
+python -m abstractcore.apps.summarizer document.txt
 ```
 
 ### Custom Timeout
 ```bash
 # Set specific timeout (useful for production environments)
-python -m abstractllm.apps.summarizer document.txt --timeout 300   # 5 minutes
-python -m abstractllm.apps.summarizer document.txt --timeout 600   # 10 minutes
+python -m abstractcore.apps.summarizer document.txt --timeout 300   # 5 minutes
+python -m abstractcore.apps.summarizer document.txt --timeout 600   # 10 minutes
 
 # Explicit unlimited timeout
-python -m abstractllm.apps.summarizer document.txt --timeout none
+python -m abstractcore.apps.summarizer document.txt --timeout none
 ```
 
 ### Programmatic Usage
 ```python
-from abstractllm.processing import BasicSummarizer
+from abstractcore.processing import BasicSummarizer
 
 # Unlimited timeout (default)
 summarizer = BasicSummarizer()
@@ -446,7 +446,7 @@ summarizer = BasicSummarizer(timeout=None)
 ### With AbstractCore Session
 
 ```python
-from abstractllm import BasicSession
+from abstractcore import BasicSession
 
 session = BasicSession(llm, system_prompt="You are an expert summarizer")
 summarizer = BasicSummarizer(session)

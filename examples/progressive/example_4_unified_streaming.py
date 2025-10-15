@@ -3,7 +3,7 @@
 Example 4: Unified Streaming Architecture - Real-time Response Processing
 =========================================================================
 
-This example demonstrates AbstractLLM's unified streaming architecture:
+This example demonstrates AbstractCore's unified streaming architecture:
 - Single streaming path for all scenarios
 - Real-time tool execution during streaming
 - Character-by-character response delivery
@@ -15,8 +15,8 @@ Technical Architecture Highlights:
 - Tag rewriting during streaming
 - Zero-buffering design for minimal latency
 
-Required: pip install abstractllm
-Optional: pip install abstractllm[ollama] for streaming with local models
+Required: pip install abstractcore
+Optional: pip install abstractcore[ollama] for streaming with local models
 """
 
 import os
@@ -29,10 +29,10 @@ import logging
 # Add project root to path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from abstractllm import create_llm, GenerateResponse
-from abstractllm.providers.streaming import UnifiedStreamProcessor, IncrementalToolDetector
-from abstractllm.tools import ToolDefinition, tool
-from abstractllm.tools.tag_rewriter import ToolCallTags
+from abstractcore import create_llm, GenerateResponse
+from abstractcore.providers.streaming import UnifiedStreamProcessor, IncrementalToolDetector
+from abstractcore.tools import ToolDefinition, tool
+from abstractcore.tools.tag_rewriter import ToolCallTags
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -601,7 +601,7 @@ def main():
     Main entry point - demonstrates unified streaming architecture.
     """
     print("\n" + "📡 " * 20)
-    print(" AbstractLLM Core - Example 4: Unified Streaming Architecture")
+    print(" AbstractCore Core - Example 4: Unified Streaming Architecture")
     print("📡 " * 20)
 
     # Run all demonstrations

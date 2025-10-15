@@ -4,8 +4,8 @@ Test graceful fallback for wrong model names.
 """
 
 import pytest
-from abstractllm import create_llm
-from abstractllm.exceptions import ModelNotFoundError, AuthenticationError
+from abstractcore import create_llm
+from abstractcore.exceptions import ModelNotFoundError, AuthenticationError
 
 
 def test_anthropic_wrong_model():

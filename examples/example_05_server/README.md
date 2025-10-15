@@ -1,4 +1,4 @@
-# AbstractLLM Core: Server and API Integration
+# AbstractCore Core: Server and API Integration
 
 ## What You'll Learn
 
@@ -8,7 +8,7 @@
 
 ### Learning Objectives
 
-1. Build a FastAPI server with AbstractLLM
+1. Build a FastAPI server with AbstractCore
 2. Configure request/response middleware
 3. Implement advanced error handling
 4. Create scalable API endpoints
@@ -25,10 +25,10 @@ This example demonstrates building a professional-grade LLM server:
 
 ```python
 from fastapi import FastAPI, HTTPException
-from abstractllm import AbstractLLM
+from abstractcore import create_llm
 
 app = FastAPI()
-llm = AbstractLLM(provider='openai', model='gpt-4')
+llm = create_llm(provider='openai', model='gpt-4')
 
 @app.post("/generate")
 async def generate_text(prompt: str, max_tokens: int = 100):

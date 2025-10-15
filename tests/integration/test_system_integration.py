@@ -1,5 +1,5 @@
 """
-Comprehensive integration tests for AbstractLLM Core.
+Comprehensive integration tests for AbstractCore.
 
 Tests the entire system including:
 - JSON model capabilities as single source of truth
@@ -14,11 +14,11 @@ import logging
 import tempfile
 from pathlib import Path
 
-from abstractllm.providers.ollama_provider import OllamaProvider
-from abstractllm.providers.openai_provider import OpenAIProvider
-from abstractllm.tools import register_tool, get_registry, ToolDefinition, clear_registry
-from abstractllm.utils.structured_logging import configure_logging, get_logger
-from abstractllm.architectures import get_model_capabilities, detect_architecture
+from abstractcore.providers.ollama_provider import OllamaProvider
+from abstractcore.providers.openai_provider import OpenAIProvider
+from abstractcore.tools import register_tool, get_registry, ToolDefinition, clear_registry
+from abstractcore.utils.structured_logging import configure_logging, get_logger
+from abstractcore.architectures import get_model_capabilities, detect_architecture
 
 
 class TestJSONCapabilitiesIntegration:
@@ -117,8 +117,8 @@ class TestUnifiedToolingSystem:
 
     def test_tool_execution(self):
         """Test direct tool execution."""
-        from abstractllm.tools.core import ToolCall
-        from abstractllm.tools import execute_tools
+        from abstractcore.tools.core import ToolCall
+        from abstractcore.tools import execute_tools
 
         # Test simple tool
         call1 = ToolCall(name='get_test_value', arguments={})
@@ -184,7 +184,7 @@ class TestLoggingTelemetrySystem:
                 handler.flush()
 
             # Check log file was created (should be timestamped)
-            log_files = list(log_dir.glob('abstractllm_*.log'))
+            log_files = list(log_dir.glob('abstractcore_*.log'))
             assert len(log_files) == 1, f"Expected 1 log file, found {len(log_files)}: {log_files}"
             log_file = log_files[0]
 
@@ -215,7 +215,7 @@ class TestLoggingTelemetrySystem:
             assert provider.logger is not None
 
             # Provider should log architecture detection
-            log_file = Path(temp_dir) / 'abstractllm.log'
+            log_file = Path(temp_dir) / 'abstractcore.log'
             if log_file.exists():
                 log_content = log_file.read_text()
                 # Should contain architecture-related logs

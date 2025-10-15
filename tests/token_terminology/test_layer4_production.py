@@ -13,10 +13,10 @@ import pytest
 import subprocess
 import sys
 from pathlib import Path
-from abstractllm import create_llm
-from abstractllm.architectures import get_model_capabilities, get_context_limits
-from abstractllm.providers.openai_provider import OpenAIProvider
-from abstractllm.providers.ollama_provider import OllamaProvider
+from abstractcore import create_llm
+from abstractcore.architectures import get_model_capabilities, get_context_limits
+from abstractcore.providers.openai_provider import OpenAIProvider
+from abstractcore.providers.ollama_provider import OllamaProvider
 
 
 class TestExistingTestSuite:
@@ -181,7 +181,7 @@ class TestCLICompatibility:
     def test_cli_auto_detection_imports(self):
         """Test CLI auto-detection can be imported."""
         try:
-            from abstractllm.utils.cli import auto_detect_provider
+            from abstractcore.utils.cli import auto_detect_provider
             assert callable(auto_detect_provider), "auto_detect_provider should be callable"
         except ImportError as e:
             pytest.skip(f"CLI module not available: {e}")
@@ -202,7 +202,7 @@ class TestFeatureIntegration:
 
     def test_structured_output_with_max_tokens(self):
         """Test structured output works with new max_tokens."""
-        from abstractllm.core.types import GenerateResponse
+        from abstractcore.core.types import GenerateResponse
 
         # Create provider
         llm = create_llm("openai", model="gpt-4")
@@ -219,7 +219,7 @@ class TestFeatureIntegration:
 
     def test_tool_calling_with_token_limits(self):
         """Test tool calling works with token limit detection."""
-        from abstractllm.tools import ToolDefinition
+        from abstractcore.tools import ToolDefinition
 
         llm = create_llm("openai", model="gpt-4")
 
@@ -237,7 +237,7 @@ class TestFeatureIntegration:
 
     def test_retry_mechanism_with_token_limits(self):
         """Test retry mechanism respects token limits."""
-        from abstractllm.core.retry import RetryConfig
+        from abstractcore.core.retry import RetryConfig
 
         # Create provider with retry config
         retry_config = RetryConfig(max_attempts=3)
@@ -273,7 +273,7 @@ class TestBackwardCompatibility:
         assert hasattr(llm, "max_output_tokens"), "Should have max_output_tokens"
 
     def test_interface_compatibility(self):
-        """Test AbstractLLM interface compatibility."""
+        """Test AbstractCore interface compatibility."""
         llm = create_llm("openai", model="gpt-4")
 
         # Should have standard interface methods
@@ -373,7 +373,7 @@ class TestRegressionPrevention:
     def test_json_consistency_check(self):
         """Regular check that JSON remains consistent."""
         import json
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:

@@ -12,14 +12,14 @@ Tests system resilience:
 import pytest
 import json
 from pathlib import Path
-from abstractllm.architectures import (
+from abstractcore.architectures import (
     get_model_capabilities,
     get_context_limits,
     detect_architecture
 )
-from abstractllm.architectures.detection import resolve_model_alias
-from abstractllm.providers.openai_provider import OpenAIProvider
-from abstractllm.providers.ollama_provider import OllamaProvider
+from abstractcore.architectures.detection import resolve_model_alias
+from abstractcore.providers.openai_provider import OpenAIProvider
+from abstractcore.providers.ollama_provider import OllamaProvider
 
 
 class TestAll85Models:
@@ -27,7 +27,7 @@ class TestAll85Models:
 
     def test_load_all_models_from_json(self):
         """Load and verify all models from JSON."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -41,7 +41,7 @@ class TestAll85Models:
 
     def test_every_model_has_max_tokens(self):
         """Verify every single model has max_tokens field."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -62,7 +62,7 @@ class TestAll85Models:
 
     def test_every_model_max_tokens_in_valid_range(self):
         """Verify all max_tokens values are in a reasonable range."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -86,7 +86,7 @@ class TestAll85Models:
 
     def test_provider_initialization_all_models(self):
         """Test provider initialization with all models from JSON."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:
@@ -181,7 +181,7 @@ class TestComplexAliasPatterns:
 
     def test_slash_in_alias(self):
         """Test aliases with slashes (e.g., qwen/qwen3-next-80b)."""
-        assets_dir = Path(__file__).parent.parent.parent / "abstractllm" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
         with open(json_file, 'r') as f:

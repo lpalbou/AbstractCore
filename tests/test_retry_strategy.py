@@ -15,18 +15,18 @@ import time
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
 
-from abstractllm.core.retry import (
+from abstractcore.core.retry import (
     RetryConfig, RetryManager, CircuitBreaker, CircuitState,
     RetryableErrorType, default_retry_manager
 )
 import json
-from abstractllm.exceptions import (
+from abstractcore.exceptions import (
     RateLimitError, ProviderAPIError, AuthenticationError,
     InvalidRequestError, ModelNotFoundError
 )
-from abstractllm.events import EventType, GlobalEventBus
-from abstractllm.providers.base import BaseProvider
-from abstractllm.core.types import GenerateResponse
+from abstractcore.events import EventType, GlobalEventBus
+from abstractcore.providers.base import BaseProvider
+from abstractcore.core.types import GenerateResponse
 
 
 class TestRetryConfig:
@@ -395,7 +395,7 @@ class TestRetryManager:
 
         mock_func.assert_not_called()
 
-    @patch('abstractllm.events.emit_global')
+    @patch('abstractcore.events.emit_global')
     def test_event_emission(self, mock_emit):
         """Test retry events are properly emitted."""
         config = RetryConfig(max_attempts=2)
@@ -460,7 +460,7 @@ class TestBaseProviderIntegration:
 
     def test_structured_output_retry_strategy_parameter(self):
         """Test passing retry_strategy parameter to generate method."""
-        from abstractllm.structured import FeedbackRetry
+        from abstractcore.structured import FeedbackRetry
         from pydantic import BaseModel, ValidationError
 
         class TestModel(BaseModel):
@@ -528,7 +528,7 @@ class TestBaseProviderIntegration:
 
         assert provider.retry_manager.config.max_attempts == 5
 
-    @patch('abstractllm.providers.base.time.sleep')
+    @patch('abstractcore.providers.base.time.sleep')
     def test_provider_retry_on_failure(self, mock_sleep):
         """Test provider retries on API failures."""
         provider = MockProvider("test-model")
@@ -566,7 +566,7 @@ class TestBaseProviderIntegration:
         # Should only be called once (no retries)
         assert provider._generate_internal.call_count == 1
 
-    @patch('abstractllm.events.emit_global')
+    @patch('abstractcore.events.emit_global')
     def test_provider_retry_events(self, mock_emit):
         """Test provider emits retry events."""
         provider = MockProvider("test-model")
@@ -638,7 +638,7 @@ class TestEdgeCases:
         manager = RetryManager()
 
         # Mock emit_global to raise exception
-        with patch('abstractllm.events.emit_global', side_effect=Exception("Event error")):
+        with patch('abstractcore.events.emit_global', side_effect=Exception("Event error")):
             mock_func = Mock(return_value="success")
 
             # Should still work despite event emission failure
@@ -685,7 +685,7 @@ class TestIntegrationScenarios:
     """Test realistic integration scenarios."""
 
     @patch('time.sleep')
-    @patch('abstractllm.events.emit_global')
+    @patch('abstractcore.events.emit_global')
     def test_rate_limit_recovery_scenario(self, mock_emit, mock_sleep):
         """Test realistic rate limit recovery scenario."""
         provider = MockProvider("gpt-4")

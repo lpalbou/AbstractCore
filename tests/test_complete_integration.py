@@ -12,11 +12,11 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from abstractllm import create_llm
-from abstractllm.events import EventType, GlobalEventBus
-from abstractllm.exceptions import AuthenticationError, ProviderAPIError
-from abstractllm.utils import configure_logging, get_logger
-from abstractllm.media import MediaHandler
+from abstractcore import create_llm
+from abstractcore.events import EventType, GlobalEventBus
+from abstractcore.exceptions import AuthenticationError, ProviderAPIError
+from abstractcore.utils import configure_logging, get_logger
+from abstractcore.media import MediaHandler
 
 
 class IntegrationVerifier:

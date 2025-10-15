@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Demo script showing how to use the /tooltag command in the AbstractLLM CLI.
+Demo script showing how to use the /tooltag command in the AbstractCore CLI.
 
 This script demonstrates the new /tooltag command that allows testing
 tool call tag rewriting with different models and streaming modes.
@@ -15,7 +15,7 @@ from pathlib import Path
 
 def run_cli_demo():
     """Run the CLI with /tooltag command examples."""
-    print("🏷️ AbstractLLM CLI Tool Tag Rewriting Demo")
+    print("🏷️ AbstractCore CLI Tool Tag Rewriting Demo")
     print("=" * 60)
     print()
     print("This demo shows how to use the new /tooltag command to test")
@@ -42,7 +42,7 @@ def run_cli_demo():
     # Start the CLI
     try:
         subprocess.run([
-            sys.executable, "-m", "abstractllm.utils.cli",
+            sys.executable, "-m", "abstractcore.utils.cli",
             "--provider", "openai",
             "--model", "gpt-4o-mini",
             "--debug"

@@ -3,7 +3,7 @@
 Example 6: Production Patterns - Building Robust AI Applications
 =================================================================
 
-This example demonstrates production-ready patterns for AbstractLLM:
+This example demonstrates production-ready patterns for AbstractCore:
 - Session management and conversation history
 - Structured output with validation
 - Embeddings and RAG patterns
@@ -18,7 +18,7 @@ Technical Architecture Highlights:
 - Event system for observability
 - Production testing patterns
 
-Required: pip install abstractllm[all]
+Required: pip install abstractcore[all]
 """
 
 import os
@@ -34,10 +34,10 @@ import logging
 # Add project root to path for development
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from abstractllm import create_llm, BasicSession, GenerateResponse
-from abstractllm.events import EventType, subscribe, unsubscribe_all
-from abstractllm.processing import BasicSummarizer, SummaryStyle, SummaryLength
-from abstractllm.tools import ToolDefinition, tool
+from abstractcore import create_llm, BasicSession, GenerateResponse
+from abstractcore.events import EventType, subscribe, unsubscribe_all
+from abstractcore.processing import BasicSummarizer, SummaryStyle, SummaryLength
+from abstractcore.tools import ToolDefinition, tool
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -216,7 +216,7 @@ def embeddings_and_rag_patterns():
     print("=" * 70)
 
     try:
-        from abstractllm.embeddings import EmbeddingManager
+        from abstractcore.embeddings import EmbeddingManager
         embeddings_available = True
     except ImportError:
         print("   ⚠️ Embeddings module not available")
@@ -402,7 +402,7 @@ def event_driven_architecture():
             # Simulate token usage
             if not response.usage:
                 # Use centralized token estimation for mock usage
-                from abstractllm.utils.token_utils import TokenUtils
+                from abstractcore.utils.token_utils import TokenUtils
                 estimated_tokens = TokenUtils.estimate_tokens(prompt) + TokenUtils.estimate_tokens(response.content or "")
                 response.usage = {"total_tokens": estimated_tokens}
         except Exception as e:
@@ -582,7 +582,7 @@ def testing_patterns():
     print("""
 ```python
 import pytest
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 def test_generation():
     # Mock provider for deterministic testing
@@ -742,7 +742,7 @@ def monitoring_and_alerting():
 ```yaml
 # prometheus-rules.yml
 groups:
-  - name: abstractllm
+  - name: abstractcore
     interval: 30s
     rules:
       - alert: HighErrorRate
@@ -770,7 +770,7 @@ def main():
     Main entry point - demonstrates production patterns.
     """
     print("\n" + "🏭 " * 20)
-    print(" AbstractLLM Core - Example 6: Production Patterns")
+    print(" AbstractCore Core - Example 6: Production Patterns")
     print("🏭 " * 20)
 
     # Run all demonstrations

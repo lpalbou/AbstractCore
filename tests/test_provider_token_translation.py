@@ -13,13 +13,13 @@ from unittest.mock import MagicMock, patch
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from abstractllm import create_llm
-from abstractllm.providers.huggingface_provider import HuggingFaceProvider
-from abstractllm.providers.openai_provider import OpenAIProvider
-from abstractllm.providers.anthropic_provider import AnthropicProvider
-from abstractllm.providers.ollama_provider import OllamaProvider
-from abstractllm.providers.mlx_provider import MLXProvider
-from abstractllm.providers.lmstudio_provider import LMStudioProvider
+from abstractcore import create_llm
+from abstractcore.providers.huggingface_provider import HuggingFaceProvider
+from abstractcore.providers.openai_provider import OpenAIProvider
+from abstractcore.providers.anthropic_provider import AnthropicProvider
+from abstractcore.providers.ollama_provider import OllamaProvider
+from abstractcore.providers.mlx_provider import MLXProvider
+from abstractcore.providers.lmstudio_provider import LMStudioProvider
 
 
 class TestProviderTokenTranslation:

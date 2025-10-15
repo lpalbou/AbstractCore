@@ -21,7 +21,7 @@ def example_1_basic_embedding():
     print("Example 1: Basic Embedding Generation")
     print("=" * 60)
 
-    from abstractllm.embeddings import EmbeddingManager
+    from abstractcore.embeddings import EmbeddingManager
 
     # Create embedding manager (uses lightweight model for speed)
     embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
@@ -43,7 +43,7 @@ def example_2_similarity_search():
     print("Example 2: Text Similarity Search")
     print("=" * 60)
 
-    from abstractllm.embeddings import EmbeddingManager
+    from abstractcore.embeddings import EmbeddingManager
 
     embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 
@@ -74,7 +74,7 @@ def example_3_document_search():
     print("Example 3: Document Collection Search")
     print("=" * 60)
 
-    from abstractllm.embeddings import EmbeddingManager
+    from abstractcore.embeddings import EmbeddingManager
 
     embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 
@@ -117,7 +117,7 @@ def example_4_batch_processing():
     print("Example 4: Batch Processing for Efficiency")
     print("=" * 60)
 
-    from abstractllm.embeddings import EmbeddingManager
+    from abstractcore.embeddings import EmbeddingManager
     import time
 
     embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
@@ -164,7 +164,7 @@ def example_5_rag_pipeline():
     print("Example 5: RAG Pipeline Example")
     print("=" * 60)
 
-    from abstractllm.embeddings import EmbeddingManager
+    from abstractcore.embeddings import EmbeddingManager
 
     embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 
@@ -209,7 +209,7 @@ Based on the provided context, please answer the question:"""
     print(f"  Ready for LLM: ✓")
 
     # In a real application, you would now send this to an LLM:
-    # from abstractllm import create_llm
+    # from abstractcore import create_llm
     # llm = create_llm("openai", model="gpt-4o-mini")
     # response = llm.generate(rag_prompt)
     # print(f"  LLM Answer: {response.content}")
@@ -223,7 +223,7 @@ def example_6_performance_optimization():
     print("Example 6: Performance Optimization")
     print("=" * 60)
 
-    from abstractllm.embeddings import EmbeddingManager
+    from abstractcore.embeddings import EmbeddingManager
 
     # Option 1: Default configuration (good for most use cases)
     embedder_default = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
@@ -267,7 +267,7 @@ def example_7_error_handling():
     print("Example 7: Error Handling")
     print("=" * 60)
 
-    from abstractllm.embeddings import EmbeddingManager
+    from abstractcore.embeddings import EmbeddingManager
 
     try:
         # This will work
@@ -297,7 +297,7 @@ def example_7_error_handling():
 
 def main():
     """Run all examples."""
-    print("🚀 AbstractLLM Embeddings - Simple Concrete Examples")
+    print("🚀 AbstractCore Embeddings - Simple Concrete Examples")
     print("=" * 80)
 
     try:
@@ -314,7 +314,7 @@ def main():
         print("• Try different embedding models: 'embeddinggemma', 'stella-400m'")
         print("• Enable ONNX optimization: backend='onnx'")
         print("• Use Matryoshka truncation: output_dims=256")
-        print("• Integrate with your LLM: from abstractllm import create_llm")
+        print("• Integrate with your LLM: from abstractcore import create_llm")
         print("• Build a complete RAG application!")
 
     except ImportError as e:

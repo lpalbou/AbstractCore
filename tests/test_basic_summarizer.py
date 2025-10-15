@@ -6,8 +6,8 @@ with real models and real content.
 """
 
 import pytest
-from abstractllm import create_llm
-from abstractllm.processing import BasicSummarizer, SummaryStyle, SummaryLength
+from abstractcore import create_llm
+from abstractcore.processing import BasicSummarizer, SummaryStyle, SummaryLength
 
 
 class TestBasicSummarizer:

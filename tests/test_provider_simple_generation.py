@@ -6,7 +6,7 @@ Tests that providers can generate responses to simple prompts.
 import pytest
 import os
 import time
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 
 class TestProviderSimpleGeneration:

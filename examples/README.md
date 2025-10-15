@@ -1,18 +1,18 @@
-# AbstractLLM Core: Learning Journey
+# AbstractCore Core: Learning Journey
 
-## Welcome to AbstractLLM Core Examples
+## Welcome to AbstractCore Core Examples
 
-This collection of examples is designed to guide you through the powerful capabilities of AbstractLLM Core, from beginner to advanced usage.
+This collection of examples is designed to guide you through the powerful capabilities of AbstractCore Core, from beginner to advanced usage.
 
 ### Learning Path
 
 🚀 **Progressive Complexity**
-Each example builds upon the previous one, creating a comprehensive learning experience. Follow the journey to become an expert in AbstractLLM Core.
+Each example builds upon the previous one, creating a comprehensive learning experience. Follow the journey to become an expert in AbstractCore Core.
 
 #### Example Progression
 
 1. **Basic Introduction** (`example_01_basic`)
-   - Your first steps with AbstractLLM
+   - Your first steps with AbstractCore
    - Simple text generation
    - Basic configuration
    - **Learning Time**: ~15 minutes
@@ -76,10 +76,10 @@ Each example builds upon the previous one, creating a comprehensive learning exp
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/abstractllm_core.git
+git clone https://github.com/your-org/abstractcore.git
 
 # Navigate to examples directory
-cd abstractllm_core/examples
+cd abstractcore/examples
 
 # Create a virtual environment
 python -m venv .venv
@@ -115,9 +115,9 @@ pip install -r requirements.txt
 
 ### Community and Support
 
-- [Discussion Forums](https://github.com/your-org/abstractllm_core/discussions)
-- [Issue Tracker](https://github.com/your-org/abstractllm_core/issues)
-- [Documentation](https://your-org.github.io/abstractllm_core)
+- [Discussion Forums](https://github.com/your-org/abstractcore/discussions)
+- [Issue Tracker](https://github.com/your-org/abstractcore/issues)
+- [Documentation](https://your-org.github.io/abstractcore)
 
 ### Contributing
 

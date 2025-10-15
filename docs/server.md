@@ -11,7 +11,7 @@ Transform AbstractCore into an OpenAI-compatible API server. One server, all mod
 pip install abstractcore[server]
 
 # Start server
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Test
 curl http://localhost:8000/health
@@ -70,13 +70,13 @@ export ABSTRACTCORE_DEBUG=true
 
 ```bash
 # Development with auto-reload
-uvicorn abstractllm.server.app:app --reload
+uvicorn abstractcore.server.app:app --reload
 
 # Production with multiple workers
-uvicorn abstractllm.server.app:app --workers 4
+uvicorn abstractcore.server.app:app --workers 4
 
 # Custom port
-uvicorn abstractllm.server.app:app --port 3000
+uvicorn abstractcore.server.app:app --port 3000
 ```
 
 ---
@@ -242,7 +242,7 @@ codex --model "ollama/qwen3-coder:30b" "Write a factorial function"
 # Configure server
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Configure CLI
 export OPENAI_BASE_URL="http://localhost:8000/v1"
@@ -258,7 +258,7 @@ crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"
 # Configure server
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Configure CLI
 export OPENAI_BASE_URL="http://localhost:8000/v1"
@@ -297,7 +297,7 @@ ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 
 EXPOSE 8000
 
-CMD ["uvicorn", "abstractllm.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 ```
 
 **Run:**
@@ -327,7 +327,7 @@ services:
 ```bash
 pip install gunicorn
 
-gunicorn abstractllm.server.app:app \
+gunicorn abstractcore.server.app:app \
   --worker-class uvicorn.workers.UvicornWorker \
   --workers 4 \
   --bind 0.0.0.0:8000
@@ -341,18 +341,18 @@ gunicorn abstractllm.server.app:app \
 
 ```bash
 export ABSTRACTCORE_DEBUG=true
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 **Log Files:**
-- `logs/abstractllm_TIMESTAMP.log` - Structured events
+- `logs/abstractcore_TIMESTAMP.log` - Structured events
 - `logs/YYYYMMDD-payloads.jsonl` - Full request bodies
 - `logs/verbatim_TIMESTAMP.jsonl` - Complete I/O
 
 **Useful Commands:**
 ```bash
 # Find errors
-grep '"level": "error"' logs/abstractllm_*.log
+grep '"level": "error"' logs/abstractcore_*.log
 
 # Track token usage
 cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
@@ -425,7 +425,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 lsof -i :8000
 
 # Use different port
-uvicorn abstractllm.server.app:app --port 3000
+uvicorn abstractcore.server.app:app --port 3000
 ```
 
 ### No Models Available

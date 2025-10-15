@@ -13,14 +13,14 @@ The AbstractCore internal CLI provides advanced chat history management and syst
 
 ```bash
 # Start the internal CLI
-python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 
 # Or with any provider
-python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini
-python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest
+python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini
+python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest
 
 # With streaming enabled (--stream flag)
-python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b --stream
+python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream
 ```
 
 ## New Commands
@@ -157,7 +157,7 @@ Toggle real-time streaming of responses. You can also start with streaming enabl
 
 ```bash
 # Method 1: Start with streaming enabled
-python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b --stream
+python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream
 
 # Method 2: Toggle during conversation
 👤 You: /stream
@@ -376,7 +376,7 @@ Use the available tools to help me with these tasks.
 
 ```bash
 # Start CLI with a model that supports auto-compaction
-python -m abstractllm.utils.cli --provider ollama --model gemma3:1b
+python -m abstractcore.utils.cli --provider ollama --model gemma3:1b
 
 # Have a long conversation...
 👤 You: What is Python?

@@ -1,5 +1,5 @@
 """
-Comprehensive test suite for AbstractLLM core components.
+Comprehensive test suite for AbstractCore core components.
 Tests actual implementations with no mocking.
 """
 
@@ -10,10 +10,10 @@ import tempfile
 from datetime import datetime
 from typing import Dict, Any, List
 
-from abstractllm import create_llm, BasicSession, GenerateResponse, Message
-from abstractllm.core.enums import MessageRole, ModelParameter, ModelCapability
-from abstractllm.core.interface import AbstractLLMInterface
-from abstractllm.tools.core import ToolDefinition
+from abstractcore import create_llm, BasicSession, GenerateResponse, Message
+from abstractcore.core.enums import MessageRole, ModelParameter, ModelCapability
+from abstractcore.core.interface import AbstractCoreInterface
+from abstractcore.tools.core import ToolDefinition
 
 
 class TestMessage:
@@ -141,7 +141,7 @@ class TestProviderFactory:
         """Test creating mock provider"""
         provider = create_llm("mock")
         assert provider is not None
-        assert isinstance(provider, AbstractLLMInterface)
+        assert isinstance(provider, AbstractCoreInterface)
 
     def test_create_ollama_provider(self):
         """Test creating Ollama provider"""

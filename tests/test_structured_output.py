@@ -13,8 +13,8 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
 
-from abstractllm.structured.retry import FeedbackRetry
-from abstractllm.structured.handler import StructuredOutputHandler
+from abstractcore.structured.retry import FeedbackRetry
+from abstractcore.structured.handler import StructuredOutputHandler
 
 
 # Test models
@@ -255,7 +255,7 @@ class TestIntegrationScenarios:
 
             def _generate_internal(self, **kwargs):
                 # Mock successful response
-                from abstractllm.core.types import GenerateResponse
+                from abstractcore.core.types import GenerateResponse
                 return GenerateResponse(
                     content='{"name": "John", "age": 30, "email": "john@example.com"}'
                 )
@@ -281,7 +281,7 @@ class TestIntegrationScenarios:
             call_count = 0
 
             def _generate_internal(self, **kwargs):
-                from abstractllm.core.types import GenerateResponse
+                from abstractcore.core.types import GenerateResponse
                 self.call_count += 1
 
                 if self.call_count == 1:
@@ -313,7 +313,7 @@ class TestIntegrationScenarios:
             model_capabilities = {"structured_output": "prompted"}
 
             def _generate_internal(self, **kwargs):
-                from abstractllm.core.types import GenerateResponse
+                from abstractcore.core.types import GenerateResponse
                 # Always return invalid data
                 return GenerateResponse(content='{"invalid": "data"}')
 

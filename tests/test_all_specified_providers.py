@@ -12,7 +12,7 @@ This test validates all the providers and models mentioned in the specifications
 import os
 from pydantic import BaseModel
 from typing import List, Optional
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 
 # Test models for validation

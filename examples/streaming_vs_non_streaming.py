@@ -3,7 +3,7 @@
 Streaming vs Non-Streaming Tool Usage Comparison
 
 This example specifically demonstrates the differences between
-streaming and non-streaming tool usage with AbstractLLM Core.
+streaming and non-streaming tool usage with AbstractCore Core.
 """
 
 import os
@@ -13,7 +13,7 @@ from typing import List, Dict, Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from abstractllm import AbstractLLM
+from abstractcore import create_llm
 
 # Simple tools for demonstration
 DEMO_TOOLS = [
@@ -73,7 +73,7 @@ def demonstrate_non_streaming():
 
     try:
         # Initialize LLM
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         print("Request: Calculate 15 * 23 and tell me an interesting fact about mathematics")
         print("\nProcessing request (non-streaming)...")
@@ -114,7 +114,7 @@ def demonstrate_streaming():
 
     try:
         # Initialize LLM
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         print("Request: Calculate 42 * 17 and get the current time")
         print("\nProcessing request (streaming)...")
@@ -172,7 +172,7 @@ def side_by_side_comparison():
     print_section("Side-by-Side Performance Comparison")
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         # Same prompt for both
         prompt = "Calculate 100 / 4, get an interesting fact about space, and tell me the current time"
@@ -272,7 +272,7 @@ def demonstrate_hybrid_approach():
     print_section("Hybrid Approach: Stream + Collect")
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         print("Demonstrating streaming with collection for post-processing...")
         print(f"\n📡 Real-time display: ", end="", flush=True)
@@ -322,10 +322,10 @@ def demonstrate_hybrid_approach():
 
 def main():
     """Run all comparison examples"""
-    print("AbstractLLM Core - Streaming vs Non-Streaming Tool Usage")
+    print("AbstractCore Core - Streaming vs Non-Streaming Tool Usage")
     print("=" * 60)
     print("This script compares streaming and non-streaming approaches")
-    print("for tool usage with AbstractLLM Core.")
+    print("for tool usage with AbstractCore Core.")
     print("\nNote: Examples require Ollama to be running locally.")
 
     # Run all comparisons

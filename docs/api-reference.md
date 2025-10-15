@@ -23,7 +23,7 @@ def create_llm(
     model: Optional[str] = None,
     retry_config: Optional[RetryConfig] = None,
     **kwargs
-) -> AbstractLLMInterface
+) -> AbstractCoreInterface
 ```
 
 **Parameters:**
@@ -40,11 +40,11 @@ def create_llm(
 - `timeout` (int): Request timeout in seconds
 - `top_p` (float): Nucleus sampling parameter
 
-**Returns:** AbstractLLMInterface instance
+**Returns:** AbstractCoreInterface instance
 
 **Example:**
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Basic usage
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -64,7 +64,7 @@ llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:
 
 ## Classes
 
-### AbstractLLMInterface
+### AbstractCoreInterface
 
 Base interface for all LLM providers. All providers implement this interface.
 
@@ -288,18 +288,18 @@ Manages conversation context and history.
 class BasicSession:
     def __init__(
         self,
-        provider: AbstractLLMInterface,
+        provider: AbstractCoreInterface,
         system_prompt: Optional[str] = None
     ):
 ```
 
 **Parameters:**
-- `provider` (AbstractLLMInterface): LLM provider instance
+- `provider` (AbstractCoreInterface): LLM provider instance
 - `system_prompt` (str, optional): System prompt for the conversation
 
 **Attributes:**
 - `messages` (List[Message]): Conversation history
-- `provider` (AbstractLLMInterface): LLM provider
+- `provider` (AbstractCoreInterface): LLM provider
 - `system_prompt` (str): System prompt
 
 **Methods:**
@@ -331,13 +331,13 @@ Save session to JSON file.
 #### load()
 ```python
 @classmethod
-def load(cls, filepath: Path, provider: AbstractLLMInterface) -> "BasicSession"
+def load(cls, filepath: Path, provider: AbstractCoreInterface) -> "BasicSession"
 ```
 Load session from JSON file.
 
 **Example:**
 ```python
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 
 llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(
@@ -437,7 +437,7 @@ def on_global(event_type: EventType, handler: Callable[[Event], None]) -> None
 
 **Example:**
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 def cost_monitor(event):
     if hasattr(event, 'cost_usd') and event.cost_usd:
@@ -514,8 +514,8 @@ class RetryConfig:
 
 **Example:**
 ```python
-from abstractllm import create_llm
-from abstractllm.core.retry import RetryConfig
+from abstractcore import create_llm
+from abstractcore.core.retry import RetryConfig
 
 config = RetryConfig(
     max_attempts=5,
@@ -539,7 +539,7 @@ class FeedbackRetry:
 
 **Example:**
 ```python
-from abstractllm.structured import FeedbackRetry
+from abstractcore.structured import FeedbackRetry
 from pydantic import BaseModel
 
 class User(BaseModel):
@@ -602,7 +602,7 @@ Compute cosine similarity between two texts.
 
 **Example:**
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 embedder = EmbeddingManager(model="embeddinggemma")
 
@@ -622,21 +622,21 @@ print(f"Similarity: {similarity:.3f}")
 
 ### Base Exceptions
 
-#### AbstractLLMError
+#### AbstractCoreError
 ```python
-class AbstractLLMError(Exception):
-    """Base exception for AbstractLLM."""
+class AbstractCoreError(Exception):
+    """Base exception for AbstractCore."""
 ```
 
 #### ProviderAPIError
 ```python
-class ProviderAPIError(AbstractLLMError):
+class ProviderAPIError(AbstractCoreError):
     """Provider API error."""
 ```
 
 #### ModelNotFoundError
 ```python
-class ModelNotFoundError(AbstractLLMError):
+class ModelNotFoundError(AbstractCoreError):
     """Model not found error."""
 ```
 
@@ -655,7 +655,7 @@ class RateLimitError(ProviderAPIError):
 ### Usage
 
 ```python
-from abstractllm.exceptions import ProviderAPIError, RateLimitError
+from abstractcore.exceptions import ProviderAPIError, RateLimitError
 
 try:
     response = llm.generate("Hello world")
@@ -709,7 +709,7 @@ def route_request(prompt, task_type="general"):
 ### Production Monitoring
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 import logging
 
 # Setup logging

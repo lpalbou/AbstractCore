@@ -18,7 +18,7 @@ pip install abstractcore[embeddings]
 ### First Embeddings
 
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 # Option 1: HuggingFace (default) - Local models with ONNX acceleration
 embedder = EmbeddingManager()  # Uses all-MiniLM-L6-v2 by default
@@ -181,7 +181,7 @@ print(f"Search matrix: {search_matrix.shape}")  # (2, 4) - 2 queries × 4 docume
 ### Semantic Search
 
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 embedder = EmbeddingManager()
 
@@ -220,8 +220,8 @@ for rank, (idx, similarity, doc) in enumerate(results, 1):
 ### Simple RAG Pipeline
 
 ```python
-from abstractllm import create_llm
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore import create_llm
+from abstractcore.embeddings import EmbeddingManager
 
 # Setup
 embedder = EmbeddingManager()
@@ -275,7 +275,7 @@ for ctx in contexts:
 ### Document Clustering (NEW)
 
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 embedder = EmbeddingManager()
 
@@ -378,8 +378,8 @@ print(f"Memory cache hits: {stats['memory_cache_info']['hits']}")
 ### Enhanced Context Selection
 
 ```python
-from abstractllm import create_llm
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore import create_llm
+from abstractcore.embeddings import EmbeddingManager
 
 def smart_context_selection(query, documents, max_context_length=2000):
     """Select most relevant context that fits within token limits."""
@@ -453,7 +453,7 @@ for doc in documents_multilingual:
 ### Error Handling
 
 ```python
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 def safe_embedding(text, embedder, fallback_value=None):
     """Generate embedding with error handling."""
@@ -480,7 +480,7 @@ else:
 
 ```python
 import time
-from abstractllm.embeddings import EmbeddingManager
+from abstractcore.embeddings import EmbeddingManager
 
 class MonitoredEmbeddingManager:
     def __init__(self, *args, **kwargs):
@@ -550,7 +550,7 @@ If you prefer HTTP endpoints over Python code, use the AbstractCore server:
 ```bash
 # Start the server
 pip install abstractcore[server]
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 **HTTP Request:**

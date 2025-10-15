@@ -20,7 +20,7 @@ AbstractCore provides a universal tool calling system that works across all LLM 
 The simplest way to create and use tools is with the `@tool` decorator:
 
 ```python
-from abstractllm import create_llm, tool
+from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -> str:
@@ -55,7 +55,7 @@ The `@tool` decorator is the primary way to create tools in AbstractCore. It aut
 ### Basic Usage
 
 ```python
-from abstractllm import tool
+from abstractcore import tool
 
 @tool
 def list_files(directory: str = ".", pattern: str = "*") -> str:
@@ -271,7 +271,7 @@ response = llm.generate("What's the weather?", tools=[get_weather])
 Tools are defined using the `ToolDefinition` class, but the `@tool` decorator handles this automatically:
 
 ```python
-from abstractllm.tools import ToolDefinition
+from abstractcore.tools import ToolDefinition
 
 # Manual tool definition (rarely needed)
 tool_def = ToolDefinition(
@@ -378,7 +378,7 @@ response = llm.generate(
 Use the event system to control tool execution:
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 def security_check(event):
     """Prevent execution of dangerous tools."""
@@ -441,7 +441,7 @@ def safe_division(a: float, b: float) -> str:
 AbstractCore provides comprehensive error handling:
 
 ```python
-from abstractllm.exceptions import ToolExecutionError
+from abstractcore.exceptions import ToolExecutionError
 
 try:
     response = llm.generate("Use the broken tool", tools=[broken_tool])
@@ -485,7 +485,7 @@ def create_file(filename: str, content: str) -> str:
 Use the tool registry for better performance with many tools:
 
 ```python
-from abstractllm.tools import ToolRegistry, register_tool
+from abstractcore.tools import ToolRegistry, register_tool
 
 # Register tools globally
 register_tool(get_weather)
@@ -557,7 +557,7 @@ Used when calling LLMs directly via Python. Handles real-time tag rewriting for 
 #### Quick Start
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Automatic format detection and conversion
 llm = create_llm("ollama", model="qwen3-coder:30b")
@@ -576,7 +576,7 @@ print(response.tool_calls)
 For specific agentic CLI requirements:
 
 ```python
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 # Option 1: Simple tag name (auto-formatted with angle brackets)
 llm = create_llm(
@@ -593,7 +593,7 @@ llm = create_llm(
 )
 
 # Option 3: ToolCallTags object for full control
-from abstractllm.tools.tag_rewriter import ToolCallTags
+from abstractcore.tools.tag_rewriter import ToolCallTags
 
 custom_tags = ToolCallTags(
     start_tag="<custom_tool>",
@@ -614,7 +614,7 @@ llm = create_llm(
 Built-in support for popular agentic CLIs:
 
 ```python
-from abstractllm.tools.tag_rewriter import create_tag_rewriter
+from abstractcore.tools.tag_rewriter import create_tag_rewriter
 
 # Codex CLI
 rewriter = create_tag_rewriter("codex")  # Qwen3 format
@@ -748,7 +748,7 @@ Monitor and control tool execution through events:
 ### Cost Monitoring
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 def monitor_tool_costs(event):
     """Monitor costs of tool executions."""

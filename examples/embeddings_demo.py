@@ -3,7 +3,7 @@
 Embeddings Demo - Real-world usage examples
 ============================================
 
-Demonstrates how to use the AbstractLLM Core embeddings system
+Demonstrates how to use the AbstractCore Core embeddings system
 for semantic search and RAG scenarios.
 """
 
@@ -16,8 +16,8 @@ import tempfile
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from abstractllm.embeddings import EmbeddingManager
-from abstractllm import create_llm
+from abstractcore.embeddings import EmbeddingManager
+from abstractcore import create_llm
 
 
 def demo_basic_embeddings():
@@ -117,17 +117,17 @@ def demo_rag_pipeline():
             cache_dir=Path(temp_dir)
         )
 
-        # Simulated knowledge base about AbstractLLM
+        # Simulated knowledge base about AbstractCore
         knowledge_base = [
-            "AbstractLLM Core provides a unified interface to multiple LLM providers including OpenAI, Anthropic, and local models.",
-            "The retry system in AbstractLLM implements exponential backoff and circuit breaker patterns for production reliability.",
-            "Event system in AbstractLLM enables real-time monitoring and observability of LLM operations.",
+            "AbstractCore Core provides a unified interface to multiple LLM providers including OpenAI, Anthropic, and local models.",
+            "The retry system in AbstractCore implements exponential backoff and circuit breaker patterns for production reliability.",
+            "Event system in AbstractCore enables real-time monitoring and observability of LLM operations.",
             "Structured output support allows generating and validating Pydantic models from LLM responses.",
             "The embeddings module provides SOTA open-source models like EmbeddingGemma for semantic search capabilities."
         ]
 
         # User question
-        question = "How does AbstractLLM handle errors and reliability?"
+        question = "How does AbstractCore handle errors and reliability?"
 
         print(f"Question: {question}")
 
@@ -210,7 +210,7 @@ def demo_performance():
 
 def main():
     """Run all demos."""
-    print("🚀 AbstractLLM Embeddings Demo")
+    print("🚀 AbstractCore Embeddings Demo")
     print("=" * 70)
 
     try:

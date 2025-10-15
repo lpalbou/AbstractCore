@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Advanced Tool Usage Examples for AbstractLLM Core
+Advanced Tool Usage Examples for AbstractCore Core
 
 This example demonstrates advanced tool usage patterns including:
 - Custom tool implementations
@@ -20,9 +20,9 @@ from dataclasses import dataclass
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from abstractllm import AbstractLLM
-from abstractllm.events import EventType
-from abstractllm.tools.core import ToolCall, ToolResult
+from abstractcore import create_llm
+from abstractcore.events import EventType
+from abstractcore.tools.core import ToolCall, ToolResult
 
 # Custom tool implementations
 class WeatherAPI:
@@ -457,7 +457,7 @@ def demonstrate_tool_chaining():
     print("="*60)
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         # Set up execution tracking
         tracker = ToolExecutionTracker()
@@ -498,7 +498,7 @@ def demonstrate_error_handling():
     print("="*60)
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         # Request with intentional errors
         response = llm.generate(
@@ -526,7 +526,7 @@ def demonstrate_performance_optimization():
     print("="*60)
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         start_time = time.time()
 
@@ -558,7 +558,7 @@ def demonstrate_streaming_with_complex_tools():
     print("="*60)
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         print("Streaming complex tool operations:")
         print("Response: ", end="", flush=True)
@@ -602,7 +602,7 @@ def demonstrate_conditional_tool_execution():
     print("="*60)
 
     try:
-        llm = AbstractLLM(provider="ollama", model="llama3.2:3b")
+        llm = create_llm(provider="ollama", model="llama3.2:3b")
 
         # Add conditional logic in event handler
         def conditional_handler(event):
@@ -630,13 +630,13 @@ def demonstrate_conditional_tool_execution():
 
 def main():
     """Run all advanced examples"""
-    print("AbstractLLM Core - Advanced Tool Usage Examples")
+    print("AbstractCore Core - Advanced Tool Usage Examples")
     print("=" * 60)
     print("This script demonstrates advanced tool usage patterns.")
     print("Note: Examples may fail if Ollama is not running locally.")
 
     # Register custom tool handler globally
-    from abstractllm.tools import register_tool_handler
+    from abstractcore.tools import register_tool_handler
     register_tool_handler(custom_tool_handler)
 
     # Run advanced examples
@@ -649,7 +649,7 @@ def main():
     print("\n" + "="*60)
     print(" Advanced Examples Complete")
     print("="*60)
-    print("These examples show the full power of the AbstractLLM Core tool system!")
+    print("These examples show the full power of the AbstractCore Core tool system!")
 
 if __name__ == "__main__":
     main()

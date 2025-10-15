@@ -63,7 +63,7 @@ assert "<ojlk>" in full_output  # FAILED - got 'ojlk' instead
 
 **Implementation**: Added `_format_tag_for_output()` method to `ToolCallTagRewriter` that wraps plain tags with angle brackets during output generation.
 
-**Code Changes** (`abstractllm/tools/tag_rewriter.py`):
+**Code Changes** (`abstractcore/tools/tag_rewriter.py`):
 ```python
 def _format_tag_for_output(self, tag: str, is_end: bool = False) -> str:
     """
@@ -95,7 +95,7 @@ def _format_tag_for_output(self, tag: str, is_end: bool = False) -> str:
 
 **Implementation**: Updated `UnifiedStreamProcessor._initialize_tag_rewriter()` to differentiate between single tags and comma-separated tags.
 
-**Code Changes** (`abstractllm/providers/streaming.py`):
+**Code Changes** (`abstractcore/providers/streaming.py`):
 ```python
 if ',' in tool_call_tags:
     # Comma-separated: User specified both start and end tags
@@ -124,7 +124,7 @@ else:
 
 **Implementation**: Updated `ToolCallTags.__post_init__()` to properly detect existing angle brackets.
 
-**Code Changes** (`abstractllm/tools/tag_rewriter.py`):
+**Code Changes** (`abstractcore/tools/tag_rewriter.py`):
 ```python
 # For end tag: check if it already has angle brackets at all
 # If it starts with '<' (like '<END>'), leave it as-is
@@ -146,7 +146,7 @@ if (not self.end_tag.startswith('<') and
 
 **Implementation**: Added `tag_rewrite_buffer` attribute to `UnifiedStreamProcessor.__init__()`.
 
-**Code Changes** (`abstractllm/providers/streaming.py`):
+**Code Changes** (`abstractcore/providers/streaming.py`):
 ```python
 # Backwards compatibility: tag_rewrite_buffer attribute (unused in current implementation)
 self.tag_rewrite_buffer = ""
@@ -242,14 +242,14 @@ self.tag_rewrite_buffer = ""
 
 ### Files Modified
 
-1. **`abstractllm/tools/tag_rewriter.py`** (113 lines modified)
+1. **`abstractcore/tools/tag_rewriter.py`** (113 lines modified)
    - Added `_format_tag_for_output()` method
    - Updated `_compile_patterns()` to use output tags
    - Fixed `ToolCallTags.__post_init__()` end tag logic
    - Updated `rewrite_text()` to use output tags
    - Updated `_rewrite_complete_tool_call()` to use output tags
 
-2. **`abstractllm/providers/streaming.py`** (32 lines modified)
+2. **`abstractcore/providers/streaming.py`** (32 lines modified)
    - Updated `_initialize_tag_rewriter()` with intelligent auto-format logic
    - Added `tag_rewrite_buffer` attribute for compatibility
    - Added `ToolDetectionState` enum for backward compatibility
@@ -383,7 +383,7 @@ def test_cli_interaction_scenario(self):
     )
 
     # Simulated LLM response with tool call
-    content = 'I will list the files for you.<|tool_call|>{"name": "list_files", "arguments": {"directory_path": "abstractllm"}}</|tool_call|>'
+    content = 'I will list the files for you.<|tool_call|>{"name": "list_files", "arguments": {"directory_path": "abstractcore"}}</|tool_call|>'
 
     # Simulate character-by-character streaming like real LLM
     for i in range(0, len(content), 5):  # 5 chars at a time

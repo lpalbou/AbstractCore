@@ -68,7 +68,7 @@ POST /v1/multi/chat
 
 ```python
 # Core library usage
-from abstractllm import MultiLLM
+from abstractcore import MultiLLM
 
 multi_llm = MultiLLM([
     ("openai", "gpt-4o-mini"),
@@ -103,7 +103,7 @@ response = multi_llm.generate("What is Python?", strategy="consensus")
 
 ```python
 # Core library - basic support
-from abstractllm import MultiLLM
+from abstractcore import MultiLLM
 multi_llm = MultiLLM(providers_config)
 response = multi_llm.generate_parallel("message")
 

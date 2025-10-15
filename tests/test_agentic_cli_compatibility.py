@@ -26,7 +26,7 @@ TEST_MODEL = "ollama/qwen3-coder:30b"
 
 @pytest.fixture(scope="module")
 def server():
-    """Start the AbstractLLM server for testing, stop after tests complete."""
+    """Start the AbstractCore server for testing, stop after tests complete."""
     # Check if server is already running
     try:
         response = httpx.get(f"{BASE_URL}/health", timeout=2)
@@ -42,7 +42,7 @@ def server():
     env["ABSTRACTCORE_DEBUG"] = "true"
 
     process = subprocess.Popen(
-        ["python", "-m", "uvicorn", "abstractllm.server.app:app",
+        ["python", "-m", "uvicorn", "abstractcore.server.app:app",
          "--host", "0.0.0.0", "--port", "8003"],
         env=env,
         stdout=subprocess.PIPE,
@@ -218,7 +218,7 @@ class TestCodexMultiTurnToolCalling:
             {
                 "role": "tool",
                 "tool_call_id": "call_pwd_001",
-                "content": "/Users/user/projects/abstractllm_core"
+                "content": "/Users/user/projects/abstractcore_core"
             },
             {
                 "role": "assistant",
@@ -237,7 +237,7 @@ class TestCodexMultiTurnToolCalling:
             {
                 "role": "tool",
                 "tool_call_id": "call_cat_001",
-                "content": "# AbstractLLM\n\nA universal LLM abstraction library..."
+                "content": "# AbstractCore\n\nA universal LLM abstraction library..."
             },
             {
                 "role": "user",

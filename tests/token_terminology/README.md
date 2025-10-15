@@ -4,7 +4,7 @@
 
 ## Overview
 
-This directory contains comprehensive tests for the token terminology migration from `context_length` to `max_tokens` across the AbstractLLM Core codebase.
+This directory contains comprehensive tests for the token terminology migration from `context_length` to `max_tokens` across the AbstractCore codebase.
 
 **Migration Summary:**
 - **Changed**: All 85 models in `model_capabilities.json` from `context_length` → `max_tokens`
@@ -136,17 +136,17 @@ Code Validation (2 tests) ✅
 ## Migration Details
 
 ### Files Modified
-1. **abstractllm/assets/model_capabilities.json**
+1. **abstractcore/assets/model_capabilities.json**
    - All 85 models: `context_length` → `max_tokens`
    - Default capabilities: Added `max_tokens: 16384`
 
-2. **abstractllm/architectures/detection.py**
+2. **abstractcore/architectures/detection.py**
    - `get_context_limits()`: Returns `max_tokens` key
 
-3. **abstractllm/providers/base.py**
+3. **abstractcore/providers/base.py**
    - Provider initialization: Uses `max_tokens` from JSON
 
-4. **abstractllm/utils/cli.py**
+4. **abstractcore/utils/cli.py**
    - Auto-detection: Uses `max_tokens` for context window
 
 5. **tests/integration/test_system_integration.py**
@@ -225,7 +225,7 @@ source .venv/bin/activate
 **Issue**: Can't find test files
 ```bash
 # Solution: Run from project root
-cd /Users/albou/projects/abstractllm_core
+cd /Users/albou/projects/abstractcore_core
 python -m pytest tests/token_terminology/test_max_tokens_migration.py
 ```
 
@@ -271,10 +271,10 @@ When adding new models to `model_capabilities.json`:
 
 ## References
 
-- **Project Root**: `/Users/albou/projects/abstractllm_core`
-- **Test Location**: `/Users/albou/projects/abstractllm_core/tests/token_terminology/`
-- **Model JSON**: `/Users/albou/projects/abstractllm_core/abstractllm/assets/model_capabilities.json`
-- **Detection Code**: `/Users/albou/projects/abstractllm_core/abstractllm/architectures/detection.py`
+- **Project Root**: `/Users/albou/projects/abstractcore_core`
+- **Test Location**: `/Users/albou/projects/abstractcore_core/tests/token_terminology/`
+- **Model JSON**: `/Users/albou/projects/abstractcore_core/abstractcore/assets/model_capabilities.json`
+- **Detection Code**: `/Users/albou/projects/abstractcore_core/abstractcore/architectures/detection.py`
 
 ---
 
@@ -288,5 +288,5 @@ For questions or issues related to this migration:
 ---
 
 **Last Updated**: 2025-10-11
-**Test Engineer**: AbstractLLM Advanced Test Engineering Specialist
+**Test Engineer**: AbstractCore Advanced Test Engineering Specialist
 **Migration Status**: ✅ COMPLETE AND PRODUCTION READY

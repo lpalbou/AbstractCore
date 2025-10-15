@@ -1,10 +1,10 @@
 """
-Example usage of structured output with AbstractLLM.
+Example usage of structured output with AbstractCore.
 """
 
 from typing import List, Optional
 from pydantic import BaseModel, field_validator
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 
 # Define response models
@@ -149,7 +149,7 @@ def demo_validation_retry():
 
 
 if __name__ == "__main__":
-    print("AbstractLLM Structured Output Examples")
+    print("AbstractCore Structured Output Examples")
     print("=" * 40)
 
     # Always run mock demo

@@ -87,16 +87,16 @@ export LMSTUDIO_HOST="http://localhost:1234"     # LMStudio server location
 
 ```bash
 # Configure server for Codex CLI (default qwen3 format)
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Configure server for Crush CLI
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Configure server for custom format
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS="[TOOL],[/TOOL]"
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 
 #### Per-Request Override (when you control the client)
@@ -174,17 +174,17 @@ for chunk in stream:
 export ABSTRACTCORE_DEBUG=true
 
 # Start server with debug logging
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # With additional uvicorn debugging
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000 --log-level debug
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000 --log-level debug
 ```
 
 ### Log File Locations
 
 | Log Type | Location | Format | Contents |
 |----------|----------|--------|----------|
-| Structured Logs | `logs/abstractllm_TIMESTAMP.log` | JSON | Events, errors, metadata |
+| Structured Logs | `logs/abstractcore_TIMESTAMP.log` | JSON | Events, errors, metadata |
 | Request Payloads | `logs/YYYYMMDD-payloads.jsonl` | JSONL | Full request bodies |
 | Verbatim I/O | `logs/verbatim_TIMESTAMP.jsonl` | JSONL | Complete prompts/responses |
 
@@ -192,7 +192,7 @@ uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000 --log-level debug
 
 ```bash
 # Find all errors
-grep '"level": "error"' logs/abstractllm_*.log | jq -r '.event + " | " + .error'
+grep '"level": "error"' logs/abstractcore_*.log | jq -r '.event + " | " + .error'
 
 # Calculate average latency by provider
 cat logs/verbatim_*.jsonl | jq -r 'select(.provider=="ollama") | .metadata.latency_ms' | \
@@ -230,7 +230,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
 # Start server
-CMD ["uvicorn", "abstractllm.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 ```
 
 ### Docker Compose Example
@@ -298,16 +298,16 @@ spec:
 
 ```bash
 # Multiple workers for production
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000 --workers 4
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000 --workers 4
 
 # With Gunicorn for better performance
-gunicorn abstractllm.server.app:app \
+gunicorn abstractcore.server.app:app \
   --worker-class uvicorn.workers.UvicornWorker \
   --workers 4 \
   --bind 0.0.0.0:8000
 
 # Development with auto-reload
-uvicorn abstractllm.server.app:app --reload --log-level debug
+uvicorn abstractcore.server.app:app --reload --log-level debug
 ```
 
 ### Model-Specific Optimization
@@ -344,7 +344,7 @@ curl -H "Authorization: Bearer your-secret-key" \
 openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
 
 # Run with SSL
-uvicorn abstractllm.server.app:app \
+uvicorn abstractcore.server.app:app \
   --host 0.0.0.0 \
   --port 8000 \
   --ssl-keyfile=./key.pem \

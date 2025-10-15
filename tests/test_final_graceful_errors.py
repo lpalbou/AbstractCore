@@ -5,7 +5,7 @@ Shows the exact user experience now vs before.
 """
 
 import os
-from abstractllm import create_llm, ModelNotFoundError
+from abstractcore import create_llm, ModelNotFoundError
 
 
 def test_anthropic_clean_error():

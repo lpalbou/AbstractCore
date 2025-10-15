@@ -52,7 +52,7 @@ Query Parameters:
 ### 1. Start the Server
 
 ```bash
-python -m abstractllm.server.app
+python -m abstractcore.server.app
 ```
 
 ### 2. Access Interactive Docs
@@ -234,7 +234,7 @@ The enum is properly documented in the OpenAPI schema, making it available to:
 ### 3. Type Hints
 The enum provides type hints in Python:
 ```python
-from abstractllm.server.app import ModelType
+from abstractcore.server.app import ModelType
 
 # IDE autocomplete works
 model_type = ModelType.TEXT_EMBEDDING  # ✓ Autocompletes

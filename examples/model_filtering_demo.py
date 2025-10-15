@@ -138,7 +138,7 @@ if __name__ == "__main__":
     except requests.exceptions.ConnectionError:
         print("\n❌ Error: Could not connect to server at http://localhost:8000")
         print("Please make sure the AbstractCore server is running:")
-        print("  python -m abstractllm.server.app")
+        print("  python -m abstractcore.server.app")
     except Exception as e:
         print(f"\n❌ Error: {e}")
     

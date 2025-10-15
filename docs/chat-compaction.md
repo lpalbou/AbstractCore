@@ -15,7 +15,7 @@ The `compact()` method implements 2025 state-of-the-art practices for conversati
 
 ### Auto-Compact Mode (Recommended)
 ```python
-from abstractllm import create_llm, BasicSession
+from abstractcore import create_llm, BasicSession
 
 # Create session with auto-compaction enabled
 llm = create_llm("ollama", model="gemma3:1b")
@@ -113,7 +113,7 @@ print(f"Threshold: {session.auto_compact_threshold} tokens")
 ### Event Monitoring
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 def monitor_compaction(event):
     if event.type == EventType.COMPACTION_STARTED:
@@ -302,7 +302,7 @@ restored.provider = llm  # Re-attach provider
 ### With Tools
 
 ```python
-from abstractllm.tools import tool
+from abstractcore.tools import tool
 
 @tool
 def summarize_conversation():
@@ -316,7 +316,7 @@ compacted = session.compact()  # Tools are preserved in compacted session
 ### With Events
 
 ```python
-from abstractllm.events import EventType, on_global
+from abstractcore.events import EventType, on_global
 
 def monitor_compaction(event):
     if event.type == EventType.AFTER_GENERATE:

@@ -11,7 +11,7 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
 
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 
 # Test models
@@ -144,12 +144,12 @@ class TestStructuredOutputUseCases:
             model_capabilities = {"structured_output": "prompted"}
 
             def _generate_internal(self, **kwargs):
-                from abstractllm.core.types import GenerateResponse
+                from abstractcore.core.types import GenerateResponse
                 return GenerateResponse(
                     content='{"name": "Wireless Headphones", "price": 99.99, "category": "Electronics"}'
                 )
 
-        from abstractllm.structured.handler import StructuredOutputHandler
+        from abstractcore.structured.handler import StructuredOutputHandler
 
         handler = StructuredOutputHandler()
         provider = MockExtractorProvider()
@@ -184,13 +184,13 @@ class TestStructuredOutputUseCases:
             model_capabilities = {"structured_output": "prompted"}
 
             def _generate_internal(self, **kwargs):
-                from abstractllm.core.types import GenerateResponse
+                from abstractcore.core.types import GenerateResponse
                 return GenerateResponse(
                     content='''{"attendee_name": "Alice Smith", "email": "alice@example.com",
                              "event_preference": "workshop", "dietary_restrictions": "vegetarian"}'''
                 )
 
-        from abstractllm.structured.handler import StructuredOutputHandler
+        from abstractcore.structured.handler import StructuredOutputHandler
 
         handler = StructuredOutputHandler()
         provider = MockFormFillerProvider()

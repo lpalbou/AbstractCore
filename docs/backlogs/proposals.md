@@ -1,6 +1,6 @@
-## Critical Analysis of AbstractLLM Library - Oct 15th, 2025 (REVISED)
+## Critical Analysis of AbstractCore Library - Oct 15th, 2025 (REVISED)
 
-After conducting a comprehensive investigation of the AbstractLLM codebase with additional context about the Abstract Series ecosystem, I'm revising my assessment with a more nuanced understanding.
+After conducting a comprehensive investigation of the AbstractCore codebase with additional context about the Abstract Series ecosystem, I'm revising my assessment with a more nuanced understanding.
 
 ### **Ecosystem Context: Strategic Architecture**
 
@@ -20,7 +20,7 @@ This is **genuinely ambitious** and shows sophisticated systems thinking about s
 ### **Architectural Strengths: Foundation Excellence**
 
 **1. Provider Abstraction Pattern**
-The `AbstractLLMInterface` and `BaseProvider` hierarchy is genuinely well-designed. The unified token parameter vocabulary is particularly clever - abstracting away the chaos of different provider APIs into a coherent system. This is **non-trivial engineering** that most libraries get wrong.
+The `AbstractCoreInterface` and `BaseProvider` hierarchy is genuinely well-designed. The unified token parameter vocabulary is particularly clever - abstracting away the chaos of different provider APIs into a coherent system. This is **non-trivial engineering** that most libraries get wrong.
 
 **2. Event-Driven Architecture** 
 The event system provides proper observability hooks without being intrusive. The telemetry tracking with structured logging shows production-grade thinking - **essential for the ecosystem layers above**.
@@ -66,7 +66,7 @@ The library is **fundamentally synchronous** in a world that demands async. This
 **However**, given the ecosystem context, this might be **intentionally deferred** to higher layers. The question is whether async belongs in AbstractCore or AbstractAgent/AbstractTUI.
 
 **2. Media Handling Gaps**
-The current media system (```1:151:abstractllm/media/__init__.py```) is **basic but functional**:
+The current media system (```1:151:abstractcore/media/__init__.py```) is **basic but functional**:
 - Only handles images (jpg, png, gif, webp)
 - Missing: docx, xlsx, pdf, ppt support
 - **No SET-based context management** - this is a critical missing piece
