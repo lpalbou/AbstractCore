@@ -18,8 +18,9 @@ from pydantic import BaseModel, Field
 from ..core.interface import AbstractLLMInterface
 from ..core.factory import create_llm
 from ..structured.retry import FeedbackRetry
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class JudgmentCriteria(BaseModel):
@@ -114,14 +115,25 @@ class BasicJudge:
     def __init__(
         self,
         llm: Optional[AbstractLLMInterface] = None,
-        temperature: float = 0.1  # Low temperature for consistent evaluation
+        temperature: float = 0.1,  # Low temperature for consistent evaluation
+        max_tokens: int = 32000,
+        max_output_tokens: int = 8000,
+        debug: bool = False
     ):
-        """Initialize the judge"""
+        """Initialize the judge
+        
+        Args:
+            llm: AbstractLLM instance (any provider). If None, uses default Ollama model
+            temperature: Temperature for evaluation consistency (default 0.1)
+            max_tokens: Maximum total tokens for LLM context (default 32000)
+            max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+            debug: Enable debug output showing raw LLM responses (default False)
+        """
         if llm is None:
             try:
                 # Use low temperature for consistent evaluation
                 self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M",
-                                    max_tokens=32000, max_output_tokens=4000, temperature=temperature)
+                                    max_tokens=max_tokens, max_output_tokens=max_output_tokens, temperature=temperature)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'qwen3:4b-instruct-2507-q4_K_M': {e}\n\n"
@@ -142,6 +154,8 @@ class BasicJudge:
                 raise RuntimeError(error_msg) from e
         else:
             self.llm = llm
+        
+        self.debug = debug
 
         self.retry_strategy = FeedbackRetry(max_attempts=3)
 
@@ -177,7 +191,7 @@ class BasicJudge:
         if context is None:
             context = "general content evaluation"
 
-        logger.info(f"Starting evaluation: {context}")
+        logger.info("Starting evaluation", context=context)
 
         # Build the evaluation prompt
         prompt = self._build_evaluation_prompt(content, context, criteria, custom_criteria, reference, include_criteria)
@@ -189,18 +203,25 @@ class BasicJudge:
                 response_model=Assessment,
                 retry_strategy=self.retry_strategy
             )
+            
+            # Debug output if requested
+            if self.debug:
+                print(f"\n=== DEBUG: Raw LLM Response ===")
+                print(f"Prompt length: {len(prompt)} characters")
+                print(f"Response: {result}")
+                print("=== End Debug Output ===\n")
 
             # Convert to dict and add metadata
             assessment_dict = result.dict() if hasattr(result, 'dict') else result
 
             # Log results
             overall_score = assessment_dict.get('overall_score', 0)
-            logger.info(f"Evaluation completed: {overall_score}/5 overall score")
+            logger.info("Evaluation completed", overall_score=overall_score, max_score=5)
 
             return assessment_dict
 
         except Exception as e:
-            logger.error(f"Evaluation failed: {e}")
+            logger.error("Evaluation failed", error=str(e), context=context)
             # Return basic failure assessment
             return {
                 "overall_score": 1,
@@ -253,7 +274,7 @@ class BasicJudge:
         if isinstance(file_paths, str):
             file_paths = [file_paths]
 
-        logger.info(f"Starting evaluation of {len(file_paths)} file(s)")
+        logger.info("Starting file evaluation", file_count=len(file_paths))
 
         # Set default context if none provided
         if context is None:
@@ -304,7 +325,7 @@ class BasicJudge:
                         raise ValueError(f"Cannot read file {file_path.name}: {e}")
 
             if not content.strip():
-                logger.warning(f"File {file_path.name} is empty or contains no readable content")
+                logger.warning("File is empty or contains no readable content", file_name=file_path.name)
                 # Create minimal assessment for empty file
                 assessment = {
                     "overall_score": 1,
@@ -324,7 +345,11 @@ class BasicJudge:
             # Create file-specific context
             file_context = f"{context} (file: {file_path.name})"
 
-            logger.info(f"Evaluating file {i+1}/{len(file_paths)}: {file_path.name} ({len(content):,} characters)")
+            logger.info("Evaluating file", 
+                       file_number=i+1, 
+                       total_files=len(file_paths), 
+                       file_name=file_path.name, 
+                       content_length=len(content))
 
             # Evaluate the file content
             assessment = self.evaluate(
@@ -341,7 +366,7 @@ class BasicJudge:
 
             assessments.append(assessment)
 
-        logger.info(f"Completed evaluation of {len(file_paths)} file(s)")
+        logger.info("Completed file evaluation", file_count=len(file_paths))
 
         # Return single assessment if only one file
         if len(assessments) == 1:
@@ -353,7 +378,7 @@ class BasicJudge:
             return assessments
         else:
             # Generate global assessment and return structured result
-            logger.info("Generating global assessment from individual file evaluations...")
+            logger.info("Generating global assessment from individual file evaluations", file_count=len(assessments))
             global_assessment = self._generate_global_assessment(
                 assessments, context, criteria, custom_criteria, include_criteria
             )
@@ -461,7 +486,10 @@ Provide a comprehensive global assessment of overall quality and recommendations
             return global_assessment
 
         except Exception as e:
-            logger.error(f"Global assessment generation failed: {e}")
+            logger.error("Global assessment generation failed", 
+                        error=str(e), 
+                        file_count=total_files, 
+                        context=context)
             # Return fallback global assessment
             return {
                 "overall_score": int(round(avg_score)),
@@ -629,6 +657,9 @@ def create_judge(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     temperature: float = 0.1,
+    max_tokens: int = 32000,
+    max_output_tokens: int = 8000,
+    debug: bool = False,
     **kwargs
 ) -> BasicJudge:
     """
@@ -638,13 +669,16 @@ def create_judge(
         provider: LLM provider (e.g., "ollama", "openai", "anthropic")
         model: Model name
         temperature: Temperature for evaluation (default 0.1 for consistency)
+        max_tokens: Maximum total tokens for LLM context (default 32000)
+        max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+        debug: Enable debug output showing raw LLM responses (default False)
         **kwargs: Additional arguments passed to create_llm
 
     Returns:
         BasicJudge instance
     """
     if provider and model:
-        llm = create_llm(provider, model=model, temperature=temperature, **kwargs)
-        return BasicJudge(llm)
+        llm = create_llm(provider, model=model, temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, **kwargs)
+        return BasicJudge(llm=llm, temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, debug=debug)
     else:
-        return BasicJudge()
+        return BasicJudge(temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, debug=debug)

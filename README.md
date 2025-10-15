@@ -181,19 +181,19 @@ AbstractCore includes **three specialized command-line applications** for common
 
 ```bash
 # Document summarization with different styles and lengths
-summarizer document.pdf --style=executive --length=brief
-summarizer report.txt --focus="technical details" --output=summary.txt
-summarizer large_doc.txt --chunk-size=15000 --provider=openai --model=gpt-4o-mini
+summarizer document.pdf --style executive --length brief
+summarizer report.txt --focus "technical details" --output summary.txt
+summarizer large_doc.txt --chunk-size 15000 --provider openai --model gpt-4o-mini
 
 # Entity extraction with various formats and options
-extractor research_paper.pdf --format=json-ld --focus=technology
-extractor article.txt --entity-types=person,organization,location --output=entities.jsonld
-extractor doc.txt --iterate=3 --mode=thorough --verbose
+extractor research_paper.pdf --format json-ld --focus technology
+extractor article.txt --entity-types person,organization,location --output entities.jsonld
+extractor doc.txt --iterate 3 --mode thorough --verbose
 
 # Text evaluation with custom criteria and contexts
-judge essay.txt --criteria=clarity,accuracy,coherence --context="academic writing"
-judge code.py --context="code review" --format=plain --verbose
-judge proposal.md --custom-criteria=has_examples,covers_risks --output=assessment.json
+judge essay.txt --criteria clarity,accuracy,coherence --context "academic writing"
+judge code.py --context "code review" --format plain --verbose
+judge proposal.md --custom-criteria has_examples,covers_risks --output assessment.json
 ```
 
 ### Installation & Setup

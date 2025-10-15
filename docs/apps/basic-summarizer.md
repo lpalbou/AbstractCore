@@ -52,13 +52,13 @@ The `summarizer` CLI provides direct terminal access for document summarization 
 summarizer document.pdf
 
 # With specific style and length
-summarizer report.txt --style=executive --length=brief
+summarizer report.txt --style executive --length brief
 
 # Focus on specific aspects
-summarizer data.md --focus="technical details" --output=summary.txt
+summarizer data.md --focus "technical details" --output summary.txt
 
 # Use different provider
-summarizer large.txt --provider=openai --model=gpt-4o-mini --verbose
+summarizer large.txt --provider openai --model gpt-4o-mini --verbose
 ```
 
 ### CLI Parameters
@@ -83,20 +83,20 @@ summarizer document.pdf
 summarizer report.txt --verbose
 
 # Executive summary for business documents
-summarizer quarterly_report.pdf --style=executive --length=brief --output=exec_summary.txt
+summarizer quarterly_report.pdf --style executive --length brief --output exec_summary.txt
 
 # Technical focus with detailed analysis
-summarizer technical_spec.md --focus="implementation details" --style=analytical --length=detailed
+summarizer technical_spec.md --focus "implementation details" --style analytical --length detailed
 
 # Large document processing with custom chunking
-summarizer large_manual.txt --chunk-size=15000 --verbose
+summarizer large_manual.txt --chunk-size 15000 --verbose
 
 # Using cloud providers for highest quality
-summarizer important_doc.pdf --provider=openai --model=gpt-4o-mini --style=executive
+summarizer important_doc.pdf --provider openai --model gpt-4o-mini --style executive
 
 # Batch processing with shell scripting
 for file in *.pdf; do
-    summarizer "$file" --style=structured --output="${file%.pdf}_summary.txt"
+    summarizer "$file" --style structured --output "${file%.pdf}_summary.txt"
 done
 ```
 
@@ -104,10 +104,10 @@ done
 
 ```bash
 # Method 1: Direct command (recommended after installation)
-summarizer document.txt --style=executive
+summarizer document.txt --style executive
 
 # Method 2: Via Python module (always works)
-python -m abstractllm.apps.summarizer document.txt --style=executive
+python -m abstractllm.apps.summarizer document.txt --style executive
 ```
 
 ### Supported File Types

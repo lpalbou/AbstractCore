@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 from ..core.interface import AbstractLLMInterface
 from ..core.factory import create_llm
 from ..structured.retry import FeedbackRetry
+from ..utils.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class SummaryStyle(Enum):
@@ -62,7 +65,7 @@ class BasicSummarizer:
     - Built-in retry and error handling (inherited from AbstractCore)
 
     Optimized defaults (no setup required):
-        summarizer = BasicSummarizer()  # Uses gemma3:1b-it-qat, 16k context, 8k chunks
+        summarizer = BasicSummarizer()  # Uses gemma3:1b-it-qat, 32k context, 8k chunks
 
     Custom setup for different needs:
         llm = create_llm("openai", model="gpt-4o-mini", max_tokens=32000)
@@ -74,18 +77,26 @@ class BasicSummarizer:
     - GPT-4o-mini: Variable, high cost per request
     """
 
-    def __init__(self, llm: Optional[AbstractLLMInterface] = None, max_chunk_size: int = 8000):
+    def __init__(
+        self, 
+        llm: Optional[AbstractLLMInterface] = None, 
+        max_chunk_size: int = 8000,
+        max_tokens: int = 32000,
+        max_output_tokens: int = 8000
+    ):
         """
         Initialize the summarizer
 
         Args:
-            llm: AbstractLLM instance (any provider). If None, attempts to create ollama gemma3:1b-it-qat with 16k context
-            max_chunk_size: Maximum characters per chunk for long documents (default 8k)
+            llm: AbstractLLM instance (any provider). If None, attempts to create ollama gemma3:1b-it-qat
+            max_chunk_size: Maximum characters per chunk for long documents (default 8000)
+            max_tokens: Maximum total tokens for LLM context (default 32000)
+            max_output_tokens: Maximum tokens for LLM output generation (default 4000)
         """
         if llm is None:
             try:
-                # Default to gemma3:1b-it-qat with 16k context window
-                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=16000)
+                # Default to gemma3:1b-it-qat with configurable token limits
+                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=max_tokens, max_output_tokens=max_output_tokens)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}\n\n"
@@ -155,8 +166,16 @@ class BasicSummarizer:
         # Handle long documents through chunking
         # Use token-aware chunking for better accuracy
         if self._should_chunk_by_tokens(text):
+            logger.info("Using chunked summarization for long document", 
+                       text_length=len(text), 
+                       style=style.value, 
+                       length=length.value)
             return self._summarize_long_document(text, focus, style, length)
         else:
+            logger.info("Using single-chunk summarization", 
+                       text_length=len(text), 
+                       style=style.value, 
+                       length=length.value)
             return self._summarize_single_chunk(text, focus, style, length)
 
     def _summarize_single_chunk(
@@ -222,6 +241,10 @@ class BasicSummarizer:
 
         # Split text into overlapping chunks
         chunks = self._split_text_into_chunks(text)
+        
+        logger.debug("Split document into chunks", 
+                    chunk_count=len(chunks), 
+                    avg_chunk_size=sum(len(c) for c in chunks) // len(chunks))
 
         if len(chunks) == 1:
             return self._summarize_single_chunk(chunks[0], focus, style, length)
@@ -245,7 +268,9 @@ class BasicSummarizer:
                 chunk_summaries.append(response.structured_output)
             else:
                 # If chunk processing fails, create a fallback summary
-                print(f"Warning: Chunk {i+1} processing failed, creating fallback")
+                logger.warning("Chunk processing failed, creating fallback", 
+                             chunk_number=i+1, 
+                             total_chunks=len(chunks))
                 chunk_summaries.append(ChunkSummary(
                     summary=f"Section {i+1} content summary unavailable",
                     key_points=["Content processing failed"]
@@ -311,8 +336,8 @@ class BasicSummarizer:
         estimated_tokens = TokenUtils.estimate_tokens(text, model_name)
         
         # Use a conservative token limit (leaving room for prompt overhead)
-        # Most models have 16k+ context, so 6k tokens for input text is safe
-        token_limit = 6000
+        # Most models have 32k+ context nowadays, so 8k tokens for input text is safe
+        token_limit = 8000
         
         if estimated_tokens > token_limit:
             return True
@@ -398,7 +423,8 @@ Generate a comprehensive structured summary following the specified style and le
     def _build_chunk_prompt(self, chunk: str, focus: Optional[str], chunk_num: int, total_chunks: int) -> str:
         """Build prompt for individual chunk processing"""
 
-        focus_instruction = f"\nFocus area: {focus}" if focus else ""
+        focus_instruction = f" You have been asked to focus especially on {focus}." if focus else ""
+
 
         return f"""Summarize this section of a larger document (Part {chunk_num} of {total_chunks}).
 
@@ -442,7 +468,7 @@ Keep the summary focused but comprehensive enough to be combined with other sect
 
         focus_instruction = ""
         if focus:
-            focus_instruction = f"\nSpecial focus: {focus}\nEnsure the final summary strongly addresses this focus area."
+            focus_instruction = f" You have been asked to focus especially on {focus}. Ensure the final summary strongly addresses this focus area." if focus_instruction else ""
 
         return f"""Combine these section summaries into a cohesive final summary of the complete document.
 
@@ -486,6 +512,9 @@ Create a unified summary that represents the entire document effectively."""
         """
         if len(messages) <= preserve_recent:
             # If short enough, just summarize normally
+            logger.debug("Chat history is short, using standard summarization", 
+                        message_count=len(messages), 
+                        preserve_recent=preserve_recent)
             chat_text = self._format_chat_messages_to_text(messages)
             return self.summarize(
                 chat_text,
@@ -497,6 +526,11 @@ Create a unified summary that represents the entire document effectively."""
         # Split into older messages (to summarize) and recent messages (to preserve)
         older_messages = messages[:-preserve_recent]
         recent_messages = messages[-preserve_recent:]
+        
+        logger.debug("Splitting chat history for summarization", 
+                    total_messages=len(messages),
+                    older_messages=len(older_messages),
+                    recent_messages=len(recent_messages))
 
         # Summarize older messages with conversational focus
         older_text = self._format_chat_messages_to_text(older_messages)

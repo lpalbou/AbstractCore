@@ -23,6 +23,7 @@ Usage:
 import argparse
 import sys
 import time
+from typing import Optional
 
 from .. import create_llm, BasicSession
 from ..tools.common_tools import list_files, read_file, write_file, execute_command, search_files
@@ -108,7 +109,10 @@ class SimpleCLI:
             print("  /history [n]             Show conversation history")
             print("                           • /history        - Show all messages")
             print("                           • /history 5      - Show last 5 interactions")
-            print("  /compact                 Compress chat history using local model")
+            print("  /compact [focus]         Compress chat history using local model")
+            print("                           • /compact                    - General compaction")
+            print("                           • /compact technical details - Focus on technical aspects")
+            print("                           • /compact key decisions     - Focus on decisions made")
             print("  /system [prompt]         View or change system prompt")
             print("                           • /system         - Show current prompt")
             print("                           • /system <text>  - Set new prompt")
@@ -211,8 +215,19 @@ class SimpleCLI:
             except Exception as e:
                 print(f"❌ Failed to switch: {e}")
 
-        elif cmd == 'compact':
-            self.handle_compact()
+        elif cmd.startswith('compact'):
+            # Parse /compact [focus] command
+            parts = cmd.split(maxsplit=1)
+            if len(parts) == 1:
+                # No focus specified - use default
+                self.handle_compact(None)
+            else:
+                # Focus specified - extract everything after "compact "
+                focus = user_input[9:].strip()  # Remove "/compact " prefix
+                if focus:
+                    self.handle_compact(focus)
+                else:
+                    self.handle_compact(None)
 
         elif cmd.startswith('facts'):
             # Parse /facts [file] command
@@ -286,8 +301,8 @@ class SimpleCLI:
 
         return True
 
-    def handle_compact(self):
-        """Handle /compact command - compact chat history using gemma3:1b"""
+    def handle_compact(self, focus: Optional[str] = None):
+        """Handle /compact [focus] command - compact chat history with optional focus"""
         messages = self.session.get_messages()
 
         if len(messages) <= 3:  # System + minimal conversation
@@ -295,7 +310,11 @@ class SimpleCLI:
             return
 
         try:
-            print("🗜️  Compacting chat history...")
+            # Display what we're doing
+            if focus:
+                print(f"🗜️  Compacting chat history with focus: '{focus}'...")
+            else:
+                print("🗜️  Compacting chat history...")
             print(f"   Before: {len(messages)} messages (~{self.session.get_token_estimate()} tokens)")
 
             # Create compact provider using gemma3:1b-it-qat for fast, local processing
@@ -310,10 +329,10 @@ class SimpleCLI:
 
             start_time = time.time()
 
-            # Perform in-place compaction
+            # Perform in-place compaction with optional focus
             self.session.force_compact(
                 preserve_recent=4,  # Keep last 6 messages (3 exchanges)
-                focus="key information and ongoing context"
+                focus=focus or "key information and ongoing context"
             )
 
             duration = time.time() - start_time
@@ -1195,7 +1214,7 @@ Key Commands:
   /status                         Show system status and capabilities
   /history [n]                    Show conversation history
   /model <provider:model>         Switch LLM provider/model
-  /compact                        Compress chat history
+  /compact [focus]                Compress chat history with optional focus
   /facts [file]                   Extract knowledge facts
   /judge                          Evaluate conversation quality
   /system [prompt]                View/change system prompt

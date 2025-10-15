@@ -1068,7 +1068,7 @@ def edit_file(
 
     Examples:
         edit_file("config.py", "debug = False", "debug = True")
-        edit_file("script.py", r"def old_func\([^)]*\):", "def new_func():", use_regex=True)
+        edit_file("script.py", r"def old_func\\([^)]*\\):", "def new_func():", use_regex=True)
         edit_file("document.txt", "TODO", "DONE", max_replacements=1)
         edit_file("test.py", "class OldClass", "class NewClass", preview_only=True)
     """

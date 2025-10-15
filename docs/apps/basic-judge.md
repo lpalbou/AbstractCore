@@ -270,10 +270,10 @@ results = judge.evaluate_files(
 **CLI Global Assessment:**
 ```bash
 # Default: Includes global assessment
-judge file1.py file2.py file3.py --context="code review"
+judge file1.py file2.py file3.py --context "code review"
 
 # Skip global assessment (original behavior)
-judge file1.py file2.py file3.py --context="code review" --exclude-global
+judge file1.py file2.py file3.py --context "code review" --exclude-global
 ```
 
 ## Command Line Interface
@@ -287,23 +287,23 @@ The `judge` CLI provides comprehensive evaluation capabilities for files and dir
 judge "This code is well-structured and efficient."
 
 # Evaluate single file with context
-judge document.py --context="code review"
+judge document.py --context "code review"
 
 # Multiple files with specific criteria
-judge file1.py file2.py file3.py --context="code review" --criteria=clarity,soundness
+judge file1.py file2.py file3.py --context "code review" --criteria clarity,soundness
 
 # Custom output format and file
-judge proposal.txt --format=plain --output=assessment.txt
+judge proposal.txt --format plain --output assessment.txt
 ```
 
 ### Alternative Usage Methods
 
 ```bash
 # Method 1: Direct command (recommended after installation)
-judge document.txt --context="code review"
+judge document.txt --context "code review"
 
 # Method 2: Via Python module (always works)
-python -m abstractllm.apps.judge document.txt --context="code review"
+python -m abstractllm.apps.judge document.txt --context "code review"
 ```
 
 ### Basic Usage
@@ -313,38 +313,38 @@ python -m abstractllm.apps.judge document.txt --context="code review"
 judge "This code is well-structured and efficient."
 
 # Evaluate single file
-judge document.py --context="code review"
+judge document.py --context "code review"
 
 # Evaluate multiple files sequentially (avoids context overflow)
-judge file1.py file2.py file3.py --context="code review"
+judge file1.py file2.py file3.py --context "code review"
 
 # Specify output format
-judge content.md --format=plain
+judge content.md --format plain
 
 # Save to file
-judge proposal.txt --output=assessment.json
+judge proposal.txt --output assessment.json
 
 # Multiple files with wildcard patterns
-judge src/*.py --context="Python code review" --format=json --output=review.json
+judge src/*.py --context "Python code review" --format json --output review.json
 ```
 
 ### Advanced Options
 
 ```bash
 # Focus on specific criteria
-judge doc.py --criteria=clarity,soundness,effectiveness
+judge doc.py --criteria clarity,soundness,effectiveness
 
 # Add custom evaluation criteria
-judge api_docs.md --custom-criteria=has_examples,covers_errors
+judge api_docs.md --custom-criteria has_examples,covers_errors
 
 # Comparison-based evaluation
-judge draft.md --reference=ideal_solution.md
+judge draft.md --reference ideal_solution.md
 
 # Custom provider and model
-judge content.txt --provider=openai --model=gpt-4o-mini
+judge content.txt --provider openai --model gpt-4o-mini
 
 # Include detailed criteria explanations
-judge content.txt --include-criteria --format=plain
+judge content.txt --include-criteria --format plain
 
 # Verbose output with progress
 judge large_doc.md --verbose
@@ -372,25 +372,25 @@ judge large_doc.md --verbose
 
 **JSON Format (default):**
 ```bash
-python -m abstractllm.apps.judge content.txt --format=json
+python -m abstractllm.apps.judge content.txt --format json
 # Output: Structured JSON with scores, feedback, and reasoning
 ```
 
 **Plain Text Format:**
 ```bash
-python -m abstractllm.apps.judge content.txt --format=plain
+python -m abstractllm.apps.judge content.txt --format plain
 # Output: Human-readable assessment report
 ```
 
 **Filtered Criteria:**
 ```bash
-python -m abstractllm.apps.judge code.py --criteria=clarity,soundness,effectiveness
+python -m abstractllm.apps.judge code.py --criteria clarity,soundness,effectiveness
 # Output: Only evaluates specified criteria
 ```
 
 **Enhanced Assessment with Criteria Details:**
 ```bash
-python -m abstractllm.apps.judge content.txt --include-criteria --format=plain
+python -m abstractllm.apps.judge content.txt --include-criteria --format plain
 # Output: Includes judge's summary, source reference, and detailed criteria explanations
 ```
 
@@ -409,7 +409,7 @@ def calculate_total(items):
 
 **Command:**
 ```bash
-judge "def calculate_total..." --context="code review" --criteria=clarity,soundness,effectiveness --format=plain
+judge "def calculate_total..." --context "code review" --criteria clarity,soundness,effectiveness --format plain
 ```
 
 **Expected Assessment:**
@@ -459,9 +459,9 @@ print(f"Recommendations: {assessment['actionable_feedback']}")
 # Review all Python files in a project
 judge src/*.py tests/*.py \
   --context="Python project review" \
-  --criteria=clarity,soundness,effectiveness \
-  --format=json \
-  --output=project_review.json \
+  --criteria clarity,soundness,effectiveness \
+  --format json \
+  --output project_review.json \
   --verbose
 ```
 
@@ -502,10 +502,10 @@ print(f"High-quality files: {len(excellent_files)}")
 ```bash
 judge research_paper.pdf \
   --context="academic paper review" \
-  --criteria=clarity,soundness,innovation,completeness \
-  --reference=conference_guidelines.txt \
-  --format=json \
-  --output=review_assessment.json \
+  --criteria clarity,soundness,innovation,completeness \
+  --reference conference_guidelines.txt \
+  --format json \
+  --output review_assessment.json \
   --verbose
 ```
 
@@ -599,12 +599,12 @@ custom_criteria = ["addresses_costs", "defines_timeline", "identifies_risks"]
 ```bash
 # Compare against ideal solution
 judge student_solution.py \
-  --reference=expert_solution.py \
+  --reference expert_solution.py \
   --context="programming assignment grading"
 
 # Compare against standards
 judge company_policy.md \
-  --reference=industry_standards.md \
+  --reference industry_standards.md \
   --context="policy compliance review"
 ```
 
@@ -776,7 +776,7 @@ ollama serve
 
 **Inconsistent evaluation results**
 - Use lower temperature: `--temperature=0.05`
-- Try a more capable model: `--provider=openai --model=gpt-4o-mini`
+- Try a more capable model: `--provider openai --model gpt-4o-mini`
 - Ensure context description is specific and consistent
 
 **Low-quality assessments**
