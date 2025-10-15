@@ -606,17 +606,19 @@ a:hover {
     transition: all var(--transition-fast);
 }
 
+/* Mobile Navigation Improvements */
 @media (max-width: 768px) {
     .nav-container {
         padding: 0 var(--spacing-4);
+        height: 3.5rem;
     }
     
     .nav-menu {
         position: fixed;
-        top: 4rem;
+        top: 3.5rem;
         left: -100%;
         width: 100%;
-        height: calc(100vh - 4rem);
+        height: calc(100vh - 3.5rem);
         background-color: var(--background);
         flex-direction: column;
         justify-content: flex-start;
@@ -624,10 +626,20 @@ a:hover {
         gap: var(--spacing-6);
         padding-top: var(--spacing-12);
         transition: left var(--transition-normal);
+        box-shadow: var(--shadow-lg);
+        z-index: 999;
     }
     
     .nav-menu.active {
         left: 0;
+    }
+    
+    .nav-link {
+        font-size: var(--font-size-lg);
+        padding: var(--spacing-4) var(--spacing-6);
+        width: 90%;
+        text-align: center;
+        border-radius: var(--radius-lg);
     }
     
     .nav-toggle {
@@ -644,6 +656,16 @@ a:hover {
     
     .nav-toggle.active .bar:nth-child(3) {
         transform: rotate(-45deg) translate(0.375rem, -0.375rem);
+    }
+    
+    /* Adjust brand for mobile */
+    .brand-text {
+        font-size: var(--font-size-lg);
+    }
+    
+    .logo-abstract {
+        width: 2rem;
+        height: 2rem;
     }
 }
 
@@ -1093,7 +1115,131 @@ code[class*="language-"],
     font-family: var(--font-mono) !important;
 }
 
-/* Responsive Design */
+/* Enhanced Mobile-First Responsive Design */
+
+/* Extra small devices (phones, 320px and up) */
+@media (max-width: 480px) {
+    :root {
+        --font-size-xs: 0.6rem;
+        --font-size-sm: 0.65rem;
+        --font-size-base: 0.875rem;
+        --font-size-lg: 1rem;
+        --font-size-xl: 1.125rem;
+        --font-size-2xl: 1.25rem;
+        --font-size-3xl: 1.5rem;
+        --font-size-4xl: 1.75rem;
+        --font-size-5xl: 2rem;
+    }
+    
+    .container {
+        padding: 0 var(--spacing-3);
+    }
+    
+    .hero-title {
+        font-size: var(--font-size-4xl) !important;
+        line-height: 1.2;
+        margin-bottom: var(--spacing-4);
+    }
+    
+    .hero-description {
+        font-size: var(--font-size-base) !important;
+        line-height: 1.5;
+        margin-bottom: var(--spacing-6);
+    }
+    
+    .hero-container {
+        padding: 0 var(--spacing-3);
+        gap: var(--spacing-8);
+    }
+    
+    .hero-actions {
+        flex-direction: column;
+        gap: var(--spacing-3);
+        width: 100%;
+    }
+    
+    .btn {
+        width: 100%;
+        justify-content: center;
+        padding: var(--spacing-4) var(--spacing-6);
+        font-size: var(--font-size-base);
+    }
+    
+    .hero-stats {
+        flex-direction: column;
+        gap: var(--spacing-4);
+        text-align: center;
+    }
+    
+    .stat {
+        width: 100%;
+    }
+    
+    .stat-number {
+        font-size: var(--font-size-xl);
+    }
+    
+    .stat-label {
+        font-size: var(--font-size-xs);
+    }
+    
+    /* Mobile AI Documentation Note */
+    .hero-note {
+        margin: var(--spacing-6) 0;
+        padding: var(--spacing-4);
+        border-radius: var(--radius-lg);
+    }
+    
+    .ai-docs-note {
+        font-size: var(--font-size-sm) !important;
+        line-height: 1.4 !important;
+        text-align: center;
+        word-wrap: break-word;
+        hyphens: auto;
+    }
+    
+    .ai-link {
+        display: inline-block;
+        padding: 2px 6px !important;
+        margin: 0 2px;
+        border-radius: 4px !important;
+        font-size: var(--font-size-sm) !important;
+        word-break: break-word;
+    }
+}
+
+/* Small devices (landscape phones, 481px and up) */
+@media (min-width: 481px) and (max-width: 768px) {
+    .hero-title {
+        font-size: var(--font-size-4xl);
+        line-height: 1.15;
+    }
+    
+    .hero-description {
+        font-size: var(--font-size-lg);
+    }
+    
+    .hero-actions {
+        flex-direction: row;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: var(--spacing-3);
+    }
+    
+    .btn {
+        flex: 1;
+        min-width: 140px;
+        max-width: 200px;
+    }
+    
+    .hero-stats {
+        flex-direction: row;
+        justify-content: center;
+        gap: var(--spacing-6);
+    }
+}
+
+/* Medium devices (tablets, 769px and up) */
 @media (max-width: 768px) {
     .system-overview {
         grid-template-columns: 1fr;
@@ -1107,8 +1253,8 @@ code[class*="language-"],
     
     .architecture-diagram,
     .interactive-flow {
-        padding: 2rem;
-        margin: 2rem 0;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
     }
     
     .flow-step {
@@ -1119,6 +1265,80 @@ code[class*="language-"],
     .performance-grid {
         grid-template-columns: 1fr;
         gap: 1.5rem;
+    }
+    
+    .features-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-6);
+    }
+    
+    .providers-grid {
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: var(--spacing-4);
+    }
+    
+    .docs-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-6);
+    }
+    
+    .examples-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-6);
+    }
+    
+    /* Better touch targets for mobile */
+    .nav-link,
+    .btn,
+    .doc-link,
+    .provider-card,
+    .example-link {
+        min-height: 44px;
+        min-width: 44px;
+    }
+    
+    /* Mobile section padding */
+    section {
+        padding: var(--spacing-12) 0;
+    }
+    
+    .section-title {
+        font-size: var(--font-size-2xl);
+        text-align: center;
+        margin-bottom: var(--spacing-4);
+    }
+    
+    .section-description {
+        font-size: var(--font-size-base);
+        text-align: center;
+        margin-bottom: var(--spacing-8);
+    }
+    
+    /* Mobile code blocks */
+    .code-block,
+    .code-window {
+        margin: var(--spacing-4) 0;
+        border-radius: var(--radius-md);
+    }
+    
+    .code-content {
+        padding: var(--spacing-4);
+        font-size: 0.7rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Mobile footer improvements */
+    .footer-content {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-6);
+        text-align: center;
+    }
+    
+    .footer-bottom {
+        flex-direction: column;
+        gap: var(--spacing-4);
+        text-align: center;
     }
 }
 
@@ -1155,6 +1375,7 @@ code[class*="language-"],
     line-height: 1.5;
 }
 
+/* Large tablets and small laptops */
 @media (max-width: 1024px) {
     .hero-container {
         grid-template-columns: 1fr;
@@ -1175,9 +1396,10 @@ code[class*="language-"],
     }
 }
 
+/* Tablets and larger phones */
 @media (max-width: 768px) {
     .hero {
-        padding: calc(4rem + var(--spacing-12)) 0 var(--spacing-12);
+        padding: calc(3.5rem + var(--spacing-8)) 0 var(--spacing-8);
     }
     
     .hero-title {
@@ -1191,10 +1413,33 @@ code[class*="language-"],
     .hero-actions {
         flex-direction: column;
         align-items: center;
+        gap: var(--spacing-3);
     }
     
     .hero-stats {
         justify-content: center;
+        flex-wrap: wrap;
+    }
+}
+
+/* Extra mobile improvements for very small screens */
+@media (max-width: 480px) {
+    .hero {
+        padding: calc(3.5rem + var(--spacing-6)) 0 var(--spacing-6);
+    }
+    
+    /* Ensure text doesn't overflow */
+    .hero-content {
+        max-width: 100%;
+        overflow-wrap: break-word;
+        word-wrap: break-word;
+        hyphens: auto;
+    }
+    
+    /* Make sure buttons are properly sized */
+    .hero-actions .btn {
+        font-size: var(--font-size-sm);
+        padding: var(--spacing-3) var(--spacing-5);
     }
 }
 
