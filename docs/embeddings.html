@@ -70,7 +70,7 @@
                     <h2>Quick Start</h2>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
+                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
 
 # Create embedding manager (HuggingFace by default)
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
@@ -151,7 +151,7 @@ embedder = EmbeddingManager(
                     
                     <h3>Basic Semantic Search</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
+                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
 
 # Create embedder
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
@@ -236,8 +236,8 @@ for doc, score in results:
                     
                     <h3>Simple RAG System</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm
-from abstractllm.embeddings import EmbeddingManager
+                        <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.embeddings import EmbeddingManager
 
 class SimpleRAG:
     def __init__(self, llm_provider="openai", llm_model="gpt-4o-mini"):

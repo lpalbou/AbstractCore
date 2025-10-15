@@ -59,7 +59,7 @@ python --version  # Should be 3.9+
 pip show abstractcore
 
 # Test core library
-python -c "from abstractllm import create_llm; print('✓ Core library OK')"
+python -c "from abstractcore import create_llm; print('✓ Core library OK')"
 
 # Test server (if installed)
 curl http://localhost:8000/health  # Should return {"status":"healthy"}</code></pre>
@@ -86,7 +86,7 @@ echo $OPENAI_API_KEY</code></pre>
                         <p><strong>Symptom:</strong> Tools not executing, streaming interruptions</p>
                         <p><strong>Quick Fix:</strong> Use <code>@tool</code> decorator and handle tool calls properly</p>
                         <div class="code-block">
-                            <pre><code class="language-python">from abstractllm import create_llm, tool
+                            <pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -> str:
@@ -142,7 +142,7 @@ echo 'export OPENAI_API_KEY="sk-..."' >> ~/.bashrc
 source ~/.bashrc
 
 # Test authentication
-python -c "from abstractllm import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)"</code></pre>
+python -c "from abstractcore import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)"</code></pre>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0;">Model Not Found</h3>
@@ -190,7 +190,7 @@ netstat -ano | findstr :8000  # Windows
 kill -9 $(lsof -t -i:8000)  # Linux/Mac
 
 # Use different port
-uvicorn abstractllm.server.app:app --port 3000</code></pre>
+uvicorn abstractcore.server.app:app --port 3000</code></pre>
             </section>
 
             <!-- Best Practices -->
@@ -238,7 +238,7 @@ uvicorn abstractllm.server.app:app --port 3000</code></pre>
                         <pre><code class="language-python">import logging
 logging.basicConfig(level=logging.DEBUG)
 
-from abstractllm import create_llm
+from abstractcore import create_llm
 llm = create_llm("openai", model="gpt-4o-mini")</code></pre>
                     
                     <p><strong>Server:</strong></p>
@@ -247,10 +247,10 @@ llm = create_llm("openai", model="gpt-4o-mini")</code></pre>
 export ABSTRACTCORE_DEBUG=true
 
 # Start with debug logging
-uvicorn abstractllm.server.app:app --log-level debug
+uvicorn abstractcore.server.app:app --log-level debug
 
 # Monitor logs
-tail -f logs/abstractllm_*.log</code></pre>
+tail -f logs/abstractcore_*.log</code></pre>
             </section>
 
             <!-- Error Reference -->

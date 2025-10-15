@@ -58,7 +58,7 @@
 pip install abstractcore[server]
 
 # Start server
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Test
 curl http://localhost:8000/health
@@ -118,13 +118,13 @@ export ABSTRACTCORE_DEBUG=true</code></pre>
                     <h3 style="margin: 0 0 1rem 0;">Startup Options</h3>
                     <div class="code-block">
                         <pre><code class="language-bash"># Development with auto-reload
-uvicorn abstractllm.server.app:app --reload
+uvicorn abstractcore.server.app:app --reload
 
 # Production with multiple workers
-uvicorn abstractllm.server.app:app --workers 4
+uvicorn abstractcore.server.app:app --workers 4
 
 # Custom port
-uvicorn abstractllm.server.app:app --port 3000</code></pre>
+uvicorn abstractcore.server.app:app --port 3000</code></pre>
             </section>
 
             <!-- API Endpoints -->
@@ -251,7 +251,7 @@ codex --model "ollama/qwen3-coder:30b" "Write a factorial function"</code></pre>
                             <pre><code class="language-bash"># Configure server
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Configure CLI
 export OPENAI_BASE_URL="http://localhost:8000/v1"
@@ -266,7 +266,7 @@ crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"</code></pr
                             <pre><code class="language-bash"># Configure server
 export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Configure CLI
 export OPENAI_BASE_URL="http://localhost:8000/v1"
@@ -305,7 +305,7 @@ ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 
 EXPOSE 8000
 
-CMD ["uvicorn", "abstractllm.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]</code></pre>
+CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]</code></pre>
                         
                         <div class="code-block">
                             <pre><code class="language-bash">docker build -t abstractcore-server .
@@ -316,7 +316,7 @@ docker run -p 8000:8000 -e OPENAI_API_KEY=$OPENAI_API_KEY abstractcore-server</c
                         <div class="code-block">
                             <pre><code class="language-bash">pip install gunicorn
 
-gunicorn abstractllm.server.app:app \
+gunicorn abstractcore.server.app:app \
   --worker-class uvicorn.workers.UvicornWorker \
   --workers 4 \
   --bind 0.0.0.0:8000</code></pre>
@@ -344,11 +344,11 @@ services:
                     <h3 style="margin: 0 0 1rem 0;">Enable Debug Logging</h3>
                     <div class="code-block">
                         <pre><code class="language-bash">export ABSTRACTCORE_DEBUG=true
-uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000</code></pre>
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000</code></pre>
                     
                     <p><strong>Log Files:</strong></p>
                     <ul>
-                        <li><code>logs/abstractllm_TIMESTAMP.log</code> - Structured events</li>
+                        <li><code>logs/abstractcore_TIMESTAMP.log</code> - Structured events</li>
                         <li><code>logs/YYYYMMDD-payloads.jsonl</code> - Full request bodies</li>
                         <li><code>logs/verbatim_TIMESTAMP.jsonl</code> - Complete I/O</li>
                     </ul>
@@ -357,7 +357,7 @@ uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000</code></pre>
                         <h4 style="margin: 0 0 0.5rem 0;">Useful Commands</h4>
                         <div class="code-block">
                             <pre><code class="language-bash"># Find errors
-grep '"level": "error"' logs/abstractllm_*.log
+grep '"level": "error"' logs/abstractcore_*.log
 
 # Track token usage
 cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \

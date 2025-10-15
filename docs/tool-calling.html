@@ -125,7 +125,7 @@
                     <p>The simplest way to create and use tools is with the <code>@tool</code> decorator:</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm, tool
+                        <pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -> str:
@@ -160,7 +160,7 @@ print(response.content)
                     
                     <h3>Basic Usage</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import tool
+                        <pre><code class="language-python">from abstractcore import tool
 
 @tool
 def list_files(directory: str = ".", pattern: str = "*") -> str:
@@ -460,7 +460,7 @@ response = llm.generate(
                     <p>Use the event system to control tool execution:</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.events import EventType, on_global
+                        <pre><code class="language-python">from abstractcore.events import EventType, on_global
 
 def security_check(event):
     """Prevent execution of dangerous tools."""
@@ -498,7 +498,7 @@ def safe_division(a: float, b: float) -> str:
                     <p>AbstractCore provides comprehensive error handling:</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.exceptions import ToolExecutionError
+                        <pre><code class="language-python">from abstractcore.exceptions import ToolExecutionError
 
 try:
     response = llm.generate("Use the broken tool", tools=[broken_tool])
@@ -558,7 +558,7 @@ except ToolExecutionError as e:
                     
                     <h3>Cost Monitoring</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.events import EventType, on_global
+                        <pre><code class="language-python">from abstractcore.events import EventType, on_global
 
 def monitor_tool_costs(event):
     """Monitor costs of tool executions."""

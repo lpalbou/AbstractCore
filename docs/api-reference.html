@@ -110,7 +110,7 @@
 
                         <h4>Example</h4>
                         <div class="code-block">
-                            <pre><code class="language-python">from abstractllm import create_llm
+                            <pre><code class="language-python">from abstractcore import create_llm
 
 # Basic usage
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -271,7 +271,7 @@ def load(cls, filepath: Path, provider: AbstractLLMInterface) -> "BasicSession"<
 
                         <h4>Example</h4>
                         <div class="code-block">
-                            <pre><code class="language-python">from abstractllm import create_llm, BasicSession
+                            <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
 llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(
@@ -317,7 +317,7 @@ loaded_session = BasicSession.load('tutoring_session.json', provider=llm)</code>
 
                         <h3 style="margin: 2rem 0 1rem 0;">Event Registration</h3>
                         <div class="code-block">
-                            <pre><code class="language-python">from abstractllm.events import EventType, on_global
+                            <pre><code class="language-python">from abstractcore.events import EventType, on_global
 
 # Cost monitoring
 def monitor_costs(event):
@@ -348,8 +348,8 @@ on_global(EventType.GENERATION_COMPLETED, track_performance)</code></pre>
                     <p>Production-grade error handling with multiple layers.</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm
-from abstractllm.core.retry import RetryConfig
+                        <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.core.retry import RetryConfig
 
 config = RetryConfig(
     max_attempts=3,           # Try up to 3 times
@@ -369,8 +369,8 @@ llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)</code></pre
                     <p>Built-in support for semantic search and RAG applications.</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
-from abstractllm import create_llm
+                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+from abstractcore import create_llm
 
 # Initialize components
 embedder = EmbeddingManager()
@@ -412,7 +412,7 @@ print(response.content)</code></pre>
                     <p>Comprehensive exception hierarchy for robust applications.</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.exceptions import (
+                        <pre><code class="language-python">from abstractcore.exceptions import (
     ModelNotFoundError,
     ProviderAPIError,
     AuthenticationError,

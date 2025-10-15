@@ -1,0 +1,248 @@
+{"version": "2.4.0", "debug_mode": true, "event": "\ud83d\ude80 AbstractCore Server Starting", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:26.192555Z"}
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+Request options: {'method': 'get', 'url': '/models', 'post_parser': <function SyncAPIClient._request_api_list.<locals>._parser at 0x362397060>, 'json_data': None}
+Sending HTTP Request: GET https://api.openai.com/v1/models
+connect_tcp.started host='api.openai.com' port=443 local_address=None timeout=5.0 socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366da2f60>
+start_tls.started ssl_context=<ssl.SSLContext object at 0x3666d43d0> server_hostname='api.openai.com' timeout=5.0
+start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x365531b80>
+send_request_headers.started request=<Request [b'GET']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'GET']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'GET']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 15 Oct 2025 19:10:27 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'openai-version', b'2020-10-01'), (b'x-request-id', b'e5253f5f1fb5ae03d44103d6190959dc'), (b'openai-processing-ms', b'253'), (b'x-envoy-upstream-service-time', b'255'), (b'x-openai-proxy-wasm', b'v0.1'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'cf-cache-status', b'DYNAMIC'), (b'Set-Cookie', b'__cf_bm=J292WhKuPnwExJWUm3eo8RV3UlCNRrDSawf7HQLAq8g-1760555427-1.0.1.1-qQXzjbDv0KpwIfpPG0UHezWUX.gQDAfXTDqRlNfB76XlTzNAS9UahSFIKJeg0TXJmIvF1zojX2WPSu11IajwCXb.KGweTzS3zzVqYCGWotk; path=/; expires=Wed, 15-Oct-25 19:40:27 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None'), (b'X-Content-Type-Options', b'nosniff'), (b'Set-Cookie', b'_cfuvid=kEQ7fBTqS5L7AABoajxf5JRhS7FpC08E1e8E29pC6sg-1760555427436-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None'), (b'Server', b'cloudflare'), (b'CF-RAY', b'98f19dd98887d14e-CDG'), (b'Content-Encoding', b'br'), (b'alt-svc', b'h3=":443"; ma=86400')])
+HTTP Request: GET https://api.openai.com/v1/models "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'GET']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+HTTP Response: GET https://api.openai.com/v1/models "200 OK" Headers([('date', 'Wed, 15 Oct 2025 19:10:27 GMT'), ('content-type', 'application/json'), ('transfer-encoding', 'chunked'), ('connection', 'keep-alive'), ('openai-version', '2020-10-01'), ('x-request-id', 'e5253f5f1fb5ae03d44103d6190959dc'), ('openai-processing-ms', '253'), ('x-envoy-upstream-service-time', '255'), ('x-openai-proxy-wasm', 'v0.1'), ('strict-transport-security', 'max-age=31536000; includeSubDomains; preload'), ('cf-cache-status', 'DYNAMIC'), ('set-cookie', '__cf_bm=J292WhKuPnwExJWUm3eo8RV3UlCNRrDSawf7HQLAq8g-1760555427-1.0.1.1-qQXzjbDv0KpwIfpPG0UHezWUX.gQDAfXTDqRlNfB76XlTzNAS9UahSFIKJeg0TXJmIvF1zojX2WPSu11IajwCXb.KGweTzS3zzVqYCGWotk; path=/; expires=Wed, 15-Oct-25 19:40:27 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None'), ('x-content-type-options', 'nosniff'), ('set-cookie', '_cfuvid=kEQ7fBTqS5L7AABoajxf5JRhS7FpC08E1e8E29pC6sg-1760555427436-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None'), ('server', 'cloudflare'), ('cf-ray', '98f19dd98887d14e-CDG'), ('content-encoding', 'br'), ('alt-svc', 'h3=":443"; ma=86400')])
+request_id: e5253f5f1fb5ae03d44103d6190959dc
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Using capabilities from 'claude-3-haiku' for 'claude-3-haiku-20240307'
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Using capabilities from 'claude-3-haiku' for 'claude-3-haiku-20240307'
+{"event": "Using max_tokens 200000 from model capabilities for claude-3-haiku-20240307", "logger": "AnthropicProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.539213Z"}
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Using capabilities from 'claude-3-haiku' for 'claude-3-haiku-20240307'
+{"event": "Using max_output_tokens 4096 from model capabilities for claude-3-haiku-20240307", "logger": "AnthropicProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.539318Z"}
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Using capabilities from 'claude-3-haiku' for 'claude-3-haiku-20240307'
+Initialized tool handler for claude-3-haiku-20240307: architecture=claude, native=True, prompted=True
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+connect_tcp.started host='api.anthropic.com' port=443 local_address=None timeout=10.0 socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366dd7020>
+start_tls.started ssl_context=<ssl.SSLContext object at 0x366763bd0> server_hostname='api.anthropic.com' timeout=10.0
+start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366dd6f30>
+send_request_headers.started request=<Request [b'GET']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'GET']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'GET']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 15 Oct 2025 19:10:27 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'request-id', b'req_011CU9Wh3t7CTBocUCfNnQJ3'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'anthropic-organization-id', b'5f4c7d27-265b-4b46-9dfd-715a0704d0dd'), (b'x-envoy-upstream-service-time', b'35'), (b'via', b'1.1 google'), (b'cf-cache-status', b'DYNAMIC'), (b'X-Robots-Tag', b'none'), (b'Server', b'cloudflare'), (b'CF-RAY', b'98f19dde9b072c0b-CDG')])
+HTTP Request: GET https://api.anthropic.com/v1/models "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'GET']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+close.started
+close.complete
+{"event": "Retrieved 11 models from Anthropic API", "logger": "AnthropicProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.735094Z"}
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Using default capabilities for 'llama2' (architecture: llama2)
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Using default capabilities for 'llama2' (architecture: llama2)
+{"event": "Using max_tokens 16384 from model capabilities for llama2", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.735867Z"}
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Using default capabilities for 'llama2' (architecture: llama2)
+{"event": "Using max_output_tokens 4096 from model capabilities for llama2", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.735936Z"}
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Using default capabilities for 'llama2' (architecture: llama2)
+Initialized tool handler for llama2: architecture=llama2, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=5.0 socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366da3050>
+send_request_headers.started request=<Request [b'GET']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'GET']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'GET']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 19:10:27 GMT'), (b'Transfer-Encoding', b'chunked')])
+HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'GET']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+No specific architecture detected for 'local-model', using generic
+No specific architecture detected for 'local-model', using generic
+Using default capabilities for 'local-model' (architecture: generic)
+No specific architecture detected for 'local-model', using generic
+Using default capabilities for 'local-model' (architecture: generic)
+{"event": "Using max_tokens 16384 from model capabilities for local-model", "logger": "LMStudioProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.748215Z"}
+No specific architecture detected for 'local-model', using generic
+Using default capabilities for 'local-model' (architecture: generic)
+{"event": "Using max_output_tokens 4096 from model capabilities for local-model", "logger": "LMStudioProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.748297Z"}
+No specific architecture detected for 'local-model', using generic
+No specific architecture detected for 'local-model', using generic
+Using default capabilities for 'local-model' (architecture: generic)
+Initialized tool handler for local-model: architecture=generic, native=False, prompted=True
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+connect_tcp.started host='localhost' port=1234 local_address=None timeout=5.0 socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366dd6810>
+send_request_headers.started request=<Request [b'GET']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'GET']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'GET']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'X-Powered-By', b'Express'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'2031'), (b'ETag', b'W/"7ef-pbA2GS939+S95haqqRBYCdzO9GI"'), (b'Date', b'Wed, 15 Oct 2025 19:10:27 GMT'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=5')])
+HTTP Request: GET http://localhost:1234/v1/models "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'GET']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Listed 115 models from all providers", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:27.755604Z"}
+{"request_id": "4c9a06e8", "provider": "ollama", "model": "qwen3-coder:30b", "messages": 4, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:27.764655Z"}
+{"request_id": "4c9a06e8", "target_format": "qwen3", "user_agent": "python-httpx/0.27.2", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:27.764737Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.765000Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:27.765058Z"}
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366e08860>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 19:10:30 GMT'), (b'Content-Length', b'762')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Generation completed for qwen3-coder:30b: 2302.61ms (tokens: 308)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T19:10:30.072240Z"}
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+{"request_id": "e9834e26", "provider": "ollama", "model": "qwen3-coder:30b", "messages": 4, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:30.084788Z"}
+{"request_id": "e9834e26", "target_format": "qwen3", "user_agent": "python-httpx/0.27.2", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:30.084919Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:30.085274Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:30.085385Z"}
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366e09520>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 19:10:31 GMT'), (b'Content-Length', b'1024')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Generation completed for qwen3-coder:30b: 1783.78ms (tokens: 208)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T19:10:31.876732Z"}
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+{"request_id": "dddab2e9", "provider": "ollama", "model": "qwen3-coder:30b", "messages": 6, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:31.884823Z"}
+{"request_id": "dddab2e9", "target_format": "qwen3", "user_agent": "python-httpx/0.27.2", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:31.884935Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:31.885182Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:31.885257Z"}
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366e0a270>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 19:10:33 GMT'), (b'Content-Length', b'1105')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Generation completed for qwen3-coder:30b: 1882.93ms (tokens: 264)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T19:10:33.773565Z"}
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+{"request_id": "f1e6ce32", "provider": "ollama", "model": "qwen3-coder:30b", "messages": 6, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:33.780731Z"}
+{"request_id": "f1e6ce32", "target_format": "qwen3", "user_agent": "python-httpx/0.27.2", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T19:10:33.780849Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:33.781074Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T19:10:33.781141Z"}
+load_ssl_context verify=True cert=None trust_env=True http2=False
+load_verify_locations cafile='/opt/anaconda3/lib/python3.12/site-packages/certifi/cacert.pem'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x366e0ae40>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 19:10:34 GMT'), (b'Content-Length', b'365')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Generation completed for qwen3-coder:30b: 328.69ms (tokens: 97)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T19:10:34.114874Z"}
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+close.started
+close.complete

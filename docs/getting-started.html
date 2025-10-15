@@ -93,7 +93,7 @@ pip install abstractcore</code></pre>
                 <p>Create a file called <code>first_llm.py</code>:</p>
                 
                 <div class="code-block">
-                    <pre><code class="language-python">from abstractllm import create_llm
+                    <pre><code class="language-python">from abstractcore import create_llm
 
 # Choose your provider (uncomment one):
 llm = create_llm("openai", model="gpt-4o-mini")        # Cloud
@@ -122,7 +122,7 @@ print(response.content)</code></pre>
                 <p>AbstractCore supports multiple providers with the same interface:</p>
                 
                 <div class="code-block">
-                    <pre><code class="language-python">from abstractllm import create_llm
+                    <pre><code class="language-python">from abstractcore import create_llm
 
 # Same interface, different providers
 openai_llm = create_llm("openai", model="gpt-4o-mini")
@@ -142,7 +142,7 @@ for name, llm in [("OpenAI", openai_llm), ("Claude", claude_llm), ("Ollama", loc
                 
                 <div class="code-block">
                     <pre><code class="language-python">from pydantic import BaseModel
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 class MovieReview(BaseModel):
     title: str
@@ -168,7 +168,7 @@ print(f"Summary: {review.summary}")</code></pre>
                 <p>Let your LLM call functions with the <code>@tool</code> decorator:</p>
                 
                 <div class="code-block">
-                    <pre><code class="language-python">from abstractllm import create_llm, tool
+                    <pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -> str:
@@ -202,7 +202,7 @@ print(response.content)
                 <p>Show responses as they're generated:</p>
                 
                 <div class="code-block">
-                    <pre><code class="language-python">from abstractllm import create_llm
+                    <pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")
 
@@ -217,7 +217,7 @@ print("\n")
                 <p>Maintain context across multiple turns:</p>
                 
                 <div class="code-block">
-                    <pre><code class="language-python">from abstractllm import create_llm, BasicSession
+                    <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
 llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(provider=llm, system_prompt="You are a helpful coding tutor.")

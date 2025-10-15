@@ -86,8 +86,8 @@ prod_answer = ask_question(llm_prod, "What is Python?")</code></pre>
                         Build retrieval-augmented generation systems with built-in embedding support.
                     </p>
                     <div class="example-code">
-                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
-from abstractllm import create_llm
+                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+from abstractcore import create_llm
 
 # Initialize components
 embedder = EmbeddingManager()
@@ -134,7 +134,7 @@ print(response.content)</code></pre>
                         Create sophisticated tool-enabled applications that work across all providers.
                     </p>
                     <div class="example-code">
-                        <pre><code class="language-python">from abstractllm import create_llm, tool
+                        <pre><code class="language-python">from abstractcore import create_llm, tool
 import requests
 import json
 
@@ -189,7 +189,7 @@ print(response.content)</code></pre>
                     <div class="example-code">
                         <pre><code class="language-python">from pydantic import BaseModel, Field
 from typing import List, Optional
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 class Address(BaseModel):
     street: str
@@ -248,7 +248,7 @@ for emp in company.employees:
                         Build interactive applications with real-time streaming responses.
                     </p>
                     <div class="example-code">
-                        <pre><code class="language-python">from abstractllm import create_llm, tool
+                        <pre><code class="language-python">from abstractcore import create_llm, tool
 import time
 
 @tool
@@ -300,7 +300,7 @@ if __name__ == "__main__":
                         Build applications with persistent conversation memory and analytics.
                     </p>
                     <div class="example-code">
-                        <pre><code class="language-python">from abstractllm import create_llm, BasicSession
+                        <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 import json
 
 def create_tutoring_session():

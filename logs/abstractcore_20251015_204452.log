@@ -1,0 +1,635 @@
+{"version": "2.4.0", "debug_mode": false, "event": "\ud83d\ude80 AbstractCore Server Starting", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:44:52.616384Z"}
+Request options: {'method': 'get', 'url': '/models', 'post_parser': <function SyncAPIClient._request_api_list.<locals>._parser at 0x36f280360>, 'json_data': None}
+Sending HTTP Request: GET https://api.openai.com/v1/models
+connect_tcp.started host='api.openai.com' port=443 local_address=None timeout=5.0 socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc12690>
+start_tls.started ssl_context=<ssl.SSLContext object at 0x36f233e50> server_hostname='api.openai.com' timeout=5.0
+start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36f7bf830>
+send_request_headers.started request=<Request [b'GET']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'GET']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'GET']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 15 Oct 2025 18:45:03 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'openai-version', b'2020-10-01'), (b'x-request-id', b'69bcd2328a69afac1962ad03676a46e1'), (b'openai-processing-ms', b'629'), (b'x-envoy-upstream-service-time', b'632'), (b'x-openai-proxy-wasm', b'v0.1'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'cf-cache-status', b'DYNAMIC'), (b'Set-Cookie', b'__cf_bm=PUwCbWhmJzksV5uif3CQ6UhYkU8_hzBnsLsj6DGgEbs-1760553903-1.0.1.1-INcMmIGttpZj8lTnXqXiR0.H1AXdsGRiAtvtGJb85mMH5A1U4bvtBGQV_BKisF60upsh3n1kj5pfOnZPuDK_yk_VQVL6ONrgVgsdmCaeacM; path=/; expires=Wed, 15-Oct-25 19:15:03 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None'), (b'X-Content-Type-Options', b'nosniff'), (b'Set-Cookie', b'_cfuvid=jkle9_iZnHrtTVhRCdQomWEQKQQSQvQzNcoAKAXBfH0-1760553903207-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None'), (b'Server', b'cloudflare'), (b'CF-RAY', b'98f178a1fee7531b-CDG'), (b'Content-Encoding', b'br'), (b'alt-svc', b'h3=":443"; ma=86400')])
+HTTP Request: GET https://api.openai.com/v1/models "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'GET']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+HTTP Response: GET https://api.openai.com/v1/models "200 OK" Headers([('date', 'Wed, 15 Oct 2025 18:45:03 GMT'), ('content-type', 'application/json'), ('transfer-encoding', 'chunked'), ('connection', 'keep-alive'), ('openai-version', '2020-10-01'), ('x-request-id', '69bcd2328a69afac1962ad03676a46e1'), ('openai-processing-ms', '629'), ('x-envoy-upstream-service-time', '632'), ('x-openai-proxy-wasm', 'v0.1'), ('strict-transport-security', 'max-age=31536000; includeSubDomains; preload'), ('cf-cache-status', 'DYNAMIC'), ('set-cookie', '__cf_bm=PUwCbWhmJzksV5uif3CQ6UhYkU8_hzBnsLsj6DGgEbs-1760553903-1.0.1.1-INcMmIGttpZj8lTnXqXiR0.H1AXdsGRiAtvtGJb85mMH5A1U4bvtBGQV_BKisF60upsh3n1kj5pfOnZPuDK_yk_VQVL6ONrgVgsdmCaeacM; path=/; expires=Wed, 15-Oct-25 19:15:03 GMT; domain=.api.openai.com; HttpOnly; Secure; SameSite=None'), ('x-content-type-options', 'nosniff'), ('set-cookie', '_cfuvid=jkle9_iZnHrtTVhRCdQomWEQKQQSQvQzNcoAKAXBfH0-1760553903207-0.0.1.1-604800000; path=/; domain=.api.openai.com; HttpOnly; Secure; SameSite=None'), ('server', 'cloudflare'), ('cf-ray', '98f178a1fee7531b-CDG'), ('content-encoding', 'br'), ('alt-svc', 'h3=":443"; ma=86400')])
+request_id: 69bcd2328a69afac1962ad03676a46e1
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Using capabilities from 'claude-3-haiku' for 'claude-3-haiku-20240307'
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Using capabilities from 'claude-3-haiku' for 'claude-3-haiku-20240307'
+{"event": "Using max_tokens 200000 from model capabilities for claude-3-haiku-20240307", "logger": "AnthropicProvider", "level": "debug", "timestamp": "2025-10-15T18:45:03.360537Z"}
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Using capabilities from 'claude-3-haiku' for 'claude-3-haiku-20240307'
+{"event": "Using max_output_tokens 4096 from model capabilities for claude-3-haiku-20240307", "logger": "AnthropicProvider", "level": "debug", "timestamp": "2025-10-15T18:45:03.360637Z"}
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Detected architecture 'claude' for model 'claude-3-haiku-20240307' (pattern: 'claude')
+Using capabilities from 'claude-3-haiku' for 'claude-3-haiku-20240307'
+Initialized tool handler for claude-3-haiku-20240307: architecture=claude, native=True, prompted=True
+connect_tcp.started host='api.anthropic.com' port=443 local_address=None timeout=10.0 socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc3ef00>
+start_tls.started ssl_context=<ssl.SSLContext object at 0x36f498050> server_hostname='api.anthropic.com' timeout=10.0
+start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc3e390>
+send_request_headers.started request=<Request [b'GET']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'GET']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'GET']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Wed, 15 Oct 2025 18:45:03 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'request-id', b'req_011CU9UkhRRmBNpv49QtzptY'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'anthropic-organization-id', b'5f4c7d27-265b-4b46-9dfd-715a0704d0dd'), (b'x-envoy-upstream-service-time', b'129'), (b'via', b'1.1 google'), (b'cf-cache-status', b'DYNAMIC'), (b'X-Robots-Tag', b'none'), (b'Server', b'cloudflare'), (b'CF-RAY', b'98f178a87e45d4fa-CDG')])
+HTTP Request: GET https://api.anthropic.com/v1/models "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'GET']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+close.started
+close.complete
+{"event": "Retrieved 11 models from Anthropic API", "logger": "AnthropicProvider", "level": "debug", "timestamp": "2025-10-15T18:45:03.660205Z"}
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Using default capabilities for 'llama2' (architecture: llama2)
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Using default capabilities for 'llama2' (architecture: llama2)
+{"event": "Using max_tokens 16384 from model capabilities for llama2", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:45:03.661285Z"}
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Using default capabilities for 'llama2' (architecture: llama2)
+{"event": "Using max_output_tokens 4096 from model capabilities for llama2", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:45:03.661390Z"}
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Detected architecture 'llama2' for model 'llama2' (pattern: 'llama2')
+Using default capabilities for 'llama2' (architecture: llama2)
+Initialized tool handler for llama2: architecture=llama2, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=5.0 socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc3f140>
+send_request_headers.started request=<Request [b'GET']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'GET']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'GET']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 18:45:03 GMT'), (b'Transfer-Encoding', b'chunked')])
+HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'GET']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+No specific architecture detected for 'local-model', using generic
+No specific architecture detected for 'local-model', using generic
+Using default capabilities for 'local-model' (architecture: generic)
+No specific architecture detected for 'local-model', using generic
+Using default capabilities for 'local-model' (architecture: generic)
+{"event": "Using max_tokens 16384 from model capabilities for local-model", "logger": "LMStudioProvider", "level": "debug", "timestamp": "2025-10-15T18:45:03.674778Z"}
+No specific architecture detected for 'local-model', using generic
+Using default capabilities for 'local-model' (architecture: generic)
+{"event": "Using max_output_tokens 4096 from model capabilities for local-model", "logger": "LMStudioProvider", "level": "debug", "timestamp": "2025-10-15T18:45:03.674862Z"}
+No specific architecture detected for 'local-model', using generic
+No specific architecture detected for 'local-model', using generic
+Using default capabilities for 'local-model' (architecture: generic)
+Initialized tool handler for local-model: architecture=generic, native=False, prompted=True
+connect_tcp.started host='localhost' port=1234 local_address=None timeout=5.0 socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc682c0>
+send_request_headers.started request=<Request [b'GET']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'GET']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'GET']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'X-Powered-By', b'Express'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Content-Length', b'2031'), (b'ETag', b'W/"7ef-pbA2GS939+S95haqqRBYCdzO9GI"'), (b'Date', b'Wed, 15 Oct 2025 18:45:03 GMT'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=5')])
+HTTP Request: GET http://localhost:1234/v1/models "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'GET']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Listed 115 models from all providers", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:45:03.692980Z"}
+{"request_id": "0d0bc267", "provider": "ollama", "model": "qwen3:4b-instruct-2507-q4_K_M", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:04.304125Z"}
+{"request_id": "0d0bc267", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:04.304218Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3:4b-instruct-2507-q4_K_M", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:04.304420Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3:4b-instruct-2507-q4_K_M", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:04.304472Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+Initialized tool handler for qwen3:4b-instruct-2507-q4_K_M: architecture=qwen3, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc69d60>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 18:46:12 GMT'), (b'Content-Length', b'401')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Generation completed for qwen3:4b-instruct-2507-q4_K_M: 8681.82ms (tokens: 38)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T18:46:12.991031Z"}
+Detected architecture 'qwen3' for model 'ollama/qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected 0 tool calls in content
+{"request_id": "38406b7b", "provider": "ollama", "model": "qwen3:4b-instruct-2507-q4_K_M", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:13.000069Z"}
+{"request_id": "38406b7b", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:13.000235Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3:4b-instruct-2507-q4_K_M", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:13.000978Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3:4b-instruct-2507-q4_K_M", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:13.001086Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+Initialized tool handler for qwen3:4b-instruct-2507-q4_K_M: architecture=qwen3, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc6aab0>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 18:46:13 GMT'), (b'Content-Length', b'630')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Generation completed for qwen3:4b-instruct-2507-q4_K_M: 960.69ms (tokens: 130)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T18:46:13.971322Z"}
+Detected architecture 'qwen3' for model 'ollama/qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected 0 tool calls in content
+{"request_id": "435b819f", "provider": "ollama", "model": "qwen3:4b-instruct-2507-q4_K_M", "messages": 1, "has_tools": true, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:13.977735Z"}
+{"request_id": "435b819f", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:13.977939Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3:4b-instruct-2507-q4_K_M", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:13.978414Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3:4b-instruct-2507-q4_K_M", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:13.978542Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Using capabilities from 'qwen3' for 'qwen3:4b-instruct-2507-q4_K_M'
+Initialized tool handler for qwen3:4b-instruct-2507-q4_K_M: architecture=qwen3, native=False, prompted=True
+{"event": "Tool execution disabled - tools will be generated but not executed", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T18:46:13.988674Z"}
+Detected architecture 'qwen3' for model 'qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc6bb60>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 18:46:14 GMT'), (b'Content-Length', b'471')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Initialized qwen3 tag rewriter for model qwen3:4b-instruct-2507-q4_K_M
+rewrite_text called with text: <|tool_call|>
+{"name": "get_current_weather", "arguments": {"location": "Boston, MA", "unit": "fahre
+Target output tags: start='<|tool_call|>', end='</|tool_call|>'
+Already in target format, returning as-is
+Tag rewriting had no effect on: <|tool_call|>
+{"name": "get_current_weather", "arg
+{"event": "Generation completed for qwen3:4b-instruct-2507-q4_K_M: 577.03ms (tokens: 310)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T18:46:14.565846Z"}
+Detected architecture 'qwen3' for model 'ollama/qwen3:4b-instruct-2507-q4_K_M' (pattern: 'qwen3:')
+Detected 1 tool calls in content
+{"request_id": "2cc89014", "provider": "ollama", "model": "qwen3-coder:30b", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:14.569102Z"}
+{"request_id": "2cc89014", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:14.569179Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:14.569428Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:14.569502Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc3e900>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 18:46:23 GMT'), (b'Content-Length', b'381')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Generation completed for qwen3-coder:30b: 9132.66ms (tokens: 36)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T18:46:23.708223Z"}
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+{"request_id": "57c6ee66", "provider": "ollama", "model": "qwen3-coder:30b", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:23.711839Z"}
+{"request_id": "57c6ee66", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:23.712080Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:23.712645Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:23.712790Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc6ba70>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 18:46:26 GMT'), (b'Content-Length', b'1571')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+{"event": "Generation completed for qwen3-coder:30b: 3243.08ms (tokens: 332)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T18:46:26.963782Z"}
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+{"request_id": "ee780f69", "provider": "ollama", "model": "qwen3-coder:30b", "messages": 1, "has_tools": true, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:26.967530Z"}
+{"request_id": "ee780f69", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:26.967717Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_tokens 32768 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:26.968178Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+{"event": "Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b", "logger": "OllamaProvider", "level": "debug", "timestamp": "2025-10-15T18:46:26.968303Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+{"event": "Tool execution disabled - tools will be generated but not executed", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T18:46:26.977597Z"}
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x36fc6b1d0>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 18:46:27 GMT'), (b'Content-Length', b'453')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Initialized qwen3 tag rewriter for model qwen3-coder:30b
+rewrite_text called with text: <|tool_call|>
+{"name": "get_current_weather", "arguments": {"location": "Boston", "unit": "fahrenhei
+Target output tags: start='<|tool_call|>', end='</|tool_call|>'
+Already in target format, returning as-is
+Tag rewriting had no effect on: <|tool_call|>
+{"name": "get_current_weather", "arg
+{"event": "Generation completed for qwen3-coder:30b: 689.89ms (tokens: 308)", "logger": "OllamaProvider", "level": "info", "timestamp": "2025-10-15T18:46:27.667678Z"}
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 1 tool calls in content
+{"request_id": "ae963518", "provider": "huggingface", "model": "microsoft/DialoGPT-medium", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:27.670832Z"}
+{"request_id": "ae963518", "target_format": "passthrough", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:27.671007Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+{"event": "Using max_tokens 16384 from model capabilities for microsoft/DialoGPT-medium", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:46:27.671604Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+{"event": "Using max_output_tokens 4096 from model capabilities for microsoft/DialoGPT-medium", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:46:27.671733Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+Initialized tool handler for microsoft/DialoGPT-medium: architecture=gpt, native=False, prompted=False
+Starting new HTTPS connection (1): huggingface.co:443
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/tokenizer_config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/tokenizer_config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/tree/main/additional_chat_templates?recursive=False&expand=False HTTP/1.1" 404 64
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/adapter_config.json HTTP/1.1" 404 0
+Popen(['git', 'version'], cwd=/Users/albou/projects/abstractllm_core, stdin=None, shell=False, universal_newlines=False)
+Popen(['git', 'version'], cwd=/Users/albou/projects/abstractllm_core, stdin=None, shell=False, universal_newlines=False)
+close.started
+close.complete
+Trying paths: ['/Users/albou/.docker/config.json', '/Users/albou/.dockercfg']
+Found file at path: /Users/albou/.docker/config.json
+Found 'credsStore' section
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/model.safetensors HTTP/1.1" 404 0
+Starting new HTTPS connection (1): huggingface.co:443
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium HTTP/1.1" 200 4660
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/commits/main HTTP/1.1" 200 5803
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/discussions?p=0 HTTP/1.1" 200 12509
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/commits/refs%2Fpr%2F22 HTTP/1.1" 200 6768
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/generation_config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/refs%2Fpr%2F22/model.safetensors.index.json HTTP/1.1" 404 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/generation_config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/refs%2Fpr%2F22/model.safetensors HTTP/1.1" 302 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/custom_generate/generate.py HTTP/1.1" 404 0
+{"event": "Generation completed for microsoft/DialoGPT-medium: 7203.45ms (tokens: 16)", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:46:40.387209Z"}
+{"request_id": "20309854", "provider": "huggingface", "model": "microsoft/DialoGPT-medium", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:40.486331Z"}
+{"request_id": "20309854", "target_format": "passthrough", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:40.486427Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+{"event": "Using max_tokens 16384 from model capabilities for microsoft/DialoGPT-medium", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:46:40.486648Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+{"event": "Using max_output_tokens 4096 from model capabilities for microsoft/DialoGPT-medium", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:46:40.486712Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+Initialized tool handler for microsoft/DialoGPT-medium: architecture=gpt, native=False, prompted=False
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/tokenizer_config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/tokenizer_config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/tree/main/additional_chat_templates?recursive=False&expand=False HTTP/1.1" 404 64
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/model.safetensors HTTP/1.1" 404 0
+Starting new HTTPS connection (1): huggingface.co:443
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium HTTP/1.1" 200 4660
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/commits/main HTTP/1.1" 200 5803
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/discussions?p=0 HTTP/1.1" 200 12509
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/generation_config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/generation_config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/commits/refs%2Fpr%2F22 HTTP/1.1" 200 6768
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/custom_generate/generate.py HTTP/1.1" 404 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/refs%2Fpr%2F22/model.safetensors.index.json HTTP/1.1" 404 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/refs%2Fpr%2F22/model.safetensors HTTP/1.1" 302 0
+{"event": "Generation completed for microsoft/DialoGPT-medium: 153.88ms (tokens: 16)", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:46:42.378572Z"}
+{"request_id": "6faa99b6", "provider": "huggingface", "model": "microsoft/DialoGPT-medium", "messages": 1, "has_tools": true, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:42.463957Z"}
+{"request_id": "6faa99b6", "target_format": "passthrough", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:42.464035Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+{"event": "Using max_tokens 16384 from model capabilities for microsoft/DialoGPT-medium", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:46:42.464243Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+{"event": "Using max_output_tokens 4096 from model capabilities for microsoft/DialoGPT-medium", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:46:42.464301Z"}
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Detected architecture 'gpt' for model 'microsoft/DialoGPT-medium' (pattern: 'gpt')
+Using default capabilities for 'microsoft/DialoGPT-medium' (architecture: gpt)
+Initialized tool handler for microsoft/DialoGPT-medium: architecture=gpt, native=False, prompted=False
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/tokenizer_config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/tokenizer_config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/tree/main/additional_chat_templates?recursive=False&expand=False HTTP/1.1" 404 64
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/model.safetensors HTTP/1.1" 404 0
+Starting new HTTPS connection (1): huggingface.co:443
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium HTTP/1.1" 200 4660
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/generation_config.json HTTP/1.1" 307 0
+https://huggingface.co:443 "HEAD /api/resolve-cache/models/microsoft/DialoGPT-medium/7b40bb0f92c45fefa957d088000d8648e5c7fa33/generation_config.json HTTP/1.1" 200 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/main/custom_generate/generate.py HTTP/1.1" 404 0
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/commits/main HTTP/1.1" 200 5803
+{"event": "Tool execution disabled - tools will be generated but not executed", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:46:43.822284Z"}
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/discussions?p=0 HTTP/1.1" 200 12509
+https://huggingface.co:443 "GET /api/models/microsoft/DialoGPT-medium/commits/refs%2Fpr%2F22 HTTP/1.1" 200 6768
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/refs%2Fpr%2F22/model.safetensors.index.json HTTP/1.1" 404 0
+https://huggingface.co:443 "HEAD /microsoft/DialoGPT-medium/resolve/refs%2Fpr%2F22/model.safetensors HTTP/1.1" 302 0
+Initialized qwen3 tag rewriter for model microsoft/DialoGPT-medium
+rewrite_text called with text: I am guessing it is Boston, but I'm not sure.
+Target output tags: start='<|tool_call|>', end='</|tool_call|>'
+Starting pattern matching with 5 patterns
+Pattern 0: <\|tool_call\|>\s*(.*?)\s*</\|tool_call\|>... - found 0 matches
+Pattern 1: <function_call>\s*(.*?)\s*</function_call>... - found 0 matches
+Pattern 2: <tool_call>\s*(.*?)\s*</tool_call>... - found 0 matches
+Pattern 3: ```tool_code\s*\n(.*?)\n```... - found 0 matches
+Pattern 4: (?<![<])(\{[^{}]*["\']name["\'][^{}]*(?:\{[^{}]*\}... - found 0 matches
+Final rewritten text: I am guessing it is Boston, but I'm not sure.
+Tag rewriting had no effect on: I am guessing it is Boston, but I'm not sure.
+{"event": "Generation completed for microsoft/DialoGPT-medium: 767.77ms (tokens: 23)", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:46:44.590173Z"}
+{"request_id": "dcd69a80", "provider": "huggingface", "model": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:44.682277Z"}
+{"request_id": "dcd69a80", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:46:44.682374Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+{"event": "Using max_tokens 32768 from model capabilities for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:46:44.682583Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+{"event": "Using max_output_tokens 8192 from model capabilities for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:46:44.682639Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+Initialized tool handler for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF: architecture=generic, native=True, prompted=True
+{"event": "Generation completed for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF: 6220.45ms (tokens: 46)", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:47:02.690715Z"}
+No specific architecture detected for 'huggingface/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Detected 0 tool calls in content
+{"request_id": "a9216ad6", "provider": "huggingface", "model": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:02.910331Z"}
+{"request_id": "a9216ad6", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:02.910428Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+{"event": "Using max_tokens 32768 from model capabilities for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:47:02.910652Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+{"event": "Using max_output_tokens 8192 from model capabilities for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:47:02.910711Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+Initialized tool handler for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF: architecture=generic, native=True, prompted=True
+{"event": "Generation completed for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF: 10879.96ms (tokens: 362)", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:47:14.181830Z"}
+No specific architecture detected for 'huggingface/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Detected 0 tool calls in content
+{"request_id": "7c170a37", "provider": "huggingface", "model": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "messages": 1, "has_tools": true, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:14.467099Z"}
+{"request_id": "7c170a37", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:14.467202Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+{"event": "Using max_tokens 32768 from model capabilities for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:47:14.467443Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+{"event": "Using max_output_tokens 8192 from model capabilities for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "logger": "HuggingFaceProvider", "level": "debug", "timestamp": "2025-10-15T18:47:14.467503Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Using capabilities from 'qwen3-coder-30b' for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'
+Initialized tool handler for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF: architecture=generic, native=True, prompted=True
+{"event": "Tool execution disabled - tools will be generated but not executed", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:47:14.842752Z"}
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+No specific architecture detected for 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+{"event": "Tool execution disabled - returning response with tool calls", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:47:20.343261Z"}
+Initialized qwen3 tag rewriter for model unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF
+rewrite_text called with text: <function_call>
+{"name": "get_current_weather", "arguments": {"location": "Boston", "unit": "celsius
+Target output tags: start='<|tool_call|>', end='</|tool_call|>'
+Starting pattern matching with 5 patterns
+Pattern 0: <\|tool_call\|>\s*(.*?)\s*</\|tool_call\|>... - found 0 matches
+Pattern 1: <function_call>\s*(.*?)\s*</function_call>... - found 1 matches
+Match found at 0:120, text: {"name": "get_current_weather", "arguments": {"loc
+Replaced with: <|tool_call|>{"name": "get_current_weather", "arguments": {"location": "Boston", "unit": "celsius"}}
+Final rewritten text: <|tool_call|>{"name": "get_current_weather", "arguments": {"location": "Boston", "unit": "celsius"}}</|tool_call|>
+Tag rewriting successful: <function_call>
+{"name": "get_current_weather", "a -> <|tool_call|>{"name": "get_current_weather", "argu
+{"event": "Generation completed for unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF: 5500.64ms (tokens: 498)", "logger": "HuggingFaceProvider", "level": "info", "timestamp": "2025-10-15T18:47:20.343524Z"}
+No specific architecture detected for 'huggingface/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF', using generic
+Detected 0 tool calls in content
+{"request_id": "7fe5c203", "provider": "mlx", "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:20.605505Z"}
+{"request_id": "7fe5c203", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:20.605611Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+{"event": "Using max_tokens 131072 from model capabilities for mlx-community/Qwen3-4B-Instruct-2507-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:20.605837Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+{"event": "Using max_output_tokens 8192 from model capabilities for mlx-community/Qwen3-4B-Instruct-2507-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:20.605895Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+Initialized tool handler for mlx-community/Qwen3-4B-Instruct-2507-4bit: architecture=qwen3, native=False, prompted=True
+https://huggingface.co:443 "GET /api/models/mlx-community/Qwen3-4B-Instruct-2507-4bit/revision/main HTTP/1.1" 200 6082
+{"event": "Generation completed for mlx-community/Qwen3-4B-Instruct-2507-4bit: 535.91ms (tokens: 60)", "logger": "MLXProvider", "level": "info", "timestamp": "2025-10-15T18:47:22.606028Z"}
+Detected architecture 'qwen3' for model 'mlx/mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected 0 tool calls in content
+{"request_id": "282f9152", "provider": "mlx", "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:22.627820Z"}
+{"request_id": "282f9152", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:22.627911Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+{"event": "Using max_tokens 131072 from model capabilities for mlx-community/Qwen3-4B-Instruct-2507-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:22.628144Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+{"event": "Using max_output_tokens 8192 from model capabilities for mlx-community/Qwen3-4B-Instruct-2507-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:22.628199Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+Initialized tool handler for mlx-community/Qwen3-4B-Instruct-2507-4bit: architecture=qwen3, native=False, prompted=True
+https://huggingface.co:443 "GET /api/models/mlx-community/Qwen3-4B-Instruct-2507-4bit/revision/main HTTP/1.1" 200 6082
+{"event": "Generation completed for mlx-community/Qwen3-4B-Instruct-2507-4bit: 783.27ms (tokens: 145)", "logger": "MLXProvider", "level": "info", "timestamp": "2025-10-15T18:47:23.945655Z"}
+Detected architecture 'qwen3' for model 'mlx/mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected 0 tool calls in content
+{"request_id": "f14a580f", "provider": "mlx", "model": "mlx-community/Qwen3-4B-Instruct-2507-4bit", "messages": 1, "has_tools": true, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:23.964838Z"}
+{"request_id": "f14a580f", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:23.964995Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+{"event": "Using max_tokens 131072 from model capabilities for mlx-community/Qwen3-4B-Instruct-2507-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:23.965217Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+{"event": "Using max_output_tokens 8192 from model capabilities for mlx-community/Qwen3-4B-Instruct-2507-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:23.965266Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Using capabilities from 'qwen3-4b' for 'mlx-community/Qwen3-4B-Instruct-2507-4bit'
+Initialized tool handler for mlx-community/Qwen3-4B-Instruct-2507-4bit: architecture=qwen3, native=False, prompted=True
+https://huggingface.co:443 "GET /api/models/mlx-community/Qwen3-4B-Instruct-2507-4bit/revision/main HTTP/1.1" 200 6082
+{"event": "Tool execution disabled - tools will be generated but not executed", "logger": "MLXProvider", "level": "info", "timestamp": "2025-10-15T18:47:24.593013Z"}
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected architecture 'qwen3' for model 'mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+{"event": "Tool execution disabled - returning response with tool calls", "logger": "MLXProvider", "level": "info", "timestamp": "2025-10-15T18:47:25.057080Z"}
+Initialized qwen3 tag rewriter for model mlx-community/Qwen3-4B-Instruct-2507-4bit
+rewrite_text called with text: <|tool_call|>
+{"name": "get_current_weather", "arguments": {"location": "Boston, MA", "unit": "celsi
+Target output tags: start='<|tool_call|>', end='</|tool_call|>'
+Already in target format, returning as-is
+Tag rewriting had no effect on: <|tool_call|>
+{"name": "get_current_weather", "arg
+{"event": "Generation completed for mlx-community/Qwen3-4B-Instruct-2507-4bit: 464.15ms (tokens: 359)", "logger": "MLXProvider", "level": "info", "timestamp": "2025-10-15T18:47:25.057309Z"}
+Detected architecture 'qwen3' for model 'mlx/mlx-community/Qwen3-4B-Instruct-2507-4bit' (pattern: 'qwen3-4b')
+Detected 1 tool calls in content
+{"request_id": "3cb62bc3", "provider": "mlx", "model": "mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:25.076675Z"}
+{"request_id": "3cb62bc3", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:25.076768Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+{"event": "Using max_tokens 32768 from model capabilities for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:25.076975Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+{"event": "Using max_output_tokens 8192 from model capabilities for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:25.077024Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+Initialized tool handler for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit: architecture=qwen3_next, native=False, prompted=True
+https://huggingface.co:443 "GET /api/models/mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit/revision/main HTTP/1.1" 200 6539
+Model type qwen3_next not supported.
+{"request_id": "3cb62bc3", "error": "Failed to load MLX model mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit: Model type qwen3_next not supported.", "error_type": "Exception", "event": "\u274c Chat completion failed", "logger": "server", "level": "error", "timestamp": "2025-10-15T18:47:25.272988Z"}
+{"request_id": "4c300ade", "provider": "mlx", "model": "mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:25.274542Z"}
+{"request_id": "4c300ade", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:25.274608Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+{"event": "Using max_tokens 32768 from model capabilities for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:25.274825Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+{"event": "Using max_output_tokens 8192 from model capabilities for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:25.274891Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+Initialized tool handler for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit: architecture=qwen3_next, native=False, prompted=True
+https://huggingface.co:443 "GET /api/models/mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit/revision/main HTTP/1.1" 200 6539
+Model type qwen3_next not supported.
+{"request_id": "4c300ade", "error": "Failed to load MLX model mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit: Model type qwen3_next not supported.", "error_type": "Exception", "event": "\u274c Chat completion failed", "logger": "server", "level": "error", "timestamp": "2025-10-15T18:47:25.410218Z"}
+{"request_id": "f2a5f1c1", "provider": "mlx", "model": "mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "messages": 1, "has_tools": true, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:25.412147Z"}
+{"request_id": "f2a5f1c1", "target_format": "qwen3", "user_agent": "python-requests/2.32.5", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:47:25.412250Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+{"event": "Using max_tokens 32768 from model capabilities for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:25.412527Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+{"event": "Using max_output_tokens 8192 from model capabilities for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:47:25.412626Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+Initialized tool handler for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit: architecture=qwen3_next, native=False, prompted=True
+https://huggingface.co:443 "GET /api/models/mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit/revision/main HTTP/1.1" 200 6539
+Model type qwen3_next not supported.
+{"request_id": "f2a5f1c1", "error": "Failed to load MLX model mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit: Model type qwen3_next not supported.", "error_type": "Exception", "event": "\u274c Chat completion failed", "logger": "server", "level": "error", "timestamp": "2025-10-15T18:47:25.547714Z"}
+{"request_id": "32457abe", "provider": "mlx", "model": "mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "messages": 1, "has_tools": false, "stream": false, "event": "\ud83d\udce5 Chat Completion Request", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:51:14.085437Z"}
+{"request_id": "32457abe", "target_format": "qwen3", "user_agent": "curl/8.7.1", "event": "\ud83c\udfaf Target Format Detected", "logger": "server", "level": "info", "timestamp": "2025-10-15T18:51:14.085806Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+{"event": "Using max_tokens 32768 from model capabilities for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:51:14.086043Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+{"event": "Using max_output_tokens 8192 from model capabilities for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit", "logger": "MLXProvider", "level": "debug", "timestamp": "2025-10-15T18:51:14.086100Z"}
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Detected architecture 'qwen3_next' for model 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit' (pattern: 'qwen3-next')
+Using capabilities from 'qwen3' for 'mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit'
+Initialized tool handler for mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit: architecture=qwen3_next, native=False, prompted=True
+https://huggingface.co:443 "GET /api/models/mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit/revision/main HTTP/1.1" 200 6539
+Model type qwen3_next not supported.
+{"request_id": "32457abe", "error": "Failed to load MLX model mlx-community/Qwen3-Next-80B-A3B-Instruct-4bit: Model type qwen3_next not supported.", "error_type": "Exception", "event": "\u274c Chat completion failed", "logger": "server", "level": "error", "timestamp": "2025-10-15T18:51:14.226957Z"}
