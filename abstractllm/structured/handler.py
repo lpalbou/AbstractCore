@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from .retry import FeedbackRetry
 from ..utils.structured_logging import get_logger
+from ..utils.self_fixes import fix_json
 from ..events import EventType, emit_global, create_structured_output_event
 
 
@@ -169,6 +170,21 @@ class StructuredOutputHandler:
                 data = json.loads(response.content)
                 return response_model.model_validate(data)
             except (json.JSONDecodeError, ValidationError) as e:
+                # Try to fix the JSON before falling back
+                self.logger.debug("Native JSON parsing failed, attempting self-fix", 
+                                error=str(e), 
+                                response_length=len(response.content))
+                
+                fixed_json = fix_json(response.content)
+                if fixed_json:
+                    try:
+                        data = json.loads(fixed_json)
+                        result = response_model.model_validate(data)
+                        self.logger.info("JSON self-fix successful for native response")
+                        return result
+                    except (json.JSONDecodeError, ValidationError) as fix_error:
+                        self.logger.debug("Self-fix failed", error=str(fix_error))
+                
                 # Even native support can fail, fallback to prompted
                 return self._generate_prompted(provider, prompt, response_model, **kwargs)
 
@@ -222,8 +238,29 @@ class StructuredOutputHandler:
 
                 # Extract and validate JSON
                 json_content = self._extract_json(response.content)
-                data = json.loads(json_content)
-                result = response_model.model_validate(data)
+                
+                # Try parsing the extracted JSON
+                try:
+                    data = json.loads(json_content)
+                    result = response_model.model_validate(data)
+                except (json.JSONDecodeError, ValidationError) as parse_error:
+                    # Try to fix the JSON
+                    self.logger.debug("JSON parsing failed, attempting self-fix", 
+                                    error=str(parse_error), 
+                                    json_length=len(json_content),
+                                    attempt=attempt + 1)
+                    
+                    fixed_json = fix_json(json_content)
+                    if fixed_json:
+                        try:
+                            data = json.loads(fixed_json)
+                            result = response_model.model_validate(data)
+                            self.logger.info("JSON self-fix successful", attempt=attempt + 1)
+                        except (json.JSONDecodeError, ValidationError) as fix_error:
+                            self.logger.debug("Self-fix failed", error=str(fix_error), attempt=attempt + 1)
+                            raise parse_error  # Re-raise original error for retry logic
+                    else:
+                        raise parse_error  # Re-raise original error for retry logic
 
                 # Emit validation success event
                 attempt_duration_ms = (time.time() - attempt_start_time) * 1000

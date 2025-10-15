@@ -6,34 +6,37 @@ Usage:
     python -m abstractllm.apps.judge <file_path_or_text> [file2] [file3] ... [options]
 
 Options:
-    --context=<context>            Evaluation context description (e.g., "code review", "documentation assessment")
-    --criteria=<criteria>          Comma-separated criteria to evaluate (clarity,simplicity,actionability,soundness,innovation,effectiveness,relevance,completeness,coherence)
-    --custom-criteria=<criteria>   Comma-separated custom criteria (e.g., "has_examples,covers_edge_cases")
-    --reference=<file_or_text>     Reference content for comparison-based evaluation
-    --format=<format>             Output format (json, yaml, plain, default: json)
-    --output=<output>             Output file path (optional, prints to console if not provided)
-    --provider=<provider>         LLM provider (requires --model)
-    --model=<model>               LLM model (requires --provider)
-    --temperature=<temp>          Temperature for evaluation (default: 0.1 for consistency)
-    --verbose                     Show detailed progress information
-    --include-criteria           Include detailed explanation of evaluation criteria in assessment
-    --timeout=<seconds>           HTTP timeout for LLM providers (default: 300)
-    --help                       Show this help message
+    --context <context>             Evaluation context description (e.g., "code review", "documentation assessment")
+    --criteria <criteria>           Comma-separated criteria to evaluate (clarity,simplicity,actionability,soundness,innovation,effectiveness,relevance,completeness,coherence)
+    --custom-criteria <criteria>    Comma-separated custom criteria (e.g., "has_examples,covers_edge_cases")
+    --reference <file_or_text>      Reference content for comparison-based evaluation
+    --format <format>               Output format (json, yaml, plain, default: json)
+    --output <output>               Output file path (optional, prints to console if not provided)
+    --provider <provider>           LLM provider (requires --model)
+    --model <model>                 LLM model (requires --provider)
+    --temperature <temp>            Temperature for evaluation (default: 0.1 for consistency)
+    --max-tokens <tokens>           Maximum total tokens for LLM context (default: 32000)
+    --max-output-tokens <tokens>    Maximum tokens for LLM output generation (default: 8000)
+    --verbose                       Show detailed progress information
+    --debug                         Show raw LLM responses and detailed debugging information
+    --include-criteria              Include detailed explanation of evaluation criteria in assessment
+    --timeout <seconds>             HTTP timeout for LLM providers (default: 300)
+    --help                          Show this help message
 
 Examples:
     # Single file or text
     python -m abstractllm.apps.judge "This code is well-structured and solves the problem efficiently."
-    python -m abstractllm.apps.judge document.py --context="code review" --criteria=clarity,soundness,effectiveness
+    python -m abstractllm.apps.judge document.py --context "code review" --criteria clarity,soundness,effectiveness
 
     # Multiple files (evaluated sequentially to avoid context overflow)
-    python -m abstractllm.apps.judge file1.py file2.py file3.py --context="code review" --output=assessments.json
-    python -m abstractllm.apps.judge *.py --context="Python code review" --format=plain
-    python -m abstractllm.apps.judge docs/*.md --context="documentation review" --criteria=clarity,completeness
+    python -m abstractllm.apps.judge file1.py file2.py file3.py --context "code review" --output assessments.json
+    python -m abstractllm.apps.judge *.py --context "Python code review" --format plain
+    python -m abstractllm.apps.judge docs/*.md --context "documentation review" --criteria clarity,completeness
 
     # Other options
-    python -m abstractllm.apps.judge proposal.md --custom-criteria=has_examples,addresses_concerns --output=assessment.json
-    python -m abstractllm.apps.judge content.txt --reference=ideal_solution.txt --format=plain --verbose
-    python -m abstractllm.apps.judge text.md --provider=openai --model=gpt-4o-mini --temperature=0.05
+    python -m abstractllm.apps.judge proposal.md --custom-criteria has_examples,addresses_concerns --output assessment.json
+    python -m abstractllm.apps.judge content.txt --reference ideal_solution.txt --format plain --verbose
+    python -m abstractllm.apps.judge text.md --provider openai --model gpt-4o-mini --temperature 0.05
 """
 
 import argparse
@@ -253,16 +256,16 @@ def main():
 Examples:
   # Single file or text
   python -m abstractllm.apps.judge "This code is well-structured."
-  python -m abstractllm.apps.judge document.py --context="code review" --criteria=clarity,soundness
-  python -m abstractllm.apps.judge proposal.md --custom-criteria=has_examples --output=assessment.json
+  python -m abstractllm.apps.judge document.py --context "code review" --criteria clarity,soundness
+  python -m abstractllm.apps.judge proposal.md --custom-criteria has_examples --output assessment.json
 
   # Multiple files (evaluated sequentially)
-  python -m abstractllm.apps.judge file1.py file2.py file3.py --context="code review" --format=json
-  python -m abstractllm.apps.judge docs/*.md --context="documentation review" --format=plain
+  python -m abstractllm.apps.judge file1.py file2.py file3.py --context "code review" --format json
+  python -m abstractllm.apps.judge docs/*.md --context "documentation review" --format plain
 
   # Other options
-  python -m abstractllm.apps.judge content.txt --reference=ideal.txt --format=plain --verbose
-  python -m abstractllm.apps.judge text.md --provider=openai --model=gpt-4o-mini
+  python -m abstractllm.apps.judge content.txt --reference ideal.txt --format plain --verbose
+  python -m abstractllm.apps.judge text.md --provider openai --model gpt-4o-mini
 
 Available criteria:
   clarity, simplicity, actionability, soundness, innovation, effectiveness,
@@ -341,9 +344,29 @@ Default model setup:
     )
 
     parser.add_argument(
+        '--max-tokens',
+        type=int,
+        default=32000,
+        help='Maximum total tokens for LLM context (default: 32000)'
+    )
+
+    parser.add_argument(
+        '--max-output-tokens',
+        type=int,
+        default=8000,
+        help='Maximum tokens for LLM output generation (default: 8000)'
+    )
+
+    parser.add_argument(
         '--verbose',
         action='store_true',
         help='Show detailed progress information'
+    )
+
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Show raw LLM responses and detailed debugging information'
     )
 
     parser.add_argument(
@@ -427,20 +450,28 @@ Default model setup:
         # Initialize judge
         if args.provider and args.model:
             if args.verbose:
-                print(f"Initializing BasicJudge ({args.provider}, {args.model}, temperature={args.temperature})...")
+                print(f"Initializing BasicJudge ({args.provider}, {args.model}, temperature={args.temperature}, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
 
             judge = create_judge(
                 provider=args.provider,
                 model=args.model,
                 temperature=args.temperature,
+                max_tokens=args.max_tokens,
+                max_output_tokens=args.max_output_tokens,
+                debug=args.debug,
                 timeout=args.timeout
             )
         else:
             if args.verbose:
-                print(f"Initializing BasicJudge (ollama, qwen3:4b-instruct-2507-q4_K_M, temperature={args.temperature})...")
+                print(f"Initializing BasicJudge (ollama, qwen3:4b-instruct-2507-q4_K_M, temperature={args.temperature}, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
 
             try:
-                judge = BasicJudge(temperature=args.temperature)
+                judge = BasicJudge(
+                    temperature=args.temperature,
+                    max_tokens=args.max_tokens,
+                    max_output_tokens=args.max_output_tokens,
+                    debug=args.debug
+                )
             except RuntimeError as e:
                 print(f"\n{e}")
                 print("\n🚀 Quick alternatives to get started:")

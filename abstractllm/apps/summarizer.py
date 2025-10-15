@@ -6,21 +6,23 @@ Usage:
     python -m abstractllm.apps.summarizer <file_path> [options]
 
 Options:
-    --style=<style>         Summary style (structured, narrative, objective, analytical, executive, conversational)
-    --length=<length>       Summary length (brief, standard, detailed, comprehensive)
-    --focus=<focus>         Specific focus area for summarization
-    --output=<output>       Output file path (optional, prints to console if not provided)
-    --chunk-size=<size>     Chunk size in characters (default: 8000, max: 32000)
-    --provider=<provider>   LLM provider (requires --model)
-    --model=<model>         LLM model (requires --provider)
+    --style <style>         Summary style (structured, narrative, objective, analytical, executive, conversational)
+    --length <length>       Summary length (brief, standard, detailed, comprehensive)
+    --focus <focus>         Specific focus area for summarization
+    --output <output>       Output file path (optional, prints to console if not provided)
+    --chunk-size <size>     Chunk size in characters (default: 8000, max: 32000)
+    --provider <provider>   LLM provider (requires --model)
+    --model <model>         LLM model (requires --provider)
+    --max-tokens <tokens>   Maximum total tokens for LLM context (default: 32000)
+    --max-output-tokens <tokens> Maximum tokens for LLM output generation (default: 8000)
     --verbose              Show detailed progress information
     --help                 Show this help message
 
 Examples:
     python -m abstractllm.apps.summarizer document.pdf
-    python -m abstractllm.apps.summarizer report.txt --style=executive --length=brief --verbose
-    python -m abstractllm.apps.summarizer data.md --focus="technical details" --output=summary.txt
-    python -m abstractllm.apps.summarizer large.txt --chunk-size=15000 --provider=openai --model=gpt-4o-mini
+    python -m abstractllm.apps.summarizer report.txt --style executive --length brief --verbose
+    python -m abstractllm.apps.summarizer data.md --focus "technical details" --output summary.txt
+    python -m abstractllm.apps.summarizer large.txt --chunk-size 15000 --provider openai --model gpt-4o-mini
 """
 
 import argparse
@@ -159,9 +161,9 @@ def main():
         epilog="""
 Examples:
   python -m abstractllm.apps.summarizer document.pdf
-  python -m abstractllm.apps.summarizer report.txt --style=executive --length=brief --verbose
-  python -m abstractllm.apps.summarizer data.md --focus="technical details" --output=summary.txt
-  python -m abstractllm.apps.summarizer large.txt --chunk-size=15000 --provider=openai --model=gpt-4o-mini
+  python -m abstractllm.apps.summarizer report.txt --style executive --length brief --verbose
+  python -m abstractllm.apps.summarizer data.md --focus "technical details" --output summary.txt
+  python -m abstractllm.apps.summarizer large.txt --chunk-size 15000 --provider openai --model gpt-4o-mini
 
 Supported file types: .txt, .md, .py, .js, .html, .json, .csv, and most text-based files
 
@@ -219,6 +221,20 @@ Default model setup:
     )
 
     parser.add_argument(
+        '--max-tokens',
+        type=int,
+        default=32000,
+        help='Maximum total tokens for LLM context (default: 32000)'
+    )
+
+    parser.add_argument(
+        '--max-output-tokens',
+        type=int,
+        default=8000,
+        help='Maximum tokens for LLM output generation (default: 8000)'
+    )
+
+    parser.add_argument(
         '--verbose',
         action='store_true',
         help='Show detailed progress information'
@@ -268,21 +284,31 @@ Default model setup:
             # Custom provider/model with max_tokens adjusted for chunk size
             max_tokens = max(16000, args.chunk_size)  # Ensure max_tokens >= chunk_size
             if args.verbose:
-                print(f"Initializing summarizer ({args.provider}, {args.model}, {max_tokens} token context)...")
+                print(f"Initializing summarizer ({args.provider}, {args.model}, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
 
-            llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens)
-            summarizer = BasicSummarizer(llm, max_chunk_size=args.chunk_size)
+            llm = create_llm(args.provider, model=args.model, max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens)
+            summarizer = BasicSummarizer(
+                llm, 
+                max_chunk_size=args.chunk_size,
+                max_tokens=args.max_tokens,
+                max_output_tokens=args.max_output_tokens
+            )
         else:
             # Default configuration with chunk size override
             if args.chunk_size != 8000:
                 # Custom chunk size, need to adjust max_tokens if necessary
                 max_tokens = max(16000, args.chunk_size)
                 if args.verbose:
-                    print(f"Initializing summarizer (ollama, gemma3:1b-it-qat, {max_tokens} token context, {args.chunk_size} chunk size)...")
+                    print(f"Initializing summarizer (ollama, gemma3:1b-it-qat, {args.max_tokens} token context, {args.max_output_tokens} output tokens, {args.chunk_size} chunk size)...")
 
                 try:
-                    llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=max_tokens)
-                    summarizer = BasicSummarizer(llm, max_chunk_size=args.chunk_size)
+                    llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens)
+                    summarizer = BasicSummarizer(
+                        llm, 
+                        max_chunk_size=args.chunk_size,
+                        max_tokens=args.max_tokens,
+                        max_output_tokens=args.max_output_tokens
+                    )
                 except Exception as e:
                     # Handle default model not available
                     print(f"\n❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}")
@@ -296,9 +322,13 @@ Default model setup:
             else:
                 # Default configuration
                 if args.verbose:
-                    print("Initializing summarizer (ollama, gemma3:1b-it-qat, 16k context, 8k chunks)...")
+                    print(f"Initializing summarizer (ollama, gemma3:1b-it-qat, {args.max_tokens} token context, {args.max_output_tokens} output tokens, {args.chunk_size} chunk size)...")
                 try:
-                    summarizer = BasicSummarizer()
+                    summarizer = BasicSummarizer(
+                        max_chunk_size=args.chunk_size,
+                        max_tokens=args.max_tokens,
+                        max_output_tokens=args.max_output_tokens
+                    )
                 except RuntimeError as e:
                     # Handle default model not available
                     print(f"\n{e}")

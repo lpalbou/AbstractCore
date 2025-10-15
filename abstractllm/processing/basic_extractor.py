@@ -16,8 +16,9 @@ from pydantic import BaseModel, Field
 from ..core.interface import AbstractLLMInterface
 from ..core.factory import create_llm
 from ..structured.retry import FeedbackRetry
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BasicExtractor:
@@ -50,12 +51,21 @@ class BasicExtractor:
     def __init__(
         self,
         llm: Optional[AbstractLLMInterface] = None,
-        max_chunk_size: int = 8000
+        max_chunk_size: int = 8000,
+        max_tokens: int = 32000,
+        max_output_tokens: int = 8000
     ):
-        """Initialize the extractor"""
+        """Initialize the extractor
+        
+        Args:
+            llm: AbstractLLM instance (any provider). If None, uses default Ollama model
+            max_chunk_size: Maximum characters per chunk for long documents (default 8000)
+            max_tokens: Maximum total tokens for LLM context (default 32000)
+            max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+        """
         if llm is None:
             try:
-                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", max_tokens=32000, max_output_tokens=8000)
+                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", max_tokens=max_tokens, max_output_tokens=max_output_tokens)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'qwen3:4b-instruct-2507-q4_K_M': {e}\n\n"
@@ -126,10 +136,10 @@ class BasicExtractor:
         logger.info("Starting JSON-LD extraction with descriptive IDs")
 
         entity_limit = self._get_entity_limit(length)
-        domain_note = f" Focus on {domain_focus} domain." if domain_focus else ""
+        domain_note = f" You have been asked to focus especially on {domain_focus}." if domain_focus else ""
 
         # Knowledge extraction prompt with JSON-LD output
-        prompt = f"""You are an expert in Semantic extraction and your task it to create consistent high-quality information-rich knowledge graphs. Your output is a JSON-LD knowledge graph with entities and relationships.{domain_note}.
+        prompt = f"""You are an expert in Semantic extraction and your task it to create consistent high-quality information-rich knowledge graphs. Your output is a JSON-LD knowledge graph with entities and relationships. {domain_note}.
 
 STEP 1 : always start by identifying the entities in the text and to classify them in 2 groups based on their importance: the primary entities are the main subjects, the main topics or main ideas; the secondary entities relates either to details of the primary entities or to additional information.
 
@@ -148,15 +158,14 @@ LIMITS: try to limit the number of entities to {entity_limit}.
 
 STEP 2 : ONCE all the entities have been created and annotated, then identify and characterize all the relationships between the selected entities.
 
-RELATIONSHIP TYPES must be one of:
-- is, is_not, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, constitutes, models, occurs_in, occurs_when
+RELATIONSHIP TYPES must be one of: is, is_not, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, develops, compatible_with, works_with, enables, disables, constitutes, models, occurs_in, occurs_when
 
 STEP 3 : create the JSON-LD knowledge graph with the entities and relationships identified and characterized in step 1 and 2. Be extra mindful to use the correct JSON-LD syntax. An example is provided just below.
 
 ----------------------------------
-EXAMPLE: HERE IS AN INPUT TEXT: "OpenAI created GPT-4. Microsoft Copilot uses GPT-4 for code generation."
+INPUT TEXT EXAMPLE: "OpenAI created GPT-4 and Microsoft Copilot uses GPT-4 for code generation. Both are AI companies developing and leveraging language models in powerful applications."
 
-AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
+EXAMPLE OF JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
 {{
   "@context": {{
     "s": "https://schema.org/",
@@ -173,6 +182,13 @@ AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
       "confidence": 0.95
     }},
     {{
+      "@id": "e:microsoft",
+      "@type": "s:Organization",
+      "s:name": "Microsoft",
+      "s:description": "AI company that created Copilot",
+      "confidence": 0.95
+    }},
+    {{
       "@id": "e:gpt4",
       "@type": "s:SoftwareApplication",
       "s:name": "GPT-4",
@@ -185,6 +201,20 @@ AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
       "s:name": "Microsoft Copilot",
       "s:description": "Code generation tool",
       "confidence": 0.95
+    }},
+    {{
+      "@id": "e:ai_companies",
+      "@type": "s:Organization",
+      "s:name": "AI Companies",
+      "s:description": "AI Companies that develop powerfull applications",
+      "confidence": 0.9
+    }},
+    {{
+      "@id": "e:powerfull_applications",
+      "@type": "s:SoftwareApplication",
+      "s:name": "Powerfull applications",
+      "s:description": "Powerfull applications developed by AI Companies",
+      "confidence": 0.9
     }},
     {{
       "@id": "r:1",
@@ -203,6 +233,46 @@ AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
       "s:about": {{"@id": "e:copilot"}},
       "s:object": {{"@id": "e:gpt4"}},
       "s:description": "Microsoft Copilot uses GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "is",
+      "s:about": {{"@id": "e:openai"}},
+      "s:object": {{"@id": "e:ai_companies"}},
+      "s:description": "OpenAI created GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "is",
+      "s:about": {{"@id": "e:microsoft"}},
+      "s:object": {{"@id": "e:ai_companies"}},
+      "s:description": "OpenAI created GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "is",
+      "s:about": {{"@id": "e:openai"}},
+      "s:object": {{"@id": "e:powerfull_applications"}},
+      "s:description": "OpenAI develops powerfull applications",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "develops",
+      "s:about": {{"@id": "e:microsoft"}},
+      "s:object": {{"@id": "e:powerfull_applications"}},
+      "s:description": "Microsoft develops powerfull applications",
       "confidence": 0.95,
       "strength": 0.9
     }}
@@ -236,7 +306,9 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
 
             # Validate structure
             if "@context" not in result or "@graph" not in result:
-                logger.error("Invalid JSON-LD structure")
+                logger.error("Invalid JSON-LD structure", 
+                           has_context="@context" in result,
+                           has_graph="@graph" in result)
                 return self._create_empty_graph()
 
             # Normalize JSON-LD references (convert strings to objects)
@@ -248,12 +320,14 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
             # Log results
             entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
             relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
-            logger.info(f"Extracted {len(entities)} entities and {len(relationships)} relationships")
+            logger.info("Extracted entities and relationships", 
+                       entity_count=len(entities), 
+                       relationship_count=len(relationships))
 
             return result
 
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON parsing failed: {e}")
+            logger.warning("JSON parsing failed", error=str(e), response_length=len(response_text))
 
             # Attempt self-correction
             from ..utils.self_fixes import fix_json
@@ -267,24 +341,54 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                         result = self._remove_dangling_references(result)
                         entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
                         relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
-                        logger.info(f"✅ JSON self-correction successful! Extracted {len(entities)} entities and {len(relationships)} relationships")
+                        logger.info("JSON self-correction successful", 
+                                   entity_count=len(entities), 
+                                   relationship_count=len(relationships))
                         return result
                 except json.JSONDecodeError:
                     pass
 
-            logger.error("JSON self-correction failed, returning empty graph")
+            logger.error("JSON self-correction failed, returning empty graph", 
+                        original_response_length=len(response_text))
             return self._create_empty_graph()
 
     def _remove_dangling_references(self, result: dict) -> dict:
-        """Remove relationships that reference non-existent entities"""
+        """
+        Validate relationships and handle entity reference issues gracefully.
+        
+        Instead of removing relationships with non-standard predicates or references,
+        we log them and try to preserve the LLM's intent.
+        
+        Accepts all predefined relationship types from the LLM prompt:
+        is, is_not, part_of, transforms, provides, describes, mentions, integrates, 
+        supports, discourages, requires, uses, creates, develops, compatible_with, works_with, 
+        enables, disables, constitutes, models, occurs_in, occurs_when
+        """
+        # Define the accepted relationship types from the LLM prompt
+        ACCEPTED_PREDICATES = {
+            'is', 'is_not', 'part_of', 'transforms', 'provides', 'describes', 
+            'mentions', 'integrates', 'supports', 'discourages', 'requires', 
+            'uses', 'creates', 'develops', 'compatible_with', 'works_with', 'enables', 
+            'disables', 'constitutes', 'models', 'occurs_in', 'occurs_when'
+        }
         defined_entities = {
             item['@id']
             for item in result.get('@graph', [])
             if item.get('@id', '').startswith('e:')
         }
 
+        # Also create a mapping of entity names to IDs for fuzzy matching
+        entity_name_to_id = {}
+        for item in result.get('@graph', []):
+            if item.get('@id', '').startswith('e:'):
+                entity_name = item.get('s:name', '').lower().strip()
+                if entity_name:
+                    entity_name_to_id[entity_name] = item['@id']
+
         cleaned_graph = []
         removed_count = 0
+        preserved_count = 0
+        predicate_usage = {}  # Track predicate usage for debugging
 
         for item in result.get('@graph', []):
             item_id = item.get('@id', '')
@@ -293,32 +397,109 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
             if item_id.startswith('e:'):
                 cleaned_graph.append(item)
 
-            # Keep only valid relationships
+            # Process relationships with more flexibility
             elif item_id.startswith('r:'):
                 # Safely extract source and target IDs
                 source_ref = item.get('s:about', {})
                 target_ref = item.get('s:object', {})
+                predicate = item.get('s:name', '')
 
                 if isinstance(source_ref, dict):
                     source_id = source_ref.get('@id', '')
                 else:
                     source_id = str(source_ref) if source_ref else ''
-                    logger.debug(f"Relationship {item_id} has non-dict s:about: {type(source_ref)} (normalized)")
+                    logger.debug("Relationship has non-dict s:about reference", 
+                               relationship_id=item_id, 
+                               source_ref_type=type(source_ref).__name__,
+                               source_ref_value=str(source_ref))
 
                 if isinstance(target_ref, dict):
                     target_id = target_ref.get('@id', '')
                 else:
                     target_id = str(target_ref) if target_ref else ''
-                    logger.debug(f"Relationship {item_id} has non-dict s:object: {type(target_ref)} (normalized)")
+                    logger.debug("Relationship has non-dict s:object reference", 
+                               relationship_id=item_id, 
+                               target_ref_type=type(target_ref).__name__,
+                               target_ref_value=str(target_ref))
 
+                # Track predicate usage for debugging
+                if predicate:
+                    predicate_usage[predicate] = predicate_usage.get(predicate, 0) + 1
+                
+                # Validate predicate - log if it's not in our accepted list but still accept it
+                if predicate and predicate not in ACCEPTED_PREDICATES:
+                    logger.debug("LLM used non-standard predicate, but accepting it", 
+                               relationship_id=item_id,
+                               predicate=predicate,
+                               reason="LLM chose creative predicate - preserving LLM intent")
+
+                # Check if both entities exist
                 if source_id in defined_entities and target_id in defined_entities:
+                    # Standard case - keep the relationship
                     cleaned_graph.append(item)
+                    preserved_count += 1
                 else:
-                    removed_count += 1
-                    logger.debug(f"Removed dangling relationship: {item_id}")
+                    # Try to salvage the relationship by fuzzy matching entity names
+                    salvaged = False
+                    
+                    # If source_id is not found, try to match by name
+                    if source_id not in defined_entities and isinstance(source_ref, str):
+                        potential_source = entity_name_to_id.get(source_ref.lower().strip())
+                        if potential_source:
+                            logger.debug("Salvaged relationship with fuzzy source matching", 
+                                       relationship_id=item_id,
+                                       original_source=source_ref,
+                                       matched_source=potential_source)
+                            # Update the reference
+                            item['s:about'] = {"@id": potential_source}
+                            source_id = potential_source
+                            salvaged = True
+                    
+                    # If target_id is not found, try to match by name
+                    if target_id not in defined_entities and isinstance(target_ref, str):
+                        potential_target = entity_name_to_id.get(target_ref.lower().strip())
+                        if potential_target:
+                            logger.debug("Salvaged relationship with fuzzy target matching", 
+                                       relationship_id=item_id,
+                                       original_target=target_ref,
+                                       matched_target=potential_target)
+                            # Update the reference
+                            item['s:object'] = {"@id": potential_target}
+                            target_id = potential_target
+                            salvaged = True
+                    
+                    # Final check after salvage attempts
+                    if source_id in defined_entities and target_id in defined_entities:
+                        cleaned_graph.append(item)
+                        preserved_count += 1
+                        if salvaged:
+                            logger.debug("Successfully salvaged relationship", 
+                                       relationship_id=item_id,
+                                       predicate=predicate)
+                    else:
+                        # Only remove if we truly can't salvage it
+                        removed_count += 1
+                        logger.debug("Removed relationship with unresolvable entity references", 
+                                   relationship_id=item_id,
+                                   predicate=predicate,
+                                   source_id=source_id,
+                                   target_id=target_id,
+                                   source_exists=source_id in defined_entities,
+                                   target_exists=target_id in defined_entities,
+                                   reason="LLM created relationship with entities that don't exist in the graph")
 
+        # Log summary with structured logging
         if removed_count > 0:
-            logger.warning(f"Removed {removed_count} relationships with dangling references")
+            logger.warning("Removed relationships with unresolvable references", 
+                         removed_count=removed_count,
+                         preserved_count=preserved_count,
+                         total_entities=len(defined_entities),
+                         predicate_usage=predicate_usage)
+        elif preserved_count > 0:
+            logger.debug("All relationships preserved", 
+                       preserved_count=preserved_count,
+                       total_entities=len(defined_entities),
+                       predicate_usage=predicate_usage)
 
         result['@graph'] = cleaned_graph
         return result
@@ -416,27 +597,34 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
 
         chunk_result = None  # Initialize to handle case where no chunks succeed
         for i, chunk in enumerate(chunks):
-            logger.info(f"Extracting from chunk {i+1}/{len(chunks)}")
+            logger.info("Extracting from chunk", chunk_number=i+1, total_chunks=len(chunks))
             chunk_result = self._extract_single_chunk(chunk, domain_focus, length)
 
             # Validate chunk result
             if not isinstance(chunk_result, dict):
-                logger.error(f"Chunk {i+1} returned {type(chunk_result)} instead of dict")
+                logger.error("Chunk returned invalid type", 
+                           chunk_number=i+1, 
+                           expected_type="dict", 
+                           actual_type=type(chunk_result).__name__)
                 chunk_result = self._create_empty_graph()
             elif "@graph" not in chunk_result:
-                logger.error(f"Chunk {i+1} missing @graph")
+                logger.error("Chunk missing @graph", chunk_number=i+1)
                 chunk_result = self._create_empty_graph()
 
             # Safely merge entities with additional error handling
             try:
                 graph_items = chunk_result.get("@graph", [])
                 if not isinstance(graph_items, list):
-                    logger.error(f"Chunk {i+1} @graph is not a list: {type(graph_items)}")
+                    logger.error("Chunk @graph is not a list", 
+                               chunk_number=i+1, 
+                               actual_type=type(graph_items).__name__)
                     graph_items = []
 
                 for entity in graph_items:
                     if not isinstance(entity, dict):
-                        logger.warning(f"Chunk {i+1} contains non-dict entity: {type(entity)}")
+                        logger.warning("Chunk contains non-dict entity", 
+                                     chunk_number=i+1, 
+                                     entity_type=type(entity).__name__)
                         continue
                     entity_id = entity.get("@id", "")
                     if entity_id.startswith("e:") and entity_id not in seen_entity_ids:
@@ -446,7 +634,9 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                 # Merge relationships (deduplicate by source-target-relation)
                 for item in graph_items:
                     if not isinstance(item, dict):
-                        logger.warning(f"Chunk {i+1} contains non-dict item: {type(item)}")
+                        logger.warning("Chunk contains non-dict item", 
+                                     chunk_number=i+1, 
+                                     item_type=type(item).__name__)
                         continue
                     item_id = item.get("@id", "")
                     if item_id.startswith("r:"):
@@ -471,7 +661,9 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                             all_relationships.append(item)
                             seen_relationship_ids.add(triple)
             except Exception as e:
-                logger.error(f"Error processing chunk {i+1}: {e}")
+                logger.error("Error processing chunk", 
+                           chunk_number=i+1, 
+                           error=str(e))
                 continue
 
         # Build final result with safe context extraction
@@ -550,7 +742,7 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
         logger.info("Starting JSON-LD refinement with complete graph output")
 
         entity_limit = self._get_entity_limit(length) if length else 20  # More generous for refinement
-        domain_note = f" Focus on {domain_focus} domain." if domain_focus else ""
+        domain_note = f" You have been asked to focus especially on {domain_focus}." if domain_focus else ""
 
         # Create formatted summary of existing extraction
         prev_entities = [item for item in previous_extraction.get('@graph', [])
@@ -579,7 +771,7 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
         ])
 
         # Knowledge graph refinement prompt with JSON-LD output (matches initial extraction format)
-        prompt = f"""You are an expert in Semantic extraction and your task is to refine and improve an existing knowledge graph. Your output is a COMPLETE refined JSON-LD knowledge graph with entities and relationships.{domain_note}
+        prompt = f"""You are an expert in Semantic extraction and your task is to refine and improve an existing knowledge graph. Your output is a COMPLETE refined JSON-LD knowledge graph with entities and relationships. {domain_note}
 
 EXISTING GRAPH TO REFINE:
 Current Entities:
@@ -612,15 +804,14 @@ LIMITS: try to limit the total number of entities to {entity_limit}.
 
 STEP 2: ONCE all the entities have been created and annotated, then identify and characterize all the relationships between the selected entities.
 
-RELATIONSHIP TYPES must be one of:
-- is, is_not, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, compatible_with, works_with, enables, disables, constitutes, models, occurs_in, occurs_when
+RELATIONSHIP TYPES must be one of: is, is_not, part_of, transforms, provides, describes, mentions, integrates, supports, discourages, requires, uses, creates, develops, compatible_with, works_with, enables, disables, constitutes, models, occurs_in, occurs_when
 
-STEP 3: Create the COMPLETE refined JSON-LD knowledge graph with ALL entities and relationships (existing + new + corrected). Be extra mindful to use the correct JSON-LD syntax. An example is provided just below.
+STEP 3 : create the JSON-LD knowledge graph with the entities and relationships identified and characterized in step 1 and 2. Be extra mindful to use the correct JSON-LD syntax. An example is provided just below.
 
 ----------------------------------
-EXAMPLE: HERE IS AN INPUT TEXT: "OpenAI created GPT-4. Microsoft Copilot uses GPT-4 for code generation."
+INPUT TEXT EXAMPLE: "OpenAI created GPT-4 and Microsoft Copilot uses GPT-4 for code generation. Both are AI companies developing and leveraging language models in powerful applications."
 
-AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
+EXAMPLE OF JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
 {{
   "@context": {{
     "s": "https://schema.org/",
@@ -637,6 +828,13 @@ AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
       "confidence": 0.95
     }},
     {{
+      "@id": "e:microsoft",
+      "@type": "s:Organization",
+      "s:name": "Microsoft",
+      "s:description": "AI company that created Copilot",
+      "confidence": 0.95
+    }},
+    {{
       "@id": "e:gpt4",
       "@type": "s:SoftwareApplication",
       "s:name": "GPT-4",
@@ -649,6 +847,20 @@ AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
       "s:name": "Microsoft Copilot",
       "s:description": "Code generation tool",
       "confidence": 0.95
+    }},
+    {{
+      "@id": "e:ai_companies",
+      "@type": "s:Organization",
+      "s:name": "AI Companies",
+      "s:description": "AI Companies that develop powerfull applications",
+      "confidence": 0.9
+    }},
+    {{
+      "@id": "e:powerfull_applications",
+      "@type": "s:SoftwareApplication",
+      "s:name": "Powerfull applications",
+      "s:description": "Powerfull applications developed by AI Companies",
+      "confidence": 0.9
     }},
     {{
       "@id": "r:1",
@@ -667,6 +879,46 @@ AND HERE IS THE EXPECTED JSON-LD KNOWLEDGE GRAPH OUTPUT FOR THAT INPUT TEXT:
       "s:about": {{"@id": "e:copilot"}},
       "s:object": {{"@id": "e:gpt4"}},
       "s:description": "Microsoft Copilot uses GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "is",
+      "s:about": {{"@id": "e:openai"}},
+      "s:object": {{"@id": "e:ai_companies"}},
+      "s:description": "OpenAI created GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "is",
+      "s:about": {{"@id": "e:microsoft"}},
+      "s:object": {{"@id": "e:ai_companies"}},
+      "s:description": "OpenAI created GPT-4",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "is",
+      "s:about": {{"@id": "e:openai"}},
+      "s:object": {{"@id": "e:powerfull_applications"}},
+      "s:description": "OpenAI develops powerfull applications",
+      "confidence": 0.95,
+      "strength": 0.9
+    }},
+    {{
+      "@id": "r:1",
+      "@type": "s:Relationship",
+      "s:name": "develops",
+      "s:about": {{"@id": "e:microsoft"}},
+      "s:object": {{"@id": "e:powerfull_applications"}},
+      "s:description": "Microsoft develops powerfull applications",
       "confidence": 0.95,
       "strength": 0.9
     }}
@@ -714,12 +966,16 @@ CRITICAL: ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
             prev_entities = [item for item in previous_extraction.get('@graph', []) if item.get('@id', '').startswith('e:')]
             prev_relationships = [item for item in previous_extraction.get('@graph', []) if item.get('@id', '').startswith('r:')]
 
-            logger.info(f"Refinement: {len(prev_entities)} → {len(entities)} entities, {len(prev_relationships)} → {len(relationships)} relationships")
+            logger.info("Refinement completed", 
+                       prev_entities=len(prev_entities),
+                       new_entities=len(entities),
+                       prev_relationships=len(prev_relationships), 
+                       new_relationships=len(relationships))
 
             return result
 
         except json.JSONDecodeError as e:
-            logger.warning(f"Refinement JSON parsing failed: {e}")
+            logger.warning("Refinement JSON parsing failed", error=str(e))
 
             # Attempt self-correction
             from ..utils.self_fixes import fix_json
@@ -733,7 +989,9 @@ CRITICAL: ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
                         result = self._remove_dangling_references(result)
                         entities = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('e:')]
                         relationships = [item for item in result.get('@graph', []) if item.get('@id', '').startswith('r:')]
-                        logger.info(f"✅ Refinement JSON self-correction successful! Refined to {len(entities)} entities and {len(relationships)} relationships")
+                        logger.info("Refinement JSON self-correction successful", 
+                                   entity_count=len(entities), 
+                                   relationship_count=len(relationships))
                         return result
                 except json.JSONDecodeError:
                     pass
@@ -754,21 +1012,21 @@ CRITICAL: ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
         if len(chunks) == 1:
             return self._refine_single_chunk(chunks[0], previous_extraction, domain_focus, length)
 
-        logger.info(f"Refining long document with {len(chunks)} chunks")
+        logger.info("Refining long document", chunk_count=len(chunks))
 
         # Start with the previous extraction as the base
         current_extraction = previous_extraction
 
         # Refine each chunk against the evolving extraction
         for i, chunk in enumerate(chunks):
-            logger.info(f"Refining chunk {i+1}/{len(chunks)}")
+            logger.info("Refining chunk", chunk_number=i+1, total_chunks=len(chunks))
 
             # Refine this chunk against the current extraction
             chunk_refinement = self._refine_single_chunk(chunk, current_extraction, domain_focus, length)
 
             # Validate chunk result
             if not isinstance(chunk_refinement, dict) or "@graph" not in chunk_refinement:
-                logger.warning(f"Chunk {i+1} refinement failed, skipping")
+                logger.warning("Chunk refinement failed, skipping", chunk_number=i+1)
                 continue
 
             # Update current extraction with refinements from this chunk
@@ -817,7 +1075,10 @@ CRITICAL: ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
         """
         # Validate input - ensure it's a dict
         if not isinstance(jsonld_result, dict):
-            logger.error(f"_format_output received {type(jsonld_result)} instead of dict: {repr(jsonld_result)}")
+            logger.error("_format_output received invalid type", 
+                        expected_type="dict", 
+                        actual_type=type(jsonld_result).__name__, 
+                        value_repr=repr(jsonld_result))
             jsonld_result = self._create_empty_graph()
 
         # Ensure it has the required structure
@@ -832,7 +1093,9 @@ CRITICAL: ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
         elif output_format == "triples":
             return self._convert_to_triples(jsonld_result)
         else:
-            logger.warning(f"Unknown output format '{output_format}', defaulting to jsonld")
+            logger.warning("Unknown output format, defaulting to jsonld", 
+                          requested_format=output_format, 
+                          default_format="jsonld")
             return jsonld_result
 
     def _minify_jsonld(self, jsonld_result: dict) -> dict:

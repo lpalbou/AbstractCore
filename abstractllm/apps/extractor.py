@@ -6,31 +6,33 @@ Usage:
     python -m abstractllm.apps.extractor <file_path> [options]
 
 Options:
-    --focus=<focus>             Specific focus area for extraction (e.g., "technology", "business", "medical")
-    --style=<style>             Extraction style (structured, focused, minimal, comprehensive, default: structured)
-    --length=<length>           Extraction depth (brief, standard, detailed, comprehensive, default: standard)
-    --entity-types=<types>      Comma-separated entity types to focus on (person,organization,location,etc.)
-    --similarity-threshold=<t>  Similarity threshold for entity deduplication (0.0-1.0, default: 0.85)
-    --format=<format>          Output format (json-ld, json, yaml, default: json-ld)
-    --output=<output>          Output file path (optional, prints to console if not provided)
-    --chunk-size=<size>        Chunk size in characters (default: 6000, max: 32000)
-    --provider=<provider>      LLM provider (requires --model)
-    --model=<model>            LLM model (requires --provider)
-    --no-embeddings           Disable semantic entity deduplication
-    --fast                    Use fast extraction (skip verification, larger chunks, no embeddings)
-    --iterate=<number>        Number of refinement iterations (default: 1, finds missing entities and verifies relationships)
-    --minified                Output minified JSON-LD (compact, no indentation)
-    --verbose                 Show detailed progress information
-    --timeout=<seconds>       HTTP timeout for LLM providers (default: 300, increase for large models)
-    --help                    Show this help message
+    --focus <focus>             Specific focus area for extraction (e.g., "technology", "business", "medical")
+    --style <style>             Extraction style (structured, focused, minimal, comprehensive, default: structured)
+    --length <length>           Extraction depth (brief, standard, detailed, comprehensive, default: standard)
+    --entity-types <types>      Comma-separated entity types to focus on (person,organization,location,etc.)
+    --similarity-threshold <t>  Similarity threshold for entity deduplication (0.0-1.0, default: 0.85)
+    --format <format>           Output format (json-ld, json, yaml, triples, default: json-ld)
+    --output <output>           Output file path (optional, prints to console if not provided)
+    --chunk-size <size>         Chunk size in characters (default: 6000, max: 32000)
+    --provider <provider>       LLM provider (requires --model)
+    --model <model>             LLM model (requires --provider)
+    --no-embeddings             Disable semantic entity deduplication
+    --fast                      Use fast extraction (skip verification, larger chunks, no embeddings)
+    --iterate <number>          Number of refinement iterations (default: 1, finds missing entities and verifies relationships)
+    --minified                  Output minified JSON-LD (compact, no indentation)
+    --verbose                   Show detailed progress information
+    --timeout <seconds>         HTTP timeout for LLM providers (default: 300, increase for large models)
+    --max-tokens <tokens>       Maximum total tokens for LLM context (default: 32000)
+    --max-output-tokens <tokens> Maximum tokens for LLM output generation (default: 8000)
+    --help                      Show this help message
 
 Examples:
     python -m abstractllm.apps.extractor document.pdf
-    python -m abstractllm.apps.extractor report.txt --focus=technology --style=structured --verbose
-    python -m abstractllm.apps.extractor data.md --entity-types=person,organization --output=kg.jsonld
+    python -m abstractllm.apps.extractor report.txt --focus technology --style structured --verbose
+    python -m abstractllm.apps.extractor data.md --entity-types person,organization --output kg.jsonld
     python -m abstractllm.apps.extractor large.txt --fast --minified --verbose  # Fast, compact output
-    python -m abstractllm.apps.extractor report.txt --length=detailed --provider=openai --model=gpt-4o-mini
-    python -m abstractllm.apps.extractor doc.txt --iterate=3 --verbose  # 3 refinement passes for higher quality
+    python -m abstractllm.apps.extractor report.txt --length detailed --provider openai --model gpt-4o-mini
+    python -m abstractllm.apps.extractor doc.txt --iterate 3 --verbose  # 3 refinement passes for higher quality
 """
 
 import argparse
@@ -239,8 +241,8 @@ Default model setup:
     parser.add_argument(
         '--chunk-size',
         type=int,
-        default=6000,
-        help='Chunk size in characters (default: 6000, max: 32000)'
+        default=8000,
+        help='Chunk size in characters (default: 8000, max: 32000)'
     )
 
     parser.add_argument(
@@ -294,8 +296,22 @@ Default model setup:
     parser.add_argument(
         '--timeout',
         type=float,
-        default=300.0,
+        default=600.0,
         help='HTTP request timeout in seconds for LLM providers (default: 300, i.e., 5 minutes). Increase for large models like 36B+ parameters'
+    )
+
+    parser.add_argument(
+        '--max-tokens',
+        type=int,
+        default=32000,
+        help='Maximum total tokens for LLM context (default: 32000)'
+    )
+
+    parser.add_argument(
+        '--max-output-tokens',
+        type=int,
+        default=8000,
+        help='Maximum tokens for LLM output generation (default: 8000)'
     )
 
     # Parse arguments
@@ -397,24 +413,28 @@ Default model setup:
                 max_output_tokens = 8000
 
             if args.verbose:
-                print(f"Initializing BasicExtractor (mode: {extraction_mode}, {args.provider}, {args.model}, {max_tokens} token context, {max_output_tokens} output tokens)...")
+                print(f"Initializing BasicExtractor (mode: {extraction_mode}, {args.provider}, {args.model}, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
                 if adjusted_chunk_size != args.chunk_size:
                     print(f"Adjusted chunk size from {args.chunk_size} to {adjusted_chunk_size} characters for {args.provider} compatibility")
 
-            llm = create_llm(args.provider, model=args.model, max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=args.timeout)
+            llm = create_llm(args.provider, model=args.model, max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens, timeout=args.timeout)
 
             extractor = BasicExtractor(
                 llm=llm,
-                max_chunk_size=adjusted_chunk_size
+                max_chunk_size=adjusted_chunk_size,
+                max_tokens=args.max_tokens,
+                max_output_tokens=args.max_output_tokens
             )
         else:
             # Default configuration
             if args.verbose:
-                print(f"Initializing BasicExtractor (mode: {extraction_mode}, ollama, qwen3:4b-instruct-2507-q4_K_M, 32000 token context, 8000 output tokens)...")
+                print(f"Initializing BasicExtractor (mode: {extraction_mode}, ollama, qwen3:4b-instruct-2507-q4_K_M, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
 
             try:
                 extractor = BasicExtractor(
-                    max_chunk_size=args.chunk_size
+                    max_chunk_size=args.chunk_size,
+                    max_tokens=args.max_tokens,
+                    max_output_tokens=args.max_output_tokens
                 )
             except RuntimeError as e:
                 # Handle default model not available
