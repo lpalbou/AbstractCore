@@ -804,6 +804,46 @@ BasicJudge implements 2025 state-of-the-art practices:
 
 BasicJudge is designed for production use with built-in error handling, retry logic, and efficient evaluation of content from short snippets to comprehensive documents.
 
+## Timeout Configuration
+
+The judge supports flexible timeout configuration for different evaluation scenarios:
+
+### Default Behavior (Unlimited Timeout)
+```bash
+# Runs as long as needed - recommended for complex evaluations
+python -m abstractllm.apps.judge document.txt
+```
+
+### Custom Timeout
+```bash
+# Set specific timeout (useful for production environments)
+python -m abstractllm.apps.judge document.txt --timeout 300   # 5 minutes
+python -m abstractllm.apps.judge document.txt --timeout 900   # 15 minutes
+
+# Explicit unlimited timeout
+python -m abstractllm.apps.judge document.txt --timeout none
+```
+
+### Programmatic Usage
+```python
+from abstractllm.processing import BasicJudge
+
+# Unlimited timeout (default)
+judge = BasicJudge()
+
+# Custom timeout
+judge = BasicJudge(timeout=300)  # 5 minutes
+
+# Explicit unlimited timeout
+judge = BasicJudge(timeout=None)
+```
+
+**When to Use Timeouts:**
+- **Production environments**: Set reasonable timeouts (300-900 seconds) to prevent hanging
+- **Large documents**: Use unlimited timeout for comprehensive evaluations
+- **Multiple files**: Consider longer timeouts when evaluating many files
+- **Complex criteria**: Detailed evaluations may need more time
+
 ## Troubleshooting
 
 ### Common Issues

@@ -20,6 +20,10 @@ class MockProvider(BaseProvider):
 
     def __init__(self, model: str = "mock-model", **kwargs):
         super().__init__(model, **kwargs)
+        
+        # Handle timeout parameter for mock provider
+        self._handle_timeout_parameter(kwargs)
+        
         # Mock provider uses prompted strategy for structured output
         self.model_capabilities = {"structured_output": "prompted"}
 
@@ -105,6 +109,34 @@ class MockProvider(BaseProvider):
                 mock_data[field_name] = f"mock_{field_name}"
 
         return json.dumps(mock_data)
+
+    def _handle_timeout_parameter(self, kwargs: Dict[str, Any]) -> None:
+        """
+        Handle timeout parameter for Mock provider.
+        
+        Mock provider simulates responses instantly, so timeout parameters
+        don't apply. If a non-None timeout is provided, it's accepted but
+        has no effect on mock generation.
+        
+        Args:
+            kwargs: Initialization kwargs that may contain timeout
+        """
+        timeout_value = kwargs.get('timeout')
+        if timeout_value is not None:
+            # For mock provider, we accept timeout but it has no effect
+            # No warning needed since this is for testing
+            self._timeout = timeout_value
+        else:
+            # Keep None value 
+            self._timeout = None
+
+    def _update_http_client_timeout(self) -> None:
+        """
+        Mock provider doesn't use HTTP clients.
+        Timeout changes have no effect on mock responses.
+        """
+        # No-op for mock provider - no HTTP clients used
+        pass
 
     def get_capabilities(self) -> List[str]:
         """Get mock capabilities"""

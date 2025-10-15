@@ -286,7 +286,7 @@ extractor document.txt --iterate 3 --verbose
 | `--iterate` | 1-10 | 1 | Number of refinement iterations |
 | `--minified` | Flag | False | Output minified JSON |
 | `--verbose` | Flag | False | Show detailed progress |
-| `--timeout` | Seconds | 300 | HTTP timeout for LLM requests |
+| `--timeout` | Seconds/none | unlimited | HTTP timeout for LLM requests. Use 'none' for unlimited or specify seconds (e.g., 600) |
 
 ### Entity Types
 
@@ -601,6 +601,46 @@ ollama serve
 
 **"Provider/model required together"**
 - Both `--provider` and `--model` must be specified together
+
+## Timeout Configuration
+
+The extractor supports flexible timeout configuration for different use cases:
+
+### Default Behavior (Unlimited Timeout)
+```bash
+# Runs as long as needed - recommended for large documents or complex models
+python -m abstractllm.apps.extractor document.txt
+```
+
+### Custom Timeout
+```bash
+# Set specific timeout (useful for production environments)
+python -m abstractllm.apps.extractor document.txt --timeout 600  # 10 minutes
+python -m abstractllm.apps.extractor document.txt --timeout 1800 # 30 minutes
+
+# Explicit unlimited timeout
+python -m abstractllm.apps.extractor document.txt --timeout none
+```
+
+### Programmatic Usage
+```python
+from abstractllm.processing import BasicExtractor
+
+# Unlimited timeout (default)
+extractor = BasicExtractor()
+
+# Custom timeout
+extractor = BasicExtractor(timeout=600)  # 10 minutes
+
+# Explicit unlimited timeout
+extractor = BasicExtractor(timeout=None)
+```
+
+**When to Use Timeouts:**
+- **Production environments**: Set reasonable timeouts (300-1800 seconds) to prevent hanging
+- **Large documents**: Use unlimited timeout for documents >50KB or complex extractions
+- **Large models**: Models >30B parameters may need longer processing time
+- **Development**: Use unlimited timeout to avoid interruptions during testing
 
 ## Integration Examples
 

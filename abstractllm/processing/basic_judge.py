@@ -118,7 +118,8 @@ class BasicJudge:
         temperature: float = 0.1,  # Low temperature for consistent evaluation
         max_tokens: int = 32000,
         max_output_tokens: int = 8000,
-        debug: bool = False
+        debug: bool = False,
+        timeout: Optional[float] = None
     ):
         """Initialize the judge
         
@@ -128,12 +129,13 @@ class BasicJudge:
             max_tokens: Maximum total tokens for LLM context (default 32000)
             max_output_tokens: Maximum tokens for LLM output generation (default 8000)
             debug: Enable debug output showing raw LLM responses (default False)
+            timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
         """
         if llm is None:
             try:
                 # Use low temperature for consistent evaluation
                 self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M",
-                                    max_tokens=max_tokens, max_output_tokens=max_output_tokens, temperature=temperature)
+                                    max_tokens=max_tokens, max_output_tokens=max_output_tokens, temperature=temperature, timeout=timeout)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'qwen3:4b-instruct-2507-q4_K_M': {e}\n\n"
@@ -663,6 +665,7 @@ def create_judge(
     max_tokens: int = 32000,
     max_output_tokens: int = 8000,
     debug: bool = False,
+    timeout: Optional[float] = None,
     **kwargs
 ) -> BasicJudge:
     """
@@ -675,13 +678,14 @@ def create_judge(
         max_tokens: Maximum total tokens for LLM context (default 32000)
         max_output_tokens: Maximum tokens for LLM output generation (default 8000)
         debug: Enable debug output showing raw LLM responses (default False)
+        timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
         **kwargs: Additional arguments passed to create_llm
 
     Returns:
         BasicJudge instance
     """
     if provider and model:
-        llm = create_llm(provider, model=model, temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, **kwargs)
-        return BasicJudge(llm=llm, temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, debug=debug)
+        llm = create_llm(provider, model=model, temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=timeout, **kwargs)
+        return BasicJudge(llm=llm, temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, debug=debug, timeout=timeout)
     else:
-        return BasicJudge(temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, debug=debug)
+        return BasicJudge(temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, debug=debug, timeout=timeout)

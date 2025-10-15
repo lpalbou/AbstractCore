@@ -383,9 +383,8 @@ Default model setup:
 
     parser.add_argument(
         '--timeout',
-        type=float,
-        default=300.0,
-        help='HTTP request timeout in seconds for LLM providers (default: 300)'
+        default=None,
+        help='HTTP request timeout in seconds for LLM providers (default: None = infininity)'
     )
 
     # Parse arguments
@@ -398,9 +397,6 @@ Default model setup:
             sys.exit(1)
 
         # Validate timeout
-        if args.timeout < 30.0:
-            print("Error: Timeout must be at least 30 seconds")
-            sys.exit(1)
 
         # Validate provider/model pair
         if args.provider and not args.model:

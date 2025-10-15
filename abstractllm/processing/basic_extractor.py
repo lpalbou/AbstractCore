@@ -53,7 +53,8 @@ class BasicExtractor:
         llm: Optional[AbstractLLMInterface] = None,
         max_chunk_size: int = 8000,
         max_tokens: int = 32000,
-        max_output_tokens: int = 8000
+        max_output_tokens: int = 8000,
+        timeout: Optional[float] = None
     ):
         """Initialize the extractor
         
@@ -62,10 +63,11 @@ class BasicExtractor:
             max_chunk_size: Maximum characters per chunk for long documents (default 8000)
             max_tokens: Maximum total tokens for LLM context (default 32000)
             max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+            timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
         """
         if llm is None:
             try:
-                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", max_tokens=max_tokens, max_output_tokens=max_output_tokens)
+                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=timeout)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'qwen3:4b-instruct-2507-q4_K_M': {e}\n\n"

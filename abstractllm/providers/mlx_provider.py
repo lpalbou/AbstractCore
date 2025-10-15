@@ -24,6 +24,9 @@ class MLXProvider(BaseProvider):
     def __init__(self, model: str = "mlx-community/Mistral-7B-Instruct-v0.1-4bit", **kwargs):
         super().__init__(model, **kwargs)
 
+        # Handle timeout parameter for local models
+        self._handle_timeout_parameter(kwargs)
+
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
 
@@ -92,6 +95,40 @@ class MLXProvider(BaseProvider):
             # Log but don't raise - unload should be best-effort
             if hasattr(self, 'logger'):
                 self.logger.warning(f"Error during unload: {e}")
+
+    def _handle_timeout_parameter(self, kwargs: Dict[str, Any]) -> None:
+        """
+        Handle timeout parameter for MLX provider.
+        
+        Since MLX models run locally on Apple Silicon,
+        timeout parameters don't apply. If a non-None timeout is provided,
+        issue a warning and treat it as None (infinity).
+        
+        Args:
+            kwargs: Initialization kwargs that may contain timeout
+        """
+        timeout_value = kwargs.get('timeout')
+        if timeout_value is not None:
+            import warnings
+            warnings.warn(
+                f"MLX provider runs models locally on Apple Silicon and does not support timeout parameters. "
+                f"Provided timeout={timeout_value} will be ignored and treated as None (unlimited).",
+                UserWarning,
+                stacklevel=3
+            )
+            # Force timeout to None for local models
+            self._timeout = None
+        else:
+            # Keep None value (unlimited timeout is appropriate for local models)
+            self._timeout = None
+
+    def _update_http_client_timeout(self) -> None:
+        """
+        MLX provider doesn't use HTTP clients for model inference.
+        Local models on Apple Silicon don't have timeout constraints.
+        """
+        # No-op for local models - they don't use HTTP clients
+        pass
 
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""

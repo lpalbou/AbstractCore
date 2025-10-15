@@ -82,7 +82,8 @@ class BasicSummarizer:
         llm: Optional[AbstractLLMInterface] = None, 
         max_chunk_size: int = 8000,
         max_tokens: int = 32000,
-        max_output_tokens: int = 8000
+        max_output_tokens: int = 8000,
+        timeout: Optional[float] = None
     ):
         """
         Initialize the summarizer
@@ -91,12 +92,13 @@ class BasicSummarizer:
             llm: AbstractLLM instance (any provider). If None, attempts to create ollama gemma3:1b-it-qat
             max_chunk_size: Maximum characters per chunk for long documents (default 8000)
             max_tokens: Maximum total tokens for LLM context (default 32000)
-            max_output_tokens: Maximum tokens for LLM output generation (default 4000)
+            max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+            timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
         """
         if llm is None:
             try:
                 # Default to gemma3:1b-it-qat with configurable token limits
-                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=max_tokens, max_output_tokens=max_output_tokens)
+                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=timeout)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}\n\n"

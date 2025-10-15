@@ -30,10 +30,11 @@ class LMStudioProvider(BaseProvider):
 
         self.base_url = base_url.rstrip('/')
 
-        # Ensure timeout is properly set and not None
+        # Get timeout value - None means unlimited timeout
         timeout_value = getattr(self, '_timeout', None)
-        if timeout_value is None:
-            timeout_value = 300.0
+        # Validate timeout if provided (None is allowed for unlimited)
+        if timeout_value is not None and timeout_value <= 0:
+            timeout_value = None  # Invalid timeout becomes unlimited
 
         try:
             self.client = httpx.Client(timeout=timeout_value)
@@ -295,10 +296,11 @@ class LMStudioProvider(BaseProvider):
                 # Create new client with updated timeout
                 self.client.close()
 
-                # Ensure timeout is not None
+                # Get timeout value - None means unlimited timeout
                 timeout_value = getattr(self, '_timeout', None)
-                if timeout_value is None:
-                    timeout_value = 300.0
+                # Validate timeout if provided (None is allowed for unlimited)
+                if timeout_value is not None and timeout_value <= 0:
+                    timeout_value = None  # Invalid timeout becomes unlimited
 
                 self.client = httpx.Client(timeout=timeout_value)
             except Exception as e:
