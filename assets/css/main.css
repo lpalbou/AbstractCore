@@ -667,6 +667,11 @@ a:hover {
         width: 2rem;
         height: 2rem;
     }
+    
+    /* Ensure main content doesn't overlap with mobile navbar */
+    main[style*="padding-top"] {
+        padding-top: calc(3.5rem + 1rem) !important;
+    }
 }
 
 /* Hero Section */
@@ -1399,7 +1404,7 @@ code[class*="language-"],
 /* Tablets and larger phones */
 @media (max-width: 768px) {
     .hero {
-        padding: calc(3.5rem + var(--spacing-8)) 0 var(--spacing-8);
+        padding: calc(3.5rem + var(--spacing-12)) 0 var(--spacing-8);
     }
     
     .hero-title {
@@ -1425,7 +1430,7 @@ code[class*="language-"],
 /* Extra mobile improvements for very small screens */
 @media (max-width: 480px) {
     .hero {
-        padding: calc(3.5rem + var(--spacing-6)) 0 var(--spacing-6);
+        padding: calc(3.5rem + var(--spacing-10)) 0 var(--spacing-6);
     }
     
     /* Ensure text doesn't overflow */
