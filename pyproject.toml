@@ -9,10 +9,10 @@ description = "Unified interface to all LLM providers with essential infrastruct
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Laurent-Philippe Albou"}
+    {name = "Laurent-Philippe Albou", email = "contact@abstractcore.ai"}
 ]
 maintainers = [
-    {name = "Laurent-Philippe Albou"}
+    {name = "Laurent-Philippe Albou", email = "contact@abstractcore.ai"}
 ]
 keywords = [
     "llm",
