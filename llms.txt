@@ -1,0 +1,220 @@
+# AbstractCore - Unified LLM Provider Interface
+
+**Write once, run everywhere.** Production-ready Python library for all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with universal tool calling, streaming, session management, and built-in CLI apps.
+
+## Quick Start
+
+```bash
+pip install abstractcore[all]
+```
+
+- **[5-Minute Setup](docs/getting-started.md)**: Basic usage with any provider
+- **[Prerequisites](docs/prerequisites.md)**: API keys and local provider setup
+- **[Installation Options](#installation-options)**: Provider-specific dependencies
+
+## Core Features
+
+- **[API Reference](docs/api-reference.md)**: Complete Python API with examples
+- **[Universal Tool Calling](docs/tool-calling.md)**: @tool decorator works across ALL providers
+- **[Session Management](docs/session.md)**: Persistent conversations with analytics
+- **[Streaming](docs/api-reference.md)**: Real-time responses across all providers
+- **[Structured Output](docs/getting-started.md)**: Pydantic validation with auto-retry
+- **[Embeddings](docs/embeddings.md)**: SOTA models for semantic search and RAG
+
+## Built-in CLI Applications
+
+Ready-to-use terminal tools - no Python code required:
+
+- **[Summarizer](docs/apps/basic-summarizer.md)**: `summarizer document.pdf --style executive`
+- **[Extractor](docs/apps/basic-extractor.md)**: `extractor report.txt --format json-ld --focus technology`
+- **[Judge](docs/apps/basic-judge.md)**: `judge essay.txt --criteria clarity,accuracy --context "academic writing"`
+
+## Optional Components
+
+- **[HTTP Server](docs/server.md)**: OpenAI-compatible REST API for multi-language access
+- **[Architecture](docs/architecture.md)**: System design and component interactions
+- **[Examples](examples/)**: Progressive tutorials from basic to production patterns
+
+## Documentation & Support
+
+- **[Troubleshooting](docs/troubleshooting.md)**: Common issues and solutions
+- **[Full Documentation](docs/README.md)**: Complete navigation guide
+- **[GitHub Issues](https://github.com/lpalbou/AbstractCore/issues)**: Report bugs and get help
+
+## Installation Options
+
+```bash
+# Minimal core
+pip install abstractcore
+
+# With specific providers
+pip install abstractcore[openai]
+pip install abstractcore[anthropic]
+pip install abstractcore[ollama]
+
+# With server support
+pip install abstractcore[server]
+
+# With embeddings
+pip install abstractcore[embeddings]
+
+# Everything
+pip install abstractcore[all]
+```
+
+## Why AbstractCore?
+
+- **Write once, run everywhere**: Same code works with any LLM provider
+- **Production ready**: Built-in error handling, retries, and monitoring
+- **Universal tool calling**: @tool decorator works across ALL providers
+- **Built-in apps**: Ready-to-use CLI tools (summarizer, extractor, judge)
+- **Debug capabilities**: Self-healing JSON and `--debug` mode for troubleshooting
+
+## Essential Code Examples
+
+### Basic Usage with Factory Pattern
+```python
+from abstractllm import create_llm
+
+# Factory pattern creates appropriate provider
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate("What is the capital of France?")
+print(response.content)
+```
+
+### Universal Tool Calling with @tool Decorator
+```python
+from abstractllm import create_llm, tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    return f"Weather in {city}: 72°F, Sunny"
+
+# Works with ANY provider - OpenAI, Anthropic, Ollama, etc.
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+response = llm.generate(
+    "What's the weather in Paris?",
+    tools=[get_weather]  # Automatic format detection and conversion
+)
+
+# Enhanced metadata for complex tools
+@tool(
+    description="Search database for records",
+    tags=["database", "search"],
+    when_to_use="When user asks for specific data",
+    examples=[{"description": "Find users named John", "arguments": {"query": "name=John"}}]
+)
+def search_database(query: str, table: str = "users") -> str:
+    return f"Searching {table} for: {query}"
+
+# Tool chaining - LLM automatically calls multiple tools in sequence
+@tool
+def get_user_location(user_id: str) -> str:
+    return {"user123": "Paris", "user456": "Tokyo"}.get(user_id, "Unknown")
+
+# LLM will call get_user_location first, then get_weather with the result
+response = llm.generate("What's the weather for user123?", tools=[get_user_location, get_weather])
+```
+
+### Structured Output with Automatic Retry
+```python
+from pydantic import BaseModel
+from abstractllm import create_llm
+
+class Person(BaseModel):
+    name: str
+    age: int
+
+# Automatic validation and retry on failures
+person = llm.generate(
+    "Extract: John Doe is 25 years old",
+    response_model=Person
+)
+print(f"{person.name}, age {person.age}")
+```
+
+### Session Management with Analytics
+```python
+from abstractllm import BasicSession, create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(llm, system_prompt="You are a helpful assistant.")
+
+response1 = session.generate("My name is Alice")
+response2 = session.generate("What's my name?")  # Remembers context
+
+# Save with analytics
+session.save("conversation.json", summary=True, assessment=True, facts=True)
+```
+
+### CLI Applications (Terminal & Python)
+```bash
+# Terminal usage - no Python code needed
+summarizer document.pdf --style executive --output summary.txt
+extractor report.txt --format json-ld --focus technology
+judge essay.txt --criteria clarity,accuracy --context "academic writing"
+```
+
+```python
+# Python API usage
+from abstractllm.processing import BasicSummarizer, BasicExtractor, BasicJudge
+
+summarizer = BasicSummarizer()
+summary = summarizer.summarize(text, style="executive", length="brief")
+
+extractor = BasicExtractor()
+kg = extractor.extract(text, output_format="jsonld")
+
+judge = BasicJudge()
+assessment = judge.evaluate(text, context="code review", focus="error handling")
+```
+
+### Advanced Features
+```python
+# Architecture-aware tool calling - automatic format detection
+# Qwen3: <|tool_call|>{"name": "func", "arguments": {...}}</|tool_call|>
+# LLaMA3: <function_call>{"name": "func", "arguments": {...}}</function_call>
+# OpenAI/Anthropic: Native API tool calls
+
+# Event system for production monitoring
+from abstractllm.events import EventType, on_global
+
+def cost_monitor(event):
+    if event.cost_usd and event.cost_usd > 0.10:
+        alert(f"High cost request: ${event.cost_usd}")
+
+on_global(EventType.GENERATION_COMPLETED, cost_monitor)
+
+# Memory management for local models
+llm = create_llm("ollama", model="large-model")
+response = llm.generate("Hello")
+llm.unload()  # Free memory
+```
+
+### Debug & Performance Features
+```bash
+# Debug mode shows raw LLM responses
+judge document.txt --debug --provider lmstudio --model qwen/qwen3-next-80b
+
+# Advanced extractor modes and iterations
+extractor document.pdf --mode thorough --iterate 3 --similarity-threshold 0.9
+extractor large_file.txt --mode fast --no-embeddings --minified
+
+# Focus areas for targeted evaluation
+judge README.md --focus "architectural diagrams, technical comparisons" --debug
+judge code.py --focus "error handling, performance" --temperature 0.05
+
+# Self-healing JSON handles truncated responses automatically
+# Token limits: max_tokens=32k, max_output_tokens=8k prevent truncation
+```
+
+---
+
+## Quick Links
+
+- **GitHub**: https://github.com/lpalbou/AbstractCore
+- **PyPI**: `pip install abstractcore[all]`
+- **License**: MIT | **Python**: 3.9+ | **Status**: Production Ready
+
+**Complete Documentation**: [llms-full.txt](https://lpalbou.github.io/AbstractCore/llms-full.txt)
