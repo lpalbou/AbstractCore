@@ -10,47 +10,33 @@
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
     
-    <!-- Shared Components -->
-    <script src="../assets/js/shared-components.js"></script>
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <!-- Logo will be injected by shared-components.js -->
-                            <div class="logo-circle"></div>
-                            <div class="logo-lines">
-                                <div class="logo-line"></div>
-                                <div class="logo-line"></div>
-                                <div class="logo-line"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <span class="brand-text">AbstractCore</span>
-                </a>
-            </div>
-            
-            <div class="nav-menu" id="nav-menu">
-                <a href="../index.html#features" class="nav-link">Features</a>
-                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
-                <a href="../index.html#docs" class="nav-link">Documentation</a>
-                <a href="../index.html#examples" class="nav-link">Examples</a>
-                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
-                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                    </svg>
-                    GitHub
-                </a>
-            </div>
-            
-            <div class="nav-toggle" id="nav-toggle">
-                <span class="bar"></span>
-                <span class="bar"></span>
-                <span class="bar"></span>
-            </div>
-        </div>
-    </nav>
+    <div class="navbar-placeholder"></div>
+    
+    <script>
+        // Initialize navbar with docs-specific configuration
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '../',
+                menuItems: [
+                    { text: 'Features', href: 'index.html#features' },
+                    { text: 'Quick Start', href: 'index.html#quickstart' },
+                    { text: 'Documentation', href: 'index.html#docs' },
+                    { text: 'Examples', href: 'index.html#examples' },
+                    { 
+                        text: 'GitHub', 
+                        href: 'https://github.com/lpalbou/AbstractCore',
+                        target: '_blank',
+                        icon: 'github'
+                    }
+                ]
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -60,7 +46,6 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">
                     Complete troubleshooting guide for AbstractCore with common issues, solutions, and best practices.
                 </p>
-            </div>
 
             <!-- Quick Diagnosis -->
             <div style="background: linear-gradient(135deg, #ef4444, #dc2626); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
@@ -78,8 +63,6 @@ python -c "from abstractllm import create_llm; print('✓ Core library OK')"
 
 # Test server (if installed)
 curl http://localhost:8000/health  # Should return {"status":"healthy"}</code></pre>
-                </div>
-            </div>
 
             <!-- Common Mistakes -->
             <section style="margin-bottom: 3rem;">
@@ -97,8 +80,6 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 # Verify they're set
 echo $OPENAI_API_KEY</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid #f59e0b;">
                         <h3 style="margin: 0 0 1rem 0; color: #f59e0b;">2. 🧩 Mishandling Tool Calls</h3>
@@ -117,8 +98,6 @@ response = llm.generate(
     "What's the weather in Paris?",
     tools=[get_weather]  # Pass as list
 )</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid #8b5cf6;">
                         <h3 style="margin: 0 0 1rem 0; color: #8b5cf6;">3. 💻 Provider Dependency Confusion</h3>
@@ -132,9 +111,6 @@ pip install abstractcore[ollama]
 
 # Install everything
 pip install abstractcore[all]</code></pre>
-                        </div>
-                    </div>
-                </div>
             </section>
 
             <!-- Common Issues -->
@@ -167,8 +143,6 @@ source ~/.bashrc
 
 # Test authentication
 python -c "from abstractllm import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)"</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0;">Model Not Found</h3>
@@ -188,7 +162,6 @@ ollama pull qwen3-coder:30b
 
 # Verify Ollama is running
 ollama serve</code></pre>
-                        </div>
                         
                         <p><strong>For OpenAI/Anthropic:</strong></p>
                         <div class="code-block">
@@ -198,8 +171,6 @@ llm = create_llm("openai", model="gpt4")  # ✗ Wrong
 
 llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # ✓ Correct
 llm = create_llm("anthropic", model="claude-3")  # ✗ Wrong</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0;">Server Won't Start</h3>
@@ -220,9 +191,6 @@ kill -9 $(lsof -t -i:8000)  # Linux/Mac
 
 # Use different port
 uvicorn abstractllm.server.app:app --port 3000</code></pre>
-                        </div>
-                    </div>
-                </div>
             </section>
 
             <!-- Best Practices -->
@@ -238,7 +206,6 @@ uvicorn abstractllm.server.app:app --port 3000</code></pre>
                             <li>✅ Use <code>.env</code> files (add to <code>.gitignore</code>)</li>
                             <li>✅ Implement configuration validation</li>
                         </ul>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">Tool Development</h3>
@@ -248,7 +215,6 @@ uvicorn abstractllm.server.app:app --port 3000</code></pre>
                             <li>✅ Write clear docstrings</li>
                             <li>✅ Handle edge cases and errors</li>
                         </ul>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Error Handling</h3>
@@ -258,8 +224,6 @@ uvicorn abstractllm.server.app:app --port 3000</code></pre>
                             <li>✅ Log errors systematically</li>
                             <li>✅ Design for graceful degradation</li>
                         </ul>
-                    </div>
-                </div>
             </section>
 
             <!-- Debug Techniques -->
@@ -276,7 +240,6 @@ logging.basicConfig(level=logging.DEBUG)
 
 from abstractllm import create_llm
 llm = create_llm("openai", model="gpt-4o-mini")</code></pre>
-                    </div>
                     
                     <p><strong>Server:</strong></p>
                     <div class="code-block">
@@ -288,8 +251,6 @@ uvicorn abstractllm.server.app:app --log-level debug
 
 # Monitor logs
 tail -f logs/abstractllm_*.log</code></pre>
-                    </div>
-                </div>
             </section>
 
             <!-- Error Reference -->
@@ -338,7 +299,6 @@ tail -f logs/abstractllm_*.log</code></pre>
                             </tr>
                         </tbody>
                     </table>
-                </div>
             </section>
 
             <!-- Getting Help -->
@@ -351,7 +311,6 @@ tail -f logs/abstractllm_*.log</code></pre>
                     <li style="margin-bottom: 0.5rem;"><strong>Check Documentation:</strong> <a href="getting-started.html" style="color: #e0e7ff;">Getting Started</a>, <a href="api-reference.html" style="color: #e0e7ff;">API Reference</a></li>
                     <li><strong>Community Support:</strong> <a href="https://github.com/lpalbou/AbstractCore/issues" style="color: #e0e7ff;" target="_blank">GitHub Issues</a></li>
                 </ol>
-            </div>
 
             <!-- Related Documentation -->
             <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
@@ -360,25 +319,18 @@ tail -f logs/abstractllm_*.log</code></pre>
                     <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
-                    </a>
                     
                     <a href="prerequisites.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Prerequisites</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Provider setup</p>
-                    </a>
                     
                     <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API docs</p>
-                    </a>
                     
                     <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
-                    </a>
-                </div>
-            </div>
-        </div>
     </main>
 
     <!-- Scripts -->

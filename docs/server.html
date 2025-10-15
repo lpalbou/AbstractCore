@@ -10,47 +10,33 @@
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
     
-    <!-- Shared Components -->
-    <script src="../assets/js/shared-components.js"></script>
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <!-- Logo will be injected by shared-components.js -->
-                            <div class="logo-circle"></div>
-                            <div class="logo-lines">
-                                <div class="logo-line"></div>
-                                <div class="logo-line"></div>
-                                <div class="logo-line"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <span class="brand-text">AbstractCore</span>
-                </a>
-            </div>
-            
-            <div class="nav-menu" id="nav-menu">
-                <a href="../index.html#features" class="nav-link">Features</a>
-                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
-                <a href="../index.html#docs" class="nav-link">Documentation</a>
-                <a href="../index.html#examples" class="nav-link">Examples</a>
-                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
-                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                    </svg>
-                    GitHub
-                </a>
-            </div>
-            
-            <div class="nav-toggle" id="nav-toggle">
-                <span class="bar"></span>
-                <span class="bar"></span>
-                <span class="bar"></span>
-            </div>
-        </div>
-    </nav>
+    <div class="navbar-placeholder"></div>
+    
+    <script>
+        // Initialize navbar with docs-specific configuration
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '../',
+                menuItems: [
+                    { text: 'Features', href: 'index.html#features' },
+                    { text: 'Quick Start', href: 'index.html#quickstart' },
+                    { text: 'Documentation', href: 'index.html#docs' },
+                    { text: 'Examples', href: 'index.html#examples' },
+                    { 
+                        text: 'GitHub', 
+                        href: 'https://github.com/lpalbou/AbstractCore',
+                        target: '_blank',
+                        icon: 'github'
+                    }
+                ]
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -60,7 +46,6 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">
                     Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.
                 </p>
-            </div>
 
             <!-- Quick Start -->
             <section style="margin-bottom: 3rem;">
@@ -78,8 +63,6 @@ uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000
 # Test
 curl http://localhost:8000/health
 # Response: {"status":"healthy"}</code></pre>
-                    </div>
-                </div>
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
@@ -91,8 +74,6 @@ curl http://localhost:8000/health
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0;">First Request (Python)</h3>
@@ -109,9 +90,6 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)</code></pre>
-                        </div>
-                    </div>
-                </div>
             </section>
 
             <!-- Configuration -->
@@ -135,8 +113,6 @@ export ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 
 # Debug mode
 export ABSTRACTCORE_DEBUG=true</code></pre>
-                    </div>
-                </div>
                 
                 <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <h3 style="margin: 0 0 1rem 0;">Startup Options</h3>
@@ -149,8 +125,6 @@ uvicorn abstractllm.server.app:app --workers 4
 
 # Custom port
 uvicorn abstractllm.server.app:app --port 3000</code></pre>
-                    </div>
-                </div>
             </section>
 
             <!-- API Endpoints -->
@@ -173,7 +147,6 @@ uvicorn abstractllm.server.app:app --port 3000</code></pre>
   "max_tokens": 1000,
   "stream": false
 }</code></pre>
-                    </div>
                     
                     <p><strong>Key Parameters:</strong></p>
                     <ul>
@@ -200,9 +173,6 @@ stream = client.chat.completions.create(
 for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="", flush=True)</code></pre>
-                        </div>
-                    </div>
-                </div>
                 
                 <!-- Embeddings -->
                 <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -214,7 +184,6 @@ for chunk in stream:
   "input": "Text to embed",
   "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2"
 }</code></pre>
-                    </div>
                     
                     <p><strong>Supported Providers:</strong></p>
                     <ul>
@@ -232,9 +201,6 @@ for chunk in stream:
     "input": ["text 1", "text 2", "text 3"],
     "model": "ollama/granite-embedding:278m"
   }'</code></pre>
-                        </div>
-                    </div>
-                </div>
                 
                 <!-- Other Endpoints -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
@@ -247,16 +213,12 @@ curl http://localhost:8000/v1/models
 
 # Ollama models only
 curl http://localhost:8000/v1/models?provider=ollama</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">GET /providers</h3>
                         <p style="margin: 0 0 1rem 0;">List all available providers and their status.</p>
                         <div class="code-block">
                             <pre><code class="language-bash">curl http://localhost:8000/providers</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">GET /health</h3>
@@ -264,9 +226,6 @@ curl http://localhost:8000/v1/models?provider=ollama</code></pre>
                         <div class="code-block">
                             <pre><code class="language-bash">curl http://localhost:8000/health
 # Response: {"status":"healthy"}</code></pre>
-                        </div>
-                    </div>
-                </div>
             </section>
 
             <!-- Agentic CLI Integration -->
@@ -285,8 +244,6 @@ export ABSTRACTCORE_API_KEY="unused"
 
 # Use with any model
 codex --model "ollama/qwen3-coder:30b" "Write a factorial function"</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
                         <h3 style="margin: 0 0 1rem 0;">Crush CLI (LLaMA3 format)</h3>
@@ -302,8 +259,6 @@ export OPENAI_API_KEY="unused"
 
 # Use
 crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
                         <h3 style="margin: 0 0 1rem 0;">Gemini CLI (XML format)</h3>
@@ -319,9 +274,6 @@ export OPENAI_API_KEY="unused"
 
 # Use
 gemini-cli --model "ollama/qwen3-coder:30b" "Review this project"</code></pre>
-                        </div>
-                    </div>
-                </div>
                 
                 <div style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <h3 style="margin: 0 0 1rem 0; color: var(--text-primary);">🔧 Tool Call Format Configuration</h3>
@@ -334,8 +286,6 @@ export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml      # Gemini CLI
 # Control tool execution
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=true   # Server executes
 export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client</code></pre>
-                    </div>
-                </div>
             </section>
 
             <!-- Deployment -->
@@ -356,13 +306,10 @@ ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 EXPOSE 8000
 
 CMD ["uvicorn", "abstractllm.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]</code></pre>
-                        </div>
                         
                         <div class="code-block">
                             <pre><code class="language-bash">docker build -t abstractcore-server .
 docker run -p 8000:8000 -e OPENAI_API_KEY=$OPENAI_API_KEY abstractcore-server</code></pre>
-                        </div>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0;">Production with Gunicorn</h3>
@@ -373,7 +320,6 @@ gunicorn abstractllm.server.app:app \
   --worker-class uvicorn.workers.UvicornWorker \
   --workers 4 \
   --bind 0.0.0.0:8000</code></pre>
-                        </div>
                         
                         <h4 style="margin: 1rem 0 0.5rem 0;">Docker Compose</h4>
                         <div class="code-block">
@@ -388,9 +334,6 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped</code></pre>
-                        </div>
-                    </div>
-                </div>
             </section>
 
             <!-- Debug and Monitoring -->
@@ -402,7 +345,6 @@ services:
                     <div class="code-block">
                         <pre><code class="language-bash">export ABSTRACTCORE_DEBUG=true
 uvicorn abstractllm.server.app:app --host 0.0.0.0 --port 8000</code></pre>
-                    </div>
                     
                     <p><strong>Log Files:</strong></p>
                     <ul>
@@ -423,9 +365,6 @@ cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
 
 # Monitor specific model
 grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl</code></pre>
-                        </div>
-                    </div>
-                </div>
                 
                 <div style="background: var(--info-bg); border: 2px solid var(--info-text); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <h3 style="margin: 0 0 1rem 0; color: var(--info-text);">📊 Interactive Documentation</h3>
@@ -434,7 +373,6 @@ grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl</code></pre>
                         <li><strong>Swagger UI:</strong> <code>http://localhost:8000/docs</code></li>
                         <li><strong>ReDoc:</strong> <code>http://localhost:8000/redoc</code></li>
                     </ul>
-                </div>
             </section>
 
             <!-- Common Patterns -->
@@ -465,8 +403,6 @@ def generate_with_fallback(prompt):
         except Exception:
             continue
     raise Exception("All providers failed")</code></pre>
-                    </div>
-                </div>
                 
                 <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <h3 style="margin: 0 0 1rem 0;">Local Model Gateway</h3>
@@ -482,8 +418,6 @@ curl -X POST http://localhost:8000/v1/chat/completions \
     "model": "ollama/qwen3-coder:30b",
     "messages": [{"role": "user", "content": "Write a Python function"}]
   }'</code></pre>
-                    </div>
-                </div>
             </section>
 
             <!-- Why AbstractCore Server -->
@@ -494,33 +428,26 @@ curl -X POST http://localhost:8000/v1/chat/completions \
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">✅ Universal</h3>
                         <p style="margin: 0;">One API for all providers</p>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">✅ OpenAI Compatible</h3>
                         <p style="margin: 0;">Drop-in replacement</p>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">✅ Simple</h3>
                         <p style="margin: 0;">Clean, focused endpoints</p>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">✅ Fast</h3>
                         <p style="margin: 0;">Lightweight, high-performance</p>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">✅ Debuggable</h3>
                         <p style="margin: 0;">Comprehensive logging</p>
-                    </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">✅ CLI Ready</h3>
                         <p style="margin: 0;">Codex, Gemini CLI, Crush support</p>
-                    </div>
-                </div>
             </section>
 
             <!-- Related Documentation -->
@@ -530,25 +457,18 @@ curl -X POST http://localhost:8000/v1/chat/completions \
                     <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Core library quick start</p>
-                    </a>
                     
                     <a href="architecture.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Architecture</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">System architecture including server</p>
-                    </a>
                     
                     <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Core library API</p>
-                    </a>
                     
                     <a href="troubleshooting.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Troubleshooting</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Common issues and solutions</p>
-                    </a>
-                </div>
-            </div>
-        </div>
     </main>
 
     <!-- Scripts -->
