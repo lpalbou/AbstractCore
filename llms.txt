@@ -1,73 +1,45 @@
 # AbstractCore - Unified LLM Provider Interface
 
-> AbstractCore is a production-ready Python library providing a unified interface to all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with advanced features including universal tool calling, streaming, session management, embeddings, and built-in processing apps.
+**Write once, run everywhere.** Production-ready Python library for all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with universal tool calling, streaming, session management, and built-in CLI apps.
 
 ## Quick Start
 
-- [Installation Guide](https://github.com/lpalbou/AbstractCore#installation-options): Install AbstractCore with provider-specific dependencies
-- [5-Minute Getting Started](https://github.com/lpalbou/AbstractCore/blob/main/docs/getting-started.md): Basic setup and first LLM call with any provider
-- [Prerequisites & Setup](https://github.com/lpalbou/AbstractCore/blob/main/docs/prerequisites.md): Configure API keys and local providers (Ollama, MLX, etc.)
+```bash
+pip install abstractcore[all]
+```
 
-## Core Library Features
+- **[5-Minute Setup](docs/getting-started.md)**: Basic usage with any provider
+- **[Prerequisites](docs/prerequisites.md)**: API keys and local provider setup
+- **[Installation Options](#installation-options)**: Provider-specific dependencies
 
-- [Python API Reference](https://github.com/lpalbou/AbstractCore/blob/main/docs/api-reference.md): Complete API documentation with examples for all methods
-- [Provider Support](https://github.com/lpalbou/AbstractCore#supported-providers): OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with unified interface
-- [Tool Calling System](https://lpalbou.github.io/AbstractCore/docs/tool-calling.html): Universal @tool decorator and tool system across all providers
-- [Session Management](https://github.com/lpalbou/AbstractCore/blob/main/docs/session.md): Persistent conversations with metadata, analytics, and serialization
-- [Streaming Support](https://github.com/lpalbou/AbstractCore/blob/main/docs/api-reference.md): Real-time token generation with unified strategy
-- [Structured Output](https://github.com/lpalbou/AbstractCore/blob/main/docs/getting-started.md): Pydantic model validation with automatic retries
-- [Embeddings System](https://github.com/lpalbou/AbstractCore/blob/main/docs/embeddings.md): SOTA embedding models for semantic search and RAG applications
+## Core Features
 
-## Built-in Processing Apps & CLI Applications
+- **[API Reference](docs/api-reference.md)**: Complete Python API with examples
+- **[Universal Tool Calling](docs/tool-calling.md)**: @tool decorator works across ALL providers
+- **[Session Management](docs/session.md)**: Persistent conversations with analytics
+- **[Streaming](docs/api-reference.md)**: Real-time responses across all providers
+- **[Structured Output](docs/getting-started.md)**: Pydantic validation with auto-retry
+- **[Embeddings](docs/embeddings.md)**: SOTA models for semantic search and RAG
 
-- [Summarizer CLI](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-summarizer.md): Direct terminal & programmatic document summarization (`summarizer document.pdf --style=executive`)
-- [Extractor CLI](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-extractor.md): Direct terminal & programmatic Knowledge graph extraction (`extractor report.txt --format=json-ld --focus=technology`)
-- [Judge CLI](https://github.com/lpalbou/AbstractCore/blob/main/docs/apps/basic-judge.md): Direct terminal & programmatic Text evaluation and scoring (`judge essay.txt --criteria=clarity,accuracy --context="academic writing"`)
-- [CLI Usage Guide](https://github.com/lpalbou/AbstractCore#built-in-applications-ready-to-use-cli-tools): Complete parameter reference and usage examples
+## Built-in CLI Applications
 
-## Server & Integration
+Ready-to-use terminal tools - no Python code required:
 
-- [HTTP Server Guide](https://github.com/lpalbou/AbstractCore/blob/main/docs/server.md): OpenAI-compatible REST API server for multi-language access
-- [Agentic CLI Integration](https://github.com/lpalbou/AbstractCore/blob/main/docs/server.md): Codex, Crush, Gemini CLI compatibility
-- [Tool Syntax Rewriting](https://github.com/lpalbou/AbstractCore/blob/main/docs/tool-syntax-rewriting.md): Real-time format conversion for external CLI tools
+- **[Summarizer](docs/apps/basic-summarizer.md)**: `summarizer document.pdf --style executive`
+- **[Extractor](docs/apps/basic-extractor.md)**: `extractor report.txt --format json-ld --focus technology`
+- **[Judge](docs/apps/basic-judge.md)**: `judge essay.txt --criteria clarity,accuracy --context "academic writing"`
 
-## Advanced Features
+## Optional Components
 
-- [Event System](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/events/__init__.py): Monitor costs, performance, and tool executions with preventable events
-- [Retry Configuration](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/core/retry.py): Circuit breakers, exponential backoff, jitter for production reliability
-- [Error Handling](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/exceptions/__init__.py): Comprehensive exception hierarchy for robust applications
-- [Architecture Overview](https://github.com/lpalbou/AbstractCore/blob/main/docs/architecture.md): System design and component interactions
-- [Token Management](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/utils/token_utils.py): Centralized token counting, cost estimation, and management utilities
-
-## Working Examples
-
-- [Progressive Examples](https://github.com/lpalbou/AbstractCore/tree/main/examples/progressive): Step-by-step learning from basic to advanced usage
-- [Complete RAG Example](https://github.com/lpalbou/AbstractCore/blob/main/examples/complete_rag_example.py): Full retrieval-augmented generation implementation
-- [Embeddings Demos](https://github.com/lpalbou/AbstractCore/blob/main/examples/embeddings_demo.py): Semantic search and similarity computation
-- [Streaming Examples](https://github.com/lpalbou/AbstractCore/blob/main/examples/streaming_vs_non_streaming.py): Real-time vs batch processing patterns
-- [Tool Usage Examples](https://github.com/lpalbou/AbstractCore/blob/main/examples/tool_usage_advanced.py): Complex tool calling scenarios
-- [Production Patterns](https://github.com/lpalbou/AbstractCore/tree/main/examples/example_06_production): Enterprise-ready deployment examples
-
-## Internal CLI Tool
-
-- [Internal CLI Guide](https://github.com/lpalbou/AbstractCore/blob/main/docs/internal-cli.md): Interactive testing tool with conversation management
-- [CLI Implementation](https://github.com/lpalbou/AbstractCore/blob/main/abstractllm/utils/cli.py): Built-in tools for file operations, web search, system commands
-- [Chat Management](https://github.com/lpalbou/AbstractCore/blob/main/docs/chat-compaction.md): History compaction, fact extraction, quality evaluation
-
-## Use Cases & Patterns
-
-- [Provider Flexibility](https://github.com/lpalbou/AbstractCore#1-provider-flexibility): Switch between providers with identical code
-- [Local Development](https://github.com/lpalbou/AbstractCore#2-local-development-cloud-production): Free local models for development, cloud for production
-- [Multi-Provider Setup](https://github.com/lpalbou/AbstractCore/blob/main/docs/api-reference.md): Route requests based on task complexity
-- [Production Monitoring](https://github.com/lpalbou/AbstractCore/blob/main/docs/api-reference.md): Cost tracking, performance monitoring, error handling
+- **[HTTP Server](docs/server.md)**: OpenAI-compatible REST API for multi-language access
+- **[Architecture](docs/architecture.md)**: System design and component interactions
+- **[Examples](examples/)**: Progressive tutorials from basic to production patterns
 
 ## Documentation & Support
 
-- [Complete Documentation Index](https://github.com/lpalbou/AbstractCore/blob/main/docs/README.md): Full navigation guide to all documentation
-- [Troubleshooting Guide](https://github.com/lpalbou/AbstractCore/blob/main/docs/troubleshooting.md): Common issues and solutions
-- [Capabilities Reference](https://github.com/lpalbou/AbstractCore/blob/main/docs/capabilities.md): What AbstractCore can and cannot do
-- [Comparison Guide](https://github.com/lpalbou/AbstractCore/blob/main/docs/comparison.md): How AbstractCore compares to alternatives
-- [Contributing Guidelines](https://github.com/lpalbou/AbstractCore/blob/main/CONTRIBUTING.md): How to contribute to the project
+- **[Troubleshooting](docs/troubleshooting.md)**: Common issues and solutions
+- **[Full Documentation](docs/README.md)**: Complete navigation guide
+- **[GitHub Issues](https://github.com/lpalbou/AbstractCore/issues)**: Report bugs and get help
 
 ## Installation Options
 
@@ -90,19 +62,13 @@ pip install abstractcore[embeddings]
 pip install abstractcore[all]
 ```
 
-## Key Differentiators
+## Why AbstractCore?
 
-- **Provider Agnostic**: Same code works with any LLM provider via factory pattern
-- **Production Ready**: Robust error handling, retries, circuit breakers, event system
-- **Type Safe**: Full Pydantic integration for structured outputs with automatic retries
-- **Local & Cloud**: Support for both local models and cloud APIs with memory management
-- **Unified Streaming**: Consistent streaming across all providers with tool support
-- **Universal Tool Calling**: @tool decorator works across ALL providers with format conversion
-- **Session Management**: Persistent conversations with analytics and complete serialization
-- **Built-in CLI Apps**: Production-ready terminal applications (`summarizer`, `extractor`, `judge`) with comprehensive parameter support
-- **Embeddings**: Built-in SOTA embedding models for RAG applications
-- **Server Mode**: Optional OpenAI-compatible HTTP API with agentic CLI support
-- **Well Documented**: Comprehensive guides and working examples
+- **Write once, run everywhere**: Same code works with any LLM provider
+- **Production ready**: Built-in error handling, retries, and monitoring
+- **Universal tool calling**: @tool decorator works across ALL providers
+- **Built-in apps**: Ready-to-use CLI tools (summarizer, extractor, judge)
+- **Debug capabilities**: Self-healing JSON and `--debug` mode for troubleshooting
 
 ## Essential Code Examples
 
@@ -125,12 +91,30 @@ def get_weather(city: str) -> str:
     """Get current weather for a city."""
     return f"Weather in {city}: 72°F, Sunny"
 
-# Works with ANY provider
-llm = create_llm("openai", model="gpt-4o-mini")
+# Works with ANY provider - OpenAI, Anthropic, Ollama, etc.
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
 response = llm.generate(
     "What's the weather in Paris?",
-    tools=[get_weather]  # Pass function directly
+    tools=[get_weather]  # Automatic format detection and conversion
 )
+
+# Enhanced metadata for complex tools
+@tool(
+    description="Search database for records",
+    tags=["database", "search"],
+    when_to_use="When user asks for specific data",
+    examples=[{"description": "Find users named John", "arguments": {"query": "name=John"}}]
+)
+def search_database(query: str, table: str = "users") -> str:
+    return f"Searching {table} for: {query}"
+
+# Tool chaining - LLM automatically calls multiple tools in sequence
+@tool
+def get_user_location(user_id: str) -> str:
+    return {"user123": "Paris", "user456": "Tokyo"}.get(user_id, "Unknown")
+
+# LLM will call get_user_location first, then get_weather with the result
+response = llm.generate("What's the weather for user123?", tools=[get_user_location, get_weather])
 ```
 
 ### Structured Output with Automatic Retry
@@ -164,71 +148,73 @@ response2 = session.generate("What's my name?")  # Remembers context
 session.save("conversation.json", summary=True, assessment=True, facts=True)
 ```
 
-### Built-in CLI Applications
+### CLI Applications (Terminal & Python)
 ```bash
-# Direct terminal usage (no Python code needed)
-summarizer document.pdf --style=executive --length=brief --output=summary.txt
-extractor report.txt --format=json-ld --entity-types=person,organization --focus=technology
-judge essay.txt --criteria=clarity,accuracy,coherence --context="academic writing" --format=plain
-
-# Alternative: Python module approach
-python -m abstractllm.apps.summarizer document.pdf --style=executive
-python -m abstractllm.apps.extractor report.txt --format=triples --verbose
-python -m abstractllm.apps.judge essay.txt --criteria=soundness --output=assessment.json
+# Terminal usage - no Python code needed
+summarizer document.pdf --style executive --output summary.txt
+extractor report.txt --format json-ld --focus technology
+judge essay.txt --criteria clarity,accuracy --context "academic writing"
 ```
 
-### Built-in Processing Apps (Python API)
 ```python
+# Python API usage
 from abstractllm.processing import BasicSummarizer, BasicExtractor, BasicJudge
 
-# Intelligent summarization
 summarizer = BasicSummarizer()
-summary = summarizer.summarize(long_text, style="executive", length="brief")
+summary = summarizer.summarize(text, style="executive", length="brief")
 
-# Knowledge graph extraction
 extractor = BasicExtractor()
-kg = extractor.extract(text, domain_focus="technology", output_format="jsonld")
+kg = extractor.extract(text, output_format="jsonld")
 
-# Text evaluation
 judge = BasicJudge()
-assessment = judge.evaluate(text, context="code review", criteria=["clarity", "soundness"])
+assessment = judge.evaluate(text, context="code review", focus="error handling")
 ```
 
-### Event System for Production Monitoring
+### Advanced Features
 ```python
+# Architecture-aware tool calling - automatic format detection
+# Qwen3: <|tool_call|>{"name": "func", "arguments": {...}}</|tool_call|>
+# LLaMA3: <function_call>{"name": "func", "arguments": {...}}</function_call>
+# OpenAI/Anthropic: Native API tool calls
+
+# Event system for production monitoring
 from abstractllm.events import EventType, on_global
 
 def cost_monitor(event):
     if event.cost_usd and event.cost_usd > 0.10:
         alert(f"High cost request: ${event.cost_usd}")
 
-def prevent_dangerous_tools(event):
-    for call in event.data.get('tool_calls', []):
-        if call.name in ['delete_file', 'system_command']:
-            event.prevent()  # Stop execution
-
 on_global(EventType.GENERATION_COMPLETED, cost_monitor)
-on_global(EventType.TOOL_STARTED, prevent_dangerous_tools)
-```
 
-### Memory Management for Local Providers
-```python
-# Explicit memory management for local models
+# Memory management for local models
 llm = create_llm("ollama", model="large-model")
 response = llm.generate("Hello")
 llm.unload()  # Free memory
-del llm
 ```
 
-## Repository Information
+### Debug & Performance Features
+```bash
+# Debug mode shows raw LLM responses
+judge document.txt --debug --provider lmstudio --model qwen/qwen3-next-80b
+
+# Advanced extractor modes and iterations
+extractor document.pdf --mode thorough --iterate 3 --similarity-threshold 0.9
+extractor large_file.txt --mode fast --no-embeddings --minified
+
+# Focus areas for targeted evaluation
+judge README.md --focus "architectural diagrams, technical comparisons" --debug
+judge code.py --focus "error handling, performance" --temperature 0.05
+
+# Self-healing JSON handles truncated responses automatically
+# Token limits: max_tokens=32k, max_output_tokens=8k prevent truncation
+```
+
+---
+
+## Quick Links
 
 - **GitHub**: https://github.com/lpalbou/AbstractCore
-- **License**: MIT
-- **Python**: 3.9+
-- **Status**: Production Ready (v2.3.6)
-- **Testing**: All tests passing on Apple M4 Max, Python 3.12.2
-- **Package**: Available on PyPI as `abstractcore`
+- **PyPI**: `pip install abstractcore[all]`
+- **License**: MIT | **Python**: 3.9+ | **Status**: Production Ready
 
-## Complete Documentation
-
-For comprehensive documentation in a single file, see [llms-full.txt](https://lpalbou.github.io/AbstractCore/llms-full.txt)
+**Complete Documentation**: [llms-full.txt](https://lpalbou.github.io/AbstractCore/llms-full.txt)
