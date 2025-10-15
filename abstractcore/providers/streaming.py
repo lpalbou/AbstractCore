@@ -390,11 +390,16 @@ class UnifiedStreamProcessor:
             # No custom tags - initialize default rewriter to target format
             self._initialize_default_rewriter(default_target_format)
 
-        # Create detector - preserve tool calls for rewriting/conversion
-        # When converting to OpenAI JSON, we still need to detect and extract tool calls
+        # Create detector - preserve tool calls when user explicitly wants format conversion
+        # Filter out tool calls for clean UX when no explicit format conversion is requested
+        preserve_for_rewriting = (
+            self.convert_to_openai_json or  # OpenAI JSON conversion
+            (tool_call_tags is not None)   # Explicit format conversion requested
+        )
+        
         self.detector = IncrementalToolDetector(
             model_name=model_name,
-            rewrite_tags=(self.tag_rewriter is not None or self.convert_to_openai_json)
+            rewrite_tags=preserve_for_rewriting
         )
 
     def process_stream(self, response_stream: Iterator[GenerateResponse],
