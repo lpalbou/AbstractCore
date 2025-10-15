@@ -256,26 +256,48 @@ extractor large_doc.txt --mode=fast --minified --output=kg_fast.jsonld</code></p
                 </div>
             </section>
 
+            <!-- Debug Capabilities Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">🔧 Debug Capabilities and Self-Healing JSON</h2>
+                <p style="margin-bottom: 1.5rem;">Robust debugging and error recovery features for production use.</p>
+                
+                <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; margin-bottom: 2rem;">
+                    <h3 style="margin-bottom: 1rem;">Key Features</h3>
+                    <ul style="margin-left: 1.5rem; line-height: 1.8;">
+                        <li><strong>Self-Healing JSON</strong>: Automatically repairs truncated or malformed JSON responses</li>
+                        <li><strong>Debug Mode</strong>: <code>--debug</code> flag shows raw LLM responses for troubleshooting</li>
+                        <li><strong>Focus Areas</strong>: <code>--focus</code> parameter for targeted evaluation</li>
+                        <li><strong>Increased Token Limits</strong>: Default <code>max_tokens=32000</code>, <code>max_output_tokens=8000</code></li>
+                        <li><strong>Consistent CLI Syntax</strong>: All apps use space syntax (<code>--param value</code>)</li>
+                    </ul>
+                </div>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Debug Examples</h3>
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Debug raw LLM responses for troubleshooting
+judge document.txt --debug --provider lmstudio --model qwen/qwen3-next-80b
+
+# Focus areas for targeted evaluation
+judge README.md --focus "architectural diagrams, technical comparisons" --debug
+
+# Automatic JSON self-repair with increased token limits
+extractor large_doc.txt --mode thorough --max-tokens 32000 --max-output-tokens 8000</code></pre>
+            </section>
+
             <!-- Judge Section -->
             <section style="margin-bottom: 4rem;">
                 <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">⚖️ Judge</h2>
-                <p style="margin-bottom: 1.5rem;">Text evaluation and scoring with customizable criteria and contexts.</p>
+                <p style="margin-bottom: 1.5rem;">Text evaluation and scoring with customizable criteria, contexts, and debug capabilities.</p>
                 
-                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Quick Examples</h3>
-                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Basic text evaluation
-judge essay.txt
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Enhanced Examples</h3>
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Text evaluation with focus areas and debug capabilities
+judge essay.txt --criteria clarity,accuracy,coherence --context "academic writing" --include-criteria
+judge code.py --context "code review" --format plain --verbose --debug
+judge README.md --focus "technical accuracy,examples" --temperature 0.05 --max-output-tokens 8000
 
-# Code review with specific criteria
-judge code.py --context="code review" --criteria=clarity,soundness --format=plain
-
-# Academic writing evaluation
-judge paper.md --context="academic writing" --criteria=clarity,accuracy,coherence --verbose
-
-# Custom criteria evaluation
-judge proposal.txt --custom-criteria=has_examples,covers_risks --output=assessment.json
-
-# Multiple files evaluation
-judge file1.py file2.py file3.py --context="code review" --format=json</code></pre>
+# Advanced evaluation scenarios  
+judge document.txt --debug --provider lmstudio --model qwen/qwen3-next-80b
+judge proposal.md --focus "architectural diagrams, technical comparisons" --debug
+judge multiple_files.txt --exclude-global --reference reference.md</code></pre>
 
                 <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Key Parameters</h3>
                 <div style="overflow-x: auto;">
@@ -377,6 +399,74 @@ judge file1.py file2.py file3.py --context="code review" --format=json</code></p
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </section>
+
+            <!-- Complete CLI Parameters Reference -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">📋 Complete CLI Parameters Reference</h2>
+                <p style="margin-bottom: 1.5rem;">Comprehensive parameter documentation for all applications with enhanced features.</p>
+
+                <!-- Extractor Parameters -->
+                <div style="margin-bottom: 3rem;">
+                    <h3 style="font-size: 1.5rem; margin-bottom: 1rem; color: var(--accent-color);">Extractor Parameters</h3>
+                    <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 1.5rem; font-size: 0.9rem;"><code class="language-bash"># Core parameters
+--focus FOCUS                    # Specific focus area (e.g., "technology", "business")
+--format {json-ld,triples,json,yaml}  # Output format
+--entity-types TYPES             # Comma-separated types (person,organization,location,etc.)
+--output OUTPUT                  # Output file path
+
+# Performance & Quality
+--mode {fast,balanced,thorough}  # Extraction mode (balanced=default)
+--iterate N                      # Refinement iterations (default: 1)
+--similarity-threshold 0.0-1.0   # Entity deduplication threshold (default: 0.85)
+--no-embeddings                  # Disable semantic deduplication
+--minified                       # Compact JSON output
+
+# LLM Configuration
+--provider PROVIDER --model MODEL  # Custom LLM provider/model
+--max-tokens 32000               # Context window (default: 32000)
+--max-output-tokens 8000         # Output tokens (default: 8000)
+--timeout 300                    # HTTP timeout seconds (default: 300)
+--chunk-size 8000                # Chunk size for large files</code></pre>
+                </div>
+
+                <!-- Judge Parameters -->
+                <div style="margin-bottom: 3rem;">
+                    <h3 style="font-size: 1.5rem; margin-bottom: 1rem; color: var(--accent-color);">Judge Parameters</h3>
+                    <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 1.5rem; font-size: 0.9rem;"><code class="language-bash"># Evaluation Configuration
+--criteria CRITERIA              # Standard criteria (clarity,soundness,etc.)
+--focus FOCUS                    # Primary focus areas for evaluation
+--context CONTEXT                # Evaluation context description
+--reference FILE_OR_TEXT         # Reference content for comparison
+
+# Output & Debug
+--format {json,plain,yaml}       # Output format (default: json)
+--debug                          # Show raw LLM responses
+--include-criteria               # Include detailed criteria explanations
+--exclude-global                 # Skip global assessment for multiple files
+
+# LLM Configuration  
+--temperature 0.1                # Evaluation consistency (default: 0.1)
+--max-tokens 32000               # Context window (default: 32000)
+--max-output-tokens 8000         # Output tokens (default: 8000)
+--timeout 300                    # HTTP timeout seconds</code></pre>
+                </div>
+
+                <!-- Summarizer Parameters -->
+                <div style="margin-bottom: 3rem;">
+                    <h3 style="font-size: 1.5rem; margin-bottom: 1rem; color: var(--accent-color);">Summarizer Parameters</h3>
+                    <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 1.5rem; font-size: 0.9rem;"><code class="language-bash"># Content Configuration
+--style {structured,narrative,objective,analytical,executive,conversational}
+--length {brief,standard,detailed,comprehensive}
+--focus FOCUS                    # Specific focus area
+--chunk-size 8000                # Chunk size for large files (max: 32000)
+
+# Output & Performance
+--output OUTPUT                  # Output file path
+--max-tokens 32000               # Context window (default: 32000)
+--max-output-tokens 8000         # Output tokens (default: 8000)
+--verbose                        # Show detailed progress</code></pre>
                 </div>
             </section>
 

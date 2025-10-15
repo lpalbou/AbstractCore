@@ -79,7 +79,7 @@
     model: Optional[str] = None,
     retry_config: Optional[RetryConfig] = None,
     **kwargs
-) -> AbstractLLMInterface</code></pre>
+) -> AbstractCoreInterface</code></pre>
                         </div>
 
                         <h4>Parameters</h4>
@@ -106,7 +106,7 @@
                         </div>
 
                         <h4>Returns</h4>
-                        <p><code>AbstractLLMInterface</code> instance</p>
+                        <p><code>AbstractCoreInterface</code> instance</p>
 
                         <h4>Example</h4>
                         <div class="code-block">
@@ -135,7 +135,7 @@ llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:
                     <h2>Classes</h2>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0;">AbstractLLMInterface</h3>
+                        <h3 style="margin: 0 0 1rem 0;">AbstractCoreInterface</h3>
                         <p>Base interface for all LLM providers. All providers implement this interface.</p>
                         
                         <h4>generate()</h4>
@@ -229,7 +229,7 @@ class GenerateResponse:
                             <pre><code class="language-python">class BasicSession:
     def __init__(
         self,
-        provider: AbstractLLMInterface,
+        provider: AbstractCoreInterface,
         system_prompt: Optional[str] = None
     ):</code></pre>
                         </div>
@@ -237,7 +237,7 @@ class GenerateResponse:
                         <h4>Parameters</h4>
                         <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
                             <ul style="margin: 0;">
-                                <li><code>provider</code> (AbstractLLMInterface): LLM provider instance</li>
+                                <li><code>provider</code> (AbstractCoreInterface): LLM provider instance</li>
                                 <li><code>system_prompt</code> (str, optional): System prompt for the conversation</li>
                             </ul>
                         </div>
@@ -265,7 +265,7 @@ class GenerateResponse:
                         <h5>load()</h5>
                         <div class="code-block">
                             <pre><code class="language-python">@classmethod
-def load(cls, filepath: Path, provider: AbstractLLMInterface) -> "BasicSession"</code></pre>
+def load(cls, filepath: Path, provider: AbstractCoreInterface) -> "BasicSession"</code></pre>
                         </div>
                         <p>Load session from JSON file.</p>
 
