@@ -100,11 +100,11 @@ class BasicJudge:
         >>> for i, result in enumerate(results):
         ...     print(f"File {i+1}: {result['overall_score']}/5")
 
-        # Evaluate with custom criteria
+        # Evaluate with specific focus areas
         >>> result = judge.evaluate(
         ...     content="The API documentation explains endpoints clearly.",
         ...     context="API documentation review",
-        ...     custom_criteria=["has_examples", "covers_error_cases"]
+        ...     focus="technical accuracy, completeness, examples"
         ... )
 
         # Evaluate with specific criteria focus
@@ -164,7 +164,7 @@ class BasicJudge:
         content: str,
         context: Optional[str] = None,
         criteria: Optional[JudgmentCriteria] = None,
-        custom_criteria: Optional[List[str]] = None,
+        focus: Optional[str] = None,
         reference: Optional[str] = None,
         include_criteria: bool = False
     ) -> dict:
@@ -175,7 +175,7 @@ class BasicJudge:
             content: The content to evaluate
             context: Optional context describing what is being evaluated
             criteria: JudgmentCriteria object specifying which standard criteria to use
-            custom_criteria: List of additional custom criteria to evaluate
+            focus: Specific areas to focus evaluation on (e.g., "technical accuracy, performance")
             reference: Optional reference/expected output for comparison
             include_criteria: Include detailed explanation of evaluation criteria in assessment
 
@@ -194,7 +194,7 @@ class BasicJudge:
         logger.info("Starting evaluation", context=context)
 
         # Build the evaluation prompt
-        prompt = self._build_evaluation_prompt(content, context, criteria, custom_criteria, reference, include_criteria)
+        prompt = self._build_evaluation_prompt(content, context, criteria, focus, reference, include_criteria)
 
         # Generate structured assessment
         try:
@@ -241,7 +241,7 @@ class BasicJudge:
         file_paths: Union[str, List[str]],
         context: Optional[str] = None,
         criteria: Optional[JudgmentCriteria] = None,
-        custom_criteria: Optional[List[str]] = None,
+        focus: Optional[str] = None,
         reference: Optional[str] = None,
         include_criteria: bool = False,
         max_file_size: int = 1000000,  # 1MB default limit per file
@@ -254,7 +254,7 @@ class BasicJudge:
             file_paths: Single file path or list of file paths to evaluate
             context: Optional context describing what is being evaluated
             criteria: JudgmentCriteria object specifying which standard criteria to use
-            custom_criteria: List of additional custom criteria to evaluate
+            focus: Specific areas to focus evaluation on (e.g., "technical accuracy, performance")
             reference: Optional reference/expected output for comparison
             include_criteria: Include detailed explanation of evaluation criteria in assessment
             max_file_size: Maximum file size in bytes (default 1MB to avoid context overflow)
@@ -356,7 +356,7 @@ class BasicJudge:
                 content=content,
                 context=file_context,
                 criteria=criteria,
-                custom_criteria=custom_criteria,
+                focus=focus,
                 reference=reference,
                 include_criteria=include_criteria
             )
@@ -380,7 +380,7 @@ class BasicJudge:
             # Generate global assessment and return structured result
             logger.info("Generating global assessment from individual file evaluations", file_count=len(assessments))
             global_assessment = self._generate_global_assessment(
-                assessments, context, criteria, custom_criteria, include_criteria
+                assessments, context, criteria, focus, include_criteria
             )
 
             return {
@@ -393,7 +393,7 @@ class BasicJudge:
         individual_assessments: List[dict],
         context: str,
         criteria: Optional[JudgmentCriteria],
-        custom_criteria: Optional[List[str]],
+        focus: Optional[str],
         include_criteria: bool
     ) -> dict:
         """
@@ -403,7 +403,7 @@ class BasicJudge:
             individual_assessments: List of individual file assessment dictionaries
             context: The evaluation context
             criteria: JudgmentCriteria used for individual evaluations
-            custom_criteria: Custom criteria used for individual evaluations
+            focus: Specific areas that were focused on during evaluation
             include_criteria: Whether to include detailed criteria explanations
 
         Returns:
@@ -472,7 +472,7 @@ Provide a comprehensive global assessment of overall quality and recommendations
                 content=global_content,
                 context=f"global assessment summary for {total_files} files ({context})",
                 criteria=criteria,
-                custom_criteria=custom_criteria,
+                focus=focus,
                 include_criteria=include_criteria
             )
 
@@ -509,7 +509,7 @@ Provide a comprehensive global assessment of overall quality and recommendations
         content: str,
         context: str,
         criteria: JudgmentCriteria,
-        custom_criteria: Optional[List[str]],
+        focus: Optional[str],
         reference: Optional[str],
         include_criteria: bool = False
     ) -> str:
@@ -555,11 +555,13 @@ Provide a comprehensive global assessment of overall quality and recommendations
             active_criteria.append("coherence")
             criteria_descriptions.append("- **Coherence**: Is the flow logical, consistent, and well-structured?")
 
-        # Add custom criteria
-        if custom_criteria:
-            for custom in custom_criteria:
-                active_criteria.append(custom)
-                criteria_descriptions.append(f"- **{custom.title()}**: Custom evaluation criterion")
+        # Add focus areas as primary evaluation criteria
+        if focus:
+            # Parse focus string (comma-separated like in summarizer/extractor)
+            focus_items = [item.strip() for item in focus.split(',') if item.strip()]
+            for focus_item in focus_items:
+                active_criteria.append(focus_item)
+                criteria_descriptions.append(f"- **{focus_item.title()}**: PRIMARY FOCUS AREA - This is a key evaluation target")
 
         criteria_text = "\n".join(criteria_descriptions)
 
@@ -614,7 +616,7 @@ EVALUATION PROCESS:
 2. **STEP 2**: Identify specific strengths and weaknesses
 3. **STEP 3**: Provide actionable recommendations for improvement
 4. **STEP 4**: Assign scores based on the rubric (be fair but appropriately critical)
-5. **STEP 5**: Calculate overall score as average of individual scores
+5. **STEP 5**: Calculate overall score - PRIMARY FOCUS AREAS should heavily influence the final score
 
 CRITICAL ASSESSMENT PRINCIPLES:
 - Be objective and evidence-based in your evaluation
@@ -622,6 +624,7 @@ CRITICAL ASSESSMENT PRINCIPLES:
 - Focus on providing clear, simple, and actionable feedback
 - Balance recognition of strengths with honest identification of weaknesses
 - Ensure recommendations are specific and implementable
+- PRIMARY FOCUS AREAS are the most important evaluation targets - weaknesses in these areas should significantly impact the overall score
 
 RESPONSE FORMAT:
 Provide your assessment as a structured JSON response with the following format:

@@ -115,7 +115,7 @@ class BasicJudge:
         content: str,
         context: Optional[str] = None,
         criteria: Optional[JudgmentCriteria] = None,
-        custom_criteria: Optional[List[str]] = None,
+        focus: Optional[str] = None,
         reference: Optional[str] = None,
         include_criteria: bool = False
     ) -> dict
@@ -125,7 +125,7 @@ class BasicJudge:
         file_paths: Union[str, List[str]],
         context: Optional[str] = None,
         criteria: Optional[JudgmentCriteria] = None,
-        custom_criteria: Optional[List[str]] = None,
+        focus: Optional[str] = None,
         reference: Optional[str] = None,
         include_criteria: bool = False,
         max_file_size: int = 1000000
@@ -138,7 +138,7 @@ class BasicJudge:
 - **`content`** (str): The content to evaluate
 - **`context`** (str, optional): Description of what is being evaluated (e.g., "code review", "documentation assessment")
 - **`criteria`** (JudgmentCriteria, optional): Object specifying which standard criteria to use
-- **`custom_criteria`** (List[str], optional): Additional custom criteria to evaluate
+- **`focus`** (str, optional): Specific areas to focus evaluation on (e.g., "technical accuracy, performance")
 - **`reference`** (str, optional): Reference content for comparison-based evaluation
 - **`include_criteria`** (bool, optional): Include detailed explanation of evaluation criteria in assessment (default: False)
 
@@ -146,7 +146,7 @@ class BasicJudge:
 - **`file_paths`** (str or List[str]): Single file path or list of file paths to evaluate sequentially
 - **`context`** (str, optional): Description of evaluation context (default: "file content evaluation")
 - **`criteria`** (JudgmentCriteria, optional): Object specifying which standard criteria to use
-- **`custom_criteria`** (List[str], optional): Additional custom criteria to evaluate
+- **`focus`** (str, optional): Specific areas to focus evaluation on (e.g., "technical accuracy, performance")
 - **`reference`** (str, optional): Reference content for comparison-based evaluation
 - **`include_criteria`** (bool, optional): Include detailed explanation of evaluation criteria in assessment (default: False)
 - **`max_file_size`** (int, optional): Maximum file size in bytes to prevent context overflow (default: 1MB)
@@ -334,8 +334,8 @@ judge src/*.py --context "Python code review" --format json --output review.json
 # Focus on specific criteria
 judge doc.py --criteria clarity,soundness,effectiveness
 
-# Add custom evaluation criteria
-judge api_docs.md --custom-criteria has_examples,covers_errors
+# Focus on specific evaluation areas
+judge api_docs.md --focus "technical accuracy,examples,error handling"
 
 # Comparison-based evaluation
 judge draft.md --reference ideal_solution.md
@@ -357,7 +357,7 @@ judge large_doc.md --verbose
 | `content` | Content to evaluate: single text string, single file path, or multiple file paths | Required (one or more arguments) |
 | `--context` | Evaluation context description | Free text |
 | `--criteria` | Comma-separated standard criteria | clarity, simplicity, actionability, soundness, innovation, effectiveness, relevance, completeness, coherence |
-| `--custom-criteria` | Comma-separated custom criteria | Free text |
+| `--focus` | Specific focus areas for evaluation | Free text (comma-separated) |
 | `--reference` | Reference content for comparison | File path or text |
 | `--include-criteria` | Include detailed criteria explanations in assessment | Flag |
 | `--exclude-global` | Skip global assessment for multiple files | Flag (default: False, global assessment included) |
@@ -393,6 +393,48 @@ python -m abstractllm.apps.judge code.py --criteria clarity,soundness,effectiven
 python -m abstractllm.apps.judge content.txt --include-criteria --format plain
 # Output: Includes judge's summary, source reference, and detailed criteria explanations
 ```
+
+## Focus Areas: Impact on Evaluation
+
+The `--focus` parameter dramatically changes evaluation outcomes by treating specified areas as **PRIMARY FOCUS AREAS**. Here are real examples showing the impact:
+
+**Key Difference:**
+- **Without focus**: Judge evaluates general quality (clarity, coherence) → High score
+- **With focus**: Judge prioritizes specified areas → Low score when focus areas are missing
+
+### Real README Evaluation Comparison
+
+**Command:**
+```bash
+judge README.md --focus "technicalities, architectural diagrams and data flow, explanations of technical choices and comparison with SOTA approaches"
+```
+
+**Results:**
+- **Overall Score**: 3/5 (down from 5/5 without focus)
+- **Judge Summary**: "However, it critically lacks architectural diagrams and technical comparisons to SOTA approaches—core requirements..."
+- **Weaknesses**: Directly address focus areas:
+  - "No architectural diagrams or data flow visualizations"
+  - "Lacks technical comparisons with SOTA approaches like LangChain, LlamaIndex"
+  - "No explanation of how tool calling is unified across providers"
+
+**Key Insight**: Focus areas become the **primary evaluation targets**. Even excellent documentation gets lower scores when it lacks the specified focus areas.
+
+> **Fun Fact**: We used our own judge to evaluate our README.md with focus on "architectural diagrams and SOTA comparisons" and got a humbling 3/5 score. Turns out eany documentation can be improved! 😅
+
+### Focus vs Criteria: Understanding the Difference
+
+```bash
+# --criteria: HOW to evaluate (evaluation methods)
+judge doc.txt --criteria "clarity,soundness,effectiveness"
+
+# --focus: WHAT to focus on (evaluation subjects)  
+judge doc.txt --focus "performance benchmarks,security analysis"
+
+# Combined: Evaluate specific areas using specific criteria
+judge doc.txt --criteria "clarity,completeness" --focus "API documentation,error handling"
+```
+
+**Pro Tip**: Use `--focus` when you want to evaluate **specific content areas**. Use `--criteria` when you want to change **evaluation dimensions**.
 
 ## Real-World Examples
 
@@ -445,7 +487,7 @@ assessment = judge.evaluate(
     content=doc_content,
     context="API documentation review",
     criteria=criteria,
-    custom_criteria=["has_examples", "covers_errors"]
+    focus="examples, error handling, API completeness"
 )
 
 print(f"Completeness: {assessment['completeness_score']}/5")
@@ -670,7 +712,7 @@ def automated_code_review(code_diff, context="code review"):
     assessment = judge.evaluate(
         content=code_diff,
         context=context,
-        custom_criteria=["follows_conventions", "has_tests", "handles_errors"]
+        focus="code conventions, test coverage, error handling"
     )
 
     return {
