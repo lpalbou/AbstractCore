@@ -10,47 +10,33 @@
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
     
-    <!-- Shared Components -->
-    <script src="../assets/js/shared-components.js"></script>
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <!-- Logo will be injected by shared-components.js -->
-                            <div class="logo-circle"></div>
-                            <div class="logo-lines">
-                                <div class="logo-line"></div>
-                                <div class="logo-line"></div>
-                                <div class="logo-line"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <span class="brand-text">AbstractCore</span>
-                </a>
-            </div>
-            
-            <div class="nav-menu" id="nav-menu">
-                <a href="../index.html#features" class="nav-link">Features</a>
-                <a href="../index.html#quickstart" class="nav-link">Quick Start</a>
-                <a href="../index.html#docs" class="nav-link">Documentation</a>
-                <a href="../index.html#examples" class="nav-link">Examples</a>
-                <a href="https://github.com/lpalbou/AbstractCore" class="nav-link" target="_blank">
-                    <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                    </svg>
-                    GitHub
-                </a>
-            </div>
-            
-            <div class="nav-toggle" id="nav-toggle">
-                <span class="bar"></span>
-                <span class="bar"></span>
-                <span class="bar"></span>
-            </div>
-        </div>
-    </nav>
+    <div class="navbar-placeholder"></div>
+    
+    <script>
+        // Initialize navbar with docs-specific configuration
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '../',
+                menuItems: [
+                    { text: 'Features', href: 'index.html#features' },
+                    { text: 'Quick Start', href: 'index.html#quickstart' },
+                    { text: 'Documentation', href: 'index.html#docs' },
+                    { text: 'Examples', href: 'index.html#examples' },
+                    { 
+                        text: 'GitHub', 
+                        href: 'https://github.com/lpalbou/AbstractCore',
+                        target: '_blank',
+                        icon: 'github'
+                    }
+                ]
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -60,7 +46,6 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">
                     Persistent conversations with metadata, analytics, and complete serialization support.
                 </p>
-            </div>
 
             <div class="doc-content">
                 <section id="overview">
@@ -76,7 +61,6 @@
                             <li><strong>Metadata Support</strong>: Rich metadata including location, timestamps, and custom fields</li>
                             <li><strong>Tool Integration</strong>: Full support for tool calling within sessions</li>
                         </ul>
-                    </div>
                 </section>
 
                 <section id="basic-usage">
@@ -102,7 +86,6 @@ print(response1.content)
 # Context is maintained
 response2 = session.generate("Can you help me with error handling?")
 print(response2.content)</code></pre>
-                    </div>
 
                     <h3>Session with Tools</h3>
                     <div class="code-block">
@@ -123,7 +106,6 @@ session = BasicSession(
 
 response = session.generate("What time is it?")
 print(response.content)</code></pre>
-                    </div>
                 </section>
 
                 <section id="serialization">
@@ -151,7 +133,6 @@ session.save(
         "session_type": "coding_help"
     }
 )</code></pre>
-                    </div>
 
                     <h3>Loading Sessions</h3>
                     <div class="code-block">
@@ -167,7 +148,6 @@ print(f"Session created: {loaded_session.created_at}")
 print(f"Message count: {len(loaded_session.messages)}")
 print(f"Provider: {loaded_session.provider_name}")
 print(f"Model: {loaded_session.model_name}")</code></pre>
-                    </div>
                 </section>
 
                 <section id="analytics">
@@ -180,7 +160,6 @@ summary = session.generate_summary()
 print("Summary:", summary.summary)
 print("Key topics:", summary.key_topics)
 print("Participant count:", summary.participant_count)</code></pre>
-                    </div>
 
                     <h3>Quality Assessment</h3>
                     <div class="code-block">
@@ -191,7 +170,6 @@ print("Helpfulness:", assessment.helpfulness_score)
 print("Accuracy:", assessment.accuracy_score)
 print("Clarity:", assessment.clarity_score)
 print("Feedback:", assessment.feedback)</code></pre>
-                    </div>
 
                     <h3>Fact Extraction</h3>
                     <div class="code-block">
@@ -202,7 +180,6 @@ for fact in facts.facts:
     print(f"  Category: {fact.category}")
     print(f"  Source: {fact.source_message_index}")
     print()</code></pre>
-                    </div>
                 </section>
 
                 <section id="metadata">
@@ -233,7 +210,6 @@ for message in session.messages:
         print(f"Device: {message.metadata.get('device', 'unknown')}")
         print(f"Content: {message.content}")
         print()</code></pre>
-                    </div>
 
                     <h3>Location-Aware Conversations</h3>
                     <div class="code-block">
@@ -246,7 +222,6 @@ session.add_message(
 
 response = session.generate()
 # Assistant can use location context in response</code></pre>
-                    </div>
                 </section>
 
                 <section id="advanced-features">
@@ -266,7 +241,6 @@ session = BasicSession(
         "priority": "high"
     }
 )</code></pre>
-                    </div>
 
                     <h3>Session Events</h3>
                     <div class="code-block">
@@ -280,7 +254,6 @@ def log_session_activity(event):
 
 # Subscribe to session events
 on_global(EventType.GENERATION_COMPLETED, log_session_activity)</code></pre>
-                    </div>
 
                     <h3>Batch Processing</h3>
                     <div class="code-block">
@@ -298,7 +271,6 @@ for file_path in session_files:
     print(f"Summary: {summary.summary}")
     print(f"Quality Score: {assessment.overall_score}")
     print("-" * 50)</code></pre>
-                    </div>
                 </section>
 
                 <section id="session-schema">
@@ -341,7 +313,6 @@ for file_path in session_files:
     "total_tokens": 1250
   }
 }</code></pre>
-                    </div>
                 </section>
 
                 <!-- Related Documentation -->
@@ -351,26 +322,18 @@ for file_path in session_files:
                         <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Learn the basics of AbstractCore</p>
-                        </a>
                         
                         <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Use tools within sessions</p>
-                        </a>
                         
                         <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API documentation</p>
-                        </a>
                         
                         <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Session usage examples</p>
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
     </main>
 
     <!-- Scripts -->
