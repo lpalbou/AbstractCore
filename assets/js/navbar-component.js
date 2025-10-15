@@ -16,16 +16,16 @@ class AbstractCoreNavbar {
                 { text: 'Documentation', href: '#docs' },
                 { text: 'Examples', href: '#examples' },
                 { 
-                    text: 'PyPI', 
-                    href: 'https://pypi.org/project/abstractcore/',
-                    target: '_blank',
-                    icon: 'pypi'
-                },
-                { 
                     text: 'GitHub', 
                     href: 'https://github.com/lpalbou/AbstractCore',
                     target: '_blank',
                     icon: 'github'
+                },
+                { 
+                    text: 'PyPI', 
+                    href: 'https://pypi.org/project/abstractcore/',
+                    target: '_blank',
+                    icon: 'pypi'
                 }
             ]
         };
@@ -35,7 +35,7 @@ class AbstractCoreNavbar {
      * Generate the animated AbstractCore logo HTML
      */
     getLogoHTML() {
-        const logoHref = this.config.basePath ? `${this.config.basePath}index.html` : '#';
+        const logoHref = this.config.basePath ? `${this.config.basePath}index.html` : '/';
         
         return `
             <a href="${logoHref}" class="brand-link">
