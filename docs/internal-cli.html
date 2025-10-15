@@ -56,14 +56,14 @@
                 
                 <div class="code-block">
                     <pre><code class="language-bash"># Start the internal CLI
-python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b
+python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 
 # Or with any provider
-python -m abstractllm.utils.cli --provider openai --model gpt-4o-mini
-python -m abstractllm.utils.cli --provider anthropic --model claude-3-5-haiku-latest
+python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini
+python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest
 
 # With streaming enabled
-python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b --stream</code></pre>
+python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream</code></pre>
                 
                 <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <p style="margin: 0; color: var(--info-text);"><strong>💡 Note:</strong> Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)? See the <a href="server.html" style="color: var(--info-text); text-decoration: underline; font-weight: 600;">Server Documentation</a> for complete setup guides.</p>
@@ -257,7 +257,7 @@ python -m abstractllm.utils.cli --provider ollama --model qwen3-coder:30b --stre
                     
                     <div class="code-block">
                         <pre><code class="language-bash"># Start CLI with a model that supports auto-compaction
-python -m abstractllm.utils.cli --provider ollama --model gemma3:1b
+python -m abstractcore.utils.cli --provider ollama --model gemma3:1b
 
 # Have a long conversation...
 👤 You: What is Python?

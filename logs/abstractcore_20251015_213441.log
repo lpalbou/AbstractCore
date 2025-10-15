@@ -1,0 +1,33 @@
+🚀 AbstractCore Server Starting | version=2.4.0, debug_mode=True
+Listed 3 models from all providers
+📥 Chat Completion Request | request_id=ee9afcc6, provider=ollama, model=qwen3-coder:30b, messages=4, has_tools=False, stream=False
+🎯 Target Format Detected | request_id=ee9afcc6, target_format=qwen3, user_agent=python-httpx/0.28.1
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_tokens 32768 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x106573650>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 19:34:49 GMT'), (b'Content-Length', b'867')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Generation completed for qwen3-coder:30b: 7463.98ms (tokens: 315)
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content

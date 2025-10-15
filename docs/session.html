@@ -68,7 +68,7 @@
                     
                     <h3>Creating a Session</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm, BasicSession
+                        <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
 # Create LLM provider
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -89,7 +89,7 @@ print(response2.content)</code></pre>
 
                     <h3>Session with Tools</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.tools import tool
+                        <pre><code class="language-python">from abstractcore.tools import tool
 
 @tool
 def get_current_time() -> str:
@@ -244,7 +244,7 @@ session = BasicSession(
 
                     <h3>Session Events</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm.events import EventType, on_global
+                        <pre><code class="language-python">from abstractcore.events import EventType, on_global
 
 def log_session_activity(event):
     """Log all session activities."""

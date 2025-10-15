@@ -154,7 +154,7 @@
                         <div class="code-title">example.py</div>
                     </div>
                     <div class="code-content">
-                        <pre><code class="language-python">from abstractllm import create_llm
+                        <pre><code class="language-python">from abstractcore import create_llm
 
 # Works with any provider - just change the name
 llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
@@ -349,7 +349,7 @@ export ANTHROPIC_API_KEY="your-key-here"
                             <h3 class="step-title">Code</h3>
                             <p class="step-description">Start building with the unified interface</p>
                             <div class="code-block">
-                                <pre><code class="language-python">from abstractllm import create_llm
+                                <pre><code class="language-python">from abstractcore import create_llm
 
 # Create LLM instance
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -381,7 +381,7 @@ print(response.content)</code></pre>
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">basic_usage.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractllm import create_llm
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
 
 # Works with any provider
 providers = [&quot;openai&quot;, &quot;anthropic&quot;, &quot;ollama&quot;]
@@ -401,7 +401,7 @@ for provider in providers:
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python">from abstractllm import create_llm
+                                    <pre><code class="language-python">from abstractcore import create_llm
 
 # Works with any provider
 providers = ["openai", "anthropic", "ollama"]
@@ -425,7 +425,7 @@ for provider in providers:
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">tool_calling.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractllm import create_llm, tool
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -&gt; str:
@@ -448,7 +448,7 @@ print(response.content)
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python">from abstractllm import create_llm, tool
+                                    <pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -> str:
@@ -476,7 +476,7 @@ print(response.content)
                                     </div>
                                     <div class="code-title">structured_output.py</div>
                                     <button class="copy-button" onclick="copyCode(this)" data-code="from pydantic import BaseModel
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 class Person(BaseModel):
     name: str
@@ -501,7 +501,7 @@ print(f&quot;{person.name}, {person.age}, {person.occupation}&quot;)
                                 </div>
                                 <div class="code-content">
                                     <pre><code class="language-python">from pydantic import BaseModel
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 class Person(BaseModel):
     name: str
@@ -529,7 +529,7 @@ print(f"{person.name}, {person.age}, {person.occupation}")
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">streaming.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractllm import create_llm
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
 
 llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
@@ -548,7 +548,7 @@ print()
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python">from abstractllm import create_llm
+                                    <pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")
 
@@ -834,7 +834,7 @@ llm_prod = create_llm("openai", model="gpt-4o-mini")
                         Build retrieval-augmented generation systems with built-in embedding support.
                     </p>
                     <div class="example-code">
-                        <pre><code class="language-python">from abstractllm.embeddings import EmbeddingManager
+                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
 
 embedder = EmbeddingManager()
 docs_embeddings = embedder.embed_batch(documents)
@@ -856,7 +856,7 @@ similarity = embedder.compute_similarity(query, docs[0])</code></pre>
                     </p>
                     <div class="example-code">
                         <pre><code class="language-bash"># Start server
-uvicorn abstractllm.server.app:app --port 8000
+uvicorn abstractcore.server.app:app --port 8000
 
 # Use with any OpenAI client
 curl -X POST http://localhost:8000/v1/chat/completions \

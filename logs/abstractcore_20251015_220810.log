@@ -1,0 +1,188 @@
+🚀 AbstractCore Server Starting | version=2.4.0, debug_mode=True
+Listed 3 models from all providers
+📥 Chat Completion Request | request_id=369aee9f, provider=ollama, model=qwen3-coder:30b, messages=4, has_tools=False, stream=False
+🎯 Target Format Detected | request_id=369aee9f, target_format=qwen3, user_agent=python-httpx/0.28.1
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_tokens 32768 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x105f60d40>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 20:08:20 GMT'), (b'Content-Length', b'806')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Generation completed for qwen3-coder:30b: 9250.91ms (tokens: 297)
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+📥 Chat Completion Request | request_id=bdf4ce4c, provider=ollama, model=qwen3-coder:30b, messages=4, has_tools=False, stream=False
+🎯 Target Format Detected | request_id=bdf4ce4c, target_format=qwen3, user_agent=python-httpx/0.28.1
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_tokens 32768 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x105f61850>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 20:08:21 GMT'), (b'Content-Length', b'764')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Generation completed for qwen3-coder:30b: 1203.40ms (tokens: 147)
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+📥 Chat Completion Request | request_id=91c4b9f5, provider=ollama, model=qwen3-coder:30b, messages=6, has_tools=False, stream=False
+🎯 Target Format Detected | request_id=91c4b9f5, target_format=qwen3, user_agent=python-httpx/0.28.1
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_tokens 32768 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x105f62540>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 20:08:24 GMT'), (b'Content-Length', b'1316')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Generation completed for qwen3-coder:30b: 2436.98ms (tokens: 302)
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+📥 Chat Completion Request | request_id=df2a21de, provider=ollama, model=qwen3-coder:30b, messages=6, has_tools=False, stream=False
+🎯 Target Format Detected | request_id=df2a21de, target_format=qwen3, user_agent=python-httpx/0.28.1
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_tokens 32768 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x105f631d0>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 20:08:24 GMT'), (b'Content-Length', b'366')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Generation completed for qwen3-coder:30b: 337.98ms (tokens: 97)
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+📥 Chat Completion Request | request_id=eb485b3f, provider=ollama, model=qwen3-coder:30b, messages=4, has_tools=False, stream=False
+🎯 Target Format Detected | request_id=eb485b3f, target_format=qwen3, user_agent=python-httpx/0.28.1
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_tokens 32768 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x105f63d70>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 20:08:25 GMT'), (b'Content-Length', b'754')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Generation completed for qwen3-coder:30b: 1151.25ms (tokens: 136)
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content
+📥 Chat Completion Request | request_id=cb6b7382, provider=ollama, model=qwen3-coder:30b, messages=4, has_tools=False, stream=False
+🎯 Target Format Detected | request_id=cb6b7382, target_format=qwen3, user_agent=python-httpx/0.28.1
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_tokens 32768 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Using max_output_tokens 8192 from model capabilities for qwen3-coder:30b
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected architecture 'qwen3_moe' for model 'qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Using capabilities from 'qwen3' for 'qwen3-coder:30b'
+Initialized tool handler for qwen3-coder:30b: architecture=qwen3_moe, native=False, prompted=True
+connect_tcp.started host='localhost' port=11434 local_address=None timeout=None socket_options=None
+connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x105f808c0>
+send_request_headers.started request=<Request [b'POST']>
+send_request_headers.complete
+send_request_body.started request=<Request [b'POST']>
+send_request_body.complete
+receive_response_headers.started request=<Request [b'POST']>
+receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Wed, 15 Oct 2025 20:08:26 GMT'), (b'Content-Length', b'689')])
+HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+receive_response_body.started request=<Request [b'POST']>
+receive_response_body.complete
+response_closed.started
+response_closed.complete
+Generation completed for qwen3-coder:30b: 1025.67ms (tokens: 126)
+Detected architecture 'qwen3_moe' for model 'ollama/qwen3-coder:30b' (pattern: 'qwen3-coder:30b')
+Detected 0 tool calls in content

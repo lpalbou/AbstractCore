@@ -104,7 +104,7 @@ set OPENAI_API_KEY=sk-your-key-here</code></pre>
 
                     <h3>3. Test Connection</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm
+                        <pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("Hello, world!")
@@ -132,7 +132,7 @@ set ANTHROPIC_API_KEY=your-key-here</code></pre>
 
                     <h3>3. Test Connection</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm
+                        <pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 response = llm.generate("Hello, world!")
@@ -167,7 +167,7 @@ ollama pull granite3.3:2b                   # Lightweight</code></pre>
 
                     <h3>4. Test Connection</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm
+                        <pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
 response = llm.generate("Hello, world!")
@@ -185,7 +185,7 @@ print(response.content)</code></pre>
                     <h3>2. Download a Model</h3>
                     <div class="code-block">
                         <pre><code class="language-python"># Models are downloaded automatically on first use
-from abstractllm import create_llm
+from abstractcore import create_llm
 
 llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
 response = llm.generate("Hello, world!")
@@ -213,7 +213,7 @@ print(response.content)</code></pre>
 
                     <h3>3. Test Connection</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm
+                        <pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("lmstudio", model="your-model-name")
 response = llm.generate("Hello, world!")
@@ -235,7 +235,7 @@ export HUGGINGFACE_API_TOKEN="your-token-here"</code></pre>
 
                     <h3>3. Test Connection</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractllm import create_llm
+                        <pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("huggingface", model="microsoft/DialoGPT-medium")
 response = llm.generate("Hello, world!")
