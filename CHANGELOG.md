@@ -5,6 +5,17 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.9] - 2025-10-25
+### Fixed
+- **Timeout Handling**: Comprehensive timeout parameter handling across all providers
+  - All providers now properly handle `timeout=None` (infinity) as the default
+  - **HuggingFace Provider**: Issues warning when non-None timeout is provided (local models don't support timeouts)
+  - **MLX Provider**: Issues warning when non-None timeout is provided (local models don't support timeouts)  
+  - **Mock Provider**: Accepts timeout parameters for testing without warnings
+  - **API Providers** (OpenAI, Anthropic, Ollama, LMStudio): Properly pass timeout to HTTP clients
+  - Added `_update_http_client_timeout()` method for providers that need to update client timeouts
+- Setting timeout default to None (infinity)
+
 ## [2.3.8] - 2025-10-25
 ### Fixed
 - Issue with the version

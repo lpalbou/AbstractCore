@@ -401,6 +401,46 @@ The summarizer uses sophisticated prompts that:
 - **Focus alignment**: Measures how well summary addresses specified focus
 - **Word counting**: Tracks compression ratios
 
+## Timeout Configuration
+
+The summarizer supports flexible timeout configuration for different document processing scenarios:
+
+### Default Behavior (Unlimited Timeout)
+```bash
+# Runs as long as needed - recommended for large documents
+python -m abstractllm.apps.summarizer document.txt
+```
+
+### Custom Timeout
+```bash
+# Set specific timeout (useful for production environments)
+python -m abstractllm.apps.summarizer document.txt --timeout 300   # 5 minutes
+python -m abstractllm.apps.summarizer document.txt --timeout 600   # 10 minutes
+
+# Explicit unlimited timeout
+python -m abstractllm.apps.summarizer document.txt --timeout none
+```
+
+### Programmatic Usage
+```python
+from abstractllm.processing import BasicSummarizer
+
+# Unlimited timeout (default)
+summarizer = BasicSummarizer()
+
+# Custom timeout
+summarizer = BasicSummarizer(timeout=300)  # 5 minutes
+
+# Explicit unlimited timeout
+summarizer = BasicSummarizer(timeout=None)
+```
+
+**When to Use Timeouts:**
+- **Production environments**: Set reasonable timeouts (300-600 seconds) to prevent hanging
+- **Large documents**: Use unlimited timeout for documents >100KB
+- **Batch processing**: Consider timeouts to handle individual document failures gracefully
+- **Development**: Use unlimited timeout to avoid interruptions during testing
+
 ## Integration Examples
 
 ### With AbstractCore Session

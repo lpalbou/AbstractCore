@@ -52,6 +52,18 @@ from ..processing import BasicExtractor
 from ..core.factory import create_llm
 
 
+def timeout_type(value):
+    """Parse timeout value - accepts None, 'none', or float"""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.lower() == 'none':
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid timeout value: {value}. Use 'none' for unlimited or a number in seconds.")
+
+
 def read_file_content(file_path: str) -> str:
     """
     Read content from various file types
@@ -295,9 +307,9 @@ Default model setup:
 
     parser.add_argument(
         '--timeout',
-        type=float,
-        default=600.0,
-        help='HTTP request timeout in seconds for LLM providers (default: 300, i.e., 5 minutes). Increase for large models like 36B+ parameters'
+        type=timeout_type,
+        default=None,
+        help='HTTP request timeout in seconds for LLM providers (default: unlimited). Use "none" for unlimited timeout or specify seconds (e.g., 600 for 10 minutes)'
     )
 
     parser.add_argument(
@@ -342,13 +354,7 @@ Default model setup:
             sys.exit(1)
 
         # Validate timeout parameter
-        if args.timeout < 30.0:
-            print("Error: Timeout must be at least 30 seconds")
-            sys.exit(1)
 
-        if args.timeout > 7200.0:  # 2 hours
-            print("Error: Timeout cannot exceed 7200 seconds (2 hours)")
-            sys.exit(1)
 
         # Validate provider/model pair
         if args.provider and not args.model:
@@ -423,7 +429,8 @@ Default model setup:
                 llm=llm,
                 max_chunk_size=adjusted_chunk_size,
                 max_tokens=args.max_tokens,
-                max_output_tokens=args.max_output_tokens
+                max_output_tokens=args.max_output_tokens,
+                timeout=args.timeout
             )
         else:
             # Default configuration
@@ -434,7 +441,8 @@ Default model setup:
                 extractor = BasicExtractor(
                     max_chunk_size=args.chunk_size,
                     max_tokens=args.max_tokens,
-                    max_output_tokens=args.max_output_tokens
+                    max_output_tokens=args.max_output_tokens,
+                    timeout=args.timeout
                 )
             except RuntimeError as e:
                 # Handle default model not available

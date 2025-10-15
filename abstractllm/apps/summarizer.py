@@ -240,6 +240,12 @@ Default model setup:
         help='Show detailed progress information'
     )
 
+    parser.add_argument(
+        '--timeout',
+        default=None,
+        help='HTTP request timeout in seconds for LLM providers (default: None = unlimited)'
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -286,12 +292,13 @@ Default model setup:
             if args.verbose:
                 print(f"Initializing summarizer ({args.provider}, {args.model}, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
 
-            llm = create_llm(args.provider, model=args.model, max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens)
+            llm = create_llm(args.provider, model=args.model, max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens, timeout=args.timeout)
             summarizer = BasicSummarizer(
                 llm, 
                 max_chunk_size=args.chunk_size,
                 max_tokens=args.max_tokens,
-                max_output_tokens=args.max_output_tokens
+                max_output_tokens=args.max_output_tokens,
+                timeout=args.timeout
             )
         else:
             # Default configuration with chunk size override
@@ -302,12 +309,13 @@ Default model setup:
                     print(f"Initializing summarizer (ollama, gemma3:1b-it-qat, {args.max_tokens} token context, {args.max_output_tokens} output tokens, {args.chunk_size} chunk size)...")
 
                 try:
-                    llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens)
+                    llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens, timeout=args.timeout)
                     summarizer = BasicSummarizer(
                         llm, 
                         max_chunk_size=args.chunk_size,
                         max_tokens=args.max_tokens,
-                        max_output_tokens=args.max_output_tokens
+                        max_output_tokens=args.max_output_tokens,
+                        timeout=args.timeout
                     )
                 except Exception as e:
                     # Handle default model not available
@@ -327,7 +335,8 @@ Default model setup:
                     summarizer = BasicSummarizer(
                         max_chunk_size=args.chunk_size,
                         max_tokens=args.max_tokens,
-                        max_output_tokens=args.max_output_tokens
+                        max_output_tokens=args.max_output_tokens,
+                        timeout=args.timeout
                     )
                 except RuntimeError as e:
                     # Handle default model not available
