@@ -41,6 +41,42 @@
     
     <!-- Analytics -->
     <script defer data-domain="lpalbou.github.io" src="https://plausible.io/js/script.js"></script>
+    
+    <!-- AI Documentation Styles -->
+    <style>
+        .hero-note {
+            margin: 1.5rem 0;
+            padding: 1rem 1.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            text-align: center;
+        }
+        .ai-docs-note {
+            color: white;
+            margin: 0;
+            font-size: 0.95rem;
+        }
+        .ai-link {
+            color: #ffd700;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0.2rem 0.4rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        .ai-link:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+        .section-description .ai-link {
+            color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+        .section-description .ai-link:hover {
+            background: rgba(102, 126, 234, 0.2);
+        }
+    </style>
 </head>
 <body>
     <!-- Navigation -->
@@ -114,6 +150,14 @@
                         </svg>
                         View on GitHub
                     </a>
+                </div>
+
+                <div class="hero-note">
+                    <p class="ai-docs-note">
+                        🤖 <strong>For AI Agents:</strong> Use our AI-optimized documentation at 
+                        <a href="llms.txt" class="ai-link">llms.txt</a> (concise) or 
+                        <a href="llms-full.txt" class="ai-link">llms-full.txt</a> (complete) for seamless integration.
+                    </p>
                 </div>
 
                 <div class="hero-stats">
@@ -700,7 +744,8 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
             <div class="section-header">
                 <h2 class="section-title">Comprehensive Documentation</h2>
                 <p class="section-description">
-                    Everything you need to build production-ready LLM applications.
+                    Everything you need to build production-ready LLM applications. 
+                    <strong>AI agents:</strong> Use our optimized <a href="llms.txt" class="ai-link">llms.txt</a> or <a href="llms-full.txt" class="ai-link">llms-full.txt</a> for direct integration.
                 </p>
             </div>
             
@@ -721,12 +766,12 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
                             <span class="doc-description">Fix common issues quickly</span>
                         </a>
                         <a href="llms.txt" class="doc-link">
-                            <span class="doc-title">AI-Ready Documentation</span>
-                            <span class="doc-description">Concise guide for AI consumption</span>
+                            <span class="doc-title">🤖 AI Agent Documentation</span>
+                            <span class="doc-description">Optimized for AI consumption - concise, actionable examples</span>
                         </a>
                         <a href="llms-full.txt" class="doc-link">
-                            <span class="doc-title">Complete Documentation</span>
-                            <span class="doc-description">Full technical reference</span>
+                            <span class="doc-title">🤖 Complete AI Documentation</span>
+                            <span class="doc-description">Full technical reference for AI agents - all features covered</span>
                         </a>
                         <a href="docs/server.html" class="doc-link">
                             <span class="doc-title">HTTP Server Guide</span>
