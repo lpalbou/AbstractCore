@@ -35,7 +35,7 @@ class AbstractCoreNavbar {
      * Generate the animated AbstractCore logo HTML
      */
     getLogoHTML() {
-        const logoHref = this.config.basePath ? `${this.config.basePath}index.html` : '/';
+        const logoHref = 'https://lpalbou.github.io/AbstractCore/';
         
         return `
             <a href="${logoHref}" class="brand-link">
