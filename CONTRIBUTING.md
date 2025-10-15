@@ -63,6 +63,36 @@ pip install pytest black isort mypy
 - **Integration tests** - Test real-world scenarios
 - **Run tests**: `pytest`
 
+#### Version Management
+
+AbstractCore uses a **dual-version system** for reliable version management:
+
+1. **Source of Truth**: `abstractllm/utils/version.py` contains the static version string
+2. **Build System**: `pyproject.toml` uses dynamic versioning to read from the version file
+3. **Manual Sync Required**: Both files must be updated when releasing new versions
+
+**For Release Maintainers:**
+```bash
+# 1. Update the version in version.py
+# Edit abstractllm/utils/version.py:
+__version__ = "2.3.8"  # Update this line
+
+# 2. The pyproject.toml automatically reads from version.py during build
+# No manual update needed in pyproject.toml
+
+# 3. Verify version consistency
+python -c "import abstractllm; print(f'Version: {abstractllm.__version__}')"
+
+# 4. Build and test
+python -m build --wheel
+```
+
+**Why This Approach:**
+- **Reliability**: Static version works in all deployment scenarios (development, installed packages, Docker, etc.)
+- **Single Source**: Python code always reads from one place (`version.py`)
+- **Build Integration**: Setuptools automatically reads version during packaging
+- **No Dependencies**: No runtime dependency on `pyproject.toml` or external tools
+
 #### Pull Request Guidelines
 1. **Create a feature branch**: `git checkout -b feature/your-feature-name`
 2. **Write tests** for your changes
