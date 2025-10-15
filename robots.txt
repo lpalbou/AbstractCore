@@ -6,4 +6,4 @@ Allow: /llms.txt
 Allow: /llms-full.txt
 
 # Sitemap
-Sitemap: https://lpalbou.github.io/AbstractCore/sitemap.xml
+Sitemap: https://www.abstractcore.ai/sitemap.xml

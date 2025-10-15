@@ -312,36 +312,36 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
     # Implementation here...</code></pre>
                     </div>
                     
-                    <div style="background: linear-gradient(135deg, #e3f2fd, #f3e5f5); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: #1565c0;">🔄 How This Gets Transformed</h3>
-                        <p style="margin: 0 0 1rem 0;">When you use this tool with a prompted model (like Ollama), AbstractCore automatically generates a system prompt like this:</p>
+                    <div style="background: linear-gradient(135deg, #1e40af, #7c3aed); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0; color: white;">
+                        <h3 style="margin: 0 0 1rem 0; color: #ffffff;">🔄 How This Gets Transformed</h3>
+                        <p style="margin: 0 0 1rem 0; color: #e5e7eb;">When you use this tool with a prompted model (like Ollama), AbstractCore automatically generates a system prompt like this:</p>
                         
-                        <div style="background: #fff; padding: 1rem; border-radius: 0.5rem; font-family: monospace; font-size: 0.875rem; border-left: 4px solid #1565c0;">
-                            <strong>You are a helpful AI assistant with access to the following tools:</strong><br><br>
+                        <div style="background: #1f2937; padding: 1rem; border-radius: 0.5rem; font-family: monospace; font-size: 0.875rem; border-left: 4px solid #60a5fa; color: #f3f4f6;">
+                            <strong style="color: #ffffff;">You are a helpful AI assistant with access to the following tools:</strong><br><br>
                             
-                            <strong>**list_files**</strong>: Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)<br>
-                            • <strong>When to use</strong>: When you need to find files by their names, paths, or file extensions (NOT for searching file contents)<br>
-                            • <strong>Tags</strong>: file, directory, listing, filesystem<br>
-                            • <strong>Parameters</strong>: {"directory_path": {"type": "string", "default": "."}, "pattern": {"type": "string", "default": "*"}, ...}<br><br>
+                            <strong style="color: #fbbf24;">**list_files**</strong><span style="color: #e5e7eb;">: Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)</span><br>
+                            <span style="color: #a78bfa;">• </span><strong style="color: #10b981;">When to use</strong><span style="color: #e5e7eb;">: When you need to find files by their names, paths, or file extensions (NOT for searching file contents)</span><br>
+                            <span style="color: #a78bfa;">• </span><strong style="color: #10b981;">Tags</strong><span style="color: #e5e7eb;">: file, directory, listing, filesystem</span><br>
+                            <span style="color: #a78bfa;">• </span><strong style="color: #10b981;">Parameters</strong><span style="color: #e5e7eb;">: {"directory_path": {"type": "string", "default": "."}, "pattern": {"type": "string", "default": "*"}, ...}</span><br><br>
                             
-                            <strong>To use a tool, respond with this EXACT format:</strong><br>
-                            &lt;|tool_call|&gt;<br>
-                            {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}<br>
-                            &lt;/|tool_call|&gt;<br><br>
+                            <strong style="color: #ffffff;">To use a tool, respond with this EXACT format:</strong><br>
+                            <span style="color: #f59e0b;">&lt;|tool_call|&gt;</span><br>
+                            <span style="color: #e5e7eb;">{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}</span><br>
+                            <span style="color: #f59e0b;">&lt;/|tool_call|&gt;</span><br><br>
                             
-                            <strong>**EXAMPLES:**</strong><br><br>
-                            <strong>**list_files Examples:**</strong><br>
-                            1. List all files in current directory:<br>
-                            &lt;|tool_call|&gt;<br>
-                            {"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*"}}<br>
-                            &lt;/|tool_call|&gt;<br><br>
+                            <strong style="color: #ffffff;">**EXAMPLES:**</strong><br><br>
+                            <strong style="color: #fbbf24;">**list_files Examples:**</strong><br>
+                            <span style="color: #e5e7eb;">1. List all files in current directory:</span><br>
+                            <span style="color: #f59e0b;">&lt;|tool_call|&gt;</span><br>
+                            <span style="color: #e5e7eb;">{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*"}}</span><br>
+                            <span style="color: #f59e0b;">&lt;/|tool_call|&gt;</span><br><br>
                             
-                            2. Find all Python files recursively:<br>
-                            &lt;|tool_call|&gt;<br>
-                            {"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*.py", "recursive": true}}<br>
-                            &lt;/|tool_call|&gt;<br><br>
+                            <span style="color: #e5e7eb;">2. Find all Python files recursively:</span><br>
+                            <span style="color: #f59e0b;">&lt;|tool_call|&gt;</span><br>
+                            <span style="color: #e5e7eb;">{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*.py", "recursive": true}}</span><br>
+                            <span style="color: #f59e0b;">&lt;/|tool_call|&gt;</span><br><br>
                             
-                            <em>... and 3 more examples with proper formatting ...</em>
+                            <em style="color: #9ca3af;">... and 3 more examples with proper formatting ...</em>
                         </div>
                     </div>
                 </section>
