@@ -129,12 +129,12 @@
 
                 <div class="hero-stats">
                     <div class="stat">
-                        <div class="stat-number">6+</div>
-                        <div class="stat-label">Providers</div>
+                        <div class="stat-number">137+</div>
+                        <div class="stat-label">Models</div>
                     </div>
                     <div class="stat">
-                        <div class="stat-number">100%</div>
-                        <div class="stat-label">Test Coverage</div>
+                        <div class="stat-number">6+</div>
+                        <div class="stat-label">Providers</div>
                     </div>
                     <div class="stat">
                         <div class="stat-number">MIT</div>
@@ -191,9 +191,9 @@ llm = create_llm("ollama", model="qwen3-coder:30b")
                             <path d="M2 12l10 5 10-5"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Provider Agnostic</h3>
+                    <h3 class="feature-title">Provider Discovery</h3>
                     <p class="feature-description">
-                        Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, and HuggingFace with identical code.
+                        Centralized registry with 137+ models across 6 providers. Programmatically discover all available providers and models with comprehensive metadata.
                     </p>
                 </div>
                 
@@ -218,9 +218,9 @@ llm = create_llm("ollama", model="qwen3-coder:30b")
                             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Universal Tools</h3>
+                    <h3 class="feature-title">Universal Tools + Syntax Rewriting</h3>
                     <p class="feature-description">
-                        Consistent tool calling across ALL providers, even those without native support. Works everywhere.
+                        Tool calling across ALL providers with real-time format conversion for agent CLI compatibility. Architecture-aware detection and custom tag support.
                     </p>
                 </div>
                 
@@ -260,9 +260,9 @@ llm = create_llm("ollama", model="qwen3-coder:30b")
                             <polyline points="21,12 16.5,14.6 16.5,19.79"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Streaming Support</h3>
+                    <h3 class="feature-title">Token Management + Streaming</h3>
                     <p class="feature-description">
-                        Real-time token generation with proper tool call handling. Unified streaming across all providers.
+                        Unified token parameters across all providers with budget validation. Real-time streaming with proper tool call handling and cost estimation.
                     </p>
                 </div>
                 
@@ -274,9 +274,9 @@ llm = create_llm("ollama", model="qwen3-coder:30b")
                             <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Built-in CLI Apps</h3>
+                    <h3 class="feature-title">Session Management + Analytics</h3>
                     <p class="feature-description">
-                        Ready-to-use terminal tools: <code>summarizer</code>, <code>extractor</code>, <code>judge</code> with debug modes and advanced features.
+                        Persistent conversations with SOTA 2025 auto-compaction algorithm. Built-in analytics: summaries, assessments, fact extraction with complete serialization.
                     </p>
                 </div>
                 
@@ -290,9 +290,9 @@ llm = create_llm("ollama", model="qwen3-coder:30b")
                             <polyline points="10,9 9,9 8,9"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Debug & Self-Healing</h3>
+                    <h3 class="feature-title">Production Resilience + OpenAI Server</h3>
                     <p class="feature-description">
-                        <code>--debug</code> mode shows raw LLM responses. Self-healing JSON automatically repairs truncated outputs.
+                        Production-grade retry logic, circuit breakers, and event-driven monitoring. OpenAI-compatible HTTP server for multi-language access.
                     </p>
                 </div>
             </div>
@@ -364,11 +364,11 @@ print(response.content)</code></pre>
                 
                 <div class="quickstart-demo">
                     <div class="demo-tabs">
-                        <button class="tab-button active" data-tab="basic">Basic Usage</button>
+                        <button class="tab-button active" data-tab="basic">Provider Discovery</button>
                         <button class="tab-button" data-tab="tools">Tool Calling</button>
-                        <button class="tab-button" data-tab="structured">Structured Output</button>
-                        <button class="tab-button" data-tab="streaming">Streaming</button>
-                        <button class="tab-button" data-tab="cli">CLI Apps</button>
+                        <button class="tab-button" data-tab="structured">Session Analytics</button>
+                        <button class="tab-button" data-tab="streaming">Token Management</button>
+                        <button class="tab-button" data-tab="cli">HTTP Server</button>
                     </div>
                     
                     <div class="demo-content">
@@ -380,18 +380,17 @@ print(response.content)</code></pre>
                                         <span class="dot yellow"></span>
                                         <span class="dot green"></span>
                                     </div>
-                                    <div class="code-title">basic_usage.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
+                                    <div class="code-title">provider_discovery.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore.providers import get_all_providers_with_models
 
-# Works with any provider
-providers = [&quot;openai&quot;, &quot;anthropic&quot;, &quot;ollama&quot;]
-
+# Get comprehensive information about all providers
+providers = get_all_providers_with_models()
 for provider in providers:
-    llm = create_llm(provider)
-    response = llm.generate(&quot;What is Python?&quot;)
-    print(f&quot;{provider}: {response.content[:50]}...&quot;)
-
-# Same code, different providers! 🚀">
+    print(f&quot;{provider['display_name']}: {provider['model_count']} models&quot;)
+    print(f&quot;Features: {', '.join(provider['supported_features'])}&quot;)
+    print(f&quot;Local: {provider['local_provider']}&quot;)
+    print(f&quot;Auth Required: {provider['authentication_required']}&quot;)
+    print()">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -401,17 +400,16 @@ for provider in providers:
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python">from abstractcore import create_llm
+                                    <pre><code class="language-python">from abstractcore.providers import get_all_providers_with_models
 
-# Works with any provider
-providers = ["openai", "anthropic", "ollama"]
-
+# Get comprehensive information about all providers
+providers = get_all_providers_with_models()
 for provider in providers:
-    llm = create_llm(provider)
-    response = llm.generate("What is Python?")
-    print(f"{provider}: {response.content[:50]}...")
-
-# Same code, different providers! 🚀</code></pre>
+    print(f"{provider['display_name']}: {provider['model_count']} models")
+    print(f"Features: {', '.join(provider['supported_features'])}")
+    print(f"Local: {provider['local_provider']}")
+    print(f"Auth Required: {provider['authentication_required']}")
+    print()</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -424,21 +422,27 @@ for provider in providers:
                                         <span class="dot yellow"></span>
                                         <span class="dot green"></span>
                                     </div>
-                                    <div class="code-title">tool_calling.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm, tool
+                                    <div class="code-title">tool_syntax_rewriting.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
+from abstractcore.tools import tool
 
 @tool
-def get_weather(city: str) -&gt; str:
-    &quot;&quot;&quot;Get current weather for a city.&quot;&quot;&quot;
-    return f&quot;Weather in {city}: 72°F, Sunny&quot;
+def calculate(expression: str) -&gt; float:
+    &quot;&quot;&quot;Perform mathematical calculation.&quot;&quot;&quot;
+    return eval(expression)
 
-llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
-response = llm.generate(
-    &quot;What's the weather in Paris?&quot;,
-    tools=[get_weather]
+# Custom tag configuration for agent CLI compatibility
+llm = create_llm(
+    &quot;ollama&quot;,
+    model=&quot;qwen3-coder:30b&quot;,
+    tool_call_tags=&quot;function_call&quot;  # Converts to &lt;function_call&gt;...&lt;/function_call&gt;
 )
-print(response.content)
-# Output: The weather in Paris is 72°F and sunny!">
+
+# Real-time streaming with format conversion
+for chunk in llm.generate(&quot;Calculate 15 * 23&quot;, tools=[calculate], stream=True):
+    if chunk.tool_calls:
+        print(f&quot;Tool detected: {chunk.tool_calls[0].name}&quot;)
+    print(chunk.content, end=&quot;&quot;, flush=True)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -448,20 +452,26 @@ print(response.content)
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python">from abstractcore import create_llm, tool
+                                    <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.tools import tool
 
 @tool
-def get_weather(city: str) -> str:
-    """Get current weather for a city."""
-    return f"Weather in {city}: 72°F, Sunny"
+def calculate(expression: str) -> float:
+    """Perform mathematical calculation."""
+    return eval(expression)
 
-llm = create_llm("openai", model="gpt-4o-mini")
-response = llm.generate(
-    "What's the weather in Paris?",
-    tools=[get_weather]
+# Custom tag configuration for agent CLI compatibility
+llm = create_llm(
+    "ollama",
+    model="qwen3-coder:30b",
+    tool_call_tags="function_call"  # Converts to <function_call>...</function_call>
 )
-print(response.content)
-# Output: The weather in Paris is 72°F and sunny!</code></pre>
+
+# Real-time streaming with format conversion
+for chunk in llm.generate("Calculate 15 * 23", tools=[calculate], stream=True):
+    if chunk.tool_calls:
+        print(f"Tool detected: {chunk.tool_calls[0].name}")
+    print(chunk.content, end="", flush=True)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -474,23 +484,25 @@ print(response.content)
                                         <span class="dot yellow"></span>
                                         <span class="dot green"></span>
                                     </div>
-                                    <div class="code-title">structured_output.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="from pydantic import BaseModel
-from abstractcore import create_llm
-
-class Person(BaseModel):
-    name: str
-    age: int
-    occupation: str
+                                    <div class="code-title">session_analytics.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import BasicSession, create_llm
 
 llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
-person = llm.generate(
-    &quot;Extract: John Doe is 25 and works as a developer&quot;,
-    response_model=Person
-)
+session = BasicSession(llm, system_prompt=&quot;You are a helpful assistant.&quot;)
 
-print(f&quot;{person.name}, {person.age}, {person.occupation}&quot;)
-# Output: John Doe, 25, developer">
+response1 = session.generate(&quot;My name is Alice&quot;)
+response2 = session.generate(&quot;What's my name?&quot;)  # Remembers context
+
+# Auto-compaction with SOTA 2025 algorithm
+session.compact(target_tokens=8000)  # Compresses while preserving context
+
+# Advanced analytics
+summary = session.generate_summary(style=&quot;executive&quot;, length=&quot;brief&quot;)
+assessment = session.generate_assessment(criteria=[&quot;clarity&quot;, &quot;helpfulness&quot;])
+facts = session.extract_facts(entity_types=[&quot;person&quot;, &quot;organization&quot;, &quot;date&quot;])
+
+# Save with analytics
+session.save(&quot;conversation.json&quot;, summary=True, assessment=True, facts=True)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -500,22 +512,24 @@ print(f&quot;{person.name}, {person.age}, {person.occupation}&quot;)
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python">from pydantic import BaseModel
-from abstractcore import create_llm
-
-class Person(BaseModel):
-    name: str
-    age: int
-    occupation: str
+                                    <pre><code class="language-python">from abstractcore import BasicSession, create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")
-person = llm.generate(
-    "Extract: John Doe is 25 and works as a developer",
-    response_model=Person
-)
+session = BasicSession(llm, system_prompt="You are a helpful assistant.")
 
-print(f"{person.name}, {person.age}, {person.occupation}")
-# Output: John Doe, 25, developer</code></pre>
+response1 = session.generate("My name is Alice")
+response2 = session.generate("What's my name?")  # Remembers context
+
+# Auto-compaction with SOTA 2025 algorithm
+session.compact(target_tokens=8000)  # Compresses while preserving context
+
+# Advanced analytics
+summary = session.generate_summary(style="executive", length="brief")
+assessment = session.generate_assessment(criteria=["clarity", "helpfulness"])
+facts = session.extract_facts(entity_types=["person", "organization", "date"])
+
+# Save with analytics
+session.save("conversation.json", summary=True, assessment=True, facts=True)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -528,17 +542,29 @@ print(f"{person.name}, {person.age}, {person.occupation}")
                                         <span class="dot yellow"></span>
                                         <span class="dot green"></span>
                                     </div>
-                                    <div class="code-title">streaming.py</div>
+                                    <div class="code-title">token_management.py</div>
                                     <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
+from abstractcore.utils.token_utils import estimate_tokens
 
-llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+# Unified token parameters work across ALL providers
+llm = create_llm(
+    &quot;anthropic&quot;,
+    model=&quot;claude-3-5-haiku-latest&quot;,
+    max_tokens=32000,           # Context window (input + output)
+    max_output_tokens=8000,     # Maximum output tokens
+    max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
+)
 
-print(&quot;AI: &quot;, end=&quot;&quot;, flush=True)
-for chunk in llm.generate(&quot;Write a haiku about coding&quot;, stream=True):
-    print(chunk.content, end=&quot;&quot;, flush=True)
-print()
+# Token estimation and validation
+text = &quot;Your input text here...&quot;
+estimated = estimate_tokens(text, model=&quot;claude-3-5-haiku-latest&quot;)
+print(f&quot;Estimated tokens: {estimated}&quot;)
 
-# Real-time streaming across all providers! ⚡">
+# Budget validation with warnings
+response = llm.generate(&quot;Write a detailed analysis...&quot;)
+print(f&quot;Input tokens: {response.usage.input_tokens}&quot;)
+print(f&quot;Output tokens: {response.usage.output_tokens}&quot;)
+print(f&quot;Cost estimate: ${response.usage.cost_usd:.4f}&quot;)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -549,15 +575,27 @@ print()
                                 </div>
                                 <div class="code-content">
                                     <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.utils.token_utils import estimate_tokens
 
-llm = create_llm("openai", model="gpt-4o-mini")
+# Unified token parameters work across ALL providers
+llm = create_llm(
+    "anthropic",
+    model="claude-3-5-haiku-latest",
+    max_tokens=32000,           # Context window (input + output)
+    max_output_tokens=8000,     # Maximum output tokens
+    max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
+)
 
-print("AI: ", end="", flush=True)
-for chunk in llm.generate("Write a haiku about coding", stream=True):
-    print(chunk.content, end="", flush=True)
-print()
+# Token estimation and validation
+text = "Your input text here..."
+estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+print(f"Estimated tokens: {estimated}")
 
-# Real-time streaming across all providers! ⚡</code></pre>
+# Budget validation with warnings
+response = llm.generate("Write a detailed analysis...")
+print(f"Input tokens: {response.usage.input_tokens}")
+print(f"Output tokens: {response.usage.output_tokens}")
+print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -570,19 +608,28 @@ print()
                                         <span class="dot yellow"></span>
                                         <span class="dot green"></span>
                                     </div>
-                                    <div class="code-title">terminal</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="# Ready-to-use CLI apps - no Python code needed!
+                                    <div class="code-title">http_server.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="# Start OpenAI-compatible server
+# uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
-# Document summarization
-summarizer document.pdf --style executive --output summary.txt
+import openai
 
-# Knowledge graph extraction  
-extractor report.txt --format json-ld --focus technology --iterate 3
+client = openai.OpenAI(
+    base_url=&quot;http://localhost:8000/v1&quot;,
+    api_key=&quot;unused&quot;  # Not required for local providers
+)
 
-# Text evaluation with debug mode
-judge essay.txt --criteria clarity,accuracy --debug --focus 'examples, completeness'
+# Route to any provider using model format: provider/model
+response = client.chat.completions.create(
+    model=&quot;ollama/qwen3-coder:30b&quot;,      # Ollama provider
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]
+)
 
-# All apps support --debug for troubleshooting! 🔍">
+# Provider discovery via HTTP API
+# GET /providers - Complete provider metadata
+# GET /providers/ollama/models - Models for specific provider
+
+print(response.choices[0].message.content)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -592,18 +639,27 @@ judge essay.txt --criteria clarity,accuracy --debug --focus 'examples, completen
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-bash"># Ready-to-use CLI apps - no Python code needed!
+                                    <pre><code class="language-python"># Start OpenAI-compatible server
+# uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
-# Document summarization
-summarizer document.pdf --style executive --output summary.txt
+import openai
 
-# Knowledge graph extraction  
-extractor report.txt --format json-ld --focus technology --iterate 3
+client = openai.OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="unused"  # Not required for local providers
+)
 
-# Text evaluation with debug mode
-judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completeness"
+# Route to any provider using model format: provider/model
+response = client.chat.completions.create(
+    model="ollama/qwen3-coder:30b",      # Ollama provider
+    messages=[{"role": "user", "content": "Hello!"}]
+)
 
-# All apps support --debug for troubleshooting! 🔍</code></pre>
+# Provider discovery via HTTP API
+# GET /providers - Complete provider metadata
+# GET /providers/ollama/models - Models for specific provider
+
+print(response.choices[0].message.content)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -630,7 +686,7 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
                             <img src="assets/providers/openai.svg" alt="OpenAI">
                         </div>
                         <h3 class="provider-name">OpenAI</h3>
-                        <p class="provider-description">GPT-5, GPT-4.5 (Orion), GPT-4o</p>
+                        <p class="provider-description">gpt-5-nano-2025-08-07, GPT-4o, GPT-4o-mini</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -643,7 +699,7 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
                             <img src="assets/providers/anthropic.svg" alt="Anthropic">
                         </div>
                         <h3 class="provider-name">Anthropic</h3>
-                        <p class="provider-description">Claude 4.1, Claude 3.7 Sonnet, Claude Opus 4</p>
+                        <p class="provider-description">claude-3-5-haiku-latest, Claude 3.5 Sonnet</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -656,7 +712,7 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
                             <img src="assets/providers/ollama.svg" alt="Ollama">
                         </div>
                         <h3 class="provider-name">Ollama</h3>
-                        <p class="provider-description">Local models, privacy-first</p>
+                        <p class="provider-description">qwen3-coder:30b, Local models, privacy-first</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -669,7 +725,7 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
                             <img src="assets/providers/lmstudio.svg" alt="LMStudio">
                         </div>
                         <h3 class="provider-name">LMStudio</h3>
-                        <p class="provider-description">Local inference server</p>
+                        <p class="provider-description">llama-3.2-8b-instruct, Local inference server</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -682,7 +738,7 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
                             <img src="assets/providers/mlx.svg" alt="MLX">
                         </div>
                         <h3 class="provider-name">MLX</h3>
-                        <p class="provider-description">Apple Silicon optimized</p>
+                        <p class="provider-description">qwen3-air-4bit, Apple Silicon optimized</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -695,7 +751,7 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
                             <img src="assets/providers/huggingface.svg" alt="HuggingFace">
                         </div>
                         <h3 class="provider-name">HuggingFace</h3>
-                        <p class="provider-description">Open source models</p>
+                        <p class="provider-description">microsoft/DialoGPT-large, Open source models</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -757,6 +813,10 @@ judge essay.txt --criteria clarity,accuracy --debug --focus "examples, completen
                         <a href="docs/embeddings.html" class="doc-link">
                             <span class="doc-title">Vector Embeddings</span>
                             <span class="doc-description">Semantic search and RAG</span>
+                        </a>
+                        <a href="docs/token-management.html" class="doc-link">
+                            <span class="doc-title">Token Management</span>
+                            <span class="doc-description">Unified parameters and budget validation</span>
                         </a>
                         <a href="https://www.abstractcore.ai/llms-full.txt" class="doc-link">
                             <span class="doc-title">🤖 Complete AI Documentation</span>

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Management - AbstractCore</title>
+    <meta name="description" content="Unified token parameter vocabulary with budget validation across all LLM providers in AbstractCore.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+    
+    <script>
+        // Initialize navbar with docs-specific configuration
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '../',
+                menuItems: [
+                    { 
+                        text: 'GitHub', 
+                        href: 'https://github.com/lpalbou/AbstractCore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    { 
+                        text: 'PyPI', 
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1300px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Token Management</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Unified parameter vocabulary with budget validation across all LLM providers.
+                </p>
+            </div>
+
+            <!-- Overview -->
+            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
+                <h2 style="margin: 0 0 1.5rem 0;">🎯 Key Benefits</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
+                        <h3 style="margin: 0 0 1rem 0;">Unified Parameters</h3>
+                        <p style="margin: 0; font-size: 0.9rem;">Same token parameters work across ALL providers - no more provider-specific configurations.</p>
+                    </div>
+                    
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
+                        <h3 style="margin: 0 0 1rem 0;">Budget Validation</h3>
+                        <p style="margin: 0; font-size: 0.9rem;">Automatic token estimation and cost calculation with warnings for budget overruns.</p>
+                    </div>
+                    
+                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
+                        <h3 style="margin: 0 0 1rem 0;">Auto-Calculation</h3>
+                        <p style="margin: 0; font-size: 0.9rem;">Smart input/output token allocation based on context window and requirements.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="doc-content">
+                <section id="unified-parameters">
+                    <h2>Unified Token Parameters</h2>
+                    <p>AbstractCore provides a consistent token parameter vocabulary that works across all providers:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+# Unified token parameters work across ALL providers
+llm = create_llm(
+    "anthropic",
+    model="claude-3-5-haiku-latest",
+    max_tokens=32000,           # Context window (input + output)
+    max_output_tokens=8000,     # Maximum output tokens
+    max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
+)
+
+# Same parameters work with any provider
+openai_llm = create_llm(
+    "openai",
+    model="gpt-4o-mini",
+    max_tokens=16384,           # Context window
+    max_output_tokens=4000,     # Output limit
+    max_input_tokens=12384      # Input limit (auto-calculated: 16384 - 4000)
+)
+
+# Local providers too
+ollama_llm = create_llm(
+    "ollama",
+    model="qwen3-coder:30b",
+    max_tokens=8192,            # Context window
+    max_output_tokens=2048      # Output limit (input auto-calculated: 6144)
+)</code></pre>
+                    </div>
+
+                    <h3>Parameter Definitions</h3>
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1rem 0;">
+                        <ul style="margin: 0;">
+                            <li><strong>max_tokens</strong>: Total context window (input + output combined)</li>
+                            <li><strong>max_output_tokens</strong>: Maximum tokens for generated response</li>
+                            <li><strong>max_input_tokens</strong>: Maximum tokens for input (auto-calculated if not set)</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="token-estimation">
+                    <h2>Token Estimation & Validation</h2>
+                    <p>Estimate token usage before making requests and validate against budgets:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore.utils.token_utils import estimate_tokens, calculate_token_budget
+
+# Estimate tokens for input text
+text = "Your input text here..."
+estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+print(f"Estimated tokens: {estimated}")
+
+# Calculate optimal token budget
+budget = calculate_token_budget(
+    context_window=32000,
+    target_output=8000,
+    safety_margin=0.1  # 10% safety margin
+)
+print(f"Recommended input limit: {budget.max_input_tokens}")
+print(f"Recommended output limit: {budget.max_output_tokens}")
+
+# Validate before generation
+if estimated > budget.max_input_tokens:
+    print(f"Warning: Input too long ({estimated} > {budget.max_input_tokens})")
+    # Truncate or split input</code></pre>
+                    </div>
+                </section>
+
+                <section id="cost-tracking">
+                    <h2>Cost Tracking & Monitoring</h2>
+                    <p>Track token usage and costs across all providers:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.events import EventType, on_global
+
+# Cost monitoring with events
+def cost_monitor(event):
+    usage = event.data.get('usage', {})
+    if usage:
+        print(f"Input tokens: {usage.get('input_tokens', 0)}")
+        print(f"Output tokens: {usage.get('output_tokens', 0)}")
+        print(f"Total tokens: {usage.get('total_tokens', 0)}")
+        
+        cost = usage.get('cost_usd', 0)
+        if cost > 0.10:  # Alert for high-cost requests
+            print(f"⚠️  High cost request: ${cost:.4f}")
+
+on_global(EventType.GENERATION_COMPLETED, cost_monitor)
+
+# Generate with cost tracking
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate("Write a detailed analysis...")
+
+# Access usage information
+print(f"Input tokens: {response.usage.input_tokens}")
+print(f"Output tokens: {response.usage.output_tokens}")
+print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
+                    </div>
+                </section>
+
+                <section id="provider-mapping">
+                    <h2>Provider-Specific Mapping</h2>
+                    <p>AbstractCore automatically maps unified parameters to provider-specific formats:</p>
+                    
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0;">Parameter Mapping Table</h3>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid var(--border-light);">
+                                    <th style="text-align: left; padding: 0.75rem;">Provider</th>
+                                    <th style="text-align: left; padding: 0.75rem;">max_tokens</th>
+                                    <th style="text-align: left; padding: 0.75rem;">max_output_tokens</th>
+                                    <th style="text-align: left; padding: 0.75rem;">Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr style="border-bottom: 1px solid var(--border-light);">
+                                    <td style="padding: 0.75rem;"><strong>OpenAI</strong></td>
+                                    <td style="padding: 0.75rem;">→ max_tokens (output only)</td>
+                                    <td style="padding: 0.75rem;">→ max_tokens</td>
+                                    <td style="padding: 0.75rem;">Input managed by context</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid var(--border-light);">
+                                    <td style="padding: 0.75rem;"><strong>Anthropic</strong></td>
+                                    <td style="padding: 0.75rem;">→ context window</td>
+                                    <td style="padding: 0.75rem;">→ max_tokens</td>
+                                    <td style="padding: 0.75rem;">Input truncated if needed</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid var(--border-light);">
+                                    <td style="padding: 0.75rem;"><strong>Ollama</strong></td>
+                                    <td style="padding: 0.75rem;">→ num_ctx</td>
+                                    <td style="padding: 0.75rem;">→ num_predict</td>
+                                    <td style="padding: 0.75rem;">Local model parameters</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid var(--border-light);">
+                                    <td style="padding: 0.75rem;"><strong>LMStudio</strong></td>
+                                    <td style="padding: 0.75rem;">→ max_tokens (total)</td>
+                                    <td style="padding: 0.75rem;">→ max_tokens</td>
+                                    <td style="padding: 0.75rem;">OpenAI-compatible format</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid var(--border-light);">
+                                    <td style="padding: 0.75rem;"><strong>MLX</strong></td>
+                                    <td style="padding: 0.75rem;">→ context_length</td>
+                                    <td style="padding: 0.75rem;">→ max_tokens</td>
+                                    <td style="padding: 0.75rem;">Apple Silicon optimization</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 0.75rem;"><strong>HuggingFace</strong></td>
+                                    <td style="padding: 0.75rem;">→ max_length</td>
+                                    <td style="padding: 0.75rem;">→ max_new_tokens</td>
+                                    <td style="padding: 0.75rem;">Transformers library format</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="best-practices">
+                    <h2>Best Practices</h2>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                            <h3 style="margin: 0 0 1rem 0;">1. Set Reasonable Limits</h3>
+                            <div class="code-block">
+                                <pre><code class="language-python"># Good: Reasonable limits
+llm = create_llm(
+    "openai",
+    model="gpt-4o-mini",
+    max_tokens=16384,       # Model's context window
+    max_output_tokens=4000, # 25% for output
+    max_input_tokens=12384  # 75% for input
+)
+
+# Avoid: Unrealistic limits
+# max_tokens=1000000  # Exceeds model capability</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                            <h3 style="margin: 0 0 1rem 0;">2. Use Token Estimation</h3>
+                            <div class="code-block">
+                                <pre><code class="language-python"># Always estimate before generation
+def safe_generate(llm, prompt):
+    estimated = estimate_tokens(prompt)
+    
+    if estimated > llm.max_input_tokens:
+        # Truncate or split prompt
+        prompt = truncate_to_tokens(prompt, llm.max_input_tokens)
+    
+    return llm.generate(prompt)</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                            <h3 style="margin: 0 0 1rem 0;">3. Monitor Costs</h3>
+                            <div class="code-block">
+                                <pre><code class="language-python"># Set up cost monitoring
+daily_budget = 10.00  # $10 daily budget
+current_spend = 0.00
+
+def budget_monitor(event):
+    global current_spend
+    cost = event.data.get('usage', {}).get('cost_usd', 0)
+    current_spend += cost
+    
+    if current_spend > daily_budget:
+        raise Exception(f"Daily budget exceeded: ${current_spend:.2f}")
+
+on_global(EventType.GENERATION_COMPLETED, budget_monitor)</code></pre>
+                            </div>
+                        </div>
+                        
+                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                            <h3 style="margin: 0 0 1rem 0;">4. Handle Truncation Gracefully</h3>
+                            <div class="code-block">
+                                <pre><code class="language-python"># Handle truncated responses
+response = llm.generate(prompt)
+
+if response.finish_reason == "length":
+    print("⚠️  Response was truncated due to token limit")
+    # Consider increasing max_output_tokens
+    # or breaking task into smaller parts</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="advanced-features">
+                    <h2>Advanced Features</h2>
+                    
+                    <h3>Dynamic Token Allocation</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore.utils.token_utils import dynamic_token_allocation
+
+# Automatically adjust token limits based on content
+def adaptive_generate(llm, prompt, desired_output_length="medium"):
+    # Estimate input tokens
+    input_tokens = estimate_tokens(prompt)
+    
+    # Calculate optimal allocation
+    allocation = dynamic_token_allocation(
+        context_window=llm.max_tokens,
+        input_tokens=input_tokens,
+        output_preference=desired_output_length  # "short", "medium", "long"
+    )
+    
+    # Update LLM configuration
+    llm.max_output_tokens = allocation.output_tokens
+    llm.max_input_tokens = allocation.input_tokens
+    
+    return llm.generate(prompt)</code></pre>
+                    </div>
+
+                    <h3>Batch Token Optimization</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python"># Optimize token usage for batch processing
+def batch_process_with_token_optimization(llm, prompts):
+    results = []
+    
+    for prompt in prompts:
+        # Estimate and optimize for each prompt
+        estimated = estimate_tokens(prompt)
+        
+        if estimated > llm.max_input_tokens:
+            # Split large prompts
+            chunks = split_prompt_by_tokens(prompt, llm.max_input_tokens)
+            for chunk in chunks:
+                result = llm.generate(chunk)
+                results.append(result)
+        else:
+            result = llm.generate(prompt)
+            results.append(result)
+    
+    return results</code></pre>
+                    </div>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Basic AbstractCore usage</p>
+                        </a>
+                        
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API documentation</p>
+                        </a>
+                        
+                        <a href="session.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Session Management</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Persistent conversations</p>
+                        </a>
+                        
+                        <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world usage examples</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
