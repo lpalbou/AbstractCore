@@ -109,50 +109,14 @@ def is_embedding_model(model_name: str) -> bool:
     return any(pattern in model_lower for pattern in embedding_patterns)
 
 # ============================================================================
-# Provider Model Discovery
+# Provider Model Discovery (Using Centralized Registry)
 # ============================================================================
 
 def get_models_from_provider(provider_name: str) -> List[str]:
-    """Get available models from a specific provider using their list_available_models() method."""
+    """Get available models from a specific provider using the centralized provider registry."""
     try:
-        if provider_name == "openai":
-            from ..providers.openai_provider import OpenAIProvider
-            return OpenAIProvider.list_available_models()
-        elif provider_name == "anthropic":
-            from ..providers.anthropic_provider import AnthropicProvider
-            # Need minimal instance for API key access
-            try:
-                provider = AnthropicProvider(model="claude-3-haiku-20240307")
-                return provider.list_available_models()
-            except Exception:
-                return []
-        elif provider_name == "ollama":
-            from ..providers.ollama_provider import OllamaProvider
-            # Need minimal instance for HTTP client
-            try:
-                provider = OllamaProvider(model="llama2")
-                return provider.list_available_models()
-            except Exception:
-                return []
-        elif provider_name == "lmstudio":
-            from ..providers.lmstudio_provider import LMStudioProvider
-            # Need minimal instance for HTTP client
-            try:
-                provider = LMStudioProvider(model="local-model")
-                return provider.list_available_models()
-            except Exception:
-                return []
-        elif provider_name == "mlx":
-            from ..providers.mlx_provider import MLXProvider
-            return MLXProvider.list_available_models()
-        elif provider_name == "huggingface":
-            from ..providers.huggingface_provider import HuggingFaceProvider
-            return HuggingFaceProvider.list_available_models()
-        elif provider_name == "mock":
-            # Mock provider for testing
-            return ["mock-model-1", "mock-model-2", "mock-embedding-1"]
-        else:
-            return []
+        from ..providers.registry import get_available_models_for_provider
+        return get_available_models_for_provider(provider_name)
     except Exception as e:
         logger.debug(f"Failed to get models from provider {provider_name}: {e}")
         return []
@@ -508,7 +472,7 @@ async def list_models(
                         continue  # Skip non-embedding models
                     if type == ModelType.TEXT_GENERATION and is_embedding:
                         continue  # Skip embedding models
-                
+
                 model_id = f"{provider.lower()}/{model}"
                 models_data.append({
                     "id": model_id,
@@ -517,12 +481,13 @@ async def list_models(
                     "created": int(time.time()),
                     "permission": [{"allow_create_engine": False, "allow_sampling": True}]
                 })
-            
+
             filter_msg = f" (type={type.value})" if type else ""
             logger.info(f"Listed {len(models_data)} models for provider {provider}{filter_msg}")
         else:
-            # Get models from all providers
-            providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface", "mock"]
+            # Get models from all providers using centralized registry
+            from ..providers.registry import list_available_providers
+            providers = list_available_providers()
             for prov in providers:
                 models = get_models_from_provider(prov)
                 for model in models:
@@ -533,7 +498,7 @@ async def list_models(
                             continue  # Skip non-embedding models
                         if type == ModelType.TEXT_GENERATION and is_embedding:
                             continue  # Skip embedding models
-                    
+
                     model_id = f"{prov}/{model}"
                     models_data.append({
                         "id": model_id,
@@ -542,7 +507,7 @@ async def list_models(
                         "created": int(time.time()),
                         "permission": [{"allow_create_engine": False, "allow_sampling": True}]
                     })
-            
+
             filter_msg = f" (type={type.value})" if type else ""
             logger.info(f"Listed {len(models_data)} models from all providers{filter_msg}")
 
@@ -562,13 +527,15 @@ async def list_models(
 async def list_providers():
     """
     List all available AbstractCore providers and their capabilities.
-    
-    Returns information about all registered LLM providers, including:
-    - Provider name and type
-    - Number of available models
-    - Current availability status
-    - Provider description
-    
+
+    Returns comprehensive information about all registered LLM providers, including:
+    - Provider name, display name, and type
+    - Number of available models and sample models
+    - Current availability status and detailed error information
+    - Provider description and supported features
+    - Authentication requirements and installation instructions
+    - Local vs. cloud provider designation
+
     **Supported Providers:**
     - **OpenAI**: Commercial API with GPT-4, GPT-3.5, and embedding models
     - **Anthropic**: Commercial API with Claude 3 family models
@@ -577,42 +544,47 @@ async def list_providers():
     - **MLX**: Apple Silicon optimized local inference
     - **HuggingFace**: Access to HuggingFace models (transformers and embeddings)
     - **Mock**: Testing provider for development
-    
+
     **Use Cases:**
     - Discover available providers before making requests
     - Check provider availability and model counts
     - Build dynamic provider selection UIs
-    - Monitor provider status
-    
-    **Note:** Only providers with available models are included in the response.
-    
-    **Returns:** A list of provider objects with name, type, model count, status, and description.
+    - Monitor provider status and troubleshoot issues
+    - Get installation instructions for missing dependencies
+
+    **Enhanced Information:**
+    This endpoint now uses the centralized provider registry to provide
+    comprehensive information including supported features, authentication
+    requirements, and detailed status information.
+
+    **Returns:** A list of provider objects with comprehensive metadata.
     """
     try:
-        providers_info = []
-        providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface", "mock"]
+        from ..providers.registry import get_all_providers_with_models, get_all_providers_status
 
-        for provider_name in providers:
-            models = get_models_from_provider(provider_name)
-            if models:  # Only include providers that have models
-                providers_info.append({
-                    "name": provider_name,
-                    "type": "llm",  # Could be extended to include "embedding" type
-                    "model_count": len(models),
-                    "status": "available",
-                    "description": f"{provider_name.title()} provider with {len(models)} available models"
-                })
+        # Get providers with models (available providers)
+        available_providers = get_all_providers_with_models()
 
-        logger.info(f"Listed {len(providers_info)} available providers")
+        # Optionally include all providers (even those with issues) for debugging
+        # Uncomment the next line if you want to see providers with errors too:
+        # all_providers = get_all_providers_status()
+
+        logger.info(f"Listed {len(available_providers)} available providers with models")
 
         return {
-            "providers": sorted(providers_info, key=lambda x: x["name"])
+            "providers": available_providers,
+            "total_providers": len(available_providers),
+            "registry_version": "2.0",  # Indicate this is using the new registry system
+            "note": "Provider information from centralized AbstractCore registry"
         }
 
     except Exception as e:
         logger.error(f"Failed to list providers: {e}")
         return {
-            "providers": []
+            "providers": [],
+            "total_providers": 0,
+            "error": str(e),
+            "registry_version": "2.0"
         }
 
 @app.post("/v1/responses")
