@@ -216,9 +216,21 @@ curl http://localhost:8000/v1/models?provider=ollama</code></pre>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">GET /providers</h3>
-                        <p style="margin: 0 0 1rem 0;">List all available providers and their status.</p>
+                        <p style="margin: 0 0 1rem 0;">Complete provider metadata with model counts and capabilities.</p>
                         <div class="code-block">
-                            <pre><code class="language-bash">curl http://localhost:8000/providers</code></pre>
+                            <pre><code class="language-bash">curl http://localhost:8000/providers
+# Returns: Complete provider metadata including:
+# - Model counts (137+ models on our test instance - it will vary on yours depending of the providers and models you install)
+# - Supported features (tools, streaming, etc.)
+# - Authentication requirements
+# - Local vs cloud provider status</code></pre>
+                        </div>
+                        
+                        <h4 style="margin: 1rem 0 0.5rem 0;">GET /providers/{provider}/models</h4>
+                        <p style="margin: 0 0 1rem 0;">Models for specific provider with detailed information.</p>
+                        <div class="code-block">
+                            <pre><code class="language-bash">curl http://localhost:8000/providers/ollama/models</code></pre>
+                        </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">GET /health</h3>
@@ -235,12 +247,12 @@ curl http://localhost:8000/v1/models?provider=ollama</code></pre>
                 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
-                        <h3 style="margin: 0 0 1rem 0;">Codex CLI</h3>
+                        <h3 style="margin: 0 0 1rem 0;">Codex CLI (Qwen3 Format)</h3>
                         <div class="code-block">
-                            <pre><code class="language-bash"># Setup
+                            <pre><code class="language-bash"># Setup with tool syntax rewriting
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
-export ABSTRACTCORE_API_KEY="unused"
+export ABSTRACTCORE_TOOL_FORMAT="qwen3"  # <|tool_call|>...JSON...</|tool_call|>
 
 # Use with any model
 codex --model "ollama/qwen3-coder:30b" "Write a factorial function"</code></pre>

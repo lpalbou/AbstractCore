@@ -146,7 +146,23 @@ print(response.content)</code></pre>
 
                 <h2>Core Concepts (5-Minute Tour)</h2>
 
-                <h3>1. Providers and Models</h3>
+                <h3>1. Provider Discovery (Centralized Registry)</h3>
+                <p>AbstractCore provides a centralized registry to discover all available providers and models:</p>
+                
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore.providers import get_all_providers_with_models
+
+# Get comprehensive information about all providers with available models
+providers = get_all_providers_with_models()
+for provider in providers:
+    print(f"{provider['display_name']}: {provider['model_count']} models")
+    print(f"Features: {', '.join(provider['supported_features'])}")
+    print(f"Local: {provider['local_provider']}")
+    print(f"Auth Required: {provider['authentication_required']}")
+    print()</code></pre>
+                </div>
+
+                <h3>2. Providers and Models</h3>
                 <p>AbstractCore supports multiple providers with the same interface:</p>
                 
                 <div class="code-block">
@@ -165,7 +181,7 @@ for name, llm in [("OpenAI", openai_llm), ("Claude", claude_llm), ("Ollama", loc
     print(f"{name}: {response.content[:50]}...")</code></pre>
                 </div>
 
-                <h3>2. Structured Output (Game Changer)</h3>
+                <h3>3. Structured Output (Game Changer)</h3>
                 <p>Instead of parsing strings, get typed objects directly:</p>
                 
                 <div class="code-block">
@@ -192,7 +208,7 @@ print(f"Summary: {review.summary}")</code></pre>
 
                 <p><strong>No more string parsing!</strong> AbstractCore handles JSON validation and retries automatically.</p>
 
-                <h3>3. Tool Calling (LLM with Superpowers)</h3>
+                <h3>4. Tool Calling (LLM with Superpowers)</h3>
                 <p>Let your LLM call functions with the <code>@tool</code> decorator:</p>
                 
                 <div class="code-block">
@@ -226,7 +242,7 @@ print(response.content)
 # Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.</code></pre>
                 </div>
 
-                <h3>4. Streaming (Real-Time Responses)</h3>
+                <h3>5. Streaming (Real-Time Responses)</h3>
                 <p>Show responses as they're generated:</p>
                 
                 <div class="code-block">
@@ -241,7 +257,7 @@ print("\n")
 # Output appears word by word in real-time</code></pre>
                 </div>
 
-                <h3>5. Conversations with Memory</h3>
+                <h3>6. Conversations with Memory</h3>
                 <p>Maintain context across multiple turns:</p>
                 
                 <div class="code-block">
