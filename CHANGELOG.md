@@ -5,6 +5,15 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2025-10-16
+
+### Fixed
+- **Critical Package Distribution Fix**: Fixed `ModuleNotFoundError: No module named 'abstractcore.exceptions'` that occurred when installing from PyPI
+  - Added missing `abstractcore.exceptions` and `abstractcore.media` packages to the setuptools configuration in `pyproject.toml`
+  - This issue was introduced during the refactoring process when these modules were not included in the package distribution list
+  - Users can now successfully import `from abstractcore import create_llm` after installing from PyPI
+  - Verified fix by building and testing the wheel package with the corrected configuration
+
 ## [2.4.0] - 2025-10-15
 
 ### Breaking Changes
