@@ -174,7 +174,7 @@ full-dev = [
 
 
 [tool.setuptools]
-packages = ["abstractcore", "abstractcore.core", "abstractcore.providers", "abstractcore.tools", "abstractcore.structured", "abstractcore.events", "abstractcore.embeddings", "abstractcore.architectures", "abstractcore.utils", "abstractcore.assets", "abstractcore.server", "abstractcore.apps", "abstractcore.processing"]
+packages = ["abstractcore", "abstractcore.core", "abstractcore.providers", "abstractcore.tools", "abstractcore.structured", "abstractcore.events", "abstractcore.embeddings", "abstractcore.architectures", "abstractcore.utils", "abstractcore.assets", "abstractcore.server", "abstractcore.apps", "abstractcore.processing", "abstractcore.exceptions", "abstractcore.media"]
 
 [tool.setuptools.dynamic]
 version = {attr = "abstractcore.utils.version.__version__"}
