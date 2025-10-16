@@ -5,6 +5,40 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.2] - 2025-10-16
+
+### Added
+- **Centralized Provider Registry System**: Unified provider discovery and metadata management
+  - **Single Source of Truth**: Created `abstractcore/providers/registry.py` with `ProviderRegistry` class for centralized provider management
+  - **Package-wide Discovery Function**: `get_all_providers_with_models()` provides unified access to ALL providers with complete metadata
+  - **Complete Model Lists**: Fixed truncation issue - now returns all models without "... and X more" truncation
+  - **Rich Metadata**: Installation instructions, features, authentication requirements, supported capabilities automatically available
+  - **HTTP API Integration**: Server `/providers` endpoint now uses centralized registry (registry_version: "2.0")
+  - **Dynamic Discovery**: Automatically discovers providers without hardcoding, eliminating manual synchronization
+
+### Enhanced
+- **Factory System**: Simplified `create_llm()` from 70+ line if/elif chain to single registry call while maintaining full backward compatibility
+- **Server Endpoints**: Enhanced `/providers` endpoint with comprehensive metadata including model counts, features, and installation instructions
+- **Documentation**: Added "Provider Discovery" section to both `llms.txt` and `llms-full.txt` with Python API and HTTP API examples
+- **Error Messages**: Improved error messages with dynamic provider lists from registry
+
+### Fixed
+- **Manual Provider Synchronization**: Eliminated need to manually update provider lists across factory.py, server/app.py, and documentation
+- **Model List Truncation**: Fixed "... and X more" truncation - now returns complete model lists for all providers
+- **Provider Metadata Inconsistency**: Centralized all provider information including features, authentication requirements, and installation extras
+
+### Technical
+- **Comprehensive Test Suite**: Added 50 tests in `tests/provider_registry/` covering core functionality, server integration, and factory integration
+- **Lazy Loading**: Provider classes loaded on-demand for better performance and memory usage
+- **Backward Compatibility**: All existing code continues to work unchanged - no breaking changes
+- **Extensible Architecture**: Easy to add new providers by registering them in the centralized registry
+
+### Benefits
+- **Developers**: Single function to discover all providers programmatically
+- **Server Users**: Enhanced `/providers` endpoint with rich metadata
+- **Maintainers**: No more manual provider list synchronization across multiple files
+- **Documentation**: Always up-to-date provider information in docs
+
 ## [2.4.1] - 2025-10-16
 
 ### Fixed
