@@ -157,7 +157,7 @@
                         <pre><code class="language-python">from abstractcore import create_llm
 
 # Works with any provider - just change the name
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4.5")
 response = llm.generate("What is the capital of France?")
 print(response.content)
 
@@ -580,7 +580,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4.5",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -588,7 +588,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+estimated = estimate_tokens(text, model="claude-haiku-4.5")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings
@@ -699,7 +699,7 @@ print(response.choices[0].message.content)</code></pre>
                             <img src="assets/providers/anthropic.svg" alt="Anthropic">
                         </div>
                         <h3 class="provider-name">Anthropic</h3>
-                        <p class="provider-description">claude-3-5-haiku-latest, Claude 3.5 Sonnet</p>
+                        <p class="provider-description">claude-haiku-4.5, Claude 3.5 Sonnet</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -725,7 +725,7 @@ print(response.choices[0].message.content)</code></pre>
                             <img src="assets/providers/lmstudio.svg" alt="LMStudio">
                         </div>
                         <h3 class="provider-name">LMStudio</h3>
-                        <p class="provider-description">llama-3.2-8b-instruct, Local inference server</p>
+                        <p class="provider-description">qwen/qwen3-next-80b, glm-4.5-air-mlx</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -738,7 +738,7 @@ print(response.choices[0].message.content)</code></pre>
                             <img src="assets/providers/mlx.svg" alt="MLX">
                         </div>
                         <h3 class="provider-name">MLX</h3>
-                        <p class="provider-description">qwen3-air-4bit, Apple Silicon optimized</p>
+                        <p class="provider-description">mlx-community/gemma-3n-E4B-4bit, mlx-community/Qwen3-4B-Instruct-2507-4bit</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
@@ -751,7 +751,7 @@ print(response.choices[0].message.content)</code></pre>
                             <img src="assets/providers/huggingface.svg" alt="HuggingFace">
                         </div>
                         <h3 class="provider-name">HuggingFace</h3>
-                        <p class="provider-description">microsoft/DialoGPT-large, Open source models</p>
+                        <p class="provider-description">meta-llama/Llama-3.1-8B-Instruct, unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF, Open source models</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                         </div>
