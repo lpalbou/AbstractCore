@@ -16,10 +16,13 @@ pip install abstractcore[all]
 
 - **[API Reference](docs/api-reference.md)**: Complete Python API with examples
 - **[Universal Tool Calling](docs/tool-calling.md)**: @tool decorator works across ALL providers
-- **[Session Management](docs/session.md)**: Persistent conversations with analytics
+- **[Provider Discovery](docs/getting-started.md)**: Centralized registry to programmatically list ALL providers and models
+- **[Session Management](docs/session.md)**: Persistent conversations with analytics and auto-compaction
 - **[Streaming](docs/api-reference.md)**: Real-time responses across all providers
 - **[Structured Output](docs/getting-started.md)**: Pydantic validation with auto-retry
 - **[Embeddings](docs/embeddings.md)**: SOTA models for semantic search and RAG
+- **[Token Management](docs/token-management.md)**: Unified parameter vocabulary with budget validation
+- **[Tool Syntax Rewriting](docs/tool-calling.md)**: Real-time format conversion for agent CLI compatibility
 
 ## Built-in CLI Applications
 
@@ -82,9 +85,23 @@ response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
 
+### Provider Discovery (Centralized Registry)
+```python
+from abstractcore.providers import get_all_providers_with_models
+
+# Get comprehensive information about all providers with available models
+providers = get_all_providers_with_models()
+for provider in providers:
+    print(f"{provider['display_name']}: {provider['model_count']} models")
+    print(f"Features: {', '.join(provider['supported_features'])}")
+    print(f"Local: {provider['local_provider']}")
+    print(f"Auth Required: {provider['authentication_required']}")
+```
+
 ### Universal Tool Calling with @tool Decorator
 ```python
-from abstractcore import create_llm, tool
+from abstractcore import create_llm
+from abstractcore.tools import tool
 
 @tool
 def get_weather(city: str) -> str:
@@ -117,6 +134,87 @@ def get_user_location(user_id: str) -> str:
 response = llm.generate("What's the weather for user123?", tools=[get_user_location, get_weather])
 ```
 
+### Session Management with Analytics
+```python
+from abstractcore import BasicSession, create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(llm, system_prompt="You are a helpful assistant.")
+
+response1 = session.generate("My name is Alice")
+response2 = session.generate("What's my name?")  # Remembers context
+
+# Auto-compaction with SOTA 2025 algorithm
+session.compact(target_tokens=8000)  # Compresses while preserving context
+
+# Advanced analytics
+summary = session.generate_summary(style="executive", length="brief")
+assessment = session.generate_assessment(criteria=["clarity", "helpfulness"])
+facts = session.extract_facts(entity_types=["person", "organization", "date"])
+
+# Save with analytics
+session.save("conversation.json", summary=True, assessment=True, facts=True)
+```
+
+### Token Management (Unified Parameters)
+```python
+from abstractcore import create_llm
+from abstractcore.utils.token_utils import estimate_tokens
+
+# Unified token parameters work across ALL providers
+llm = create_llm(
+    "anthropic",
+    model="claude-3-5-haiku-latest",
+    max_tokens=32000,           # Context window (input + output)
+    max_output_tokens=8000,     # Maximum output tokens
+    max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
+)
+
+# Token estimation and validation
+text = "Your input text here..."
+estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+print(f"Estimated tokens: {estimated}")
+
+# Budget validation with warnings
+response = llm.generate("Write a detailed analysis...")
+print(f"Input tokens: {response.usage.input_tokens}")
+print(f"Output tokens: {response.usage.output_tokens}")
+print(f"Cost estimate: ${response.usage.cost_usd:.4f}")
+```
+
+### Tool Syntax Rewriting (Real-time Format Conversion)
+```python
+from abstractcore import create_llm
+from abstractcore.tools.tag_rewriter import ToolCallTagRewriter
+
+# Custom tag configuration for any agent framework
+llm = create_llm(
+    "ollama",
+    model="qwen3-coder:30b",
+    tool_call_tags="function_call"  # Converts to: <function_call>...JSON...</function_call>
+)
+
+# Multiple custom formats
+llm = create_llm(
+    "mlx",
+    model="qwen3-air-4bit",
+    tool_call_tags=("[[tool_use]]", "[[/tool_use]]")  # Start and end tags
+)
+
+# Architecture-aware format detection
+# Qwen3: <|tool_call|>{...}</|tool_call|>
+# LLaMA3: <function_call>{...}</function_call>
+# XML-based: <tool_call>{...}</tool_call>
+# Claude Code: [[tool_use]]{...}[[/tool_use]]
+# OpenAI/Anthropic: Native JSON API calls
+
+# Real-time streaming with format conversion
+for chunk in llm.generate("Use the calculator tool", tools=[calculate], stream=True):
+    if chunk.tool_calls:
+        print(f"Tool detected: {chunk.tool_calls[0].name}")
+    print(chunk.content, end="", flush=True)
+```
+
 ### Structured Output with Automatic Retry
 ```python
 from pydantic import BaseModel
@@ -132,20 +230,6 @@ person = llm.generate(
     response_model=Person
 )
 print(f"{person.name}, age {person.age}")
-```
-
-### Session Management with Analytics
-```python
-from abstractcore import BasicSession, create_llm
-
-llm = create_llm("openai", model="gpt-4o-mini")
-session = BasicSession(llm, system_prompt="You are a helpful assistant.")
-
-response1 = session.generate("My name is Alice")
-response2 = session.generate("What's my name?")  # Remembers context
-
-# Save with analytics
-session.save("conversation.json", summary=True, assessment=True, facts=True)
 ```
 
 ### CLI Applications (Terminal & Python)
@@ -170,13 +254,35 @@ judge = BasicJudge()
 assessment = judge.evaluate(text, context="code review", focus="error handling")
 ```
 
+### HTTP Server (OpenAI-Compatible)
+```bash
+# Start server
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
+```
+
+```python
+# OpenAI-compatible client usage
+import openai
+
+client = openai.OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="unused"  # Not required for local providers
+)
+
+# Route to any provider using model format: provider/model
+response = client.chat.completions.create(
+    model="ollama/qwen3-coder:30b",      # Ollama provider
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+# Provider discovery via HTTP API
+# GET /providers - Complete provider metadata
+# GET /providers/ollama/models - Models for specific provider
+```
+
 ### Advanced Features
 ```python
 # Architecture-aware tool calling - automatic format detection
-# Qwen3: <|tool_call|>{"name": "func", "arguments": {...}}</|tool_call|>
-# LLaMA3: <function_call>{"name": "func", "arguments": {...}}</function_call>
-# OpenAI/Anthropic: Native API tool calls
-
 # Event system for production monitoring
 from abstractcore.events import EventType, on_global
 
@@ -190,6 +296,16 @@ on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 llm = create_llm("ollama", model="large-model")
 response = llm.generate("Hello")
 llm.unload()  # Free memory
+
+# Production resilience with retry and circuit breaker
+from abstractcore.resilience import RetryManager, CircuitBreaker
+
+llm = create_llm(
+    "openai",
+    model="gpt-4o-mini",
+    retry_manager=RetryManager(max_attempts=3, backoff_strategy="exponential"),
+    circuit_breaker=CircuitBreaker(failure_threshold=5, timeout=60)
+)
 ```
 
 ### Debug & Performance Features
@@ -208,6 +324,57 @@ judge code.py --focus "error handling, performance" --temperature 0.05
 # Self-healing JSON handles truncated responses automatically
 # Token limits: max_tokens=32k, max_output_tokens=8k prevent truncation
 ```
+
+## API Summary for AI Systems
+
+### Core Functions
+```python
+# Factory
+from abstractcore import create_llm, BasicSession
+
+# Provider Discovery
+from abstractcore.providers import (
+    get_all_providers_with_models,
+    list_available_providers,
+    get_provider_info,
+    is_provider_available
+)
+
+# Tools
+from abstractcore.tools import tool, UniversalToolHandler
+
+# Token Management
+from abstractcore.utils.token_utils import estimate_tokens, calculate_token_budget
+
+# Processing
+from abstractcore.processing import BasicSummarizer, BasicExtractor, BasicJudge
+
+# Events
+from abstractcore.events import EventType, on_global, emit_global
+
+# Resilience
+from abstractcore.resilience import RetryManager, CircuitBreaker
+```
+
+### Supported Providers
+| Provider | Features | Default Model |
+|----------|----------|---------------|
+| **OpenAI** | Native tools, streaming, structured output | gpt-5-nano-2025-08-07 |
+| **Anthropic** | Native tools, streaming, structured output | claude-3-5-haiku-latest |
+| **Ollama** | Prompted tools, streaming, local models | qwen3-coder:30b |
+| **LMStudio** | Prompted tools, streaming, local models | llama-3.2-8b-instruct |
+| **MLX** | Prompted tools, streaming, Apple Silicon | qwen3-air-4bit |
+| **HuggingFace** | Prompted tools, streaming, open models | microsoft/DialoGPT-large |
+
+### Key Capabilities for AI
+- **137+ models** across 6 providers via centralized registry
+- **Real-time tool syntax conversion** for agent CLI compatibility
+- **SOTA 2025 session compaction** with context preservation
+- **Unified token parameters** across all providers
+- **Event-driven architecture** for monitoring and control
+- **Production resilience** with retries and circuit breakers
+- **Self-healing JSON** for robust structured output
+- **OpenAI-compatible server** for multi-language access
 
 ---
 
