@@ -1349,6 +1349,7 @@
       "aliases": [
         "gemma3n:e4b:latest",
         "gemma-3n-e4b",
+        "google/gemma-3n-e4b",
         "gemma3n",
         "gemma3n:e2b:latest",
         "gemma3n:e2b"

@@ -22,7 +22,7 @@ class MasterVisionTester:
     """Master tester that runs comprehensive tests across multiple images."""
 
     def __init__(self, providers: List[str] = None):
-        self.providers = providers or ["lmstudio", "ollama", "huggingface"]
+        self.providers = providers or ["lmstudio", "ollama", "huggingface", "anthropic", "openai"]
         self.test_images = [
             "mystery1_mp.jpg",
             "mystery2_sc.jpg",
@@ -326,7 +326,7 @@ class MasterVisionTester:
 async def main():
     """Main master test runner."""
     parser = argparse.ArgumentParser(description="Master Vision Testing - Tests all images")
-    parser.add_argument("--providers", nargs="+", default=["lmstudio", "ollama", "huggingface"],
+    parser.add_argument("--providers", nargs="+", default=["lmstudio", "ollama", "huggingface", "anthropic", "openai"],
                        help="Providers to test")
     parser.add_argument("--output", help="Output file name for master report")
     parser.add_argument("--save-results", action="store_true", help="Save master report to file")
