@@ -1,0 +1,910 @@
+{
+  "test_config": {
+    "image_path": "tests/vision_examples/mystery1_mp.jpg",
+    "providers": [
+      "lmstudio",
+      "ollama"
+    ],
+    "query_types": [
+      "keywords",
+      "summary",
+      "structured"
+    ],
+    "total_models": 9
+  },
+  "reference_analysis": {
+    "image_name": "mystery1_mp.jpg",
+    "description": "Mountain hiking trail with wooden fence and scenic landscape",
+    "keywords": [
+      "mountain",
+      "hiking",
+      "trail",
+      "fence",
+      "wooden",
+      "railing",
+      "path",
+      "dirt",
+      "road",
+      "gravel",
+      "sky",
+      "clouds",
+      "sun",
+      "lens flare",
+      "sunlight",
+      "valley",
+      "hills",
+      "landscape",
+      "scenic",
+      "outdoor",
+      "nature",
+      "countryside",
+      "grass",
+      "vegetation",
+      "shadows",
+      "perspective",
+      "depth",
+      "vista",
+      "horizon",
+      "backlighting",
+      "golden hour"
+    ],
+    "summary": "A scenic mountain hiking trail captured during daytime with bright sunlight creating a dramatic lens flare effect. The image shows a dirt and gravel path or trail running through mountainous terrain, with a wooden rail fence along the left side of the path. The trail leads toward distant mountains and valleys visible in the background, creating a strong sense of depth and perspective. The sky is bright blue with scattered white clouds, and the sun is positioned in the upper left creating dramatic backlighting and long shadows cast across the path. Green vegetation and grass can be seen along the trail edges and slopes. The composition uses leading lines from both the path and fence to draw the viewer's eye toward the expansive mountain vista in the distance.",
+    "structured": {
+      "theme": "Outdoor recreation and scenic nature photography",
+      "mood": "Peaceful, inspiring, adventurous, serene",
+      "color_tone": "Warm golden hour lighting with dominant blue sky",
+      "setting": "Mountain trail in rural/natural environment",
+      "weather": "Clear sunny day with partial cloud cover",
+      "time_of_day": "Late morning or early afternoon",
+      "composition": "Leading lines, strong perspective, rule of thirds",
+      "main_objects": [
+        "wooden fence",
+        "dirt trail",
+        "mountains",
+        "vegetation"
+      ],
+      "lighting": "Dramatic backlighting with lens flare and strong contrast",
+      "suggested_activity": "Hiking, walking, outdoor recreation",
+      "dominant_colors": [
+        "blue",
+        "golden yellow",
+        "green",
+        "brown"
+      ],
+      "visual_elements": [
+        "lens flare",
+        "shadows",
+        "depth of field",
+        "leading lines"
+      ],
+      "landscape_type": "Mountainous terrain with rolling hills",
+      "human_presence": "None visible, but trail suggests human activity"
+    }
+  },
+  "results": {
+    "lmstudio/qwen/qwen2.5-vl-7b": {
+      "keywords": "Dirt road, fence, sun, sky, clouds, mountains, greenery, blue, shadows, bright, pathway, natural.",
+      "summary": "The image presents a serene rural scene under a clear blue sky with scattered white clouds. A dirt path meanders through the foreground, bordered by lush green foliage on one side and a wooden fence running parallel to it. The sun is positioned in the upper left corner of the frame, casting long shadows of the fence along the path and onto the grassy field beyond. In the background, rolling hills and distant mountain ranges form a picturesque backdrop, with the mountains appearing slightly hazy under the bright sunlight. The composition emphasizes depth and tranquility, inviting the viewer to imagine walking down this peaceful trail towards the horizon.",
+      "structured": "Theme: Rural Landscape\nMood: Serene and Invigorating\nColor_tone: Bright and Natural, dominated by blue skies and earthy tones.\nSetting: Open Field with a Dirt Path Leading to Distant Mountains\nWeather: Clear and Sunny\nTime_of_day: Late Afternoon or Early Morning (lighting suggests this)\nComposition: The path leads the eye towards the horizon with open space on either side.\nMain_objects: Dirt path, wooden fence, distant mountains, sparse vegetation.\nLighting: Direct sunlight creates sharp shadows and a high contrast scene.\nSuggested_activity: Hiking, cycling, or taking a walk in nature.\nDominant_colors: Blue (sky), Brown (path and fence), Green (vegetation).\nVisual_elements: The clear sky, the straight path leading into the distance, the wooden fence on one side, and the mountainous backdrop create depth and perspective.\nLandscape_type: Open Field with a dirt road cutting through it, potentially part of a larger rural or agricultural area. \nHuman_presence: No direct signs of human presence in terms of people or man-made structures, but there are remnants such as the wooden fence that could suggest past or current human activity.",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.2903225806451613,
+          "precision": 0.07692307692307693,
+          "f1": 0.12162162162162163,
+          "found_keywords": [
+            "mountain",
+            "fence",
+            "path",
+            "dirt",
+            "road",
+            "sky",
+            "clouds",
+            "sun",
+            "shadows"
+          ],
+          "found_count": 9,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.7142857142857143,
+          "covered_elements": [
+            "mountain",
+            "trail",
+            "fence",
+            "wooden",
+            "path",
+            "dirt",
+            "sky",
+            "sun",
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 108,
+          "completeness": "high"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 23.6214759349823,
+          "summary": 11.481280088424683,
+          "structured": 20.646993160247803
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "lmstudio",
+        "model": "qwen/qwen2.5-vl-7b",
+        "test_timestamp": "2025-10-17T16:30:02.379218"
+      }
+    },
+    "lmstudio/google/gemma-3n-e4b": {
+      "keywords": "Here are some words that describe the image, categorized as requested:\n\n**Objects:**\n\n* Path\n* Fence\n* Mountains\n* Sky\n* Sun\n* Clouds\n* Grass\n\n**Scenery:**\n\n* Mountainous\n* Scenic\n* Expansive\n* Distant\n* Open\n\n**Colors:**\n\n* Blue\n* Green\n* Brown\n* White\n* Yellow (from the sun)\n\n**Light:**\n\n* Sunlight\n* Shadowed\n* Bright\n* Warm\n\n**Atmosphere:**\n\n* Peaceful\n* Serene\n* Distant\n* Airy",
+      "summary": "The image captures a breathtaking mountain vista on a bright, sunny day. A dirt path winds along a grassy ridge, bordered by a rustic wooden fence on one side and lush green vegetation on the other. In the distance, layers of hazy blue mountains stretch towards a clear sky dotted with wispy clouds and a brilliant sun. The overall atmosphere is one of serene tranquility and expansive natural beauty, inviting exploration and a sense of peaceful escape.",
+      "structured": "## Image Analysis: Mountain Path at Sunrise\n\n**Theme:** Tranquil Journey Through Nature's Grandeur\n**Mood:** Serene, Peaceful, Inspiring\n**Color Palette:** Warm Earth Tones and Cool Sky Hues\n**Setting:** High-altitude Mountain Landscape, Early Morning\n**Weather:** Clear, Sunny, Gentle Breeze \n**Time of Day:** Early Morning (Sunrise)\n**Composition:** Wide-angle, Leading Lines \n**Dominant Colors:** Earthy browns and greens, bright blue sky with golden sunlight\n**Visual Elements:** Wooden fence, dirt path, distant mountain peaks, fluffy clouds, sunlight rays \n**Lighting:** Golden hour sunlight casting long shadows on the path\n**Suggests:** A sense of adventure, freedom, and connection with nature. \n**Human Activity:** No visible human activity, emphasizing the untouched wilderness. \n\n\n\nThis image evokes a sense of peace and tranquility as it captures a scenic mountain path bathed in the warm glow of early morning sunlight. The vastness of the landscape and the clear sky create a feeling of serenity and inspire awe at the beauty of nature. The long shadows cast by the wooden fence add depth and perspective to the scene, drawing the viewer into this peaceful mountain vista.",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.2903225806451613,
+          "precision": 0.18604651162790697,
+          "f1": 0.22677165354330708,
+          "found_keywords": [
+            "mountain",
+            "fence",
+            "path",
+            "sky",
+            "clouds",
+            "sun",
+            "sunlight",
+            "scenic",
+            "grass"
+          ],
+          "found_count": 9,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.5,
+          "covered_elements": [
+            "mountain",
+            "fence",
+            "wooden",
+            "path",
+            "dirt",
+            "sky",
+            "sun"
+          ],
+          "key_elements_count": 14,
+          "word_count": 77,
+          "completeness": "medium"
+        },
+        "structured": {
+          "structure_score": 0.8571428571428571,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "lighting",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "12/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 10.55262303352356,
+          "summary": 10.361250877380371,
+          "structured": 20.338212966918945
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "lmstudio",
+        "model": "google/gemma-3n-e4b",
+        "test_timestamp": "2025-10-17T16:30:43.701330"
+      }
+    },
+    "lmstudio/mistralai/magistral-small-2509": {
+      "keywords": null,
+      "summary": "The image depicts a serene rural scene with a dirt road stretching into the distance, flanked by a wooden fence on one side and green foliage on the other. The road leads towards distant mountains, which are bathed in the bright sunlight. The sky above is a clear blue with scattered clouds, and the sun shines brightly to the right, casting long shadows that suggest it might be early morning or late afternoon. The overall atmosphere is peaceful and inviting, with a sense of depth created by the diagonal composition that draws the viewer's eye towards the mountains in the background.",
+      "structured": "Theme: Rural landscape with a dirt road leading to mountains\nMood: Peaceful and tranquil\nColor_tone: Bright with blues, greens, and earthy browns\nSetting: Countryside with open fields\nWeather: Clear and sunny\nTime_of_day: Midday or early afternoon\nComposition: Leading line of the road, fence adding depth to the scene\nMain_objects: Dirt road, wooden fence, grassy field, distant mountains\nLighting: Bright sunlight with distinct shadows\nSuggested_activity: Walking, hiking, or driving through the countryside\nDominant_colors: Blue, green, brown/beige\nVisual_elements: Leading line of the road, shadows cast by the fence and plants, clear blue sky\nLandscape_type: Rural plain with mountainous background\nHuman_presence: Indirect signs (fence, road) but no people visible",
+      "evaluation": {
+        "summary": {
+          "coverage_score": 0.5714285714285714,
+          "covered_elements": [
+            "mountain",
+            "fence",
+            "wooden",
+            "dirt",
+            "sky",
+            "sun",
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 101,
+          "completeness": "medium"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 2,
+        "response_times": {
+          "summary": 88.39330816268921,
+          "structured": 89.82096576690674
+        },
+        "success_rate": 0.6666666666666666
+      },
+      "metadata": {
+        "provider": "lmstudio",
+        "model": "mistralai/magistral-small-2509",
+        "test_timestamp": "2025-10-17T16:33:44.313978"
+      }
+    },
+    "ollama/qwen2.5vl:7b": {
+      "keywords": "path, fence, mountains, sky, clouds, sun, grass, dirt, shadows, rural, scenic, serene, natural, outdoor, landscape, sunny, tranquil, pathway, horizon, foliage, rural, scenic, calm, peaceful",
+      "summary": "The image captures a serene rural landscape under a bright blue sky dotted with fluffy white clouds. A rustic wooden fence runs along the left side of the frame, leading the eye towards a dirt path that winds through a grassy field. In the distance, majestic mountain ranges stretch across the horizon, their peaks partially obscured by the haze of the setting sun. The sunlight casts long shadows, creating a tranquil and expansive atmosphere, suggesting a peaceful, early evening scene in a countryside setting.",
+      "structured": "Theme: [Outdoor landscape]\nMood: [Serene and peaceful]\nColor_tone: [Bright and vibrant with cool tones]\nSetting: [Rural or mountainous area]\nWeather: [Sunny with scattered clouds]\nTime_of_day: [Midday or early afternoon]\nComposition: [A wide-angle shot with a focus on the horizon and leading lines]\nMain_objects: [Dirt path, wooden fence, grass, distant mountains, sky]\nLighting: [Natural daylight with strong sunlight and shadows]\nSuggested_activity: [Hiking, cycling, or simply enjoying the scenery]\nDominant_colors: [Blue, green, brown, white, and yellow]\nVisual_elements: [Sunny sky, mountain range, grassy field, dirt path, wooden fence]\nLandscape_type: [Mountainous or hilly terrain]\nHuman_presence: [No visible signs of human activity]",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.41935483870967744,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "mountain",
+            "fence",
+            "path",
+            "dirt",
+            "sky",
+            "clouds",
+            "sun",
+            "landscape",
+            "scenic",
+            "outdoor",
+            "grass",
+            "shadows",
+            "horizon"
+          ],
+          "found_count": 13,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.6428571428571429,
+          "covered_elements": [
+            "mountain",
+            "fence",
+            "wooden",
+            "path",
+            "dirt",
+            "sky",
+            "sun",
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 84,
+          "completeness": "medium"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 3.7011709213256836,
+          "summary": 5.543854236602783,
+          "structured": 8.596542835235596
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "qwen2.5vl:7b",
+        "test_timestamp": "2025-10-17T16:34:02.192071"
+      }
+    },
+    "ollama/gemma3:4b": {
+      "keywords": "Here's a list of keywords extracted from the image:\n\nSky, clouds, mountains, path, dirt, vegetation, fence, sunlight, shadows, green, blue, rural, landscape",
+      "summary": "Here's a detailed descriptive summary of the image:\n\nThe image captures a bright, sunny scene on a grassy hillside. A dirt road winds its way through the foreground, casting long shadows from the sun and a weathered wooden fence runs along the edge of the road. Distant mountains are visible in the background, partially obscured by a hazy atmosphere, while the sky is a vibrant blue filled with scattered white clouds. The overall composition evokes a feeling of tranquility and openness, suggesting a peaceful, elevated location.",
+      "structured": "Okay, here\u2019s an analysis of the image in the requested format:\n\n**Theme:** Mountain Landscape, Scenic View\n\n**Mood:** Serene, Peaceful, Inviting\n\n**Color_tone:** Warm, Bright, Natural \u2013 dominated by blues, greens, and earthy tones.\n\n**Setting:** Mountain Terrain, Hillside\n\n**Weather:** Clear, Sunny\n\n**Time_of_day:** Mid-morning or early afternoon \u2013 the sunlight is strong and casting distinct shadows.\n\n**Composition:** Leading Lines (the path), Rule of Thirds (the path and distant mountains), Diagonal lines.\n\n**Main_objects:** Dirt path, Wooden Fence, Distant Mountains, Vegetation (grass, shrubs).\n\n**Lighting:** Strong, Direct Sunlight, Creating Long Shadows, High Contrast.\n\n**Suggested_activity:** Hiking, Walking, Photography, Enjoying nature.\n\n**Dominant_colors:** Blue (sky), Green (vegetation), Brown (path and fence), Grey (mountains)\n\n**Visual_elements:** Shadows, Texture (rough path, dense vegetation), Depth (due to mountains receding into the distance), Perspective.\n\n**Landscape_type:** Rolling Hills, Mountainous Terrain\n\n**Human_presence:** None visible (suggests isolation and natural beauty). \n\n\nDo you want me to elaborate on any of these points, or perhaps analyze a different image?",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.3548387096774194,
+          "precision": 0.045454545454545456,
+          "f1": 0.08058608058608058,
+          "found_keywords": [
+            "mountain",
+            "fence",
+            "path",
+            "dirt",
+            "sky",
+            "clouds",
+            "sun",
+            "sunlight",
+            "landscape",
+            "vegetation",
+            "shadows"
+          ],
+          "found_count": 11,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.5,
+          "covered_elements": [
+            "mountain",
+            "fence",
+            "wooden",
+            "dirt",
+            "sky",
+            "sun",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 86,
+          "completeness": "medium"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 3.5093259811401367,
+          "summary": 3.2726950645446777,
+          "structured": 7.077165126800537
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3:4b",
+        "test_timestamp": "2025-10-17T16:34:16.090088"
+      }
+    },
+    "ollama/gemma3:4b-it-qat": {
+      "keywords": "Sky, clouds, mountains, road, path, fence, sunlight, shadows, green, vegetation, landscape",
+      "summary": "Here's a detailed description of the image:\n\nThe photograph captures a sunny, expansive landscape featuring a dirt path winding uphill, flanked by a rustic wooden fence and vibrant green vegetation. In the distance, hazy mountains rise against a brilliant blue sky dotted with fluffy white clouds, creating a sense of depth and vastness. The strong sunlight casts long shadows across the path, highlighting the texture of the ground and emphasizing the bright, cheerful atmosphere of an outdoor scene. Overall, the image evokes a feeling of peacefulness and adventure within a natural, mountainous setting.",
+      "structured": "Here\u2019s an analysis of the image, broken down into the requested categories:\n\n**Theme:** Mountain Trail & Scenic View\n\n**Mood:** Peaceful, serene, inviting, exploratory\n\n**Color_tone:** Bright, airy, with earthy tones \u2013 predominantly blues, greens, and browns.\n\n**Setting:** Mountain landscape, likely a trail or road winding through a high-altitude area.\n\n**Weather:** Sunny, clear \u2013 indicating a bright day.\n\n**Time_of_day:** Mid-morning or early afternoon \u2013 the sunlight is strong and casts distinct shadows.\n\n**Composition:** Leading lines (the trail), rule of thirds (the fence and trail placement), depth of field (focus on the trail).\n\n**Main_objects:** Dirt trail, wooden fence, vegetation (grass and plants), distant mountains.\n\n**Lighting:** Strong directional sunlight, creating sharp shadows and highlighting textures.  The light is warm and bright.\n\n**Suggested_activity:** Hiking, trail running, photography, enjoying a scenic view.\n\n**Dominant_colors:** Blue (sky), green (vegetation), brown (trail and fence), gray (mountains).\n\n**Visual_elements:** Shadows, texture of the trail, the sharp contrast between light and shadow, the scale of the mountains, the details of the vegetation.\n\n**Landscape_type:** Rugged, mountainous terrain.\n\n**Human_presence:** Minimal \u2013 just the trail and fence suggest human access and use.\n\nLet me know if you\u2019d like me to elaborate on any of these points!",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.3548387096774194,
+          "precision": 0.09090909090909091,
+          "f1": 0.14473684210526314,
+          "found_keywords": [
+            "mountain",
+            "fence",
+            "path",
+            "road",
+            "sky",
+            "clouds",
+            "sun",
+            "sunlight",
+            "landscape",
+            "vegetation",
+            "shadows"
+          ],
+          "found_count": 11,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.6428571428571429,
+          "covered_elements": [
+            "mountain",
+            "fence",
+            "wooden",
+            "path",
+            "dirt",
+            "sky",
+            "sun",
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 93,
+          "completeness": "medium"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 7.993038177490234,
+          "summary": 3.125188112258911,
+          "structured": 8.05199408531189
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3:4b-it-qat",
+        "test_timestamp": "2025-10-17T16:34:35.293437"
+      }
+    },
+    "ollama/gemma3n:e4b": {
+      "keywords": "Please provide me with the image! I need the image to be able to extract keywords. \n\nOnce you provide the image, I will list keywords separated by commas, describing:\n\n* **Objects:** (e.g., car, tree, building, person)\n* **Scenery:** (e.g., forest, city, beach, mountains)\n* **Colors:** (e.g., blue, green, red, yellow)\n* **Lighting:** (e.g., sunlight, shadows, bright, dim)\n* **Activities:** (e.g., walking, running, reading, eating)\n\n\n\n**Just paste the image link or upload the image, and I'll get started!**\n",
+      "summary": "Please provide me with the image! I need the image data to be able to describe it.  Just paste the image link (like the \"[img-0]\" you provided) or upload the image directly, and I'll give you a detailed description in 3-4 sentences covering objects, scenery, lighting, composition, and atmosphere. \n\nI'm ready when you are! \ud83d\ude0a \n",
+      "structured": "Okay, please provide the image! I need the image data to analyze it. Once you provide the image, I will analyze it and give you a structured response in the format you requested.\n\nJust paste the image link or upload the image, and I'll get started.\n\n\n\n",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.12903225806451613,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "mountain",
+            "sun",
+            "sunlight",
+            "shadows"
+          ],
+          "found_count": 4,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.07142857142857142,
+          "covered_elements": [
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 55,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 0.0,
+          "covered_fields": [],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "0/14",
+          "organization": "narrative"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 7.70022988319397,
+          "summary": 2.733607769012451,
+          "structured": 2.786846876144409
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3n:e4b",
+        "test_timestamp": "2025-10-17T16:34:48.544787"
+      }
+    },
+    "ollama/gemma3n:e2b": {
+      "keywords": "Beach, ocean, sunset, palm trees, blue, warm, golden light, relaxing, vacation, sand, waves, sky, clouds, people, walking.",
+      "summary": "Please provide me with the image! I need the image to be able to describe it. \n\nOnce you upload the image, I will analyze it and give you a detailed description covering:\n\n* **Objects:** What specific things are visible (people, animals, buildings, objects, etc.)?\n* **Scenery:** What is the setting like? (indoor/outdoor, landscape, city, etc.)\n* **Lighting:** What is the quality and direction of the light? (natural, artificial, bright, dim, etc.)\n* **Composition:** How are the elements arranged within the frame? (rule of thirds, leading lines, symmetry, etc.)\n* **Atmosphere:** What feeling or mood does the image evoke? (peaceful, energetic, mysterious, etc.)\n\nI'm ready when you are! Just paste the image link or upload it.\n\n\n\n",
+      "structured": "Okay, I will analyze the image and provide a structured response in the requested format. Please provide the image! I need the image to be able to complete the analysis. \n\n**Once you provide the image, I will fill in the fields below.**\n\n---\n\n**Here's the template I'll use:**\n\n**Theme:** [Main theme/subject]\n**Mood:** [Emotional tone/atmosphere]\n**Color_tone:** [Overall color palette description]\n**Setting:** [Location/environment type]\n**Weather:** [Weather conditions visible]\n**Time_of_day:** [Apparent time based on lighting]\n**Composition:** [Photographic composition elements]\n**Main_objects:** [Key objects visible]\n**Lighting:** [Lighting conditions and quality]\n**Suggested_activity:** [What activity this scene suggests]\n**Dominant_colors:** [Primary colors present]\n**Visual_elements:** [Notable visual features]\n**Landscape_type:** [Type of terrain/landscape]\n**Human_presence:** [Any signs of human activity]\n\n\n\n**I'm ready when you are! Just paste the image link or upload the image.**\n\n\n\n",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0967741935483871,
+          "precision": 0.058823529411764705,
+          "f1": 0.07317073170731708,
+          "found_keywords": [
+            "sky",
+            "clouds",
+            "sun"
+          ],
+          "found_count": 3,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.07142857142857142,
+          "covered_elements": [
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 115,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 2.8798789978027344,
+          "summary": 4.283504247665405,
+          "structured": 5.5307183265686035
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3n:e2b",
+        "test_timestamp": "2025-10-17T16:35:01.274046"
+      }
+    },
+    "ollama/llama3.2-vision:11b": {
+      "keywords": "Sun, fence, dirt road, mountains, grass, blue sky, shadows, greenery.",
+      "summary": "The image features a dirt path with a wooden fence on the left, leading towards a mountain range in the background. The path is lined with greenery on both sides, and the fence is topped with green plants. The path leads to a clearing in the distance, with the mountains visible in the background. The sky is blue with a few clouds, and the sun shines brightly from the left, casting a warm glow over the scene. The overall atmosphere is one of serenity and natural beauty, with the path and fence creating a sense of tranquility and the mountains adding a sense of grandeur.",
+      "structured": "**Theme:** A serene landscape of rolling hills and mountains.\n\n**Mood:** Peaceful and tranquil.\n\n**Color_tone:** The image features a predominantly blue sky, green grass, and brown dirt, with warm sunlight casting a golden glow.\n\n**Setting:** A rural, mountainous region with rolling hills and a dirt road.\n\n**Weather:** A sunny day with a few clouds in the sky.\n\n**Time_of_day:** Late morning or early afternoon, as indicated by the angle of the sun.\n\n**Composition:** The composition is straightforward, with the dirt road leading the viewer's eye into the distance, and the rolling hills and mountains providing a natural frame.\n\n**Main_objects:** The dirt road, the rolling hills, and the mountains.\n\n**Lighting:** Natural, with warm sunlight casting long shadows across the landscape.\n\n**Suggested_activity:** Hiking or driving through the countryside.\n\n**Dominant_colors:** Blue (sky), green (grass), brown (dirt), and gold (sunlight).\n\n**Visual_elements:** The rolling hills, mountains, and dirt road create a sense of depth and distance.\n\n**Landscape_type:** A rolling hillside with a dirt road leading into the distance, set against a mountainous backdrop.",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.25806451612903225,
+          "precision": 0.1,
+          "f1": 0.14414414414414414,
+          "found_keywords": [
+            "mountain",
+            "fence",
+            "dirt",
+            "road",
+            "sky",
+            "sun",
+            "grass",
+            "shadows"
+          ],
+          "found_count": 8,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.5,
+          "covered_elements": [
+            "mountain",
+            "fence",
+            "wooden",
+            "path",
+            "dirt",
+            "sky",
+            "sun"
+          ],
+          "key_elements_count": 14,
+          "word_count": 105,
+          "completeness": "medium"
+        },
+        "structured": {
+          "structure_score": 0.9285714285714286,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "13/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 18.643677949905396,
+          "summary": 8.720670938491821,
+          "structured": 16.646941900253296
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "llama3.2-vision:11b",
+        "test_timestamp": "2025-10-17T16:35:45.320186"
+      }
+    }
+  },
+  "summary": {
+    "overall": {
+      "total_models": 9,
+      "successful_models": 9,
+      "overall_success_rate": 1.0,
+      "test_timestamp": "2025-10-17T16:35:45.320277"
+    },
+    "by_provider": {
+      "lmstudio": {
+        "models_tested": 3,
+        "total_tests": 9,
+        "successful_tests": 8,
+        "success_rate": 0.8888888888888888,
+        "avg_response_time": 40.48036077287462
+      },
+      "ollama": {
+        "models_tested": 6,
+        "total_tests": 18,
+        "successful_tests": 18,
+        "success_rate": 1.0,
+        "avg_response_time": 6.7109473016526975
+      }
+    },
+    "by_query_type": {
+      "keywords": {
+        "successful_tests": 8,
+        "avg_quality_score": 0.0988788842134667,
+        "avg_response_time": 9.825177609920502
+      },
+      "summary": {
+        "successful_tests": 9,
+        "avg_quality_score": 0.46825396825396826,
+        "avg_response_time": 15.323928833007812
+      },
+      "structured": {
+        "successful_tests": 9,
+        "avg_quality_score": 0.8650793650793651,
+        "avg_response_time": 19.944042338265312
+      }
+    }
+  }
+}

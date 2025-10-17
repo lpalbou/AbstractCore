@@ -109,6 +109,7 @@ class OllamaProvider(BaseProvider):
                           messages: Optional[List[Dict[str, str]]] = None,
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
+                          media: Optional[List['MediaContent']] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
@@ -163,10 +164,40 @@ class OllamaProvider(BaseProvider):
             # Add current prompt as user message (only if non-empty)
             # When using messages array, prompt should be empty or already in messages
             if prompt and prompt.strip():
-                payload["messages"].append({
-                    "role": "user",
-                    "content": prompt
-                })
+                # Handle multimodal message with media content
+                if media:
+                    try:
+                        from ..media.handlers import LocalMediaHandler
+                        media_handler = LocalMediaHandler("ollama", self.model_capabilities, model_name=self.model)
+
+                        # Create multimodal message combining text and media
+                        multimodal_message = media_handler.create_multimodal_message(prompt, media)
+
+                        # For local providers, we might get a string (embedded text) or dict (structured)
+                        if isinstance(multimodal_message, str):
+                            payload["messages"].append({
+                                "role": "user",
+                                "content": multimodal_message
+                            })
+                        else:
+                            payload["messages"].append(multimodal_message)
+                    except ImportError:
+                        self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                        payload["messages"].append({
+                            "role": "user",
+                            "content": prompt
+                        })
+                    except Exception as e:
+                        self.logger.warning(f"Failed to process media content: {e}")
+                        payload["messages"].append({
+                            "role": "user",
+                            "content": prompt
+                        })
+                else:
+                    payload["messages"].append({
+                        "role": "user",
+                        "content": prompt
+                    })
 
             endpoint = "/api/chat"
         else:

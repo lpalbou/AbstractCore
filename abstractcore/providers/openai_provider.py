@@ -65,6 +65,7 @@ class OpenAIProvider(BaseProvider):
                           messages: Optional[List[Dict[str, str]]] = None,
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
+                          media: Optional[List['MediaContent']] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
@@ -89,7 +90,23 @@ class OpenAIProvider(BaseProvider):
 
         # Add current prompt as user message
         if prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
-            api_messages.append({"role": "user", "content": prompt})
+            # Handle multimodal message with media content
+            if media:
+                try:
+                    from ..media.handlers import OpenAIMediaHandler
+                    media_handler = OpenAIMediaHandler(self.model_capabilities)
+
+                    # Create multimodal message combining text and media
+                    multimodal_message = media_handler.create_multimodal_message(prompt, media)
+                    api_messages.append(multimodal_message)
+                except ImportError:
+                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    api_messages.append({"role": "user", "content": prompt})
+                except Exception as e:
+                    self.logger.warning(f"Failed to process media content: {e}")
+                    api_messages.append({"role": "user", "content": prompt})
+            else:
+                api_messages.append({"role": "user", "content": prompt})
 
         # Prepare API call parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)

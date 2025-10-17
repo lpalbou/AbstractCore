@@ -473,21 +473,23 @@ class HuggingFaceProvider(BaseProvider):
                           messages: Optional[List[Dict[str, str]]] = None,
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
+                          media: Optional[List['MediaContent']] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using appropriate backend"""
 
         if self.model_type == "gguf":
-            return self._generate_gguf(prompt, messages, system_prompt, tools, stream, **kwargs)
+            return self._generate_gguf(prompt, messages, system_prompt, tools, media, stream, **kwargs)
         else:
-            return self._generate_transformers(prompt, messages, system_prompt, tools, stream, **kwargs)
+            return self._generate_transformers(prompt, messages, system_prompt, tools, media, stream, **kwargs)
 
     def _generate_transformers(self,
                                prompt: str,
                                messages: Optional[List[Dict[str, str]]] = None,
                                system_prompt: Optional[str] = None,
                                tools: Optional[List[Dict[str, Any]]] = None,
+                               media: Optional[List['MediaContent']] = None,
                                stream: bool = False,
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using transformers backend (original implementation)"""
@@ -499,7 +501,37 @@ class HuggingFaceProvider(BaseProvider):
                 finish_reason="error"
             )
 
-        # Build input text with tool support
+        # Build input text with tool and media support
+        # Handle media content first if present
+        if media:
+            try:
+                from ..media.handlers import LocalMediaHandler
+                media_handler = LocalMediaHandler("huggingface", self.model_capabilities, model_name=self.model)
+
+                # Create multimodal message combining text and media
+                multimodal_message = media_handler.create_multimodal_message(prompt, media)
+
+                # For local providers, we get text-embedded content
+                if isinstance(multimodal_message, str):
+                    prompt = multimodal_message
+                else:
+                    # If we get a structured message, extract the content
+                    if isinstance(multimodal_message, dict) and "content" in multimodal_message:
+                        if isinstance(multimodal_message["content"], list):
+                            # Find text content in the structured message
+                            text_content = ""
+                            for item in multimodal_message["content"]:
+                                if item.get("type") == "text":
+                                    text_content = item.get("text", "")
+                                    break
+                            prompt = text_content or prompt
+                        else:
+                            prompt = str(multimodal_message["content"])
+            except ImportError:
+                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+            except Exception as e:
+                self.logger.warning(f"Failed to process media content: {e}")
+
         input_text = self._build_input_text_transformers(prompt, messages, system_prompt, tools)
 
         # Generation parameters using unified system
@@ -532,6 +564,7 @@ class HuggingFaceProvider(BaseProvider):
                        messages: Optional[List[Dict[str, str]]] = None,
                        system_prompt: Optional[str] = None,
                        tools: Optional[List[Dict[str, Any]]] = None,
+                       media: Optional[List['MediaContent']] = None,
                        stream: bool = False,
                        **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using GGUF backend with llama-cpp-python"""
@@ -552,7 +585,38 @@ class HuggingFaceProvider(BaseProvider):
         if messages:
             chat_messages.extend(messages)
 
-        chat_messages.append({"role": "user", "content": prompt})
+        # Handle media content for the user message
+        user_message_content = prompt
+        if media:
+            try:
+                from ..media.handlers import LocalMediaHandler
+                media_handler = LocalMediaHandler("huggingface", self.model_capabilities, model_name=self.model)
+
+                # Create multimodal message combining text and media
+                multimodal_message = media_handler.create_multimodal_message(prompt, media)
+
+                # For local providers, we get text-embedded content
+                if isinstance(multimodal_message, str):
+                    user_message_content = multimodal_message
+                else:
+                    # If we get a structured message, extract the content
+                    if isinstance(multimodal_message, dict) and "content" in multimodal_message:
+                        if isinstance(multimodal_message["content"], list):
+                            # Find text content in the structured message
+                            text_content = ""
+                            for item in multimodal_message["content"]:
+                                if item.get("type") == "text":
+                                    text_content = item.get("text", "")
+                                    break
+                            user_message_content = text_content or prompt
+                        else:
+                            user_message_content = str(multimodal_message["content"])
+            except ImportError:
+                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+            except Exception as e:
+                self.logger.warning(f"Failed to process media content: {e}")
+
+        chat_messages.append({"role": "user", "content": user_message_content})
 
         # Prepare parameters using unified system
         unified_kwargs = self._prepare_generation_kwargs(**kwargs)

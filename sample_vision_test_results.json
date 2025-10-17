@@ -1,0 +1,234 @@
+{
+  "summary": {
+    "total_tests": 32,
+    "successful_tests": 30,
+    "failed_tests": 2,
+    "success_rate": 0.938,
+    "test_timestamp": "2025-10-17T03:05:00",
+    "total_models": 8,
+    "total_images": 4
+  },
+  "by_provider": {
+    "lmstudio": {
+      "models_tested": 3,
+      "successful_models": 3,
+      "average_recall": 0.823,
+      "average_precision": 0.756,
+      "average_f1": 0.788,
+      "model_results": {
+        "qwen/qwen2.5-vl-7b": {
+          "images_tested": 4,
+          "successful_images": 4,
+          "average_recall": 0.786,
+          "average_precision": 0.734,
+          "average_f1": 0.759,
+          "best_image": "mystery3_us.jpg",
+          "worst_image": "mystery2_sc.jpg"
+        },
+        "google/gemma-3n-e4b": {
+          "images_tested": 4,
+          "successful_images": 4,
+          "average_recall": 0.773,
+          "average_precision": 0.701,
+          "average_f1": 0.735,
+          "best_image": "mystery1_mp.jpg",
+          "worst_image": "mystery2_sc.jpg"
+        },
+        "mistralai/magistral-small-2509": {
+          "images_tested": 4,
+          "successful_images": 3,
+          "average_recall": 0.725,
+          "average_precision": 0.689,
+          "average_f1": 0.706,
+          "best_image": "mystery4_wh.jpg",
+          "worst_image": "mystery2_sc.jpg",
+          "notes": "Good performance on natural scenes, slightly lower on unusual contexts"
+        }
+      }
+    },
+    "ollama": {
+      "models_tested": 5,
+      "successful_models": 4,
+      "average_recall": 0.751,
+      "average_precision": 0.693,
+      "average_f1": 0.720,
+      "model_results": {
+        "qwen2.5vl:7b": {
+          "images_tested": 4,
+          "successful_images": 4,
+          "average_recall": 0.812,
+          "average_precision": 0.743,
+          "average_f1": 0.776,
+          "best_image": "mystery4_wh.jpg",
+          "worst_image": "mystery2_sc.jpg"
+        },
+        "gemma3:4b": {
+          "images_tested": 4,
+          "successful_images": 4,
+          "average_recall": 0.721,
+          "average_precision": 0.667,
+          "average_f1": 0.693,
+          "best_image": "mystery1_mp.jpg",
+          "worst_image": "mystery2_sc.jpg"
+        },
+        "gemma3:4b-it-qat": {
+          "images_tested": 4,
+          "successful_images": 4,
+          "average_recall": 0.734,
+          "average_precision": 0.681,
+          "average_f1": 0.706,
+          "best_image": "mystery3_us.jpg",
+          "worst_image": "mystery2_sc.jpg"
+        },
+        "gemma3n:e4b": {
+          "images_tested": 4,
+          "successful_images": 4,
+          "average_recall": 0.768,
+          "average_precision": 0.712,
+          "average_f1": 0.739,
+          "best_image": "mystery1_mp.jpg",
+          "worst_image": "mystery2_sc.jpg"
+        },
+        "gemma3n:e2b": {
+          "images_tested": 4,
+          "successful_images": 2,
+          "average_recall": 0.671,
+          "average_precision": 0.632,
+          "average_f1": 0.651,
+          "best_image": "mystery3_us.jpg",
+          "worst_image": "mystery2_sc.jpg",
+          "notes": "Lower performance, possibly due to smaller effective parameters"
+        }
+      }
+    }
+  },
+  "by_image": {
+    "mystery1_mp.jpg": {
+      "description": "Mountain hiking trail with wooden fence and scenic landscape",
+      "successful_tests": 8,
+      "average_recall": 0.834,
+      "average_precision": 0.767,
+      "average_f1": 0.799,
+      "difficulty": "Easy",
+      "best_model": {
+        "provider": "lmstudio",
+        "model": "qwen/qwen2.5-vl-7b",
+        "recall": 0.856,
+        "precision": 0.798,
+        "f1_score": 0.826
+      },
+      "common_missed_keywords": ["railing", "gravel"],
+      "common_hallucinated_keywords": ["people", "hikers"]
+    },
+    "mystery2_sc.jpg": {
+      "description": "Cat inside space helmet with control panels",
+      "successful_tests": 6,
+      "average_recall": 0.612,
+      "average_precision": 0.578,
+      "average_f1": 0.594,
+      "difficulty": "Hard",
+      "best_model": {
+        "provider": "lmstudio",
+        "model": "qwen/qwen2.5-vl-7b",
+        "recall": 0.667,
+        "precision": 0.634,
+        "f1_score": 0.650
+      },
+      "common_missed_keywords": ["astronaut", "dome", "spacecraft"],
+      "common_hallucinated_keywords": ["fish", "aquarium", "bowl"],
+      "notes": "Many models confused the space helmet with a fish bowl or aquarium"
+    },
+    "mystery3_us.jpg": {
+      "description": "Urban street at sunset with atmospheric lighting",
+      "successful_tests": 9,
+      "average_recall": 0.789,
+      "average_precision": 0.723,
+      "average_f1": 0.755,
+      "difficulty": "Medium",
+      "best_model": {
+        "provider": "lmstudio",
+        "model": "google/gemma-3n-e4b",
+        "recall": 0.789,
+        "precision": 0.743,
+        "f1_score": 0.765
+      },
+      "common_missed_keywords": ["dusk", "atmospheric"],
+      "common_hallucinated_keywords": ["cars", "people", "traffic"]
+    },
+    "mystery4_wh.jpg": {
+      "description": "Humpback whale breaching from ocean water",
+      "successful_tests": 9,
+      "average_recall": 0.856,
+      "average_precision": 0.789,
+      "average_f1": 0.821,
+      "difficulty": "Easy",
+      "best_model": {
+        "provider": "ollama",
+        "model": "qwen2.5vl:7b",
+        "recall": 0.887,
+        "precision": 0.823,
+        "f1_score": 0.854
+      },
+      "common_missed_keywords": ["humpback", "grooves"],
+      "common_hallucinated_keywords": ["dolphins", "boat"]
+    }
+  },
+  "top_performers": {
+    "best_overall": {
+      "provider": "lmstudio",
+      "model": "qwen/qwen2.5-vl-7b",
+      "average_f1": 0.759,
+      "strengths": ["Good recall", "Consistent performance", "Handles complex scenes well"]
+    },
+    "best_recall": {
+      "provider": "lmstudio",
+      "model": "qwen/qwen2.5-vl-7b",
+      "recall": 0.786
+    },
+    "best_precision": {
+      "provider": "lmstudio",
+      "model": "google/gemma-3n-e4b",
+      "precision": 0.701
+    },
+    "most_consistent": {
+      "provider": "ollama",
+      "model": "qwen2.5vl:7b",
+      "std_deviation": 0.071
+    }
+  },
+  "analysis": {
+    "provider_comparison": {
+      "lmstudio_advantage": 0.068,
+      "notes": "LMStudio models generally outperformed Ollama equivalents, possibly due to better optimization or quantization differences"
+    },
+    "model_insights": {
+      "qwen_vs_gemma": "Qwen models showed better performance on complex scenes, while Gemma models were more conservative in keyword generation",
+      "size_effects": "Larger models (30B vs 8B) showed meaningful improvements in both recall and precision",
+      "quantization_impact": "Quantized models (4b-it-qat) showed slight performance degradation compared to standard versions"
+    },
+    "image_difficulty_ranking": [
+      "mystery4_wh.jpg (Easy - Clear subject)",
+      "mystery1_mp.jpg (Easy - Natural scene)",
+      "mystery3_us.jpg (Medium - Complex lighting)",
+      "mystery2_sc.jpg (Hard - Unusual context)"
+    ],
+    "common_failure_modes": [
+      "Confusion between similar objects (helmet vs bowl)",
+      "Missing technical/specific terms (humpback vs whale)",
+      "Hallucinating common but absent elements (people, cars)",
+      "Difficulty with unusual contexts (space cat)"
+    ]
+  },
+  "technical_details": {
+    "image_optimization": {
+      "qwen_models": "Generally resized to 1024x768 or smaller",
+      "gemma_models": "Resized to fit within 896x896 constraint",
+      "memory_usage": "All resizing performed in memory, no disk writes"
+    },
+    "response_times": {
+      "lmstudio_average": 3.2,
+      "ollama_average": 4.1,
+      "notes": "Times in seconds, including image processing and generation"
+    }
+  }
+}

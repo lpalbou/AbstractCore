@@ -1,151 +1,119 @@
 """
-Media handling for different providers.
+AbstractCore Media Handler System.
+
+This module provides unified media handling capabilities across all providers,
+supporting various file types including images, documents, audio, and video.
+
+The system follows AbstractCore's proven architectural patterns:
+- Interface → Base → Provider-Specific implementations
+- Capability detection using model_capabilities.json
+- Unified API across all providers
 """
 
-import base64
-from pathlib import Path
-from typing import Union, Dict, Any, Optional
-from enum import Enum
+# Core types and base classes
+from .base import BaseMediaHandler, BaseProviderMediaHandler
+from .types import MediaContent, MediaType, ContentFormat, MultimodalMessage
+from .auto_handler import AutoMediaHandler
 
+# Media processing capabilities
+from .capabilities import (
+    MediaCapabilities,
+    get_media_capabilities,
+    is_vision_model,
+    is_multimodal_model,
+    get_supported_media_types,
+    supports_images,
+    supports_documents,
+    get_max_images,
+    should_use_text_embedding
+)
 
-class MediaType(Enum):
-    """Supported media types"""
-    IMAGE = "image"
-    AUDIO = "audio"
-    VIDEO = "video"
-    DOCUMENT = "document"
+# Processors for different file types
+from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor
 
+# Provider-specific handlers
+from .handlers import OpenAIMediaHandler, AnthropicMediaHandler, LocalMediaHandler
 
-class MediaHandler:
-    """Base class for media handling"""
+# Default media handler - automatically selects appropriate processor
+class MediaHandler(AutoMediaHandler):
+    """
+    Default media handler that automatically selects the appropriate processor.
 
-    @staticmethod
-    def encode_image(image_path: Union[str, Path]) -> str:
-        """
-        Encode an image file to base64.
+    This class provides automatic file type detection and processor selection,
+    making it easy to process any supported media type with a single interface.
+    """
+    pass
 
-        Args:
-            image_path: Path to the image file
+# Convenience functions for common operations
+def process_file(file_path: str) -> MediaContent:
+    """
+    Process a file using the automatic media handler.
 
-        Returns:
-            Base64 encoded string
-        """
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+    Args:
+        file_path: Path to the file to process
 
-    @staticmethod
-    def format_for_openai(image_path: Union[str, Path]) -> Dict[str, Any]:
-        """
-        Format image for OpenAI API.
+    Returns:
+        MediaContent object with processed content
+    """
+    handler = AutoMediaHandler()
+    result = handler.process_file(file_path)
+    if result.success:
+        return result.media_content
+    else:
+        from .base import MediaProcessingError
+        raise MediaProcessingError(result.error_message)
 
-        Args:
-            image_path: Path to the image
+def get_media_type_from_path(file_path: str) -> MediaType:
+    """
+    Determine media type from file path.
 
-        Returns:
-            Formatted content for OpenAI
-        """
-        base64_image = MediaHandler.encode_image(image_path)
-        return {
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{base64_image}"
-            }
-        }
+    Args:
+        file_path: Path to the file
 
-    @staticmethod
-    def format_for_anthropic(image_path: Union[str, Path]) -> Dict[str, Any]:
-        """
-        Format image for Anthropic API.
+    Returns:
+        MediaType enum value
+    """
+    from .types import detect_media_type
+    from pathlib import Path
+    return detect_media_type(Path(file_path))
 
-        Args:
-            image_path: Path to the image
+# Export all public components
+__all__ = [
+    # Core types
+    'MediaContent',
+    'MediaType',
+    'ContentFormat',
+    'MultimodalMessage',
 
-        Returns:
-            Formatted content for Anthropic
-        """
-        base64_image = MediaHandler.encode_image(image_path)
+    # Base classes
+    'BaseMediaHandler',
+    'BaseProviderMediaHandler',
+    'AutoMediaHandler',
 
-        # Detect image type
-        path = Path(image_path)
-        media_type = "image/jpeg"
-        if path.suffix.lower() == ".png":
-            media_type = "image/png"
-        elif path.suffix.lower() == ".gif":
-            media_type = "image/gif"
-        elif path.suffix.lower() == ".webp":
-            media_type = "image/webp"
+    # Capability detection
+    'MediaCapabilities',
+    'get_media_capabilities',
+    'is_vision_model',
+    'is_multimodal_model',
+    'get_supported_media_types',
+    'supports_images',
+    'supports_documents',
+    'get_max_images',
+    'should_use_text_embedding',
 
-        return {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": media_type,
-                "data": base64_image
-            }
-        }
+    # Processors
+    'ImageProcessor',
+    'TextProcessor',
+    'PDFProcessor',
+    'OfficeProcessor',
 
-    @staticmethod
-    def format_for_provider(image_path: Union[str, Path], provider: str) -> Optional[Dict[str, Any]]:
-        """
-        Format media for a specific provider.
+    # Handlers
+    'OpenAIMediaHandler',
+    'AnthropicMediaHandler',
+    'LocalMediaHandler',
 
-        Args:
-            image_path: Path to the media file
-            provider: Provider name
-
-        Returns:
-            Formatted content or None if not supported
-        """
-        provider_lower = provider.lower()
-
-        if provider_lower == "openai":
-            return MediaHandler.format_for_openai(image_path)
-        elif provider_lower == "anthropic":
-            return MediaHandler.format_for_anthropic(image_path)
-        else:
-            # Local providers typically don't support images directly
-            return None
-
-    @staticmethod
-    def is_image_file(path: Union[str, Path]) -> bool:
-        """
-        Check if a file is an image.
-
-        Args:
-            path: Path to check
-
-        Returns:
-            True if the file is an image
-        """
-        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.tiff'}
-        return Path(path).suffix.lower() in image_extensions
-
-    @staticmethod
-    def get_media_type(path: Union[str, Path]) -> MediaType:
-        """
-        Determine the media type of a file.
-
-        Args:
-            path: Path to the file
-
-        Returns:
-            MediaType enum value
-        """
-        path = Path(path)
-        extension = path.suffix.lower()
-
-        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
-        audio_extensions = {'.mp3', '.wav', '.m4a', '.ogg', '.flac'}
-        video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
-        document_extensions = {'.pdf', '.doc', '.docx', '.txt', '.md'}
-
-        if extension in image_extensions:
-            return MediaType.IMAGE
-        elif extension in audio_extensions:
-            return MediaType.AUDIO
-        elif extension in video_extensions:
-            return MediaType.VIDEO
-        elif extension in document_extensions:
-            return MediaType.DOCUMENT
-        else:
-            return MediaType.DOCUMENT  # Default to document
+    # Legacy and convenience
+    'MediaHandler',
+    'process_file',
+    'get_media_type_from_path'
+]

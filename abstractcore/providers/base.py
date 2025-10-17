@@ -204,6 +204,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                messages: Optional[List[Dict[str, str]]] = None,
                                system_prompt: Optional[str] = None,
                                tools: Optional[List] = None,  # Accept both ToolDefinition and Dict
+                               media: Optional[List[Union[str, Dict[str, Any], 'MediaContent']]] = None,  # Media files
                                stream: bool = False,
                                response_model: Optional[Type[BaseModel]] = None,
                                retry_strategy=None,  # Custom retry strategy for structured output
@@ -215,6 +216,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Providers should override _generate_internal instead of generate.
 
         Args:
+            prompt: The input prompt
+            messages: Optional conversation history
+            system_prompt: Optional system prompt
+            tools: Optional list of available tools
+            media: Optional list of media files (file paths, MediaContent objects, or dicts)
+            stream: Whether to stream the response
             response_model: Optional Pydantic model for structured output
             retry_strategy: Optional retry strategy for structured output validation
             tool_call_tags: Optional tool call tag format for rewriting
@@ -235,6 +242,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     messages=messages,
                     system_prompt=system_prompt,
                     tools=tools,
+                    media=media,
                     response_model=response_model,
                     retry_strategy=retry_strategy,
                     tool_call_tags=tool_call_tags,
@@ -253,9 +261,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 messages=messages,
                 system_prompt=system_prompt,
                 tools=None,  # No tools in this path
+                media=media,
                 stream=stream,
                 **kwargs
             )
+
+        # Process media content if provided
+        processed_media = None
+        if media:
+            processed_media = self._process_media_content(media)
 
         # Convert tools to ToolDefinition objects first (outside retry loop)
         converted_tools = None
@@ -308,6 +322,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     messages=messages,
                     system_prompt=system_prompt,
                     tools=converted_tools,
+                    media=processed_media,
                     stream=stream,
                     execute_tools=should_execute_tools,
                     tool_call_tags=tool_call_tags,
@@ -391,6 +406,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                           messages: Optional[List[Dict[str, str]]] = None,
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
+                          media: Optional[List['MediaContent']] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
                           execute_tools: Optional[bool] = None,
@@ -400,8 +416,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
         This is called by generate_with_telemetry.
 
         Args:
+            prompt: The input prompt
+            messages: Optional conversation history
+            system_prompt: Optional system prompt
+            tools: Optional list of available tools
+            media: Optional list of processed MediaContent objects
+            stream: Whether to stream the response
             response_model: Optional Pydantic model for structured output
             execute_tools: Whether to execute tools automatically (True) or let agent handle execution (False)
+            **kwargs: Additional provider-specific parameters
         """
         raise NotImplementedError("Subclasses must implement _generate_internal")
 
@@ -756,6 +779,73 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def estimate_tokens(self, text: str) -> int:
         """Rough estimation of token count for given text"""
         return super().estimate_tokens(text)
+
+    def _process_media_content(self, media: List[Union[str, Dict[str, Any], 'MediaContent']]) -> List['MediaContent']:
+        """
+        Process media content from various input formats into standardized MediaContent objects.
+
+        Args:
+            media: List of media inputs (file paths, MediaContent objects, or dicts)
+
+        Returns:
+            List of processed MediaContent objects
+
+        Raises:
+            ImportError: If media processing dependencies are not available
+            ValueError: If media input format is invalid
+        """
+        if not media:
+            return []
+
+        try:
+            # Import media handler components
+            from ..media import AutoMediaHandler
+            from ..media.types import MediaContent
+        except ImportError as e:
+            raise ImportError(
+                f"Media processing requires additional dependencies. "
+                f"Install with: pip install abstractcore[media]. Error: {e}"
+            )
+
+        processed_media = []
+
+        for i, media_item in enumerate(media):
+            try:
+                if isinstance(media_item, str):
+                    # File path - process with auto media handler
+                    handler = AutoMediaHandler()
+                    result = handler.process_file(media_item)
+                    if result.success:
+                        processed_media.append(result.media_content)
+                    else:
+                        self.logger.warning(f"Failed to process media file {media_item}: {result.error_message}")
+                        continue
+
+                elif hasattr(media_item, 'media_type'):
+                    # Already a MediaContent object
+                    processed_media.append(media_item)
+
+                elif isinstance(media_item, dict):
+                    # Dictionary format - convert to MediaContent
+                    try:
+                        media_content = MediaContent.from_dict(media_item)
+                        processed_media.append(media_content)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to convert media dict at index {i}: {e}")
+                        continue
+
+                else:
+                    self.logger.warning(f"Unsupported media type at index {i}: {type(media_item)}")
+                    continue
+
+            except Exception as e:
+                self.logger.warning(f"Failed to process media item at index {i}: {e}")
+                continue
+
+        if not processed_media and media:
+            self.logger.warning("No media items were successfully processed")
+
+        return processed_media
 
     @abstractmethod
     def list_available_models(self, **kwargs) -> List[str]:
