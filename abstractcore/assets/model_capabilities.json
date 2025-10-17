@@ -192,7 +192,9 @@
       "notes": "More likely to call unnecessary tools",
       "source": "Anthropic official docs",
       "canonical_name": "claude-3.5-haiku",
-      "aliases": [],
+      "aliases": [
+        "claude-3-5-haiku-20241022"
+      ],
       "max_tokens": 200000
     },
     "claude-3-opus": {
