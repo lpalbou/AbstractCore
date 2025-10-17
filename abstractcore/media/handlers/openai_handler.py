@@ -51,6 +51,9 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
         # Use appropriate processor based on media type
         if media_type == MediaType.IMAGE:
             from ..processors import ImageProcessor
+            # Ensure maximum resolution for best OpenAI vision results
+            if 'prefer_max_resolution' not in kwargs:
+                kwargs['prefer_max_resolution'] = True
             processor = ImageProcessor(**kwargs)
         elif media_type == MediaType.DOCUMENT:
             if file_path.suffix.lower() == '.pdf':

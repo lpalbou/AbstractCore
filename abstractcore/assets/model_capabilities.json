@@ -1256,34 +1256,11 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-vl-7b",
       "aliases": [
-        "qwen/qwen2.5-vl-7b"
+        "qwen/qwen2.5-vl-7b",
+        "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"
       ],
       "max_tokens": 128000
-    },
-    "gemma-3n-e4b": {
-      "max_output_tokens": 8192,
-      "tool_support": "native",
-      "structured_output": "native",
-      "parallel_tools": true,
-      "vision_support": true,
-      "audio_support": true,
-      "video_support": true,
-      "image_resolutions": [
-        "896x896"
-      ],
-      "max_image_resolution": "896x896",
-      "vision_encoder": "SigLIP-400M",
-      "image_tokens_per_image": 256,
-      "adaptive_windowing": true,
-      "memory_footprint": "3GB",
-      "notes": "Gemma3n-E4B 8B params with 4B effective, 896x896 fixed resolution with adaptive windowing",
-      "source": "Google Gemma3n documentation 2025",
-      "canonical_name": "gemma-3n-e4b",
-      "aliases": [
-        "google/gemma-3n-e4b"
-      ],
-      "max_tokens": 32768
-    },
+    },    
     "gemma3-4b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
@@ -1305,27 +1282,6 @@
       "aliases": [
         "gemma3:4b"
       ],
-      "max_tokens": 128000
-    },
-    "gemma3n": {
-      "max_output_tokens": 8192,
-      "tool_support": "native",
-      "structured_output": "native",
-      "parallel_tools": true,
-      "vision_support": true,
-      "audio_support": true,
-      "video_support": true,
-      "image_resolutions": [
-        "896x896"
-      ],
-      "max_image_resolution": "896x896",
-      "vision_encoder": "SigLIP-400M",
-      "image_tokens_per_image": 256,
-      "adaptive_windowing": true,
-      "notes": "Gemma3n device-optimized multimodal model, 896x896 fixed resolution with adaptive windowing",
-      "source": "Google Gemma3n announcement 2025",
-      "canonical_name": "gemma3n",
-      "aliases": [],
       "max_tokens": 128000
     },
     "qwen2.5vl:7b": {
@@ -1387,32 +1343,16 @@
       "image_tokens_per_image": 256,
       "adaptive_windowing": true,
       "memory_footprint": "3GB",
-      "notes": "Gemma3n-E4B Ollama variant, 8B params with 4B effective, 896x896 fixed resolution",
-      "source": "Ollama model library",
+      "notes": "Gemma3n device-optimized multimodal model, 896x896 fixed resolution",
+      "source": "Google Gemma3n documentation 2025",
       "canonical_name": "gemma3n:e4b",
-      "aliases": [],
-      "max_tokens": 32768
-    },
-    "gemma3n:e2b": {
-      "max_output_tokens": 8192,
-      "tool_support": "native",
-      "structured_output": "native",
-      "parallel_tools": true,
-      "vision_support": true,
-      "audio_support": true,
-      "video_support": true,
-      "image_resolutions": [
-        "896x896"
+      "aliases": [
+        "gemma3n:e4b:latest",
+        "gemma-3n-e4b",
+        "gemma3n",
+        "gemma3n:e2b:latest",
+        "gemma3n:e2b"
       ],
-      "max_image_resolution": "896x896",
-      "vision_encoder": "SigLIP-400M",
-      "image_tokens_per_image": 256,
-      "adaptive_windowing": true,
-      "memory_footprint": "2GB",
-      "notes": "Gemma3n-E2B Ollama variant, 5B params with 2B effective, 896x896 fixed resolution",
-      "source": "Ollama model library",
-      "canonical_name": "gemma3n:e2b",
-      "aliases": [],
       "max_tokens": 32768
     },
     "seed-oss": {
@@ -1484,6 +1424,57 @@
       "canonical_name": "llama-4-109b",
       "aliases": [],
       "max_tokens": 10000000
+    },
+    "granite3.2:2b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "768x768"
+      ],
+      "max_image_resolution": "768x768",
+      "vision_encoder": "SigLIP2-so400m-patch14-384",
+      "image_patch_size": 14,
+      "notes": "IBM Granite 3.2-Vision model with SigLIP2 encoder, 384x384 input patches, IBM recommends 768px max dimension",
+      "source": "IBM Granite 3.2 technical report arXiv:2502.09927",
+      "canonical_name": "granite3.2-vision:latest",
+      "aliases": [
+        "granite3.2:latest",
+        "granite3.2-vision:latest",
+        "granite3.2-vision",
+        "granite-vision",
+        "ibm-granite-vision"
+      ],
+      "max_tokens": 32768
+    },
+    "granite3.3:2b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "768x768"
+      ],
+      "max_image_resolution": "768x768",
+      "vision_encoder": "SigLIP2-so400m-patch14-384",
+      "image_patch_size": 14,
+      "notes": "IBM Granite 3.3-Vision 2B enhanced model (June 2025), improved capabilities over 3.2, 768px max dimension",
+      "source": "IBM Granite 3.3 release announcement June 2025",
+      "canonical_name": "granite3.3-vision:2b",
+      "aliases": [
+        "granite3.3:latest",
+        "granite3.3-vision:2b",
+        "granite3.3-vision",
+        "ibm-granite-3.3-vision"
+      ],
+      "max_tokens": 32768
     }
   },
   "tool_support_levels": {

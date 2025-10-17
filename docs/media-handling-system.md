@@ -1,10 +1,11 @@
 # Media Handling System
 
-AbstractCore provides a **unified media handling system** that enables consistent file attachment and processing across all providers and models. Upload images, documents, and other media files using the same simple API, regardless of whether you're using OpenAI, Anthropic, Ollama, or any other provider.
+AbstractCore provides a **unified media handling system** with **automatic maximum resolution optimization** that enables consistent file attachment and processing across all providers and models. Upload images, documents, and other media files using the same simple API, and let AbstractCore automatically optimize image resolution for each model's maximum capability.
 
 ## Key Benefits
 
 - **Universal API**: Same code works across all providers
+- **Maximum Resolution Optimization**: Automatically uses each model's highest supported resolution
 - **Automatic Processing**: Intelligent file type detection and optimization
 - **Provider Adaptation**: Automatic formatting for each provider's requirements
 - **Vision Model Support**: Seamless integration with vision-capable models
@@ -54,6 +55,7 @@ response = llm.generate(
 ### Processing Features
 - **Intelligent Detection**: Automatic file type recognition
 - **Content Optimization**: Format-specific processing for best LLM results
+- **Maximum Resolution Optimization**: Automatically uses each model's highest supported resolution
 - **Memory Efficient**: Streaming processing for large files
 - **Error Recovery**: Graceful handling of corrupted or unsupported files
 
@@ -185,6 +187,41 @@ for chunk in llm.generate(
 ```
 
 ## Advanced Features
+
+### Maximum Resolution Optimization (NEW)
+
+AbstractCore automatically optimizes image resolution for each model's maximum capability, ensuring the best possible vision results:
+
+```python
+from abstractcore import create_llm
+
+# Images are automatically optimized for each model's maximum resolution
+llm = create_llm("openai", model="gpt-4o")
+response = llm.generate(
+    "Analyze this image in detail",
+    media=["photo.jpg"]  # Auto-resized to 4096x4096 for GPT-4o
+)
+
+# Different model, different optimization
+llm = create_llm("ollama", model="qwen2.5vl:7b")
+response = llm.generate(
+    "What's in this image?",
+    media=["photo.jpg"]  # Auto-resized to 3584x3584 for qwen2.5vl
+)
+```
+
+**Model-Specific Resolution Limits:**
+- **GPT-4o**: Up to 4096x4096 pixels
+- **Claude 3.5 Sonnet**: Up to 1568x1568 pixels
+- **qwen2.5vl:7b**: Up to 3584x3584 pixels
+- **gemma3:4b**: Up to 896x896 pixels
+- **llama3.2-vision:11b**: Up to 560x560 pixels
+
+**Benefits:**
+- **Better Accuracy**: Higher resolution means more detail for the model to analyze
+- **Automatic**: No manual configuration required
+- **Provider-Aware**: Adapts to each provider's optimal settings
+- **Quality Optimization**: Increased JPEG quality (90%) for better compression
 
 ### Capability Detection
 

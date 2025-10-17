@@ -52,11 +52,12 @@ class ImageProcessor(BaseMediaHandler):
 
         super().__init__(**kwargs)
 
-        # Image processing configuration
-        self.max_resolution = kwargs.get('max_resolution', (2048, 2048))
-        self.quality = kwargs.get('quality', 85)
+        # Image processing configuration - Use maximum resolution for best quality
+        self.max_resolution = kwargs.get('max_resolution', (4096, 4096))  # Increased default for better quality
+        self.quality = kwargs.get('quality', 90)  # Increased quality for better results
         self.auto_rotate = kwargs.get('auto_rotate', True)
         self.resize_mode = kwargs.get('resize_mode', 'fit')  # 'fit', 'crop', 'stretch'
+        self.prefer_max_resolution = kwargs.get('prefer_max_resolution', True)  # Always use max when possible
 
         # Set capabilities for image processing
         from ..types import MediaCapabilities
@@ -71,7 +72,7 @@ class ImageProcessor(BaseMediaHandler):
 
         self.logger.debug(
             f"Initialized ImageProcessor with max_resolution={self.max_resolution}, "
-            f"quality={self.quality}, auto_rotate={self.auto_rotate}"
+            f"quality={self.quality}, auto_rotate={self.auto_rotate}, prefer_max_resolution={self.prefer_max_resolution}"
         )
 
     def _process_internal(self, file_path: Path, media_type: MediaType, **kwargs) -> MediaContent:
@@ -99,7 +100,15 @@ class ImageProcessor(BaseMediaHandler):
         try:
             # Override defaults with kwargs
             target_format = kwargs.get('target_format', 'jpeg')
-            max_resolution = kwargs.get('max_resolution', self.max_resolution)
+            model_name = kwargs.get('model_name', None)
+
+            # Use model-specific maximum resolution if available
+            if model_name and self.prefer_max_resolution:
+                max_resolution = self._get_model_max_resolution(model_name)
+                self.logger.debug(f"Using model-specific max resolution for {model_name}: {max_resolution}")
+            else:
+                max_resolution = kwargs.get('max_resolution', self.max_resolution)
+
             quality = kwargs.get('quality', self.quality)
             auto_rotate = kwargs.get('auto_rotate', self.auto_rotate)
 
@@ -178,6 +187,51 @@ class ImageProcessor(BaseMediaHandler):
         except Exception:
             # If auto-rotation fails, return original image
             return img
+
+    def _get_model_max_resolution(self, model_name: Optional[str] = None) -> Tuple[int, int]:
+        """
+        Get maximum resolution for a specific model or return default high resolution.
+
+        Args:
+            model_name: Name of the model to check capabilities for
+
+        Returns:
+            Maximum resolution tuple (width, height)
+        """
+        if not model_name or not self.prefer_max_resolution:
+            return self.max_resolution
+
+        try:
+            from ..capabilities import get_media_capabilities
+            caps = get_media_capabilities(model_name)
+
+            if hasattr(caps, 'image_resolutions') and caps.image_resolutions:
+                resolution_str = caps.image_resolutions
+                if isinstance(resolution_str, list) and resolution_str:
+                    resolution_str = resolution_str[0]
+                else:
+                    resolution_str = str(resolution_str)
+
+                # Parse resolution strings like "3584x3584", "56x56 to 3584x3584", "variable"
+                if "to" in resolution_str:
+                    # Extract maximum from range like "56x56 to 3584x3584"
+                    max_part = resolution_str.split("to")[-1].strip()
+                    if "x" in max_part:
+                        width, height = map(int, max_part.split("x"))
+                        return (width, height)
+                elif "x" in resolution_str and "variable" not in resolution_str.lower():
+                    # Parse direct resolution like "896x896"
+                    width, height = map(int, resolution_str.split("x"))
+                    return (width, height)
+                elif "variable" in resolution_str.lower():
+                    # For variable resolution models, use a high default
+                    return (4096, 4096)
+
+        except Exception as e:
+            self.logger.debug(f"Could not get model-specific resolution for {model_name}: {e}")
+
+        # Fallback to default high resolution
+        return self.max_resolution
 
     def _needs_resize(self, current_size: Tuple[int, int], max_resolution: Tuple[int, int]) -> bool:
         """
