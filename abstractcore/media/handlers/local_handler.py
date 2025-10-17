@@ -68,6 +68,10 @@ class LocalMediaHandler(BaseProviderMediaHandler):
         if media_type == MediaType.IMAGE:
             if self.capabilities.vision_support:
                 from ..processors import ImageProcessor
+                # Pass model name for model-specific resolution optimization
+                if self.model_name:
+                    processing_kwargs['model_name'] = self.model_name
+                    processing_kwargs['prefer_max_resolution'] = True
                 processor = ImageProcessor(**processing_kwargs)
             else:
                 # If no vision support, skip image processing

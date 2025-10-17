@@ -66,16 +66,17 @@ loaded_session = BasicSession.load('conversation.json', provider=llm)
 
 ### Media Handling
 
-AbstractCore provides **unified media handling** across all providers. Upload images, PDFs, and documents using the same simple API regardless of your provider.
+AbstractCore provides **unified media handling** across all providers with **automatic maximum resolution optimization** for best results. Upload images, PDFs, and documents using the same simple API regardless of your provider.
 
 ```python
 from abstractcore import create_llm
 
 # Vision analysis - works with any vision model
+# Images automatically processed at maximum supported resolution
 llm = create_llm("openai", model="gpt-4o")
 response = llm.generate(
     "What's in this image?",
-    media=["photo.jpg"]
+    media=["photo.jpg"]  # Auto-resized to model's maximum capability
 )
 
 # Document analysis - works with any model
@@ -95,17 +96,19 @@ response = llm.generate(
 llm = create_llm("ollama", model="qwen3-vl:8b")
 response = llm.generate(
     "Describe this screenshot",
-    media=["screenshot.png"]
+    media=["screenshot.png"]  # Auto-optimized for qwen3-vl
 )
 ```
 
-**Supported formats:**
-- **Images**: PNG, JPEG, GIF, WEBP, BMP, TIFF
-- **Documents**: PDF, TXT, MD, CSV, TSV, JSON
-- **Office**: DOCX, XLSX, PPT (with `pip install abstractcore[all]`)
+**Key Features:**
+- **Smart Resolution**: Automatically uses maximum resolution supported by each model
+- **Format Support**: PNG, JPEG, GIF, WEBP, BMP, TIFF images; PDF, TXT, MD, CSV, TSV, JSON documents
+- **Office Documents**: DOCX, XLSX, PPT (with `pip install abstractcore[all]`)
+- **Vision Optimization**: Model-specific image processing for best vision results
 
 **Provider compatibility:**
-- **Vision models**: GPT-4o, Claude 3.5 Sonnet, qwen3-vl, gemma3:4b
+- **High-resolution vision**: GPT-4o (up to 4096x4096), Claude 3.5 Sonnet (up to 1568x1568)
+- **Local models**: qwen3-vl (up to 3584x3584), gemma3:4b, llama3.2-vision
 - **All models**: Automatic text extraction for non-vision models
 
 [Learn more about Media Handling](docs/media-handling-system.md)
@@ -113,8 +116,8 @@ response = llm.generate(
 ## Key Features
 
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
-- **Unified Media Handling**: Upload images, PDFs, and documents with consistent API across all providers
-- **Vision Model Support**: Automatic image processing for GPT-4o, Claude 3.5 Sonnet, qwen3-vl, and more
+- **Intelligent Media Handling**: Upload images, PDFs, and documents with automatic maximum resolution optimization
+- **Vision Model Support**: Smart image processing at each model's maximum capability for best results
 - **Document Processing**: Advanced PDF extraction, Office documents (DOCX/XLSX/PPT), and text analysis
 - **Unified Tools**: Consistent tool calling across all providers
 - **Session Management**: Persistent conversations with metadata, analytics, and complete serialization

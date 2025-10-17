@@ -54,7 +54,11 @@ class ComprehensiveVisionTester:
                 "gemma3:4b-it-qat",
                 "gemma3n:e4b",
                 "gemma3n:e2b",
-                "llama3.2-vision:11b"
+                "llama3.2-vision:11b",
+                "granite3.3:2b"
+            ],
+            "huggingface": [
+                "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"
             ]
         }
 

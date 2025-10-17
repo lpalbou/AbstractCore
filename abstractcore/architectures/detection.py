@@ -100,6 +100,8 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     """
     Resolve a model name to its canonical name by checking aliases.
 
+    Automatically converts "--" to "/" for HuggingFace cache format compatibility.
+
     Args:
         model_name: Model name that might be an alias
         models: Models dictionary from capabilities JSON
@@ -111,15 +113,24 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     if model_name in models:
         return model_name
 
-    # Check if it's an alias of any model
+    # Convert "--" to "/" for HuggingFace cache format compatibility
+    normalized_model_name = model_name.replace("--", "/")
+    if normalized_model_name != model_name:
+        logger.debug(f"Normalized model name '{model_name}' to '{normalized_model_name}'")
+
+    # Check if normalized name is a canonical name
+    if normalized_model_name in models:
+        return normalized_model_name
+
+    # Check if it's an alias of any model (try both original and normalized)
     for canonical_name, model_info in models.items():
         aliases = model_info.get("aliases", [])
-        if model_name in aliases:
+        if model_name in aliases or normalized_model_name in aliases:
             logger.debug(f"Resolved alias '{model_name}' to canonical name '{canonical_name}'")
             return canonical_name
 
-    # Return original name if no alias found
-    return model_name
+    # Return normalized name if no alias found
+    return normalized_model_name
 
 
 def get_model_capabilities(model_name: str) -> Dict[str, Any]:
