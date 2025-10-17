@@ -64,9 +64,58 @@ loaded_session = BasicSession.load('conversation.json', provider=llm)
 
 [Learn more about Session](docs/session.md)
 
+### Media Handling
+
+AbstractCore provides **unified media handling** across all providers. Upload images, PDFs, and documents using the same simple API regardless of your provider.
+
+```python
+from abstractcore import create_llm
+
+# Vision analysis - works with any vision model
+llm = create_llm("openai", model="gpt-4o")
+response = llm.generate(
+    "What's in this image?",
+    media=["photo.jpg"]
+)
+
+# Document analysis - works with any model
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+response = llm.generate(
+    "Summarize this research paper",
+    media=["research_paper.pdf"]
+)
+
+# Multiple files - mix images, PDFs, spreadsheets
+response = llm.generate(
+    "Analyze these business documents",
+    media=["report.pdf", "chart.png", "data.xlsx"]
+)
+
+# Same code works with local models
+llm = create_llm("ollama", model="qwen3-vl:8b")
+response = llm.generate(
+    "Describe this screenshot",
+    media=["screenshot.png"]
+)
+```
+
+**Supported formats:**
+- **Images**: PNG, JPEG, GIF, WEBP, BMP, TIFF
+- **Documents**: PDF, TXT, MD, CSV, TSV, JSON
+- **Office**: DOCX, XLSX, PPT (with `pip install abstractcore[all]`)
+
+**Provider compatibility:**
+- **Vision models**: GPT-4o, Claude 3.5 Sonnet, qwen3-vl, gemma3:4b
+- **All models**: Automatic text extraction for non-vision models
+
+[Learn more about Media Handling](docs/media-handling-system.md)
+
 ## Key Features
 
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
+- **Unified Media Handling**: Upload images, PDFs, and documents with consistent API across all providers
+- **Vision Model Support**: Automatic image processing for GPT-4o, Claude 3.5 Sonnet, qwen3-vl, and more
+- **Document Processing**: Advanced PDF extraction, Office documents (DOCX/XLSX/PPT), and text analysis
 - **Unified Tools**: Consistent tool calling across all providers
 - **Session Management**: Persistent conversations with metadata, analytics, and complete serialization
 - **Structured Responses**: Clean, predictable output formats with Pydantic
@@ -287,6 +336,7 @@ Each application has comprehensive documentation with examples and advanced usag
 
 ### Core Library (Python)
 - **[Python API Reference](docs/api-reference.md)** - Complete Python API documentation
+- **[Media Handling System](docs/media-handling-system.md)** - Images, PDFs, and document processing across all providers
 - **[Session Management](docs/session.md)** - Persistent conversations, serialization, and analytics
 - **[Embeddings Guide](docs/embeddings.md)** - Semantic search, RAG, and vector embeddings
 - **[Code Examples](examples/)** - Working examples for all features
@@ -312,7 +362,44 @@ for provider in providers:
     response = llm.generate("Hello!")
 ```
 
-### 2. Local Development, Cloud Production
+### 2. Vision Analysis Across Providers
+
+```python
+# Same image analysis works with any vision model
+image_files = ["product_photo.jpg", "user_feedback.png"]
+prompt = "Analyze these product images and suggest improvements"
+
+# OpenAI GPT-4o
+openai_llm = create_llm("openai", model="gpt-4o")
+openai_analysis = openai_llm.generate(prompt, media=image_files)
+
+# Anthropic Claude
+claude_llm = create_llm("anthropic", model="claude-3.5-sonnet")
+claude_analysis = claude_llm.generate(prompt, media=image_files)
+
+# Local model (free)
+local_llm = create_llm("ollama", model="qwen3-vl:8b")
+local_analysis = local_llm.generate(prompt, media=image_files)
+```
+
+### 3. Document Processing Pipeline
+
+```python
+# Universal document analysis
+documents = ["contract.pdf", "financial_data.xlsx", "presentation.ppt"]
+analysis_prompt = "Extract key information and identify potential risks"
+
+# Works with any provider
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+response = llm.generate(analysis_prompt, media=documents)
+
+# Automatic format handling:
+# - PDF: Advanced text extraction with PyMuPDF4LLM
+# - Excel: Table parsing with pandas
+# - PowerPoint: Slide content extraction with unstructured
+```
+
+### 4. Local Development, Cloud Production
 
 ```python
 # Development (free, local)
@@ -322,7 +409,7 @@ llm_dev = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
 llm_prod = create_llm("openai", model="gpt-4o-mini")
 ```
 
-### 3. Embeddings & RAG
+### 5. Embeddings & RAG
 
 ```python
 from abstractcore.embeddings import EmbeddingManager
@@ -342,7 +429,7 @@ similarity = embedder.compute_similarity(query, docs[0])
 
 [Learn more about Embeddings](docs/embeddings.md)
 
-### 4. Structured Output
+### 6. Structured Output
 
 ```python
 from pydantic import BaseModel
@@ -360,7 +447,7 @@ review = llm.generate(
 print(f"{review.title}: {review.rating}/5")
 ```
 
-### 5. Universal API Server
+### 7. Universal API Server
 
 ```bash
 # Start server once
@@ -377,14 +464,16 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 ## Why AbstractCore?
 
-- **Unified Interface**: One API for all LLM providers  
-- **Production Ready**: Robust error handling, retries, timeouts  
-- **Type Safe**: Full Pydantic integration for structured outputs  
-- **Local & Cloud**: Run models locally or use cloud APIs  
-- **Tool Calling**: Consistent function calling across providers  
-- **Streaming**: Real-time responses for interactive applications  
-- **Embeddings**: Built-in vector embeddings for RAG  
-- **Server Mode**: Optional OpenAI-compatible API server  
+- **Unified Interface**: One API for all LLM providers
+- **Multimodal Support**: Upload images, PDFs, and documents across all providers
+- **Vision Models**: Seamless integration with GPT-4o, Claude Vision, qwen3-vl, and more
+- **Production Ready**: Robust error handling, retries, timeouts
+- **Type Safe**: Full Pydantic integration for structured outputs
+- **Local & Cloud**: Run models locally or use cloud APIs
+- **Tool Calling**: Consistent function calling across providers
+- **Streaming**: Real-time responses for interactive applications
+- **Embeddings**: Built-in vector embeddings for RAG
+- **Server Mode**: Optional OpenAI-compatible API server
 - **Well Documented**: Comprehensive guides and examples  
 
 ## Installation Options
@@ -392,6 +481,9 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 ```bash
 # Minimal core
 pip install abstractcore
+
+# With media handling (images, PDFs, documents)
+pip install abstractcore[media]
 
 # With specific providers
 pip install abstractcore[openai]
@@ -404,8 +496,23 @@ pip install abstractcore[server]
 # With embeddings
 pip install abstractcore[embeddings]
 
-# Everything
+# Everything (recommended)
 pip install abstractcore[all]
+```
+
+**Media processing extras:**
+```bash
+# For advanced PDF processing
+pip install pymupdf4llm
+
+# For Office documents (DOCX, XLSX, PPT)
+pip install unstructured
+
+# For image optimization
+pip install pillow
+
+# For data processing (CSV, Excel)
+pip install pandas
 ```
 
 ## Testing Status

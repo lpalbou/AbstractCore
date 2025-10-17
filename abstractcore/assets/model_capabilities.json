@@ -13,16 +13,40 @@
       "aliases": [],
       "max_tokens": 128000
     },
-    "gpt-4o": {
+    "gpt-4-turbo-with-vision": {
       "max_output_tokens": 4096,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
       "max_tools": -1,
       "vision_support": true,
+      "audio_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "GPT-4 Turbo with vision capabilities",
+      "source": "OpenAI official docs 2025",
+      "canonical_name": "gpt-4-turbo-with-vision",
+      "aliases": [
+        "gpt-4-turbo-vision",
+        "gpt-4-vision-preview"
+      ],
+      "max_tokens": 128000
+    },
+    "gpt-4o": {
+      "max_output_tokens": 16384,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
       "audio_support": true,
-      "notes": "Multimodal, optimized for speed",
-      "source": "OpenAI official docs",
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "Multimodal omni model, 2x faster, half price, 5x higher rate limits (updated Nov 2024)",
+      "source": "OpenAI official docs 2025",
       "canonical_name": "gpt-4o",
       "aliases": [],
       "max_tokens": 128000
@@ -790,6 +814,76 @@
       "aliases": [],
       "max_tokens": 32768
     },
+    "magistral-small-2509": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_resolution": "variable",
+      "notes": "Mistral vision model optimized for multimodal tasks",
+      "source": "Mistral AI 2025 release",
+      "canonical_name": "magistral-small-2509",
+      "aliases": [
+        "mistralai/magistral-small-2509"
+      ],
+      "max_tokens": 128000
+    },
+    "Qwen/Qwen3-VL-8B-Instruct-FP8": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_resolution": "variable",
+      "image_patch_size": 16,
+      "max_image_tokens": 24576,
+      "pixel_grouping": "32x32",
+      "notes": "Qwen3-VL 8B model with FP8 quantization for HuggingFace, optimized for efficient inference",
+      "source": "Qwen team 2025 HuggingFace release",
+      "canonical_name": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+      "aliases": [
+        "qwen3-vl-8b-fp8",
+        "qwen3-vl-8b-instruct-fp8"
+      ],
+      "max_tokens": 262144
+    },
+    "llama3.2-vision:11b": {
+      "max_output_tokens": 4096,
+      "tool_support": "basic",
+      "structured_output": "basic",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "560x560",
+        "1120x560",
+        "560x1120",
+        "1120x1120"
+      ],
+      "max_image_resolution": "1120x1120",
+      "image_patch_size": 14,
+      "max_image_tokens": 6400,
+      "notes": "Llama 3.2 Vision 11B model for Ollama with multimodal capabilities",
+      "source": "Meta AI Llama 3.2 release via Ollama",
+      "canonical_name": "llama3.2-vision:11b",
+      "aliases": [
+        "llama3.2-vision-11b",
+        "llama-3.2-vision:11b"
+      ],
+      "max_tokens": 131072
+    },
     "gemma-2b": {
       "max_output_tokens": 8192,
       "tool_support": "none",
@@ -1089,11 +1183,129 @@
       "image_resolutions": [
         "variable"
       ],
-      "notes": "Qwen3-VL multimodal model with vision and video support",
+      "image_patch_size": 16,
+      "max_image_tokens": 24576,
+      "pixel_grouping": "32x32",
+      "notes": "Qwen3-VL multimodal model with vision and video support, 32x32 pixel patches",
       "source": "Alibaba Qwen3-VL technical report",
       "canonical_name": "qwen3-vl",
       "aliases": [],
       "max_tokens": 131072
+    },
+    "qwen3-vl-8b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "video_support": true,
+      "audio_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_resolution": "variable",
+      "image_patch_size": 16,
+      "max_image_tokens": 24576,
+      "pixel_grouping": "32x32",
+      "notes": "Qwen3-VL 8B dense model with 256K context, optimized for LMStudio",
+      "source": "Alibaba Qwen3-VL technical report 2025",
+      "canonical_name": "qwen3-vl-8b",
+      "aliases": [
+        "qwen/qwen3-vl-8b"
+      ],
+      "max_tokens": 262144
+    },
+    "qwen3-vl-30b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "video_support": true,
+      "audio_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_resolution": "variable",
+      "image_patch_size": 16,
+      "max_image_tokens": 24576,
+      "pixel_grouping": "32x32",
+      "notes": "Qwen3-VL 30B MoE model (30.5B total/3.3B active), best performing vision model, 256K context",
+      "source": "Alibaba Qwen3-VL technical report 2025",
+      "canonical_name": "qwen3-vl-30b",
+      "aliases": [
+        "qwen/qwen3-vl-30b"
+      ],
+      "max_tokens": 262144
+    },
+    "qwen2.5-vl-7b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "image_resolutions": [
+        "56x56 to 3584x3584"
+      ],
+      "max_image_resolution": "3584x3584",
+      "image_patch_size": 14,
+      "max_image_tokens": 16384,
+      "pixel_grouping": "28x28",
+      "notes": "Qwen2.5-VL 7B parameter vision model, 28x28 pixel patches, max 3584x3584 resolution",
+      "source": "Alibaba official docs",
+      "canonical_name": "qwen2.5-vl-7b",
+      "aliases": [
+        "qwen/qwen2.5-vl-7b"
+      ],
+      "max_tokens": 128000
+    },
+    "gemma-3n-e4b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "896x896"
+      ],
+      "max_image_resolution": "896x896",
+      "vision_encoder": "SigLIP-400M",
+      "image_tokens_per_image": 256,
+      "adaptive_windowing": true,
+      "memory_footprint": "3GB",
+      "notes": "Gemma3n-E4B 8B params with 4B effective, 896x896 fixed resolution with adaptive windowing",
+      "source": "Google Gemma3n documentation 2025",
+      "canonical_name": "gemma-3n-e4b",
+      "aliases": [
+        "google/gemma-3n-e4b"
+      ],
+      "max_tokens": 32768
+    },
+    "gemma3-4b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "896x896"
+      ],
+      "max_image_resolution": "896x896",
+      "vision_encoder": "SigLIP-400M",
+      "image_tokens_per_image": 256,
+      "adaptive_windowing": true,
+      "notes": "Gemma3 4B parameter model with vision support, 896x896 fixed resolution with adaptive windowing",
+      "source": "Google Gemma3 documentation 2025",
+      "canonical_name": "gemma3-4b",
+      "aliases": [
+        "gemma3:4b"
+      ],
+      "max_tokens": 128000
     },
     "gemma3n": {
       "max_output_tokens": 8192,
@@ -1103,11 +1315,105 @@
       "vision_support": true,
       "audio_support": true,
       "video_support": true,
-      "notes": "Gemma3n device-optimized multimodal model",
-      "source": "Google Gemma3n announcement",
+      "image_resolutions": [
+        "896x896"
+      ],
+      "max_image_resolution": "896x896",
+      "vision_encoder": "SigLIP-400M",
+      "image_tokens_per_image": 256,
+      "adaptive_windowing": true,
+      "notes": "Gemma3n device-optimized multimodal model, 896x896 fixed resolution with adaptive windowing",
+      "source": "Google Gemma3n announcement 2025",
       "canonical_name": "gemma3n",
       "aliases": [],
       "max_tokens": 128000
+    },
+    "qwen2.5vl:7b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "image_resolutions": [
+        "56x56 to 3584x3584"
+      ],
+      "max_image_resolution": "3584x3584",
+      "image_patch_size": 14,
+      "max_image_tokens": 16384,
+      "pixel_grouping": "28x28",
+      "notes": "Qwen2.5-VL 7B Ollama variant, 28x28 pixel patches, max 3584x3584 resolution",
+      "source": "Ollama model library",
+      "canonical_name": "qwen2.5vl:7b",
+      "aliases": [
+        "qwen2.5vl"
+      ],
+      "max_tokens": 128000
+    },
+    "gemma3:4b-it-qat": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "896x896"
+      ],
+      "max_image_resolution": "896x896",
+      "vision_encoder": "SigLIP-400M",
+      "image_tokens_per_image": 256,
+      "adaptive_windowing": true,
+      "notes": "Gemma3 4B instruct-tuned quantized model for Ollama, 896x896 fixed resolution",
+      "source": "Ollama model library",
+      "canonical_name": "gemma3:4b-it-qat",
+      "aliases": [],
+      "max_tokens": 128000
+    },
+    "gemma3n:e4b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "896x896"
+      ],
+      "max_image_resolution": "896x896",
+      "vision_encoder": "SigLIP-400M",
+      "image_tokens_per_image": 256,
+      "adaptive_windowing": true,
+      "memory_footprint": "3GB",
+      "notes": "Gemma3n-E4B Ollama variant, 8B params with 4B effective, 896x896 fixed resolution",
+      "source": "Ollama model library",
+      "canonical_name": "gemma3n:e4b",
+      "aliases": [],
+      "max_tokens": 32768
+    },
+    "gemma3n:e2b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "896x896"
+      ],
+      "max_image_resolution": "896x896",
+      "vision_encoder": "SigLIP-400M",
+      "image_tokens_per_image": 256,
+      "adaptive_windowing": true,
+      "memory_footprint": "2GB",
+      "notes": "Gemma3n-E2B Ollama variant, 5B params with 2B effective, 896x896 fixed resolution",
+      "source": "Ollama model library",
+      "canonical_name": "gemma3n:e2b",
+      "aliases": [],
+      "max_tokens": 32768
     },
     "seed-oss": {
       "max_output_tokens": 8192,

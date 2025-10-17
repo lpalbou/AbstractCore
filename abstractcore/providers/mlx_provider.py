@@ -139,6 +139,7 @@ class MLXProvider(BaseProvider):
                           messages: Optional[List[Dict[str, str]]] = None,
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
+                          media: Optional[List['MediaContent']] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
@@ -151,8 +152,39 @@ class MLXProvider(BaseProvider):
                 finish_reason="error"
             )
 
+        # Handle media content first if present
+        processed_prompt = prompt
+        if media:
+            try:
+                from ..media.handlers import LocalMediaHandler
+                media_handler = LocalMediaHandler("mlx", self.model_capabilities, model_name=self.model)
+
+                # Create multimodal message combining text and media
+                multimodal_message = media_handler.create_multimodal_message(prompt, media)
+
+                # For MLX (local provider), we get text-embedded content
+                if isinstance(multimodal_message, str):
+                    processed_prompt = multimodal_message
+                else:
+                    # If we get a structured message, extract the content
+                    if isinstance(multimodal_message, dict) and "content" in multimodal_message:
+                        if isinstance(multimodal_message["content"], list):
+                            # Find text content in the structured message
+                            text_content = ""
+                            for item in multimodal_message["content"]:
+                                if item.get("type") == "text":
+                                    text_content = item.get("text", "")
+                                    break
+                            processed_prompt = text_content or prompt
+                        else:
+                            processed_prompt = str(multimodal_message["content"])
+            except ImportError:
+                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+            except Exception as e:
+                self.logger.warning(f"Failed to process media content: {e}")
+
         # Build full prompt with tool support
-        full_prompt = self._build_prompt(prompt, messages, system_prompt, tools)
+        full_prompt = self._build_prompt(processed_prompt, messages, system_prompt, tools)
 
         # MLX generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)

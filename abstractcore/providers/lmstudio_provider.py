@@ -99,6 +99,7 @@ class LMStudioProvider(BaseProvider):
                           messages: Optional[List[Dict[str, str]]] = None,
                           system_prompt: Optional[str] = None,
                           tools: Optional[List[Dict[str, Any]]] = None,
+                          media: Optional[List['MediaContent']] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
                           execute_tools: Optional[bool] = None,
@@ -129,11 +130,42 @@ class LMStudioProvider(BaseProvider):
         if messages:
             chat_messages.extend(messages)
 
-        # Add current prompt
-        chat_messages.append({
-            "role": "user",
-            "content": prompt
-        })
+        # Add current prompt with media support
+        if prompt and prompt.strip():
+            # Handle multimodal message with media content
+            if media:
+                try:
+                    from ..media.handlers import LocalMediaHandler
+                    media_handler = LocalMediaHandler("lmstudio", self.model_capabilities, model_name=self.model)
+
+                    # Create multimodal message combining text and media
+                    multimodal_message = media_handler.create_multimodal_message(prompt, media)
+
+                    # For LMStudio (OpenAI-compatible), we might get a string (embedded text) or dict (structured)
+                    if isinstance(multimodal_message, str):
+                        chat_messages.append({
+                            "role": "user",
+                            "content": multimodal_message
+                        })
+                    else:
+                        chat_messages.append(multimodal_message)
+                except ImportError:
+                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    chat_messages.append({
+                        "role": "user",
+                        "content": prompt
+                    })
+                except Exception as e:
+                    self.logger.warning(f"Failed to process media content: {e}")
+                    chat_messages.append({
+                        "role": "user",
+                        "content": prompt
+                    })
+            else:
+                chat_messages.append({
+                    "role": "user",
+                    "content": prompt
+                })
 
         # Build request payload using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)

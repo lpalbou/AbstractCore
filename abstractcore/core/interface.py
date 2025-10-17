@@ -90,6 +90,7 @@ class AbstractCoreInterface(ABC):
                 messages: Optional[List[Dict[str, str]]] = None,
                 system_prompt: Optional[str] = None,
                 tools: Optional[List[Dict[str, Any]]] = None,
+                media: Optional[List[Union[str, Dict[str, Any], 'MediaContent']]] = None,
                 stream: bool = False,
                 **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
@@ -100,6 +101,7 @@ class AbstractCoreInterface(ABC):
             messages: Optional conversation history
             system_prompt: Optional system prompt
             tools: Optional list of available tools
+            media: Optional list of media files (file paths, MediaContent objects, or dicts)
             stream: Whether to stream the response
             **kwargs: Additional provider-specific parameters
 

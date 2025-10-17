@@ -1,0 +1,828 @@
+{
+  "test_config": {
+    "image_path": "tests/vision_examples/mystery1_mp.jpg",
+    "providers": [
+      "lmstudio",
+      "ollama"
+    ],
+    "query_types": [
+      "keywords",
+      "summary",
+      "structured"
+    ],
+    "total_models": 9
+  },
+  "reference_analysis": {
+    "image_name": "mystery1_mp.jpg",
+    "description": "Mountain hiking trail with wooden fence and scenic landscape",
+    "keywords": [
+      "mountain",
+      "hiking",
+      "trail",
+      "fence",
+      "wooden",
+      "railing",
+      "path",
+      "dirt",
+      "road",
+      "gravel",
+      "sky",
+      "clouds",
+      "sun",
+      "lens flare",
+      "sunlight",
+      "valley",
+      "hills",
+      "landscape",
+      "scenic",
+      "outdoor",
+      "nature",
+      "countryside",
+      "grass",
+      "vegetation",
+      "shadows",
+      "perspective",
+      "depth",
+      "vista",
+      "horizon",
+      "backlighting",
+      "golden hour"
+    ],
+    "summary": "A scenic mountain hiking trail captured during daytime with bright sunlight creating a dramatic lens flare effect. The image shows a dirt and gravel path or trail running through mountainous terrain, with a wooden rail fence along the left side of the path. The trail leads toward distant mountains and valleys visible in the background, creating a strong sense of depth and perspective. The sky is bright blue with scattered white clouds, and the sun is positioned in the upper left creating dramatic backlighting and long shadows cast across the path. Green vegetation and grass can be seen along the trail edges and slopes. The composition uses leading lines from both the path and fence to draw the viewer's eye toward the expansive mountain vista in the distance.",
+    "structured": {
+      "theme": "Outdoor recreation and scenic nature photography",
+      "mood": "Peaceful, inspiring, adventurous, serene",
+      "color_tone": "Warm golden hour lighting with dominant blue sky",
+      "setting": "Mountain trail in rural/natural environment",
+      "weather": "Clear sunny day with partial cloud cover",
+      "time_of_day": "Late morning or early afternoon",
+      "composition": "Leading lines, strong perspective, rule of thirds",
+      "main_objects": [
+        "wooden fence",
+        "dirt trail",
+        "mountains",
+        "vegetation"
+      ],
+      "lighting": "Dramatic backlighting with lens flare and strong contrast",
+      "suggested_activity": "Hiking, walking, outdoor recreation",
+      "dominant_colors": [
+        "blue",
+        "golden yellow",
+        "green",
+        "brown"
+      ],
+      "visual_elements": [
+        "lens flare",
+        "shadows",
+        "depth of field",
+        "leading lines"
+      ],
+      "landscape_type": "Mountainous terrain with rolling hills",
+      "human_presence": "None visible, but trail suggests human activity"
+    }
+  },
+  "results": {
+    "lmstudio/qwen/qwen2.5-vl-7b": {
+      "keywords": "mystery, dark, shadows, eerie, moonlit, forest, night, silence, haunted, spooky, unknown, horror, mysterious, foggy, creepy, abandoned, ominous, shadowy, silent, eerie, gloomy.",
+      "summary": "The image titled \"mystery1_mp.jpg\" presents a captivating scene that exudes an air of suspense and intrigue. The setting appears to be dimly lit, with soft, diffused lighting creating deep shadows and highlighting textures in the environment. A central figure, partially obscured by shadow, is the focal point amidst what seems to be a rugged outdoor landscape, possibly a forest or rocky terrain. The composition centers on this mysterious figure, drawing the viewer into an atmosphere of curiosity and anticipation about their identity and purpose within this enigmatic scene.",
+      "structured": "Theme: [Mystery or Enigma]\nMood: [Suspenseful, Mysterious]\nColor_tone: [Muted and Cold Tones with a Touch of Warmth in Shadows]\nSetting: [Indoor with a Blend of Natural and Artificial Light]\nWeather: [Clear, as there are no visible signs of rain or strong wind]\nTime_of_day: [Appears to be Midday based on the lighting conditions which seem bright but not overly harsh.]\nComposition: [The image has a balanced composition focusing on a central object with secondary elements around it. The arrangement suggests an intentional framing of the subject matter, likely for emphasis.]\nMain_objects: [A central object that appears to be a book or manuscript and possibly some other smaller objects in the background which are harder to identify due to distance and focus.]\nLighting: [Natural light is prominent with soft shadows indicating diffused light sources such as window light, while artificial light appears less dominant but still contributes to the scene's illumination from different angles.]\nSuggested_activity: [The book or manuscript suggests a reading or studying activity might be taking place in this environment, possibly hinting at investigation or research due to its central placement and the setting around it.]\nDominant_colors: [Greys, blues, and browns dominate the scene with subtle hints of green from plants which are slightly out of focus.]\nVisual_elements: [The visual elements include a book as the focal point, possibly a desk or table with scattered items (which could be books, papers, or other study materials), and what appears to be a window in the background contributing natural light. The inclusion of a plant adds life to the otherwise still setting.]\nLandscape_type: [The landscape type is indoors, likely an office or study room given the presence of the book and desk-like setup.]\nHuman_presence: [No direct signs of human activity are visible, suggesting that whoever was there has left recently or the scene captures a quiet moment without any current action.]",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.03225806451612903,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "shadows"
+          ],
+          "found_count": 1,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.14285714285714285,
+          "covered_elements": [
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 88,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 1.169278860092163,
+          "summary": 3.454395055770874,
+          "structured": 10.521588802337646
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "lmstudio",
+        "model": "qwen/qwen2.5-vl-7b",
+        "test_timestamp": "2025-10-17T15:36:32.562444"
+      }
+    },
+    "lmstudio/google/gemma-3n-e4b": {
+      "keywords": "Please provide me with the image! I need to see the image to extract keywords. \n\nOnce you provide the image, I will give you a list of keywords separated by commas, describing:\n\n*   **Objects:** (e.g., car, house, tree)\n*   **Scenery:** (e.g., forest, city, landscape)\n*   **Colors:** (e.g., blue, red, green)\n*   **Lighting:** (e.g., sunlight, shadows, dim)\n*   **Activities:** (e.g., walking, running, reading)\n\n\n\n",
+      "summary": "Please provide me with the image! I am unable to access external URLs or files, so I need you to either **upload the image directly** into our conversation or **describe the image in detail for me**. \n\nOnce you provide the image, I will give you a detailed description of its objects, scenery, lighting, composition, and overall atmosphere in 3-4 sentences. I'm ready when you are! \n",
+      "structured": "Okay, please provide me with the image \"mystery1_mp.jpg\". I need to see the image to analyze it and provide the structured response you requested. \n\n**Once you provide the image, I will fill in the fields below:**\n\n---\n\n**Theme:** [Main theme/subject]\n**Mood:** [Emotional tone/atmosphere]\n**Color_tone:** [Overall color palette description]\n**Setting:** [Location/environment type]\n**Weather:** [Weather conditions visible]\n**Time_of_day:** [Apparent time based on lighting]\n**Composition:** [Photographic composition elements]\n**Main_objects:** [Key objects visible]\n**Lighting:** [Lighting conditions and quality]\n**Suggested_activity:** [What activity this scene suggests]\n**Dominant_colors:** [Primary colors present]\n**Visual_elements:** [Notable visual features]\n**Landscape_type:** [Type of terrain/landscape]\n**Human_presence:** [Any signs of human activity]\n\n---\n\nI'm ready when you are! Just paste the image link or upload it.\n\n\n\n",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.12903225806451613,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "sun",
+            "sunlight",
+            "landscape",
+            "shadows"
+          ],
+          "found_count": 4,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.07142857142857142,
+          "covered_elements": [
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 65,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 2.1921138763427734,
+          "summary": 1.6767518520355225,
+          "structured": 3.7052249908447266
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "lmstudio",
+        "model": "google/gemma-3n-e4b",
+        "test_timestamp": "2025-10-17T15:36:40.168522"
+      }
+    },
+    "lmstudio/mistralai/magistral-small-2509": {
+      "keywords": "shadow, silhouette, house, window, night, fog, dark, blue light, mysterious figure, diary, old photo, candle, clock, storm",
+      "summary": "The image depicts a dimly lit room with an air of mystery. At the center, there's an old wooden table covered in dust, upon which sits a half-burned candle casting long, dancing shadows. Scattered around the table are various objects\u2014a leather-bound book with its pages slightly open, a rusty key, and an antique pocket watch stopped at a specific time. The dark corners of the room are shrouded in shadows, and the faint glow from the candle creates a sense of unease and anticipation.",
+      "structured": "Theme: Mystery/abandoned place\nMood: Suspenseful and ominous\nColor_tone: Dark, muted colors with possible contrast for dramatic effect\nSetting: Abandoned building or eerie natural setting\nWeather: Foggy or overcast to enhance mystery\nTime_of_day: Night or dusk based on dim lighting\nComposition: Use of shadows, leading lines, and focal points like doors or windows\nMain_objects: Abandoned structures, possibly a shadowy figure or unusual objects\nLighting: Dim, perhaps with selective artificial light sources like flashlights or streetlights\nSuggested_activity: Exploring, investigating, or hiding\nDominant_colors: Dark blues, blacks, and muted grays/blues\nVisual_elements: Shadows, focal points like a door or window, possibly silhouettes\nLandscape_type: Urban decay (abandoned building) or dark natural landscape\nHuman_presence: Implied by left-behind objects or footprints, not directly visible",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.21428571428571427,
+          "covered_elements": [
+            "wooden",
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 84,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 22.537616968154907,
+          "summary": 21.258944034576416,
+          "structured": 28.051285982131958
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "lmstudio",
+        "model": "mistralai/magistral-small-2509",
+        "test_timestamp": "2025-10-17T15:37:52.054711"
+      }
+    },
+    "ollama/qwen2.5vl:7b": {
+      "keywords": "mystery, dark, shadowy, eerie, unknown, spooky, light, shadow, forest, trees, night, spooky, fog, silence, unknown, eerie, darkness, shadow, night, ghostly, haunted, shadowy, darkness, eerie, shadow, forest, spooky, night, mystery, shadowy, dark, spooky, fog, unknown, eerie, night, darkness, spooky, fog, forest, unknown, dark, shadowy, spooky, night, eerie, fog, shadow, darkness, mystery, unknown, spooky, night, dark, shadow, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night, dark, eerie, fog, forest, shadow, unknown, spooky, night",
+      "summary": "The image \"mystery1_mp.jpg\" presents a scene that appears to be set in a dimly lit, possibly indoor environment, giving it a mysterious and somewhat eerie atmosphere. The composition centers around a figure that seems to be in a state of rest or perhaps sleep, with their back to the viewer. The lighting is subdued, casting shadows and creating a moody ambiance. The background is blurred, which draws attention to the figure and enhances the feeling of being hidden or concealed, adding to the enigmatic quality of the image. The overall color palette is muted, with dark and cool tones dominating, which contributes to the sense of suspense and intrigue.",
+      "structured": "Theme: [Mystery/Enigma]\nMood: [Mysterious/Intriguing]\nColor_tone: [Muted, with a mix of dark and muted tones]\nSetting: [Indoor]\nWeather: [Not clearly visible]\nTime_of_day: [Not clearly determinable due to lack of direct lighting cues]\nComposition: [Focus on a single object with a shallow depth of field]\nMain_objects: [A single object, possibly a piece of furniture or an object with a textured surface]\nLighting: [Soft, diffuse lighting with a focus on the main object]\nSuggested_activity: [Exploration or investigation of the object]\nDominant_colors: [Dark shades, possibly browns or grays]\nVisual_elements: [Textured surface, subtle shadows]\nLandscape_type: [Indoor, possibly a room]\nHuman_presence: [No visible signs of human activity]",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.14285714285714285,
+          "covered_elements": [
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 109,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 332.5019392967224,
+          "summary": 4.272382020950317,
+          "structured": 5.988713026046753
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "qwen2.5vl:7b",
+        "test_timestamp": "2025-10-17T15:43:34.865903"
+      }
+    },
+    "ollama/gemma3:4b": {
+      "keywords": "Please provide me with the image! I need to see the image to be able to extract the keywords for you. Once you provide the image, I will analyze it and list the keywords as you requested.",
+      "summary": "Okay, I've analyzed the image (mystery1_mp.jpg). Here's a detailed descriptive summary:\n\nThe image depicts a strikingly atmospheric and slightly unsettling scene of a dilapidated, abandoned building at dusk.  A lone, weathered wooden door stands open, framed by a dark, overgrown yard filled with tangled vines and decaying foliage, suggesting a forgotten and neglected space. The lighting is predominantly cool and muted, with a soft, diffused light filtering through the clouds, creating long, dramatic shadows that heighten the sense of mystery and isolation. The overall composition, with the dominant verticality of the building and the framing of the doorway, contributes to a feeling of quiet suspense and a palpable sense of history and abandonment. \n\n---\n\n**Note:** *Since I can't actually \"see\" the image, my description is based on the assumption of what a typical image with the filename \"mystery1_mp.jpg\" would likely contain \u2013 a potentially eerie or evocative scene.*",
+      "structured": "Okay, I've analyzed the image \"mystery1_mp.jpg\". Here's a structured response based on my assessment:\n\n**Theme:** Isolation, Mystery, Rural Decay\n\n**Mood:** Eerie, Melancholy, Foreboding\n\n**Color_tone:** Muted, Cool, Predominantly Grey and Brown with hints of faded color\n\n**Setting:** Abandoned Rural Property \u2013 possibly a farm or homestead\n\n**Weather:** Overcast, Cloudy \u2013 diffused light\n\n**Time_of_day:** Late Afternoon \u2013 the light is soft and directional, suggesting the sun is beginning to set.\n\n**Composition:**  The image utilizes leading lines (perhaps the fence) to draw the eye towards the central structure. There's a sense of depth created by the receding building.\n\n**Main_objects:** A dilapidated farmhouse, a weathered wooden fence, a small outbuilding (possibly a barn or shed), overgrown vegetation.\n\n**Lighting:** Diffused, Soft \u2013 the light is not harsh, creating shadows that add to the atmosphere.\n\n**Suggested_activity:**  Exploring a historical site, photography, storytelling (a ghost story perhaps).\n\n**Dominant_colors:** Grey, Brown, Beige, with touches of green from the vegetation.\n\n**Visual_elements:**  Weathered wood, peeling paint, broken windows, overgrown weeds, a sense of neglect.\n\n**Landscape_type:** Rolling Hills, Rural Terrain\n\n**Human_presence:** None directly visible, but the scene strongly implies past human activity.\n\n\n\n**Note:** *Without seeing the actual image, this analysis is based on a typical interpretation of a photograph labeled \"mystery1_mp.jpg\".  A more precise analysis would require viewing the image itself.*",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.21428571428571427,
+          "covered_elements": [
+            "wooden",
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 148,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 2.7584340572357178,
+          "summary": 4.055607080459595,
+          "structured": 7.365350961685181
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3:4b",
+        "test_timestamp": "2025-10-17T15:43:49.083639"
+      }
+    },
+    "ollama/gemma3:4b-it-qat": {
+      "keywords": "Please provide me with the image! I need to see the image to extract the keywords. Once you upload or describe the image, I'll be happy to list the keywords for you.",
+      "summary": "Okay, I've analyzed the image. Here's a detailed description:\n\nThe image depicts a dimly lit, rain-slicked street scene at night, likely in a European city.  A lone, vintage-looking car, possibly a classic sedan, is parked haphazardly on the curb, casting a faint, blueish glow onto the wet pavement.  The buildings lining the street are tall and imposing, with dark windows and a sense of age, and the overall lighting is dominated by the muted glow of streetlights and the car's headlights, creating a slightly melancholic and mysterious atmosphere. The composition is slightly off-center, drawing the viewer\u2019s eye to the car and the suggestive emptiness of the street, conveying a feeling of quiet solitude and perhaps a hint of intrigue.",
+      "structured": "Okay, I need the image \"mystery1_mp.jpg\" to analyze it. Since I cannot directly access files from your computer, please describe the image to me in as much detail as possible.  The more detail you provide, the better I can fulfill your request. \n\n**Please describe the image to me, focusing on the following aspects:**\n\n*   What is in the image? (People, animals, objects, etc.)\n*   What is the general scene? (e.g., a forest, a city street, a beach)\n*   What is the lighting like? (Bright, dark, soft, harsh)\n*   What colors do you see prominently?\n*   Are there any distinct features or details that stand out?\n\n\nOnce you provide this description, I will analyze it and give you a structured response in the format you requested.",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.07142857142857142,
+          "covered_elements": [
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 119,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 0.14285714285714285,
+          "covered_fields": [
+            "color_tone",
+            "lighting"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "2/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 4.883562088012695,
+          "summary": 1.989664077758789,
+          "structured": 5.016466856002808
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3:4b-it-qat",
+        "test_timestamp": "2025-10-17T15:44:01.016631"
+      }
+    },
+    "ollama/gemma3n:e4b": {
+      "keywords": "Forest, trees, sunlight, shadows, path, green, foliage, leaves, brown, dirt, backpack, hiking, adventure, outdoors, nature, peaceful, tranquil, exploration, journey, wilderness.\n\n\n\n",
+      "summary": "Okay, here's a detailed descriptive summary of the image you sent:\n\nThe image depicts a dimly lit, atmospheric scene featuring a vintage-looking, dark-colored car parked on a cobblestone street.  A lone figure, seemingly a woman with dark hair and a light-colored dress, stands near the car, partially obscured by shadow, adding to the mystery.  The lighting is low-key, with a warm glow emanating from a nearby streetlamp casting long shadows and highlighting the textures of the cobblestones and the car's aged paint. The composition uses a shallow depth of field, focusing attention on the figure and the car while blurring the background, creating a sense of isolation and intrigue, and the overall atmosphere is one of quiet suspense and perhaps a touch of melancholy, evoking a classic film noir aesthetic.\n\n\n\n",
+      "structured": "Okay, I've analyzed the image \"mystery1_mp.jpg\". Here's a structured response based on your requested format:\n\n**Theme:** Abandonment and Decay\n\n**Mood:** Melancholy, eerie, unsettling\n\n**Color_tone:** Cool, desaturated; predominantly blues, grays, and muted greens.\n\n**Setting:** Rural, overgrown field/landscape\n\n**Weather:** Overcast, possibly recently rainy\n\n**Time_of_day:** Late afternoon/early evening; fading light\n\n**Composition:** Rule of thirds, leading lines (fence), depth of field emphasizing the structure.\n\n**Main_objects:** Dilapidated wooden fence, overgrown field, decaying building (barn or similar), distant trees.\n\n**Lighting:** Soft, diffused light; shadows are long and muted.\n\n**Suggested_activity:** Exploration, investigation, or a sense of being lost/isolated.\n\n**Dominant_colors:** Blue, Gray, Green\n\n**Visual_elements:** Texture (decaying wood, overgrown vegetation), repetition (fence posts), contrast (structure vs. nature).\n\n**Landscape_type:** Farmland, rural field\n\n**Human_presence:** Evident through the presence of the fence and the decaying building, suggesting past human habitation.\n\n---\n\n**Note:** This analysis is based solely on the visual information present in the image. Interpretation can be subjective.\n\n\n\n",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.25806451612903225,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "hiking",
+            "path",
+            "dirt",
+            "sun",
+            "sunlight",
+            "outdoor",
+            "nature",
+            "shadows"
+          ],
+          "found_count": 8,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.14285714285714285,
+          "covered_elements": [
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 130,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 3.7018208503723145,
+          "summary": 5.2947728633880615,
+          "structured": 8.423693180084229
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3n:e4b",
+        "test_timestamp": "2025-10-17T15:44:18.474256"
+      }
+    },
+    "ollama/gemma3n:e2b": {
+      "keywords": "Okay, I'm ready to analyze the image. Please provide the image (or a link to it). I will then extract keywords, separated by commas, focusing on objects, scenery, colors, lighting, and activities. \n\n**Once you provide the image, I will give you the keywords.**\n\n**In the meantime, here's a general idea of what I'll be looking for:**\n\n*   **Objects:** People, animals, vehicles, buildings, furniture, tools, etc.\n*   **Scenery:** Landscape, city, forest, beach, mountains, sky, etc.\n*   **Colors:** Blue, red, green, yellow, brown, white, black, etc.\n*   **Lighting:** Bright, dim, sunny, cloudy, artificial, natural, etc.\n*   **Activities:** Walking, running, talking, reading, playing, working, etc.\n\n\n\n",
+      "summary": "Please provide me with the image! I need the image file (or a link to it) to be able to describe it. \n\nOnce you provide the image, I will analyze it and give you a detailed summary covering the following aspects:\n\n*   **Objects:** What specific objects are visible (people, animals, buildings, vehicles, etc.)?\n*   **Scenery:** What is the setting like? (indoor/outdoor, landscape, urban, etc.) What are the prominent features of the scenery?\n*   **Lighting:** What is the quality and direction of the light? (natural, artificial, soft, harsh, etc.) How does the lighting affect the scene?\n*   **Composition:** How are the elements arranged within the frame? (rule of thirds, leading lines, symmetry, etc.)\n*   **Atmosphere:** What is the overall feeling or mood conveyed by the image? (e.g., peaceful, tense, mysterious, joyful, etc.)\n\nI will then synthesize these observations into a 3-4 sentence descriptive summary.\n\n\n\n**Just paste the image link or upload the image file, and I'll get started!**\n\n\n\n",
+      "structured": "Okay, I will analyze the image \"mystery1_mp.jpg\" and provide a structured response in the requested format. Please note that without seeing the image, I will make educated guesses based on the filename and common visual tropes.  I will do my best to provide a reasonable analysis.\n\n**Theme:** Abandonment and Decay\n\n**Mood:** Melancholy, eerie, unsettling\n\n**Color_tone:** Desaturated, muted browns, grays, and greens.  A sense of faded color.\n\n**Setting:** Rural, possibly a decaying farmhouse or rural building.\n\n**Weather:** Overcast, potentially misty or foggy.\n\n**Time_of_day:** Late afternoon or early evening, with long shadows.\n\n**Composition:**  Rule of thirds, with a central focal point (likely a building or object).  Emphasis on depth of field, drawing the viewer into the scene.  Possible leading lines.\n\n**Main_objects:** Dilapidated building (farmhouse/barn), overgrown vegetation, possibly a vehicle or other decaying objects.\n\n**Lighting:** Soft, diffused light.  Long shadows suggest a low sun.  The light emphasizes textures and decay.\n\n**Suggested_activity:** Exploring, investigating, or simply observing the scene.  A sense of quiet contemplation.\n\n**Dominant_colors:** Brown, gray, green, muted yellow.\n\n**Visual_elements:**  Overgrown plants, weathered textures, broken windows, decaying wood, a sense of stillness.\n\n**Landscape_type:** Rural, agricultural landscape.\n\n**Human_presence:**  Signs of past human activity (the building itself), but no clear signs of current human presence.\n\n**Note:**  Since I cannot see the image, this analysis is based on the filename and general assumptions about the image content. A real analysis would require viewing the image.\n\n\n\n",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.12903225806451613,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "mountain",
+            "sky",
+            "sun",
+            "landscape"
+          ],
+          "found_count": 4,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.07142857142857142,
+          "covered_elements": [
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 157,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 4.726407289505005,
+          "summary": 4.722442865371704,
+          "structured": 7.160438776016235
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3n:e2b",
+        "test_timestamp": "2025-10-17T15:44:35.120720"
+      }
+    },
+    "ollama/llama3.2-vision:11b": {
+      "keywords": "Unfortunately, I don't have the ability to access or view images. Can you please provide a description or text of the image instead? I'll do my best to extract keywords for you!",
+      "summary": "This image appears to be a dark and atmospheric photograph of a misty, abandoned alleyway. The scene is shrouded in a thick, eerie fog that reduces visibility to just a few feet. In the center of the frame, a faintly visible streetlight casts an otherworldly glow on the wet pavement, illuminating a few scattered trash cans and a broken bike. The overall mood is one of foreboding and unease, with the fog and shadows creating a sense of mystery and potential danger.",
+      "structured": "Here is the analysis of the image:\n\n**Theme:** Abandoned/Decay\n**Mood:** Mysterious/Ominous\n**Color_tone:** Muted/Dark with hints of green\n**Setting:** Old, abandoned/ruined building/structure\n**Weather:** Overcast/Cloudy\n**Time_of_day:** Late Afternoon/Early Evening\n**Composition:** Symmetrical/ Centered with negative space\n**Main_objects:** Old door, rusty gate, overgrown vegetation\n**Lighting:** Low/Soft with shadows, possible mist or fog\n**Suggested_activity:** Exploration/Investigation\n**Dominant_colors:** Greens (overgrown vegetation), browns (wood/stone), grays (weathered metal)\n**Visual_elements:** Distressed/Decaying architecture, rusty metal, overgrown vegetation, mist/fog\n**Landscape_type:** Urban/Rural/Abandoned\n**Human_presence:** Minimal/No signs of recent human activity",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.14285714285714285,
+          "covered_elements": [
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 82,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 5.908071994781494,
+          "summary": 3.708777904510498,
+          "structured": 7.30471396446228
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "llama3.2-vision:11b",
+        "test_timestamp": "2025-10-17T15:44:52.075281"
+      }
+    }
+  },
+  "summary": {
+    "overall": {
+      "total_models": 9,
+      "successful_models": 9,
+      "overall_success_rate": 1.0,
+      "test_timestamp": "2025-10-17T15:44:52.075572"
+    },
+    "by_provider": {
+      "lmstudio": {
+        "models_tested": 3,
+        "total_tests": 9,
+        "successful_tests": 9,
+        "success_rate": 1.0,
+        "avg_response_time": 10.507466713587442
+      },
+      "ollama": {
+        "models_tested": 6,
+        "total_tests": 18,
+        "successful_tests": 18,
+        "success_rate": 1.0,
+        "avg_response_time": 23.321292175187
+      }
+    },
+    "by_query_type": {
+      "keywords": {
+        "successful_tests": 9,
+        "avg_quality_score": 0.0,
+        "avg_response_time": 42.26436058680216
+      },
+      "summary": {
+        "successful_tests": 9,
+        "avg_quality_score": 0.1349206349206349,
+        "avg_response_time": 5.603748639424642
+      },
+      "structured": {
+        "successful_tests": 9,
+        "avg_quality_score": 0.9047619047619047,
+        "avg_response_time": 9.281941837734646
+      }
+    }
+  }
+}
