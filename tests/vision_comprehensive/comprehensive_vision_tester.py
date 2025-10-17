@@ -35,7 +35,7 @@ class ComprehensiveVisionTester:
 
     def __init__(self, image_path: str, providers: List[str] = None):
         self.image_path = Path(image_path)
-        self.providers = providers or ["lmstudio", "ollama"]
+        self.providers = providers or ["lmstudio", "ollama", "huggingface", "anthropic", "openai"]
         self.results = []
 
         # Test configuration
@@ -59,6 +59,12 @@ class ComprehensiveVisionTester:
             ],
             "huggingface": [
                 "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"
+            ],
+            "anthropic": [
+                "claude-3.5-haiku"
+            ],
+            "openai": [
+                "gpt-5-mini"
             ]
         }
 
@@ -352,7 +358,7 @@ async def main():
     """Main test runner."""
     parser = argparse.ArgumentParser(description="Comprehensive Vision Testing")
     parser.add_argument("--image", required=True, help="Path to test image")
-    parser.add_argument("--providers", nargs="+", default=["lmstudio", "ollama"],
+    parser.add_argument("--providers", nargs="+", default=["lmstudio", "ollama", "huggingface", "anthropic", "openai"],
                        help="Providers to test")
     parser.add_argument("--output", help="Output file name")
     parser.add_argument("--save-results", action="store_true", help="Save results to file")

@@ -233,7 +233,7 @@
         "assistant_prefix": "Assistant: ",
         "assistant_suffix": "\n",
         "tool_format": "native",
-        "patterns": ["gemma3n", "gemma3n:e4b", "gemma3n:e2b"]
+        "patterns": ["gemma3n", "gemma3n:e4b", "gemma3n:e2b", "gemma-3n", "google/gemma-3n"]
       },
     "paligemma": {
       "description": "Google's PaliGemma vision-language architecture",
