@@ -101,7 +101,8 @@ class SimpleCLI:
             print("─" * 50)
             print("  /help                    Show this comprehensive help")
             print("  /quit                    Exit the CLI")
-            print("  /clear                   Clear conversation history")
+            print("  /clear                   Clear the screen (like unix terminal)")
+            print("  /reset                   Reset conversation history")
             print("  /status                  Show system status and capabilities")
             
             print("\n💬 CONVERSATION MANAGEMENT")
@@ -178,8 +179,13 @@ class SimpleCLI:
             print("=" * 70 + "\n")
 
         elif cmd == 'clear':
+            # Clear the screen like in unix terminal
+            import os
+            os.system('cls' if os.name == 'nt' else 'clear')
+
+        elif cmd == 'reset':
             self.session.clear_history(keep_system=True)
-            print("🧹 History cleared")
+            print("🧹 Chat history reset")
 
         elif cmd == 'stream':
             self.stream_mode = not self.stream_mode
