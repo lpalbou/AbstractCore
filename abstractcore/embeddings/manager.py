@@ -119,7 +119,7 @@ class EmbeddingManager:
     def __init__(
         self,
         model: str = None,
-        provider: str = "huggingface",
+        provider: str = None,
         backend: Union[str, EmbeddingBackend] = "auto",
         cache_dir: Optional[Path] = None,
         cache_size: int = 1000,
@@ -130,15 +130,20 @@ class EmbeddingManager:
 
         Args:
             model: Model identifier (HuggingFace model ID for HF provider, model name for others).
-            provider: Embedding provider ('huggingface', 'ollama', 'lmstudio'). Defaults to 'huggingface'.
+                  If None, uses configured default from AbstractCore config system.
+            provider: Embedding provider ('huggingface', 'ollama', 'lmstudio').
+                     If None, uses configured default from AbstractCore config system.
             backend: Inference backend for HuggingFace ('auto', 'pytorch', 'onnx', 'openvino')
             cache_dir: Directory for persistent cache. Defaults to ~/.abstractcore/embeddings
             cache_size: Maximum number of embeddings to cache in memory
             output_dims: Output dimensions for Matryoshka truncation (if supported by provider)
             trust_remote_code: Whether to trust remote code (HuggingFace only)
         """
-        # Store provider
-        self.provider = provider.lower()
+        # Load configuration defaults, but ONLY if parameters weren't explicitly provided
+        self._load_config_defaults(model, provider)
+
+        # Store provider (after config loading)
+        self.provider = self._resolved_provider.lower()
         
         # Validate provider
         if self.provider not in ["huggingface", "ollama", "lmstudio"]:
@@ -151,16 +156,16 @@ class EmbeddingManager:
         # Set up model identifier
         if self.provider == "huggingface":
             # Model configuration - HuggingFace only
-            if model is None:
-                model = get_default_model()  # Returns alias "all-minilm-l6-v2"
+            # Use resolved model (which includes config defaults if not explicitly provided)
+            resolved_model = self._resolved_model
 
             # Handle model aliases from our favored models config
-            if model in list_available_models():
-                self.model_config = get_model_config(model)
+            if resolved_model in list_available_models():
+                self.model_config = get_model_config(resolved_model)
                 self.model_id = self.model_config.model_id
             else:
                 # Direct HuggingFace model ID
-                self.model_id = model
+                self.model_id = resolved_model
                 self.model_config = None
 
             self.backend = EmbeddingBackend(backend) if backend != "auto" else None
@@ -175,22 +180,22 @@ class EmbeddingManager:
                     logger.warning(f"Dimension {output_dims} not in supported dims {self.model_config.matryoshka_dims}")
         else:
             # Ollama or LMStudio provider
-            if model is None:
+            if self._resolved_model is None:
                 raise ValueError(f"Model name is required for {self.provider} provider")
-            
-            self.model_id = model
+
+            self.model_id = self._resolved_model
             self.backend = None
             self.trust_remote_code = False
             
             # Create provider instance for delegation
             if self.provider == "ollama":
                 from ..providers.ollama_provider import OllamaProvider
-                self._provider_instance = OllamaProvider(model=model)
-                logger.info(f"Initialized Ollama embedding provider with model: {model}")
+                self._provider_instance = OllamaProvider(model=self._resolved_model)
+                logger.info(f"Initialized Ollama embedding provider with model: {self._resolved_model}")
             elif self.provider == "lmstudio":
                 from ..providers.lmstudio_provider import LMStudioProvider
-                self._provider_instance = LMStudioProvider(model=model)
-                logger.info(f"Initialized LMStudio embedding provider with model: {model}")
+                self._provider_instance = LMStudioProvider(model=self._resolved_model)
+                logger.info(f"Initialized LMStudio embedding provider with model: {self._resolved_model}")
 
         # Common setup for all providers
         self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".abstractcore" / "embeddings"
@@ -234,6 +239,39 @@ class EmbeddingManager:
                 EventType.EMBEDDING_BATCH_GENERATED = "embedding_batch_generated"
         else:
             self.has_events = False
+
+    def _load_config_defaults(self, model: Optional[str], provider: Optional[str]) -> None:
+        """Load configuration defaults, but ONLY for parameters not explicitly provided.
+
+        This ensures that direct parameters always take precedence over config defaults.
+        """
+        try:
+            # Import config manager - use lazy import to avoid circular dependencies
+            from ..config import get_config_manager
+            config_manager = get_config_manager()
+            embeddings_config = config_manager.config.embeddings
+
+            # Apply defaults ONLY if not explicitly provided
+            if provider is None:
+                self._resolved_provider = embeddings_config.provider or "huggingface"
+                logger.debug(f"Using configured default provider: {self._resolved_provider}")
+            else:
+                self._resolved_provider = provider
+                logger.debug(f"Using explicit provider parameter: {self._resolved_provider}")
+
+            if model is None:
+                # Use config default, or fallback to EmbeddingManager's original default
+                self._resolved_model = embeddings_config.model or "all-minilm-l6-v2"
+                logger.debug(f"Using configured default model: {self._resolved_model}")
+            else:
+                self._resolved_model = model
+                logger.debug(f"Using explicit model parameter: {self._resolved_model}")
+
+        except Exception as e:
+            # Fallback to hardcoded defaults if config system fails
+            logger.debug(f"Config system unavailable, using fallback defaults: {e}")
+            self._resolved_provider = provider or "huggingface"
+            self._resolved_model = model or "all-minilm-l6-v2"
 
     def _load_model(self):
         """Load the HuggingFace embedding model with optimal backend and reduced warnings."""

@@ -328,6 +328,72 @@ Each application has comprehensive documentation with examples and advanced usag
 - Integration with shell scripts and automation
 - Standardized text processing tasks
 
+## Configuration
+
+AbstractCore provides a **centralized configuration system** that manages default models, cache directories, and logging settings from a single location. This eliminates the need to specify `--provider` and `--model` parameters repeatedly.
+
+### Quick Setup
+
+```bash
+# Check current configuration (shows how to change each setting)
+abstractcore --status
+
+# Set defaults for all applications
+abstractcore --set-global-default ollama/llama3:8b
+
+# Or configure specific applications (examples of customization)
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+abstractcore --set-app-default judge anthropic claude-3-5-haiku
+
+# Configure logging (common examples)
+abstractcore --set-console-log-level WARNING  # Reduce console output
+abstractcore --set-console-log-level NONE     # Disable console logging
+abstractcore --enable-file-logging            # Save logs to files
+abstractcore --enable-debug-logging           # Full debug mode
+
+# Set API keys as needed
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key
+
+# Verify configuration (includes change commands for each setting)
+abstractcore --status
+```
+
+### Priority System
+
+AbstractCore uses a clear priority system where explicit parameters always override defaults:
+
+1. **Explicit parameters** (highest priority): `summarizer doc.txt --provider openai --model gpt-4o-mini`
+2. **App-specific config**: `abstractcore --set-app-default summarizer openai gpt-4o-mini`
+3. **Global config**: `abstractcore --set-global-default openai/gpt-4o-mini`
+4. **Built-in defaults** (lowest priority): `huggingface/unsloth/Qwen3-4B-Instruct-2507-GGUF`
+
+### Usage After Configuration
+
+Once configured, apps use your defaults automatically:
+
+```bash
+# Before configuration (requires explicit parameters)
+summarizer document.pdf --provider openai --model gpt-4o-mini
+
+# After configuration (uses configured defaults)
+summarizer document.pdf
+
+# Explicit parameters still override when needed
+summarizer document.pdf --provider anthropic --model claude-3-5-sonnet
+```
+
+### Configuration Features
+
+- **Application defaults**: Different optimal models for each app
+- **Cache directories**: Configurable cache locations for models and data
+- **Logging control**: Package-wide logging levels and debug mode
+- **API key management**: Centralized API key storage
+- **Interactive setup**: `abstractcore --configure` for guided configuration
+
+**Complete guide**: [Centralized Configuration](docs/centralized-config.md)
+
 ## Documentation
 
 **📚 Complete Documentation:** [docs/](docs/) - Full documentation index and navigation guide

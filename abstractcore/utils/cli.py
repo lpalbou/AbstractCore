@@ -1205,7 +1205,7 @@ Examples:
   python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
   python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini --stream
   python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-20241022
-  python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --prompt "What is Python?"
+  python -m abstractcore.utils.cli --prompt "What is Python?"  # Uses configured defaults
 
 Key Commands:
   /help                           Show comprehensive command guide
@@ -1221,17 +1221,21 @@ Key Commands:
 
 Tools: list_files, search_files, read_file, write_file, execute_command
 
+Configuration:
+  Set defaults with: abstractcore --set-app-default cli <provider> <model>
+  Check status with: abstractcore --status
+
 Note: This is a basic demonstrator with limited capabilities. For production
 use cases requiring advanced reasoning, ReAct patterns, or complex tool chains,
 build custom solutions using the AbstractCore framework directly.
         """
     )
 
-    # Required arguments
-    parser.add_argument('--provider', required=True,
+    # Optional arguments (no longer required - will use configured defaults)
+    parser.add_argument('--provider',
                        choices=['openai', 'anthropic', 'ollama', 'huggingface', 'mlx', 'lmstudio'],
-                       help='LLM provider to use')
-    parser.add_argument('--model', required=True, help='Model name to use')
+                       help='LLM provider to use (optional - uses configured default)')
+    parser.add_argument('--model', help='Model name to use (optional - uses configured default)')
 
     # Optional arguments
     parser.add_argument('--stream', action='store_true', help='Enable streaming mode')
@@ -1246,6 +1250,42 @@ build custom solutions using the AbstractCore framework directly.
 
     args = parser.parse_args()
 
+    # Get provider and model from configuration if not specified
+    if not args.provider or not args.model:
+        try:
+            from ..config import get_config_manager
+            config_manager = get_config_manager()
+            default_provider, default_model = config_manager.get_app_default('cli')
+
+            # Use configured defaults if available
+            provider = args.provider or default_provider
+            model = args.model or default_model
+
+            if not provider or not model:
+                print("❌ Error: No provider/model specified and no defaults configured")
+                print()
+                print("💡 Solutions:")
+                print("   1. Specify explicitly: --provider ollama --model gemma3:1b-it-qat")
+                print("   2. Configure defaults: abstractcore --set-app-default cli ollama gemma3:1b-it-qat")
+                print("   3. Check current config: abstractcore --status")
+                sys.exit(1)
+
+            # Show what we're using if defaults were applied
+            if not args.provider or not args.model:
+                if not args.prompt:  # Only show in interactive mode
+                    print(f"🔧 Using configured defaults: {provider}/{model}")
+                    print("   (Configure with: abstractcore --set-app-default cli <provider> <model>)")
+                    print()
+
+        except Exception as e:
+            print(f"❌ Error loading configuration: {e}")
+            print("💡 Please specify --provider and --model explicitly")
+            sys.exit(1)
+    else:
+        # Use explicit arguments
+        provider = args.provider
+        model = args.model
+
     # Build kwargs
     kwargs = {'temperature': args.temperature}
     if args.base_url:
@@ -1255,8 +1295,8 @@ build custom solutions using the AbstractCore framework directly.
 
     # Create CLI (suppress banner for single-prompt mode)
     cli = SimpleCLI(
-        provider=args.provider,
-        model=args.model,
+        provider=provider,
+        model=model,
         stream=args.stream,
         max_tokens=args.max_tokens,
         debug=args.debug,

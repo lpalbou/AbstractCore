@@ -146,9 +146,10 @@ def download_vision_model(model_name: str = "blip-base-caption") -> bool:
         # Configure AbstractCore to use this model
         from abstractcore.config import get_config_manager
         config_manager = get_config_manager()
-        config_manager.set_vision_caption(f"local/{model_name}")
+        # Use the proper HuggingFace model identifier
+        config_manager.set_vision_provider("huggingface", hf_id)
 
-        print(f"✅ Configured AbstractCore to use local model: {model_name}")
+        print(f"✅ Configured AbstractCore to use HuggingFace model: {hf_id}")
         print(f"🎯 Vision fallback is now enabled!")
 
         return True
@@ -170,15 +171,23 @@ def add_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--reset", action="store_true",
                        help="Reset all configuration to defaults")
 
-    # Default model settings
-    parser.add_argument("--set-default-model", metavar="MODEL",
-                       help="Set default model (format: provider/model or model)")
+    # Global default model settings
+    parser.add_argument("--set-global-default", metavar="MODEL",
+                       help="Set global default model (format: provider/model)")
     parser.add_argument("--set-default-provider", metavar="PROVIDER",
-                       help="Set default provider")
+                       help="Set global default provider")
     parser.add_argument("--set-chat-model", metavar="MODEL",
                        help="Set default chat model")
     parser.add_argument("--set-code-model", metavar="MODEL",
                        help="Set default code model")
+
+    # App-specific defaults
+    parser.add_argument("--set-app-default", nargs=3, metavar=("APP", "PROVIDER", "MODEL"),
+                       help="Set app-specific default (app: cli, summarizer, extractor, judge)")
+
+    # Legacy compatibility
+    parser.add_argument("--set-default-model", metavar="MODEL",
+                       help="Set global default model (legacy, same as --set-global-default)")
 
     # Vision configuration
     parser.add_argument("--set-vision-caption", metavar="MODEL",
@@ -204,22 +213,79 @@ def add_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--list-api-keys", action="store_true",
                        help="List API key status for all providers")
 
+    # Cache configuration
+    parser.add_argument("--set-default-cache-dir", metavar="PATH",
+                       help="Set default cache directory")
+    parser.add_argument("--set-huggingface-cache-dir", metavar="PATH",
+                       help="Set HuggingFace cache directory")
+    parser.add_argument("--set-local-models-cache-dir", metavar="PATH",
+                       help="Set local models cache directory")
+
+    # Logging configuration
+    parser.add_argument("--set-console-log-level", metavar="LEVEL",
+                       choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NONE"],
+                       help="Set console logging level")
+    parser.add_argument("--set-file-log-level", metavar="LEVEL",
+                       choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NONE"],
+                       help="Set file logging level")
+    parser.add_argument("--set-log-base-dir", metavar="PATH",
+                       help="Set base directory for log files")
+    parser.add_argument("--enable-debug-logging", action="store_true",
+                       help="Enable debug logging for both console and file")
+    parser.add_argument("--disable-console-logging", action="store_true",
+                       help="Disable console logging")
+    parser.add_argument("--enable-file-logging", action="store_true",
+                       help="Enable file logging")
+    parser.add_argument("--disable-file-logging", action="store_true",
+                       help="Disable file logging")
+
 def print_status():
     """Print comprehensive configuration status."""
     config_manager = get_config_manager()
     status = config_manager.get_status()
 
     print("📋 AbstractCore Configuration Status")
-    print("=" * 60)
+    print("=" * 70)
 
-    # Default models
-    print("\n🎯 Default Models:")
-    defaults = status["defaults"]
-    if defaults["provider"] and defaults["model"]:
-        print(f"   Primary: {defaults['provider']}/{defaults['model']}")
+    # App-specific defaults (most important)
+    print("\n🎯 Application Defaults:")
+    app_defaults = status["app_defaults"]
+
+    print("   CLI (utils):   ", end="")
+    cli_info = app_defaults["cli"]
+    if cli_info["provider"] and cli_info["model"]:
+        print(f"{cli_info['provider']}/{cli_info['model']}")
     else:
-        print(f"   Primary: {defaults['model'] or '❌ Not set'}")
-    print(f"   Provider: {defaults['provider'] or '❌ Not set'}")
+        print("❌ Not configured")
+
+    print("   Summarizer:    ", end="")
+    sum_info = app_defaults["summarizer"]
+    if sum_info["provider"] and sum_info["model"]:
+        print(f"{sum_info['provider']}/{sum_info['model']}")
+    else:
+        print("❌ Not configured")
+
+    print("   Extractor:     ", end="")
+    ext_info = app_defaults["extractor"]
+    if ext_info["provider"] and ext_info["model"]:
+        print(f"{ext_info['provider']}/{ext_info['model']}")
+    else:
+        print("❌ Not configured")
+
+    print("   Judge:         ", end="")
+    judge_info = app_defaults["judge"]
+    if judge_info["provider"] and judge_info["model"]:
+        print(f"{judge_info['provider']}/{judge_info['model']}")
+    else:
+        print("❌ Not configured")
+
+    # Global defaults
+    print("\n🌐 Global Fallback:")
+    defaults = status["global_defaults"]
+    if defaults["provider"] and defaults["model"]:
+        print(f"   Default: {defaults['provider']}/{defaults['model']}")
+    else:
+        print("   Default: ❌ Not set")
     print(f"   Chat: {defaults['chat_model'] or '❌ Not set'}")
     print(f"   Code: {defaults['code_model'] or '❌ Not set'}")
 
@@ -244,6 +310,27 @@ def print_status():
     print("\n🔑 API Keys:")
     for provider, status_text in status["api_keys"].items():
         print(f"   {provider}: {status_text}")
+
+    # Cache Configuration
+    print("\n💾 Cache Directories:")
+    cache = status["cache"]
+    print(f"   Default: {cache['default_cache_dir']} (change: --set-default-cache-dir PATH)")
+    print(f"   HuggingFace: {cache['huggingface_cache_dir']} (change: --set-huggingface-cache-dir PATH)")
+    print(f"   Local Models: {cache['local_models_cache_dir']} (change: --set-local-models-cache-dir PATH)")
+    print(f"   Status: {cache['status']}")
+
+    # Logging Configuration
+    print("\n📝 Logging:")
+    logging_info = status["logging"]
+    print(f"   Status: {logging_info['status']}")
+    print(f"   Console Level: {logging_info['console_level']} (change: --set-console-log-level LEVEL)")
+    print(f"   File Level: {logging_info['file_level']} (change: --set-file-log-level LEVEL)")
+    file_status = "✅ Enabled" if logging_info['file_logging_enabled'] else "❌ Disabled"
+    file_cmd = "--disable-file-logging" if logging_info['file_logging_enabled'] else "--enable-file-logging"
+    print(f"   File Logging: {file_status} (change: {file_cmd})")
+    print(f"   Log Directory: {logging_info['log_base_dir']} (change: --set-log-base-dir PATH)")
+    print(f"   Verbatim Capture: {'✅ Enabled' if logging_info['verbatim_enabled'] else '❌ Disabled'}")
+    print(f"   Quick commands: --enable-debug-logging, --disable-console-logging")
 
     print(f"\n📁 Config file: {status['config_file']}")
 
@@ -316,15 +403,30 @@ def handle_commands(args) -> bool:
         print("✅ Configuration reset to defaults")
         handled = True
 
-    # Default model settings
-    if args.set_default_model:
-        config_manager.set_default_model(args.set_default_model)
-        print(f"✅ Set default model to: {args.set_default_model}")
+    # Global default model settings
+    if args.set_global_default:
+        config_manager.set_global_default_model(args.set_global_default)
+        print(f"✅ Set global default to: {args.set_global_default}")
+        handled = True
+
+    if args.set_default_model:  # Legacy compatibility
+        config_manager.set_global_default_model(args.set_default_model)
+        print(f"✅ Set global default to: {args.set_default_model}")
         handled = True
 
     if args.set_default_provider:
-        config_manager.set_default_provider(args.set_default_provider)
-        print(f"✅ Set default provider to: {args.set_default_provider}")
+        config_manager.set_global_default_provider(args.set_default_provider)
+        print(f"✅ Set global default provider to: {args.set_default_provider}")
+        handled = True
+
+    # App-specific defaults
+    if args.set_app_default:
+        app, provider, model = args.set_app_default
+        try:
+            config_manager.set_app_default(app, provider, model)
+            print(f"✅ Set {app} default to: {provider}/{model}")
+        except ValueError as e:
+            print(f"❌ Error: {e}")
         handled = True
 
     if args.set_chat_model:
@@ -393,6 +495,58 @@ def handle_commands(args) -> bool:
         print("🔑 API Key Status:")
         for provider, status_text in status["api_keys"].items():
             print(f"   {provider}: {status_text}")
+        handled = True
+
+    # Cache configuration
+    if args.set_default_cache_dir:
+        config_manager.set_default_cache_dir(args.set_default_cache_dir)
+        print(f"✅ Set default cache directory to: {args.set_default_cache_dir}")
+        handled = True
+
+    if args.set_huggingface_cache_dir:
+        config_manager.set_huggingface_cache_dir(args.set_huggingface_cache_dir)
+        print(f"✅ Set HuggingFace cache directory to: {args.set_huggingface_cache_dir}")
+        handled = True
+
+    if args.set_local_models_cache_dir:
+        config_manager.set_local_models_cache_dir(args.set_local_models_cache_dir)
+        print(f"✅ Set local models cache directory to: {args.set_local_models_cache_dir}")
+        handled = True
+
+    # Logging configuration
+    if args.set_console_log_level:
+        config_manager.set_console_log_level(args.set_console_log_level)
+        print(f"✅ Set console log level to: {args.set_console_log_level}")
+        handled = True
+
+    if args.set_file_log_level:
+        config_manager.set_file_log_level(args.set_file_log_level)
+        print(f"✅ Set file log level to: {args.set_file_log_level}")
+        handled = True
+
+    if args.set_log_base_dir:
+        config_manager.set_log_base_dir(args.set_log_base_dir)
+        print(f"✅ Set log base directory to: {args.set_log_base_dir}")
+        handled = True
+
+    if args.enable_debug_logging:
+        config_manager.enable_debug_logging()
+        print("✅ Enabled debug logging for both console and file")
+        handled = True
+
+    if args.disable_console_logging:
+        config_manager.disable_console_logging()
+        print("✅ Disabled console logging")
+        handled = True
+
+    if args.enable_file_logging:
+        config_manager.enable_file_logging()
+        print("✅ Enabled file logging")
+        handled = True
+
+    if args.disable_file_logging:
+        config_manager.disable_file_logging()
+        print("✅ Disabled file logging")
         handled = True
 
     return handled

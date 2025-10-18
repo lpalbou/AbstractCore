@@ -25,6 +25,52 @@ try:
 except ImportError:
     STRUCTLOG_AVAILABLE = False
 
+# Import configuration manager
+def _get_config_defaults():
+    """Get configuration defaults from centralized config system."""
+    try:
+        from ..config import get_config_manager
+        config_manager = get_config_manager()
+        logging_config = config_manager.config.logging
+
+        # Convert string levels to logging constants
+        level_map = {
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR,
+            "CRITICAL": logging.CRITICAL,
+            "NONE": logging.CRITICAL + 10  # Higher than CRITICAL to effectively disable logging
+        }
+
+        console_level = level_map.get(logging_config.console_level, logging.WARNING)
+        file_level = level_map.get(logging_config.file_level, logging.DEBUG)
+
+        # Use log_base_dir if file logging enabled
+        log_dir = None
+        if logging_config.file_logging_enabled and logging_config.log_base_dir:
+            # Expand user home directory
+            log_dir = str(Path(logging_config.log_base_dir).expanduser())
+
+        return {
+            'console_level': console_level,
+            'file_level': file_level,
+            'log_dir': log_dir,
+            'verbatim_enabled': logging_config.verbatim_enabled,
+            'console_json': logging_config.console_json,
+            'file_json': logging_config.file_json
+        }
+    except Exception:
+        # Fallback to hardcoded defaults if config unavailable
+        return {
+            'console_level': logging.WARNING,
+            'file_level': logging.DEBUG,
+            'log_dir': None,
+            'verbatim_enabled': True,
+            'console_json': False,
+            'file_json': True
+        }
+
 # Global configuration
 class LogConfig:
     """Global logging configuration singleton."""
@@ -40,14 +86,18 @@ class LogConfig:
         if self._initialized:
             return
 
-        # Default configuration
-        self.console_level = logging.WARNING
-        self.file_level = logging.DEBUG
-        self.log_dir = None
-        self.verbatim_enabled = True
-        self.console_json = False
-        self.file_json = True
+        # Load configuration from centralized config system
+        config_defaults = _get_config_defaults()
+        self.console_level = config_defaults['console_level']
+        self.file_level = config_defaults['file_level']
+        self.log_dir = config_defaults['log_dir']
+        self.verbatim_enabled = config_defaults['verbatim_enabled']
+        self.console_json = config_defaults['console_json']
+        self.file_json = config_defaults['file_json']
         self._initialized = True
+
+        # Setup logging with configuration
+        self._setup_structlog()
 
     def configure(self,
                   console_level: Optional[int] = None,
@@ -140,7 +190,9 @@ class LogConfig:
         # File handler
         if self.log_dir and self.file_level is not None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_file = Path(self.log_dir) / f"abstractcore_{timestamp}.log"
+            log_dir_expanded = Path(self.log_dir).expanduser()
+            log_dir_expanded.mkdir(parents=True, exist_ok=True)
+            log_file = log_dir_expanded / f"abstractcore_{timestamp}.log"
 
             file_handler = logging.FileHandler(log_file)
             file_handler.setLevel(self.file_level)
@@ -154,13 +206,19 @@ class LogConfig:
             file_handler.setFormatter(file_formatter)
             root_logger.addHandler(file_handler)
 
-        # Set root logger level to the most verbose level
-        if self.console_level is not None and self.file_level is not None:
-            root_logger.setLevel(min(self.console_level, self.file_level))
-        elif self.console_level is not None:
-            root_logger.setLevel(self.console_level)
-        elif self.file_level is not None:
-            root_logger.setLevel(self.file_level)
+        # Set root logger level to the most verbose level of enabled handlers
+        # Only consider file_level if file logging is actually enabled (log_dir is set)
+        effective_levels = []
+        if self.console_level is not None:
+            effective_levels.append(self.console_level)
+        if self.file_level is not None and self.log_dir:
+            effective_levels.append(self.file_level)
+
+        if effective_levels:
+            root_logger.setLevel(min(effective_levels))
+        else:
+            # No handlers enabled, set to WARNING as a safe default
+            root_logger.setLevel(logging.WARNING)
 
 
 # Global config instance
