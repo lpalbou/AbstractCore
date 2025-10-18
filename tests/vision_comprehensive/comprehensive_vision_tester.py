@@ -52,16 +52,14 @@ class ComprehensiveVisionTester:
                 "qwen2.5vl:7b",
                 "gemma3:4b",
                 "gemma3:4b-it-qat",
-                "gemma3n:e4b",
-                "gemma3n:e2b",
                 "llama3.2-vision:11b",
-                "granite3.3:2b"
+                "granite3.2-vision:2b"
             ],
             "huggingface": [
                 "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"
             ],
             "anthropic": [
-                "claude-3.5-haiku"
+                "claude-3-5-haiku-20241022"
             ],
             "openai": [
                 "gpt-5-mini"
@@ -365,21 +363,10 @@ async def main():
 
     args = parser.parse_args()
 
-    # Find image file
-    image_path = None
-    possible_paths = [
-        Path(args.image),
-        Path(f"tests/vision_examples/{args.image}"),
-        Path(f"tests/vision_examples/{args.image}.jpg"),
-        Path(f"tests/vision_examples/{args.image}_mp.jpg")
-    ]
+    # Use image file path directly
+    image_path = Path(args.image)
 
-    for path in possible_paths:
-        if path.exists():
-            image_path = path
-            break
-
-    if not image_path:
+    if not image_path.exists():
         print(f"❌ Image not found: {args.image}")
         return 1
 

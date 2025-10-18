@@ -585,36 +585,62 @@ class HuggingFaceProvider(BaseProvider):
         if messages:
             chat_messages.extend(messages)
 
-        # Handle media content for the user message
-        user_message_content = prompt
+        # Handle media content for the user message - use proper vision format for GGUF models
         if media:
             try:
-                from ..media.handlers import LocalMediaHandler
-                media_handler = LocalMediaHandler("huggingface", self.model_capabilities, model_name=self.model)
+                from ..architectures.detection import supports_vision
 
-                # Create multimodal message combining text and media
-                multimodal_message = media_handler.create_multimodal_message(prompt, media)
+                # Check if this model supports vision natively
+                if supports_vision(self.model):
+                    # Use HuggingFace multimodal format for vision-capable GGUF models
+                    user_message_content = []
 
-                # For local providers, we get text-embedded content
-                if isinstance(multimodal_message, str):
-                    user_message_content = multimodal_message
+                    # Add text content
+                    user_message_content.append({"type": "text", "text": prompt})
+
+                    # Add media content
+                    for media_item in media:
+                        if hasattr(media_item, 'file_path') and media_item.file_path:
+                            # Use file:// URL format as specified in HuggingFace docs
+                            file_path = str(media_item.file_path)
+                            if not file_path.startswith('file://'):
+                                file_path = f"file://{file_path}"
+                            user_message_content.append({
+                                "type": "image",
+                                "image": file_path
+                            })
+                        elif hasattr(media_item, 'content') and media_item.content:
+                            # For base64 or other content, we might need to save to temp file
+                            import tempfile
+                            import base64
+                            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
+                                if isinstance(media_item.content, str) and media_item.content.startswith('data:'):
+                                    # Handle base64 data URLs
+                                    header, data = media_item.content.split(',', 1)
+                                    decoded_data = base64.b64decode(data)
+                                    tmp_file.write(decoded_data)
+                                else:
+                                    tmp_file.write(media_item.content)
+                                tmp_file.flush()
+                                user_message_content.append({
+                                    "type": "image",
+                                    "image": f"file://{tmp_file.name}"
+                                })
                 else:
-                    # If we get a structured message, extract the content
-                    if isinstance(multimodal_message, dict) and "content" in multimodal_message:
-                        if isinstance(multimodal_message["content"], list):
-                            # Find text content in the structured message
-                            text_content = ""
-                            for item in multimodal_message["content"]:
-                                if item.get("type") == "text":
-                                    text_content = item.get("text", "")
-                                    break
-                            user_message_content = text_content or prompt
-                        else:
-                            user_message_content = str(multimodal_message["content"])
+                    # Fallback to text-based media handling for non-vision models
+                    from ..media.handlers import LocalMediaHandler
+                    media_handler = LocalMediaHandler("huggingface", self.model_capabilities, model_name=self.model)
+                    multimodal_message = media_handler.create_multimodal_message(prompt, media)
+                    user_message_content = multimodal_message if isinstance(multimodal_message, str) else prompt
+
             except ImportError:
                 self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                user_message_content = prompt
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")
+                user_message_content = prompt
+        else:
+            user_message_content = prompt
 
         chat_messages.append({"role": "user", "content": user_message_content})
 
