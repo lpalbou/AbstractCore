@@ -237,13 +237,129 @@ if is_vision_model("gpt-4o"):
 if supports_images("claude-3.5-sonnet"):
     print("This model supports image analysis")
 
-# Automatic fallback for non-vision models
+# Current: Automatic fallback for non-vision models
 llm = create_llm("openai", model="gpt-4")  # Non-vision model
 response = llm.generate(
     "Analyze this image",
-    media=["photo.jpg"]  # Will extract text/metadata instead
+    media=["photo.jpg"]  # Currently: Will extract basic metadata instead
 )
 ```
+
+### Vision Fallback System (IMPLEMENTED ✅)
+
+AbstractCore now includes an **automatic vision fallback system** that enables text-only models to process images using a transparent two-stage pipeline:
+
+#### How Vision Fallback Works
+
+When you use a text-only model with images, AbstractCore automatically:
+
+1. **Detects Model Limitations**: Identifies when a text-only model receives an image
+2. **Uses Vision Fallback**: Employs a configured vision model to analyze the image
+3. **Provides Description**: Passes the image description to the text-only model
+4. **Returns Results**: User gets complete image analysis without knowing about the two-stage process
+
+#### Automatic Setup
+
+```python
+from abstractcore import create_llm
+
+# Text-only model with image - triggers helpful warnings
+llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No vision support
+response = llm.generate("What's in this image?", media=["photo.jpg"])
+
+# User sees helpful guidance in logs:
+# 🔸 EASIEST: Download BLIP vision model (990MB): abstractcore --download-vision-model
+# 🔸 Use existing Ollama model: abstractcore --set-vision-caption qwen2.5vl:7b
+# 🔸 Use cloud API: abstractcore --set-vision-provider openai --model gpt-4o
+```
+
+#### One-Command Setup
+
+```bash
+# Download and configure BLIP model automatically
+abstractcore --download-vision-model
+
+# Alternative: Use existing Ollama model
+abstractcore --set-vision-caption qwen2.5vl:7b
+
+# Alternative: Use cloud vision API
+abstractcore --set-vision-provider openai --model gpt-4o
+```
+
+#### Working Example
+
+```python
+from abstractcore import create_llm
+
+# After running: abstractcore --set-vision-caption qwen2.5vl:7b
+
+# Text-only model now works seamlessly with images
+llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")
+response = llm.generate("What's in this image?", media=["whale_photo.jpg"])
+
+print(response.content)
+# Output: "The image shows a whale leaping or breaching out of the water.
+# This dramatic moment captures the whale in mid-air, often with spray and
+# water cascading around its body, highlighting its immense size and power.
+# Such behavior, known as 'breaching,' is commonly observed in species like
+# humpback whales and is thought to serve purposes such as communication,
+# play, or removing parasites..."
+```
+
+#### Behind the Scenes
+
+What actually happens (transparent to user):
+1. **Stage 1**: `qwen2.5vl:7b` (vision model) analyzes `whale_photo.jpg` → detailed description
+2. **Stage 2**: `qwen/qwen3-next-80b` (text-only) processes description + user question → final analysis
+
+#### Configuration Commands
+
+```bash
+# Check current status
+abstractcore --status
+
+# Download models (automatic setup)
+abstractcore --download-vision-model              # BLIP base (990MB)
+abstractcore --download-vision-model vit-gpt2     # ViT-GPT2 (500MB, CPU-friendly)
+abstractcore --download-vision-model git-base     # GIT base (400MB, smallest)
+
+# Use existing provider models
+abstractcore --set-vision-caption qwen2.5vl:7b
+abstractcore --set-vision-caption llama3.2-vision:11b
+
+# Cloud APIs
+abstractcore --set-vision-provider openai --model gpt-4o
+abstractcore --set-vision-provider anthropic --model claude-3.5-sonnet
+
+# Interactive setup
+abstractcore --configure
+
+# Advanced: Fallback chains
+abstractcore --add-vision-fallback ollama qwen2.5vl:7b
+abstractcore --add-vision-fallback openai gpt-4o
+```
+
+#### Benefits of Vision Fallback
+
+- **Universal Compatibility**: Any text-only model can now process images
+- **Cost Optimization**: Use cheaper text models for reasoning, vision models only for description
+- **Transparent Operation**: Users don't need to change their code
+- **Flexible Configuration**: Local models, cloud APIs, or hybrid setups
+- **Offline-First**: Works without internet after downloading local models
+- **Automatic Fallback**: Graceful degradation when vision not configured
+
+#### Supported Vision Models
+
+**Local Models (Downloaded):**
+- **BLIP Base**: 990MB, excellent quality, CPU/GPU compatible
+- **ViT-GPT2**: 500MB, CPU-friendly, good performance
+- **GIT Base**: 400MB, smallest size, basic quality
+
+**Provider Models:**
+- **Ollama**: `qwen2.5vl:7b`, `llama3.2-vision:11b`, `gemma3:4b`
+- **LMStudio**: `qwen/qwen2.5-vl-7b`, `google/gemma-3n-e4b`
+- **OpenAI**: `gpt-4o`, `gpt-4-turbo-with-vision`
+- **Anthropic**: `claude-3.5-sonnet`, `claude-4-series`
 
 ### Custom Processing Options
 

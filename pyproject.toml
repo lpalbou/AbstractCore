@@ -59,6 +59,7 @@ Repository = "https://github.com/lpalbou/AbstractCore"
 Changelog = "https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md"
 
 [project.scripts]
+abstractcore = "abstractcore.cli.main:main"
 summarizer = "abstractcore.apps.summarizer:main"
 abstractcore-summarizer = "abstractcore.apps.summarizer:main"
 extractor = "abstractcore.apps.extractor:main"

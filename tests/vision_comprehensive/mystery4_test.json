@@ -1,0 +1,668 @@
+{
+  "test_config": {
+    "image_path": "tests/vision_examples/mystery4_wh.jpg",
+    "providers": [
+      "ollama"
+    ],
+    "query_types": [
+      "keywords",
+      "summary",
+      "structured"
+    ],
+    "total_models": 7
+  },
+  "reference_analysis": {
+    "image_name": "mystery1_mp.jpg",
+    "description": "Mountain hiking trail with wooden fence and scenic landscape",
+    "keywords": [
+      "mountain",
+      "hiking",
+      "trail",
+      "fence",
+      "wooden",
+      "railing",
+      "path",
+      "dirt",
+      "road",
+      "gravel",
+      "sky",
+      "clouds",
+      "sun",
+      "lens flare",
+      "sunlight",
+      "valley",
+      "hills",
+      "landscape",
+      "scenic",
+      "outdoor",
+      "nature",
+      "countryside",
+      "grass",
+      "vegetation",
+      "shadows",
+      "perspective",
+      "depth",
+      "vista",
+      "horizon",
+      "backlighting",
+      "golden hour"
+    ],
+    "summary": "A scenic mountain hiking trail captured during daytime with bright sunlight creating a dramatic lens flare effect. The image shows a dirt and gravel path or trail running through mountainous terrain, with a wooden rail fence along the left side of the path. The trail leads toward distant mountains and valleys visible in the background, creating a strong sense of depth and perspective. The sky is bright blue with scattered white clouds, and the sun is positioned in the upper left creating dramatic backlighting and long shadows cast across the path. Green vegetation and grass can be seen along the trail edges and slopes. The composition uses leading lines from both the path and fence to draw the viewer's eye toward the expansive mountain vista in the distance.",
+    "structured": {
+      "theme": "Outdoor recreation and scenic nature photography",
+      "mood": "Peaceful, inspiring, adventurous, serene",
+      "color_tone": "Warm golden hour lighting with dominant blue sky",
+      "setting": "Mountain trail in rural/natural environment",
+      "weather": "Clear sunny day with partial cloud cover",
+      "time_of_day": "Late morning or early afternoon",
+      "composition": "Leading lines, strong perspective, rule of thirds",
+      "main_objects": [
+        "wooden fence",
+        "dirt trail",
+        "mountains",
+        "vegetation"
+      ],
+      "lighting": "Dramatic backlighting with lens flare and strong contrast",
+      "suggested_activity": "Hiking, walking, outdoor recreation",
+      "dominant_colors": [
+        "blue",
+        "golden yellow",
+        "green",
+        "brown"
+      ],
+      "visual_elements": [
+        "lens flare",
+        "shadows",
+        "depth of field",
+        "leading lines"
+      ],
+      "landscape_type": "Mountainous terrain with rolling hills",
+      "human_presence": "None visible, but trail suggests human activity"
+    }
+  },
+  "results": {
+    "ollama/qwen2.5vl:7b": {
+      "keywords": "whale, ocean, splash, water, dorsal, fin, surface, motion, aquatic, marine, wildlife, marine, life, aquatic, habitat, natural, environment, ecosystem, biodiversity, marine, mammal, animal, wildlife, conservation, nature, scenic, peaceful, serene, majestic, powerful, freedom, grace, beauty, serene, calm, serene, tranquil, serene, peaceful, serene, calming, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing, serene, soothing",
+      "summary": "The image captures a majestic humpback whale breaching the ocean's surface, its massive body partially submerged and its fluke prominently visible as it arcs gracefully upwards. The whale's skin is textured with barnacles and the water around it is splashing, creating a dynamic sense of movement. The background shows a hazy, distant shoreline under a pale sky, suggesting a serene yet dramatic atmosphere. The composition focuses on the whale, drawing the viewer's attention to its grandeur and the raw power of its breach, while the soft lighting and muted colors add to the tranquil yet awe-inspiring ambiance of the scene.",
+      "structured": "Theme: Marine Life/Whales\nMood: Serene and majestic\nColor_tone: Cool and natural, dominated by shades of blue and gray\nSetting: Ocean or sea\nWeather: Overcast or cloudy\nTime_of_day: Late afternoon or early evening, suggested by the soft light\nComposition: Focused on the whale's tail, with a wide view of the ocean\nMain_objects: Humpback whale's tail\nLighting: Soft, natural light with a diffuse quality\nSuggested_activity: Whales engaging in natural behavior, such as feeding or migration\nDominant_colors: Blue, gray, and white\nVisual_elements: The whale's tail with barnacles, water splashing around, and the distant horizon\nLandscape_type: Oceanic\nHuman_presence: None detected",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.06451612903225806,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "scenic",
+            "nature"
+          ],
+          "found_count": 2,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.14285714285714285,
+          "covered_elements": [
+            "sky",
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 100,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 357.1995429992676,
+          "summary": 275.53339529037476,
+          "structured": 9.192002058029175
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "qwen2.5vl:7b",
+        "test_timestamp": "2025-10-17T18:38:14.806394"
+      }
+    },
+    "ollama/gemma3:4b": {
+      "keywords": "Here\u2019s a list of keywords extracted from the image:\n\nWhale, Ocean, Water, Spray, Blue, Gray, Light, Jump, Marine, Animal",
+      "summary": "Here's a detailed descriptive summary of the image:\n\nThe image captures a majestic humpback whale breaching the ocean surface, its massive body partially submerged and its enormous flipper extended upwards. The whale is a dark, mottled gray-blue color, and the water around it is a deep, shimmering blue, creating a dramatic contrast. The lighting is soft and diffused, suggesting an overcast day, and the composition emphasizes the whale\u2019s scale and power against the vastness of the ocean. The overall atmosphere is one of awe and wonder, highlighting the beauty and grandeur of marine wildlife.",
+      "structured": "Okay, here\u2019s an analysis of the image in the requested structured format:\n\n**Theme:** Whale Behavior/Marine Life\n\n**Mood:** Awe, Wonder, Majesty\n\n**Color_tone:** Cool, predominantly blues and grays, with subtle hints of silver/gray in the whale\u2019s skin.\n\n**Setting:** Ocean/Coastal Environment\n\n**Weather:** Clear, Calm\n\n**Time_of_day:** Late Afternoon/Early Evening (Due to the soft, diffused lighting)\n\n**Composition:** Dynamic, Centered Subject, Rule of Thirds (implied through whale placement)\n\n**Main_objects:** Whale, Water, Sky\n\n**Lighting:** Soft, Diffused, Natural \u2013 creating a sense of depth and highlighting the whale\u2019s form.\n\n**Suggested_activity:** Whale Watching, Marine Conservation, Photography\n\n**Dominant_colors:** Blue, Gray, Silver\n\n**Visual_elements:**  The whale\u2019s massive size, spray of water, the depth of the ocean, the vastness of the sky.\n\n**Landscape_type:** Open Ocean\n\n**Human_presence:** None visible \u2013 the scene is devoid of human presence, emphasizing the wildness of the environment. \n\n\nWould you like me to analyze another image?",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.07142857142857142,
+          "covered_elements": [
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 94,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 7.0240418910980225,
+          "summary": 5.710323333740234,
+          "structured": 5.508939981460571
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3:4b",
+        "test_timestamp": "2025-10-17T18:38:33.090044"
+      }
+    },
+    "ollama/gemma3:4b-it-qat": {
+      "keywords": "Whale, ocean, water, blue, gray, splash, movement, light",
+      "summary": "Here's a detailed description of the image:\n\nThe photograph captures a majestic humpback whale breaching dramatically from the ocean, its immense body partially emerging from the water. The whale\u2019s dark, textured skin is highlighted by a spray of water and foam as it rises, with a prominent pectoral fin visible. The scene is set against a muted, overcast sky and a vast expanse of gray ocean, creating a serene and somewhat dramatic atmosphere. The composition emphasizes the scale of the whale against the open sea, conveying a sense of awe and wonder.",
+      "structured": "Here's an analysis of the image, broken down into the requested format:\n\n**Theme:** Marine Wildlife, specifically a whale breaching.\n\n**Mood:** Majestic, awe-inspiring, serene, and powerful.\n\n**Color_tone:** Cool blues and grays dominate, with subtle hints of the whale\u2019s dark coloration.\n\n**Setting:** Ocean, open water.\n\n**Weather:** Calm, clear \u2013 minimal visible waves or disturbances.\n\n**Time_of_day:** Mid-morning or early afternoon \u2013 the lighting suggests diffused sunlight.\n\n**Composition:** Dynamic and dramatic, capturing the whale in mid-leap, with the water and sky providing a strong backdrop. Rule of thirds is loosely applied, with the whale positioned off-center.\n\n**Main_objects:** Whale, water, sky.\n\n**Lighting:** Soft, natural light \u2013 likely daylight, creating highlights on the whale\u2019s skin and casting reflections on the water.\n\n**Suggested_activity:** Whale watching, marine photography, conservation.\n\n**Dominant_colors:** Blue, gray, black, and white.\n\n**Visual_elements:** The whale\u2019s massive size, the spray of water, the movement of the animal, and the vastness of the ocean.\n\n**Landscape_type:** Open ocean, expansive and limitless.\n\n**Human_presence:** None visible.\n\nLet me know if you\u2019d like a more detailed explanation of any particular aspect!",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.14285714285714285,
+          "covered_elements": [
+            "sky",
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 92,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 8.079788208007812,
+          "summary": 4.091367244720459,
+          "structured": 6.444297790527344
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3:4b-it-qat",
+        "test_timestamp": "2025-10-17T18:38:51.750166"
+      }
+    },
+    "ollama/gemma3n:e4b": {
+      "keywords": "Please provide me with the image! I need the image to be able to extract keywords. \n\nOnce you provide the image, I will list keywords separated by commas, covering objects, scenery, colors, lighting, and activities. \n\nFor example, if the image showed a beach scene with a sunset, the keywords might be:\n\nbeach, sunset, ocean, sand, sky, orange, red, yellow, clouds, waves, people, walking, relaxing.\n\n\n\n",
+      "summary": "Please provide me with the image! I need the actual image data to be able to describe it.  I am a text-based AI and cannot access images directly from links or file names like \"[img-0]\". \n\n**Once you provide the image, I will give you a detailed description covering:**\n\n*   **Objects:** What are the main things visible in the image (people, animals, buildings, objects, etc.)?\n*   **Scenery:** What is the environment like? (indoor/outdoor, landscape, city, etc.)\n*   **Lighting:** How is the image lit? (natural sunlight, artificial light, shadows, etc.)\n*   **Composition:** How are the elements arranged in the image? (rule of thirds, leading lines, symmetry, etc.)\n*   **Atmosphere:** What feeling or mood does the image evoke? (peaceful, energetic, mysterious, etc.)\n\n\n\nI'm ready when you are! Just paste the image link or upload the image file.\n\n\n\n",
+      "structured": "Okay, I'm ready to analyze the image. Please provide the image. I need the image data to complete the analysis. \n\n**Once you provide the image, I will respond with a structured analysis in the format you requested.**\n\nFor example, the response will look like this (but with details specific to the image you provide):\n\n**Theme:** Urban decay/abandonment\n**Mood:** Melancholy, eerie, forgotten\n**Color_tone:** Muted, desaturated, browns and grays\n**Setting:** Abandoned industrial complex/factory\n**Weather:** Overcast, possibly rainy\n**Time_of_day:** Late afternoon/early evening\n**Composition:** Rule of thirds, leading lines, symmetrical elements\n**Main_objects:** Dilapidated buildings, broken windows, overgrown vegetation, rusted machinery\n**Lighting:** Diffused, low-key, highlighting textures\n**Suggested_activity:** Exploration, urban exploration, photography\n**Dominant_colors:** Brown, gray, green\n**Visual_elements:** Texture, contrast, repetition, decay\n**Landscape_type:** Industrial, urban\n**Human_presence:** None (suggests abandonment)\n\n\n\n**I'm waiting for you to upload the image!** Just paste the image link or upload the image file.\n\n\n\n",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0967741935483871,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "sky",
+            "clouds",
+            "sun"
+          ],
+          "found_count": 3,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.21428571428571427,
+          "covered_elements": [
+            "sun",
+            "light",
+            "shadow"
+          ],
+          "key_elements_count": 14,
+          "word_count": 134,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 8.959802865982056,
+          "summary": 7.525831937789917,
+          "structured": 9.872363090515137
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3n:e4b",
+        "test_timestamp": "2025-10-17T18:39:18.151179"
+      }
+    },
+    "ollama/gemma3n:e2b": {
+      "keywords": "Mountain, lake, trees, blue, sunlight, reflection, peaceful, landscape, nature, calm, water, sky.",
+      "summary": "Please provide me with the image! I need the image itself (or a link to it) to be able to describe it. \n\nOnce you provide the image, I will analyze it and give you a detailed summary covering:\n\n* **Objects:** What are the main things visible in the image (people, animals, objects, buildings, etc.)?\n* **Scenery:** What is the setting like? (indoor/outdoor, landscape, city, etc.)\n* **Lighting:** What is the quality and direction of the light? (natural, artificial, bright, dim, etc.)\n* **Composition:** How are the elements arranged in the image? (rule of thirds, leading lines, symmetry, etc.)\n* **Atmosphere:** What feeling or mood does the image evoke? (peaceful, energetic, mysterious, etc.)\n\nI look forward to helping you! Just paste the image or link here.\n\n\n\n",
+      "structured": "Okay, I will analyze the image and provide a structured response in the requested format. Please provide the image! I need the image to be able to perform the analysis. \n\n**Once you provide the image, I will fill in the fields below.**\n\nHere's the template I'll use:\n\n**Theme:** [Main theme/subject]\n**Mood:** [Emotional tone/atmosphere]\n**Color_tone:** [Overall color palette description]\n**Setting:** [Location/environment type]\n**Weather:** [Weather conditions visible]\n**Time_of_day:** [Apparent time based on lighting]\n**Composition:** [Photographic composition elements]\n**Main_objects:** [Key objects visible]\n**Lighting:** [Lighting conditions and quality]\n**Suggested_activity:** [What activity this scene suggests]\n**Dominant_colors:** [Primary colors present]\n**Visual_elements:** [Notable visual features]\n**Landscape_type:** [Type of terrain/landscape]\n**Human_presence:** [Any signs of human activity]\n\n\n\n**I'm ready when you are! Just paste the image link or upload the image.**\n\n\n\n",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.1935483870967742,
+          "precision": 0.0,
+          "f1": 0.0,
+          "found_keywords": [
+            "mountain",
+            "sky",
+            "sun",
+            "sunlight",
+            "landscape",
+            "nature"
+          ],
+          "found_count": 6,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.07142857142857142,
+          "covered_elements": [
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 125,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 3.360572099685669,
+          "summary": 4.6246819496154785,
+          "structured": 4.581552982330322
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "gemma3n:e2b",
+        "test_timestamp": "2025-10-17T18:39:30.763307"
+      }
+    },
+    "ollama/llama3.2-vision:11b": {
+      "keywords": "The image shows a whale in the ocean. The keywords for this image are:\n\nwater, whale, ocean",
+      "summary": "This image captures a majestic humpback whale breaching the surface of the water, its tail fluke visible above the waves. The whale's dark gray body is adorned with barnacles on its head and tail, and its long, curved tail features a distinctive pattern of lighter gray lines. The whale is positioned in the center of the image, with its head and tail extending beyond the frame's edges.\n\nIn the background, a blurry, misty shoreline is visible, with a light gray sky above. The overall atmosphere of the image is one of serenity and awe, as the whale appears to be swimming in a calm, peaceful environment. The image's composition effectively conveys a sense of wonder and appreciation for the natural beauty of marine life.",
+      "structured": "**Theme:** Wildlife Photography\n**Mood:** Serene and majestic\n**Color tone:** Cool and calming, with a focus on blues and whites\n**Setting:** Open ocean, with a distant coastline in the background\n**Weather:** Overcast, with a misty atmosphere\n**Time of day:** Late morning or early afternoon, with soft, diffused light\n**Composition:** The whale's body is centered, with its tail and fin extending out of the frame\n**Main objects:** The humpback whale, with its distinctive coloring and large body\n**Lighting:** Soft, natural light, with a focus on the whale's back and tail\n**Suggested activity:** The whale is breaching, or jumping out of the water, suggesting a sense of playfulness and freedom\n**Dominant colors:** Blues and whites, with a focus on the whale's body and the surrounding water\n**Visual elements:** The whale's large body and tail, the surrounding water, and the distant coastline in the background\n**Landscape type:** Oceanic, with a focus on the open water and the distant coastline\n**Human presence:** None, with no signs of human activity or presence in the image.",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.14285714285714285,
+          "covered_elements": [
+            "sky",
+            "light"
+          ],
+          "key_elements_count": 14,
+          "word_count": 124,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 16.987669229507446,
+          "summary": 8.699341058731079,
+          "structured": 11.995457172393799
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "llama3.2-vision:11b",
+        "test_timestamp": "2025-10-17T18:40:08.480103"
+      }
+    },
+    "ollama/granite3.3:2b": {
+      "keywords": "I'm sorry for any confusion, but as a text-based AI, I don't have the ability to visually interpret images. I can't extract keywords from an image. My capabilities are limited to processing and generating text-based information. If you have a description or context about the image, I'd be more than happy to help generate keywords based on that.",
+      "summary": "I'm sorry for the inconvenience, but as a text-based AI, I don't have the ability to view or analyze images. I can't provide a descriptive summary of visual content. Please describe the image in words, and I'd be happy to help interpret or summarize it based on your description.",
+      "structured": "Since I'm a text-based AI and cannot analyze images, I can't provide a structured response based on an image. However, I can certainly explain how one might approach analyzing an image using the provided format once it's available. Here's an example of how you could fill out such a description:\n\nTheme: A serene lakeside sunset\nMood: Peaceful and contemplative\nColor_tone: Warm oranges, soft pinks, deep blues, vibrant greens\nSetting: Natural lake surrounded by mountains in a national park\nWeather: Clear skies with a hint of clouds\nTime_of_day: Golden hour, approaching sunset (approximately 6 PM)\nComposition: Rule of thirds, leading lines created by the shoreline and boat\nMain_objects: Sailboat on the lake, distant mountains, reflections on water\nLighting: Soft, warm light from the setting sun, casting long shadows\nSuggested_activity: Relaxing evening walk or fishing\nDominant_colors: Warm hues of sunset, cool blues and greens of the water\nVisual elements: Reflections in the water, boat wakes, misty air\nLandscape_type: Mountainous, alpine lake setting\nHuman_presence: Sailboat on the lake, no clear signs of human activity elsewhere\n\nThis is just an example; actual analysis would vary based on the specific image content.",
+      "evaluation": {
+        "keywords": {
+          "recall": 0.0,
+          "precision": 0.0,
+          "f1": 0,
+          "found_keywords": [],
+          "found_count": 0,
+          "total_keywords": 31
+        },
+        "summary": {
+          "coverage_score": 0.0,
+          "covered_elements": [],
+          "key_elements_count": 14,
+          "word_count": 49,
+          "completeness": "low"
+        },
+        "structured": {
+          "structure_score": 1.0,
+          "covered_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "expected_fields": [
+            "theme",
+            "mood",
+            "color_tone",
+            "setting",
+            "weather",
+            "time_of_day",
+            "composition",
+            "main_objects",
+            "lighting",
+            "suggested_activity",
+            "dominant_colors",
+            "visual_elements",
+            "landscape_type",
+            "human_presence"
+          ],
+          "field_coverage": "14/14",
+          "organization": "structured"
+        }
+      },
+      "performance": {
+        "total_tests": 3,
+        "successful_tests": 3,
+        "response_times": {
+          "keywords": 5.601199150085449,
+          "summary": 2.6393301486968994,
+          "structured": 13.26268482208252
+        },
+        "success_rate": 1.0
+      },
+      "metadata": {
+        "provider": "ollama",
+        "model": "granite3.3:2b",
+        "test_timestamp": "2025-10-17T18:40:30.007864"
+      }
+    }
+  },
+  "summary": {
+    "overall": {
+      "total_models": 7,
+      "successful_models": 7,
+      "overall_success_rate": 1.0,
+      "test_timestamp": "2025-10-17T18:40:30.007952"
+    },
+    "by_provider": {
+      "ollama": {
+        "models_tested": 7,
+        "total_tests": 21,
+        "successful_tests": 21,
+        "success_rate": 1.0,
+        "avg_response_time": 36.994961204982935
+      }
+    },
+    "by_query_type": {
+      "keywords": {
+        "successful_tests": 7,
+        "avg_quality_score": 0.0,
+        "avg_response_time": 58.173230920519146
+      },
+      "summary": {
+        "successful_tests": 7,
+        "avg_quality_score": 0.11224489795918367,
+        "avg_response_time": 44.117752994809834
+      },
+      "structured": {
+        "successful_tests": 7,
+        "avg_quality_score": 1.0,
+        "avg_response_time": 8.693899699619838
+      }
+    }
+  }
+}

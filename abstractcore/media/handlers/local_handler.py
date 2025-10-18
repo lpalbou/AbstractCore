@@ -268,20 +268,20 @@ class LocalMediaHandler(BaseProviderMediaHandler):
                 return self._create_text_embedded_message(text, media_contents)
 
         # Handle capability mismatches with detailed warnings
-        if has_images and not provider_vision_support:
-            self.logger.warning(
-                f"Images provided but provider '{self.provider_name}' does not support vision. "
-                f"Images will be converted to text placeholders."
+        if has_images and not model_vision_support and self.model_name:
+            self.logger.info(
+                f"Model '{self.model_name}' does not support vision. "
+                f"Using vision fallback system for image analysis."
             )
-        elif has_images and not model_vision_support and self.model_name:
-            self.logger.warning(
-                f"Images provided but model '{self.model_name}' does not support vision. "
-                f"Images will be converted to text placeholders."
+        elif has_images and not provider_vision_support and not self.model_name:
+            self.logger.info(
+                f"No model-specific vision capabilities detected for provider '{self.provider_name}'. "
+                f"Using vision fallback system for image analysis."
             )
         elif has_images and not self.model_name:
-            self.logger.warning(
-                f"Images provided but no model name available for vision detection. "
-                f"Using provider capabilities only - may result in suboptimal handling."
+            self.logger.info(
+                f"No model name available for vision detection. "
+                f"Using vision fallback system for image analysis."
             )
 
         # Fallback to text-embedded format
@@ -293,7 +293,7 @@ class LocalMediaHandler(BaseProviderMediaHandler):
         Create a message with media content embedded as text.
 
         This is often more reliable for local providers that don't have
-        robust multimodal support.
+        robust multimodal support. For images on text-only models, uses vision fallback.
         """
         message_parts = []
 
@@ -309,8 +309,37 @@ class LocalMediaHandler(BaseProviderMediaHandler):
                     # This will be handled by the provider's generate method
                     message_parts.append(f"[Image {i+1}: {media_content.metadata.get('file_name', 'image')}]")
                 else:
-                    # Skip images if no vision support
-                    continue
+                    # Use vision fallback for text-only models
+                    try:
+                        from ..vision_fallback import VisionFallbackHandler, VisionNotConfiguredError
+                        fallback_handler = VisionFallbackHandler()
+
+                        # Get the actual file path from metadata or resolve it
+                        file_path = media_content.metadata.get('file_path') or media_content.metadata.get('file_name', 'image')
+
+                        # Generate description using vision fallback
+                        description = fallback_handler.create_description(str(file_path), text)
+                        message_parts.append(description)
+
+                    except VisionNotConfiguredError as e:
+                        # Vision not configured - show warning to USER, not model
+                        self.logger.warning("Vision capability not configured for text-only models")
+                        self.logger.warning("To enable image analysis with text-only models:")
+                        self.logger.warning("🔸 EASIEST: Download BLIP vision model (990MB): abstractcore --download-vision-model")
+                        self.logger.warning("🔸 Use existing Ollama model: abstractcore --set-vision-caption qwen2.5vl:7b")
+                        self.logger.warning("🔸 Use cloud API: abstractcore --set-vision-provider openai --model gpt-4o")
+                        self.logger.warning("🔸 Interactive setup: abstractcore --configure")
+                        self.logger.warning("Current status: abstractcore --status")
+
+                        # Provide minimal placeholder to model (not configuration instructions!)
+                        file_name = media_content.metadata.get('file_name', 'image')
+                        message_parts.append(f"[Image {i+1}: {file_name}]")
+
+                    except Exception as e:
+                        self.logger.warning(f"Vision fallback failed: {e}")
+                        # Fallback to basic placeholder
+                        file_name = media_content.metadata.get('file_name', 'image')
+                        message_parts.append(f"[Image {i+1}: {file_name} - vision processing unavailable]")
             else:
                 # Embed text/document content directly
                 content = str(media_content.content)

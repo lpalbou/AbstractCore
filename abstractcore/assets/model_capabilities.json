@@ -862,8 +862,8 @@
     },
     "llama3.2-vision:11b": {
       "max_output_tokens": 4096,
-      "tool_support": "basic",
-      "structured_output": "basic",
+      "tool_support": "prompted",
+      "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": true,
       "audio_support": false,
@@ -877,12 +877,64 @@
       "max_image_resolution": "1120x1120",
       "image_patch_size": 14,
       "max_image_tokens": 6400,
-      "notes": "Llama 3.2 Vision 11B model for Ollama with multimodal capabilities",
-      "source": "Meta AI Llama 3.2 release via Ollama",
+      "notes": "Llama 3.2 Vision 11B model with multimodal capabilities for visual recognition and reasoning",
+      "source": "Meta AI Llama 3.2 release",
       "canonical_name": "llama3.2-vision:11b",
       "aliases": [
         "llama3.2-vision-11b",
         "llama-3.2-vision:11b"
+      ],
+      "max_tokens": 131072
+    },
+    "llama3.2-vision:70b": {
+      "max_output_tokens": 4096,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "560x560",
+        "1120x560",
+        "560x1120",
+        "1120x1120"
+      ],
+      "max_image_resolution": "1120x1120",
+      "image_patch_size": 14,
+      "max_image_tokens": 6400,
+      "notes": "Llama 3.2 Vision 70B model with advanced multimodal capabilities for complex visual reasoning",
+      "source": "Meta AI Llama 3.2 release",
+      "canonical_name": "llama3.2-vision:70b",
+      "aliases": [
+        "llama3.2-vision-70b",
+        "llama-3.2-vision:70b"
+      ],
+      "max_tokens": 131072
+    },
+    "llama3.2-vision:90b": {
+      "max_output_tokens": 4096,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "560x560",
+        "1120x560",
+        "560x1120",
+        "1120x1120"
+      ],
+      "max_image_resolution": "1120x1120",
+      "image_patch_size": 14,
+      "max_image_tokens": 6400,
+      "notes": "Llama 3.2 Vision 90B model with top-tier multimodal capabilities for advanced visual understanding",
+      "source": "Meta AI Llama 3.2 release",
+      "canonical_name": "llama3.2-vision:90b",
+      "aliases": [
+        "llama3.2-vision-90b",
+        "llama-3.2-vision:90b"
       ],
       "max_tokens": 131072
     },
@@ -1433,28 +1485,32 @@
       "tool_support": "prompted",
       "structured_output": "prompted",
       "parallel_tools": false,
-      "vision_support": true,
+      "vision_support": false,
       "audio_support": false,
-      "video_support": false,
-      "image_resolutions": [
-        "768x768"
-      ],
-      "max_image_resolution": "768x768",
-      "vision_encoder": "SigLIP2-so400m-patch14-384",
-      "image_patch_size": 14,
-      "notes": "IBM Granite 3.2-Vision model with SigLIP2 encoder, 384x384 input patches, IBM recommends 768px max dimension",
-      "source": "IBM Granite 3.2 technical report arXiv:2502.09927",
-      "canonical_name": "granite3.2-vision:latest",
+      "notes": "IBM Granite 3.2 2B text-only model with reasoning capabilities",
+      "source": "IBM Granite 3.2 technical report",
+      "canonical_name": "granite3.2:2b",
       "aliases": [
-        "granite3.2:latest",
-        "granite3.2-vision:latest",
-        "granite3.2-vision",
-        "granite-vision",
-        "ibm-granite-vision"
+        "granite3.2-2b"
       ],
       "max_tokens": 32768
     },
-    "granite3.3:2b": {
+    "granite3.2:8b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "IBM Granite 3.2 8B text-only model with reasoning capabilities",
+      "source": "IBM Granite 3.2 technical report",
+      "canonical_name": "granite3.2:8b",
+      "aliases": [
+        "granite3.2-8b"
+      ],
+      "max_tokens": 32768
+    },
+    "granite3.2-vision:2b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
       "structured_output": "prompted",
@@ -1468,14 +1524,44 @@
       "max_image_resolution": "768x768",
       "vision_encoder": "SigLIP2-so400m-patch14-384",
       "image_patch_size": 14,
-      "notes": "IBM Granite 3.3-Vision 2B enhanced model (June 2025), improved capabilities over 3.2, 768px max dimension",
-      "source": "IBM Granite 3.3 release announcement June 2025",
-      "canonical_name": "granite3.3-vision:2b",
+      "notes": "IBM Granite 3.2-Vision 2B model with SigLIP2 encoder, optimized for visual document understanding",
+      "source": "IBM Granite 3.2 technical report arXiv:2502.09927",
+      "canonical_name": "granite3.2-vision:2b",
       "aliases": [
-        "granite3.3:latest",
-        "granite3.3-vision:2b",
-        "granite3.3-vision",
-        "ibm-granite-3.3-vision"
+        "granite3.2-vision:latest",
+        "granite3.2-vision",
+        "granite-vision",
+        "ibm-granite-vision"
+      ],
+      "max_tokens": 32768
+    },
+    "granite3.3:2b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "IBM Granite 3.3 2B text-only model with enhanced reasoning capabilities",
+      "source": "IBM Granite 3.3 release announcement",
+      "canonical_name": "granite3.3:2b",
+      "aliases": [
+        "granite3.3-2b"
+      ],
+      "max_tokens": 32768
+    },
+    "granite3.3:8b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "IBM Granite 3.3 8B text-only model with enhanced reasoning capabilities",
+      "source": "IBM Granite 3.3 release announcement",
+      "canonical_name": "granite3.3:8b",
+      "aliases": [
+        "granite3.3-8b"
       ],
       "max_tokens": 32768
     }
