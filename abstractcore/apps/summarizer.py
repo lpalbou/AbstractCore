@@ -35,6 +35,23 @@ from ..processing import BasicSummarizer, SummaryStyle, SummaryLength
 from ..core.factory import create_llm
 
 
+def get_app_defaults(app_name: str) -> tuple[str, str]:
+    """Get default provider and model for an app."""
+    try:
+        from ..config import get_config_manager
+        config_manager = get_config_manager()
+        return config_manager.get_app_default(app_name)
+    except Exception:
+        # Fallback to hardcoded defaults if config unavailable
+        hardcoded_defaults = {
+            'summarizer': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+            'extractor': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+            'judge': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+            'cli': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+        }
+        return hardcoded_defaults.get(app_name, ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'))
+
+
 def read_file_content(file_path: str) -> str:
     """
     Read content from various file types
@@ -168,9 +185,9 @@ Examples:
 Supported file types: .txt, .md, .py, .js, .html, .json, .csv, and most text-based files
 
 Default model setup:
-  - Requires Ollama: https://ollama.com/
-  - Download model: ollama pull gemma3:1b-it-qat
-  - Or use --provider and --model for other providers
+  - Fresh installs use: huggingface/unsloth/Qwen3-4B-Instruct-2507-GGUF (HuggingFace local model)
+  - Configure defaults: abstractcore --set-app-default summarizer <provider> <model>
+  - Or use --provider and --model for explicit override
         """
     )
 
@@ -241,6 +258,12 @@ Default model setup:
     )
 
     parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging and show detailed diagnostics'
+    )
+
+    parser.add_argument(
         '--timeout',
         default=None,
         help='HTTP request timeout in seconds for LLM providers (default: None = unlimited)'
@@ -248,6 +271,17 @@ Default model setup:
 
     # Parse arguments
     args = parser.parse_args()
+
+    # Configure logging based on arguments (--debug overrides config defaults)
+    if args.debug:
+        from ..utils.structured_logging import configure_logging
+        import logging
+        configure_logging(
+            console_level=logging.DEBUG,
+            file_level=logging.DEBUG,
+            verbatim_enabled=True
+        )
+        print("🐛 Debug logging enabled")
 
     try:
         # Validate chunk size
@@ -285,66 +319,61 @@ Default model setup:
         style = parse_style(args.style)
         length = parse_length(args.length)
 
-        # Initialize LLM and summarizer
+        # Get provider and model using centralized configuration
         if args.provider and args.model:
-            # Custom provider/model with max_tokens adjusted for chunk size
-            max_tokens = max(16000, args.chunk_size)  # Ensure max_tokens >= chunk_size
-            if args.verbose:
-                print(f"Initializing summarizer ({args.provider}, {args.model}, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
+            # Use explicit parameters
+            provider, model = args.provider, args.model
+            config_source = "explicit parameters"
+        else:
+            # Use configured defaults
+            provider, model = get_app_defaults('summarizer')
+            config_source = "configured defaults"
 
-            llm = create_llm(args.provider, model=args.model, max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens, timeout=args.timeout)
+        # Adjust max_tokens based on chunk size
+        max_tokens = max(args.max_tokens, args.chunk_size)
+
+        if args.verbose:
+            print(f"Initializing summarizer ({provider}, {model}, {max_tokens} token context, {args.max_output_tokens} output tokens) - using {config_source}...")
+
+        if args.debug:
+            print(f"🐛 Debug - Configuration details:")
+            print(f"   Provider: {provider}")
+            print(f"   Model: {model}")
+            print(f"   Config source: {config_source}")
+            print(f"   Max tokens: {max_tokens}")
+            print(f"   Max output tokens: {args.max_output_tokens}")
+            print(f"   Chunk size: {args.chunk_size}")
+            print(f"   Timeout: {args.timeout}")
+            print(f"   Style: {args.style}")
+            print(f"   Length: {args.length}")
+            print(f"   Focus: {args.focus}")
+
+        try:
+            llm = create_llm(provider, model=model, max_tokens=max_tokens, max_output_tokens=args.max_output_tokens, timeout=args.timeout)
             summarizer = BasicSummarizer(
-                llm, 
+                llm,
                 max_chunk_size=args.chunk_size,
-                max_tokens=args.max_tokens,
+                max_tokens=max_tokens,
                 max_output_tokens=args.max_output_tokens,
                 timeout=args.timeout
             )
-        else:
-            # Default configuration with chunk size override
-            if args.chunk_size != 8000:
-                # Custom chunk size, need to adjust max_tokens if necessary
-                max_tokens = max(16000, args.chunk_size)
-                if args.verbose:
-                    print(f"Initializing summarizer (ollama, gemma3:1b-it-qat, {args.max_tokens} token context, {args.max_output_tokens} output tokens, {args.chunk_size} chunk size)...")
+        except Exception as e:
+            # Handle model initialization failure
+            print(f"\n❌ Failed to initialize LLM '{provider}/{model}': {e}")
 
-                try:
-                    llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens, timeout=args.timeout)
-                    summarizer = BasicSummarizer(
-                        llm, 
-                        max_chunk_size=args.chunk_size,
-                        max_tokens=args.max_tokens,
-                        max_output_tokens=args.max_output_tokens,
-                        timeout=args.timeout
-                    )
-                except Exception as e:
-                    # Handle default model not available
-                    print(f"\n❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}")
-                    print("\n💡 To use the default model, please:")
-                    print("   1. Install Ollama from: https://ollama.com/")
-                    print("   2. Download the model: ollama pull gemma3:1b-it-qat")
-                    print("   3. Start Ollama service")
-                    print("\n🚀 Alternatively, specify a different provider:")
-                    print("   - Example: summarizer document.txt --provider openai --model gpt-4o-mini")
-                    sys.exit(1)
-            else:
-                # Default configuration
-                if args.verbose:
-                    print(f"Initializing summarizer (ollama, gemma3:1b-it-qat, {args.max_tokens} token context, {args.max_output_tokens} output tokens, {args.chunk_size} chunk size)...")
-                try:
-                    summarizer = BasicSummarizer(
-                        max_chunk_size=args.chunk_size,
-                        max_tokens=args.max_tokens,
-                        max_output_tokens=args.max_output_tokens,
-                        timeout=args.timeout
-                    )
-                except RuntimeError as e:
-                    # Handle default model not available
-                    print(f"\n{e}")
-                    print("\n🚀 Quick alternatives to get started:")
-                    print("   - Use --provider and --model to specify an available provider")
-                    print("   - Example: summarizer document.txt --provider openai --model gpt-4o-mini")
-                    sys.exit(1)
+            print(f"\n💡 Solutions:")
+            if provider == "ollama":
+                print(f"   - Install Ollama: https://ollama.com/")
+                print(f"   - Download the model: ollama pull {model}")
+                print(f"   - Verify with: ollama list")
+
+            print(f"\n🚀 Alternatively, specify a different provider:")
+            print(f"   - Example: summarizer document.txt --provider openai --model gpt-4o-mini")
+            print(f"   - Example: summarizer document.txt --provider anthropic --model claude-3-5-haiku-20241022")
+            print(f"\n🔧 Or configure a different default:")
+            print(f"   - abstractcore --set-app-default summarizer openai gpt-4o-mini")
+            print(f"   - abstractcore --status")
+            sys.exit(1)
 
         # Generate summary
         if args.verbose:
