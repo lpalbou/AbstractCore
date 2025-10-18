@@ -61,7 +61,7 @@ class SimpleCLI:
         self.provider = create_llm(provider, model=model, max_tokens=max_tokens, **kwargs)
         self.session = BasicSession(
             self.provider,
-            system_prompt="You are a helpful AI assistant.",
+            system_prompt="You are a helpful AI assistant with vision capabilities. When users provide images or media files, analyze and describe them directly. You also have access to file operation tools.",
             tools=[list_files, read_file, write_file, execute_command, search_files]
         )
 
@@ -153,11 +153,22 @@ class SimpleCLI:
             print("  • write_file             Create or modify files")
             print("  • execute_command        Run shell commands")
             
+            print("\n📎 FILE ATTACHMENTS")
+            print("─" * 50)
+            print("  Use @filename syntax to attach files to your message:")
+            print("  • Images: 'Analyze this screenshot @screenshot.png'")
+            print("  • Documents: 'Summarize @report.pdf and @data.csv'")
+            print("  • Multiple files: 'Compare @image1.jpg @image2.jpg @notes.txt'")
+            print("  • Vision analysis: Works with vision models (GPT-4o, Claude, qwen2.5vl)")
+            print("  • Auto-fallback: Text-only models use vision captioning for images")
+            print("  • Supported formats: Images (jpg, png, gif), PDFs, Office docs, text files")
+
             print("\n💡 TIPS & EXAMPLES")
             print("─" * 50)
             print("  • Ask questions naturally: 'What files are in this directory?'")
             print("  • Search inside files: 'Find all TODO comments in Python files'")
             print("  • Request file operations: 'Read the README.md file'")
+            print("  • Attach files: 'What's in this image? @photo.jpg'")
             print("  • Save important conversations: '/save project_discussion --summary'")
             print("  • Switch models for different tasks: '/model ollama:qwen3-coder:30b'")
             print("  • Use /status to check token usage and model capabilities")
@@ -208,7 +219,7 @@ class SimpleCLI:
                                          max_tokens=self.max_tokens, **self.kwargs)
                 self.session = BasicSession(
                     self.provider,
-                    system_prompt="You are a helpful AI assistant.",
+                    system_prompt="You are a helpful AI assistant with vision capabilities. When users provide images or media files, analyze and describe them directly. You also have access to file operation tools.",
                     tools=[list_files, read_file, write_file, execute_command, search_files]
                 )
                 print("✅ Model switched")
@@ -898,18 +909,62 @@ class SimpleCLI:
 
         print("=" * 60)
 
+    def _parse_file_attachments(self, user_input: str):
+        """Parse @filename references using AbstractCore's message preprocessor."""
+        from ..utils.message_preprocessor import MessagePreprocessor
+        import os
+
+        # Use AbstractCore's centralized file parsing logic
+        clean_input, media_files = MessagePreprocessor.parse_file_attachments(
+            user_input,
+            validate_existence=True,
+            verbose=self.debug_mode
+        )
+
+        # Show user-friendly status messages for CLI (only in interactive mode)
+        if media_files and not self.single_prompt_mode:
+            print(f"📎 Attaching {len(media_files)} file(s): {', '.join(media_files)}")
+
+            # Check for vision capabilities if images are attached
+            image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'}
+            image_files = [f for f in media_files if os.path.splitext(f.lower())[1] in image_extensions]
+
+            if image_files:
+                try:
+                    from ..media.capabilities import is_vision_model
+                    if is_vision_model(self.model_name):
+                        print(f"👁️  Vision model detected - will analyze {len(image_files)} image(s)")
+                    else:
+                        print(f"📷 Text model - will use vision fallback for {len(image_files)} image(s)")
+                except:
+                    print(f"📷 Processing {len(image_files)} image(s)")
+
+        return clean_input, media_files
+
     def generate_response(self, user_input: str):
-        """Generate and display response with tool execution."""
+        """Generate and display response with tool execution and file attachment support."""
         import re
         start_time = time.time()
 
         try:
+            # Parse @filename attachments
+            clean_input, media_files = self._parse_file_attachments(user_input)
+
+            # If no text remains after removing file references, provide default prompt
+            if not clean_input and media_files:
+                clean_input = "Please analyze the attached file(s)."
+
             if self.debug_mode:
                 print(f"🔍 Sending to {self.provider_name}:{self.model_name}")
+                if media_files:
+                    print(f"🔍 Media files: {media_files}")
 
-            # Don't pass tool_call_tags to avoid format confusion
-            # Let the model use its native format, we'll parse it universally
-            response = self.session.generate(user_input, stream=self.stream_mode)
+            # Generate response with media support
+            response = self.session.generate(
+                clean_input,
+                stream=self.stream_mode,
+                media=media_files if media_files else None
+            )
 
             if self.stream_mode:
                 if not self.single_prompt_mode:
@@ -1220,6 +1275,11 @@ Key Commands:
   /system [prompt]                View/change system prompt
 
 Tools: list_files, search_files, read_file, write_file, execute_command
+
+File Attachments:
+  Use @filename syntax to attach files: "Analyze @image.jpg and @doc.pdf"
+  Supports images, PDFs, Office docs, text files with automatic processing
+  Vision models analyze images directly; text models use vision fallback
 
 Configuration:
   Set defaults with: abstractcore --set-app-default cli <provider> <model>

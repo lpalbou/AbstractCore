@@ -1,0 +1,409 @@
+================================================================================
+INVESTIGATION REPORT: BasicSession Media Parameter Handling Issue
+================================================================================
+
+PROJECT: AbstractCore
+BRANCH: media-handling
+ISSUE: Vision/multimodal capabilities fail when using BasicSession.generate() 
+       but work with direct LLM.generate()
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+
+The root cause has been identified: BasicSession.generate() does NOT pass the
+`media` parameter to the underlying LLM provider as an explicit parameter.
+Instead, media remains in the **kwargs dict, causing BaseProvider to receive
+media=None instead of the actual media list.
+
+This prevents:
+- Image/vision model processing
+- Document multimodal analysis  
+- Vision fallback logic activation
+- Media + tools combinations
+
+================================================================================
+FINDINGS
+================================================================================
+
+1. PARAMETER PASSING MECHANISM (Session -> Provider)
+   File: abstractcore/core/session.py, lines 190-195
+   
+   CURRENT (BROKEN):
+   ```python
+   response = self.provider.generate(
+       prompt=prompt,
+       messages=messages,
+       system_prompt=self.system_prompt,
+       **kwargs  # <-- media stays in kwargs, not extracted as parameter
+   )
+   ```
+   
+   RESULT: When BaseProvider.generate_with_telemetry() is called:
+   - media parameter receives default value (None)
+   - Actual media value is in kwargs dict
+   - Provider doesn't check kwargs for media
+   - Vision capabilities never activate
+
+2. INCONSISTENT PARAMETER HANDLING
+   File: abstractcore/core/session.py, lines 181-187
+   
+   TOOLS ARE EXTRACTED EXPLICITLY:
+   ```python
+   if 'tools' not in kwargs and self.tools:
+       kwargs['tools'] = self.tools  # <-- Explicit management
+   ```
+   
+   MEDIA IS NOT:
+   - No extraction from kwargs
+   - No session-level management
+   - Just passed through as-is
+   - Falls into kwargs unpacking void
+
+3. MESSAGE CLASS LACKS MEDIA SUPPORT
+   File: abstractcore/core/types.py, lines 11-82
+   
+   ```python
+   @dataclass
+   class Message:
+       role: str
+       content: str
+       timestamp: Optional[datetime] = None
+       metadata: Optional[Dict[str, Any]] = None
+       # NO media field - media cannot be stored per message
+   ```
+   
+   CONSEQUENCE:
+   - Even if media was stored with add_message(), it would be lost
+   - Message formatting only extracts role and content
+   - Session history cannot include media
+
+4. MESSAGE FORMATTING IGNORES MEDIA
+   File: abstractcore/core/session.py, lines 231-239
+   
+   ```python
+   def _format_messages_for_provider_excluding_current(self):
+       return [
+           {"role": m.role, "content": m.content}  # Only these fields
+           for m in messages_to_send
+           if m.role != 'system'
+       ]
+   ```
+   
+   CONSEQUENCE:
+   - No media extraction from messages
+   - Even if Message had media field, it wouldn't be extracted
+   - No way to reconstruct multimodal context
+
+5. PROVIDER MEDIA PROCESSING FLOW
+   File: abstractcore/providers/base.py, lines 270-272
+   
+   ```python
+   processed_media = None
+   if media:  # <-- Checks explicit parameter, not kwargs
+       processed_media = self._process_media_content(media)
+   ```
+   
+   CONSEQUENCE:
+   - Provider only looks at explicit media parameter
+   - If media is None, processing is skipped
+   - AutoMediaHandler never invoked
+   - Vision models get no media to process
+
+6. PROVIDER-SPECIFIC VISION HANDLING
+   File: abstractcore/providers/ollama_provider.py, lines 168-195
+   
+   ```python
+   if media:  # <-- Will be False when media=None
+       media_handler = LocalMediaHandler("ollama", self.model_capabilities)
+       multimodal_message = media_handler.create_multimodal_message(prompt, media)
+       payload["messages"].append(multimodal_message)
+   ```
+   
+   CONSEQUENCE:
+   - Multimodal message creation never happens
+   - Vision model only receives text
+   - Image/document processing disabled
+
+================================================================================
+COMPARISON: What Works vs What's Broken
+================================================================================
+
+WORKING - Direct LLM Call:
+  llm.generate("What's in this?", media=["image.png"])
+  → BaseProvider receives media explicitly
+  → _process_media_content() called
+  → Provider._generate_internal() gets media
+  → Vision works ✓
+
+BROKEN - Session Call:
+  session.generate("What's in this?", media=["image.png"])
+  → Media in kwargs only
+  → BaseProvider receives media=None
+  → _process_media_content(None) skipped
+  → Provider._generate_internal() gets media=None
+  → Vision fails ✗
+
+================================================================================
+WHY KWARGS UNPACKING DOESN'T PRESERVE PARAMETERS
+================================================================================
+
+When Python encounters:
+  def func(a=None, b=None, **kwargs):
+      pass
+
+And you call it with:
+  func(**{'a': 1, 'b': 2, 'c': 3})
+
+Python processes it as:
+  def func(a=None, b=None, **kwargs):
+      # a=1, b=2, kwargs={'c': 3}
+      pass
+
+BUT if you call:
+  func(a=1, **{'b': 2, 'c': 3})
+
+Python processes it as:
+  def func(a=None, b=None, **kwargs):
+      # a=1, b=2, kwargs={'c': 3}
+      pass
+
+BUT if you call it like Session does:
+  func(**{'a': 1, 'b': 2, 'c': 3})
+  where the receiving signature is:
+  def func(x=None, a=None, b=None, **kwargs):
+      # a=1, b=2, kwargs={'c': 3} CORRECT!
+
+  BUT the receiving signature in BaseProvider is:
+  def generate_with_telemetry(self, 
+                             prompt=None,
+                             media=None,
+                             **kwargs):
+      
+  When called with:
+  generate(**{'prompt': 'x', 'media': ['img'], 'stream': True})
+  
+  Positional/keyword matching fills explicit params from kwargs dict:
+  - prompt='x' matches
+  - media=['img'] SHOULD match but...
+
+The issue is that BaseProvider.generate_with_telemetry has 'media' as
+an explicit parameter, but when **kwargs unpacking happens, Python doesn't
+automatically match dict keys to parameter names. The media ends up in both:
+  - media parameter (if BaseProvider checks it)
+  - kwargs dict (if BaseProvider checks it)
+
+But BaseProvider ONLY checks media parameter, not kwargs!
+
+================================================================================
+IMPACT ASSESSMENT
+================================================================================
+
+AFFECTED FUNCTIONALITY:
+- Vision model support through sessions (blocked)
+- Document processing through sessions (blocked)
+- Multimodal messages through sessions (blocked)
+- Media + tools combinations through sessions (blocked)
+- Session replay with media (blocked)
+- Vision fallback logic (blocked)
+
+WORKING FUNCTIONALITY:
+- Text generation through sessions (works)
+- Tools through sessions (works by accident)
+- System prompts through sessions (works)
+- Message history (works)
+- Streaming (works)
+
+USER EXPERIENCE IMPACT:
+- Direct calls work: llm.generate(media=[...]) ✓
+- Session calls fail: session.generate(media=[...]) ✗
+- No error message - fails silently
+- Users confused about inconsistent behavior
+- Documentation suggests session calls should work
+
+================================================================================
+ROOT CAUSE CHAIN
+================================================================================
+
+1. BasicSession.generate() doesn't extract media from kwargs
+   ↓
+2. Media passed as **kwargs unpacking instead of explicit parameter
+   ↓
+3. BaseProvider.generate_with_telemetry() receives media=None
+   ↓
+4. Media processing skipped (if media: check fails)
+   ↓
+5. Provider._generate_internal() receives media=None
+   ↓
+6. Provider media handler skipped (if media: check fails)
+   ↓
+7. Multimodal message not created
+   ↓
+8. Vision model receives text-only message
+   ↓
+9. Vision/multimodal capabilities don't activate
+
+================================================================================
+SOLUTIONS (IN PRIORITY ORDER)
+================================================================================
+
+SOLUTION 1: EXTRACT MEDIA FROM KWARGS (MINIMAL - 5 LINES)
+File: abstractcore/core/session.py, line 189 (before provider.generate call)
+
+ADD:
+    media = kwargs.pop('media', None)
+
+CHANGE:
+    response = self.provider.generate(
+        prompt=prompt,
+        messages=messages,
+        system_prompt=self.system_prompt,
+        media=media,  # <-- Add explicit parameter
+        **kwargs
+    )
+
+RESULT:
+- Unblocks vision capabilities through sessions
+- Minimal code change
+- Parallels tools handling
+- No Message class changes needed
+
+---
+
+SOLUTION 2: STORE MEDIA IN MESSAGES (COMPLETE - 30 LINES)
+File: abstractcore/core/types.py, abstractcore/core/session.py
+
+ADD to Message class:
+    media: Optional[List['MediaContent']] = None
+
+UPDATE add_message():
+    def add_message(self, role, content, media=None, ...):
+        message = Message(role=role, content=content, media=media, ...)
+
+UPDATE _format_messages_for_provider():
+    Extract media from messages and return separately
+
+RESULT:
+- Complete multimodal session support
+- Session replay with media works
+- Proper message structure
+- More invasive changes
+
+---
+
+SOLUTION 3: SESSION MEDIA REGISTRY (PRAGMATIC - 20 LINES)
+File: abstractcore/core/session.py
+
+ADD to __init__:
+    self.session_media = {}  # Track media by message index
+
+ADD to generate():
+    msg_idx = len(self.messages)
+    if media:
+        self.session_media[msg_idx] = media
+
+CHANGE:
+    media = self.session_media.get(len(self.messages) - 1)
+
+RESULT:
+- Preserves history separately
+- Minimal Message changes
+- Balanced solution
+
+================================================================================
+TESTING GAPS
+================================================================================
+
+Current test coverage does NOT include:
+- BasicSession with media parameter
+- Media + tools combinations through sessions
+- Vision fallback through sessions
+- Multimodal message formatting
+- Session replay with media
+
+RECOMMENDED TESTS:
+1. test_session_generate_with_image_media()
+2. test_session_generate_with_document_media()
+3. test_session_media_plus_tools()
+4. test_session_media_history_preservation()
+5. test_vision_fallback_through_session()
+
+================================================================================
+IMPLEMENTATION PRIORITY
+================================================================================
+
+CRITICAL (IMMEDIATE):
+- Implement Solution 1 (5-line fix)
+- Add basic session media tests
+- Document known limitations
+
+HIGH (NEXT SPRINT):
+- Implement Solution 2 or 3
+- Add comprehensive media + session tests
+- Update documentation
+
+MEDIUM (LATER):
+- Add vision-aware system prompts
+- Implement session replay with media
+- Add vision fallback logic
+
+================================================================================
+FILES INVOLVED
+================================================================================
+
+abstractcore/core/session.py (MAIN ISSUE)
+  - Line 134-195: generate() method
+  - Line 181-187: Tool handling (reference implementation)
+  - Line 190-195: Provider call (problem area)
+  - Line 231-239: Message formatting
+
+abstractcore/core/types.py (MESSAGE STRUCTURE)
+  - Line 11-82: Message class definition
+
+abstractcore/providers/base.py (PROVIDER HANDLING)
+  - Line 202-330: generate_with_telemetry() method
+  - Line 270-272: Media processing
+  - Line 320-330: Provider._generate_internal() call
+  - Line 783-850: _process_media_content() method
+
+abstractcore/providers/ollama_provider.py (PROVIDER EXAMPLE)
+  - Line 107-200: _generate_internal() method
+  - Line 168-195: Media handling logic
+
+================================================================================
+VERIFICATION STEPS
+================================================================================
+
+To verify the issue:
+1. Create session with vision model: session = BasicSession(ollama_vision)
+2. Try with media: response = session.generate("What's in this?", media=["img.png"])
+3. Observe: No vision processing, text-only response
+4. Compare with: llm.generate("What's in this?", media=["img.png"])
+5. Observe: Vision works correctly
+
+To verify the fix works:
+1. Apply Solution 1
+2. Retry: session.generate("What's in this?", media=["img.png"])
+3. Observe: Vision processing now works
+4. Add regression test
+5. Verify tools still work
+
+================================================================================
+CONCLUSION
+================================================================================
+
+The issue is a straightforward parameter passing problem in BasicSession.
+The media parameter is not extracted from kwargs and passed as an explicit
+parameter to the provider, causing it to default to None.
+
+This prevents ALL vision/multimodal capabilities from working through sessions,
+even though they work fine with direct LLM calls.
+
+The fix is simple (5 lines for immediate relief), but proper multimodal session
+support requires either Message class changes (Solution 2) or a session media
+registry (Solution 3).
+
+All three solutions are viable. Solution 1 should be implemented immediately
+to unblock users, followed by either Solution 2 or 3 for production stability.
+
+================================================================================

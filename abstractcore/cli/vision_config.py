@@ -268,7 +268,7 @@ def handle_download_vision_model(handler: 'VisionFallbackHandler', model_name: s
         from transformers import AutoProcessor, AutoModel
 
         # Download model and processor
-        processor = AutoProcessor.from_pretrained(model_info['url'])
+        processor = AutoProcessor.from_pretrained(model_info['url'], use_fast=False)
         model = AutoModel.from_pretrained(model_info['url'])
 
         # Save to local directory
