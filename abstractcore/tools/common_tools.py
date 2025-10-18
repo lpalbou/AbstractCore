@@ -121,7 +121,8 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
             except ValueError:
                 head_limit = 50  # fallback to default
         
-        directory = Path(directory_path)
+        # Expand home directory shortcuts like ~
+        directory = Path(directory_path).expanduser()
 
         if not directory.exists():
             return f"Error: Directory '{directory_path}' does not exist"
@@ -302,7 +303,8 @@ def search_files(
             except ValueError:
                 head_limit = 20  # fallback to default
         
-        search_path = Path(path)
+        # Expand home directory shortcuts like ~
+        search_path = Path(path).expanduser()
 
         # Compile regex pattern
         flags = 0 if case_sensitive else re.IGNORECASE
@@ -651,7 +653,8 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
         File contents or error message
     """
     try:
-        path = Path(file_path)
+        # Expand home directory shortcuts like ~
+        path = Path(file_path).expanduser()
 
         if not path.exists():
             return f"Error: File '{file_path}' does not exist"
@@ -765,8 +768,8 @@ def write_file(file_path: str, content: str = "", mode: str = "w", create_dirs: 
         OSError: If there are filesystem issues
     """
     try:
-        # Convert to Path object for better handling
-        path = Path(file_path)
+        # Convert to Path object for better handling and expand home directory shortcuts like ~
+        path = Path(file_path).expanduser()
 
         # Create parent directories if requested and they don't exist
         if create_dirs and path.parent != path:
@@ -1073,8 +1076,8 @@ def edit_file(
         edit_file("test.py", "class OldClass", "class NewClass", preview_only=True)
     """
     try:
-        # Validate file exists
-        path = Path(file_path)
+        # Validate file exists and expand home directory shortcuts like ~
+        path = Path(file_path).expanduser()
         if not path.exists():
             return f"❌ File not found: {file_path}"
 
@@ -1344,7 +1347,8 @@ def execute_command(
 
         # Working directory validation
         if working_directory:
-            working_dir = Path(working_directory).resolve()
+            # Expand home directory shortcuts like ~ before resolving
+            working_dir = Path(working_directory).expanduser().resolve()
             if not working_dir.exists():
                 return f"❌ Error: Working directory does not exist: {working_directory}"
             if not working_dir.is_dir():
