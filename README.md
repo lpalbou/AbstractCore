@@ -540,6 +540,10 @@ All tests passing as of October 12th, 2025.
 - **[🐛 Issues](https://github.com/lpalbou/AbstractCore/issues)** - Report bugs
 - **[💬 Discussions](https://github.com/lpalbou/AbstractCore/discussions)** - Get help
 
+## Contact
+**Maintainer:** Laurent-Philippe Albou  
+📧 Email: [contact@abstractcore.ai](mailto:contact@abstractcore.ai)
+
 ## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
