@@ -194,8 +194,6 @@ def add_arguments(parser: argparse.ArgumentParser):
     media_group = parser.add_argument_group('Media & Vision Configuration')
     media_group.add_argument("--set-vision-provider", nargs=2, metavar=("PROVIDER", "MODEL"),
                             help="Set vision model for image analysis with text-only models")
-    media_group.add_argument("--set-vision-caption", metavar="MODEL",
-                            help="Set vision caption model (format: provider/model)")
     media_group.add_argument("--add-vision-fallback", nargs=2, metavar=("PROVIDER", "MODEL"),
                             help="Add backup vision provider to fallback chain")
     media_group.add_argument("--download-vision-model", nargs="?", const="blip-base-caption", metavar="MODEL",
@@ -216,6 +214,8 @@ def add_arguments(parser: argparse.ArgumentParser):
                              help="Set global default model (use --set-global-default instead)")
     legacy_group.add_argument("--set-default-provider", metavar="PROVIDER",
                              help="Set default provider only (use --set-global-default instead)")
+    legacy_group.add_argument("--set-vision-caption", metavar="MODEL",
+                             help="DEPRECATED: Use --set-vision-provider instead")
 
     # Storage and logging group
     storage_group = parser.add_argument_group('Storage & Logging')
@@ -493,6 +493,10 @@ def handle_commands(args) -> bool:
 
     # Vision configuration
     if args.set_vision_caption:
+        print("⚠️  WARNING: --set-vision-caption is deprecated")
+        print("💡 Use instead: abstractcore --set-vision-provider PROVIDER MODEL")
+        print("   This provides clearer, more reliable configuration")
+        print()
         config_manager.set_vision_caption(args.set_vision_caption)
         print(f"✅ Set vision caption model to: {args.set_vision_caption}")
         handled = True
