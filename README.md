@@ -1,5 +1,10 @@
 # AbstractCore
 
+[![PyPI version](https://img.shields.io/pypi/v/abstractcore.svg)](https://pypi.org/project/abstractcore/)
+[![Python Version](https://img.shields.io/pypi/pyversions/abstractcore)](https://pypi.org/project/abstractcore/)
+[![license](https://img.shields.io/github/license/lpalbou/abstractcore)](https://github.com/lpalbou/abstractcore/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/lpalbou/abstractcore?style=social)](https://github.com/lpalbou/abstractcore/stargazers)
+
 A unified Python library for interaction with multiple Large Language Model (LLM) providers.
 
 **Write once, run everywhere.**
