@@ -170,7 +170,7 @@ class VisionFallbackHandler:
             from transformers import BlipProcessor, BlipForConditionalGeneration
 
             # Load BLIP model and processor
-            processor = BlipProcessor.from_pretrained(model_dir / "processor")
+            processor = BlipProcessor.from_pretrained(model_dir / "processor", use_fast=False)
             model = BlipForConditionalGeneration.from_pretrained(model_dir / "model")
 
             # Process image

@@ -186,11 +186,15 @@ class BasicSession:
         if hasattr(self, 'tool_call_tags') and self.tool_call_tags is not None and 'tool_call_tags' not in kwargs:
             kwargs['tool_call_tags'] = self.tool_call_tags
 
+        # Extract media parameter explicitly (fix for media parameter passing)
+        media = kwargs.pop('media', None)
+
         # Call provider
         response = self.provider.generate(
             prompt=prompt,
             messages=messages,
             system_prompt=self.system_prompt,
+            media=media,
             **kwargs
         )
 

@@ -107,7 +107,7 @@ def download_vision_model(model_name: str = "blip-base-caption") -> bool:
         # Download based on model type
         if "blip" in model_name:
             print("📥 Downloading BLIP model and processor...")
-            processor = BlipProcessor.from_pretrained(hf_id, cache_dir=str(models_dir))
+            processor = BlipProcessor.from_pretrained(hf_id, use_fast=False, cache_dir=str(models_dir))
             model = BlipForConditionalGeneration.from_pretrained(hf_id, cache_dir=str(models_dir))
 
             # Save to specific directory structure
@@ -161,178 +161,230 @@ def download_vision_model(model_name: str = "blip-base-caption") -> bool:
         return False
 
 def add_arguments(parser: argparse.ArgumentParser):
-    """Add all AbstractCore configuration arguments."""
+    """Add all AbstractCore configuration arguments with organized groups."""
 
-    # General configuration
-    parser.add_argument("--status", action="store_true",
-                       help="Show current AbstractCore configuration status")
-    parser.add_argument("--configure", action="store_true",
-                       help="Interactive configuration setup")
-    parser.add_argument("--reset", action="store_true",
-                       help="Reset all configuration to defaults")
+    # General configuration group
+    general_group = parser.add_argument_group('General Configuration')
+    general_group.add_argument("--status", action="store_true",
+                              help="Show current configuration status with change commands")
+    general_group.add_argument("--configure", action="store_true",
+                              help="Interactive guided setup for first-time users")
+    general_group.add_argument("--reset", action="store_true",
+                              help="Reset all configuration to built-in defaults")
 
-    # Global default model settings
-    parser.add_argument("--set-global-default", metavar="MODEL",
-                       help="Set global default model (format: provider/model)")
-    parser.add_argument("--set-default-provider", metavar="PROVIDER",
-                       help="Set global default provider")
-    parser.add_argument("--set-chat-model", metavar="MODEL",
-                       help="Set default chat model")
-    parser.add_argument("--set-code-model", metavar="MODEL",
-                       help="Set default code model")
+    # Model configuration group
+    model_group = parser.add_argument_group('Model Configuration')
+    model_group.add_argument("--set-global-default", metavar="PROVIDER/MODEL",
+                            help="Set fallback model for all apps (e.g., ollama/llama3:8b)")
+    model_group.add_argument("--set-app-default", nargs=3, metavar=("APP", "PROVIDER", "MODEL"),
+                            help="Set app-specific model (apps: cli, summarizer, extractor, judge)")
+    model_group.add_argument("--set-chat-model", metavar="PROVIDER/MODEL",
+                            help="Set specialized chat model (optional)")
+    model_group.add_argument("--set-code-model", metavar="PROVIDER/MODEL",
+                            help="Set specialized coding model (optional)")
 
-    # App-specific defaults
-    parser.add_argument("--set-app-default", nargs=3, metavar=("APP", "PROVIDER", "MODEL"),
-                       help="Set app-specific default (app: cli, summarizer, extractor, judge)")
+    # Authentication group
+    auth_group = parser.add_argument_group('Authentication')
+    auth_group.add_argument("--set-api-key", nargs=2, metavar=("PROVIDER", "KEY"),
+                           help="Set API key for cloud providers (openai, anthropic, google, etc.)")
+    auth_group.add_argument("--list-api-keys", action="store_true",
+                           help="Show which providers have API keys configured")
 
-    # Legacy compatibility
-    parser.add_argument("--set-default-model", metavar="MODEL",
-                       help="Set global default model (legacy, same as --set-global-default)")
+    # Media processing group
+    media_group = parser.add_argument_group('Media & Vision Configuration')
+    media_group.add_argument("--set-vision-provider", nargs=2, metavar=("PROVIDER", "MODEL"),
+                            help="Set vision model for image analysis with text-only models")
+    media_group.add_argument("--set-vision-caption", metavar="MODEL",
+                            help="Set vision caption model (format: provider/model)")
+    media_group.add_argument("--add-vision-fallback", nargs=2, metavar=("PROVIDER", "MODEL"),
+                            help="Add backup vision provider to fallback chain")
+    media_group.add_argument("--download-vision-model", nargs="?", const="blip-base-caption", metavar="MODEL",
+                            help="Download local vision model (default: blip-base-caption, ~1GB)")
+    media_group.add_argument("--disable-vision", action="store_true",
+                            help="Disable vision fallback for text-only models")
 
-    # Vision configuration
-    parser.add_argument("--set-vision-caption", metavar="MODEL",
-                       help="Set vision caption model (format: provider/model or model)")
-    parser.add_argument("--set-vision-provider", nargs=2, metavar=("PROVIDER", "MODEL"),
-                       help="Set vision provider and model explicitly")
-    parser.add_argument("--add-vision-fallback", nargs=2, metavar=("PROVIDER", "MODEL"),
-                       help="Add fallback provider/model to vision chain")
-    parser.add_argument("--disable-vision", action="store_true",
-                       help="Disable vision fallback")
-    parser.add_argument("--download-vision-model", nargs="?", const="blip-base-caption", metavar="MODEL",
-                       help="Download local vision model (default: blip-base-caption, 990MB)")
+    # Embeddings group
+    embed_group = parser.add_argument_group('Embeddings Configuration')
+    embed_group.add_argument("--set-embeddings-model", metavar="MODEL",
+                            help="Set model for semantic search (format: provider/model)")
+    embed_group.add_argument("--set-embeddings-provider", nargs="?", const=True, metavar="PROVIDER",
+                            help="Set embeddings provider (huggingface, openai, etc.)")
 
-    # Embeddings configuration
-    parser.add_argument("--set-embeddings-model", metavar="MODEL",
-                       help="Set embeddings model (format: provider/model or model)")
-    parser.add_argument("--set-embeddings-provider", nargs="?", const=True, metavar="PROVIDER",
-                       help="Set embeddings provider")
+    # Legacy compatibility (hidden in advanced section)
+    legacy_group = parser.add_argument_group('Legacy Options')
+    legacy_group.add_argument("--set-default-model", metavar="MODEL",
+                             help="Set global default model (use --set-global-default instead)")
+    legacy_group.add_argument("--set-default-provider", metavar="PROVIDER",
+                             help="Set default provider only (use --set-global-default instead)")
 
-    # API keys
-    parser.add_argument("--set-api-key", nargs=2, metavar=("PROVIDER", "KEY"),
-                       help="Set API key for provider")
-    parser.add_argument("--list-api-keys", action="store_true",
-                       help="List API key status for all providers")
+    # Storage and logging group
+    storage_group = parser.add_argument_group('Storage & Logging')
+    storage_group.add_argument("--set-default-cache-dir", metavar="PATH",
+                              help="Set default cache directory for models and data")
+    storage_group.add_argument("--set-huggingface-cache-dir", metavar="PATH",
+                              help="Set HuggingFace models cache directory")
+    storage_group.add_argument("--set-local-models-cache-dir", metavar="PATH",
+                              help="Set local vision/embedding models cache directory")
+    storage_group.add_argument("--set-log-base-dir", metavar="PATH",
+                              help="Set directory for log files")
 
-    # Cache configuration
-    parser.add_argument("--set-default-cache-dir", metavar="PATH",
-                       help="Set default cache directory")
-    parser.add_argument("--set-huggingface-cache-dir", metavar="PATH",
-                       help="Set HuggingFace cache directory")
-    parser.add_argument("--set-local-models-cache-dir", metavar="PATH",
-                       help="Set local models cache directory")
-
-    # Logging configuration
-    parser.add_argument("--set-console-log-level", metavar="LEVEL",
-                       choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NONE"],
-                       help="Set console logging level")
-    parser.add_argument("--set-file-log-level", metavar="LEVEL",
-                       choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NONE"],
-                       help="Set file logging level")
-    parser.add_argument("--set-log-base-dir", metavar="PATH",
-                       help="Set base directory for log files")
-    parser.add_argument("--enable-debug-logging", action="store_true",
-                       help="Enable debug logging for both console and file")
-    parser.add_argument("--disable-console-logging", action="store_true",
-                       help="Disable console logging")
-    parser.add_argument("--enable-file-logging", action="store_true",
-                       help="Enable file logging")
-    parser.add_argument("--disable-file-logging", action="store_true",
-                       help="Disable file logging")
+    # Logging control group
+    logging_group = parser.add_argument_group('Logging Control')
+    logging_group.add_argument("--set-console-log-level", metavar="LEVEL",
+                              choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NONE"],
+                              help="Set console logging level (default: WARNING)")
+    logging_group.add_argument("--set-file-log-level", metavar="LEVEL",
+                              choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "NONE"],
+                              help="Set file logging level (default: DEBUG)")
+    logging_group.add_argument("--enable-debug-logging", action="store_true",
+                              help="Enable debug logging for both console and file")
+    logging_group.add_argument("--disable-console-logging", action="store_true",
+                              help="Disable all console logging output")
+    logging_group.add_argument("--enable-file-logging", action="store_true",
+                              help="Enable saving logs to files")
+    logging_group.add_argument("--disable-file-logging", action="store_true",
+                              help="Disable file logging")
 
 def print_status():
-    """Print comprehensive configuration status."""
+    """Print comprehensive configuration status with improved readability."""
     config_manager = get_config_manager()
     status = config_manager.get_status()
 
-    print("📋 AbstractCore Configuration Status")
-    print("=" * 70)
+    # Header with clear context
+    print("📋 AbstractCore Default Configuration Status")
+    print("   (Explicit parameters in commands override these defaults)")
+    print("=" * 75)
 
-    # App-specific defaults (most important)
-    print("\n🎯 Application Defaults:")
+    # ESSENTIAL SECTION - What users care about most
+    print("\n┌─ ESSENTIAL CONFIGURATION")
+    print("│")
+
+    # App defaults with improved formatting
+    print("│  🎯 Application Defaults")
     app_defaults = status["app_defaults"]
 
-    print("   CLI (utils):   ", end="")
-    cli_info = app_defaults["cli"]
-    if cli_info["provider"] and cli_info["model"]:
-        print(f"{cli_info['provider']}/{cli_info['model']}")
-    else:
-        print("❌ Not configured")
+    apps = [
+        ("CLI (utils)", app_defaults["cli"]),
+        ("Summarizer", app_defaults["summarizer"]),
+        ("Extractor", app_defaults["extractor"]),
+        ("Judge", app_defaults["judge"])
+    ]
 
-    print("   Summarizer:    ", end="")
-    sum_info = app_defaults["summarizer"]
-    if sum_info["provider"] and sum_info["model"]:
-        print(f"{sum_info['provider']}/{sum_info['model']}")
-    else:
-        print("❌ Not configured")
+    for app_name, app_info in apps:
+        status_icon = "✅" if app_info["provider"] and app_info["model"] else "⚠️"
+        model_text = f"{app_info['provider']}/{app_info['model']}" if app_info["provider"] and app_info["model"] else "Using global fallback"
+        print(f"│     {status_icon} {app_name:<12} {model_text}")
 
-    print("   Extractor:     ", end="")
-    ext_info = app_defaults["extractor"]
-    if ext_info["provider"] and ext_info["model"]:
-        print(f"{ext_info['provider']}/{ext_info['model']}")
-    else:
-        print("❌ Not configured")
-
-    print("   Judge:         ", end="")
-    judge_info = app_defaults["judge"]
-    if judge_info["provider"] and judge_info["model"]:
-        print(f"{judge_info['provider']}/{judge_info['model']}")
-    else:
-        print("❌ Not configured")
-
-    # Global defaults
-    print("\n🌐 Global Fallback:")
+    # Global fallback
+    print("│")
+    print("│  🌐 Global Fallback")
     defaults = status["global_defaults"]
     if defaults["provider"] and defaults["model"]:
-        print(f"   Default: {defaults['provider']}/{defaults['model']}")
+        print(f"│     ✅ Default         {defaults['provider']}/{defaults['model']}")
     else:
-        print("   Default: ❌ Not set")
-    print(f"   Chat: {defaults['chat_model'] or '❌ Not set'}")
-    print(f"   Code: {defaults['code_model'] or '❌ Not set'}")
+        print(f"│     ⚠️  Default         Using built-in default (huggingface/unsloth/Qwen3-4B-Instruct-2507-GGUF)")
 
-    # Vision configuration
-    print("\n👁️  Vision Fallback:")
+    # Show specialized models if set
+    chat_model = defaults['chat_model']
+    code_model = defaults['code_model']
+    if chat_model or code_model:
+        print("│     ┌─ Specialized Models")
+        if chat_model:
+            print(f"│     │  💬 Chat          {chat_model}")
+        if code_model:
+            print(f"│     │  💻 Code          {code_model}")
+
+    # API Keys status (simplified)
+    print("│")
+    print("│  🔑 Provider Access")
+    api_keys = status["api_keys"]
+    configured_keys = [provider for provider, status_text in api_keys.items() if "✅" in status_text]
+    missing_keys = [provider for provider, status_text in api_keys.items() if "❌" in status_text]
+
+    if configured_keys:
+        print(f"│     ✅ Configured       {', '.join(configured_keys)}")
+    if missing_keys:
+        print(f"│     ⚠️  Missing keys     {', '.join(missing_keys)}")
+
+    print("└─")
+
+    # SECONDARY SECTION - Important but less frequently changed
+    print("\n┌─ SECONDARY CONFIGURATION")
+    print("│")
+
+    # Vision with user-friendly descriptions
+    print("│  👁️  Media Processing")
     vision = status["vision"]
-    print(f"   Strategy: {vision['strategy']}")
-    print(f"   Status: {vision['status']}")
+    strategy_desc = {
+        "two_stage": "Smart captioning for text-only models",
+        "disabled": "Media processing disabled",
+        "basic_metadata": "Basic metadata extraction only"
+    }
+    vision_status = "✅ Ready" if "✅" in vision['status'] else "⚠️ Not configured"
+    strategy_text = strategy_desc.get(vision['strategy'], vision['strategy'])
+    print(f"│     {vision_status:<12} {strategy_text}")
     if vision["caption_provider"] and vision["caption_model"]:
-        print(f"   Primary: {vision['caption_provider']}/{vision['caption_model']}")
-    if vision["fallback_chain_length"] > 0:
-        print(f"   Fallback chain: {vision['fallback_chain_length']} entries")
+        print(f"│     📷 Vision Model     {vision['caption_provider']}/{vision['caption_model']}")
 
     # Embeddings
-    print("\n🔗 Embeddings:")
+    print("│")
+    print("│  🔗 Embeddings")
     embeddings = status["embeddings"]
-    print(f"   Status: {embeddings['status']}")
-    if embeddings["provider"] and embeddings["model"]:
-        print(f"   Model: {embeddings['provider']}/{embeddings['model']}")
+    emb_status = "✅ Ready" if "✅" in embeddings['status'] else "⚠️ Not configured"
+    print(f"│     {emb_status:<12} {embeddings['provider']}/{embeddings['model']}")
 
-    # API Keys
-    print("\n🔑 API Keys:")
-    for provider, status_text in status["api_keys"].items():
-        print(f"   {provider}: {status_text}")
+    print("└─")
 
-    # Cache Configuration
-    print("\n💾 Cache Directories:")
-    cache = status["cache"]
-    print(f"   Default: {cache['default_cache_dir']} (change: --set-default-cache-dir PATH)")
-    print(f"   HuggingFace: {cache['huggingface_cache_dir']} (change: --set-huggingface-cache-dir PATH)")
-    print(f"   Local Models: {cache['local_models_cache_dir']} (change: --set-local-models-cache-dir PATH)")
-    print(f"   Status: {cache['status']}")
+    # ADVANCED SECTION - System-level settings
+    print("\n┌─ ADVANCED CONFIGURATION")
+    print("│")
 
-    # Logging Configuration
-    print("\n📝 Logging:")
+    # Logging with simplified status
+    print("│  📝 Logging")
     logging_info = status["logging"]
-    print(f"   Status: {logging_info['status']}")
-    print(f"   Console Level: {logging_info['console_level']} (change: --set-console-log-level LEVEL)")
-    print(f"   File Level: {logging_info['file_level']} (change: --set-file-log-level LEVEL)")
-    file_status = "✅ Enabled" if logging_info['file_logging_enabled'] else "❌ Disabled"
-    file_cmd = "--disable-file-logging" if logging_info['file_logging_enabled'] else "--enable-file-logging"
-    print(f"   File Logging: {file_status} (change: {file_cmd})")
-    print(f"   Log Directory: {logging_info['log_base_dir']} (change: --set-log-base-dir PATH)")
-    print(f"   Verbatim Capture: {'✅ Enabled' if logging_info['verbatim_enabled'] else '❌ Disabled'}")
-    print(f"   Quick commands: --enable-debug-logging, --disable-console-logging")
 
-    print(f"\n📁 Config file: {status['config_file']}")
+    # Determine overall logging status
+    console_level = logging_info['console_level']
+    file_enabled = logging_info['file_logging_enabled']
+
+    if console_level == "NONE" and not file_enabled:
+        log_status = "❌ Disabled"
+        log_desc = "No logging output"
+    elif console_level == "DEBUG" or file_enabled:
+        log_status = "✅ Verbose"
+        log_desc = f"Console: {console_level}, File: {'ON' if file_enabled else 'OFF'}"
+    else:
+        log_status = "⚠️ Minimal"
+        log_desc = f"Console: {console_level} only"
+
+    print(f"│     {log_status:<12} {log_desc}")
+
+    # Cache (simplified)
+    print("│")
+    print("│  💾 Storage")
+    cache = status["cache"]
+    print(f"│     ✅ Configured      Cache: {cache['default_cache_dir']}")
+
+    print("└─")
+
+    # HELP SECTION - Separate actionable commands
+    print("\n┌─ QUICK CONFIGURATION COMMANDS")
+    print("│")
+    print("│  🚀 Common Tasks")
+    print("│     abstractcore --set-global-default PROVIDER MODEL")
+    print("│     abstractcore --set-app-default APPNAME PROVIDER MODEL")
+    print("│     abstractcore --set-api-key PROVIDER YOUR_KEY")
+    print("│")
+    print("│  🔧 Specialized Setup")
+    print("│     abstractcore --enable-debug-logging")
+    print("│     abstractcore --configure  (interactive setup)")
+    print("│")
+    print("│  📖 More Help")
+    print("│     abstractcore --help")
+    print("│     docs/centralized-config.md")
+    print("└─")
+
+    print(f"\n📁 Configuration file: {status['config_file']}")
 
 def interactive_configure():
     """Interactive configuration setup."""
@@ -561,18 +613,57 @@ def main(argv: List[str] = None):
         description="AbstractCore Unified Configuration System",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
+QUICK START:
   abstractcore --status                           # Show current configuration
-  abstractcore --configure                       # Interactive setup
-  abstractcore --set-default-model ollama/llama3:8b
-  abstractcore --set-vision-caption qwen2.5vl:7b
-  abstractcore --set-api-key openai sk-...
+  abstractcore --configure                       # Interactive guided setup
 
-The configuration system enables:
-- Default model settings for consistent behavior
-- Vision fallback for text-only models processing images
-- Embeddings configuration for semantic search
-- API key management for cloud providers
+COMMON TASKS:
+  # Set default model for all apps
+  abstractcore --set-global-default ollama llama3:8b
+
+  # Set different models for specific apps
+  abstractcore --set-app-default cli lmstudio qwen/qwen3-next-80b
+  abstractcore --set-app-default summarizer openai gpt-4o-mini
+  abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+
+  # Configure API keys
+  abstractcore --set-api-key openai sk-your-key-here
+  abstractcore --set-api-key anthropic your-anthropic-key
+
+  # Setup vision for images (with text-only models)
+  abstractcore --set-vision-provider ollama qwen2.5vl:7b
+  abstractcore --download-vision-model
+
+  # Configure logging
+  abstractcore --enable-debug-logging            # Enable debug mode
+  abstractcore --set-console-log-level WARNING   # Reduce console output
+  abstractcore --enable-file-logging             # Save logs to files
+
+SPECIALIZED MODELS:
+  abstractcore --set-chat-model openai/gpt-4o-mini      # For chat applications
+  abstractcore --set-code-model anthropic/claude-3-5-sonnet  # For coding tasks
+
+PRIORITY SYSTEM:
+  1. Explicit parameters (highest):  summarizer doc.pdf --provider openai --model gpt-4o
+  2. App-specific config:           --set-app-default summarizer openai gpt-4o-mini
+  3. Global config:                 --set-global-default openai/gpt-4o-mini
+  4. Built-in defaults (lowest):    huggingface/unsloth/Qwen3-4B-Instruct-2507-GGUF
+
+APPS:
+  cli        Interactive CLI (python -m abstractcore.utils.cli)
+  summarizer Document summarization (summarizer document.pdf)
+  extractor  Entity/relationship extraction (extractor data.txt)
+  judge      Text evaluation and scoring (judge essay.md)
+
+TROUBLESHOOTING:
+  abstractcore --status                          # Check current settings
+  abstractcore --reset                          # Reset to defaults
+  abstractcore --list-api-keys                  # Check API key status
+
+  If apps show "no provider/model configured":
+  abstractcore --set-global-default ollama llama3:8b
+
+DOCUMENTATION: docs/centralized-config.md
         """
     )
 

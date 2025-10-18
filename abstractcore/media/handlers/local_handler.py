@@ -314,8 +314,8 @@ class LocalMediaHandler(BaseProviderMediaHandler):
                         from ..vision_fallback import VisionFallbackHandler, VisionNotConfiguredError
                         fallback_handler = VisionFallbackHandler()
 
-                        # Get the actual file path from metadata or resolve it
-                        file_path = media_content.metadata.get('file_path') or media_content.metadata.get('file_name', 'image')
+                        # Get the actual file path from media_content object
+                        file_path = media_content.file_path or media_content.metadata.get('file_path') or media_content.metadata.get('file_name', 'image')
 
                         # Generate description using vision fallback
                         description = fallback_handler.create_description(str(file_path), text)
