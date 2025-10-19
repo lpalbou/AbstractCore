@@ -1454,7 +1454,7 @@ POST /v1/completions
 # Embeddings
 POST /v1/embeddings
 
-# AbstractCore-specific responses
+# OpenAI Responses API (100% Compatible)
 POST /v1/responses
 
 # Provider management
@@ -1544,9 +1544,9 @@ response = client.chat.completions.create(
 )
 ```
 
-#### 2. OpenAI Vision API Format
+#### 2. OpenAI Vision API Format (with NEW type="file" Support)
 
-Standard OpenAI multimodal format:
+Standard OpenAI multimodal format with enhanced file support:
 
 ```python
 # Image with URL
@@ -1560,6 +1560,49 @@ response = client.chat.completions.create(
                 "type": "image_url",
                 "image_url": {"url": "https://example.com/image.jpg"}
             }
+        ]
+    }]
+)
+
+# NEW: Explicit file type for documents (PDF, DOCX, XLSX, CSV, etc.)
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Analyze this document"},
+            {
+                "type": "file",
+                "file_url": {"url": "https://example.com/report.pdf"}
+            }
+        ]
+    }]
+)
+
+# Mixed media (images, documents, data files)
+response = client.chat.completions.create(
+    model="anthropic/claude-3.5-sonnet",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Compare this chart with the data"},
+            {"type": "image_url", "image_url": {"url": "https://example.com/chart.png"}},
+            {"type": "file", "file_url": {"url": "https://example.com/data.csv"}}
+        ]
+    }]
+)
+
+# Document with base64 data (PDF, DOCX, CSV, etc.)
+with open("report.pdf", "rb") as f:
+    pdf_data = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="lmstudio/qwen/qwen3-next-80b",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Summarize this document"},
+            {"type": "file", "file_url": {"url": f"data:application/pdf;base64,{pdf_data}"}}
         ]
     }]
 )
@@ -1669,6 +1712,160 @@ content = [
 - **Documents**: PDF, DOCX, XLSX, PPTX
 - **Data/Text**: CSV, TSV, TXT, MD, JSON, XML
 - **Size Limits**: 10MB per file, 32MB total per request
+
+### OpenAI Responses API (/v1/responses)
+
+AbstractCore 2.5.0 introduces 100% OpenAI-compatible `/v1/responses` endpoint with native `input_file` support:
+
+#### Why Use /v1/responses?
+
+- **OpenAI Compatible**: Drop-in replacement for OpenAI's Responses API
+- **Native File Support**: `input_file` type designed specifically for document attachments
+- **Cleaner API**: Explicit separation between text (`input_text`) and files (`input_file`)
+- **Backward Compatible**: Existing `messages` format still works alongside new `input` format
+- **Optional Streaming**: Streaming opt-in with `"stream": true` (defaults to `false`)
+
+#### OpenAI Responses API Format
+
+```python
+import requests
+
+# Standard OpenAI Responses API format
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Analyze this document"},
+                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+                ]
+            }
+        ],
+        "stream": False  # Optional streaming (defaults to False)
+    }
+)
+
+# Works with any provider
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "lmstudio/qwen/qwen3-next-80b",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Analyze the letter and provide a summary of the key points."
+                    },
+                    {
+                        "type": "input_file",
+                        "file_url": "https://www.berkshirehathaway.com/letters/2024ltr.pdf"
+                    }
+                ]
+            }
+        ]
+    }
+)
+
+# Streaming mode (opt-in)
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "anthropic/claude-3.5-sonnet",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Summarize this report"},
+                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+                ]
+            }
+        ],
+        "stream": True  # Enable real-time streaming
+    },
+    stream=True  # Important for streaming responses
+)
+
+for line in response.iter_lines():
+    if line:
+        print(line.decode())
+```
+
+#### Legacy Format (Still Supported)
+
+The endpoint automatically detects and supports the legacy `messages` format:
+
+```python
+# Legacy format (backward compatible)
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "openai/gpt-4",
+        "messages": [
+            {"role": "user", "content": "Tell me a story"}
+        ],
+        "stream": False
+    }
+)
+```
+
+#### Automatic Format Detection
+
+The server automatically detects which format you're using:
+- **OpenAI Format**: Presence of `input` field → converts to internal format
+- **Legacy Format**: Presence of `messages` field → processes directly
+- **Error**: Missing both `input` and `messages` → returns 400 error with clear message
+
+#### Supported Media Types in input_file
+
+All file types supported via URL, local path, or base64:
+
+```python
+# PDF from URL
+{"type": "input_file", "file_url": "https://example.com/report.pdf"}
+
+# Excel from local path
+{"type": "input_file", "file_url": "/path/to/spreadsheet.xlsx"}
+
+# CSV from base64
+{"type": "input_file", "file_url": "data:text/csv;base64,RGF0ZSxQcm9kdW..."}
+
+# PowerPoint from URL
+{"type": "input_file", "file_url": "https://example.com/presentation.pptx"}
+```
+
+#### Complete Example with Multiple Files
+
+```python
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "openai/gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Compare the financial data in the spreadsheet with the PDF report and the chart image"
+                    },
+                    {"type": "input_file", "file_url": "https://example.com/financial_data.xlsx"},
+                    {"type": "input_file", "file_url": "https://example.com/annual_report.pdf"},
+                    {"type": "input_file", "file_url": "https://example.com/quarterly_chart.png"}
+                ]
+            }
+        ],
+        "max_tokens": 2000,
+        "temperature": 0.7,
+        "stream": False
+    }
+)
+
+print(response.json()["choices"][0]["message"]["content"])
 
 #### Mixed Content Example
 

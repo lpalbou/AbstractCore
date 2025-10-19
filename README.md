@@ -121,15 +121,16 @@ response = llm.generate(
 ## Key Features
 
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
+- **Centralized Configuration**: Global defaults and app-specific preferences at `~/.abstractcore/config/abstractcore.json`
 - **Intelligent Media Handling**: Upload images, PDFs, and documents with automatic maximum resolution optimization
 - **Vision Model Support**: Smart image processing at each model's maximum capability for best results
-- **Document Processing**: Advanced PDF extraction, Office documents (DOCX/XLSX/PPT), and text analysis
+- **Document Processing**: Advanced PDF extraction (PyMuPDF4LLM), Office documents (DOCX/XLSX/PPT), CSV/TSV analysis
 - **Unified Tools**: Consistent tool calling across all providers
 - **Session Management**: Persistent conversations with metadata, analytics, and complete serialization
 - **Structured Responses**: Clean, predictable output formats with Pydantic
 - **Streaming Support**: Real-time token generation for interactive experiences
 - **Embeddings**: Built-in support for semantic search and RAG applications
-- **Universal Server**: Optional OpenAI-compatible API server
+- **Universal Server**: Optional OpenAI-compatible API server with `/v1/responses` endpoint
 
 ## Supported Providers
 
@@ -167,12 +168,15 @@ response = client.chat.completions.create(
 ```
 
 **Server Features:**
-- OpenAI-compatible REST endpoints (`/v1/chat/completions`, `/v1/embeddings`, etc.)
+- OpenAI-compatible REST endpoints (`/v1/chat/completions`, `/v1/embeddings`, `/v1/responses`)
+- **NEW in v2.5.0**: OpenAI Responses API (`/v1/responses`) with native `input_file` support
 - Multi-provider support through one HTTP API
+- Comprehensive media processing (images, PDFs, Office documents, CSV/TSV)
 - Agentic CLI integration (Codex, Crush, Gemini CLI)
-- Streaming responses
+- Streaming responses with optional opt-in
 - Tool call format conversion
-- Interactive API docs at `/docs`
+- Enhanced debug logging with `--debug` flag
+- Interactive API docs at `/docs` (Swagger UI)
 
 **When to use the server:**
 - Integrating with existing OpenAI-compatible tools

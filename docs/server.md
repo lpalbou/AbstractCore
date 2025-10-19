@@ -360,6 +360,190 @@ for model in providers_models:
 
 ---
 
+### OpenAI Responses API
+
+**Endpoint:** `POST /v1/responses`
+
+**NEW in v2.5.0**: 100% OpenAI-compatible Responses API with native `input_file` support.
+
+#### Why Use /v1/responses?
+
+- **OpenAI Compatible**: Drop-in replacement for OpenAI's Responses API
+- **Native File Support**: `input_file` type designed specifically for document attachments
+- **Cleaner API**: Explicit separation between text (`input_text`) and files (`input_file`)
+- **Backward Compatible**: Existing `messages` format still works alongside new `input` format
+- **Optional Streaming**: Streaming opt-in with `"stream": true` (defaults to `false`)
+
+#### Request Format
+
+**OpenAI Responses API Format (Recommended):**
+```json
+{
+  "model": "gpt-4o",
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "input_text", "text": "Analyze this document"},
+        {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+      ]
+    }
+  ],
+  "stream": false,
+  "max_tokens": 2000,
+  "temperature": 0.7
+}
+```
+
+**Legacy Format (Still Supported):**
+```json
+{
+  "model": "openai/gpt-4",
+  "messages": [
+    {"role": "user", "content": "Tell me a story"}
+  ],
+  "stream": false
+}
+```
+
+#### Automatic Format Detection
+
+The server automatically detects which format you're using:
+- **OpenAI Format**: Presence of `input` field → converts to internal format
+- **Legacy Format**: Presence of `messages` field → processes directly
+- **Error**: Missing both fields → returns 400 error with clear message
+
+#### Examples
+
+**Simple Text Request:**
+```bash
+curl -X POST http://localhost:8000/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "lmstudio/qwen/qwen3-next-80b",
+    "input": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "input_text", "text": "What is Python?"}
+        ]
+      }
+    ]
+  }'
+```
+
+**File Analysis:**
+```bash
+curl -X POST http://localhost:8000/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "input": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "input_text", "text": "Analyze the letter and summarize key points"},
+          {"type": "input_file", "file_url": "https://www.berkshirehathaway.com/letters/2024ltr.pdf"}
+        ]
+      }
+    ]
+  }'
+```
+
+**Multiple Files:**
+```bash
+curl -X POST http://localhost:8000/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "anthropic/claude-3.5-sonnet",
+    "input": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "input_text", "text": "Compare these documents"},
+          {"type": "input_file", "file_url": "https://example.com/report1.pdf"},
+          {"type": "input_file", "file_url": "https://example.com/report2.pdf"},
+          {"type": "input_file", "file_url": "https://example.com/chart.png"}
+        ]
+      }
+    ],
+    "max_tokens": 2000
+  }'
+```
+
+**Streaming Response:**
+```bash
+curl -X POST http://localhost:8000/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "input": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "input_text", "text": "Summarize this document"},
+          {"type": "input_file", "file_url": "https://example.com/document.pdf"}
+        ]
+      }
+    ],
+    "stream": true
+  }' --no-buffer
+```
+
+#### Supported Media Types
+
+All file types supported via URL, local path, or base64:
+
+- **Documents**: PDF, DOCX, XLSX, PPTX
+- **Data Files**: CSV, TSV, JSON, XML
+- **Text Files**: TXT, MD
+- **Images**: PNG, JPEG, GIF, WEBP, BMP, TIFF
+- **Size Limits**: 10MB per file, 32MB total per request
+
+**Source Options:**
+```json
+// HTTP/HTTPS URL
+{"type": "input_file", "file_url": "https://example.com/report.pdf"}
+
+// Local file path
+{"type": "input_file", "file_url": "/path/to/document.xlsx"}
+
+// Base64 data URL
+{"type": "input_file", "file_url": "data:application/pdf;base64,JVBERi0x..."}
+```
+
+#### Python Client Example
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+
+# Direct request to /v1/responses endpoint
+import requests
+
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Analyze this document"},
+                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+                ]
+            }
+        ]
+    }
+)
+
+result = response.json()
+print(result["choices"][0]["message"]["content"])
+```
+
+---
+
 ### Embeddings
 
 **Endpoint:** `POST /v1/embeddings`
