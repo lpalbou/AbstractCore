@@ -25,6 +25,18 @@ import sys
 import time
 from typing import Optional
 
+# Enable command history and arrow key navigation
+try:
+    import readline
+    # Configure readline for better history behavior
+    readline.set_startup_hook(lambda: readline.insert_text(''))
+    readline.parse_and_bind("tab: complete")
+    # Set a reasonable history length
+    readline.set_history_length(1000)
+except ImportError:
+    # readline not available (typically on Windows)
+    readline = None
+
 from .. import create_llm, BasicSession
 from ..tools.common_tools import list_files, read_file, write_file, execute_command, search_files
 from ..processing import BasicExtractor, BasicJudge
@@ -57,6 +69,9 @@ class SimpleCLI:
 
         self.max_tokens = max_tokens
 
+        # Initialize command history with persistent storage
+        self._setup_command_history()
+
         # Initialize provider and session with tools
         self.provider = create_llm(provider, model=model, max_tokens=max_tokens, **kwargs)
         self.session = BasicSession(
@@ -81,6 +96,47 @@ class SimpleCLI:
             print("💡 Ask questions naturally or use tools: 'What files are here?'")
             print("=" * 70)
 
+    def _setup_command_history(self):
+        """Setup command history with persistent storage."""
+        if readline is None:
+            return  # No readline support available
+
+        # Store history in user's home directory
+        import os
+        import pathlib
+
+        # Create .abstractcore directory if it doesn't exist
+        history_dir = pathlib.Path.home() / '.abstractcore'
+        history_dir.mkdir(exist_ok=True)
+
+        # Define history file path
+        self.history_file = history_dir / 'cli_history.txt'
+
+        try:
+            # Load existing history if file exists
+            if self.history_file.exists():
+                readline.read_history_file(str(self.history_file))
+                if self.debug_mode:
+                    history_size = readline.get_current_history_length()
+                    print(f"🔍 Loaded {history_size} command(s) from history")
+        except (FileNotFoundError, PermissionError) as e:
+            if self.debug_mode:
+                print(f"⚠️ Could not load command history: {e}")
+
+    def _save_command_history(self):
+        """Save current command history to disk."""
+        if readline is None or not hasattr(self, 'history_file'):
+            return
+
+        try:
+            # Ensure the directory exists
+            self.history_file.parent.mkdir(exist_ok=True)
+            # Save history to file
+            readline.write_history_file(str(self.history_file))
+        except (PermissionError, OSError) as e:
+            if self.debug_mode:
+                print(f"⚠️ Could not save command history: {e}")
+
     def handle_command(self, user_input: str) -> bool:
         """Handle commands. Returns True if command processed, False otherwise."""
         if not user_input.startswith('/'):
@@ -89,6 +145,7 @@ class SimpleCLI:
         cmd = user_input[1:].strip()
 
         if cmd in ['quit', 'exit', 'q']:
+            self._save_command_history()
             print("👋 Goodbye!")
             sys.exit(0)
 
@@ -1241,10 +1298,12 @@ class SimpleCLI:
                     print("\n\n👋 Use /quit to exit.")
                     continue
                 except EOFError:
+                    self._save_command_history()
                     print("\n👋 Goodbye!")
                     break
 
         except Exception as e:
+            self._save_command_history()
             print(f"❌ Fatal error: {e}")
 
     def run_single_prompt(self, prompt: str):
@@ -1316,11 +1375,20 @@ build custom solutions using the AbstractCore framework directly.
 
     args = parser.parse_args()
 
+    # Load configuration manager for defaults
+    try:
+        from ..config import get_config_manager
+        config_manager = get_config_manager()
+    except Exception as e:
+        config_manager = None
+        if not args.provider or not args.model:
+            print(f"❌ Error loading configuration: {e}")
+            print("💡 Please specify --provider and --model explicitly")
+            sys.exit(1)
+
     # Get provider and model from configuration if not specified
     if not args.provider or not args.model:
-        try:
-            from ..config import get_config_manager
-            config_manager = get_config_manager()
+        if config_manager:
             default_provider, default_model = config_manager.get_app_default('cli')
 
             # Use configured defaults if available
@@ -1342,15 +1410,23 @@ build custom solutions using the AbstractCore framework directly.
                     print(f"🔧 Using configured defaults: {provider}/{model}")
                     print("   (Configure with: abstractcore --set-app-default cli <provider> <model>)")
                     print()
-
-        except Exception as e:
-            print(f"❌ Error loading configuration: {e}")
-            print("💡 Please specify --provider and --model explicitly")
+        else:
+            print("❌ Error: No provider/model specified and configuration unavailable")
             sys.exit(1)
     else:
         # Use explicit arguments
         provider = args.provider
         model = args.model
+
+    # Get streaming default from configuration (only if --stream not explicitly provided)
+    if not args.stream and config_manager:
+        try:
+            default_streaming = config_manager.get_streaming_default('cli')
+            stream_mode = default_streaming
+        except Exception:
+            stream_mode = False  # Safe fallback
+    else:
+        stream_mode = args.stream
 
     # Build kwargs
     kwargs = {'temperature': args.temperature}
@@ -1363,7 +1439,7 @@ build custom solutions using the AbstractCore framework directly.
     cli = SimpleCLI(
         provider=provider,
         model=model,
-        stream=args.stream,
+        stream=stream_mode,
         max_tokens=args.max_tokens,
         debug=args.debug,
         show_banner=not args.prompt,  # Hide banner in single-prompt mode

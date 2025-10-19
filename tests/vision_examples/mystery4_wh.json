@@ -1,0 +1,32 @@
+{
+  "image_name": "mystery4_wh.jpg",
+  "description": "Spectacular wildlife photograph of a humpback whale breaching from the ocean surface",
+
+  "keywords": [
+    "whale", "humpback", "breach", "breaching", "ocean", "sea", "water",
+    "marine", "wildlife", "mammal", "cetacean", "spray", "splash", "waves",
+    "gray", "black", "white", "barnacles", "flippers", "fins", "tail",
+    "flukes", "powerful", "majestic", "nature", "dramatic", "action",
+    "movement", "leap", "jump", "surface", "photography", "wild", "natural",
+    "impressive", "size", "massive", "conservation", "marine life"
+  ],
+
+  "summary": "A breathtaking wildlife photograph capturing a humpback whale in the dramatic act of breaching, with the massive marine mammal partially emerged from the ocean surface. The whale's distinctive dark gray body with white markings is clearly visible, along with characteristic features like its long flippers and the barnacle formations typical of humpback whales. Water cascades dramatically from the whale's body as it rises from the sea, creating a spectacular spray and splash effect. The ocean surface shows active waves, and the background appears misty or foggy, giving the scene an atmospheric quality. This powerful image showcases the incredible size and grace of these magnificent marine creatures in their natural habitat, representing a remarkable moment of wildlife behavior.",
+
+  "structured": {
+    "theme": "Marine wildlife photography and conservation",
+    "mood": "Awe-inspiring, dramatic, powerful, majestic, wild",
+    "color_tone": "Muted grays and blues with natural ocean palette",
+    "setting": "Open ocean/marine environment",
+    "weather": "Overcast or misty conditions over ocean",
+    "time_of_day": "Daytime with diffused natural lighting",
+    "composition": "Action shot, whale positioned prominently, dynamic movement",
+    "main_objects": ["humpback whale", "ocean water", "spray/splash", "waves"],
+    "lighting": "Diffused natural daylight with soft contrast",
+    "suggested_activity": "Whale watching, marine wildlife photography, eco-tourism",
+    "dominant_colors": ["dark gray", "white", "blue-gray", "ocean blue"],
+    "visual_elements": ["motion blur", "water spray", "dynamic action", "scale"],
+    "landscape_type": "Open ocean/marine environment",
+    "human_presence": "Implied photographer, likely from boat"
+  }
+}

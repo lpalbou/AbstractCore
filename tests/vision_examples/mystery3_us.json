@@ -1,0 +1,32 @@
+{
+  "image_name": "mystery3_us.jpg",
+  "description": "Urban sunset scene along a tree-lined pedestrian pathway with street lamps and dramatic sky",
+
+  "keywords": [
+    "urban", "city", "street", "sunset", "pathway", "walkway", "sidewalk",
+    "trees", "bare", "winter", "branches", "street lamp", "lamppost", "lighting",
+    "sky", "clouds", "dramatic", "colorful", "pink", "orange", "purple",
+    "twilight", "dusk", "evening", "peaceful", "serene", "perspective",
+    "buildings", "architecture", "residential", "neighborhood", "linear",
+    "symmetry", "vanishing point", "golden hour", "atmospheric"
+  ],
+
+  "summary": "A stunning urban sunset scene captured along a tree-lined pedestrian pathway or wide sidewalk. The image shows a straight walkway flanked by bare winter trees on both sides, leading toward the horizon where a dramatic sunset fills the sky with vibrant pink, orange, and purple hues. Classic street lamps line the pathway, providing warm artificial lighting that contrasts beautifully with the natural sunset colors. Residential buildings are visible on either side through the trees, suggesting an urban or suburban neighborhood setting. The composition creates a strong sense of perspective with the pathway acting as a leading line toward the colorful sky. The bare tree branches create an intricate silhouette pattern against the dramatic sunset, and the overall atmosphere is peaceful and contemplative.",
+
+  "structured": {
+    "theme": "Urban landscape photography during golden hour",
+    "mood": "Peaceful, contemplative, romantic, serene, dramatic",
+    "color_tone": "Warm sunset palette with pink, orange, and purple hues",
+    "setting": "Urban/suburban neighborhood with tree-lined street",
+    "weather": "Clear evening with dramatic sunset clouds",
+    "time_of_day": "Sunset/dusk/twilight hour",
+    "composition": "Strong leading lines, central perspective, symmetrical framing",
+    "main_objects": ["walkway", "street lamps", "bare trees", "buildings", "sunset sky"],
+    "lighting": "Mixed natural sunset light and artificial street lighting",
+    "suggested_activity": "Evening walk, urban exploration, photography",
+    "dominant_colors": ["pink", "orange", "purple", "yellow", "dark silhouettes"],
+    "visual_elements": ["leading lines", "symmetry", "silhouettes", "perspective", "color gradient"],
+    "landscape_type": "Urban/suburban tree-lined street or boulevard",
+    "human_presence": "None visible but human infrastructure throughout"
+  }
+}

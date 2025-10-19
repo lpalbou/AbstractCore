@@ -25,6 +25,20 @@ try:
 except ImportError:
     STRUCTLOG_AVAILABLE = False
 
+try:
+    import colorama
+    from colorama import Fore, Style
+    COLORAMA_AVAILABLE = True
+    # Initialize colorama for cross-platform colored output
+    colorama.init(autoreset=True)
+except ImportError:
+    COLORAMA_AVAILABLE = False
+    # Fallback empty classes if colorama not available
+    class Fore:
+        RED = YELLOW = GREEN = CYAN = BLUE = MAGENTA = WHITE = RESET = ""
+    class Style:
+        BRIGHT = DIM = RESET_ALL = ""
+
 # Import configuration manager
 def _get_config_defaults():
     """Get configuration defaults from centralized config system."""
@@ -70,6 +84,34 @@ def _get_config_defaults():
             'console_json': False,
             'file_json': True
         }
+
+# Color mapping for log levels
+LOG_LEVEL_COLORS = {
+    'DEBUG': Fore.CYAN + Style.DIM,           # Cyan, dimmed (less prominent)
+    'INFO': Fore.GREEN,                       # Green (informational, good)
+    'WARNING': Fore.YELLOW + Style.BRIGHT,    # Bright yellow (attention)
+    'ERROR': Fore.RED,                        # Red (error)
+    'CRITICAL': Fore.RED + Style.BRIGHT       # Bright red (critical)
+}
+
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter that adds colors to log levels."""
+
+    def format(self, record):
+        # Get the original formatted message
+        formatted_message = super().format(record)
+
+        # Only add colors if colorama is available and we're outputting to a terminal
+        if COLORAMA_AVAILABLE and hasattr(sys.stdout, 'isatty') and sys.stdout.isatty():
+            # Get color for this level
+            level_color = LOG_LEVEL_COLORS.get(record.levelname, '')
+
+            if level_color:
+                # Replace the level name with colored version
+                colored_level = f"{level_color}[{record.levelname}]{Style.RESET_ALL}"
+                formatted_message = formatted_message.replace(f"[{record.levelname}]", colored_level)
+
+        return formatted_message
 
 # Global configuration
 class LogConfig:
@@ -180,7 +222,8 @@ class LogConfig:
             if self.console_json:
                 console_formatter = logging.Formatter('%(message)s')
             else:
-                console_formatter = logging.Formatter(
+                # Use colored formatter for better visual distinction
+                console_formatter = ColoredFormatter(
                     '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
                     datefmt='%H:%M:%S'
                 )

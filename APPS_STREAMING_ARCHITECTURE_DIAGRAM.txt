@@ -1,0 +1,371 @@
+================================================================================
+AbstractCore Apps & Streaming Architecture - Visual Reference
+================================================================================
+
+1. COMPLETE SYSTEM ARCHITECTURE
+================================================================================
+
+                            ┌─────────────────────┐
+                            │   User/Application  │
+                            └──────────┬──────────┘
+                                       │
+                    ┌──────────────────┼──────────────────┐
+                    │                  │                  │
+                    ▼                  ▼                  ▼
+         ┌──────────────────┐  ┌─────────────────┐  ┌──────────────────┐
+         │  Apps (Batch)    │  │  Interactive    │  │  HTTP Server     │
+         │                  │  │  CLI            │  │  /chat/          │
+         │ - Summarizer     │  │                 │  │ completions      │
+         │ - Extractor      │  │  abstractcore.  │  │                  │
+         │ - Judge          │  │  utils.cli      │  │  abstractcore.   │
+         │                  │  │                 │  │  server.app      │
+         └────────┬─────────┘  └────────┬────────┘  └────────┬─────────┘
+                  │                     │                    │
+                  └─────────────────────┼────────────────────┘
+                                        │
+                          ┌─────────────▼──────────────┐
+                          │  Configuration Manager     │
+                          │  ~/.abstractcore/config/   │
+                          │  abstractcore.json         │
+                          └─────────────┬──────────────┘
+                                        │
+                    ┌───────────────────┼───────────────────┐
+                    │                   │                   │
+                    ▼                   ▼                   ▼
+         ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+         │  App Defaults    │  │  Streaming       │  │  Logging Config  │
+         │                  │  │  Config          │  │                  │
+         │ - summarizer     │  │                  │  │ - console_level  │
+         │ - extractor      │  │ cli_stream_      │  │ - file_level     │
+         │ - judge          │  │ default: bool    │  │ - log_dir        │
+         │ - cli            │  │                  │  │ - verbatim_      │
+         │                  │  │ apps don't       │  │   enabled        │
+         │                  │  │ stream (by       │  │ - file_json      │
+         │                  │  │ design)          │  │                  │
+         └──────────────────┘  └──────────────────┘  └──────────────────┘
+
+
+2. APP PROCESSING PIPELINE (All Three Apps)
+================================================================================
+
+     ┌─────────────────────────────────────────┐
+     │  Args: --provider, --model, --timeout   │
+     └────────────┬────────────────────────────┘
+                  │
+                  ▼
+     ┌─────────────────────────────────────────┐
+     │  Resolve Provider/Model                 │
+     │  1. Check args (explicit override)      │
+     │  2. Check config defaults               │
+     │  3. Use hardcoded fallback              │
+     └────────────┬────────────────────────────┘
+                  │
+                  ▼
+     ┌─────────────────────────────────────────┐
+     │  Create LLM Instance                    │
+     │  create_llm(provider, model=...,        │
+     │             max_tokens=...,             │
+     │             max_output_tokens=...)      │
+     └────────────┬────────────────────────────┘
+                  │
+                  ▼
+     ┌─────────────────────────────────────────┐
+     │  Create App Instance                    │
+     │  - BasicSummarizer                      │
+     │  - BasicExtractor                       │
+     │  - BasicJudge                           │
+     └────────────┬────────────────────────────┘
+                  │
+                  ▼
+     ┌─────────────────────────────────────────┐
+     │  Process (NO STREAMING)                 │
+     │  ❌ stream=False (hard-coded)           │
+     │  ✅ Aggregates complete response       │
+     │  ✅ Post-processes & structures        │
+     │  ✅ Returns structured object          │
+     └────────────┬────────────────────────────┘
+                  │
+                  ▼
+     ┌─────────────────────────────────────────┐
+     │  Format Output                          │
+     │  - Text (summary/assessment)            │
+     │  - JSON-LD (knowledge graph)            │
+     │  - YAML / Triples                       │
+     └────────────┬────────────────────────────┘
+                  │
+                  ▼
+     ┌─────────────────────────────────────────┐
+     │  Display or Save to File                │
+     └─────────────────────────────────────────┘
+
+
+3. CONFIGURATION RESOLUTION PRIORITY
+================================================================================
+
+                    ┌─────────────────────┐
+                    │  CLI Arguments      │  ← HIGHEST PRIORITY
+                    │  --provider xyz     │     (Explicit user intent)
+                    │  --model abc        │
+                    └────────────┬────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────┐
+                    │  Config File        │  ← MEDIUM PRIORITY
+                    │  ~/.abstractcore/   │     (User preference)
+                    │  config/abstractcore.json
+                    │  app_defaults.      │
+                    │  summarizer_provider│
+                    └────────────┬────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────┐
+                    │  Hardcoded Fallback │  ← LOWEST PRIORITY
+                    │  in app_config_     │     (Default)
+                    │  utils.py           │
+                    │  ('huggingface',    │
+                    │  'unsloth/...')     │
+                    └─────────────────────┘
+
+
+4. STREAMING DECISION MATRIX
+================================================================================
+
+Component          Use Case        Streaming    Config     Note
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLI                Interactive     ✅ YES      ✅ YES     Configurable
+                   Chat
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Server API         Real-time       ✅ YES      ⚠️ N/A    Per-request
+                   Chat/Agents
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Summarizer         Batch           ❌ NO       ✅ YES    Aggregates
+                   Processing      (by design)           complete text
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Extractor          Batch           ❌ NO       ✅ YES    Structures
+                   Processing      (by design)          knowledge graph
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Judge              Batch           ❌ NO       ✅ YES    Computes
+                   Processing      (by design)          evaluation scores
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+5. CONFIGURATION FILES & LOCATIONS
+================================================================================
+
+Location: ~/.abstractcore/config/abstractcore.json
+
+{
+  "app_defaults": {
+    "cli_provider": "huggingface",
+    "cli_model": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "summarizer_provider": "openai",
+    "summarizer_model": "gpt-4o-mini",
+    "extractor_provider": "anthropic",
+    "extractor_model": "claude-3-5-haiku-20241022",
+    "judge_provider": "ollama",
+    "judge_model": "gemma3:1b-it-qat"
+  },
+  "streaming": {
+    "cli_stream_default": false  ← Only CLI uses this
+  },
+  "logging": {
+    "console_level": "WARNING",
+    "file_level": "DEBUG",
+    "log_base_dir": "~/.abstractcore/logs",
+    "file_logging_enabled": true,
+    "verbatim_enabled": true
+  }
+}
+
+
+6. PARAMETER PASSING FLOW (Example: Summarizer)
+================================================================================
+
+User Command:
+  $ python -m abstractcore.apps.summarizer document.txt
+
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │  Parse Arguments     │
+                    │  (argparse)          │
+                    │                      │
+                    │  args.provider=None  │
+                    │  args.model=None     │
+                    │  args.max_tokens=32k │
+                    └──────────┬───────────┘
+                               │
+                ┌──────────────┴──────────────┐
+                │                             │
+    (provider/model specified?)      (use defaults)
+                │                             │
+                ▼                             ▼
+    ┌─────────────────────┐      ┌──────────────────────┐
+    │ Config lookup:       │      │ get_app_defaults()   │
+    │ args.provider &      │      │                      │
+    │ args.model           │      │ Try config file      │
+    │                      │      │ Fall back to         │
+    │ config_source=       │      │ hardcoded defaults   │
+    │ "explicit params"    │      │                      │
+    │                      │      │ config_source=       │
+    │                      │      │ "configured defaults"│
+    └──────────┬───────────┘      └──────────┬───────────┘
+               │                             │
+               └──────────────┬──────────────┘
+                              │
+                              ▼
+                    ┌──────────────────────┐
+                    │ create_llm(          │
+                    │   provider,          │
+                    │   model=model,       │
+                    │   max_tokens=32000,  │
+                    │   max_output_tokens= │
+                    │   8000               │
+                    │ )                    │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ BasicSummarizer(llm) │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ llm.generate(        │
+                    │   text,              │
+                    │   stream=False ← NO  │
+                    │ )                    │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ Post-process &       │
+                    │ Return Structured    │
+                    │ Result               │
+                    └──────────────────────┘
+
+
+7. APP SPECIFICATIONS QUICK REFERENCE
+================================================================================
+
+SUMMARIZER
+──────────
+- Max default tokens: 32,000 (context budget)
+- Default output tokens: 8,000 (generation budget)
+- Default chunk size: 8,000 characters
+- Streaming: NO (needs text aggregation)
+- Post-processing: Key points + compression ratio
+- Output: Structured SummaryResult object
+- Formats: Text (console/file)
+
+EXTRACTOR
+─────────
+- Max default tokens: 32,000 (context budget)
+- Default output tokens: 8,000 (generation budget)
+- Default chunk size: 8,000 characters
+- Modes: fast, balanced, thorough
+- Streaming: NO (needs JSON-LD assembly)
+- Post-processing: Deduplication + relationship verification
+- Output: JSON-LD knowledge graph
+- Formats: JSON-LD, Triples, JSON, YAML
+- Special: Supports iterative refinement (--iterate N)
+
+JUDGE
+─────
+- Max default tokens: 32,000 (context budget)
+- Default output tokens: 8,000 (generation budget)
+- Temperature: 0.1 (for consistency)
+- Streaming: NO (needs score calculation)
+- Criteria: clarity, simplicity, actionability, soundness, innovation,
+           effectiveness, relevance, completeness, coherence
+- Output: Assessment dictionary with scores
+- Formats: JSON, Plain text, YAML
+
+
+8. CONFIGURATION COMMANDS
+================================================================================
+
+Set App Defaults:
+  $ abstractcore --set-app-default summarizer openai gpt-4o-mini
+  $ abstractcore --set-app-default extractor anthropic claude-3-5-sonnet
+  $ abstractcore --set-app-default judge ollama gemma3:1b-it-qat
+
+Check Configuration:
+  $ abstractcore --status
+
+Configure CLI Streaming:
+  $ abstractcore --stream on      (enable by default)
+  $ abstractcore --stream off     (disable by default)
+
+Configure Logging:
+  $ abstractcore --set-logging-level console DEBUG
+  $ abstractcore --set-logging-level file DEBUG
+  $ abstractcore --set-log-dir ~/.abstractcore/logs
+
+
+9. KEY DESIGN DECISIONS
+================================================================================
+
+1. APPS DON'T STREAM (By Design)
+   ✅ Clear separation: batch vs. interactive
+   ✅ Simpler implementation: no streaming complexity
+   ✅ Better for structure: JSON-LD, assessments need completeness
+   ✅ Appropriate UX: batch operations show final result
+
+2. UNIFIED CONFIGURATION HIERARCHY
+   ✅ CLI args > Config file > Hardcoded fallback
+   ✅ Same pattern across all apps
+   ✅ Consistent user experience
+   ✅ Explicit parameters always override
+
+3. CONFIGURATION SYSTEM READY FOR EXPANSION
+   ✅ Infrastructure exists for per-app settings
+   ✅ Streaming infrastructure in place
+   ✅ Logging infrastructure in place
+   ✅ No breaking changes needed to add features
+
+4. SEPARATION OF CONCERNS
+   ✅ Apps handle their domain (summarization/extraction/judgment)
+   ✅ CLI handles streaming & interactivity
+   ✅ Server handles HTTP & SSE
+   ✅ Config handles persistence
+   ✅ Logging handles auditing
+
+
+10. FILE LOCATIONS REFERENCE
+================================================================================
+
+Apps:
+  /abstractcore/apps/summarizer.py          (429 lines)
+  /abstractcore/apps/extractor.py           (607 lines)
+  /abstractcore/apps/judge.py               (616 lines)
+  /abstractcore/apps/app_config_utils.py    (19 lines)
+
+Configuration:
+  /abstractcore/config/manager.py           (main config)
+  /abstractcore/config/__init__.py          (exports)
+  ~/.abstractcore/config/abstractcore.json  (user config file)
+
+CLI & Server:
+  /abstractcore/utils/cli.py                (interactive CLI with streaming)
+  /abstractcore/cli/main.py                 (configuration CLI)
+  /abstractcore/server/app.py               (HTTP API with streaming)
+
+Logging:
+  /abstractcore/utils/structured_logging.py (structured logging system)
+
+Processing:
+  /abstractcore/processing/basic_summarizer.py
+  /abstractcore/processing/basic_extractor.py
+  /abstractcore/processing/basic_judge.py
+
+Infrastructure:
+  /abstractcore/core/interface.py           (LLM interface)
+  /abstractcore/core/session.py             (session layer)
+  /abstractcore/core/factory.py             (LLM factory)
+  /abstractcore/providers/streaming.py      (streaming processor)
+  /abstractcore/providers/base.py           (base provider)
+
+================================================================================
+End of Architecture Diagram
+================================================================================

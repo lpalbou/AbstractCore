@@ -245,6 +245,15 @@ def add_arguments(parser: argparse.ArgumentParser):
     logging_group.add_argument("--disable-file-logging", action="store_true",
                               help="Disable file logging")
 
+    # Streaming configuration group
+    streaming_group = parser.add_argument_group('Streaming Configuration')
+    streaming_group.add_argument("--stream", choices=["on", "off"],
+                                 help="Set default streaming behavior for CLI (on/off)")
+    streaming_group.add_argument("--enable-streaming", action="store_true",
+                                help="Enable streaming by default for CLI")
+    streaming_group.add_argument("--disable-streaming", action="store_true",
+                                help="Disable streaming by default for CLI")
+
 def print_status():
     """Print comprehensive configuration status with improved readability."""
     config_manager = get_config_manager()
@@ -333,31 +342,51 @@ def print_status():
     emb_status = "✅ Ready" if "✅" in embeddings['status'] else "⚠️ Not configured"
     print(f"│     {emb_status:<12} {embeddings['provider']}/{embeddings['model']}")
 
+    # Streaming configuration
+    print("│")
+    print("│  🌊 Streaming")
+    streaming = status["streaming"]
+    stream_status = "✅ Enabled" if streaming['cli_stream_default'] else "⚠️ Disabled"
+    stream_desc = "Real-time response display by default" if streaming['cli_stream_default'] else "Complete response display by default"
+    print(f"│     {stream_status:<12} {stream_desc}")
+
     print("└─")
 
     # ADVANCED SECTION - System-level settings
     print("\n┌─ ADVANCED CONFIGURATION")
     print("│")
 
-    # Logging with simplified status
+    # Logging with dual system display
     print("│  📝 Logging")
     logging_info = status["logging"]
 
-    # Determine overall logging status
     console_level = logging_info['console_level']
+    file_level = logging_info['file_level']
     file_enabled = logging_info['file_logging_enabled']
 
-    if console_level == "NONE" and not file_enabled:
-        log_status = "❌ Disabled"
-        log_desc = "No logging output"
-    elif console_level == "DEBUG" or file_enabled:
-        log_status = "✅ Verbose"
-        log_desc = f"Console: {console_level}, File: {'ON' if file_enabled else 'OFF'}"
-    else:
-        log_status = "⚠️ Minimal"
-        log_desc = f"Console: {console_level} only"
+    # Console logging status
+    console_status = "✅" if console_level not in ["NONE", "CRITICAL"] else "❌"
+    print(f"│     {console_status} Console        {console_level}")
 
-    print(f"│     {log_status:<12} {log_desc}")
+    # File logging status
+    if file_enabled:
+        file_status = "✅"
+        print(f"│     {file_status} File           {file_level}")
+    else:
+        file_status = "❌"
+        print(f"│     {file_status} File           Disabled")
+
+    # Overall summary
+    if console_level == "NONE" and not file_enabled:
+        overall_desc = "No logging output"
+    elif console_level == "DEBUG" and file_enabled:
+        overall_desc = "Full debug logging enabled"
+    elif file_enabled:
+        overall_desc = "Dual logging active"
+    else:
+        overall_desc = "Console logging only"
+
+    print(f"│     📊 Summary        {overall_desc}")
 
     # Cache (simplified)
     print("│")
@@ -375,9 +404,28 @@ def print_status():
     print("│     abstractcore --set-app-default APPNAME PROVIDER MODEL")
     print("│     abstractcore --set-api-key PROVIDER YOUR_KEY")
     print("│")
-    print("│  🔧 Specialized Setup")
+    print("│  🔧 Media & Behavior")
+    print("│     abstractcore --set-vision-provider PROVIDER MODEL")
+    print("│     abstractcore --download-vision-model  (local models)")
+    print("│     abstractcore --stream on/off")
+    print("│     abstractcore --enable-streaming / --disable-streaming")
+    print("│")
+    print("│  📊 Logging & Storage")
     print("│     abstractcore --enable-debug-logging")
+    print("│     abstractcore --set-console-log-level LEVEL")
+    print("│     abstractcore --set-file-log-level LEVEL")
+    print("│     abstractcore --enable-file-logging / --disable-file-logging")
+    print("│     abstractcore --set-default-cache-dir PATH")
+    print("│")
+    print("│  🎯 Specialized Models")
+    print("│     abstractcore --set-chat-model PROVIDER/MODEL")
+    print("│     abstractcore --set-code-model PROVIDER/MODEL")
+    print("│     abstractcore --set-embeddings-model PROVIDER/MODEL")
+    print("│")
+    print("│  🎛️  Advanced")
     print("│     abstractcore --configure  (interactive setup)")
+    print("│     abstractcore --reset  (reset to defaults)")
+    print("│     abstractcore --list-api-keys  (check API status)")
     print("│")
     print("│  📖 More Help")
     print("│     abstractcore --help")
@@ -603,6 +651,24 @@ def handle_commands(args) -> bool:
     if args.disable_file_logging:
         config_manager.disable_file_logging()
         print("✅ Disabled file logging")
+        handled = True
+
+    # Streaming configuration
+    if args.stream:
+        enabled = args.stream == "on"
+        config_manager.set_streaming_default("cli", enabled)
+        status = "enabled" if enabled else "disabled"
+        print(f"✅ CLI streaming {status} by default")
+        handled = True
+
+    if args.enable_streaming:
+        config_manager.enable_cli_streaming()
+        print("✅ Enabled CLI streaming by default")
+        handled = True
+
+    if args.disable_streaming:
+        config_manager.disable_cli_streaming()
+        print("✅ Disabled CLI streaming by default")
         handled = True
 
     return handled
