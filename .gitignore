@@ -1,7 +1,12 @@
 untracked
 .venv
+.claude
+.pytest_cache
 abstractcore.egg-info
 dist
 build
 tests
 abstractcore
+logs
+test_logs
+tests
