@@ -1246,6 +1246,29 @@
       "aliases": [],
       "max_tokens": 131072
     },
+    "qwen3-vl-4b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "video_support": true,
+      "audio_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_resolution": "variable",
+      "image_patch_size": 16,
+      "max_image_tokens": 24576,
+      "pixel_grouping": "32x32",
+      "notes": "Qwen3-VL 4B dense model with 256K context, optimized for LMStudio",
+      "source": "Alibaba Qwen3-VL technical report 2025",
+      "canonical_name": "qwen3-vl-4b",
+      "aliases": [
+        "qwen/qwen3-vl-4b"
+      ],
+      "max_tokens": 262144
+    },
     "qwen3-vl-8b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",

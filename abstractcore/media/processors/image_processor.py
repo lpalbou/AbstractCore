@@ -47,7 +47,7 @@ class ImageProcessor(BaseMediaHandler):
         if not PIL_AVAILABLE:
             raise ImportError(
                 "PIL/Pillow is required for image processing. "
-                "Install with: pip install Pillow"
+                "Install with: pip install \"abstractcore[media]\""
             )
 
         super().__init__(**kwargs)

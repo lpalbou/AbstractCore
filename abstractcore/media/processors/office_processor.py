@@ -113,7 +113,7 @@ class OfficeProcessor(BaseMediaHandler):
 
         if not self._unstructured_available:
             raise MediaProcessingError(
-                "Unstructured library not available. Install with: pip install unstructured[office]"
+                "Unstructured library not available. Install with: pip install \"abstractcore[media]\""
             )
 
         try:
@@ -156,7 +156,7 @@ class OfficeProcessor(BaseMediaHandler):
         if not self._unstructured_available:
             return MediaProcessingResult(
                 success=False,
-                error_message="Unstructured library not available. Install with: pip install unstructured[office]"
+                error_message="Unstructured library not available. Install with: pip install \"abstractcore[media]\""
             )
 
         if not self.can_process(file_path):

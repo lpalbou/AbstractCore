@@ -1027,10 +1027,19 @@ def handle_base64_image(data_url: str) -> str:
         # Decode base64 data
         file_data = base64.b64decode(data)
 
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
+        # Save to temporary file with request-specific prefix for better isolation
+        import hashlib
+        data_hash = hashlib.md5(data[:100].encode() if len(data) > 100 else data.encode()).hexdigest()[:8]
+        request_id = uuid.uuid4().hex[:8]
+        prefix = f"abstractcore_b64_{data_hash}_{request_id}_"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension, prefix=prefix) as temp_file:
             temp_file.write(file_data)
-            return temp_file.name
+            temp_file_path = temp_file.name
+
+        # Log the temporary file creation for debugging
+        logger.debug(f"Processed base64 media to temporary file: {temp_file_path} (size: {len(file_data)} bytes)")
+        return temp_file_path
 
     except Exception as e:
         logger.error(f"Failed to process base64 media: {e}")
@@ -1055,8 +1064,20 @@ def download_image_temporarily(url: str) -> str:
         if parsed.scheme not in ("http", "https"):
             raise ValueError("Only HTTP and HTTPS URLs are allowed")
 
+        # Create request with browser-like headers to avoid 403 Forbidden errors
+        request = urllib.request.Request(url)
+        request.add_header('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        request.add_header('Accept', 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8')
+        request.add_header('Accept-Language', 'en-US,en;q=0.9')
+        request.add_header('Accept-Encoding', 'gzip, deflate, br')
+        request.add_header('Connection', 'keep-alive')
+        request.add_header('Upgrade-Insecure-Requests', '1')
+        request.add_header('Sec-Fetch-Dest', 'image')
+        request.add_header('Sec-Fetch-Mode', 'no-cors')
+        request.add_header('Sec-Fetch-Site', 'cross-site')
+
         # Download with size limit (10MB)
-        response = urllib.request.urlopen(url, timeout=30)
+        response = urllib.request.urlopen(request, timeout=30)
         if response.getheader('content-length'):
             size = int(response.getheader('content-length'))
             if size > 10 * 1024 * 1024:  # 10MB limit
@@ -1085,10 +1106,19 @@ def download_image_temporarily(url: str) -> str:
         }
         extension = ext_map.get(content_type, ".jpg")
 
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
+        # Save to temporary file with request-specific prefix for better isolation
+        import hashlib
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        request_id = uuid.uuid4().hex[:8]
+        prefix = f"abstractcore_img_{url_hash}_{request_id}_"
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension, prefix=prefix) as temp_file:
             temp_file.write(data)
-            return temp_file.name
+            temp_file_path = temp_file.name
+
+        # Log the temporary file creation for debugging
+        logger.debug(f"Downloaded image to temporary file: {temp_file_path} (size: {len(data)} bytes)")
+        return temp_file_path
 
     except Exception as e:
         logger.error(f"Failed to download image from URL {url}: {e}")
@@ -1372,7 +1402,15 @@ async def process_chat_completion(
             gen_kwargs["presence_penalty"] = request.presence_penalty
 
         # Generate response
-        temp_files_to_cleanup = [f for f in all_media_files if f.startswith("/tmp/") or "temp" in f]
+        # Only cleanup files created by this request (with our specific prefixes)
+        temp_files_to_cleanup = [
+            f for f in all_media_files
+            if f.startswith("/tmp/") and (
+                "abstractcore_img_" in f or
+                "abstractcore_b64_" in f or
+                "temp" in f
+            )
+        ]
 
         try:
             if request.stream:
@@ -1389,14 +1427,28 @@ async def process_chat_completion(
                     response, provider, model, syntax_rewriter, request_id
                 )
         finally:
-            # Cleanup temporary files (base64 and downloaded images)
-            for temp_file in temp_files_to_cleanup:
-                try:
-                    if os.path.exists(temp_file):
-                        os.unlink(temp_file)
-                        logger.debug(f"Cleaned up temporary file: {temp_file}")
-                except Exception as e:
-                    logger.warning(f"Failed to cleanup temporary file {temp_file}: {e}")
+            # Cleanup temporary files (base64 and downloaded images) with delay to avoid race conditions
+            import threading
+            import time
+
+            def delayed_cleanup():
+                """Cleanup temporary files after a short delay to avoid race conditions"""
+                time.sleep(1)  # Short delay to ensure generation is complete
+                for temp_file in temp_files_to_cleanup:
+                    try:
+                        if os.path.exists(temp_file):
+                            # Additional check: only delete files created by this session
+                            if ("abstractcore_img_" in temp_file or "abstractcore_b64_" in temp_file):
+                                os.unlink(temp_file)
+                                logger.debug(f"Cleaned up temporary file: {temp_file}")
+                            else:
+                                logger.debug(f"Skipped cleanup of non-AbstractCore file: {temp_file}")
+                    except Exception as e:
+                        logger.warning(f"Failed to cleanup temporary file {temp_file}: {e}")
+
+            # Run cleanup in background thread to avoid blocking response
+            cleanup_thread = threading.Thread(target=delayed_cleanup, daemon=True)
+            cleanup_thread.start()
 
     except Exception as e:
         logger.error(
@@ -1503,15 +1555,29 @@ def generate_streaming_response(
             has_tool_calls=has_tool_calls
         )
 
-        # Cleanup temporary files for streaming
+        # Cleanup temporary files for streaming with delay to avoid race conditions
         if temp_files_to_cleanup:
-            for temp_file in temp_files_to_cleanup:
-                try:
-                    if os.path.exists(temp_file):
-                        os.unlink(temp_file)
-                        logger.debug(f"Cleaned up temporary file during streaming: {temp_file}")
-                except Exception as cleanup_error:
-                    logger.warning(f"Failed to cleanup temporary file {temp_file}: {cleanup_error}")
+            import threading
+            import time
+
+            def delayed_streaming_cleanup():
+                """Cleanup temporary files after streaming completes"""
+                time.sleep(2)  # Longer delay for streaming to ensure all chunks are sent
+                for temp_file in temp_files_to_cleanup:
+                    try:
+                        if os.path.exists(temp_file):
+                            # Additional check: only delete files created by this session
+                            if ("abstractcore_img_" in temp_file or "abstractcore_b64_" in temp_file):
+                                os.unlink(temp_file)
+                                logger.debug(f"Cleaned up temporary file during streaming: {temp_file}")
+                            else:
+                                logger.debug(f"Skipped cleanup of non-AbstractCore streaming file: {temp_file}")
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to cleanup temporary file {temp_file}: {cleanup_error}")
+
+            # Run cleanup in background thread
+            cleanup_thread = threading.Thread(target=delayed_streaming_cleanup, daemon=True)
+            cleanup_thread.start()
 
     except Exception as e:
         logger.error(
