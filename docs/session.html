@@ -56,8 +56,9 @@
                         <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Key Features</h3>
                         <ul style="margin: 0; padding-left: 1.5rem;">
                             <li><strong>Persistent Conversations</strong>: Maintain context across sessions</li>
+                            <li><strong>Auto-Compaction</strong>: SOTA 2025 algorithm compresses while preserving context</li>
                             <li><strong>Complete Serialization</strong>: Save/load entire session state</li>
-                            <li><strong>Built-in Analytics</strong>: Generate summaries, assessments, and fact extraction</li>
+                            <li><strong>Advanced Analytics</strong>: Generate summaries, assessments, and fact extraction</li>
                             <li><strong>Metadata Support</strong>: Rich metadata including location, timestamps, and custom fields</li>
                             <li><strong>Tool Integration</strong>: Full support for tool calling within sessions</li>
                         </ul>
@@ -85,7 +86,10 @@ print(response1.content)
 
 # Context is maintained
 response2 = session.generate("Can you help me with error handling?")
-print(response2.content)</code></pre>
+print(response2.content)
+
+# Auto-compaction with SOTA 2025 algorithm
+session.compact(target_tokens=8000)  # Compresses while preserving context</code></pre>
 
                     <h3>Session with Tools</h3>
                     <div class="code-block">
@@ -155,16 +159,16 @@ print(f"Model: {loaded_session.model_name}")</code></pre>
                     
                     <h3>Generate Summary</h3>
                     <div class="code-block">
-                        <pre><code class="language-python"># Generate conversation summary
-summary = session.generate_summary()
+                        <pre><code class="language-python"># Generate conversation summary with style options
+summary = session.generate_summary(style="executive", length="brief")
 print("Summary:", summary.summary)
 print("Key topics:", summary.key_topics)
 print("Participant count:", summary.participant_count)</code></pre>
 
                     <h3>Quality Assessment</h3>
                     <div class="code-block">
-                        <pre><code class="language-python"># Generate quality assessment
-assessment = session.generate_assessment()
+                        <pre><code class="language-python"># Generate quality assessment with custom criteria
+assessment = session.generate_assessment(criteria=["clarity", "helpfulness"])
 print("Overall score:", assessment.overall_score)
 print("Helpfulness:", assessment.helpfulness_score)
 print("Accuracy:", assessment.accuracy_score)
@@ -173,8 +177,8 @@ print("Feedback:", assessment.feedback)</code></pre>
 
                     <h3>Fact Extraction</h3>
                     <div class="code-block">
-                        <pre><code class="language-python"># Extract key facts
-facts = session.extract_facts()
+                        <pre><code class="language-python"># Extract key facts with entity type filtering
+facts = session.extract_facts(entity_types=["person", "organization", "date"])
 for fact in facts.facts:
     print(f"- {fact.content} (confidence: {fact.confidence})")
     print(f"  Category: {fact.category}")
