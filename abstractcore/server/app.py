@@ -33,9 +33,9 @@ import urllib.parse
 import argparse
 import sys
 import logging
-from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple
+from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query, Body
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -309,6 +309,59 @@ def get_models_from_provider(provider_name: str) -> List[str]:
         return []
 
 # ============================================================================
+# OpenAI Responses API Models (100% Compatible)
+# ============================================================================
+
+class OpenAIInputContent(BaseModel):
+    """OpenAI Responses API content item"""
+    type: Literal["input_text", "input_file"] = Field(
+        description="Content type - 'input_text' for text or 'input_file' for files"
+    )
+    text: Optional[str] = Field(
+        default=None,
+        description="Text content (required when type='input_text')"
+    )
+    file_url: Optional[str] = Field(
+        default=None,
+        description="Direct file URL (required when type='input_file')"
+    )
+
+class OpenAIResponsesInput(BaseModel):
+    """OpenAI Responses API input message"""
+    role: Literal["user"] = Field(
+        description="Message role (OpenAI responses only supports 'user')"
+    )
+    content: List[OpenAIInputContent] = Field(
+        description="Array of input content items"
+    )
+
+class OpenAIResponsesRequest(BaseModel):
+    """OpenAI Responses API request format (100% compatible)"""
+    model: str = Field(
+        description="Model identifier",
+        example="gpt-4o"
+    )
+    input: List[OpenAIResponsesInput] = Field(
+        description="Array of input messages"
+    )
+    max_tokens: Optional[int] = Field(
+        default=None,
+        description="Maximum tokens to generate"
+    )
+    temperature: Optional[float] = Field(
+        default=None,
+        description="Sampling temperature"
+    )
+    top_p: Optional[float] = Field(
+        default=None,
+        description="Top-p sampling"
+    )
+    stream: Optional[bool] = Field(
+        default=False,
+        description="Enable streaming (false by default, set to true for real-time responses)"
+    )
+
+# ============================================================================
 # Models
 # ============================================================================
 
@@ -569,7 +622,7 @@ class ChatCompletionRequest(BaseModel):
                         ],
                         "temperature": 0.5,
                         "max_tokens": 500,
-                        "stream": True
+                        "stream": False
                     }
                 },
                 "tools_with_media": {
@@ -717,6 +770,117 @@ class EmbeddingRequest(BaseModel):
                 "user": "user-123"
             }
         }
+
+# ============================================================================
+# Union Request Model for /v1/responses endpoint
+# ============================================================================
+
+class ResponsesAPIRequest(BaseModel):
+    """
+    Union request model for /v1/responses endpoint supporting both OpenAI and legacy formats.
+
+    The endpoint automatically detects the format based on the presence of 'input' vs 'messages' field.
+    """
+    class Config:
+        schema_extra = {
+            "oneOf": [
+                {
+                    "title": "OpenAI Responses API Format",
+                    "description": "OpenAI-compatible responses format with input_file support",
+                    "$ref": "#/components/schemas/OpenAIResponsesRequest"
+                },
+                {
+                    "title": "Legacy Format (ChatCompletionRequest)",
+                    "description": "Backward-compatible format using messages array",
+                    "$ref": "#/components/schemas/ChatCompletionRequest"
+                }
+            ],
+            "examples": {
+                "openai_format": {
+                    "summary": "OpenAI Responses API Format",
+                    "description": "Use input array with input_text and input_file objects",
+                    "value": {
+                        "model": "gpt-4o",
+                        "input": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": "Analyze this document"},
+                                    {"type": "input_file", "file_url": "https://example.com/doc.pdf"}
+                                ]
+                            }
+                        ],
+                        "stream": False
+                    }
+                },
+                "legacy_format": {
+                    "summary": "Legacy Format (Backward Compatible)",
+                    "description": "Use messages array like standard chat completions",
+                    "value": {
+                        "model": "openai/gpt-4",
+                        "messages": [
+                            {"role": "user", "content": "Tell me a story"}
+                        ],
+                        "stream": False
+                    }
+                }
+            }
+        }
+
+# ============================================================================
+# OpenAI Responses API Compatibility
+# ============================================================================
+
+def convert_openai_responses_to_chat_completion(openai_request: OpenAIResponsesRequest) -> ChatCompletionRequest:
+    """
+    Convert OpenAI Responses API format to internal ChatCompletionRequest format.
+
+    Transforms:
+    - input -> messages
+    - input_text -> text
+    - input_file -> file with file_url
+
+    Args:
+        openai_request: OpenAI responses API request
+
+    Returns:
+        ChatCompletionRequest compatible with our internal processing
+    """
+    # Convert input messages to chat messages
+    messages = []
+
+    for input_msg in openai_request.input:
+        # Build content array as list of dicts (not ContentItem objects)
+        content_items = []
+
+        for content in input_msg.content:
+            if content.type == "input_text":
+                content_items.append({
+                    "type": "text",
+                    "text": content.text
+                })
+            elif content.type == "input_file":
+                content_items.append({
+                    "type": "file",
+                    "file_url": {"url": content.file_url}  # Convert to our format
+                })
+
+        # Create chat message with list content (not ContentItem objects)
+        message_dict = {
+            "role": input_msg.role,
+            "content": content_items
+        }
+        messages.append(ChatMessage(**message_dict))
+
+    # Build ChatCompletionRequest
+    return ChatCompletionRequest(
+        model=openai_request.model,
+        messages=messages,
+        max_tokens=openai_request.max_tokens,
+        temperature=openai_request.temperature,
+        top_p=openai_request.top_p,
+        stream=openai_request.stream
+    )
 
 # ============================================================================
 # Helper Functions
@@ -982,31 +1146,101 @@ async def list_providers():
         }
 
 @app.post("/v1/responses")
-async def create_response(request: ChatCompletionRequest, http_request: Request):
+async def create_response(
+    http_request: Request,
+    request_body: Annotated[
+        Dict[str, Any],
+        Body(
+            ...,
+            examples={
+                "openai_format": {
+                    "summary": "OpenAI Responses API Format",
+                    "description": "Use input array with input_text and input_file objects",
+                    "value": {
+                        "model": "gpt-4o",
+                        "input": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": "Analyze this document"},
+                                    {"type": "input_file", "file_url": "https://example.com/doc.pdf"}
+                                ]
+                            }
+                        ],
+                        "stream": False
+                    }
+                },
+                "legacy_format": {
+                    "summary": "Legacy Format (Backward Compatible)",
+                    "description": "Use messages array like standard chat completions",
+                    "value": {
+                        "model": "openai/gpt-4",
+                        "messages": [
+                            {"role": "user", "content": "Tell me a story"}
+                        ],
+                        "stream": False
+                    }
+                },
+                "file_analysis": {
+                    "summary": "Document Analysis",
+                    "description": "Analyze files using OpenAI format",
+                    "value": {
+                        "model": "openai/gpt-4",
+                        "input": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": "What's the key information in this CSV?"},
+                                    {"type": "input_file", "file_url": "data:text/csv;base64,RGF0ZSxQcm9kdWN0LFNhbGVzCjIwMjQtMDEtMDEsUHJvZHVjdCBBLDEwMDAwCjIwMjQtMDEtMDIsUHJvZHVjdCBCLDE1MDAwCjIwMjQtMDEtMDMsUHJvZHVjdCBDLDI1MDAw"}
+                                ]
+                            }
+                        ]
+                    }
+                },
+                "streaming_example": {
+                    "summary": "Streaming Response",
+                    "description": "Enable streaming for real-time responses",
+                    "value": {
+                        "model": "lmstudio/qwen/qwen3-next-80b",
+                        "input": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "input_text", "text": "Analyze the letter and provide a summary of the key points."},
+                                    {"type": "input_file", "file_url": "https://www.berkshirehathaway.com/letters/2024ltr.pdf"}
+                                ]
+                            }
+                        ],
+                        "stream": True
+                    }
+                }
+            }
+        )
+    ]
+):
     """
-    Create a real-time streaming response for the given chat conversation.
-    
-    This endpoint provides real-time conversation capabilities optimized for streaming interaction.
-    It's similar to OpenAI's Realtime/Responses API, automatically enabling streaming for immediate token delivery.
-    
-    **Key Features:**
-    - **Always Streams**: Streaming is automatically enabled for real-time interaction
-    - **Lower Latency**: Optimized for quick first-token delivery
-    - **Same Parameters**: Uses the same request format as `/v1/chat/completions`
-    - **Multi-Provider**: Supports all providers (OpenAI, Anthropic, Ollama, etc.)
-    
-    **Use Cases:**
-    - Real-time chat interfaces
-    - Voice-to-text streaming
-    - Live coding assistants
-    - Interactive agents
-    
-    **Differences from `/v1/chat/completions`:**
-    - Streaming is always enabled (ignores `stream: false`)
-    - Optimized for immediate response delivery
-    - Better for user-facing real-time applications
-    
-    **Example:**
+    OpenAI Responses API (100% Compatible) + Backward Compatibility
+
+    Supports both OpenAI's responses format and our legacy format for seamless migration.
+    Streaming can be enabled by setting "stream": true for real-time interaction.
+
+    **OpenAI Format (input_file support):**
+    ```json
+    {
+      "model": "gpt-4o",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {"type": "input_text", "text": "Analyze this document"},
+            {"type": "input_file", "file_url": "https://example.com/doc.pdf"}
+          ]
+        }
+      ]
+    }
+    ```
+
+    **Legacy Format (backward compatibility):**
     ```json
     {
       "model": "openai/gpt-4",
@@ -1015,24 +1249,65 @@ async def create_response(request: ChatCompletionRequest, http_request: Request)
       ]
     }
     ```
-    
-    **Returns:** Server-sent events stream of chat completion chunks, terminated by `data: [DONE]`.
+
+    **Key Features:**
+    - **100% OpenAI Compatible**: Supports input_file with file_url
+    - **Universal File Support**: PDF, DOCX, XLSX, CSV, images, and more
+    - **Multi-Provider**: Works with all providers (OpenAI, Anthropic, Ollama, etc.)
+    - **Optional Streaming**: Set "stream": true for real-time responses
+    - **Backward Compatible**: Existing clients continue to work
+
+    **Returns:** Chat completion object, or server-sent events stream if streaming is enabled.
     """
-    # For now, delegate to chat completions with streaming enabled
-    # The OpenAI Responses API is essentially streaming chat completions with enhanced real-time features
-    request.stream = True  # Force streaming for responses API
+    try:
+        # Use the parsed request body directly
+        request_data = request_body
 
-    provider, model = parse_model_string(request.model)
+        # Detect OpenAI responses format vs legacy format
+        if "input" in request_data:
+            # OpenAI Responses API format
+            logger.info("📡 OpenAI Responses API format detected")
 
-    logger.info(
-        "📡 Responses API Request",
-        provider=provider,
-        model=model,
-        messages=len(request.messages),
-        has_tools=bool(request.tools)
-    )
+            # Parse as OpenAI format
+            openai_request = OpenAIResponsesRequest(**request_data)
 
-    return await process_chat_completion(provider, model, request, http_request)
+            # Convert to internal format
+            chat_request = convert_openai_responses_to_chat_completion(openai_request)
+
+        elif "messages" in request_data:
+            # Legacy format (backward compatibility)
+            logger.info("📡 Legacy responses format detected")
+
+            # Parse as ChatCompletionRequest
+            chat_request = ChatCompletionRequest(**request_data)
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"message": "Request must contain either 'input' (OpenAI format) or 'messages' (legacy format)", "type": "invalid_request"}}
+            )
+
+        # Respect user's streaming preference (defaults to False)
+
+        # Process using our standard pipeline
+        provider, model = parse_model_string(chat_request.model)
+
+        logger.info(
+            "📡 Responses API Request",
+            provider=provider,
+            model=model,
+            format="openai" if "input" in request_data else "legacy",
+            messages=len(chat_request.messages)
+        )
+
+        return await process_chat_completion(provider, model, chat_request, http_request)
+
+    except Exception as e:
+        logger.error(f"Responses API error: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": str(e), "type": "processing_error"}}
+        )
 
 @app.post("/v1/embeddings")
 async def create_embeddings(request: EmbeddingRequest):
@@ -1224,12 +1499,12 @@ def handle_base64_image(data_url: str) -> str:
             detail={"error": {"message": f"Invalid base64 media data: {e}", "type": "media_error"}}
         )
 
-def download_image_temporarily(url: str) -> str:
+def download_file_temporarily(url: str) -> str:
     """
-    Download image from URL to temporary file.
+    Download file from URL to temporary file (supports images, documents, data files).
 
     Args:
-        url: HTTP(S) URL to image
+        url: HTTP(S) URL to file
 
     Returns:
         Path to temporary file
@@ -1243,12 +1518,13 @@ def download_image_temporarily(url: str) -> str:
         # Create request with browser-like headers to avoid 403 Forbidden errors
         request = urllib.request.Request(url)
         request.add_header('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-        request.add_header('Accept', 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8')
+        # Generic accept header for all file types
+        request.add_header('Accept', '*/*')
         request.add_header('Accept-Language', 'en-US,en;q=0.9')
         request.add_header('Accept-Encoding', 'gzip, deflate, br')
         request.add_header('Connection', 'keep-alive')
         request.add_header('Upgrade-Insecure-Requests', '1')
-        request.add_header('Sec-Fetch-Dest', 'image')
+        request.add_header('Sec-Fetch-Dest', 'document')  # More generic than 'image'
         request.add_header('Sec-Fetch-Mode', 'no-cors')
         request.add_header('Sec-Fetch-Site', 'cross-site')
 
@@ -1257,7 +1533,7 @@ def download_image_temporarily(url: str) -> str:
         if response.getheader('content-length'):
             size = int(response.getheader('content-length'))
             if size > 10 * 1024 * 1024:  # 10MB limit
-                raise ValueError("Image too large (max 10MB)")
+                raise ValueError("File too large (max 10MB)")
 
         # Read data with size check
         data = b""
@@ -1267,41 +1543,88 @@ def download_image_temporarily(url: str) -> str:
                 break
             data += chunk
             if len(data) > 10 * 1024 * 1024:  # 10MB limit
-                raise ValueError("Image too large (max 10MB)")
+                raise ValueError("File too large (max 10MB)")
 
         # Determine extension from content-type or URL
         content_type = response.getheader('content-type', '').lower()
         ext_map = {
+            # Images
             "image/jpeg": ".jpg",
             "image/jpg": ".jpg",
             "image/png": ".png",
             "image/gif": ".gif",
             "image/webp": ".webp",
             "image/bmp": ".bmp",
-            "image/tiff": ".tiff"
+            "image/tiff": ".tiff",
+            # Documents
+            "application/pdf": ".pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+            # Data files
+            "text/csv": ".csv",
+            "text/tab-separated-values": ".tsv",
+            "application/json": ".json",
+            "application/xml": ".xml",
+            "text/xml": ".xml",
+            "text/plain": ".txt",
+            "text/markdown": ".md",
+            # Generic fallback
+            "application/octet-stream": ".bin"
         }
-        extension = ext_map.get(content_type, ".jpg")
+
+        # Try to get extension from content-type first, then URL
+        extension = ext_map.get(content_type)
+        if not extension:
+            # Try to get extension from URL
+            url_path = parsed.path.lower()
+            if url_path.endswith('.pdf'):
+                extension = '.pdf'
+            elif url_path.endswith('.jpg') or url_path.endswith('.jpeg'):
+                extension = '.jpg'
+            elif url_path.endswith('.png'):
+                extension = '.png'
+            elif url_path.endswith('.docx'):
+                extension = '.docx'
+            elif url_path.endswith('.xlsx'):
+                extension = '.xlsx'
+            elif url_path.endswith('.csv'):
+                extension = '.csv'
+            else:
+                extension = '.bin'  # Generic fallback
 
         # Save to temporary file with request-specific prefix for better isolation
         import hashlib
         url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
         request_id = uuid.uuid4().hex[:8]
-        prefix = f"abstractcore_img_{url_hash}_{request_id}_"
+        prefix = f"abstractcore_file_{url_hash}_{request_id}_"
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=extension, prefix=prefix) as temp_file:
             temp_file.write(data)
             temp_file_path = temp_file.name
 
         # Log the temporary file creation for debugging
-        logger.debug(f"Downloaded image to temporary file: {temp_file_path} (size: {len(data)} bytes)")
+        logger.info(f"Downloaded file to temporary file: {temp_file_path} (size: {len(data)} bytes, type: {content_type})")
         return temp_file_path
 
     except Exception as e:
-        logger.error(f"Failed to download image from URL {url}: {e}")
+        logger.error(f"Failed to download file from URL {url}: {e}")
         raise HTTPException(
             status_code=400,
-            detail={"error": {"message": f"Failed to download image: {e}", "type": "media_error"}}
+            detail={"error": {"message": f"Failed to download file: {e}", "type": "media_error"}}
         )
+
+def download_image_temporarily(url: str) -> str:
+    """
+    Download image from URL to temporary file (backward compatibility wrapper).
+
+    Args:
+        url: HTTP(S) URL to image
+
+    Returns:
+        Path to temporary file
+    """
+    return download_file_temporarily(url)
 
 def process_image_url_object(image_url_obj: Dict[str, Any]) -> Optional[str]:
     """
@@ -1712,6 +2035,7 @@ async def process_chat_completion(
             f for f in all_media_files
             if f.startswith("/tmp/") and (
                 "abstractcore_img_" in f or
+                "abstractcore_file_" in f or
                 "abstractcore_b64_" in f or
                 "temp" in f
             )
@@ -1734,7 +2058,6 @@ async def process_chat_completion(
         finally:
             # Cleanup temporary files (base64 and downloaded images) with delay to avoid race conditions
             import threading
-            import time
 
             def delayed_cleanup():
                 """Cleanup temporary files after a short delay to avoid race conditions"""
@@ -1743,7 +2066,7 @@ async def process_chat_completion(
                     try:
                         if os.path.exists(temp_file):
                             # Additional check: only delete files created by this session
-                            if ("abstractcore_img_" in temp_file or "abstractcore_b64_" in temp_file):
+                            if ("abstractcore_img_" in temp_file or "abstractcore_file_" in temp_file or "abstractcore_b64_" in temp_file):
                                 os.unlink(temp_file)
                                 logger.debug(f"Cleaned up temporary file: {temp_file}")
                             else:
@@ -1863,7 +2186,6 @@ def generate_streaming_response(
         # Cleanup temporary files for streaming with delay to avoid race conditions
         if temp_files_to_cleanup:
             import threading
-            import time
 
             def delayed_streaming_cleanup():
                 """Cleanup temporary files after streaming completes"""
@@ -1872,7 +2194,7 @@ def generate_streaming_response(
                     try:
                         if os.path.exists(temp_file):
                             # Additional check: only delete files created by this session
-                            if ("abstractcore_img_" in temp_file or "abstractcore_b64_" in temp_file):
+                            if ("abstractcore_img_" in temp_file or "abstractcore_file_" in temp_file or "abstractcore_b64_" in temp_file):
                                 os.unlink(temp_file)
                                 logger.debug(f"Cleaned up temporary file during streaming: {temp_file}")
                             else:
