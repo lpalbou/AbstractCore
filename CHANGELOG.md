@@ -5,6 +5,273 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2025-10-20
+
+### Major Features
+
+#### OpenAI Responses API Compatibility
+- **NEW `/v1/responses` Endpoint**: 100% compatible with OpenAI's Responses API format
+  - **input_file Support**: Native support for `{"type": "input_file", "file_url": "..."}` in content arrays
+  - **Backward Compatible**: Existing `messages` format continues to work alongside new `input` format
+  - **Automatic Format Detection**: Server automatically detects and converts between OpenAI and legacy formats
+  - **Streaming Support**: Optional streaming with `"stream": true` for real-time responses (defaults to `false`)
+  - **Universal File Processing**: Works with all file types (PDF, DOCX, XLSX, CSV, images) across all providers
+
+#### Enhanced File Attachment System
+- **type="file" Support**: New content type alongside `"text"` and `"image_url"` for explicit file attachments
+  - **Unified Format**: `{"type": "file", "file_url": {"url": "..."}}` works consistently across all endpoints
+  - **Multiple Sources**: Supports HTTP(S) URLs, local file paths, and base64 data URLs
+  - **Content-Type Detection**: Intelligent file type detection from headers and URL extensions
+  - **Generic Downloader**: Replaces image-only downloader with universal file download supporting 15+ file types
+
+#### Production-Grade PDF Processing
+- **Complete Text Extraction**: Full PDF content extraction using PyMuPDF4LLM with formatting preservation
+  - **40,000+ Character Support**: Successfully tested with large documents (Berkshire Hathaway annual letter)
+  - **LLM-Optimized Output**: Markdown formatting with preserved tables, headers, and structure
+  - **Automatic Installation**: Added PyMuPDF4LLM, PyMuPDF, and Pillow to dependencies
+  - **Graceful Fallbacks**: Multi-level fallback ensures content extraction even if advanced processing fails
+
+#### Centralized Configuration System
+- **Global Configuration Management**: Unified configuration at `~/.abstractcore/config/abstractcore.json`
+  - **App-Specific Defaults**: Set different models for CLI, summarizer, extractor, and judge apps
+  - **Global Fallbacks**: Configure fallback models when app-specific settings aren't available
+  - **API Key Management**: Centralized API key storage for all providers
+  - **Cache Configuration**: Configurable cache directories for HuggingFace, local models, and general cache
+  - **Logging Control**: Console and file logging levels with enable/disable commands
+  - **Streaming Defaults**: Configure default streaming behavior for CLI applications
+
+#### Comprehensive Media Handling System
+- **Universal Media API**: Same `media=[]` parameter works across all providers with automatic format conversion
+  - **Image Processing**: Automatic resolution optimization for each model's maximum capability (GPT-4o: 4096px, Claude 3.5: 1568px, qwen2.5vl: 3584px)
+  - **Document Processing**: Full support for PDF, DOCX, XLSX, PPTX with complete content extraction
+  - **Data Files**: CSV, TSV, JSON, XML with intelligent parsing and analysis
+  - **Provider-Specific Formatting**: Automatic conversion to OpenAI JSON, Anthropic Messages API, or local text embedding
+  - **Error Handling**: Multi-level fallback strategy ensures users always get meaningful results
+
+#### Vision Capabilities and Fallback System
+- **Vision Fallback for Text-Only Models**: Transparent two-stage pipeline enables image processing for any model
+  - **Automatic Detection**: Identifies when text-only models receive images and activates fallback
+  - **One-Command Setup**: `abstractcore --download-vision-model` downloads and configures BLIP vision model
+  - **Flexible Configuration**: Supports local models (BLIP, ViT-GPT2, GIT), Ollama, LMStudio, and cloud APIs
+  - **Transparent Operation**: Users don't need to change code - system handles vision fallback automatically
+
+### Server Enhancements
+
+#### Enhanced Debug and Logging
+- **Command-Line Arguments**: Added `--debug`, `--host`, and `--port` flags for flexible server startup
+  - **Debug Mode**: `--debug` enables comprehensive request/response logging with timing metrics
+  - **Custom Binding**: `--host` and `--port` allow custom server addresses (default: 127.0.0.1:8000)
+  - **Environment Integration**: Follows centralized config patterns with `ABSTRACTCORE_DEBUG` variable
+
+- **Comprehensive Error Reporting**: Enhanced 422 validation error handling with actionable diagnostics
+  - **Field-Level Details**: Shows exact field path, validation message, and problematic input
+  - **Request Body Capture**: In debug mode, logs full request body for troubleshooting
+  - **Structured Logging**: JSON-formatted logs with client IP, timing, and error context
+  - **Before vs After**: "422 Unprocessable Entity" now shows detailed field validation errors
+
+#### Media Processing Integration
+- **OpenAI Vision API Format**: Full support for `image_url` objects with base64 data URLs and HTTP(S) URLs
+- **File Processing Pipeline**: Automatic media extraction, validation, and cleanup with request-specific prefixes
+- **Size Limits**: 10MB per file, 32MB total per request with comprehensive validation
+- **Cleanup Logic**: Automatic temporary file cleanup for `abstractcore_img_*`, `abstractcore_file_*`, and `abstractcore_b64_*` prefixes
+- **Prompt Adaptation**: Intelligent prompt adaptation based on file types to avoid confusion
+
+### Fixed
+
+#### Critical Runtime Issues
+- **Time Module Scoping**: Removed redundant local `import time` statements causing "cannot access local variable" errors
+  - Fixed in lines 1995-1996 and 2123-2124 of `abstractcore/server/app.py`
+  - Now uses global time import consistently throughout server
+
+- **Boolean Syntax**: Corrected JavaScript boolean syntax (`false`/`true`) to Python syntax (`False`/`True`)
+  - Fixed in lines 625, 813, 824, 1170, 1181, 1214 across request examples and defaults
+
+- **Streaming Default**: Changed `/v1/responses` endpoint default from `stream=True` to `stream=False`
+  - Aligns with OpenAI API standard behavior (streaming opt-in, not opt-out)
+  - Line 361 in `OpenAIResponsesRequest` model
+
+#### Swagger UI Integration
+- **Payload Input Issue**: Fixed `/v1/responses` endpoint not showing request body in Swagger "Try it out"
+  - Replaced raw `Request` parameter with proper FastAPI `Body(...)` annotation
+  - Added comprehensive examples for OpenAI format, legacy format, file analysis, and streaming
+  - Lines 1148-1220 now properly expose request schema to OpenAPI documentation
+
+#### Media Processing Reliability
+- **PDF Download Failures**: Created generic file downloader replacing image-only version
+  - Added proper `Accept: */*` headers instead of image-specific headers
+  - Comprehensive content-type mapping for PDF, DOCX, XLSX, CSV, and 10+ other types
+  - URL extension fallback when content-type header missing
+  - Lines 1502-1627 in `abstractcore/server/app.py`
+
+### Enhanced
+
+#### CLI Applications
+- **Centralized Configuration Integration**: All CLI apps (summarizer, extractor, judge) now use centralized config
+  - Apps respect `abstractcore --set-app-default` configuration
+  - Fallback to global defaults when app-specific config not set
+  - Enhanced `--debug` mode for all applications
+
+- **Vision Configuration CLI**: New `abstractcore/cli/vision_config.py` for vision fallback setup
+  - Interactive configuration wizard
+  - Model download commands
+  - Status checking and validation
+
+#### Documentation
+- **Centralized Configuration**: Created `docs/centralized-config.md` with complete configuration system documentation
+  - All available commands with examples
+  - Configuration file format and priority system
+  - Troubleshooting guide and common tasks
+
+- **Media Handling System**: Comprehensive `docs/media-handling-system.md` with production-tested examples
+  - "How It Works Behind the Scenes" section explaining multi-layer architecture
+  - Provider-specific formatting documentation (OpenAI JSON, Anthropic Messages API)
+  - Real-world CLI usage examples with verified working commands
+  - Model compatibility matrix and resolution limits
+
+- **Server Documentation**: Updated `docs/server.md` with `/v1/responses` endpoint details
+  - OpenAI Responses API format examples
+  - File attachment workflows
+  - Streaming configuration
+  - Media processing capabilities
+
+### Technical
+
+#### Architecture Improvements
+- **Provider Registry Enhancement**: Leverages centralized provider registry for model discovery
+  - `/providers` endpoint returns complete provider metadata
+  - No hardcoded provider lists - all dynamic discovery
+  - Registry version 2.0 indicators in API responses
+
+- **Message Preprocessing**: New `MessagePreprocessor` for `@filename` syntax in CLI
+  - Extracts file attachments from text
+  - Validates file existence
+  - Cleans text for LLM processing
+
+- **Media Type Detection**: Intelligent file type detection and processor selection
+  - AutoMediaHandler coordinates specialized processors
+  - ImageProcessor, PDFProcessor, OfficeProcessor, TextProcessor
+  - Graceful fallback ensures processing never fails completely
+
+#### Test Coverage
+- **Media Examples**: Added comprehensive test assets in `tests/media_examples/`
+  - PDF reports, Office documents, spreadsheets, presentations
+  - CSV/TSV data files with various encodings
+  - Image examples with metadata
+
+- **Server Testing**: Enhanced test suite for media processing and OpenAI compatibility
+  - Real file processing tests (not mocked)
+  - Cross-provider media handling verification
+  - Streaming with media attachments
+
+### Breaking Changes
+None. All changes maintain full backward compatibility with version 2.4.x.
+
+### Migration Guide
+
+#### For Server Users
+The `/v1/responses` endpoint now accepts both OpenAI's `input` format and our legacy `messages` format:
+
+**OpenAI Responses API Format (Recommended):**
+```json
+{
+  "model": "gpt-4o",
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "input_text", "text": "Analyze this document"},
+        {"type": "input_file", "file_url": "https://example.com/doc.pdf"}
+      ]
+    }
+  ],
+  "stream": false
+}
+```
+
+**Legacy Format (Still Supported):**
+```json
+{
+  "model": "openai/gpt-4",
+  "messages": [
+    {"role": "user", "content": "Tell me a story"}
+  ],
+  "stream": false
+}
+```
+
+**Note**: Streaming is now opt-in (set `"stream": true`) instead of automatic, matching OpenAI's behavior.
+
+#### For Configuration Users
+New centralized configuration system available:
+
+```bash
+# Set global default model
+abstractcore --set-global-default ollama/llama3:8b
+
+# Set app-specific defaults
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+
+# Configure logging
+abstractcore --set-console-log-level WARNING
+abstractcore --enable-file-logging
+
+# Check current configuration
+abstractcore --status
+```
+
+Configuration is stored in `~/.abstractcore/config/abstractcore.json` and respects priority:
+1. Explicit parameters (highest priority)
+2. App-specific configuration
+3. Global configuration
+4. Hardcoded defaults (lowest priority)
+
+#### For Media Processing Users
+Media processing now supports explicit file types:
+
+**CLI (Using @filename syntax):**
+```bash
+python -m abstractcore.utils.cli --prompt "Analyze @report.pdf and @chart.png"
+```
+
+**Python API:**
+```python
+response = llm.generate(
+    "Analyze these documents",
+    media=["report.pdf", "chart.png", "data.xlsx"]
+)
+```
+
+**Server API (New type="file"):**
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Analyze this file"},
+        {"type": "file", "file_url": {"url": "https://example.com/doc.pdf"}}
+      ]
+    }
+  ]
+}
+```
+
+All formats work identically across all providers with automatic format conversion.
+
+### Dependencies Added
+- `pymupdf4llm` (0.0.27): LLM-optimized PDF text extraction
+- `pymupdf` (1.26.5): Core PDF processing library
+- `pydantic` (2.12.3): Request validation and serialization
+- `fastapi`: Enhanced with latest features
+- `pillow` (12.0.0): Image processing support
+
+### Benefits
+- **Users**: Seamless file attachment across all providers with `@filename` CLI syntax and `media=[]` API
+- **Developers**: OpenAI-compatible server endpoints with comprehensive media processing
+- **Production**: Robust error handling, detailed logging, and graceful degradation
+- **Configuration**: Single source of truth for all package-wide preferences and defaults
+
 ## [2.4.3] - 2025-10-19
 
 ### Fixed
