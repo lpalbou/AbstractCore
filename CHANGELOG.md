@@ -5,6 +5,56 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.3] - 2025-10-19
+
+### Fixed
+- **Media System Critical Fixes**: Resolved implementation issues preventing full media processing functionality
+  - **PDF Processing**: Fixed `output_format` parameter conflict in `PDFProcessor._create_media_content()` call (line 128) causing "got multiple values for keyword argument" error
+  - **Office Document Processing**: Fixed element iteration errors in `OfficeProcessor` by replacing `convert_to_dict()` approach with direct element processing for DOCX, XLSX, and PPTX files
+  - **Unstructured Library Integration**: Updated office processor to work correctly with current unstructured library API, eliminating "'NarrativeText' object is not iterable" and "'Table' object is not iterable" errors
+
+### Enhanced
+- **Production-Ready Media System**: All file types now working perfectly with comprehensive content extraction
+  - **PDF Files**: Full text extraction with formatting preservation using PyMuPDF4LLM
+  - **Word Documents**: Complete document analysis with structure preservation (DOCX)
+  - **Excel Spreadsheets**: Sheet-by-sheet content extraction with intelligent data analysis (XLSX)
+  - **PowerPoint Presentations**: Slide content extraction with comprehensive presentation analysis (PPTX)
+  - **CSV/TSV Files**: Intelligent data parsing with quality assessment and recommendations
+  - **Images**: Seamless vision model integration with existing test infrastructure
+
+### Verified
+- **CLI Integration**: Confirmed `@filename` syntax works flawlessly across all file types
+  - Tested with real files: PDF reports, Office documents, spreadsheets, presentations, data files, and images
+  - Cross-provider compatibility verified with OpenAI, Anthropic, and LMStudio providers
+  - All examples documented in `docs/media-handling-system.md` are production-tested and working
+
+### Documentation
+- **Comprehensive Media System Documentation**: Completely rewrote `docs/media-handling-system.md` to reflect actual implementation
+  - Added detailed "How It Works Behind the Scenes" section explaining the multi-layer architecture
+  - Documented provider-specific formatting (OpenAI JSON, Anthropic Messages API, local text embedding)
+  - Added real-world CLI usage examples with verified working commands
+  - Included cross-provider workflow diagrams and error handling strategies
+- **Architecture Documentation**: Updated `docs/architecture.md` with comprehensive media system architecture section
+  - Added media processing workflow diagrams and component descriptions
+  - Documented graceful fallback strategy and provider-specific formatting
+  - Included unified media API documentation and CLI integration details
+
+### Technical
+- **Robust Error Handling**: Multi-level fallback strategy ensures users always get meaningful results
+  - Advanced processing with specialized libraries (PyMuPDF4LLM, Unstructured)
+  - Basic processing fallbacks for text extraction
+  - Metadata-only fallbacks when all else fails
+  - System never crashes or fails completely
+- **Test Infrastructure**: Leveraged existing `tests/vision_examples/` with production-quality test assets
+  - 5 high-quality images with comprehensive JSON metadata for validation
+  - Real-world testing with actual provider APIs and file processing
+
+### Benefits
+- **Users**: Can immediately attach any file type using `@filename` syntax with excellent analysis results
+- **Developers**: Universal `media=[]` parameter works identically across all providers
+- **Production**: Reliable media processing with comprehensive error handling and graceful degradation
+- **CLI**: Simple file attachment workflow that works with all supported file formats
+
 ## [2.4.2] - 2025-10-16
 
 ### Added

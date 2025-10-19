@@ -93,6 +93,55 @@ class OfficeProcessor(BaseMediaHandler):
         supported_extensions = {'.docx', '.xlsx', '.pptx'}
         return file_path.suffix.lower() in supported_extensions
 
+    def _process_internal(self, file_path: Path, media_type: MediaType, **kwargs) -> MediaContent:
+        """
+        Internal processing method for Office documents.
+
+        Args:
+            file_path: Path to the Office document
+            media_type: Detected media type (should be DOCUMENT)
+            **kwargs: Additional processing options
+
+        Returns:
+            MediaContent with processed Office document content
+
+        Raises:
+            MediaProcessingError: If processing fails
+        """
+        if media_type != MediaType.DOCUMENT:
+            raise MediaProcessingError(f"OfficeProcessor only handles document types, got {media_type}")
+
+        if not self._unstructured_available:
+            raise MediaProcessingError(
+                "Unstructured library not available. Install with: pip install unstructured[office]"
+            )
+
+        try:
+            # Extract content based on file type
+            file_extension = file_path.suffix.lower()
+
+            if file_extension == '.docx':
+                content, metadata = self._process_docx(file_path, **kwargs)
+            elif file_extension == '.xlsx':
+                content, metadata = self._process_xlsx(file_path, **kwargs)
+            elif file_extension == '.pptx':
+                content, metadata = self._process_pptx(file_path, **kwargs)
+            else:
+                raise MediaProcessingError(f"Unsupported Office file type: {file_extension}")
+
+            # Create MediaContent object
+            return self._create_media_content(
+                content=content,
+                media_type=MediaType.DOCUMENT,
+                content_format=ContentFormat.TEXT,
+                mime_type=self._get_mime_type(file_extension),
+                file_path=file_path,
+                metadata=metadata
+            )
+
+        except Exception as e:
+            raise MediaProcessingError(f"Office document processing failed: {str(e)}")
+
     def process_file(self, file_path: Path, **kwargs) -> MediaProcessingResult:
         """
         Process an Office document file.
@@ -169,7 +218,6 @@ class OfficeProcessor(BaseMediaHandler):
             Tuple of (content, metadata)
         """
         from unstructured.partition.docx import partition_docx
-        from unstructured.staging.base import convert_to_dict
 
         # Partition the document
         elements = partition_docx(
@@ -184,9 +232,9 @@ class OfficeProcessor(BaseMediaHandler):
         images = []
 
         for element in elements:
-            element_dict = convert_to_dict(element)
-            element_type = element_dict.get('type', 'Unknown')
-            text_content = element_dict.get('text', '')
+            # Get element type and text content directly from the element
+            element_type = type(element).__name__
+            text_content = str(element)
 
             if element_type == 'Table' and self.extract_tables:
                 # Extract table content
@@ -197,14 +245,13 @@ class OfficeProcessor(BaseMediaHandler):
                     content_parts.append(f"\nTable: {text_content}\n")
 
             elif element_type == 'Image' and self.extract_images:
-                images.append(element_dict)
-                content_parts.append(f"\n[Image: {element_dict.get('metadata', {}).get('filename', 'image')}]\n")
+                images.append(text_content)
+                content_parts.append(f"\n[Image: {text_content}]\n")
 
             elif text_content.strip():
                 if self.markdown_output and element_type in ['Title', 'Header']:
                     # Format headers in markdown
-                    header_level = element_dict.get('metadata', {}).get('header_level', 1)
-                    content_parts.append(f"\n{'#' * header_level} {text_content}\n")
+                    content_parts.append(f"\n## {text_content}\n")
                 else:
                     content_parts.append(text_content)
 
@@ -224,13 +271,13 @@ class OfficeProcessor(BaseMediaHandler):
 
         if self.include_metadata and elements:
             # Add document-level metadata from first element
-            first_element = convert_to_dict(elements[0])
-            doc_metadata = first_element.get('metadata', {})
-            metadata.update({
-                'author': doc_metadata.get('author'),
-                'creation_date': doc_metadata.get('creation_date'),
-                'last_modified': doc_metadata.get('last_modified')
-            })
+            first_element = elements[0]
+            if hasattr(first_element, 'metadata') and first_element.metadata:
+                metadata.update({
+                    'author': getattr(first_element.metadata, 'author', None),
+                    'creation_date': getattr(first_element.metadata, 'creation_date', None),
+                    'last_modified': getattr(first_element.metadata, 'last_modified', None)
+                })
 
         return content, metadata
 
@@ -246,7 +293,6 @@ class OfficeProcessor(BaseMediaHandler):
             Tuple of (content, metadata)
         """
         from unstructured.partition.xlsx import partition_xlsx
-        from unstructured.staging.base import convert_to_dict
 
         # Partition the spreadsheet
         elements = partition_xlsx(
@@ -259,12 +305,13 @@ class OfficeProcessor(BaseMediaHandler):
 
         current_sheet = None
         for element in elements:
-            element_dict = convert_to_dict(element)
-            text_content = element_dict.get('text', '')
+            # Get element content directly
+            text_content = str(element)
 
-            # Track sheet information
-            metadata = element_dict.get('metadata', {})
-            sheet_name = metadata.get('sheet_name', 'Sheet1')
+            # For XLSX, try to get sheet information from element if available
+            sheet_name = 'Sheet1'  # Default sheet name
+            if hasattr(element, 'metadata') and element.metadata:
+                sheet_name = getattr(element.metadata, 'sheet_name', 'Sheet1')
 
             if sheet_name != current_sheet:
                 if self.markdown_output:
@@ -326,7 +373,6 @@ class OfficeProcessor(BaseMediaHandler):
             Tuple of (content, metadata)
         """
         from unstructured.partition.pptx import partition_pptx
-        from unstructured.staging.base import convert_to_dict
 
         # Partition the presentation
         elements = partition_pptx(
@@ -339,13 +385,14 @@ class OfficeProcessor(BaseMediaHandler):
         current_slide = None
 
         for element in elements:
-            element_dict = convert_to_dict(element)
-            text_content = element_dict.get('text', '')
-            element_type = element_dict.get('type', 'Unknown')
+            # Get element content directly
+            text_content = str(element)
+            element_type = type(element).__name__
 
-            # Track slide information
-            metadata = element_dict.get('metadata', {})
-            slide_number = metadata.get('slide_number')
+            # Track slide information - try to get from element metadata if available
+            slide_number = None
+            if hasattr(element, 'metadata') and element.metadata:
+                slide_number = getattr(element.metadata, 'slide_number', None)
 
             if slide_number != current_slide:
                 slide_count += 1
@@ -377,13 +424,13 @@ class OfficeProcessor(BaseMediaHandler):
 
         if self.include_metadata and elements:
             # Add presentation-level metadata
-            first_element = convert_to_dict(elements[0])
-            doc_metadata = first_element.get('metadata', {})
-            metadata.update({
-                'author': doc_metadata.get('author'),
-                'creation_date': doc_metadata.get('creation_date'),
-                'last_modified': doc_metadata.get('last_modified')
-            })
+            first_element = elements[0]
+            if hasattr(first_element, 'metadata') and first_element.metadata:
+                metadata.update({
+                    'author': getattr(first_element.metadata, 'author', None),
+                    'creation_date': getattr(first_element.metadata, 'creation_date', None),
+                    'last_modified': getattr(first_element.metadata, 'last_modified', None)
+                })
 
         return content, metadata
 
