@@ -49,7 +49,7 @@ class PDFProcessor(BaseMediaHandler):
         if not PYMUPDF4LLM_AVAILABLE:
             raise ImportError(
                 "PyMuPDF4LLM is required for PDF processing. "
-                "Install with: pip install pymupdf4llm"
+                "Install with: pip install \"abstractcore[media]\""
             )
 
         super().__init__(**kwargs)

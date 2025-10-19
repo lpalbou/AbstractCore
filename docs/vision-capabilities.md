@@ -170,6 +170,8 @@ AbstractCore's vision system is built on a **layered architecture** that provide
    - **Strengths**: Small size, decent performance
    - **Cost**: Free (local)
 
+**Note:** As of October 19th, 2025, `gemma3n` models in Ollama do not have vision capabilities enabled, despite the similar naming to `gemma3` vision models. Use `gemma3:4b` or other confirmed vision models for image processing tasks.
+
 ### Model Comparison Matrix
 
 | Model | Provider | Size | Speed | Accuracy | Resolution | Cost | Best Use Case |

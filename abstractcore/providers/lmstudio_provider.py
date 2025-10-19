@@ -141,11 +141,14 @@ class LMStudioProvider(BaseProvider):
                         user_message_text = msg["content"]
                         break
             try:
-                from ..media.handlers import LocalMediaHandler
-                media_handler = LocalMediaHandler("lmstudio", self.model_capabilities, model_name=self.model)
+                # CRITICAL FIX: Process media files into MediaContent objects first
+                processed_media = self._process_media_content(media)
 
-                # Create multimodal message combining text and media
-                multimodal_message = media_handler.create_multimodal_message(user_message_text, media)
+                # Use capability-based media handler selection
+                media_handler = self._get_media_handler_for_model(self.model)
+
+                # Create multimodal message combining text and processed media
+                multimodal_message = media_handler.create_multimodal_message(user_message_text, processed_media)
 
                 # For LMStudio (OpenAI-compatible), we might get a string (embedded text) or dict (structured)
                 if isinstance(multimodal_message, str):
@@ -363,7 +366,37 @@ class LMStudioProvider(BaseProvider):
                 except Exception:
                     pass  # Best effort - don't fail the operation
 
+    def _normalize_model_name(self, model_name: str) -> str:
+        """Remove common provider prefixes from model name."""
+        for prefix in ["lmstudio/", "qwen/", "ollama/", "huggingface/"]:
+            if model_name.startswith(prefix):
+                model_name = model_name[len(prefix):]
+        return model_name
 
+    def _get_media_handler_for_model(self, model_name: str):
+        """Get appropriate media handler based on model vision capabilities."""
+        from ..media.handlers import OpenAIMediaHandler, LocalMediaHandler
+
+        # Normalize model name by removing provider prefixes
+        clean_model_name = self._normalize_model_name(model_name)
+
+        # Determine if model supports vision
+        try:
+            from ..architectures.detection import supports_vision
+            use_vision_handler = supports_vision(clean_model_name)
+        except Exception as e:
+            self.logger.debug(f"Vision detection failed: {e}, defaulting to LocalMediaHandler")
+            use_vision_handler = False
+
+        # Create appropriate handler
+        if use_vision_handler:
+            handler = OpenAIMediaHandler(self.model_capabilities, model_name=model_name)
+            self.logger.debug(f"Using OpenAIMediaHandler for vision model: {clean_model_name}")
+        else:
+            handler = LocalMediaHandler("lmstudio", self.model_capabilities, model_name=model_name)
+            self.logger.debug(f"Using LocalMediaHandler for model: {clean_model_name}")
+
+        return handler
 
     def list_available_models(self, **kwargs) -> List[str]:
         """List available models from LMStudio server."""

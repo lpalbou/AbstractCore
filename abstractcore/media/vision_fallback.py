@@ -91,7 +91,7 @@ class VisionFallbackHandler:
                     self.vision_config.caption_model,
                     image_path
                 )
-                return f"Image analysis: {description}"
+                return description
             except Exception as e:
                 logger.debug(f"Primary vision provider failed: {e}")
 
@@ -103,7 +103,7 @@ class VisionFallbackHandler:
                     provider_config["model"],
                     image_path
                 )
-                return f"Image analysis: {description}"
+                return description
             except Exception as e:
                 logger.debug(f"Vision provider {provider_config} failed: {e}")
                 continue
@@ -112,7 +112,7 @@ class VisionFallbackHandler:
         if self._has_local_models():
             try:
                 description = self._generate_local_description(image_path)
-                return f"Image analysis: {description}"
+                return description
             except Exception as e:
                 logger.debug(f"Local vision model failed: {e}")
 
@@ -126,7 +126,7 @@ class VisionFallbackHandler:
 
             vision_llm = create_llm(provider, model=model)
             response = vision_llm.generate(
-                "Provide a detailed description of this image in 2-3 sentences.",
+                "Provide a detailed description of this image in 3-4 sentences. Be precise about specific landmarks, buildings, objects, and details. If you recognize specific places or things, name them accurately. Describe naturally without phrases like 'this image shows'.",
                 media=[image_path]
             )
             return response.content.strip()

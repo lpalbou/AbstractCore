@@ -105,6 +105,13 @@ processing = [
     # No additional dependencies - built on core AbstractCore
 ]
 
+media = [
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "unstructured[office]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+]
+
 # Provider groups for convenience
 api-providers = [
     "abstractcore[openai,anthropic]",
@@ -124,11 +131,11 @@ all-providers = [
 ]
 
 all = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,processing,server,dev,test,docs]",
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,processing,media,server,dev,test,docs]",
 ]
 
 lightweight = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,embeddings,processing,server]",
+    "abstractcore[openai,anthropic,ollama,lmstudio,embeddings,processing,media,server]",
 ]
 
 # Development dependencies
