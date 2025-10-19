@@ -139,6 +139,22 @@ abstractcore --set-api-key anthropic your-anthropic-key
 abstractcore --list-api-keys
 ```
 
+### Streaming Configuration
+
+Configure default streaming behavior for CLI:
+
+```bash
+# Set streaming behavior
+abstractcore --stream on           # Enable streaming by default
+abstractcore --stream off          # Disable streaming by default
+
+# Alternative commands
+abstractcore --enable-streaming    # Enable streaming by default
+abstractcore --disable-streaming   # Disable streaming by default
+```
+
+**Note**: Streaming only affects CLI behavior. Apps (summarizer, extractor, judge) don't support streaming because they need complete structured outputs.
+
 ## Priority System
 
 AbstractCore uses a clear priority hierarchy for configuration:
@@ -234,7 +250,10 @@ abstractcore --set-api-key openai sk-your-key-here
 abstractcore --enable-debug-logging
 abstractcore --enable-file-logging
 
-# 6. Verify configuration
+# 6. Enable streaming for interactive CLI
+abstractcore --stream on
+
+# 7. Verify configuration
 abstractcore --status
 ```
 
@@ -327,6 +346,9 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
     "console_json": false,
     "file_json": true
   },
+  "streaming": {
+    "cli_stream_default": false
+  },
   "provider_preferences": {}
 }
 ```
@@ -379,6 +401,9 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **verbatim_enabled**: Whether to capture full prompts/responses (`true`/`false`)
 - **console_json**: Use JSON format for console output (`true`/`false`)
 - **file_json**: Use JSON format for file output (`true`/`false`)
+
+### Streaming Section
+- **cli_stream_default**: Default streaming mode for CLI (`true`/`false`)
 
 ### Provider Preferences Section
 - **provider_preferences**: Additional provider-specific settings (key-value pairs)

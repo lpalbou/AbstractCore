@@ -1,0 +1,31 @@
+{
+  "image_name": "mystery2_sc.jpg",
+  "description": "Whimsical scene of a cat wearing a transparent space helmet or astronaut bubble",
+
+  "keywords": [
+    "cat", "kitten", "feline", "space", "helmet", "astronaut", "bubble", "dome",
+    "transparent", "plastic", "clear", "carrier", "pet", "travel", "container",
+    "orange", "tabby", "whiskers", "eyes", "paws", "fur", "curious", "cute",
+    "whimsical", "funny", "adorable", "portrait", "close-up", "indoor",
+    "reflection", "glass", "enclosure", "protective", "gear", "sci-fi"
+  ],
+
+  "summary": "A charming and whimsical photograph featuring an orange tabby cat positioned inside a clear, transparent dome or helmet that resembles a space helmet or astronaut bubble. The cat appears calm and curious, looking directly at the camera with bright, alert eyes. The transparent enclosure creates interesting reflections and gives the scene a futuristic, space-age quality. The background shows a textured surface with small patterns, and there are some orange/red objects visible in the upper portion of the frame. The lighting is soft and even, highlighting the cat's facial features and creating a playful, endearing portrait that combines everyday pet photography with imaginative sci-fi elements.",
+
+  "structured": {
+    "theme": "Pet photography with sci-fi/space exploration humor",
+    "mood": "Playful, whimsical, cute, amusing, endearing",
+    "color_tone": "Warm orange tones with neutral background",
+    "setting": "Indoor environment with controlled lighting",
+    "weather": "Not applicable (indoor scene)",
+    "time_of_day": "Artificial lighting, time not determinable",
+    "composition": "Close-up portrait, centered subject, shallow depth of field",
+    "main_objects": ["orange tabby cat", "transparent dome/helmet", "textured background"],
+    "lighting": "Soft, even artificial lighting with minimal shadows",
+    "suggested_activity": "Pet photography, creative portrait session, humor photography",
+    "dominant_colors": ["orange", "amber", "clear/transparent", "gray", "brown"],
+    "visual_elements": ["transparency", "reflection", "close-up detail", "eye contact"],
+    "landscape_type": "Not applicable (indoor close-up)",
+    "human_presence": "Implied photographer presence, no humans visible"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "image_name": "mystery5_so.jpg",
+  "description": "Close-up food photograph of a creamy potato salad or similar mixed dish in a dark bowl",
+
+  "keywords": [
+    "food", "salad", "potato", "mayonnaise", "creamy", "bowl", "dish",
+    "vegetables", "carrots", "celery", "onions", "herbs", "mixed", "chunky",
+    "homemade", "kitchen", "cooking", "culinary", "meal", "side dish",
+    "diced", "chopped", "white", "orange", "green", "appetizing", "fresh",
+    "texture", "ingredients", "recipe", "dining", "close-up", "food photography"
+  ],
+
+  "summary": "A close-up food photograph showcasing what appears to be a creamy potato salad or similar mixed dish served in a dark-colored bowl. The dish contains chunky pieces of what look like diced potatoes mixed with a creamy white dressing, likely mayonnaise-based. Colorful vegetables are visible throughout, including orange pieces (possibly carrots) and green elements (likely celery or herbs). The mixture has a rustic, homemade appearance with visible texture and varying sizes of ingredients. The bowl sits on what appears to be a dark surface, with other dishware partially visible in the background. The lighting is warm and natural, typical of food photography, highlighting the creamy texture and fresh appearance of the ingredients.",
+
+  "structured": {
+    "theme": "Food photography and culinary presentation",
+    "mood": "Appetizing, homemade, comfort food, inviting, rustic",
+    "color_tone": "Warm whites and creams with colorful vegetable accents",
+    "setting": "Kitchen or dining environment with natural lighting",
+    "weather": "Not applicable (indoor food scene)",
+    "time_of_day": "Natural daylight, likely daytime",
+    "composition": "Close-up food photography, bowl centered, shallow depth of field",
+    "main_objects": ["potato salad", "dark bowl", "mixed vegetables", "creamy dressing"],
+    "lighting": "Soft natural lighting with even exposure",
+    "suggested_activity": "Food preparation, dining, recipe documentation",
+    "dominant_colors": ["cream/white", "orange", "green", "dark bowl"],
+    "visual_elements": ["texture", "color contrast", "close-up detail", "appetizing presentation"],
+    "landscape_type": "Not applicable (food close-up)",
+    "human_presence": "Implied cook/photographer, no humans visible"
+  }
+}
