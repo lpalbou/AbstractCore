@@ -88,18 +88,20 @@
                                 <li><code>provider</code> (str): Provider name ("openai", "anthropic", "ollama", "mlx", "lmstudio", "huggingface")</li>
                                 <li><code>model</code> (str, optional): Model name. If not provided, uses provider default</li>
                                 <li><code>retry_config</code> (RetryConfig, optional): Custom retry configuration</li>
+                                <li><code>tool_call_tags</code> (str or tuple, optional): Custom tool call format for agent CLI compatibility</li>
                                 <li><code>**kwargs</code>: Provider-specific parameters</li>
                             </ul>
                         </div>
 
-                        <h4>Provider-specific Parameters</h4>
+                        <h4>Unified Token Management Parameters</h4>
                         <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
                             <ul style="margin: 0;">
                                 <li><code>api_key</code> (str): API key for cloud providers</li>
                                 <li><code>base_url</code> (str): Custom endpoint URL</li>
                                 <li><code>temperature</code> (float): Sampling temperature (0-2)</li>
-                                <li><code>max_tokens</code> (int): Maximum total tokens (unified across providers)</li>
-                                <li><code>max_output_tokens</code> (int): Maximum output tokens (unified parameter)</li>
+                                <li><code>max_tokens</code> (int): Context window (input + output) - unified across providers</li>
+                                <li><code>max_output_tokens</code> (int): Maximum output tokens - unified parameter</li>
+                                <li><code>max_input_tokens</code> (int): Maximum input tokens (auto-calculated if not set)</li>
                                 <li><code>timeout</code> (int): Request timeout in seconds</li>
                                 <li><code>top_p</code> (float): Nucleus sampling parameter</li>
                             </ul>
@@ -120,9 +122,17 @@ llm = create_llm(
     "anthropic",
     model="claude-3-5-haiku-latest",
     temperature=0.7,
-    max_tokens=8000,        # Total budget
-    max_output_tokens=2000, # Reserve for output
+    max_tokens=32000,           # Context window (input + output)
+    max_output_tokens=8000,     # Maximum output tokens
+    max_input_tokens=24000,     # Maximum input tokens (auto-calculated if not set)
     timeout=30
+)
+
+# With tool syntax rewriting for agent CLI compatibility
+llm = create_llm(
+    "ollama",
+    model="qwen3-coder:30b",
+    tool_call_tags="function_call"  # Converts to <function_call>...JSON...</function_call>
 )
 
 # Local provider
@@ -361,6 +371,67 @@ config = RetryConfig(
 )
 
 llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)</code></pre>
+                    </div>
+                </section>
+
+                <section id="token-management">
+                    <h2>Token Management</h2>
+                    <p>Unified token parameters and budget validation across all providers.</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.utils.token_utils import estimate_tokens
+
+# Unified token parameters work across ALL providers
+llm = create_llm(
+    "anthropic",
+    model="claude-3-5-haiku-latest",
+    max_tokens=32000,           # Context window (input + output)
+    max_output_tokens=8000,     # Maximum output tokens
+    max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
+)
+
+# Token estimation and validation
+text = "Your input text here..."
+estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+print(f"Estimated tokens: {estimated}")
+
+# Budget validation with warnings
+response = llm.generate("Write a detailed analysis...")
+print(f"Input tokens: {response.usage.input_tokens}")
+print(f"Output tokens: {response.usage.output_tokens}")
+print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
+                    </div>
+                </section>
+
+                <section id="production-resilience">
+                    <h2>Production Resilience</h2>
+                    <p>Advanced retry logic, circuit breakers, and event-driven monitoring.</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.resilience import RetryManager, CircuitBreaker
+from abstractcore.events import EventType, on_global
+
+# Production resilience with retry and circuit breaker
+llm = create_llm(
+    "openai",
+    model="gpt-4o-mini",
+    retry_manager=RetryManager(max_attempts=3, backoff_strategy="exponential"),
+    circuit_breaker=CircuitBreaker(failure_threshold=5, timeout=60)
+)
+
+# Cost monitoring
+def cost_monitor(event):
+    if event.cost_usd and event.cost_usd > 0.10:
+        alert(f"High cost request: ${event.cost_usd}")
+
+on_global(EventType.GENERATION_COMPLETED, cost_monitor)
+
+# Memory management for local models
+local_llm = create_llm("ollama", model="large-model")
+response = local_llm.generate("Hello")
+local_llm.unload()  # Free memory</code></pre>
                     </div>
                 </section>
 
