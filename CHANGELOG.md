@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **CSV/TSV Files**: Intelligent data parsing with quality assessment and recommendations
   - **Images**: Seamless vision model integration with existing test infrastructure
 
+- **Server Debug Support**: Comprehensive debug mode for troubleshooting API issues
+  - **Command Line Interface**: Added `--debug`, `--host`, and `--port` arguments to server startup with comprehensive help
+  - **Enhanced Error Logging**: Detailed 422 validation error reporting with field-level diagnostics and request body capture
+  - **Request/Response Tracking**: Full HTTP request logging with client information, timing metrics, and structured JSON output
+  - **Centralized Configuration Integration**: Follows centralized config system patterns with environment variable support
+  - **Before vs After**: Uninformative "422 Unprocessable Entity" messages now provide actionable field validation details
+
 ### Verified
 - **CLI Integration**: Confirmed `@filename` syntax works flawlessly across all file types
   - Tested with real files: PDF reports, Office documents, spreadsheets, presentations, data files, and images

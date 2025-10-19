@@ -11,6 +11,9 @@ Transform AbstractCore into an OpenAI-compatible API server. One server, all mod
 pip install abstractcore[server]
 
 # Start server
+python -m abstractcore.server.app
+
+# Or with uvicorn directly
 uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Test
@@ -69,14 +72,16 @@ export ABSTRACTCORE_DEBUG=true
 ### Startup Options
 
 ```bash
-# Development with auto-reload
-uvicorn abstractcore.server.app:app --reload
+# Using AbstractCore's built-in CLI
+python -m abstractcore.server.app --help                    # View all options
+python -m abstractcore.server.app --debug                   # Debug mode
+python -m abstractcore.server.app --host 127.0.0.1 --port 8080  # Custom host/port
+python -m abstractcore.server.app --debug --port 8001       # Debug on custom port
 
-# Production with multiple workers
-uvicorn abstractcore.server.app:app --workers 4
-
-# Custom port
-uvicorn abstractcore.server.app:app --port 3000
+# Using uvicorn directly
+uvicorn abstractcore.server.app:app --reload                # Development with auto-reload
+uvicorn abstractcore.server.app:app --workers 4             # Production with multiple workers
+uvicorn abstractcore.server.app:app --port 3000             # Custom port
 ```
 
 ---
@@ -337,12 +342,43 @@ gunicorn abstractcore.server.app:app \
 
 ## Debug and Monitoring
 
-### Enable Debug Logging
+### Enable Debug Mode
+
+Debug mode provides comprehensive logging and detailed error reporting for troubleshooting API issues.
 
 ```bash
+# Method 1: Using command line flag (recommended)
+python -m abstractcore.server.app --debug
+
+# Method 2: Using environment variable
+export ABSTRACTCORE_DEBUG=true
+python -m abstractcore.server.app
+
+# Method 3: With uvicorn directly
 export ABSTRACTCORE_DEBUG=true
 uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
+
+### Debug Features
+
+**Enhanced Error Reporting:**
+- **Before**: Uninformative "422 Unprocessable Entity" messages
+- **After**: Detailed field validation errors with request body capture
+
+**Example Debug Output:**
+```json
+🔴 Request Validation Error (422) | method=POST | error_count=2 | errors=[
+  {"field": "body -> model", "message": "Field required", "type": "missing"},
+  {"field": "body -> messages", "message": "Field required", "type": "missing"}
+] | client=127.0.0.1
+
+📋 Request Body (Validation Error) | body={"invalid": "data"}
+```
+
+**Request/Response Tracking:**
+- Full HTTP request details (method, URL, headers, client IP)
+- Response status codes and processing times
+- Structured JSON logging for machine processing
 
 **Log Files:**
 - `logs/abstractcore_TIMESTAMP.log` - Structured events
