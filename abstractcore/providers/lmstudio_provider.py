@@ -130,42 +130,60 @@ class LMStudioProvider(BaseProvider):
         if messages:
             chat_messages.extend(messages)
 
-        # Add current prompt with media support
-        if prompt and prompt.strip():
-            # Handle multimodal message with media content
-            if media:
-                try:
-                    from ..media.handlers import LocalMediaHandler
-                    media_handler = LocalMediaHandler("lmstudio", self.model_capabilities, model_name=self.model)
+        # Handle media content regardless of prompt (media can be used with messages too)
+        if media:
+            # Get the last user message content to combine with media
+            user_message_text = prompt.strip() if prompt else ""
+            if not user_message_text and chat_messages:
+                # If no prompt, try to get text from the last user message
+                for msg in reversed(chat_messages):
+                    if msg.get("role") == "user" and msg.get("content"):
+                        user_message_text = msg["content"]
+                        break
+            try:
+                from ..media.handlers import LocalMediaHandler
+                media_handler = LocalMediaHandler("lmstudio", self.model_capabilities, model_name=self.model)
 
-                    # Create multimodal message combining text and media
-                    multimodal_message = media_handler.create_multimodal_message(prompt, media)
+                # Create multimodal message combining text and media
+                multimodal_message = media_handler.create_multimodal_message(user_message_text, media)
 
-                    # For LMStudio (OpenAI-compatible), we might get a string (embedded text) or dict (structured)
-                    if isinstance(multimodal_message, str):
+                # For LMStudio (OpenAI-compatible), we might get a string (embedded text) or dict (structured)
+                if isinstance(multimodal_message, str):
+                    # Replace the last user message with the multimodal message, or add new one
+                    if chat_messages and chat_messages[-1].get("role") == "user":
+                        chat_messages[-1]["content"] = multimodal_message
+                    else:
                         chat_messages.append({
                             "role": "user",
                             "content": multimodal_message
                         })
+                else:
+                    if chat_messages and chat_messages[-1].get("role") == "user":
+                        # Replace last user message with structured multimodal message
+                        chat_messages[-1] = multimodal_message
                     else:
                         chat_messages.append(multimodal_message)
-                except ImportError:
-                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+            except ImportError:
+                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                if user_message_text:
                     chat_messages.append({
                         "role": "user",
-                        "content": prompt
+                        "content": user_message_text
                     })
-                except Exception as e:
-                    self.logger.warning(f"Failed to process media content: {e}")
+            except Exception as e:
+                self.logger.warning(f"Failed to process media content: {e}")
+                if user_message_text:
                     chat_messages.append({
                         "role": "user",
-                        "content": prompt
+                        "content": user_message_text
                     })
-            else:
-                chat_messages.append({
-                    "role": "user",
-                    "content": prompt
-                })
+
+        # Add prompt as separate message if provided (for backward compatibility)
+        elif prompt and prompt.strip():
+            chat_messages.append({
+                "role": "user",
+                "content": prompt
+            })
 
         # Build request payload using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)

@@ -161,43 +161,46 @@ class OllamaProvider(BaseProvider):
                 converted_messages = self._convert_messages_for_ollama(messages)
                 payload["messages"].extend(converted_messages)
 
-            # Add current prompt as user message (only if non-empty)
-            # When using messages array, prompt should be empty or already in messages
-            if prompt and prompt.strip():
-                # Handle multimodal message with media content
-                if media:
-                    try:
-                        from ..media.handlers import LocalMediaHandler
-                        media_handler = LocalMediaHandler("ollama", self.model_capabilities, model_name=self.model)
+            # Handle media content regardless of prompt (media can be used with messages too)
+            if media:
+                # Get the text to combine with media
+                user_message_text = prompt.strip() if prompt else ""
+                try:
+                    from ..media.handlers import LocalMediaHandler
+                    media_handler = LocalMediaHandler("ollama", self.model_capabilities, model_name=self.model)
 
-                        # Create multimodal message combining text and media
-                        multimodal_message = media_handler.create_multimodal_message(prompt, media)
+                    # Create multimodal message combining text and media
+                    multimodal_message = media_handler.create_multimodal_message(user_message_text, media)
 
-                        # For local providers, we might get a string (embedded text) or dict (structured)
-                        if isinstance(multimodal_message, str):
-                            payload["messages"].append({
-                                "role": "user",
-                                "content": multimodal_message
-                            })
-                        else:
-                            payload["messages"].append(multimodal_message)
-                    except ImportError:
-                        self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    # For local providers, we might get a string (embedded text) or dict (structured)
+                    if isinstance(multimodal_message, str):
                         payload["messages"].append({
                             "role": "user",
-                            "content": prompt
+                            "content": multimodal_message
                         })
-                    except Exception as e:
-                        self.logger.warning(f"Failed to process media content: {e}")
+                    else:
+                        payload["messages"].append(multimodal_message)
+                except ImportError:
+                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    if user_message_text:
                         payload["messages"].append({
                             "role": "user",
-                            "content": prompt
+                            "content": user_message_text
                         })
-                else:
-                    payload["messages"].append({
-                        "role": "user",
-                        "content": prompt
-                    })
+                except Exception as e:
+                    self.logger.warning(f"Failed to process media content: {e}")
+                    if user_message_text:
+                        payload["messages"].append({
+                            "role": "user",
+                            "content": user_message_text
+                        })
+
+            # Add prompt as separate message if provided (for backward compatibility)
+            elif prompt and prompt.strip():
+                payload["messages"].append({
+                    "role": "user",
+                    "content": prompt
+                })
 
             endpoint = "/api/chat"
         else:
