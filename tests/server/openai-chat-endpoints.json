@@ -1,0 +1,142 @@
+[
+    {
+        "source": "https://platform.openai.com/docs/api-reference/chat/"
+    },
+    {
+        "model": "lmstudio/qwen/qwen3-next-80b",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": "You are a helpful assistant."
+            },
+            {
+                "role": "user",
+                "content": "Hello!"
+            }
+        ]
+    },
+    {
+        "model": "ollama/gemma3:4b",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "What is in this image?"
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                        }
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 300
+    },
+    {
+        "model": "huggingface/unsloth/Qwen3-4B-Instruct-2507-GGU",
+        "messages": [
+            {
+                "role": "assistant",
+                "content": "You are a helpful assistant."
+            },
+            {
+                "role": "user",
+                "content": "Hello!"
+            }
+        ],
+        "stream": true
+    },
+    {
+        "model": "gpt-4.1",
+        "messages": [
+            {
+                "role": "user",
+                "content": "What is the weather like in Boston today?"
+            }
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_current_weather",
+                    "description": "Get the current weather in a given location",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "The city and state, e.g. San Francisco, CA"
+                            },
+                            "unit": {
+                                "type": "string",
+                                "enum": [
+                                    "celsius",
+                                    "fahrenheit"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "location"
+                        ]
+                    }
+                }
+            }
+        ],
+        "tool_choice": "auto"
+    },
+    {
+        "model": "gpt-5",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hello!"
+            }
+        ],
+        "logprobs": true,
+        "top_logprobs": 2
+    },
+    {
+        "model": "gpt-4o",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "What is in this image?"
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+                        }
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 300
+    },
+    {
+        "model": "lmstudio/qwen/qwen3-vl-4b",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              { "type": "text", "text": "What is in this image?" },
+              {
+                "type": "image_url",
+                "image_url": {
+                                "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+    
+                }
+              }
+            ]
+          }
+        ],
+        "max_tokens": 300
+      }
+]

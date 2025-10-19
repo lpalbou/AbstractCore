@@ -1,0 +1,17 @@
+[
+    {
+        "source": "https://platform.openai.com/docs/api-reference/conversations/"
+    },
+    {
+        "metadata": {
+            "topic": "demo"
+        },
+        "items": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": "Hello!"
+            }
+        ]
+    }
+]
