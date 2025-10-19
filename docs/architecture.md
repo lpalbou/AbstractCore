@@ -134,7 +134,104 @@ This is critical for:
 - Memory-constrained environments (<32GB RAM)
 - Production systems serving different models sequentially
 
-### 3. Request Lifecycle
+### 3. Media Handling System
+
+AbstractCore includes a production-ready media processing system that enables universal file attachment across all providers:
+
+```mermaid
+graph TD
+    A[User Input: @file.pdf] --> B[MessagePreprocessor]
+    B --> C[Extract Files + Clean Text]
+    C --> D[AutoMediaHandler]
+    D --> E{File Type Detection}
+    E -->|Images| F[ImageProcessor]
+    E -->|PDFs| G[PDFProcessor]
+    E -->|Office| H[OfficeProcessor]
+    E -->|Text/CSV| I[TextProcessor]
+
+    F --> J[MediaContent Objects]
+    G --> J
+    H --> J
+    I --> J
+
+    J --> K{Provider Type}
+    K -->|OpenAI| L[OpenAI Format]
+    K -->|Anthropic| M[Anthropic Format]
+    K -->|Local| N[Text Embedding]
+
+    L --> O[Provider API Call]
+    M --> O
+    N --> O
+
+    style D fill:#4caf50
+    style J fill:#2196f3
+    style O fill:#ff9800
+```
+
+#### Media System Architecture
+
+**Core Components:**
+- **MessagePreprocessor**: Parses `@filename` syntax in CLI and extracts file references
+- **AutoMediaHandler**: Intelligent coordinator that selects appropriate processors
+- **Specialized Processors**:
+  - `ImageProcessor` (PIL-based for images)
+  - `PDFProcessor` (PyMuPDF4LLM for documents)
+  - `OfficeProcessor` (Unstructured for DOCX/XLSX/PPTX)
+  - `TextProcessor` (pandas for CSV/TSV data analysis)
+- **Provider Handlers**: Format media content for each provider's API requirements
+
+**Provider-Specific Formatting:**
+```python
+# Same MediaContent gets formatted differently:
+
+# OpenAI (JSON with image_url):
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Analyze this"},
+    {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+  ]
+}
+
+# Anthropic (Messages API with source):
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Analyze this"},
+    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "..."}}
+  ]
+}
+
+# Local (Text embedding):
+"Analyze this\n\nImage description: A chart showing quarterly trends..."
+```
+
+**Graceful Fallback Strategy:**
+1. **Advanced Processing**: PyMuPDF4LLM, Unstructured libraries
+2. **Basic Processing**: Simple text extraction
+3. **Metadata Fallback**: File information and properties
+4. **Never Fails**: System always provides meaningful output
+
+#### Unified Media API
+
+The same `media=[]` parameter works across all providers:
+
+```python
+# Universal API - works with any provider
+llm = create_llm("openai", model="gpt-4o")  # or "anthropic", "ollama", etc.
+response = llm.generate(
+    "Analyze these files",
+    media=["report.pdf", "chart.png", "data.xlsx"]
+)
+```
+
+**CLI Integration:**
+```bash
+# Simple @filename syntax works everywhere
+python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jpg"
+```
+
+### 4. Request Lifecycle
 
 ```mermaid
 sequenceDiagram

@@ -125,7 +125,6 @@ class PDFProcessor(BaseMediaHandler):
                 media_type=MediaType.DOCUMENT,
                 content_format=ContentFormat.TEXT,
                 mime_type=mime_type,
-                output_format=output_format,
                 **metadata
             )
 
@@ -154,8 +153,7 @@ class PDFProcessor(BaseMediaHandler):
                 'write_images': extract_images,
                 'image_format': 'png',
                 'dpi': dpi,
-                'extract_tables': self.preserve_tables,
-                'table_strategy': 'lines_strict' if self.preserve_tables else 'none'
+                'table_strategy': 'lines_strict' if self.preserve_tables else 'lines'
             }
 
             # Remove None values from options
@@ -445,7 +443,7 @@ class PDFProcessor(BaseMediaHandler):
             extraction_options = {
                 'pages': page_range,
                 'write_images': False,
-                'extract_tables': self.preserve_tables
+                'table_strategy': 'lines_strict' if self.preserve_tables else 'lines'
             }
 
             if self.markdown_output:
