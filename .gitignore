@@ -3,3 +3,5 @@ untracked
 abstractcore.egg-info
 dist
 build
+tests
+abstractcore
