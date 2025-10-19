@@ -133,6 +133,231 @@ for chunk in stream:
         print(chunk.choices[0].delta.content, end="", flush=True)
 ```
 
+### Multimodal Requests (Images, Documents, Files)
+
+AbstractCore server supports comprehensive file attachments using OpenAI-compatible multimodal message format, plus AbstractCore's convenient `@filename` syntax.
+
+#### Supported File Types
+
+- **Images**: PNG, JPEG, GIF, WEBP, BMP, TIFF
+- **Documents**: PDF, DOCX, XLSX, PPTX
+- **Data/Text**: CSV, TSV, TXT, MD, JSON, XML
+- **Size Limits**: 10MB per file, 32MB total per request
+
+#### Method 1: @filename Syntax (AbstractCore Extension)
+
+Simple syntax that works with all providers:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "messages": [
+      {"role": "user", "content": "What is in this document? @/path/to/report.pdf"}
+    ]
+  }'
+```
+
+#### Method 2: OpenAI Vision API Format (Image URLs)
+
+Standard OpenAI format for images:
+
+```json
+{
+  "model": "anthropic/claude-3-5-sonnet",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "What is in this image?"},
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "https://example.com/image.jpg"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Base64 Images:**
+```json
+{
+  "type": "image_url",
+  "image_url": {
+    "url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."
+  }
+}
+```
+
+#### Method 3: OpenAI File Format (Forward-Compatible)
+
+AbstractCore supports OpenAI's planned file format with simplified structure (consistent with image_url):
+
+**File URL Format (Recommended - Same Pattern as image_url):**
+```json
+{
+  "model": "ollama/qwen3:4b",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Analyze this document"},
+        {
+          "type": "file",
+          "file_url": {
+            "url": "https://example.com/documents/report.pdf"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Local File Path:**
+```json
+{
+  "type": "file",
+  "file_url": {
+    "url": "/Users/username/documents/data.csv"
+  }
+}
+```
+
+**Base64 Data URL:**
+```json
+{
+  "type": "file",
+  "file_url": {
+    "url": "data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago<PAovVHlwZS..."
+  }
+}
+```
+
+**Filename Extraction:**
+- **URLs/Paths**: Extracted automatically (`/path/file.pdf` → `file.pdf`)
+- **Base64**: Generated from MIME type (`data:application/pdf;base64,...` → `document.pdf`)
+
+#### Mixed Content Example
+
+Combine text, images, and documents in a single request:
+
+```json
+{
+  "model": "openai/gpt-4o",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Compare this chart with the data in the spreadsheet"},
+        {
+          "type": "image_url",
+          "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANS..."}
+        },
+        {
+          "type": "file",
+          "file_url": {
+            "url": "https://example.com/data/sales_data.xlsx"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Python Client Examples
+
+**Using OpenAI Client:**
+```python
+from openai import OpenAI
+import base64
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+
+# Method 1: @filename syntax
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{"role": "user", "content": "Summarize @document.pdf"}]
+)
+
+# Method 2: File URL (HTTP/HTTPS)
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What are the key findings?"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "https://example.com/documents/report.pdf"
+                }
+            }
+        ]
+    }]
+)
+
+# Method 3: Local file path
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-sonnet",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Analyze this local document"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "/Users/username/documents/report.pdf"
+                }
+            }
+        ]
+    }]
+)
+
+# Method 4: Base64 data URL
+with open("report.pdf", "rb") as f:
+    file_data = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="lmstudio/qwen/qwen3-next-80b",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What are the key findings?"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": f"data:application/pdf;base64,{file_data}"
+                }
+            }
+        ]
+    }]
+)
+```
+
+**Universal Provider Support:**
+```python
+# Same syntax works across all providers
+providers_models = [
+    "openai/gpt-4o",
+    "anthropic/claude-3-5-sonnet",
+    "ollama/qwen2.5vl:7b",
+    "lmstudio/qwen/qwen2.5-vl-7b"
+]
+
+for model in providers_models:
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": "Analyze @data.csv and @chart.png"}]
+    )
+    print(f"{model}: {response.choices[0].message.content[:100]}...")
+```
+
 ---
 
 ### Embeddings

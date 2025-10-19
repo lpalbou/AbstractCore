@@ -313,9 +313,9 @@ def get_models_from_provider(provider_name: str) -> List[str]:
 # ============================================================================
 
 class ContentItem(BaseModel):
-    """Individual content item within a message (OpenAI Vision API format)"""
-    type: Literal["text", "image_url"] = Field(
-        description="Content type - 'text' for text content or 'image_url' for images"
+    """Individual content item within a message (OpenAI Vision API format with file support)"""
+    type: Literal["text", "image_url", "file"] = Field(
+        description="Content type - 'text' for text content, 'image_url' for images, or 'file' for file attachments"
     )
     text: Optional[str] = Field(
         default=None,
@@ -324,6 +324,10 @@ class ContentItem(BaseModel):
     image_url: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Image URL object (required when type='image_url'). Should contain 'url' field with base64 data URL or HTTP(S) URL"
+    )
+    file_url: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="File URL object (required when type='file'). Should contain 'url' field with HTTP(S) URL, local path, or base64 data URL"
     )
 
 class ChatMessage(BaseModel):
@@ -335,7 +339,7 @@ class ChatMessage(BaseModel):
     content: Optional[Union[str, List[ContentItem]]] = Field(
         default=None,
         description="Message content - can be a string or array of content objects for multimodal messages. "
-                   "For multimodal messages, use array format with text and image_url objects.",
+                   "For multimodal messages, use array format with text, image_url, and file objects.",
         example="What is the capital of France?"
     )
     tool_call_id: Optional[str] = Field(
@@ -1332,13 +1336,36 @@ def process_image_url_object(image_url_obj: Dict[str, Any]) -> Optional[str]:
         logger.error(f"Failed to process image URL object: {e}")
         return None
 
+def process_file_url_object(file_url_obj: Dict[str, Any]) -> Optional[str]:
+    """
+    Process OpenAI file_url object and return local file path.
+
+    Simplified format (consistent with image_url):
+    {"url": "https://example.com/file.pdf"} or
+    {"url": "/local/path/file.pdf"} or
+    {"url": "data:application/pdf;base64,..."}
+
+    Args:
+        file_url_obj: File URL object with 'url' field (same as image_url)
+
+    Returns:
+        Local file path or None if processing failed
+    """
+    try:
+        # Reuse existing image URL processing logic - works perfectly for any file type
+        return process_image_url_object(file_url_obj)
+
+    except Exception as e:
+        logger.error(f"Failed to process file URL object: {e}")
+        return None
+
 def process_message_content(message: ChatMessage) -> Tuple[str, List[str]]:
     """
     Extract media files from message content and return clean text + media list.
 
     Supports both OpenAI formats:
     - content as string: "Analyze this @image.jpg"
-    - content as array: [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {...}}]
+    - content as array: [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {...}}, {"type": "file", "file_url": {...}}]
 
     Args:
         message: ChatMessage with content to process
@@ -1372,6 +1399,10 @@ def process_message_content(message: ChatMessage) -> Tuple[str, List[str]]:
                     media_file = process_image_url_object(item["image_url"])
                     if media_file:
                         media_files.append(media_file)
+                elif item_type == "file" and item.get("file_url"):
+                    media_file = process_file_url_object(item["file_url"])
+                    if media_file:
+                        media_files.append(media_file)
             elif hasattr(item, 'type'):
                 # Pydantic ContentItem object
                 if item.type == "text" and item.text:
@@ -1380,10 +1411,105 @@ def process_message_content(message: ChatMessage) -> Tuple[str, List[str]]:
                     media_file = process_image_url_object(item.image_url)
                     if media_file:
                         media_files.append(media_file)
+                elif item.type == "file" and item.file_url:
+                    media_file = process_file_url_object(item.file_url)
+                    if media_file:
+                        media_files.append(media_file)
 
         return " ".join(text_parts), media_files
 
     return str(message.content), []
+
+def adapt_prompt_for_media_types(text: str, media_files: List[str]) -> str:
+    """
+    Intelligently adapt prompts based on attached media file types.
+
+    Fixes common mismatches like "What is in this image?" when sending documents.
+
+    Args:
+        text: Original text content
+        media_files: List of media file paths
+
+    Returns:
+        Adapted text content
+    """
+    if not media_files or not text:
+        return text
+
+    # Analyze media file types
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff'}
+    document_extensions = {'.pdf', '.docx', '.xlsx', '.pptx'}
+    data_extensions = {'.csv', '.tsv', '.json', '.xml'}
+    text_extensions = {'.txt', '.md'}
+
+    has_images = False
+    has_documents = False
+    has_data = False
+    has_text = False
+
+    for file_path in media_files:
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in image_extensions:
+            has_images = True
+        elif ext in document_extensions:
+            has_documents = True
+        elif ext in data_extensions:
+            has_data = True
+        elif ext in text_extensions:
+            has_text = True
+
+    # Common prompt adaptations
+    adapted_text = text
+
+    # Fix "What is in this image?" when not dealing with images
+    if "what is in this image" in text.lower():
+        if has_documents and not has_images:
+            adapted_text = text.replace("What is in this image?", "What is in this document?")
+            adapted_text = adapted_text.replace("what is in this image?", "what is in this document?")
+            adapted_text = adapted_text.replace("What is in this image", "What is in this document")
+            adapted_text = adapted_text.replace("what is in this image", "what is in this document")
+        elif has_data and not has_images:
+            adapted_text = text.replace("What is in this image?", "What data is in this file?")
+            adapted_text = adapted_text.replace("what is in this image?", "what data is in this file?")
+            adapted_text = adapted_text.replace("What is in this image", "What data is in this file")
+            adapted_text = adapted_text.replace("what is in this image", "what data is in this file")
+        elif has_text and not has_images:
+            adapted_text = text.replace("What is in this image?", "What is in this text file?")
+            adapted_text = adapted_text.replace("what is in this image?", "what is in this text file?")
+            adapted_text = adapted_text.replace("What is in this image", "What is in this text file")
+            adapted_text = adapted_text.replace("what is in this image", "what is in this text file")
+
+    # Fix "What is in this document?" when dealing with images
+    elif "what is in this document" in text.lower() and has_images and not (has_documents or has_data or has_text):
+        adapted_text = text.replace("What is in this document?", "What is in this image?")
+        adapted_text = adapted_text.replace("what is in this document?", "what is in this image?")
+        adapted_text = adapted_text.replace("What is in this document", "What is in this image")
+        adapted_text = adapted_text.replace("what is in this document", "what is in this image")
+
+    # Handle mixed content with specific naming
+    if adapted_text != text:
+        # Count media types for better description
+        total_files = len(media_files)
+        if total_files > 1:
+            types = []
+            if has_images:
+                types.append("image(s)")
+            if has_documents:
+                types.append("document(s)")
+            if has_data:
+                types.append("data file(s)")
+            if has_text:
+                types.append("text file(s)")
+
+            if len(types) > 1:
+                adapted_text = adapted_text.replace("this document", f"these {' and '.join(types)}")
+                adapted_text = adapted_text.replace("this image", f"these {' and '.join(types)}")
+                adapted_text = adapted_text.replace("this file", f"these {' and '.join(types)}")
+
+    if adapted_text != text:
+        logger.info(f"Adapted prompt for media types: '{text}' → '{adapted_text}'")
+
+    return adapted_text
 
 def validate_media_files(files: List[str]) -> None:
     """
@@ -1396,7 +1522,8 @@ def validate_media_files(files: List[str]) -> None:
         HTTPException: If validation fails
     """
     ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff',
-                         '.pdf', '.docx', '.xlsx', '.pptx', '.csv', '.tsv', '.txt', '.md'}
+                         '.pdf', '.docx', '.xlsx', '.pptx', '.csv', '.tsv', '.txt', '.md',
+                         '.json', '.xml'}
 
     total_size = 0
     max_total_size = 32 * 1024 * 1024  # 32MB total limit
@@ -1526,9 +1653,15 @@ async def process_chat_completion(
             clean_text, media_files = process_message_content(message)
             all_media_files.extend(media_files)
 
-            # Create processed message with clean text
+            # Adapt prompt based on media file types to avoid confusion
+            if media_files:
+                adapted_text = adapt_prompt_for_media_types(clean_text, media_files)
+            else:
+                adapted_text = clean_text
+
+            # Create processed message with adapted text
             processed_message = message.model_copy()
-            processed_message.content = clean_text
+            processed_message.content = adapted_text
             processed_messages.append(processed_message)
 
         # Validate media files if any were found
