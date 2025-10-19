@@ -1518,6 +1518,191 @@ embeddings = client.embeddings.create(
 )
 ```
 
+### Multimodal Requests (Files, Images, Documents)
+
+AbstractCore server provides comprehensive support for multimodal requests through multiple compatible formats:
+
+#### 1. AbstractCore @filename Syntax
+
+Convenient syntax that works across all providers:
+
+```python
+import openai
+
+client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+
+# Simple file attachment
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{"role": "user", "content": "Analyze @report.pdf and @chart.png"}]
+)
+
+# Works with any provider
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-sonnet",
+    messages=[{"role": "user", "content": "Summarize @document.docx"}]
+)
+```
+
+#### 2. OpenAI Vision API Format
+
+Standard OpenAI multimodal format:
+
+```python
+# Image with URL
+response = client.chat.completions.create(
+    model="ollama/qwen2.5vl:7b",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is in this image?"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://example.com/image.jpg"}
+            }
+        ]
+    }]
+)
+
+# Image with base64 data
+import base64
+
+with open("image.jpg", "rb") as f:
+    image_data = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this image"},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
+            }
+        ]
+    }]
+)
+```
+
+#### 3. OpenAI File Format (Forward-Compatible)
+
+AbstractCore supports OpenAI's planned file format with simplified structure (consistent with image_url):
+
+```python
+# HTTP/HTTPS URLs
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What are the key findings in this report?"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "https://example.com/documents/report.pdf"
+                }
+            }
+        ]
+    }]
+)
+
+# Local file paths
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Analyze this local spreadsheet"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "/Users/username/documents/spreadsheet.xlsx"
+                }
+            }
+        ]
+    }]
+)
+
+# Base64 data URLs
+import base64
+
+with open("report.pdf", "rb") as f:
+    file_data = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="ollama/qwen3:4b",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What's in this document?"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": f"data:application/pdf;base64,{file_data}"
+                }
+            }
+        ]
+    }]
+)
+```
+
+**Perfect Consistency with image_url:**
+```python
+# Images and files use identical URL pattern
+content = [
+    {"type": "text", "text": "Compare these"},
+    {
+        "type": "image_url",
+        "image_url": {"url": "https://example.com/chart.png"}
+    },
+    {
+        "type": "file",
+        "file_url": {"url": "https://example.com/data.xlsx"}
+    }
+]
+```
+
+#### Supported File Types
+
+- **Images**: PNG, JPEG, GIF, WEBP, BMP, TIFF
+- **Documents**: PDF, DOCX, XLSX, PPTX
+- **Data/Text**: CSV, TSV, TXT, MD, JSON, XML
+- **Size Limits**: 10MB per file, 32MB total per request
+
+#### Mixed Content Example
+
+Combine multiple file types in a single request:
+
+```python
+# Multiple files with different formats
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Compare the chart with the spreadsheet data and summarize the document"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,iVBORw0KGgoA..."}
+            },
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "https://example.com/data/spreadsheet.xlsx"
+                }
+            },
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "/Users/username/documents/summary.pdf"
+                }
+            }
+        ]
+    }]
+)
+```
+
 ### Advanced Server Features
 
 #### Request ID Tracking and Structured Logging
