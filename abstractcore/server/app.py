@@ -30,12 +30,17 @@ import base64
 import tempfile
 import urllib.request
 import urllib.parse
+import argparse
+import sys
+import logging
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple
 from enum import Enum
 from fastapi import FastAPI, HTTPException, Request, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..core.factory import create_llm
 from ..utils.structured_logging import get_logger, configure_logging
@@ -55,18 +60,49 @@ from ..tools.syntax_rewriter import (
 # Configuration
 # ============================================================================
 
-# Configure structured logging
+# Initialize with default logging configuration (can be overridden later)
 debug_mode = os.getenv("ABSTRACTCORE_DEBUG", "false").lower() == "true"
+
+# Initial logging setup (will be reconfigured if --debug is used)
+# Check environment variable for debug mode
+initial_console_level = logging.DEBUG if debug_mode else logging.INFO
 configure_logging(
-    console_level="DEBUG" if debug_mode else "INFO",
-    file_level="DEBUG",
+    console_level=initial_console_level,
+    file_level=logging.DEBUG,
     log_dir="logs",
     verbatim_enabled=True,
     console_json=False,
     file_json=True
 )
 
-# Create FastAPI app
+# Get initial logger
+logger = get_logger("server")
+
+# Log initial startup with debug mode status
+logger.info("🚀 AbstractCore Server Initializing", version=__version__, debug_mode=debug_mode)
+
+def reconfigure_for_debug():
+    """Reconfigure logging for debug mode when --debug flag is used."""
+    global debug_mode, logger
+
+    debug_mode = True
+
+    # Reconfigure with debug levels
+    configure_logging(
+        console_level=logging.DEBUG,
+        file_level=logging.DEBUG,
+        log_dir="logs",
+        verbatim_enabled=True,
+        console_json=False,
+        file_json=True
+    )
+
+    # Update logger instance
+    logger = get_logger("server")
+
+    return logger
+
+# Create FastAPI app (will be initialized after argument parsing)
 app = FastAPI(
     title="AbstractCore Server",
     description="Universal LLM Gateway with Multi-Agent Tool Call Syntax Support and Media Processing",
@@ -81,9 +117,145 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Get logger
-logger = get_logger("server")
-logger.info("🚀 AbstractCore Server Starting", version=__version__, debug_mode=debug_mode)
+# ============================================================================
+# Enhanced Error Handling and Logging Middleware
+# ============================================================================
+
+@app.middleware("http")
+async def debug_logging_middleware(request: Request, call_next):
+    """Enhanced logging middleware for debug mode."""
+    start_time = time.time()
+
+    # Log request details in debug mode
+    if debug_mode:
+        logger.debug(
+            "📥 HTTP Request",
+            method=request.method,
+            url=str(request.url),
+            headers=dict(request.headers),
+            client=request.client.host if request.client else "unknown"
+        )
+
+    response = await call_next(request)
+
+    process_time = time.time() - start_time
+
+    # Log response details
+    log_data = {
+        "method": request.method,
+        "url": str(request.url),
+        "status_code": response.status_code,
+        "process_time_ms": round(process_time * 1000, 2)
+    }
+
+    if response.status_code >= 400:
+        logger.error("❌ HTTP Error Response", **log_data)
+    elif debug_mode:
+        logger.debug("📤 HTTP Response", **log_data)
+    else:
+        logger.info("✅ HTTP Request", **log_data)
+
+    return response
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Enhanced handler for 422 validation errors with detailed logging."""
+    error_details = []
+    for error in exc.errors():
+        error_details.append({
+            "field": " -> ".join(str(loc) for loc in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"],
+            "input": error.get("input")
+        })
+
+    # Log detailed validation error information
+    logger.error(
+        "🔴 Request Validation Error (422)",
+        method=request.method,
+        url=str(request.url),
+        error_count=len(error_details),
+        errors=error_details,
+        client=request.client.host if request.client else "unknown"
+    )
+
+    # In debug mode, also try to log the request body if possible
+    if debug_mode:
+        try:
+            # Try to get the request body for debugging
+            body = await request.body()
+            if body:
+                try:
+                    import json
+                    body_json = json.loads(body)
+                    logger.debug(
+                        "📋 Request Body (Validation Error)",
+                        body=body_json
+                    )
+                except json.JSONDecodeError:
+                    logger.debug(
+                        "📋 Request Body (Validation Error)",
+                        body_text=body.decode('utf-8', errors='replace')[:1000]  # Limit to 1000 chars
+                    )
+        except Exception as e:
+            logger.debug(f"Could not read request body for debugging: {e}")
+
+    # Return detailed error response
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "message": "Request validation failed",
+                "type": "validation_error",
+                "details": error_details
+            }
+        }
+    )
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Enhanced handler for HTTP exceptions with detailed logging."""
+    logger.error(
+        "🔴 HTTP Exception",
+        method=request.method,
+        url=str(request.url),
+        status_code=exc.status_code,
+        detail=str(exc.detail),
+        client=request.client.host if request.client else "unknown"
+    )
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "message": str(exc.detail),
+                "type": "http_error"
+            }
+        }
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handler for unexpected exceptions with detailed logging."""
+    logger.error(
+        "💥 Unexpected Server Error",
+        method=request.method,
+        url=str(request.url),
+        exception_type=type(exc).__name__,
+        exception_message=str(exc),
+        client=request.client.host if request.client else "unknown",
+        exc_info=True  # This will include the full stack trace
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "message": "Internal server error",
+                "type": "server_error"
+            }
+        }
+    )
 
 # ============================================================================
 # Model Type Detection
@@ -1668,25 +1840,88 @@ def run_server(host: str = "0.0.0.0", port: int = 8000):
     uvicorn.run(app, host=host, port=port)
 
 # ============================================================================
+# Server Runner Function
+# ============================================================================
+
+def run_server_with_args():
+    """Run the server with argument parsing for CLI usage."""
+    parser = argparse.ArgumentParser(
+        description="AbstractCore Server - Universal LLM Gateway with Media Processing",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m abstractcore.server.app                    # Start server with defaults
+  python -m abstractcore.server.app --debug           # Start with debug logging
+  python -m abstractcore.server.app --host 127.0.0.1 --port 8080  # Custom host/port
+  python -m abstractcore.server.app --debug --port 8080           # Debug on custom port
+
+Environment Variables:
+  ABSTRACTCORE_DEBUG=true    # Enable debug mode (equivalent to --debug)
+  HOST=127.0.0.1            # Server host (overridden by --host)
+  PORT=8080                  # Server port (overridden by --port)
+
+Debug Mode:
+  The --debug flag enables verbose logging and better error reporting, including:
+  - Detailed HTTP request/response logging
+  - Full error traces for 422 Unprocessable Entity errors
+  - Media processing diagnostics
+  - Provider initialization details
+        """
+    )
+
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging and show detailed diagnostics (overrides centralized config)'
+    )
+    parser.add_argument(
+        '--host',
+        default=os.getenv("HOST", "0.0.0.0"),
+        help='Host to bind the server to (default: 0.0.0.0)'
+    )
+    parser.add_argument(
+        '--port',
+        type=int,
+        default=int(os.getenv("PORT", "8000")),
+        help='Port to bind the server to (default: 8000)'
+    )
+
+    args = parser.parse_args()
+
+    # Reconfigure logging if debug mode is requested (--debug overrides config defaults)
+    if args.debug:
+        reconfigure_for_debug()
+        print("🐛 Debug mode enabled - detailed logging active")
+
+    logger.info(
+        "🚀 Starting AbstractCore Server",
+        host=args.host,
+        port=args.port,
+        debug=debug_mode,
+        version=__version__
+    )
+
+    # Enhanced uvicorn configuration for debug mode
+    uvicorn_config = {
+        "app": app,
+        "host": args.host,
+        "port": args.port,
+        "log_level": "debug" if debug_mode else "info"
+    }
+
+    # In debug mode, enable more detailed uvicorn logging
+    if debug_mode:
+        uvicorn_config.update({
+            "access_log": True,
+            "use_colors": True,
+        })
+
+    import uvicorn
+    uvicorn.run(**uvicorn_config)
+
+# ============================================================================
 # Startup
 # ============================================================================
 
 if __name__ == "__main__":
-    import uvicorn
-
-    port = int(os.getenv("PORT", "8000"))
-    host = os.getenv("HOST", "0.0.0.0")
-
-    logger.info(
-        "🚀 Starting AbstractCore Server",
-        host=host,
-        port=port,
-        debug=debug_mode
-    )
-
-    uvicorn.run(
-        app,
-        host=host,
-        port=port,
-        log_level="debug" if debug_mode else "info"
-    )
+    run_server_with_args()

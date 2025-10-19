@@ -319,7 +319,13 @@ class LocalMediaHandler(BaseProviderMediaHandler):
 
                         # Generate description using vision fallback
                         description = fallback_handler.create_description(str(file_path), text)
-                        message_parts.append(description)
+                        # Remove the original question from message_parts if it exists
+                        if message_parts and text.strip() in message_parts[0]:
+                            message_parts.clear()
+                        # Completely different approach: make model think it's continuing its own observation
+                        # No questions, no external framing - just natural continuation
+                        simple_prompt = f"{description}"
+                        message_parts.append(simple_prompt)
 
                     except VisionNotConfiguredError as e:
                         # Vision not configured - show warning to USER, not model
