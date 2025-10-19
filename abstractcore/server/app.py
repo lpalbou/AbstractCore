@@ -1,22 +1,36 @@
 """
-AbstractCore Server - Clean Architecture with Universal Tool Call Syntax Support
+AbstractCore Server - Universal LLM Gateway with Media Processing
 
 A focused FastAPI server that provides OpenAI-compatible endpoints with support for
-multiple agent formats through the enhanced syntax rewriter.
+multiple agent formats, tool calling, and comprehensive media processing capabilities.
 
 Key Features:
 - Universal tool call syntax conversion (OpenAI, Codex, Qwen3, LLaMA3, custom)
 - Auto-detection of target agent format
+- Media processing for images, documents, and data files
+- OpenAI Vision API compatible format support
+- Streaming responses with media attachments
 - Clean delegation to AbstractCore
 - Proper ReAct loop support
 - Comprehensive model listing from AbstractCore providers
+
+Media Support:
+- Images: PNG, JPEG, GIF, WEBP, BMP, TIFF
+- Documents: PDF, DOCX, XLSX, PPTX
+- Data: CSV, TSV, JSON, XML, TXT, MD
+- Size limits: 10MB per file, 32MB total per request
+- Both base64 data URLs and HTTP URLs supported
 """
 
 import os
 import json
 import time
 import uuid
-from typing import List, Dict, Any, Optional, Literal, Union, Iterator
+import base64
+import tempfile
+import urllib.request
+import urllib.parse
+from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple
 from enum import Enum
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse
@@ -26,6 +40,7 @@ from pydantic import BaseModel, Field
 from ..core.factory import create_llm
 from ..utils.structured_logging import get_logger, configure_logging
 from ..utils.version import __version__
+from ..utils.message_preprocessor import MessagePreprocessor
 # Removed simple_model_discovery import - now using provider methods directly
 from ..tools.syntax_rewriter import (
     ToolCallSyntaxRewriter,
@@ -54,7 +69,7 @@ configure_logging(
 # Create FastAPI app
 app = FastAPI(
     title="AbstractCore Server",
-    description="Universal LLM Gateway with Multi-Agent Tool Call Syntax Support",
+    description="Universal LLM Gateway with Multi-Agent Tool Call Syntax Support and Media Processing",
     version=__version__
 )
 
@@ -125,15 +140,30 @@ def get_models_from_provider(provider_name: str) -> List[str]:
 # Models
 # ============================================================================
 
+class ContentItem(BaseModel):
+    """Individual content item within a message (OpenAI Vision API format)"""
+    type: Literal["text", "image_url"] = Field(
+        description="Content type - 'text' for text content or 'image_url' for images"
+    )
+    text: Optional[str] = Field(
+        default=None,
+        description="Text content (required when type='text')"
+    )
+    image_url: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Image URL object (required when type='image_url'). Should contain 'url' field with base64 data URL or HTTP(S) URL"
+    )
+
 class ChatMessage(BaseModel):
-    """OpenAI-compatible message format"""
+    """Enhanced OpenAI-compatible message format with media support"""
     role: Literal["system", "user", "assistant", "tool"] = Field(
         description="The role of the message author. One of 'system', 'user', 'assistant', or 'tool'.",
         example="user"
     )
-    content: Optional[str] = Field(
+    content: Optional[Union[str, List[ContentItem]]] = Field(
         default=None,
-        description="The contents of the message. Can be null for assistant messages with tool calls.",
+        description="Message content - can be a string or array of content objects for multimodal messages. "
+                   "For multimodal messages, use array format with text and image_url objects.",
         example="What is the capital of France?"
     )
     tool_call_id: Optional[str] = Field(
@@ -260,21 +290,209 @@ class ChatCompletionRequest(BaseModel):
     
     class Config:
         schema_extra = {
-            "example": {
-                "model": "openai/gpt-4",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a helpful assistant."
-                    },
-                    {
-                        "role": "user",
-                        "content": "What is the capital of France?"
+            "examples": {
+                "basic_text": {
+                    "summary": "Basic Text Chat",
+                    "description": "Simple text-based conversation",
+                    "value": {
+                        "model": "openai/gpt-4",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are a helpful assistant."
+                            },
+                            {
+                                "role": "user",
+                                "content": "What is the capital of France?"
+                            }
+                        ],
+                        "temperature": 0.7,
+                        "max_tokens": 150,
+                        "stream": False
                     }
-                ],
-                "temperature": 0.7,
-                "max_tokens": 150,
-                "stream": False
+                },
+                "vision_image": {
+                    "summary": "Image Analysis",
+                    "description": "Analyze images using vision-capable models with OpenAI Vision API format",
+                    "value": {
+                        "model": "ollama/qwen2.5vl:7b",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "What's in this image?"
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "temperature": 0.7,
+                        "max_tokens": 200
+                    }
+                },
+                "document_analysis": {
+                    "summary": "Document Analysis",
+                    "description": "Process documents (PDF, CSV, Excel, etc.) with file attachments",
+                    "value": {
+                        "model": "lmstudio/qwen/qwen3-next-80b",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Analyze this CSV file and calculate the total sales"
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:text/csv;base64,RGF0ZSxQcm9kdWN0LFNhbGVzCjIwMjQtMDEtMDEsUHJvZHVjdCBBLDEwMDAwCjIwMjQtMDEtMDIsUHJvZHVjdCBCLDE1MDAwCjIwMjQtMDEtMDMsUHJvZHVjdCBDLDI1MDAw"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 300
+                    }
+                },
+                "mixed_media": {
+                    "summary": "Mixed Media Analysis",
+                    "description": "Process multiple file types in a single request",
+                    "value": {
+                        "model": "ollama/qwen2.5vl:7b",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Compare this chart image with the data in this PDF report"
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+                                        }
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:application/pdf;base64,JVBERi0xLjQKJdPr6eEKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKPJ4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQo+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDQKL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjE5NQolJUVPRgo="
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "temperature": 0.5,
+                        "max_tokens": 500,
+                        "stream": True
+                    }
+                },
+                "tools_with_media": {
+                    "summary": "Tools + Media",
+                    "description": "Combine tool usage with file attachments for complex workflows",
+                    "value": {
+                        "model": "openai/gpt-4",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Analyze this financial data and create a summary chart"
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:text/csv;base64,Q29tcGFueSxRMSxRMixRMyxRNApBY21lIEluYywyMDAsMjUwLDMwMCwzNTAKVGVjaCBDb3JwLDE1MCwyMDAsMjUwLDMwMApCaXogTHRkLDEwMCwxMjAsMTQwLDE2MA=="
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        "temperature": 0.7,
+                        "max_tokens": 2048,
+                        "stream": False,
+                        "tools": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "create_chart",
+                                    "description": "Create a chart from data",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {
+                                            "chart_type": {"type": "string"},
+                                            "data": {"type": "array"}
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        "tool_choice": "auto"
+                    }
+                },
+                "complete_request": {
+                    "summary": "Complete Request with Media",
+                    "description": "Full example showing all possible fields with file attachment",
+                    "value": {
+                        "model": "openai/gpt-4",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Analyze this CSV file and provide insights"
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:text/csv;base64,RGF0ZSxQcm9kdWN0LFNhbGVzCjIwMjQtMDEtMDEsUHJvZHVjdCBBLDEwMDAwCjIwMjQtMDEtMDIsUHJvZHVjdCBCLDE1MDAwCjIwMjQtMDEtMDMsUHJvZHVjdCBDLDI1MDAw"
+                                        }
+                                    }
+                                ],
+                                "tool_call_id": None,
+                                "tool_calls": None,
+                                "name": "DataAnalyst"
+                            }
+                        ],
+                        "temperature": 0.7,
+                        "max_tokens": 2048,
+                        "top_p": 1,
+                        "stream": False,
+                        "tools": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "analyze_data",
+                                    "description": "Analyze data and generate insights",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {
+                                            "analysis_type": {"type": "string"},
+                                            "metrics": {"type": "array"}
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        "tool_choice": "auto",
+                        "stop": ["END"],
+                        "seed": 12345,
+                        "frequency_penalty": 0.0,
+                        "presence_penalty": 0.0,
+                        "agent_format": "auto"
+                    }
+                }
             }
         }
 
@@ -755,25 +973,290 @@ async def create_embeddings(request: EmbeddingRequest):
             detail={"error": {"message": str(e), "type": "embedding_error"}}
         )
 
+# ============================================================================
+# Media Processing Utilities
+# ============================================================================
+
+def handle_base64_image(data_url: str) -> str:
+    """
+    Process base64 data URL and save to temporary file.
+
+    Args:
+        data_url: Base64 data URL (e.g., "data:image/jpeg;base64,..." or "data:application/pdf;base64,...")
+
+    Returns:
+        Path to temporary file
+    """
+    try:
+        # Parse data URL
+        if not data_url.startswith("data:"):
+            raise ValueError("Invalid data URL format")
+
+        # Extract media type and base64 data
+        header, data = data_url.split(",", 1)
+        media_type = header.split(";")[0].split(":")[1]
+
+        # Determine file extension for all supported media types
+        ext_map = {
+            # Images
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+            "image/bmp": ".bmp",
+            "image/tiff": ".tiff",
+            # Documents
+            "application/pdf": ".pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+            # Data files
+            "text/csv": ".csv",
+            "text/tab-separated-values": ".tsv",
+            "application/json": ".json",
+            "application/xml": ".xml",
+            "text/xml": ".xml",
+            "text/plain": ".txt",
+            "text/markdown": ".md",
+            # Generic fallback
+            "application/octet-stream": ".bin"
+        }
+        extension = ext_map.get(media_type, ".bin")
+
+        # Decode base64 data
+        file_data = base64.b64decode(data)
+
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
+            temp_file.write(file_data)
+            return temp_file.name
+
+    except Exception as e:
+        logger.error(f"Failed to process base64 media: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": f"Invalid base64 media data: {e}", "type": "media_error"}}
+        )
+
+def download_image_temporarily(url: str) -> str:
+    """
+    Download image from URL to temporary file.
+
+    Args:
+        url: HTTP(S) URL to image
+
+    Returns:
+        Path to temporary file
+    """
+    try:
+        # Validate URL
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("Only HTTP and HTTPS URLs are allowed")
+
+        # Download with size limit (10MB)
+        response = urllib.request.urlopen(url, timeout=30)
+        if response.getheader('content-length'):
+            size = int(response.getheader('content-length'))
+            if size > 10 * 1024 * 1024:  # 10MB limit
+                raise ValueError("Image too large (max 10MB)")
+
+        # Read data with size check
+        data = b""
+        while True:
+            chunk = response.read(8192)
+            if not chunk:
+                break
+            data += chunk
+            if len(data) > 10 * 1024 * 1024:  # 10MB limit
+                raise ValueError("Image too large (max 10MB)")
+
+        # Determine extension from content-type or URL
+        content_type = response.getheader('content-type', '').lower()
+        ext_map = {
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+            "image/bmp": ".bmp",
+            "image/tiff": ".tiff"
+        }
+        extension = ext_map.get(content_type, ".jpg")
+
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
+            temp_file.write(data)
+            return temp_file.name
+
+    except Exception as e:
+        logger.error(f"Failed to download image from URL {url}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": f"Failed to download image: {e}", "type": "media_error"}}
+        )
+
+def process_image_url_object(image_url_obj: Dict[str, Any]) -> Optional[str]:
+    """
+    Process OpenAI image_url object and return local file path.
+
+    Args:
+        image_url_obj: Image URL object with 'url' field
+
+    Returns:
+        Local file path or None if processing failed
+    """
+    try:
+        url = image_url_obj.get("url", "")
+        if not url:
+            return None
+
+        if url.startswith("data:"):
+            # Base64 encoded image
+            return handle_base64_image(url)
+        elif url.startswith(("http://", "https://")):
+            # Download from URL
+            return download_image_temporarily(url)
+        else:
+            # Assume local file path
+            if os.path.exists(url):
+                return url
+            else:
+                logger.warning(f"Local file not found: {url}")
+                return None
+
+    except Exception as e:
+        logger.error(f"Failed to process image URL object: {e}")
+        return None
+
+def process_message_content(message: ChatMessage) -> Tuple[str, List[str]]:
+    """
+    Extract media files from message content and return clean text + media list.
+
+    Supports both OpenAI formats:
+    - content as string: "Analyze this @image.jpg"
+    - content as array: [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {...}}]
+
+    Args:
+        message: ChatMessage with content to process
+
+    Returns:
+        Tuple of (clean_text, media_file_paths)
+    """
+    if message.content is None:
+        return "", []
+
+    if isinstance(message.content, str):
+        # Legacy format: extract @filename references
+        clean_text, media_files = MessagePreprocessor.parse_file_attachments(
+            message.content,
+            validate_existence=True,
+            verbose=False
+        )
+        return clean_text, media_files
+
+    elif isinstance(message.content, list):
+        # OpenAI array format: extract image_url objects
+        text_parts = []
+        media_files = []
+
+        for item in message.content:
+            if isinstance(item, dict):
+                item_type = item.get("type")
+                if item_type == "text" and item.get("text"):
+                    text_parts.append(item["text"])
+                elif item_type == "image_url" and item.get("image_url"):
+                    media_file = process_image_url_object(item["image_url"])
+                    if media_file:
+                        media_files.append(media_file)
+            elif hasattr(item, 'type'):
+                # Pydantic ContentItem object
+                if item.type == "text" and item.text:
+                    text_parts.append(item.text)
+                elif item.type == "image_url" and item.image_url:
+                    media_file = process_image_url_object(item.image_url)
+                    if media_file:
+                        media_files.append(media_file)
+
+        return " ".join(text_parts), media_files
+
+    return str(message.content), []
+
+def validate_media_files(files: List[str]) -> None:
+    """
+    Validate media files for security and size limits.
+
+    Args:
+        files: List of file paths to validate
+
+    Raises:
+        HTTPException: If validation fails
+    """
+    ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff',
+                         '.pdf', '.docx', '.xlsx', '.pptx', '.csv', '.tsv', '.txt', '.md'}
+
+    total_size = 0
+    max_total_size = 32 * 1024 * 1024  # 32MB total limit
+
+    for file_path in files:
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"message": f"File not found: {file_path}", "type": "file_not_found"}}
+            )
+
+        # Check extension
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"message": f"File type {ext} not allowed", "type": "invalid_file_type"}}
+            )
+
+        # Check individual file size (10MB per file)
+        file_size = os.path.getsize(file_path)
+        if file_size > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"message": f"File too large: {file_path} (max 10MB per file)", "type": "file_too_large"}}
+            )
+
+        total_size += file_size
+
+        # Check total size across all files
+        if total_size > max_total_size:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"message": "Total file size exceeds 32MB limit", "type": "total_size_exceeded"}}
+            )
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest, http_request: Request):
     """
-    Create a model response for the given chat conversation.
-    
-    Given a list of messages comprising a conversation, the model will return a response. 
-    This endpoint supports streaming, tool calling, and multiple providers.
-    
+    Create a model response for the given chat conversation with optional media attachments.
+
+    Given a list of messages comprising a conversation, the model will return a response.
+    This endpoint supports streaming, tool calling, media attachments, and multiple providers.
+
     **Key Features:**
     - Multi-provider support (OpenAI, Anthropic, Ollama, LMStudio, etc.)
     - Streaming responses with server-sent events
     - Tool/function calling with automatic syntax conversion
-    - OpenAI-compatible format
+    - Media attachments (images, documents, data files)
+    - OpenAI Vision API compatible format
     
     **Provider Format:** Use `provider/model` format in the model field:
     - `openai/gpt-4` - OpenAI GPT-4
     - `ollama/llama3:latest` - Ollama LLaMA 3
     - `anthropic/claude-3-opus-20240229` - Anthropic Claude 3 Opus
-    
+
+    **Media Attachments:** Support for OpenAI Vision API compatible format:
+    - String content: "Analyze this @image.jpg" (AbstractCore @filename syntax)
+    - Array content: [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}]
+    - Supported formats: Images (PNG, JPEG, GIF, WEBP), Documents (PDF, DOCX, XLSX, PPTX), Data (CSV, TSV, TXT, MD)
+    - Size limits: 10MB per file, 32MB total per request
+
     **To see available models:** `GET /v1/models?type=text-generation`
     
     **Returns:** A chat completion object, or a stream of chat completion chunks if streaming is enabled.
@@ -833,11 +1316,34 @@ async def process_chat_completion(
             user_agent=http_request.headers.get("user-agent", "")[:50]
         )
 
+        # Process media from messages
+        all_media_files = []
+        processed_messages = []
+
+        for message in request.messages:
+            clean_text, media_files = process_message_content(message)
+            all_media_files.extend(media_files)
+
+            # Create processed message with clean text
+            processed_message = message.model_copy()
+            processed_message.content = clean_text
+            processed_messages.append(processed_message)
+
+        # Validate media files if any were found
+        if all_media_files:
+            validate_media_files(all_media_files)
+            logger.info(
+                "📎 Media Files Processed",
+                request_id=request_id,
+                file_count=len(all_media_files),
+                files=[os.path.basename(f) for f in all_media_files[:5]]  # Log first 5 filenames
+            )
+
         # Create LLM instance
         llm = create_llm(provider, model=model)
 
         # Convert messages
-        messages = convert_to_abstractcore_messages(request.messages)
+        messages = convert_to_abstractcore_messages(processed_messages)
 
         # Create syntax rewriter
         syntax_rewriter = create_syntax_rewriter(target_format, f"{provider}/{model}")
@@ -846,6 +1352,7 @@ async def process_chat_completion(
         gen_kwargs = {
             "prompt": "",  # Empty when using messages
             "messages": messages,
+            "media": all_media_files if all_media_files else None,  # Add media files
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": request.stream,
@@ -865,19 +1372,31 @@ async def process_chat_completion(
             gen_kwargs["presence_penalty"] = request.presence_penalty
 
         # Generate response
-        if request.stream:
-            return StreamingResponse(
-                generate_streaming_response(
-                    llm, gen_kwargs, provider, model, syntax_rewriter, request_id
-                ),
-                media_type="text/event-stream",
-                headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
-            )
-        else:
-            response = llm.generate(**gen_kwargs)
-            return convert_to_openai_response(
-                response, provider, model, syntax_rewriter, request_id
-            )
+        temp_files_to_cleanup = [f for f in all_media_files if f.startswith("/tmp/") or "temp" in f]
+
+        try:
+            if request.stream:
+                return StreamingResponse(
+                    generate_streaming_response(
+                        llm, gen_kwargs, provider, model, syntax_rewriter, request_id, temp_files_to_cleanup
+                    ),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+                )
+            else:
+                response = llm.generate(**gen_kwargs)
+                return convert_to_openai_response(
+                    response, provider, model, syntax_rewriter, request_id
+                )
+        finally:
+            # Cleanup temporary files (base64 and downloaded images)
+            for temp_file in temp_files_to_cleanup:
+                try:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
+                        logger.debug(f"Cleaned up temporary file: {temp_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup temporary file {temp_file}: {e}")
 
     except Exception as e:
         logger.error(
@@ -897,7 +1416,8 @@ def generate_streaming_response(
     provider: str,
     model: str,
     syntax_rewriter: ToolCallSyntaxRewriter,
-    request_id: str
+    request_id: str,
+    temp_files_to_cleanup: List[str] = None
 ) -> Iterator[str]:
     """Generate OpenAI-compatible streaming response with syntax rewriting."""
     try:
@@ -982,6 +1502,16 @@ def generate_streaming_response(
             request_id=request_id,
             has_tool_calls=has_tool_calls
         )
+
+        # Cleanup temporary files for streaming
+        if temp_files_to_cleanup:
+            for temp_file in temp_files_to_cleanup:
+                try:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
+                        logger.debug(f"Cleaned up temporary file during streaming: {temp_file}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup temporary file {temp_file}: {cleanup_error}")
 
     except Exception as e:
         logger.error(
