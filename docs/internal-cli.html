@@ -105,6 +105,51 @@ python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --str
                         <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/system [prompt]</code>
             </section>
 
+            <!-- Media Handling Section -->
+            <section style="margin-bottom: 3rem;">
+                <h2>📎 Media Handling</h2>
+                <p>The internal CLI supports universal media handling with the <code>@filename</code> syntax for attaching images, documents, and data files.</p>
+
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">@filename Syntax</h3>
+                    <p>Attach any file type using the <code>@filename</code> syntax in your prompt:</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Image analysis
+python -m abstractcore.utils.cli --prompt "What's in this image? @photo.jpg"
+
+# PDF document analysis
+python -m abstractcore.utils.cli --prompt "Summarize @report.pdf"
+
+# Office documents
+python -m abstractcore.utils.cli --prompt "Extract key points from @presentation.pptx"
+python -m abstractcore.utils.cli --prompt "Analyze the data in @spreadsheet.xlsx"
+
+# Data files
+python -m abstractcore.utils.cli --prompt "What patterns are in @sales_data.csv"
+
+# Multiple files
+python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</code></pre>
+                    </div>
+
+                    <h4 style="margin: 2rem 0 1rem 0;">Supported File Types</h4>
+                    <ul>
+                        <li><strong>Images:</strong> PNG, JPEG, GIF, WEBP, BMP, TIFF</li>
+                        <li><strong>Documents:</strong> PDF, DOCX, XLSX, PPTX</li>
+                        <li><strong>Data/Text:</strong> CSV, TSV, TXT, MD, JSON, XML</li>
+                    </ul>
+
+                    <h4 style="margin: 2rem 0 1rem 0;">How It Works</h4>
+                    <p>The system automatically:</p>
+                    <ol>
+                        <li>Detects file type from extension</li>
+                        <li>Applies appropriate processor (Image, PDF, Office, Text)</li>
+                        <li>Formats content for the selected provider's API</li>
+                        <li>Handles vision fallback for text-only models when needed</li>
+                    </ol>
+                </div>
+            </section>
+
             <!-- Detailed Command Documentation -->
             <section style="margin-bottom: 3rem;">
                 <h2>📚 Command Details</h2>
@@ -342,18 +387,32 @@ python -m abstractcore.utils.cli --provider ollama --model gemma3:1b
                     <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
-                    
-                    <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/server.md" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;" target="_blank">
+                    </a>
+
+                    <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Media Handling</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment system</p>
+                    </a>
+
+                    <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
+                    </a>
+
+                    <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Server Guide</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">External agentic CLI integration</p>
-                    
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible REST API</p>
+                    </a>
+
                     <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
-                    
+                    </a>
+
                     <a href="troubleshooting.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Troubleshooting</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Common issues and solutions</p>
+                    </a>
     </main>
 
     <!-- Scripts -->

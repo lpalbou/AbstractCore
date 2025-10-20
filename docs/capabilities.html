@@ -36,7 +36,9 @@
                         icon: 'pypi'
                     }
                 ]
-            });    </script>
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -139,7 +141,74 @@ ollama_response = ollama_llm.generate("Weather in Paris?", tools=[get_weather])<
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">4. Tool Call Tag Rewriting for Agentic CLI Compatibility</h3>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">4. Centralized Configuration System</h3>
+                        <p><strong>What it does</strong>: Single source of truth for all settings with clear priority hierarchy.</p>
+
+                        <div class="code-block">
+                            <pre><code class="language-bash"># One-time configuration
+abstractcore --status
+abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --download-vision-model
+
+# Now use anywhere without repeating config
+summarizer document.pdf  # Uses configured defaults
+python -m abstractcore.utils.cli --prompt "Hello"  # Uses CLI default</code></pre>
+                        </div>
+
+                        <p><strong>Why it's exceptional</strong>: Configuration priority (Explicit > App-Specific > Global > Hardcoded) eliminates repetitive parameter passing while maintaining full control when needed.</p>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">5. Universal Media Handling System</h3>
+                        <p><strong>What it does</strong>: Attach any file type (images, PDFs, Office docs, data) with simple <code>@filename</code> syntax or <code>media=[]</code> parameter.</p>
+
+                        <div class="code-block">
+                            <pre><code class="language-python"># Python API - works across ALL providers
+llm = create_llm("openai", model="gpt-4o")
+response = llm.generate(
+    "Compare the chart with the data and summarize the document",
+    media=["chart.png", "data.csv", "report.pdf"]
+)
+
+# CLI - same simplicity
+# python -m abstractcore.utils.cli --prompt "Analyze @report.pdf and @chart.png"
+
+# Supported: Images (PNG, JPEG, GIF, WEBP, BMP, TIFF)
+#            Documents (PDF, DOCX, XLSX, PPTX)
+#            Data (CSV, TSV, TXT, MD, JSON)</code></pre>
+                        </div>
+
+                        <p><strong>Why it's exceptional</strong>: Same code works identically across OpenAI, Anthropic, Ollama, and all providers. Automatic processor selection, provider-specific formatting, and graceful fallback.</p>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">6. Vision Capabilities with Intelligent Fallback</h3>
+                        <p><strong>What it does</strong>: Image analysis across all providers with automatic resolution optimization. Text-only models can process images through transparent vision fallback.</p>
+
+                        <div class="code-block">
+                            <pre><code class="language-python"># Works with vision-capable models
+llm = create_llm("openai", model="gpt-4o")
+response = llm.generate(
+    "What's in this image?",
+    media=["photo.jpg"]
+)
+
+# Also works with text-only models via vision fallback
+text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No native vision
+response = text_llm.generate(
+    "Analyze this image",
+    media=["complex_scene.jpg"]
+)
+# Transparent: vision model analyzes → text model processes description</code></pre>
+                        </div>
+
+                        <p><strong>Why it's exceptional</strong>: Automatic image optimization per model, cross-provider consistency, and unique vision fallback system enables ANY model to process images.</p>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">7. Tool Call Tag Rewriting for Agentic CLI Compatibility</h3>
                         <p><strong>What it does</strong>: Automatically rewrites tool call tags to match different agentic CLI requirements in real-time.</p>
                         
                         <div class="code-block">
@@ -163,7 +232,7 @@ response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">5. Structured Output with Automatic Retry</h3>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">8. Structured Output with Automatic Retry</h3>
                         <p><strong>What it does</strong>: Gets typed Python objects from LLMs with automatic validation and retry on failures.</p>
                         
                         <div class="code-block">
@@ -274,6 +343,30 @@ def complex_agent():
                                             <li>Event-driven tool control and monitoring</li>
                                         </ul>
                                     </li>
+                                    <li style="margin-bottom: 1rem;">
+                                        <strong>Centralized Configuration</strong>
+                                        <ul style="margin-top: 0.5rem;">
+                                            <li>Single source of truth for all settings</li>
+                                            <li>Clear priority hierarchy (Explicit > App > Global > Default)</li>
+                                            <li>No repetitive parameter passing</li>
+                                        </ul>
+                                    </li>
+                                    <li style="margin-bottom: 1rem;">
+                                        <strong>Universal Media Handling</strong>
+                                        <ul style="margin-top: 0.5rem;">
+                                            <li>Attach images, PDFs, Office docs, data files</li>
+                                            <li>Same API across all providers</li>
+                                            <li>Automatic processing and formatting</li>
+                                        </ul>
+                                    </li>
+                                    <li>
+                                        <strong>Vision Capabilities</strong>
+                                        <ul style="margin-top: 0.5rem;">
+                                            <li>Image analysis across all providers</li>
+                                            <li>Automatic resolution optimization</li>
+                                            <li>Vision fallback for text-only models</li>
+                                        </ul>
+                                    </li>
                                 </ol>
                             </div>
                         </div>
@@ -314,17 +407,32 @@ def complex_agent():
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">5-minute quick start guide</p>
                         </a>
-                        
+
+                        <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Centralized Configuration</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global settings and defaults</p>
+                        </a>
+
+                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Media Handling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment</p>
+                        </a>
+
+                        <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
+                        </a>
+
                         <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API documentation</p>
                         </a>
-                        
+
                         <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system guide</p>
                         </a>
-                        
+
                         <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world usage examples</p>

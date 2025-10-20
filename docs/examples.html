@@ -36,7 +36,9 @@
                         icon: 'pypi'
                     }
                 ]
-            });    </script>
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -290,6 +292,136 @@ if __name__ == "__main__":
                     </div>
                 </div>
 
+                <!-- Media Handling - Image Analysis -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">⭐ Image Analysis</h3>
+                        <span class="example-badge">Media</span>
+                    </div>
+                    <p class="example-description">
+                        Analyze images across all providers with automatic optimization and vision fallback.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+# Works with any vision-capable provider
+llm = create_llm("openai", model="gpt-4o")
+
+# Single image analysis
+response = llm.generate(
+    "What objects do you see in this image? Describe the scene.",
+    media=["photo.jpg"]
+)
+print(response.content)
+
+# Multiple images comparison
+response = llm.generate(
+    "Compare these three images and identify common themes",
+    media=["image1.jpg", "image2.jpg", "image3.jpg"]
+)
+print(response.content)
+
+# Works with vision fallback for text-only models
+text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")
+response = text_llm.generate(
+    "Analyze this image",
+    media=["complex_scene.jpg"]
+)
+# Vision model analyzes → text model processes description
+print(response.content)</code></pre>
+                    </div>
+                </div>
+
+                <!-- Media Handling - Document Processing -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">⭐ Document Processing</h3>
+                        <span class="example-badge">Media</span>
+                    </div>
+                    <p class="example-description">
+                        Process PDFs, Office documents, and data files with the same simple API.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+
+# PDF analysis
+response = llm.generate(
+    "Summarize the key findings in this report",
+    media=["annual_report.pdf"]
+)
+print(response.content)
+
+# Office documents
+response = llm.generate(
+    "Extract action items from this presentation",
+    media=["meeting_slides.pptx"]
+)
+print(response.content)
+
+# Excel data analysis
+response = llm.generate(
+    "What trends do you see in this sales data?",
+    media=["sales_data.xlsx"]
+)
+print(response.content)
+
+# CSV analysis
+response = llm.generate(
+    "Calculate the average and identify outliers",
+    media=["metrics.csv"]
+)
+print(response.content)</code></pre>
+                    </div>
+                </div>
+
+                <!-- Media Handling - Mixed Media -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">⭐ Multi-Media Analysis</h3>
+                        <span class="example-badge">Media</span>
+                    </div>
+                    <p class="example-description">
+                        Combine images, documents, and data files in a single analysis request.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o")
+
+# Mixed media: chart + spreadsheet + report
+response = llm.generate(
+    """
+    Compare the chart visualization with the raw data
+    in the spreadsheet and verify it matches the
+    findings in the PDF report. Identify any discrepancies.
+    """,
+    media=["quarterly_chart.png", "data.xlsx", "report.pdf"]
+)
+print(response.content)
+
+# Real-world use case: Product analysis
+response = llm.generate(
+    """
+    Analyze this product launch:
+    - Review the design mockups
+    - Check the market data
+    - Summarize the strategy document
+
+    Provide recommendations for launch timing.
+    """,
+    media=[
+        "product_mockup_1.jpg",
+        "product_mockup_2.jpg",
+        "market_research.csv",
+        "launch_strategy.docx"
+    ]
+)
+print(response.content)</code></pre>
+                    </div>
+                </div>
+
                 <!-- Session Management Example -->
                 <div class="example-card">
                     <div class="example-header">
@@ -369,6 +501,37 @@ if __name__ == "__main__":
 
             </div>
 
+            <!-- CLI Media Handling Section -->
+            <div style="margin-top: 4rem;">
+                <h2 style="text-align: center; margin-bottom: 1rem;">CLI Media Handling</h2>
+                <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">
+                    Use the simple @filename syntax in CLI for instant file attachment
+                </p>
+
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; max-width: 900px; margin: 0 auto;">
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Image analysis
+python -m abstractcore.utils.cli --prompt "What's in @photo.jpg"
+
+# PDF document
+python -m abstractcore.utils.cli --prompt "Summarize @report.pdf"
+
+# Office documents
+python -m abstractcore.utils.cli --prompt "Extract key points from @slides.pptx"
+python -m abstractcore.utils.cli --prompt "What data is in @spreadsheet.xlsx"
+
+# Data files
+python -m abstractcore.utils.cli --prompt "Analyze trends in @sales_data.csv"
+
+# Multiple files
+python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"
+
+# Mixed media analysis
+python -m abstractcore.utils.cli --prompt "Verify @chart.png matches @data.xlsx and @report.pdf"</code></pre>
+                    </div>
+                </div>
+            </div>
+
             <!-- More Examples Section -->
             <div style="margin-top: 4rem; text-align: center;">
                 <h2>More Examples</h2>
@@ -394,6 +557,42 @@ if __name__ == "__main__":
                         <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Full RAG implementation</p>
                         <a href="https://github.com/lpalbou/AbstractCore/blob/main/examples/complete_rag_example.py" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
                     </div>
+                </div>
+            </div>
+
+            <!-- Related Documentation -->
+            <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                <h2 style="margin: 0 0 1.5rem 0; text-align: center;">Related Documentation</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                    <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
+                    </a>
+
+                    <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Centralized Configuration</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global defaults and settings</p>
+                    </a>
+
+                    <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Media Handling</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment system</p>
+                    </a>
+
+                    <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
+                    </a>
+
+                    <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
+                    </a>
+
+                    <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API</p>
+                    </a>
                 </div>
             </div>
         </div>

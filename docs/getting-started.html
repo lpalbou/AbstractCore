@@ -58,10 +58,13 @@
                 </ul>
 
                 <h2>Installation</h2>
-                
+
                 <h3>Basic Installation</h3>
                 <div class="code-block">
-                    <pre><code class="language-bash">pip install abstractcore</code></pre>
+                    <pre><code class="language-bash">pip install abstractcore
+
+# For media handling (images, PDFs, Office docs)
+pip install abstractcore[media]</code></pre>
                 </div>
 
                 <h3>Provider-Specific Installation</h3>
@@ -143,6 +146,25 @@ print(response.content)</code></pre>
                     <h3 style="margin: 0 0 0.5rem 0; color: white;">🎉 Congratulations!</h3>
                     <p style="margin: 0; color: rgba(255,255,255,0.9);">You've made your first AbstractCore LLM call.</p>
                 </div>
+
+                <h2>Recommended: Centralized Configuration</h2>
+                <p>Configure AbstractCore once to avoid specifying provider/model every time:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-bash"># Check current status
+abstractcore --status
+
+# Set global default
+abstractcore --set-global-default ollama/llama3:8b
+
+# Set app-specific defaults
+abstractcore --set-app-default cli ollama qwen3:4b
+
+# Configure API keys (stored in config file)
+abstractcore --set-api-key openai sk-your-key-here</code></pre>
+                </div>
+
+                <p><strong>Learn more:</strong> <a href="centralized-config.html">Centralized Configuration Guide</a></p>
 
                 <h2>Core Concepts (5-Minute Tour)</h2>
 
@@ -276,20 +298,81 @@ print("AI:", response2.content)
 # Output: Your name is Alex and you're learning Python.</code></pre>
                 </div>
 
+                <h3>7. Media Handling (Attach Any File)</h3>
+                <p>Attach images, PDFs, Office docs with simple syntax:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o")
+
+# Attach any file type with media parameter
+response = llm.generate(
+    "What's in this image and document?",
+    media=["photo.jpg", "report.pdf"]
+)
+
+# Or from CLI with @filename syntax
+# python -m abstractcore.utils.cli --prompt "Analyze @report.pdf"</code></pre>
+                </div>
+
+                <p><strong>Supported:</strong> Images (PNG, JPEG, GIF, WEBP), Documents (PDF, DOCX, XLSX, PPTX), Data (CSV, TSV, TXT, MD, JSON)</p>
+                <p><strong>Learn more:</strong> <a href="media-handling-system.html">Media Handling System Guide</a></p>
+
+                <h3>8. Vision Capabilities (Image Analysis)</h3>
+                <p>Analyze images across all providers with the same code:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+# Works with any vision-capable provider
+llm = create_llm("openai", model="gpt-4o")
+
+response = llm.generate(
+    "What objects do you see in this image?",
+    media=["photo.jpg"]
+)
+
+# Same code works with local models
+llm = create_llm("ollama", model="qwen2.5vl:7b")
+response = llm.generate("Describe this image", media=["scene.jpg"])</code></pre>
+                </div>
+
+                <p><strong>Vision Fallback:</strong> Text-only models can process images through transparent captioning. Configure once: <code>abstractcore --download-vision-model</code></p>
+                <p><strong>Learn more:</strong> <a href="vision-capabilities.html">Vision Capabilities Guide</a></p>
+
                 <h2>Next Steps</h2>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
+                        <h4 style="margin: 0 0 0.5rem 0;">⭐ Centralized Configuration</h4>
+                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Set up once, use everywhere</p>
+                        <a href="centralized-config.html" style="color: var(--primary-color); font-weight: 500;">Configure AbstractCore →</a>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
+                        <h4 style="margin: 0 0 0.5rem 0;">⭐ Media Handling</h4>
+                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment</p>
+                        <a href="media-handling-system.html" style="color: var(--primary-color); font-weight: 500;">Learn Media Handling →</a>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
+                        <h4 style="margin: 0 0 0.5rem 0;">⭐ Vision Capabilities</h4>
+                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis everywhere</p>
+                        <a href="vision-capabilities.html" style="color: var(--primary-color); font-weight: 500;">Explore Vision →</a>
+                    </div>
+
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
                         <h4 style="margin: 0 0 0.5rem 0;">📖 API Reference</h4>
                         <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API documentation</p>
                         <a href="api-reference.html" style="color: var(--primary-color); font-weight: 500;">View API Reference →</a>
                     </div>
-                    
+
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
                         <h4 style="margin: 0 0 0.5rem 0;">💻 Examples</h4>
                         <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world code examples</p>
                         <a href="examples.html" style="color: var(--primary-color); font-weight: 500;">View Examples →</a>
                     </div>
-                    
+
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
                         <h4 style="margin: 0 0 0.5rem 0;">🌐 Server Guide</h4>
                         <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">HTTP API server setup</p>

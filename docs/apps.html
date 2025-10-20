@@ -36,7 +36,9 @@
                         icon: 'pypi'
                     }
                 ]
-            });    </script>
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -467,6 +469,72 @@ judge multiple_files.txt --exclude-global --reference reference.md</code></pre>
 --max-tokens 32000               # Context window (default: 32000)
 --max-output-tokens 8000         # Output tokens (default: 8000)
 --verbose                        # Show detailed progress</code></pre>
+                </div>
+            </section>
+
+            <!-- Media Handling Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">📁 Media Handling with @filename Syntax</h2>
+                <p style="margin-bottom: 1.5rem;">All CLI apps support universal media handling with simple <code>@filename</code> syntax for analyzing images, PDFs, Office documents, and data files.</p>
+
+                <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; margin-bottom: 2rem;">
+                    <h3 style="margin-bottom: 1rem;">Supported File Types</h3>
+                    <ul style="margin-left: 1.5rem; line-height: 1.8;">
+                        <li><strong>Images:</strong> PNG, JPEG, GIF, WEBP, BMP, TIFF (analyzed via vision models)</li>
+                        <li><strong>Documents:</strong> PDF, DOCX, XLSX, PPTX (text extracted automatically)</li>
+                        <li><strong>Data Files:</strong> CSV, TSV, TXT, MD, JSON (parsed intelligently)</li>
+                    </ul>
+                </div>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">CLI Examples</h3>
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Summarize PDF document
+summarizer @report.pdf --style executive
+
+# Extract entities from Office document
+extractor @presentation.pptx --format json-ld
+
+# Evaluate document with image reference
+judge @document.docx --reference @original.pdf
+
+# Multiple files
+summarizer @chapter1.pdf @chapter2.pdf --length comprehensive
+
+# Mixed media - combine chart analysis with data
+extractor "@sales_chart.png What trends do you see?" --focus "business metrics"</code></pre>
+
+                <p style="margin-bottom: 1.5rem;"><strong>Learn more:</strong> <a href="media-handling-system.html" style="color: var(--accent-color);">Media Handling System Guide</a> and <a href="vision-capabilities.html" style="color: var(--accent-color);">Vision Capabilities Guide</a></p>
+            </section>
+
+            <!-- Related Documentation Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Related Documentation</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-bottom: 3rem;">
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 1rem;">⭐ Centralized Configuration</h3>
+                        <p style="margin-bottom: 1rem;">Set default providers and models once, never specify again</p>
+                        <a href="centralized-config.html"
+                           style="color: var(--accent-color); text-decoration: none; font-weight: 500;">
+                           Configure CLI Apps →
+                        </a>
+                    </div>
+
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 1rem;">⭐ Media Handling System</h3>
+                        <p style="margin-bottom: 1rem;">Universal file attachment across all apps with @filename syntax</p>
+                        <a href="media-handling-system.html"
+                           style="color: var(--accent-color); text-decoration: none; font-weight: 500;">
+                           Learn Media Handling →
+                        </a>
+                    </div>
+
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 1rem;">⭐ Vision Capabilities</h3>
+                        <p style="margin-bottom: 1.5rem;">Image analysis with vision fallback for text-only models</p>
+                        <a href="vision-capabilities.html"
+                           style="color: var(--accent-color); text-decoration: none; font-weight: 500;">
+                           Explore Vision Features →
+                        </a>
+                    </div>
                 </div>
             </section>
 

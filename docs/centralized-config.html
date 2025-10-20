@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centralized Configuration - AbstractCore</title>
+    <meta name="description" content="AbstractCore centralized configuration system - set global defaults, app-specific preferences, and never specify providers repeatedly again.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '../',
+                menuItems: [
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/AbstractCore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 900px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Centralized Configuration</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Set up once, use everywhere. AbstractCore's centralized configuration system eliminates repetitive provider and model specifications across your projects.
+                </p>
+            </div>
+
+            <div class="doc-content">
+                <h2>Overview</h2>
+                <p>
+                    AbstractCore provides a unified configuration system that manages default models, cache directories, logging settings, and API keys from a single location: <code>~/.abstractcore/config/abstractcore.json</code>
+                </p>
+                <p>
+                    This eliminates the need to specify providers and models repeatedly and provides consistent behavior across all applications.
+                </p>
+
+                <h2>Quick Start</h2>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Check current configuration status
+abstractcore --status
+
+# Set global fallback model (used when no app-specific default)
+abstractcore --set-global-default ollama/llama3:8b
+
+# Set app-specific defaults for optimal performance
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default cli ollama qwen3:4b
+
+# Set API keys
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key
+
+# Configure logging
+abstractcore --set-console-log-level WARNING</code></pre>
+                </div>
+
+                <h2>Configuration Priority System</h2>
+                <p>AbstractCore uses a clear priority hierarchy to determine which model to use:</p>
+
+                <ol>
+                    <li><strong>Explicit Parameters</strong> (highest priority)
+                        <div class="code-block">
+                            <pre><code class="language-bash">summarizer document.txt --provider openai --model gpt-4o-mini</code></pre>
+                        </div>
+                    </li>
+
+                    <li><strong>App-Specific Configuration</strong>
+                        <div class="code-block">
+                            <pre><code class="language-bash">abstractcore --set-app-default summarizer openai gpt-4o-mini</code></pre>
+                        </div>
+                    </li>
+
+                    <li><strong>Global Configuration</strong>
+                        <div class="code-block">
+                            <pre><code class="language-bash">abstractcore --set-global-default openai/gpt-4o-mini</code></pre>
+                        </div>
+                    </li>
+
+                    <li><strong>Hardcoded Defaults</strong> (lowest priority)
+                        <p>Current default: <code>huggingface/unsloth/Qwen3-4B-Instruct-2507-GGUF</code></p>
+                    </li>
+                </ol>
+
+                <h2>Application-Specific Defaults</h2>
+                <p>Set different providers and models for different AbstractCore applications:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-bash"># Fast local model for CLI testing
+abstractcore --set-app-default cli ollama qwen3:4b
+
+# High-quality cloud model for document summarization
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+
+# Balanced model for extraction tasks
+abstractcore --set-app-default extractor anthropic claude-3-5-haiku
+
+# Analytical model for evaluation
+abstractcore --set-app-default judge anthropic claude-3-5-haiku</code></pre>
+                </div>
+
+                <h2>Vision Fallback Configuration</h2>
+                <p>Enable text-only models to process images through smart vision fallback:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-bash"># Download local vision model (recommended)
+abstractcore --download-vision-model
+
+# Or use existing Ollama model
+abstractcore --set-vision-caption qwen2.5vl:7b
+
+# Or use cloud API
+abstractcore --set-vision-provider openai --model gpt-4o
+
+# Disable vision fallback
+abstractcore --disable-vision</code></pre>
+                </div>
+
+                <h2>Logging Configuration</h2>
+                <p>Control logging behavior across all AbstractCore components:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-bash"># Set console logging level
+abstractcore --set-console-log-level DEBUG    # Show all messages
+abstractcore --set-console-log-level INFO     # Show info and above
+abstractcore --set-console-log-level WARNING  # Show warnings and errors (default)
+abstractcore --set-console-log-level ERROR    # Show only errors
+abstractcore --set-console-log-level NONE     # Disable console logging
+
+# File logging controls
+abstractcore --enable-file-logging      # Start saving logs to files
+abstractcore --disable-file-logging     # Stop saving logs to files
+abstractcore --set-log-base-dir ~/.abstractcore/logs
+
+# Quick commands
+abstractcore --enable-debug-logging     # Sets both console and file to DEBUG
+abstractcore --disable-console-logging  # Keeps file logging if enabled</code></pre>
+                </div>
+
+                <h2>Cache and Storage Configuration</h2>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Set cache directories
+abstractcore --set-default-cache-dir ~/.cache/abstractcore
+abstractcore --set-huggingface-cache-dir ~/.cache/huggingface
+abstractcore --set-local-models-cache-dir ~/.abstractcore/models</code></pre>
+                </div>
+
+                <h2>Configuration Status Dashboard</h2>
+                <p>View complete configuration with helpful change commands:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-bash">abstractcore --status</code></pre>
+                </div>
+
+                <p>This displays a hierarchical dashboard showing:</p>
+                <ul>
+                    <li>🎯 Application Defaults (CLI, Summarizer, Extractor, Judge)</li>
+                    <li>🌐 Global Fallback settings</li>
+                    <li>👁️ Media Processing configuration</li>
+                    <li>🔑 Provider Access (API key status)</li>
+                    <li>📝 Logging configuration</li>
+                    <li>💾 Storage locations</li>
+                </ul>
+
+                <h2>Common Configuration Workflows</h2>
+
+                <h3>First-Time Setup</h3>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Check what's available
+abstractcore --status
+
+# Configure for development (free local models)
+abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-console-log-level WARNING
+
+# Add API keys when ready for cloud providers
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key
+
+# Verify everything works
+abstractcore --status</code></pre>
+                </div>
+
+                <h3>Development Environment</h3>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Optimize for local development
+abstractcore --set-global-default ollama/llama3:8b  # Free local models
+abstractcore --enable-debug-logging                 # Detailed logs for debugging
+abstractcore --set-app-default cli ollama qwen3:4b  # Fast model for CLI testing</code></pre>
+                </div>
+
+                <h3>Production Environment</h3>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Configure for production reliability and performance
+abstractcore --set-global-default openai/gpt-4o-mini  # Reliable cloud provider
+abstractcore --set-console-log-level WARNING          # Reduce noise
+abstractcore --enable-file-logging                    # Persistent logs
+abstractcore --set-app-default summarizer openai gpt-4o-mini  # Optimize for quality</code></pre>
+                </div>
+
+                <h3>Multi-Environment Approach</h3>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Use different providers for different applications
+abstractcore --set-app-default cli ollama qwen3:4b           # Fast for development
+abstractcore --set-app-default summarizer openai gpt-4o-mini # Quality for documents
+abstractcore --set-app-default judge anthropic claude-3-5-haiku # Detailed analysis</code></pre>
+                </div>
+
+                <h2>Configuration File Location</h2>
+                <p>Configuration is stored in: <code>~/.abstractcore/config/abstractcore.json</code></p>
+                <p>You can directly edit this file if needed, but using the CLI commands is recommended for safety and validation.</p>
+
+                <h2>Benefits</h2>
+                <ul>
+                    <li><strong>No Repetition</strong> - Set your preferences once, use them everywhere</li>
+                    <li><strong>Environment-Specific</strong> - Different settings for dev, staging, production</li>
+                    <li><strong>App-Optimized</strong> - Different models for different tasks automatically</li>
+                    <li><strong>Centralized API Keys</strong> - Manage all provider credentials in one place</li>
+                    <li><strong>Consistent Logging</strong> - Unified logging behavior across all components</li>
+                    <li><strong>Easy Switching</strong> - Change providers globally with one command</li>
+                </ul>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">First steps with AbstractCore</p>
+                        </a>
+
+                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Media Handling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment system</p>
+                        </a>
+
+                        <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
+                        </a>
+
+                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible REST API</p>
+                        </a>
+
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API</p>
+                        </a>
+
+                        <a href="apps.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Built-in Apps</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">CLI tools (Summarizer, Extractor, Judge)</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer" style="margin-top: 5rem;">
+        <div class="container" style="text-align: center; padding: 2rem 0; border-top: 1px solid var(--border-color);">
+            <p style="color: var(--text-secondary); margin: 0;">
+                &copy; 2025 AbstractCore. Licensed under MIT License.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body>
+</html>

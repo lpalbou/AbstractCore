@@ -36,7 +36,9 @@
                         icon: 'pypi'
                     }
                 ]
-            });    </script>
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -149,14 +151,15 @@ llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:
                         <p>Base interface for all LLM providers. All providers implement this interface.</p>
                         
                         <h4>generate()</h4>
-                        <p>Generate text response from the LLM.</p>
-                        
+                        <p>Generate text response from the LLM with optional media attachments.</p>
+
                         <div class="code-block">
                             <pre><code class="language-python">def generate(
     self,
     prompt: str,
     messages: Optional[List[Dict]] = None,
     system_prompt: Optional[str] = None,
+    media: Optional[List[str]] = None,
     tools: Optional[List[Callable]] = None,
     response_model: Optional[BaseModel] = None,
     retry_strategy: Optional[Retry] = None,
@@ -171,12 +174,38 @@ llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:
                                 <li><code>prompt</code> (str): Text prompt to generate from</li>
                                 <li><code>messages</code> (List[Dict], optional): Conversation messages in OpenAI format</li>
                                 <li><code>system_prompt</code> (str, optional): System prompt to set context</li>
+                                <li><code>media</code> (List[str], optional): File paths to attach (images, PDFs, documents, data files)</li>
                                 <li><code>tools</code> (List[Callable], optional): Functions the LLM can call (using @tool decorator)</li>
                                 <li><code>response_model</code> (BaseModel, optional): Pydantic model for structured output</li>
                                 <li><code>retry_strategy</code> (Retry, optional): Custom retry strategy for structured output</li>
                                 <li><code>stream</code> (bool): Enable streaming response</li>
                                 <li><code>**kwargs</code>: Additional generation parameters</li>
                             </ul>
+                        </div>
+
+                        <h4>Media Handling Example</h4>
+                        <div class="code-block">
+                            <pre><code class="language-python"># Attach images, documents, and data files
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o")
+
+# Single image
+response = llm.generate(
+    "What's in this image?",
+    media=["photo.jpg"]
+)
+
+# Multiple files (images, PDFs, Office docs, data)
+response = llm.generate(
+    "Compare the chart with the data and summarize the document",
+    media=["chart.png", "data.csv", "report.pdf"]
+)
+
+# Supported file types:
+# Images: PNG, JPEG, GIF, WEBP, BMP, TIFF
+# Documents: PDF, DOCX, XLSX, PPTX
+# Data: CSV, TSV, TXT, MD, JSON</code></pre>
                         </div>
 
                         <h4>Returns</h4>
@@ -515,17 +544,32 @@ except ProviderAPIError as e:
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">5-minute quick start guide</p>
                         </a>
-                        
+
+                        <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Centralized Configuration</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global defaults and settings</p>
+                        </a>
+
+                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Media Handling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment</p>
+                        </a>
+
+                        <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
+                        </a>
+
                         <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system guide</p>
                         </a>
-                        
+
                         <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world usage examples</p>
                         </a>
-                        
+
                         <a href="architecture.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Architecture</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">System design overview</p>

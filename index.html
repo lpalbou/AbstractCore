@@ -94,7 +94,8 @@
                     <br>Write once, run everywhere
                 </h1>
                 <p class="hero-description">
-                    A powerful Python library providing seamless interaction with all major LLM providers. 
+                    A powerful Python library providing seamless interaction with all major LLM providers
+                    with centralized configuration, universal media handling, and vision capabilities.
                     Switch between OpenAI, Anthropic, Ollama, and more with identical code.
                 </p>
                 
@@ -183,6 +184,45 @@ llm = create_llm("ollama", model="qwen3-coder:30b")
             </div>
             
             <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Centralized Configuration</h3>
+                    <p class="feature-description">
+                        One-time setup with ~/.abstractcore/config/abstractcore.json. Set global defaults, app-specific preferences, and API keys. Never specify providers repeatedly again.
+                    </p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="9" cy="9" r="2"/>
+                            <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Universal Media Handling</h3>
+                    <p class="feature-description">
+                        Attach any file with simple @filename syntax. Images, PDFs, Office docs, CSV/TSV automatically processed. Same API across all providers with intelligent fallback.
+                    </p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Vision Capabilities</h3>
+                    <p class="feature-description">
+                        Image analysis across all providers with automatic optimization. Vision fallback for text-only models through smart captioning. Multi-image support with resolution handling.
+                    </p>
+                </div>
+
                 <div class="feature-card">
                     <div class="feature-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -364,15 +404,15 @@ print(response.content)</code></pre>
                 
                 <div class="quickstart-demo">
                     <div class="demo-tabs">
-                        <button class="tab-button active" data-tab="basic">Provider Discovery</button>
+                        <button class="tab-button active" data-tab="config">Centralized Config</button>
+                        <button class="tab-button" data-tab="media">Media Handling</button>
+                        <button class="tab-button" data-tab="vision">Vision Capabilities</button>
                         <button class="tab-button" data-tab="tools">Tool Calling</button>
-                        <button class="tab-button" data-tab="structured">Session Analytics</button>
-                        <button class="tab-button" data-tab="streaming">Token Management</button>
-                        <button class="tab-button" data-tab="cli">HTTP Server</button>
+                        <button class="tab-button" data-tab="server">HTTP Server</button>
                     </div>
                     
                     <div class="demo-content">
-                        <div class="demo-panel active" id="basic">
+                        <div class="demo-panel active" id="config">
                             <div class="code-window">
                                 <div class="code-header">
                                     <div class="code-dots">
@@ -380,17 +420,30 @@ print(response.content)</code></pre>
                                         <span class="dot yellow"></span>
                                         <span class="dot green"></span>
                                     </div>
-                                    <div class="code-title">provider_discovery.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore.providers import get_all_providers_with_models
+                                    <div class="code-title">centralized_configuration.sh</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="# Check current configuration
+abstractcore --status
 
-# Get comprehensive information about all providers
-providers = get_all_providers_with_models()
-for provider in providers:
-    print(f&quot;{provider['display_name']}: {provider['model_count']} models&quot;)
-    print(f&quot;Features: {', '.join(provider['supported_features'])}&quot;)
-    print(f&quot;Local: {provider['local_provider']}&quot;)
-    print(f&quot;Auth Required: {provider['authentication_required']}&quot;)
-    print()">
+# Set global fallback model (used when no app-specific default)
+abstractcore --set-global-default ollama/llama3:8b
+
+# Set app-specific defaults for optimal performance
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default cli ollama qwen3:4b
+
+# Configure vision fallback for text-only models
+abstractcore --download-vision-model  # Download local model
+# OR use existing model:
+# abstractcore --set-vision-caption qwen2.5vl:7b
+
+# Set API keys
+abstractcore --set-api-key openai sk-your-key-here
+
+# Configure logging
+abstractcore --set-console-log-level WARNING
+
+# Now use without specifying provider/model every time!
+python -m abstractcore.utils.cli --prompt &quot;Hello!&quot;  # Uses configured defaults">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -400,16 +453,183 @@ for provider in providers:
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python">from abstractcore.providers import get_all_providers_with_models
+                                    <pre><code class="language-bash"># Check current configuration
+abstractcore --status
 
-# Get comprehensive information about all providers
-providers = get_all_providers_with_models()
-for provider in providers:
-    print(f"{provider['display_name']}: {provider['model_count']} models")
-    print(f"Features: {', '.join(provider['supported_features'])}")
-    print(f"Local: {provider['local_provider']}")
-    print(f"Auth Required: {provider['authentication_required']}")
-    print()</code></pre>
+# Set global fallback model (used when no app-specific default)
+abstractcore --set-global-default ollama/llama3:8b
+
+# Set app-specific defaults for optimal performance
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default cli ollama qwen3:4b
+
+# Configure vision fallback for text-only models
+abstractcore --download-vision-model  # Download local model
+# OR use existing model:
+# abstractcore --set-vision-caption qwen2.5vl:7b
+
+# Set API keys
+abstractcore --set-api-key openai sk-your-key-here
+
+# Configure logging
+abstractcore --set-console-log-level WARNING
+
+# Now use without specifying provider/model every time!
+python -m abstractcore.utils.cli --prompt "Hello!"  # Uses configured defaults</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="demo-panel" id="media">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">media_handling.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
+
+# Works with any provider - same API everywhere
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;)
+
+# Attach any file type with media parameter
+response = llm.generate(
+    &quot;What's in this image and document?&quot;,
+    media=[&quot;photo.jpg&quot;, &quot;report.pdf&quot;]
+)
+
+# Or use CLI with @filename syntax
+# python -m abstractcore.utils.cli --prompt &quot;Analyze @report.pdf&quot;
+
+# Supported file types:
+# - Images: PNG, JPEG, GIF, WEBP, BMP, TIFF
+# - Documents: PDF, DOCX, XLSX, PPTX
+# - Data: CSV, TSV, TXT, MD, JSON
+
+# Same code works with any provider
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-3.5-sonnet&quot;)
+response = llm.generate(
+    &quot;Summarize these materials&quot;,
+    media=[&quot;chart.png&quot;, &quot;data.csv&quot;, &quot;presentation.pptx&quot;]
+)">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from abstractcore import create_llm
+
+# Works with any provider - same API everywhere
+llm = create_llm("openai", model="gpt-4o")
+
+# Attach any file type with media parameter
+response = llm.generate(
+    "What's in this image and document?",
+    media=["photo.jpg", "report.pdf"]
+)
+
+# Or use CLI with @filename syntax
+# python -m abstractcore.utils.cli --prompt "Analyze @report.pdf"
+
+# Supported file types:
+# - Images: PNG, JPEG, GIF, WEBP, BMP, TIFF
+# - Documents: PDF, DOCX, XLSX, PPTX
+# - Data: CSV, TSV, TXT, MD, JSON
+
+# Same code works with any provider
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+response = llm.generate(
+    "Summarize these materials",
+    media=["chart.png", "data.csv", "presentation.pptx"]
+)</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="demo-panel" id="vision">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">vision_capabilities.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
+
+# Vision works across all providers with same interface
+openai_llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;)
+response = openai_llm.generate(
+    &quot;Describe this image in detail&quot;,
+    media=[&quot;photo.jpg&quot;]
+)
+
+# Same code with local provider
+ollama_llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5vl:7b&quot;)
+response = ollama_llm.generate(
+    &quot;What objects do you see?&quot;,
+    media=[&quot;scene.jpg&quot;]
+)
+
+# Vision fallback for text-only models
+# Configure once: abstractcore --download-vision-model
+text_llm = create_llm(&quot;lmstudio&quot;, model=&quot;qwen/qwen3-next-80b&quot;)  # No native vision
+response = text_llm.generate(
+    &quot;What's in this image?&quot;,
+    media=[&quot;complex_scene.jpg&quot;]
+)
+# Works transparently: vision model analyzes → text model processes description
+
+# Multi-image analysis
+response = llm.generate(
+    &quot;Compare these architectural styles&quot;,
+    media=[&quot;building1.jpg&quot;, &quot;building2.jpg&quot;, &quot;building3.jpg&quot;]
+)">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from abstractcore import create_llm
+
+# Vision works across all providers with same interface
+openai_llm = create_llm("openai", model="gpt-4o")
+response = openai_llm.generate(
+    "Describe this image in detail",
+    media=["photo.jpg"]
+)
+
+# Same code with local provider
+ollama_llm = create_llm("ollama", model="qwen2.5vl:7b")
+response = ollama_llm.generate(
+    "What objects do you see?",
+    media=["scene.jpg"]
+)
+
+# Vision fallback for text-only models
+# Configure once: abstractcore --download-vision-model
+text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No native vision
+response = text_llm.generate(
+    "What's in this image?",
+    media=["complex_scene.jpg"]
+)
+# Works transparently: vision model analyzes → text model processes description
+
+# Multi-image analysis
+response = llm.generate(
+    "Compare these architectural styles",
+    media=["building1.jpg", "building2.jpg", "building3.jpg"]
+)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -600,7 +820,7 @@ print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
                             </div>
                         </div>
                         
-                        <div class="demo-panel" id="cli">
+                        <div class="demo-panel" id="server">
                             <div class="code-window">
                                 <div class="code-header">
                                     <div class="code-dots">
@@ -612,24 +832,33 @@ print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
                                     <button class="copy-button" onclick="copyCode(this)" data-code="# Start OpenAI-compatible server
 # uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
+import requests
+
+# NEW: OpenAI Responses API with native file support
+response = requests.post(
+    &quot;http://localhost:8000/v1/responses&quot;,
+    json={
+        &quot;model&quot;: &quot;gpt-4o&quot;,
+        &quot;input&quot;: [
+            {
+                &quot;role&quot;: &quot;user&quot;,
+                &quot;content&quot;: [
+                    {&quot;type&quot;: &quot;input_text&quot;, &quot;text&quot;: &quot;Analyze this document&quot;},
+                    {&quot;type&quot;: &quot;input_file&quot;, &quot;file_url&quot;: &quot;https://example.com/report.pdf&quot;}
+                ]
+            }
+        ],
+        &quot;stream&quot;: False  # Optional streaming
+    }
+)
+
+# Or use standard chat completions with @filename syntax
 import openai
-
-client = openai.OpenAI(
-    base_url=&quot;http://localhost:8000/v1&quot;,
-    api_key=&quot;unused&quot;  # Not required for local providers
-)
-
-# Route to any provider using model format: provider/model
+client = openai.OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=&quot;unused&quot;)
 response = client.chat.completions.create(
-    model=&quot;ollama/qwen3-coder:30b&quot;,      # Ollama provider
-    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]
-)
-
-# Provider discovery via HTTP API
-# GET /providers - Complete provider metadata
-# GET /providers/ollama/models - Models for specific provider
-
-print(response.choices[0].message.content)">
+    model=&quot;ollama/qwen3-coder:30b&quot;,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Analyze @report.pdf&quot;}]
+)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -642,24 +871,33 @@ print(response.choices[0].message.content)">
                                     <pre><code class="language-python"># Start OpenAI-compatible server
 # uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
+import requests
+
+# NEW: OpenAI Responses API with native file support
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Analyze this document"},
+                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+                ]
+            }
+        ],
+        "stream": False  # Optional streaming
+    }
+)
+
+# Or use standard chat completions with @filename syntax
 import openai
-
-client = openai.OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="unused"  # Not required for local providers
-)
-
-# Route to any provider using model format: provider/model
+client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 response = client.chat.completions.create(
-    model="ollama/qwen3-coder:30b",      # Ollama provider
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-
-# Provider discovery via HTTP API
-# GET /providers - Complete provider metadata
-# GET /providers/ollama/models - Models for specific provider
-
-print(response.choices[0].message.content)</code></pre>
+    model="ollama/qwen3-coder:30b",
+    messages=[{"role": "user", "content": "Analyze @report.pdf"}]
+)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -798,6 +1036,18 @@ print(response.choices[0].message.content)</code></pre>
                 <div class="doc-category">
                     <h3 class="doc-category-title">📚 Core Library</h3>
                     <div class="doc-links">
+                        <a href="docs/centralized-config.html" class="doc-link">
+                            <span class="doc-title">⭐ Centralized Configuration</span>
+                            <span class="doc-description">Global defaults, app preferences, one-time setup</span>
+                        </a>
+                        <a href="docs/media-handling-system.html" class="doc-link">
+                            <span class="doc-title">⭐ Media Handling System</span>
+                            <span class="doc-description">Universal file attachment - images, PDFs, Office docs</span>
+                        </a>
+                        <a href="docs/vision-capabilities.html" class="doc-link">
+                            <span class="doc-title">⭐ Vision Capabilities</span>
+                            <span class="doc-description">Image analysis with vision fallback for text-only models</span>
+                        </a>
                         <a href="docs/api-reference.html" class="doc-link">
                             <span class="doc-title">Python API Reference</span>
                             <span class="doc-description">Complete API documentation</span>
