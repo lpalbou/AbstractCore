@@ -18,25 +18,30 @@
     <div class="navbar-placeholder"></div>
     
     <script>
-        // Initialize navbar with minimal docs configuration
+        // Initialize navbar with docs configuration
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '../',
                 menuItems: [
-                    { 
-                        text: 'GitHub', 
+                    { text: 'Features', href: 'capabilities.html' },
+                    { text: 'Quick Start', href: 'getting-started.html' },
+                    { text: 'Documentation', href: '../index.html#docs' },
+                    { text: 'Examples', href: 'examples.html' },
+                    {
+                        text: 'GitHub',
                         href: 'https://github.com/lpalbou/AbstractCore',
                         target: '_blank',
                         icon: 'github'
                     },
-                    { 
-                        text: 'PyPI', 
+                    {
+                        text: 'PyPI',
                         href: 'https://pypi.org/project/abstractcore/',
                         target: '_blank',
                         icon: 'pypi'
                     }
                 ]
-            });        });
+            });
+        });
     </script>
 
     <!-- Main Content -->

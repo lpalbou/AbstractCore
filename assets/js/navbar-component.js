@@ -11,18 +11,18 @@ class AbstractCoreNavbar {
             basePath: config.basePath || '',
             // Menu items configuration
             menuItems: config.menuItems || [
-                { text: 'Features', href: '#features' },
-                { text: 'Quick Start', href: '#quickstart' },
-                { text: 'Documentation', href: '#docs' },
-                { text: 'Examples', href: '#examples' },
-                { 
-                    text: 'GitHub', 
+                { text: 'Features', href: 'docs/capabilities.html' },
+                { text: 'Quick Start', href: 'docs/getting-started.html' },
+                { text: 'Documentation', href: 'index.html#docs' },
+                { text: 'Examples', href: 'docs/examples.html' },
+                {
+                    text: 'GitHub',
                     href: 'https://github.com/lpalbou/AbstractCore',
                     target: '_blank',
                     icon: 'github'
                 },
-                { 
-                    text: 'PyPI', 
+                {
+                    text: 'PyPI',
                     href: 'https://pypi.org/project/abstractcore/',
                     target: '_blank',
                     icon: 'pypi'
@@ -83,10 +83,17 @@ class AbstractCoreNavbar {
      */
     getMenuItemsHTML() {
         return this.config.menuItems.map(item => {
-            const href = item.href.startsWith('#') || item.href.startsWith('http') 
-                ? item.href 
+            // Don't prepend basePath if href is:
+            // - An anchor (#something)
+            // - An absolute URL (http/https)
+            // - Already contains '../' or '/' (relative/absolute path)
+            const href = item.href.startsWith('#') ||
+                         item.href.startsWith('http') ||
+                         item.href.startsWith('../') ||
+                         item.href.startsWith('/')
+                ? item.href
                 : `${this.config.basePath}${item.href}`;
-            
+
             const target = item.target ? `target="${item.target}"` : '';
             let icon = '';
             if (item.icon === 'github') {
@@ -94,7 +101,7 @@ class AbstractCoreNavbar {
             } else if (item.icon === 'pypi') {
                 icon = this.getPyPIIcon();
             }
-            
+
             return `
                 <a href="${href}" class="nav-link" ${target}>
                     ${icon}
