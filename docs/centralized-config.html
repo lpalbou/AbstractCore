@@ -16,11 +16,11 @@
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-
+    
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
-                                basePath: '../',
+                basePath: '',
                 menuItems: [
                     { text: 'Features', href: 'capabilities.html' },
                     { text: 'Quick Start', href: 'getting-started.html' },
@@ -38,7 +38,8 @@
                         target: '_blank',
                         icon: 'pypi'
                     }
-                ]});
+                ]
+            });
         });
     </script>
 

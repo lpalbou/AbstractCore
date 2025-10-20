@@ -21,12 +21,11 @@
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-
+    
     <script>
-        // Initialize navbar with docs-specific configuration
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
-                                basePath: '../',
+                basePath: '',
                 menuItems: [
                     { text: 'Features', href: 'capabilities.html' },
                     { text: 'Quick Start', href: 'getting-started.html' },
@@ -44,7 +43,8 @@
                         target: '_blank',
                         icon: 'pypi'
                     }
-                ]});
+                ]
+            });
         });
     </script>
 
