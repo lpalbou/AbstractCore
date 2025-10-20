@@ -257,10 +257,10 @@ product = llm.generate(
                     <h2>❌ What AbstractCore Does NOT Do</h2>
                     <p style="color: var(--text-secondary); margin-bottom: 2rem;">Understanding limitations is crucial for choosing the right tool.</p>
                     
-                    <div style="background: #fee2e2; border: 1px solid #fecaca; padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: #dc2626;">1. RAG Pipelines (Use Specialized Tools)</h3>
-                        <p><strong>What AbstractCore provides</strong>: Vector embeddings via <code>EmbeddingManager</code></p>
-                        <p><strong>What it doesn't provide</strong>: Document chunking, vector databases, retrieval strategies</p>
+                    <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 2rem; border-radius: 0.5rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: #991b1b;">1. RAG Pipelines (Use Specialized Tools)</h3>
+                        <p style="color: #1f2937;"><strong>What AbstractCore provides</strong>: Vector embeddings via <code>EmbeddingManager</code></p>
+                        <p style="color: #1f2937;"><strong>What it doesn't provide</strong>: Document chunking, vector databases, retrieval strategies</p>
                         
                         <div class="code-block">
                             <pre><code class="language-python"># AbstractCore gives you this
@@ -276,18 +276,18 @@ def rag_pipeline(query, documents):
     # 4. Construct prompt - YOU implement
     return llm.generate(prompt)</code></pre>
                         </div>
-                        
-                        <p><strong>Better alternatives</strong>:</p>
-                        <ul>
-                            <li><strong><a href="https://github.com/run-llama/llama_index" target="_blank">LlamaIndex</a></strong> - Full RAG framework</li>
-                            <li><strong><a href="https://github.com/langchain-ai/langchain" target="_blank">LangChain</a></strong> - RAG components and chains</li>
+
+                        <p style="color: #1f2937;"><strong>Better alternatives</strong>:</p>
+                        <ul style="color: #1f2937;">
+                            <li><strong><a href="https://github.com/run-llama/llama_index" target="_blank" style="color: #2563eb;">LlamaIndex</a></strong> - Full RAG framework</li>
+                            <li><strong><a href="https://github.com/langchain-ai/langchain" target="_blank" style="color: #2563eb;">LangChain</a></strong> - RAG components and chains</li>
                         </ul>
                     </div>
 
-                    <div style="background: #fee2e2; border: 1px solid #fecaca; padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: #dc2626;">2. Complex Agent Workflows (Use Agent Frameworks)</h3>
-                        <p><strong>What AbstractCore provides</strong>: Single LLM calls with tool execution</p>
-                        <p><strong>What it doesn't provide</strong>: Multi-step agent reasoning, planning, memory persistence</p>
+                    <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 2rem; border-radius: 0.5rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: #991b1b;">2. Complex Agent Workflows (Use Agent Frameworks)</h3>
+                        <p style="color: #1f2937;"><strong>What AbstractCore provides</strong>: Single LLM calls with tool execution</p>
+                        <p style="color: #1f2937;"><strong>What it doesn't provide</strong>: Multi-step agent reasoning, planning, memory persistence</p>
                         
                         <div class="code-block">
                             <pre><code class="language-python"># AbstractCore is great for this
@@ -301,12 +301,12 @@ def complex_agent():
     # 4. Persist agent state - NOT provided
     pass</code></pre>
                         </div>
-                        
-                        <p><strong>Better alternatives</strong>:</p>
-                        <ul>
-                            <li><strong><a href="https://github.com/lpalbou/AbstractAgent" target="_blank">AbstractAgent</a></strong> - Built on AbstractCore</li>
-                            <li><strong><a href="https://github.com/langchain-ai/langgraph" target="_blank">LangGraph</a></strong> - Agent orchestration</li>
-                            <li><strong><a href="https://github.com/Significant-Gravitas/AutoGPT" target="_blank">AutoGPT</a></strong> - Autonomous agents</li>
+
+                        <p style="color: #1f2937;"><strong>Better alternatives</strong>:</p>
+                        <ul style="color: #1f2937;">
+                            <li><strong><a href="https://github.com/lpalbou/AbstractAgent" target="_blank" style="color: #2563eb;">AbstractAgent</a></strong> - Built on AbstractCore</li>
+                            <li><strong><a href="https://github.com/langchain-ai/langgraph" target="_blank" style="color: #2563eb;">LangGraph</a></strong> - Agent orchestration</li>
+                            <li><strong><a href="https://github.com/Significant-Gravitas/AutoGPT" target="_blank" style="color: #2563eb;">AutoGPT</a></strong> - Autonomous agents</li>
                         </ul>
                     </div>
                 </section>
@@ -372,9 +372,9 @@ def complex_agent():
                         </div>
                         
                         <div>
-                            <h3 style="color: #dc2626;">❌ Don't Choose AbstractCore When You Need:</h3>
-                            <div style="background: #fee2e2; padding: 1.5rem; border-radius: 0.75rem;">
-                                <ol>
+                            <h3 style="color: #991b1b;">❌ Don't Choose AbstractCore When You Need:</h3>
+                            <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 1.5rem; border-radius: 0.5rem;">
+                                <ol style="color: #1f2937;">
                                     <li style="margin-bottom: 1rem;">
                                         <strong>Full RAG Frameworks</strong> → Use LlamaIndex or LangChain
                                     </li>
