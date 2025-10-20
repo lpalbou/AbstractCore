@@ -213,7 +213,9 @@
                         icon: 'pypi'
                     }
                 ]
-            });    </script>
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -229,7 +231,7 @@
             <!-- System Overview -->
             <section style="margin-bottom: 4rem;">
                 <h2 style="color: var(--text-primary); font-size: 2rem; margin-bottom: 1.5rem;">🏗️ System Overview</h2>
-                <p style="color: var(--text-secondary); font-size: 1.125rem; margin-bottom: 2rem;">AbstractCore operates as both a Python library and an optional HTTP server. Click on components to explore their functionality:</p>
+                <p style="color: var(--text-secondary); font-size: 1.125rem; margin-bottom: 2rem;">AbstractCore operates as both a Python library and an optional HTTP server with centralized configuration, universal media handling, and cross-provider vision capabilities. Click on components to explore their functionality:</p>
                 
                 <div class="architecture-diagram">
                     <!-- Top Layer: Client Applications -->
@@ -423,6 +425,59 @@ response = llm.generate("Hello, world!")</code></pre>
                 </div>
             </section>
 
+            <!-- Media Handling System Architecture -->
+            <section style="margin-bottom: 4rem;">
+                <h2>📎 Media Handling System Architecture</h2>
+                <p>AbstractCore provides a production-ready unified media handling system with intelligent processing and graceful fallback.</p>
+
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Multi-Layer Architecture</h3>
+                    <div class="interactive-flow">
+                        <div class="flow-step">
+                            <h3>1. File Attachment Processing</h3>
+                            <p>CLI <code>@filename</code> syntax and Python <code>media=[]</code> parameter</p>
+                        </div>
+
+                        <div class="flow-step">
+                            <h3>2. Intelligent Processing</h3>
+                            <p>AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text)</p>
+                        </div>
+
+                        <div class="flow-step">
+                            <h3>3. Provider Formatting</h3>
+                            <p>Same content formatted differently for each provider's API requirements</p>
+                        </div>
+
+                        <div class="flow-step">
+                            <h3>4. Graceful Fallback</h3>
+                            <p>Multi-level fallback ensures users always get meaningful results</p>
+                        </div>
+                    </div>
+
+                    <h4 style="margin: 2rem 0 1rem 0;">Supported File Types</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--primary-color);">
+                            <h5>Images</h5>
+                            <p style="font-size: 0.9rem;">PNG, JPEG, GIF, WEBP, BMP, TIFF with automatic optimization</p>
+                        </div>
+
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--secondary-color);">
+                            <h5>Documents</h5>
+                            <p style="font-size: 0.9rem;">PDF, DOCX, XLSX, PPTX with intelligent extraction</p>
+                        </div>
+
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--primary-color);">
+                            <h5>Data/Text</h5>
+                            <p style="font-size: 0.9rem;">CSV, TSV, TXT, MD, JSON with parsing and analysis</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <p style="margin: 0; color: var(--info-text);"><strong>Vision Fallback System:</strong> Text-only models can process images through a transparent two-stage pipeline where a vision model analyzes the image and the text model processes the description.</p>
+                </div>
+            </section>
+
             <!-- Tool System Architecture -->
             <section style="margin-bottom: 4rem;">
                 <h2>🛠️ Tool System Architecture</h2>
@@ -486,29 +541,77 @@ response = llm.generate("Hello, world!")</code></pre>
                 </div>
             </section>
 
+            <!-- Centralized Configuration System -->
+            <section style="margin-bottom: 4rem;">
+                <h2>⚙️ Centralized Configuration System</h2>
+                <p>Global configuration stored in <code>~/.abstractcore/config/abstractcore.json</code> with clear priority hierarchy.</p>
+
+                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0;">Configuration Priority Hierarchy</h3>
+                    <div style="display: grid; gap: 1rem;">
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--success-text);">
+                            <strong>1. Explicit Parameters</strong> (highest priority) - Passed directly to functions
+                        </div>
+
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--info-text);">
+                            <strong>2. App-Specific Configuration</strong> - Per-application defaults (CLI, Summarizer, etc.)
+                        </div>
+
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--warning-text);">
+                            <strong>3. Global Configuration</strong> - Global fallback model and settings
+                        </div>
+
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--text-secondary);">
+                            <strong>4. Hardcoded Defaults</strong> (lowest priority) - Built-in fallback values
+                        </div>
+                    </div>
+                </div>
+
+                <h4 style="margin: 2rem 0 1rem 0;">Managed Settings</h4>
+                <ul>
+                    <li><strong>Default Models:</strong> Global and app-specific model defaults</li>
+                    <li><strong>API Keys:</strong> Secure provider authentication</li>
+                    <li><strong>Vision Fallback:</strong> Vision model for text-only models</li>
+                    <li><strong>Logging:</strong> Console and file logging configuration</li>
+                    <li><strong>Storage:</strong> Cache directories and model storage</li>
+                </ul>
+            </section>
+
             <!-- Design Principles -->
             <section style="margin-bottom: 4rem;">
                 <h2>🎯 Design Principles</h2>
-                
+
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
                         <h3 style="color: var(--primary-color);">Provider Abstraction</h3>
                         <p><strong>Goal:</strong> Same interface for all providers</p>
                         <p><strong>Implementation:</strong> Common interface with provider-specific implementations</p>
                     </div>
-                    
+
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
                         <h3 style="color: var(--secondary-color);">Production Reliability</h3>
                         <p><strong>Goal:</strong> Handle real-world failures gracefully</p>
                         <p><strong>Implementation:</strong> Built-in retry logic, circuit breakers, comprehensive error handling</p>
                     </div>
-                    
+
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="color: var(--primary-color);">Universal Tool Support</h3>
+                        <h3 style="color: var(--primary-color);">Universal Media Handling</h3>
+                        <p><strong>Goal:</strong> Same code for images, documents, and data</p>
+                        <p><strong>Implementation:</strong> Intelligent processors with automatic provider formatting</p>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
+                        <h3 style="color: var(--secondary-color);">Universal Tool Support</h3>
                         <p><strong>Goal:</strong> Tools work everywhere</p>
                         <p><strong>Implementation:</strong> Native support where available, intelligent prompting as fallback</p>
                     </div>
-                    
+
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
+                        <h3 style="color: var(--primary-color);">Centralized Configuration</h3>
+                        <p><strong>Goal:</strong> Single source of truth for settings</p>
+                        <p><strong>Implementation:</strong> Hierarchical config with clear priority and easy management</p>
+                    </div>
+
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
                         <h3 style="color: var(--secondary-color);">Simplicity Over Features</h3>
                         <p><strong>Goal:</strong> Clean, focused API</p>
@@ -559,17 +662,32 @@ response = llm.generate("Hello, world!")</code></pre>
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
                     </a>
-                    
+
+                    <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Centralized Configuration</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global settings and defaults</p>
+                    </a>
+
+                    <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Media Handling</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment</p>
+                    </a>
+
+                    <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
+                    </a>
+
                     <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API docs</p>
                     </a>
-                    
+
                     <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
                     </a>
-                    
+
                     <a href="capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                         <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Capabilities</h4>
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">What AbstractCore can do</p>

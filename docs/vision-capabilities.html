@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vision Capabilities - AbstractCore</title>
+    <meta name="description" content="Image analysis across all providers with automatic optimization and vision fallback for text-only models.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '../',
+                menuItems: [
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/AbstractCore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 900px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Vision Capabilities</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Seamless image analysis across all AI providers with automatic optimization and intelligent fallback for text-only models.
+                </p>
+            </div>
+
+            <div class="doc-content">
+                <h2>Overview</h2>
+                <p>
+                    AbstractCore provides comprehensive vision capabilities that enable seamless image analysis across multiple AI providers and models. The system automatically handles image optimization, provider-specific formatting, and intelligent fallback mechanisms.
+                </p>
+
+                <h2>Key Features</h2>
+                <ul>
+                    <li><strong>Cross-Provider Consistency</strong> - Same code works identically across cloud and local providers</li>
+                    <li><strong>Automatic Optimization</strong> - Images automatically resized for each model's maximum capability</li>
+                    <li><strong>Vision Fallback</strong> - Text-only models can process images through transparent two-stage pipeline</li>
+                    <li><strong>Multi-Image Support</strong> - Analyze and compare multiple images simultaneously</li>
+                    <li><strong>Format Flexibility</strong> - PNG, JPEG, GIF, WEBP, BMP, TIFF all supported</li>
+                </ul>
+
+                <h2>Supported Providers and Models</h2>
+
+                <h3>Cloud Providers</h3>
+                <ul>
+                    <li><strong>OpenAI:</strong> GPT-4o, GPT-4 Turbo Vision (multiple images, up to 4096×4096)</li>
+                    <li><strong>Anthropic:</strong> Claude 3.5 Sonnet, Claude 3 Haiku (up to 20 images, 1568×1568)</li>
+                </ul>
+
+                <h3>Local Providers</h3>
+                <ul>
+                    <li><strong>Ollama:</strong> qwen2.5vl:7b, llama3.2-vision:11b, gemma3:4b</li>
+                    <li><strong>LMStudio:</strong> qwen/qwen2.5-vl-7b, google/gemma-3n-e4b</li>
+                    <li><strong>HuggingFace:</strong> Qwen2.5-VL variants, LLaVA models</li>
+                    <li><strong>MLX:</strong> Vision models via MLX framework</li>
+                </ul>
+
+                <h3>Image Formats</h3>
+                <p>PNG, JPEG, GIF, WEBP, BMP, TIFF with automatic optimization</p>
+
+                <h2>Basic Vision Analysis</h2>
+
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+# Works with any vision-capable provider
+llm = create_llm("openai", model="gpt-4o")
+
+# Single image analysis
+response = llm.generate(
+    "What objects do you see in this image?",
+    media=["photo.jpg"]
+)
+
+# Multiple images comparison
+response = llm.generate(
+    "Compare these architectural styles and identify differences",
+    media=["building1.jpg", "building2.jpg", "building3.jpg"]
+)</code></pre>
+                </div>
+
+                <h2>Cross-Provider Consistency</h2>
+                <p>The same code works across all providers:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-python"># Same code works across all providers
+image_files = ["chart.png", "document.pdf"]
+prompt = "Analyze the data in these files"
+
+# All work identically
+openai_response = create_llm("openai", model="gpt-4o").generate(prompt, media=image_files)
+anthropic_response = create_llm("anthropic", model="claude-3.5-sonnet").generate(prompt, media=image_files)
+ollama_response = create_llm("ollama", model="qwen2.5vl:7b").generate(prompt, media=image_files)</code></pre>
+                </div>
+
+                <h2>Vision Fallback System</h2>
+                <p>
+                    The <strong>Vision Fallback System</strong> enables text-only models to process images through a transparent two-stage pipeline. This is particularly useful when you want to use a powerful text model that doesn't have native vision capabilities.
+                </p>
+
+                <h3>Configuration (One-Time Setup)</h3>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Option 1: Download local vision model (recommended)
+abstractcore --download-vision-model
+
+# Option 2: Use existing Ollama model
+abstractcore --set-vision-caption qwen2.5vl:7b
+
+# Option 3: Use cloud API
+abstractcore --set-vision-provider openai --model gpt-4o
+
+# Disable vision fallback
+abstractcore --disable-vision</code></pre>
+                </div>
+
+                <h3>Using Vision Fallback</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># After configuration, text-only models can process images seamlessly
+text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No native vision
+
+response = text_llm.generate(
+    "What's happening in this image?",
+    media=["complex_scene.jpg"]
+)
+# Works transparently: vision model analyzes image → text model processes description</code></pre>
+                </div>
+
+                <h3>How Vision Fallback Works</h3>
+                <ol>
+                    <li>You send a request to a text-only model with an image</li>
+                    <li>AbstractCore detects the model lacks native vision capabilities</li>
+                    <li>The image is automatically sent to your configured vision model</li>
+                    <li>The vision model generates a detailed description</li>
+                    <li>The description is passed to your text model along with your original prompt</li>
+                    <li>You receive a response combining vision analysis with text processing</li>
+                </ol>
+
+                <h2>Automatic Resolution Optimization</h2>
+                <p>AbstractCore automatically optimizes images for each model's maximum capability:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-python"># Images automatically optimized per model
+llm = create_llm("openai", model="gpt-4o")
+response = llm.generate("Analyze this", media=["photo.jpg"])  # Auto-resized to 4096×4096
+
+llm = create_llm("ollama", model="qwen2.5vl:7b")
+response = llm.generate("Analyze this", media=["photo.jpg"])  # Auto-resized to 3584×3584</code></pre>
+                </div>
+
+                <h2>Structured Vision Analysis</h2>
+                <div class="code-block">
+                    <pre><code class="language-python"># Get structured responses with specific requirements
+llm = create_llm("openai", model="gpt-4o")
+
+response = llm.generate("""
+Analyze this image and provide:
+- objects: list of objects detected
+- colors: dominant colors
+- setting: location/environment
+- activities: what's happening
+
+Format as JSON.
+""", media=["scene.jpg"])
+
+import json
+analysis = json.loads(response.content)</code></pre>
+                </div>
+
+                <h2>Multi-Image Analysis</h2>
+
+                <h3>Comparison Tasks</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># Compare multiple images
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+
+response = llm.generate(
+    "Compare these three architectural designs and identify common elements",
+    media=["design_a.jpg", "design_b.jpg", "design_c.jpg"]
+)</code></pre>
+                </div>
+
+                <h3>Sequential Analysis</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># Analyze sequence of images
+response = llm.generate(
+    "Describe the progression shown in these time-lapse images",
+    media=["hour1.jpg", "hour2.jpg", "hour3.jpg", "hour4.jpg"]
+)</code></pre>
+                </div>
+
+                <h2>Common Use Cases</h2>
+
+                <h3>Document OCR and Analysis</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># Extract text from images
+response = llm.generate(
+    "Extract all text from this image and organize it",
+    media=["receipt.jpg"]
+)
+
+# Handwriting recognition
+response = llm.generate(
+    "Transcribe the handwritten notes in this image",
+    media=["notes.jpg"]
+)</code></pre>
+                </div>
+
+                <h3>Chart and Graph Analysis</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># Analyze visualizations
+response = llm.generate(
+    "What trends do you see in this chart? Provide the data points.",
+    media=["sales_chart.png"]
+)
+
+# Compare visualizations
+response = llm.generate(
+    "Compare the trends shown in these two charts",
+    media=["chart1.png", "chart2.png"]
+)</code></pre>
+                </div>
+
+                <h3>Quality Control and Inspection</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># Defect detection
+response = llm.generate(
+    "Identify any defects or anomalies in this product image",
+    media=["product_photo.jpg"]
+)
+
+# Comparison with standard
+response = llm.generate(
+    "Compare this sample with the reference and note any differences",
+    media=["sample.jpg", "reference.jpg"]
+)</code></pre>
+                </div>
+
+                <h3>Scene Understanding</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># Detailed scene analysis
+response = llm.generate(
+    """Analyze this scene and provide:
+    - Objects present
+    - Activities occurring
+    - Environmental conditions
+    - Any safety concerns""",
+    media=["scene.jpg"]
+)</code></pre>
+                </div>
+
+                <h2>CLI Integration</h2>
+                <p>Vision capabilities work seamlessly with the CLI using @filename syntax:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-bash"># Basic image analysis
+python -m abstractcore.utils.cli --prompt "Describe this image @photo.jpg"
+
+# Multiple images
+python -m abstractcore.utils.cli --prompt "Compare @before.jpg and @after.jpg"
+
+# Mixed media
+python -m abstractcore.utils.cli --prompt "Verify the chart @chart.png matches @data.csv"</code></pre>
+                </div>
+
+                <h2>Best Practices</h2>
+
+                <ul>
+                    <li><strong>Image Quality</strong> - Use high-quality images for better analysis accuracy</li>
+                    <li><strong>Clear Prompts</strong> - Be specific about what you want to extract from images</li>
+                    <li><strong>Resolution</strong> - Let AbstractCore handle optimization; don't pre-resize</li>
+                    <li><strong>Multiple Images</strong> - Limit to 10-15 images per request for best performance</li>
+                    <li><strong>Vision Fallback</strong> - Use local vision models for privacy-sensitive images</li>
+                    <li><strong>Format</strong> - JPEG for photos, PNG for screenshots/diagrams</li>
+                </ul>
+
+                <h2>Error Handling</h2>
+                <p>AbstractCore provides robust error handling for vision tasks:</p>
+
+                <ul>
+                    <li><strong>Unsupported Format</strong> - Clear error with supported format list</li>
+                    <li><strong>Image Too Large</strong> - Automatic resizing with warning</li>
+                    <li><strong>Corrupted Image</strong> - Graceful error with fallback attempt</li>
+                    <li><strong>Vision Model Unavailable</strong> - Falls back to text-only with clear message</li>
+                </ul>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">First steps with AbstractCore</p>
+                        </a>
+
+                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Media Handling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment</p>
+                        </a>
+
+                        <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Centralized Configuration</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Configure vision fallback</p>
+                        </a>
+
+                        <a href="internal-cli.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Internal CLI</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">CLI with vision support</p>
+                        </a>
+
+                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">REST API with vision support</p>
+                        </a>
+
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer" style="margin-top: 5rem;">
+        <div class="container" style="text-align: center; padding: 2rem 0; border-top: 1px solid var(--border-color);">
+            <p style="color: var(--text-secondary); margin: 0;">
+                &copy; 2025 AbstractCore. Licensed under MIT License.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body>
+</html>

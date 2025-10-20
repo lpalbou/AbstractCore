@@ -6,41 +6,48 @@ This file contains the complete documentation for AbstractCore, a unified Python
 
 1. [Project Overview](#project-overview) - What AbstractCore does and supported providers
 2. [Installation](#installation) - Quick setup with provider-specific options
-3. [Getting Started](#getting-started) - Essential code examples and patterns
-4. [Built-in CLI Applications](#built-in-cli-applications) - Ready-to-use terminal tools
-5. [Debug & Advanced Features](#debug-capabilities-and-self-healing-json) - Troubleshooting and performance
-6. [Complete CLI Parameters](#complete-cli-parameters-reference) - All available options
-7. [Documentation Index](#documentation-index) - Links to detailed guides
+3. [Centralized Configuration](#centralized-configuration) - Global defaults and preferences management
+4. [Media Handling System](#media-handling-system) - Universal file attachment and processing
+5. [Vision Capabilities](#vision-capabilities) - Image analysis across all providers
+6. [Getting Started](#getting-started) - Essential code examples and patterns
+7. [Provider Discovery](#provider-discovery) - Programmatic provider and model discovery
+8. [Built-in CLI Applications](#built-in-cli-applications) - Ready-to-use terminal tools
+9. [Debug & Advanced Features](#debug-capabilities-and-self-healing-json) - Troubleshooting and performance
+10. [Complete CLI Parameters](#complete-cli-parameters-reference) - All available options
+11. [Documentation Index](#documentation-index) - Links to detailed guides
 
 ---
 
 ## Project Overview
 
-AbstractCore is a Python library providing a unified interface to all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with production-grade features including tool calling, streaming, session management, and embeddings.
+AbstractCore is a comprehensive Python library providing a unified interface to all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with production-grade features including universal media handling, vision capabilities, tool calling, streaming, centralized configuration, and session management.
 
 ### Key Features
 
-- **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
-- **Tool Calling**: Universal @tool decorator works across ALL providers
-- **Streaming**: Real-time responses for interactive applications
-- **Session Management**: Persistent conversations with metadata
-- **Structured Output**: Pydantic model validation with automatic retries
-- **Embeddings**: SOTA embedding models for semantic search and RAG
-- **Event System**: Monitor costs, performance, and tool executions
-- **Built-in CLI Apps**: Production-ready terminal applications (`summarizer`, `extractor`, `judge`) with comprehensive parameter support
-- **HTTP Server**: OpenAI-compatible REST API
-- **Production Ready**: Robust error handling, retries, circuit breakers
+- **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with identical syntax
+- **Centralized Configuration**: Global defaults, app-specific preferences, API key management with `~/.abstractcore/config/abstractcore.json`
+- **Media Handling System**: Universal file attachment with `@filename` CLI syntax and `media=[]` API parameter - supports images, PDFs, Office docs, CSV/TSV
+- **Vision Capabilities**: Image analysis across all providers with automatic resolution optimization and vision fallback for text-only models
+- **Tool Calling**: Universal @tool decorator works across ALL providers with intelligent format conversion
+- **Streaming**: Real-time responses for interactive applications with tool call detection
+- **Session Management**: Persistent conversations with metadata and automatic context management
+- **Structured Output**: Pydantic model validation with automatic retries and error feedback
+- **Embeddings**: SOTA embedding models for semantic search and RAG applications
+- **Event System**: Monitor costs, performance, tool executions, and media processing
+- **Built-in CLI Apps**: Ready-to-use terminal applications (`summarizer`, `extractor`, `judge`) for document processing
+- **HTTP Server**: OpenAI-compatible REST API with provider discovery and unified access
+- **Production Ready**: Robust error handling, retries, circuit breakers, and graceful degradation
 
 ### Supported Providers
 
 | Provider | Features |
 |----------|----------|
-| **OpenAI** | Native tool calls, streaming, structured output |
-| **Anthropic** | Native tool calls, streaming, structured output |
-| **Ollama** | Prompted tool calls, streaming, local models |
-| **LMStudio** | Prompted tool calls, streaming, local models |
-| **MLX** | Prompted tool calls, streaming, Apple Silicon |
-| **HuggingFace** | Prompted tool calls, streaming, open models |
+| **OpenAI** | Native tool calls, streaming, structured output, vision (GPT-4o), media processing |
+| **Anthropic** | Native tool calls, streaming, structured output, vision (Claude 3.5), media processing |
+| **Ollama** | Prompted tool calls, streaming, local models, vision (qwen2.5vl:7b), media processing |
+| **LMStudio** | Prompted tool calls, streaming, local models, vision (qwen2.5-vl), media processing |
+| **MLX** | Prompted tool calls, streaming, Apple Silicon, vision models, media processing |
+| **HuggingFace** | Prompted tool calls, streaming, open models, vision models, media processing |
 
 ---
 
@@ -73,107 +80,434 @@ pip install abstractcore[mlx]
 # HuggingFace
 pip install abstractcore[huggingface]
 
+# Media handling (images, basic documents)
+pip install abstractcore[media]
+
 # Server support
 pip install abstractcore[server]
 
 # Embeddings
 pip install abstractcore[embeddings]
 
-# Everything
+# Everything (includes all features)
 pip install abstractcore[all]
 ```
 
 ---
 
-## Provider Discovery
+## Centralized Configuration
 
-AbstractCore provides a centralized provider registry system for discovering available providers and their capabilities programmatically. This system eliminates manual provider list maintenance and provides comprehensive metadata about each provider.
+AbstractCore provides a unified configuration system that manages default models, cache directories, logging settings, and other package-wide preferences from a single location. This eliminates the need to specify providers and models repeatedly and provides consistent behavior across all applications.
 
-### List All Available Providers
+### Configuration File Location
 
-```python
-from abstractcore.providers import get_all_providers_with_models
+Configuration is stored in: `~/.abstractcore/config/abstractcore.json`
 
-# Get comprehensive information about all providers with available models
-providers = get_all_providers_with_models()
-
-for provider in providers:
-    print(f"Provider: {provider['display_name']}")
-    print(f"Name: {provider['name']}")
-    print(f"Type: {provider['type']}")
-    print(f"Status: {provider['status']}")
-    print(f"Models: {provider['model_count']}")
-    print(f"Local: {provider['local_provider']}")
-    print(f"Auth Required: {provider['authentication_required']}")
-    print(f"Features: {', '.join(provider['supported_features'])}")
-    if provider.get('installation_extras'):
-        print(f"Install: pip install abstractcore[{provider['installation_extras']}]")
-    print("---")
-```
-
-### Provider Registry Functions
-
-```python
-from abstractcore.providers import (
-    list_available_providers,        # Get list of provider names
-    get_provider_info,              # Get detailed info for specific provider
-    is_provider_available,          # Check if provider is available
-    get_all_providers_status,       # Get status for all providers (including errors)
-    get_available_models_for_provider  # Get models for specific provider
-)
-
-# Quick provider checks
-provider_names = list_available_providers()
-print(f"Available providers: {provider_names}")
-
-# Check specific provider
-if is_provider_available("openai"):
-    info = get_provider_info("openai")
-    print(f"OpenAI default model: {info.default_model}")
-    print(f"OpenAI features: {info.supported_features}")
-
-# Get models for a provider
-models = get_available_models_for_provider("ollama")
-print(f"Ollama models: {models[:5]}...")  # First 5 models
-```
-
-### HTTP API Provider Discovery
-
-The server `/providers` endpoint uses this same centralized system:
+### Quick Configuration Setup
 
 ```bash
-# Get comprehensive provider information via HTTP API
-curl http://localhost:8000/providers
+# Check current configuration status
+abstractcore --status
 
-# Response includes detailed provider metadata:
+# Set global fallback model (used when no app-specific default is configured)
+abstractcore --set-global-default ollama/llama3:8b
+
+# Set app-specific defaults for optimal performance
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+abstractcore --set-app-default judge anthropic claude-3-5-haiku
+abstractcore --set-app-default cli huggingface unsloth/Qwen3-4B-Instruct-2507-GGUF
+
+# Set API keys
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key
+
+# Configure logging
+abstractcore --set-console-log-level WARNING  # Reduce console output
+abstractcore --enable-file-logging            # Save logs to files
+
+# Interactive setup
+abstractcore --configure
+```
+
+### Configuration Priority System
+
+AbstractCore uses a clear priority hierarchy:
+
+1. **Explicit Parameters** (highest priority)
+   ```bash
+   summarizer document.txt --provider openai --model gpt-4o-mini
+   ```
+
+2. **App-Specific Configuration**
+   ```bash
+   abstractcore --set-app-default summarizer openai gpt-4o-mini
+   ```
+
+3. **Global Configuration**
+   ```bash
+   abstractcore --set-global-default openai/gpt-4o-mini
+   ```
+
+4. **Hardcoded Defaults** (lowest priority)
+   - Current default: `huggingface/unsloth/Qwen3-4B-Instruct-2507-GGUF`
+
+### Application Defaults
+
+Set default providers and models for specific AbstractCore applications:
+
+```bash
+# Set defaults for individual apps
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default cli anthropic claude-3-5-haiku
+abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+abstractcore --set-app-default judge anthropic claude-3-5-haiku
+
+# View current app defaults
+abstractcore --status
+```
+
+### Logging Configuration
+
+Control logging behavior across all AbstractCore components:
+
+```bash
+# Change console logging level
+abstractcore --set-console-log-level DEBUG    # Show all messages
+abstractcore --set-console-log-level INFO     # Show info and above
+abstractcore --set-console-log-level WARNING  # Show warnings and errors only (default)
+abstractcore --set-console-log-level ERROR    # Show only errors
+abstractcore --set-console-log-level NONE     # Disable all console logging
+
+# File logging controls
+abstractcore --enable-file-logging      # Start saving logs to files
+abstractcore --disable-file-logging     # Stop saving logs to files
+abstractcore --set-log-base-dir ~/.abstractcore/logs
+
+# Quick commands
+abstractcore --enable-debug-logging     # Sets both console and file to DEBUG
+abstractcore --disable-console-logging  # Keeps file logging if enabled
+```
+
+### Cache and Storage Configuration
+
+```bash
+# Set cache directories
+abstractcore --set-default-cache-dir ~/.cache/abstractcore
+abstractcore --set-huggingface-cache-dir ~/.cache/huggingface
+abstractcore --set-local-models-cache-dir ~/.abstractcore/models
+```
+
+### Vision Fallback Configuration
+
+Configure vision processing for text-only models:
+
+```bash
+# Download local vision model (recommended)
+abstractcore --download-vision-model
+
+# Use existing Ollama model
+abstractcore --set-vision-caption qwen2.5vl:7b
+
+# Use cloud API
+abstractcore --set-vision-provider openai --model gpt-4o
+
+# Disable vision fallback
+abstractcore --disable-vision
+```
+
+### Streaming Defaults
+
+```bash
+# Set default streaming behavior for CLI
+abstractcore --stream on           # Enable streaming by default
+abstractcore --stream off          # Disable streaming by default
+```
+
+### Configuration Status
+
+View complete configuration with helpful change commands:
+
+```bash
+abstractcore --status
+```
+
+This displays a hierarchical dashboard showing:
+- 🎯 Application Defaults (CLI, Summarizer, Extractor, Judge)
+- 🌐 Global Fallback settings
+- 👁️ Media Processing configuration
+- 🔑 Provider Access (API key status)
+- 📝 Logging configuration
+- 💾 Storage locations
+
+### Common Configuration Workflows
+
+**First-Time Setup:**
+```bash
+# Check what's available
+abstractcore --status
+
+# Configure for development (free local models)
+abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-console-log-level WARNING
+
+# Add API keys when ready for cloud providers
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key
+
+# Verify everything works
+abstractcore --status
+```
+
+**Development Environment:**
+```bash
+# Optimize for local development
+abstractcore --set-global-default ollama/llama3:8b  # Free local models
+abstractcore --enable-debug-logging                 # Detailed logs for debugging
+abstractcore --set-app-default cli ollama qwen3:4b  # Fast model for CLI testing
+```
+
+**Production Environment:**
+```bash
+# Configure for production reliability and performance
+abstractcore --set-global-default openai/gpt-4o-mini  # Reliable cloud provider
+abstractcore --set-console-log-level WARNING          # Reduce noise
+abstractcore --enable-file-logging                    # Persistent logs
+abstractcore --set-app-default summarizer openai gpt-4o-mini  # Optimize for quality
+```
+
+**Multi-Environment Approach:**
+```bash
+# Use different providers for different applications
+abstractcore --set-app-default cli ollama qwen3:4b           # Fast for development
+abstractcore --set-app-default summarizer openai gpt-4o-mini # Quality for documents
+abstractcore --set-app-default judge anthropic claude-3-5-haiku # Detailed analysis
+```
+
+For complete configuration reference, see: [Centralized Configuration Guide](docs/centralized-config.md)
+
+---
+
+## Media Handling System
+
+AbstractCore provides a **production-ready unified media handling system** that enables seamless file attachment and processing across all LLM providers and models. The system automatically processes images, documents, and other media files using the same simple API, with intelligent provider-specific formatting and graceful fallback handling.
+
+### Key Features
+
+- **Universal API**: Same `media=[]` parameter works across all providers (OpenAI, Anthropic, Ollama, LMStudio, etc.)
+- **CLI Integration**: Simple `@filename` syntax in CLI for instant file attachment
+- **Intelligent Processing**: Automatic file type detection with specialized processors for each format
+- **Provider Adaptation**: Automatic formatting for each provider's API requirements
+- **Robust Fallback**: Graceful degradation when advanced processing fails
+- **Cross-Format Support**: Images, PDFs, Office documents, CSV/TSV, text files all work seamlessly
+
+### Quick Start
+
+```python
+from abstractcore import create_llm
+
+# Works with any provider - just change the provider name
+llm = create_llm("openai", model="gpt-4o", api_key="your-key")
+response = llm.generate(
+    "What's in this image and document?",
+    media=["photo.jpg", "report.pdf"]
+)
+
+# Same code works with any provider
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+response = llm.generate(
+    "Analyze these materials",
+    media=["chart.png", "data.csv", "presentation.pptx"]
+)
+```
+
+### CLI Integration
+
+Use the simple `@filename` syntax to attach any file type:
+
+```bash
+# PDF Analysis
+python -m abstractcore.utils.cli --prompt "What is this document about? @report.pdf"
+
+# Office Documents
+python -m abstractcore.utils.cli --prompt "Summarize this presentation @slides.pptx"
+python -m abstractcore.utils.cli --prompt "What data is in @spreadsheet.xlsx"
+python -m abstractcore.utils.cli --prompt "Analyze this document @contract.docx"
+
+# Data Files
+python -m abstractcore.utils.cli --prompt "What patterns are in @sales_data.csv"
+
+# Images
+python -m abstractcore.utils.cli --prompt "What's in this image? @screenshot.png"
+
+# Mixed Media
+python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and explain trends"
+```
+
+### Supported File Types
+
+**Images (Vision Models):**
+- **Formats**: PNG, JPEG, GIF, WEBP, BMP, TIFF
+- **Features**: Automatic optimization, resizing, format conversion, EXIF handling
+
+**Documents:**
+- **Text Files**: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis
+- **PDF**: Full text extraction with PyMuPDF4LLM, preserves formatting and structure
+- **Office**: DOCX, XLSX, PPTX with complete content extraction using Unstructured library
+  - **Word**: Full document analysis with structure preservation
+  - **Excel**: Sheet-by-sheet extraction with data analysis
+  - **PowerPoint**: Slide content extraction with comprehensive analysis
+
+### How It Works Behind the Scenes
+
+The media system uses a sophisticated multi-layer architecture:
+
+1. **File Attachment Processing**: CLI `@filename` syntax and Python `media=[]` parameter
+2. **Intelligent Processing**: AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text)
+3. **Provider Formatting**: Same content formatted differently for each provider's API
+4. **Graceful Fallback**: Multi-level fallback ensures users always get meaningful results
+
+**Provider-Specific Formatting Example:**
+```python
+# OpenAI Format (JSON)
 {
-  "providers": [
-    {
-      "name": "openai",
-      "display_name": "OpenAI",
-      "type": "llm",
-      "model_count": 15,
-      "status": "available",
-      "description": "Commercial API with GPT-4, GPT-3.5, and embedding models",
-      "local_provider": false,
-      "authentication_required": true,
-      "supported_features": ["chat", "completion", "embeddings", "native_tools", "streaming"],
-      "installation_extras": "openai",
-      "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "..."]
-    }
-  ],
-  "total_providers": 6,
-  "registry_version": "2.0"
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Analyze these files"},
+    {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0..."}},
+    {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
+  ]
+}
+
+# Anthropic Format (Messages API)
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Analyze these files"},
+    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0..."}},
+    {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
+  ]
 }
 ```
 
-### Benefits
+For complete media handling documentation, see: [Media Handling System Guide](docs/media-handling-system.md)
 
-- **Single Source of Truth**: No manual synchronization between factory, server, and documentation
-- **Rich Metadata**: Installation instructions, features, authentication requirements
-- **Dynamic Discovery**: Automatically discovers providers without hardcoding
-- **Extensible**: Easy to add new providers by registering them in the centralized registry
-- **Consistent API**: Same information available via Python API and HTTP endpoints
+---
+
+## Vision Capabilities
+
+AbstractCore provides comprehensive **vision capabilities** that enable seamless image analysis across multiple AI providers and models. The system automatically handles image optimization, provider-specific formatting, and intelligent fallback mechanisms.
+
+### Overview
+
+AbstractCore provides comprehensive vision capabilities across all major AI providers with automatic image optimization and intelligent fallback mechanisms. The same code works identically whether you're using cloud APIs (OpenAI, Anthropic) or local models (Ollama, LMStudio).
+
+### Supported Providers and Models
+
+**Cloud Providers:**
+- **OpenAI**: GPT-4o, GPT-4 Turbo Vision (multiple images, up to 4096×4096)
+- **Anthropic**: Claude 3.5 Sonnet, Claude 3 Haiku (up to 20 images, 1568×1568)
+
+**Local Providers:**
+- **Ollama**: qwen2.5vl:7b, llama3.2-vision:11b, gemma3:4b
+- **LMStudio**: qwen/qwen2.5-vl-7b, google/gemma-3n-e4b
+- **HuggingFace**: Qwen2.5-VL variants, LLaVA models
+- **MLX**: Vision models via MLX framework
+
+**Image Formats**: PNG, JPEG, GIF, WEBP, BMP, TIFF with automatic optimization
+
+### Basic Vision Analysis
+
+```python
+from abstractcore import create_llm
+
+# Works with any vision-capable provider
+llm = create_llm("openai", model="gpt-4o")
+
+# Single image analysis
+response = llm.generate(
+    "What objects do you see in this image?",
+    media=["photo.jpg"]
+)
+
+# Multiple images comparison
+response = llm.generate(
+    "Compare these architectural styles and identify differences",
+    media=["building1.jpg", "building2.jpg", "building3.jpg"]
+)
+```
+
+### Cross-Provider Consistency
+
+```python
+# Same code works across all providers
+image_files = ["chart.png", "document.pdf"]
+prompt = "Analyze the data in these files"
+
+# All work identically
+openai_response = create_llm("openai", model="gpt-4o").generate(prompt, media=image_files)
+anthropic_response = create_llm("anthropic", model="claude-3-5-sonnet").generate(prompt, media=image_files)
+ollama_response = create_llm("ollama", model="qwen2.5vl:7b").generate(prompt, media=image_files)
+```
+
+### Vision Fallback System
+
+The **Vision Fallback System** enables text-only models to process images through a transparent two-stage pipeline:
+
+```bash
+# Configure vision fallback (one-time setup)
+abstractcore --download-vision-model              # Download local model (recommended)
+# OR
+abstractcore --set-vision-caption qwen2.5vl:7b    # Use existing Ollama model
+# OR
+abstractcore --set-vision-provider openai --model gpt-4o  # Use cloud API
+```
+
+```python
+# After configuration, text-only models can process images seamlessly
+text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No native vision
+
+response = text_llm.generate(
+    "What's happening in this image?",
+    media=["complex_scene.jpg"]
+)
+# Works transparently: vision model analyzes image → text model processes description
+```
+
+### Automatic Resolution Optimization
+
+AbstractCore automatically optimizes images for each model's maximum capability:
+
+```python
+# Images automatically optimized per model
+llm = create_llm("openai", model="gpt-4o")
+response = llm.generate("Analyze this", media=["photo.jpg"])  # Auto-resized to 4096×4096
+
+llm = create_llm("ollama", model="qwen2.5vl:7b")
+response = llm.generate("Analyze this", media=["photo.jpg"])  # Auto-resized to 3584×3584
+```
+
+### Structured Vision Analysis
+
+```python
+# Get structured responses with specific requirements
+llm = create_llm("openai", model="gpt-4o")
+
+response = llm.generate("""
+Analyze this image and provide:
+- objects: list of objects detected
+- colors: dominant colors
+- setting: location/environment
+- activities: what's happening
+
+Format as JSON.
+""", media=["scene.jpg"])
+
+import json
+analysis = json.loads(response.content)
+```
+
+For complete vision capabilities documentation, see: [Vision Capabilities Guide](docs/vision-capabilities.md)
 
 ---
 
@@ -242,25 +576,128 @@ person = llm.generate("Extract: John Doe is 25", response_model=Person)
 print(f"{person.name}, age {person.age}")
 ```
 
-### Additional Patterns
+### Common Development Patterns
 
 ```python
-# Streaming responses
+# Streaming responses for user interfaces
 for chunk in llm.generate("Tell me a story", stream=True):
     print(chunk.content, end="", flush=True)
 
-# Session management with memory
+# Session management for chatbots
 from abstractcore import BasicSession
 session = BasicSession(llm, system_prompt="You are a helpful assistant.")
 session.add_message('user', 'My name is Alice')
 response = session.generate('What is my name?')  # Remembers context
+
+# Error handling for production apps
+try:
+    response = llm.generate("Complex request")
+except Exception as e:
+    print(f"Error: {e}")
+    # Handle gracefully
+
+# Configuration for different environments
+from abstractcore import create_llm
+
+# Development (local models)
+dev_llm = create_llm("ollama", model="qwen3:4b")
+
+# Production (cloud APIs)
+prod_llm = create_llm("openai", model="gpt-4o-mini", api_key="your-key")
+
+# Cost-sensitive applications (smaller models)
+cost_llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+```
+
+---
+
+## Provider Discovery
+
+Discover available providers and their capabilities programmatically. This is particularly useful for building applications that need to adapt to available providers or for administrative tooling.
+
+### Basic Provider Discovery
+
+```python
+from abstractcore.providers import get_all_providers_with_models
+
+# Get information about all available providers
+providers = get_all_providers_with_models()
+
+for provider in providers:
+    print(f"Provider: {provider['display_name']}")
+    print(f"Models available: {provider['model_count']}")
+    print(f"Local provider: {provider['local_provider']}")
+    print(f"Auth required: {provider['authentication_required']}")
+    print(f"Features: {', '.join(provider['supported_features'])}")
+    if provider.get('installation_extras'):
+        print(f"Install: pip install abstractcore[{provider['installation_extras']}]")
+    print("---")
+```
+
+### Provider Status and Model Discovery
+
+```python
+from abstractcore.providers import (
+    list_available_providers,        # Get provider names
+    get_provider_info,              # Detailed provider info
+    is_provider_available,          # Check availability
+    get_available_models_for_provider  # Get models for provider
+)
+
+# Check available providers
+available = list_available_providers()
+print(f"Available providers: {available}")
+
+# Get models for a specific provider
+if is_provider_available("ollama"):
+    models = get_available_models_for_provider("ollama")
+    print(f"Ollama models: {models[:5]}...")  # First 5 models
+
+# Get detailed provider information
+if is_provider_available("openai"):
+    info = get_provider_info("openai")
+    print(f"Default model: {info.default_model}")
+    print(f"Features: {info.supported_features}")
+```
+
+### HTTP API Discovery
+
+Access provider information through the HTTP API:
+
+```bash
+# Get all providers
+curl http://localhost:8000/providers
+
+# Get specific provider
+curl http://localhost:8000/providers/openai
+
+# Get models for provider
+curl http://localhost:8000/providers/ollama/models
+```
+
+The response includes comprehensive metadata:
+```json
+{
+  "providers": [
+    {
+      "name": "openai",
+      "display_name": "OpenAI",
+      "model_count": 15,
+      "status": "available",
+      "local_provider": false,
+      "authentication_required": true,
+      "supported_features": ["chat", "completion", "embeddings", "native_tools"],
+      "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]
+    }
+  ]
+}
 ```
 
 ---
 
 ## Universal Tool Calling
 
-Works across **ALL** providers - even those without native tool support. Tools can be used with both `provider.generate()` and `session.generate()`.
+Enable LLMs to call Python functions across **ALL** providers, including those without native tool support. This allows you to build interactive applications where the LLM can execute code, query databases, make API calls, or perform any Python operation.
 
 ```python
 from abstractcore import create_llm, BasicSession
@@ -932,22 +1369,26 @@ del llm
 
 Three production-ready terminal tools - no Python code required:
 
-### Quick Examples
+### Common Use Cases
 
 ```bash
-# Document summarization with multiple styles and lengths
-summarizer document.pdf --style executive --length brief --output summary.txt
-summarizer report.txt --focus "technical details" --chunk-size 15000 --verbose
+# Generate executive summaries for business documents
+summarizer quarterly_report.pdf --style executive --length brief --output executive_summary.txt
 
-# Knowledge graph extraction with various formats and modes
-extractor research_paper.pdf --format json-ld --focus technology --iterate 3 --mode thorough
-extractor article.txt --entity-types person,organization,location --output entities.jsonld --minified
-extractor large_doc.txt --mode fast --no-embeddings --timeout 600 --max-tokens 32000
+# Extract entities and relationships for research
+extractor research_paper.pdf --format json-ld --entity-types person,organization,technology --output entities.json
 
-# Text evaluation with focus areas and debug capabilities
-judge essay.txt --criteria clarity,accuracy,coherence --context "academic writing" --include-criteria
-judge code.py --context "code review" --format plain --verbose --debug
-judge README.md --focus "technical accuracy,examples" --temperature 0.05 --max-output-tokens 8000
+# Evaluate document quality for different contexts
+judge technical_spec.md --criteria clarity,accuracy,completeness --context "technical documentation"
+
+# Process large documents with chunking
+summarizer large_document.pdf --chunk-size 15000 --style structured --verbose
+
+# Fast entity extraction for content processing
+extractor articles/ --mode fast --format json --entity-types person,organization --output results/
+
+# Code review and quality assessment
+judge src/main.py --context "code review" --focus "error handling,documentation" --format plain
 ```
 
 ### Alternative Methods
@@ -1013,7 +1454,7 @@ POST /v1/completions
 # Embeddings
 POST /v1/embeddings
 
-# AbstractCore-specific responses
+# OpenAI Responses API (100% Compatible)
 POST /v1/responses
 
 # Provider management
@@ -1074,6 +1515,388 @@ response = client.chat.completions.create(
 embeddings = client.embeddings.create(
     model="ollama/granite-embedding:278m",
     input=["Hello", "World"]
+)
+```
+
+### Multimodal Requests (Files, Images, Documents)
+
+AbstractCore server provides comprehensive support for multimodal requests through multiple compatible formats:
+
+#### 1. AbstractCore @filename Syntax
+
+Convenient syntax that works across all providers:
+
+```python
+import openai
+
+client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+
+# Simple file attachment
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{"role": "user", "content": "Analyze @report.pdf and @chart.png"}]
+)
+
+# Works with any provider
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-sonnet",
+    messages=[{"role": "user", "content": "Summarize @document.docx"}]
+)
+```
+
+#### 2. OpenAI Vision API Format (with NEW type="file" Support)
+
+Standard OpenAI multimodal format with enhanced file support:
+
+```python
+# Image with URL
+response = client.chat.completions.create(
+    model="ollama/qwen2.5vl:7b",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is in this image?"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://example.com/image.jpg"}
+            }
+        ]
+    }]
+)
+
+# NEW: Explicit file type for documents (PDF, DOCX, XLSX, CSV, etc.)
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Analyze this document"},
+            {
+                "type": "file",
+                "file_url": {"url": "https://example.com/report.pdf"}
+            }
+        ]
+    }]
+)
+
+# Mixed media (images, documents, data files)
+response = client.chat.completions.create(
+    model="anthropic/claude-3.5-sonnet",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Compare this chart with the data"},
+            {"type": "image_url", "image_url": {"url": "https://example.com/chart.png"}},
+            {"type": "file", "file_url": {"url": "https://example.com/data.csv"}}
+        ]
+    }]
+)
+
+# Document with base64 data (PDF, DOCX, CSV, etc.)
+with open("report.pdf", "rb") as f:
+    pdf_data = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="lmstudio/qwen/qwen3-next-80b",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Summarize this document"},
+            {"type": "file", "file_url": {"url": f"data:application/pdf;base64,{pdf_data}"}}
+        ]
+    }]
+)
+
+# Image with base64 data
+import base64
+
+with open("image.jpg", "rb") as f:
+    image_data = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this image"},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
+            }
+        ]
+    }]
+)
+```
+
+#### 3. OpenAI File Format (Forward-Compatible)
+
+AbstractCore supports OpenAI's planned file format with simplified structure (consistent with image_url):
+
+```python
+# HTTP/HTTPS URLs
+response = client.chat.completions.create(
+    model="anthropic/claude-3-5-haiku-latest",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What are the key findings in this report?"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "https://example.com/documents/report.pdf"
+                }
+            }
+        ]
+    }]
+)
+
+# Local file paths
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Analyze this local spreadsheet"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "/Users/username/documents/spreadsheet.xlsx"
+                }
+            }
+        ]
+    }]
+)
+
+# Base64 data URLs
+import base64
+
+with open("report.pdf", "rb") as f:
+    file_data = base64.b64encode(f.read()).decode()
+
+response = client.chat.completions.create(
+    model="ollama/qwen3:4b",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What's in this document?"},
+            {
+                "type": "file",
+                "file_url": {
+                    "url": f"data:application/pdf;base64,{file_data}"
+                }
+            }
+        ]
+    }]
+)
+```
+
+**Perfect Consistency with image_url:**
+```python
+# Images and files use identical URL pattern
+content = [
+    {"type": "text", "text": "Compare these"},
+    {
+        "type": "image_url",
+        "image_url": {"url": "https://example.com/chart.png"}
+    },
+    {
+        "type": "file",
+        "file_url": {"url": "https://example.com/data.xlsx"}
+    }
+]
+```
+
+#### Supported File Types
+
+- **Images**: PNG, JPEG, GIF, WEBP, BMP, TIFF
+- **Documents**: PDF, DOCX, XLSX, PPTX
+- **Data/Text**: CSV, TSV, TXT, MD, JSON, XML
+- **Size Limits**: 10MB per file, 32MB total per request
+
+### OpenAI Responses API (/v1/responses)
+
+AbstractCore 2.5.0 introduces 100% OpenAI-compatible `/v1/responses` endpoint with native `input_file` support:
+
+#### Why Use /v1/responses?
+
+- **OpenAI Compatible**: Drop-in replacement for OpenAI's Responses API
+- **Native File Support**: `input_file` type designed specifically for document attachments
+- **Cleaner API**: Explicit separation between text (`input_text`) and files (`input_file`)
+- **Backward Compatible**: Existing `messages` format still works alongside new `input` format
+- **Optional Streaming**: Streaming opt-in with `"stream": true` (defaults to `false`)
+
+#### OpenAI Responses API Format
+
+```python
+import requests
+
+# Standard OpenAI Responses API format
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Analyze this document"},
+                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+                ]
+            }
+        ],
+        "stream": False  # Optional streaming (defaults to False)
+    }
+)
+
+# Works with any provider
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "lmstudio/qwen/qwen3-next-80b",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Analyze the letter and provide a summary of the key points."
+                    },
+                    {
+                        "type": "input_file",
+                        "file_url": "https://www.berkshirehathaway.com/letters/2024ltr.pdf"
+                    }
+                ]
+            }
+        ]
+    }
+)
+
+# Streaming mode (opt-in)
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "anthropic/claude-3.5-sonnet",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Summarize this report"},
+                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+                ]
+            }
+        ],
+        "stream": True  # Enable real-time streaming
+    },
+    stream=True  # Important for streaming responses
+)
+
+for line in response.iter_lines():
+    if line:
+        print(line.decode())
+```
+
+#### Legacy Format (Still Supported)
+
+The endpoint automatically detects and supports the legacy `messages` format:
+
+```python
+# Legacy format (backward compatible)
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "openai/gpt-4",
+        "messages": [
+            {"role": "user", "content": "Tell me a story"}
+        ],
+        "stream": False
+    }
+)
+```
+
+#### Automatic Format Detection
+
+The server automatically detects which format you're using:
+- **OpenAI Format**: Presence of `input` field → converts to internal format
+- **Legacy Format**: Presence of `messages` field → processes directly
+- **Error**: Missing both `input` and `messages` → returns 400 error with clear message
+
+#### Supported Media Types in input_file
+
+All file types supported via URL, local path, or base64:
+
+```python
+# PDF from URL
+{"type": "input_file", "file_url": "https://example.com/report.pdf"}
+
+# Excel from local path
+{"type": "input_file", "file_url": "/path/to/spreadsheet.xlsx"}
+
+# CSV from base64
+{"type": "input_file", "file_url": "data:text/csv;base64,RGF0ZSxQcm9kdW..."}
+
+# PowerPoint from URL
+{"type": "input_file", "file_url": "https://example.com/presentation.pptx"}
+```
+
+#### Complete Example with Multiple Files
+
+```python
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "openai/gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Compare the financial data in the spreadsheet with the PDF report and the chart image"
+                    },
+                    {"type": "input_file", "file_url": "https://example.com/financial_data.xlsx"},
+                    {"type": "input_file", "file_url": "https://example.com/annual_report.pdf"},
+                    {"type": "input_file", "file_url": "https://example.com/quarterly_chart.png"}
+                ]
+            }
+        ],
+        "max_tokens": 2000,
+        "temperature": 0.7,
+        "stream": False
+    }
+)
+
+print(response.json()["choices"][0]["message"]["content"])
+
+#### Mixed Content Example
+
+Combine multiple file types in a single request:
+
+```python
+# Multiple files with different formats
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Compare the chart with the spreadsheet data and summarize the document"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,iVBORw0KGgoA..."}
+            },
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "https://example.com/data/spreadsheet.xlsx"
+                }
+            },
+            {
+                "type": "file",
+                "file_url": {
+                    "url": "/Users/username/documents/summary.pdf"
+                }
+            }
+        ]
+    }]
 )
 ```
 
@@ -1682,6 +2505,9 @@ judge README.md --focus "architectural diagrams, technical comparisons" --debug
 ### Essential Guides
 - **[Getting Started](docs/getting-started.md)**: 5-minute setup and first LLM call
 - **[API Reference](docs/api-reference.md)**: Complete Python API with examples
+- **[Centralized Configuration](docs/centralized-config.md)**: Global defaults, app preferences, and configuration management
+- **[Media Handling System](docs/media-handling-system.md)**: Universal file attachment and processing across all providers
+- **[Vision Capabilities](docs/vision-capabilities.md)**: Image analysis across 7 providers with automatic optimization
 - **[Tool Calling](docs/tool-calling.md)**: Universal @tool decorator system
 - **[Session Management](docs/session.md)**: Persistent conversations with analytics
 
@@ -1693,7 +2519,7 @@ judge README.md --focus "architectural diagrams, technical comparisons" --debug
 ### Advanced Topics
 - **[Server Guide](docs/server.md)**: OpenAI-compatible HTTP API
 - **[Embeddings](docs/embeddings.md)**: Semantic search and RAG
-- **[Architecture](docs/architecture.md)**: System design overview
+- **[Architecture](docs/architecture.md)**: System design overview with media processing
 - **Error Handling**: Comprehensive exception hierarchy for robust applications
 - **Token Management**: Centralized token counting, cost estimation, and management utilities (`abstractcore.utils.token_utils`)
 
@@ -1710,9 +2536,9 @@ judge README.md --focus "architectural diagrams, technical comparisons" --debug
 - **PyPI**: `pip install abstractcore[all]`
 - **License**: MIT | **Python**: 3.9+ | **Status**: Production Ready
 
-**Why AbstractCore?**
-- **Write once, run everywhere**: Same code works with any LLM provider
-- **Production ready**: Built-in error handling, retries, and monitoring
-- **Universal tool calling**: @tool decorator works across ALL providers
-- **Built-in apps**: Ready-to-use CLI tools (summarizer, extractor, judge)
-- **Debug capabilities**: Self-healing JSON and `--debug` mode for troubleshooting
+**For Developers and Architects:**
+- **Provider Agnostic**: Switch between OpenAI, Anthropic, Ollama, and others without code changes
+- **Production Ready**: Enterprise-grade error handling, retries, and resilience patterns
+- **Universal Tool Calling**: Enable function calling on any provider, even those without native support
+- **Media Processing**: Attach any file type (PDFs, images, Office docs) with simple `@filename` syntax
+- **Built-in Apps**: Skip boilerplate with ready-to-use CLI tools for common document processing tasks

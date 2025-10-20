@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Handling System - AbstractCore</title>
+    <meta name="description" content="Universal media handling across all LLM providers - attach images, PDFs, Office docs, and more with simple syntax.">
+    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '../',
+                menuItems: [
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/AbstractCore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 900px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Media Handling System</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Attach any file type to your LLM requests. One simple API works across all providers with intelligent processing and graceful fallback.
+                </p>
+            </div>
+
+            <div class="doc-content">
+                <h2>Overview</h2>
+                <p>
+                    AbstractCore provides a production-ready unified media handling system that enables seamless file attachment and processing across all LLM providers. The system automatically processes images, documents, and other media files using the same simple API, with intelligent provider-specific formatting and graceful fallback handling.
+                </p>
+
+                <h2>Key Features</h2>
+                <ul>
+                    <li><strong>Universal API</strong> - Same <code>media=[]</code> parameter works across all providers</li>
+                    <li><strong>CLI Integration</strong> - Simple <code>@filename</code> syntax for instant file attachment</li>
+                    <li><strong>Intelligent Processing</strong> - Automatic file type detection with specialized processors</li>
+                    <li><strong>Provider Adaptation</strong> - Automatic formatting for each provider's API requirements</li>
+                    <li><strong>Robust Fallback</strong> - Graceful degradation when advanced processing fails</li>
+                    <li><strong>Cross-Format Support</strong> - Images, PDFs, Office docs, CSV/TSV all work seamlessly</li>
+                </ul>
+
+                <h2>Quick Start</h2>
+
+                <h3>Python API</h3>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+# Works with any provider - just change the provider name
+llm = create_llm("openai", model="gpt-4o", api_key="your-key")
+response = llm.generate(
+    "What's in this image and document?",
+    media=["photo.jpg", "report.pdf"]
+)
+
+# Same code works with any provider
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+response = llm.generate(
+    "Analyze these materials",
+    media=["chart.png", "data.csv", "presentation.pptx"]
+)</code></pre>
+                </div>
+
+                <h3>CLI Integration</h3>
+                <p>Use the simple <code>@filename</code> syntax to attach any file type:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-bash"># PDF Analysis
+python -m abstractcore.utils.cli --prompt "What is this document about? @report.pdf"
+
+# Office Documents
+python -m abstractcore.utils.cli --prompt "Summarize this presentation @slides.pptx"
+python -m abstractcore.utils.cli --prompt "What data is in @spreadsheet.xlsx"
+python -m abstractcore.utils.cli --prompt "Analyze this document @contract.docx"
+
+# Data Files
+python -m abstractcore.utils.cli --prompt "What patterns are in @sales_data.csv"
+
+# Images
+python -m abstractcore.utils.cli --prompt "What's in this image? @screenshot.png"
+
+# Mixed Media
+python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and explain trends"</code></pre>
+                </div>
+
+                <h2>Supported File Types</h2>
+
+                <h3>Images (Vision Models)</h3>
+                <ul>
+                    <li><strong>Formats:</strong> PNG, JPEG, GIF, WEBP, BMP, TIFF</li>
+                    <li><strong>Features:</strong> Automatic optimization, resizing, format conversion, EXIF handling</li>
+                    <li><strong>Max Size:</strong> Automatically resized for optimal model performance</li>
+                </ul>
+
+                <h3>Documents</h3>
+                <ul>
+                    <li><strong>PDF:</strong> Full text extraction with PyMuPDF4LLM, preserves formatting and structure</li>
+                    <li><strong>Word (DOCX):</strong> Full document analysis with structure preservation</li>
+                    <li><strong>Excel (XLSX):</strong> Sheet-by-sheet extraction with data analysis</li>
+                    <li><strong>PowerPoint (PPTX):</strong> Slide content extraction with comprehensive analysis</li>
+                </ul>
+
+                <h3>Data Files</h3>
+                <ul>
+                    <li><strong>Text Files:</strong> TXT, MD with intelligent parsing</li>
+                    <li><strong>Data:</strong> CSV, TSV with data analysis</li>
+                    <li><strong>Structured:</strong> JSON with intelligent parsing</li>
+                </ul>
+
+                <h2>How It Works</h2>
+
+                <p>The media system uses a sophisticated multi-layer architecture:</p>
+
+                <ol>
+                    <li><strong>File Attachment Processing</strong> - CLI <code>@filename</code> syntax and Python <code>media=[]</code> parameter</li>
+                    <li><strong>Intelligent Processing</strong> - AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text)</li>
+                    <li><strong>Provider Formatting</strong> - Same content formatted differently for each provider's API</li>
+                    <li><strong>Graceful Fallback</strong> - Multi-level fallback ensures users always get meaningful results</li>
+                </ol>
+
+                <h3>Provider-Specific Formatting Example</h3>
+                <p>AbstractCore automatically formats the same content differently for each provider:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-python"># OpenAI Format (JSON)
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Analyze these files"},
+    {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0..."}},
+    {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
+  ]
+}
+
+# Anthropic Format (Messages API)
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Analyze these files"},
+    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0..."}},
+    {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
+  ]
+}</code></pre>
+                </div>
+
+                <h2>Common Use Cases</h2>
+
+                <h3>Document Analysis</h3>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o")
+
+# Analyze PDF
+response = llm.generate(
+    "Summarize the key findings in this research paper",
+    media=["research_paper.pdf"]
+)
+
+# Extract data from Excel
+response = llm.generate(
+    "What are the top 5 sales regions by revenue?",
+    media=["sales_report.xlsx"]
+)
+
+# Analyze PowerPoint
+response = llm.generate(
+    "List the main talking points from this presentation",
+    media=["quarterly_review.pptx"]
+)</code></pre>
+                </div>
+
+                <h3>Multi-File Analysis</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># Compare multiple files
+response = llm.generate(
+    "Compare the financial data across these three reports",
+    media=["q1_report.pdf", "q2_report.pdf", "q3_report.pdf"]
+)
+
+# Mixed media types
+response = llm.generate(
+    "Verify that the chart matches the data in the spreadsheet",
+    media=["sales_chart.png", "sales_data.csv"]
+)</code></pre>
+                </div>
+
+                <h3>Image Analysis with Documents</h3>
+                <div class="code-block">
+                    <pre><code class="language-python"># Combine images and documents
+response = llm.generate(
+    "Compare the architectural designs with the specifications",
+    media=["design1.jpg", "design2.jpg", "specifications.pdf"]
+)</code></pre>
+                </div>
+
+                <h2>HTTP Server Support</h2>
+                <p>The media handling system is fully integrated with the OpenAI-compatible HTTP server:</p>
+
+                <h3>Using @filename Syntax</h3>
+                <div class="code-block">
+                    <pre><code class="language-python">import openai
+
+client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{"role": "user", "content": "Analyze @report.pdf and @chart.png"}]
+)</code></pre>
+                </div>
+
+                <h3>Using OpenAI Responses API Format</h3>
+                <div class="code-block">
+                    <pre><code class="language-python">import requests
+
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Analyze this document"},
+                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+                ]
+            }
+        ]
+    }
+)</code></pre>
+                </div>
+
+                <h2>Error Handling and Fallback</h2>
+                <p>AbstractCore provides robust error handling with graceful degradation:</p>
+
+                <ul>
+                    <li><strong>Format Detection Failure</strong> - Falls back to basic text extraction</li>
+                    <li><strong>Processing Errors</strong> - Returns partial content with error indication</li>
+                    <li><strong>Unsupported Files</strong> - Clear error messages with supported format list</li>
+                    <li><strong>Size Limits</strong> - Automatic chunking for large documents</li>
+                </ul>
+
+                <h2>Best Practices</h2>
+
+                <ul>
+                    <li><strong>File Size</strong> - Keep individual files under 10MB for optimal performance</li>
+                    <li><strong>Image Quality</strong> - Use high-quality images but let AbstractCore handle optimization</li>
+                    <li><strong>Multiple Files</strong> - Limit to 5-10 files per request to avoid token limits</li>
+                    <li><strong>File Types</strong> - Stick to supported formats for reliable processing</li>
+                    <li><strong>Clear Prompts</strong> - Specify what you want to extract or analyze from the files</li>
+                </ul>
+
+                <h2>Installation</h2>
+                <p>To use media handling features, install the media extras:</p>
+
+                <div class="code-block">
+                    <pre><code class="language-bash"># Install with media support
+pip install abstractcore[media]
+
+# Or install everything
+pip install abstractcore[all]</code></pre>
+                </div>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
+                        </a>
+
+                        <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis across providers</p>
+                        </a>
+
+                        <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Centralized Configuration</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global defaults and settings</p>
+                        </a>
+
+                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible REST API</p>
+                        </a>
+
+                        <a href="internal-cli.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Internal CLI</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Built-in CLI with @filename syntax</p>
+                        </a>
+
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer" style="margin-top: 5rem;">
+        <div class="container" style="text-align: center; padding: 2rem 0; border-top: 1px solid var(--border-color);">
+            <p style="color: var(--text-secondary); margin: 0;">
+                &copy; 2025 AbstractCore. Licensed under MIT License.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+</body>
+</html>

@@ -36,7 +36,9 @@
                         icon: 'pypi'
                     }
                 ]
-            });    </script>
+            });
+        });
+    </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
@@ -80,7 +82,53 @@ pip install abstractcore[ollama,mlx]
 pip install abstractcore[all]
 
 # Option 4: Minimal install (add providers as needed)
-pip install abstractcore</code></pre>
+pip install abstractcore
+
+# For media handling (images, PDFs, Office docs)
+pip install abstractcore[media]</code></pre>
+                </section>
+
+                <section id="centralized-config">
+                    <h2>Recommended: Centralized Configuration</h2>
+                    <p>After installation, configure AbstractCore once to avoid repetitive provider/model specifications:</p>
+
+                    <h3>1. Check Current Status</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash">abstractcore --status</code></pre>
+                    </div>
+
+                    <h3>2. Set Global Defaults (One-Time Setup)</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Set global fallback model
+abstractcore --set-global-default ollama/llama3:8b
+
+# Or use cloud provider as default
+abstractcore --set-global-default openai/gpt-4o-mini
+
+# Set app-specific defaults
+abstractcore --set-app-default cli ollama qwen3:4b
+abstractcore --set-app-default summarizer openai gpt-4o-mini</code></pre>
+                    </div>
+
+                    <h3>3. Configure API Keys (Optional but Recommended)</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Store API keys in config file instead of environment variables
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key</code></pre>
+                    </div>
+
+                    <h3>4. Configure Vision Fallback (Optional)</h3>
+                    <p>Enable text-only models to process images:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Download local vision model (recommended)
+abstractcore --download-vision-model
+
+# Or use existing Ollama model
+abstractcore --set-vision-caption qwen2.5vl:7b</code></pre>
+                    </div>
+
+                    <p><strong>Benefits:</strong> Never specify provider/model again, consistent behavior across apps, environment-specific configurations.</p>
+                    <p>Learn more: <a href="centralized-config.html">Centralized Configuration Guide</a></p>
                 </section>
 
                 <section id="openai-setup">
@@ -246,21 +294,40 @@ print(response.content)</code></pre>
                 <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
                     <h2 style="margin: 0 0 1.5rem 0;">Next Steps</h2>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Centralized Configuration</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Set up once, use everywhere - global defaults and preferences</p>
+                        </a>
+
                         <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Learn the basics and create your first LLM application</p>
-                        
+                        </a>
+
+                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Media Handling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Attach images, PDFs, Office docs with simple syntax</p>
+                        </a>
+
+                        <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with vision fallback for text-only models</p>
+                        </a>
+
                         <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool support across all providers</p>
-                        
+                        </a>
+
                         <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world usage examples and patterns</p>
-                        
+                        </a>
+
                         <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API documentation</p>
+                        </a>
     </main>
 
     <!-- Scripts -->
