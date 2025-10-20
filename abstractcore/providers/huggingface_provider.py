@@ -864,19 +864,14 @@ class HuggingFaceProvider(BaseProvider):
             if outputs and len(outputs) > 0:
                 response_text = outputs[0]['generated_text'].strip()
 
-                # Calculate token usage
-                input_tokens = len(self.tokenizer.encode(input_text))
-                output_tokens = len(self.tokenizer.encode(response_text))
+                # Calculate token usage using centralized utilities
+                usage = self._calculate_usage(input_text, response_text)
 
                 return GenerateResponse(
                     content=response_text,
                     model=self.model,
                     finish_reason="stop",
-                    usage={
-                        "prompt_tokens": input_tokens,
-                        "completion_tokens": output_tokens,
-                        "total_tokens": input_tokens + output_tokens
-                    }
+                    usage=usage
                 )
             else:
                 return GenerateResponse(
@@ -891,6 +886,20 @@ class HuggingFaceProvider(BaseProvider):
                 model=self.model,
                 finish_reason="error"
             )
+
+    def _calculate_usage(self, prompt: str, response: str) -> Dict[str, int]:
+        """Calculate token usage using centralized token utilities."""
+        from ..utils.token_utils import TokenUtils
+
+        prompt_tokens = TokenUtils.estimate_tokens(prompt, self.model)
+        completion_tokens = TokenUtils.estimate_tokens(response, self.model)
+        total_tokens = prompt_tokens + completion_tokens
+
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens
+        }
 
     def _stream_generate_transformers(self, input_text: str, max_new_tokens: int,
                                      temperature: float, top_p: float, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
