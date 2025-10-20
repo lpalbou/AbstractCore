@@ -41,7 +41,7 @@
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 900px;">
+        <div class="container" style="max-width: 1300px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Media Handling System</h1>
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">
@@ -55,15 +55,17 @@
                     AbstractCore provides a production-ready unified media handling system that enables seamless file attachment and processing across all LLM providers. The system automatically processes images, documents, and other media files using the same simple API, with intelligent provider-specific formatting and graceful fallback handling.
                 </p>
 
-                <h2>Key Features</h2>
-                <ul>
-                    <li><strong>Universal API</strong> - Same <code>media=[]</code> parameter works across all providers</li>
-                    <li><strong>CLI Integration</strong> - Simple <code>@filename</code> syntax for instant file attachment</li>
-                    <li><strong>Intelligent Processing</strong> - Automatic file type detection with specialized processors</li>
-                    <li><strong>Provider Adaptation</strong> - Automatic formatting for each provider's API requirements</li>
-                    <li><strong>Robust Fallback</strong> - Graceful degradation when advanced processing fails</li>
-                    <li><strong>Cross-Format Support</strong> - Images, PDFs, Office docs, CSV/TSV all work seamlessly</li>
-                </ul>
+                <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Key Features</h3>
+                    <ul style="margin: 0; padding-left: 1.5rem;">
+                        <li><strong>Universal API</strong> - Same <code>media=[]</code> parameter works across all providers</li>
+                        <li><strong>CLI Integration</strong> - Simple <code>@filename</code> syntax for instant file attachment</li>
+                        <li><strong>Intelligent Processing</strong> - Automatic file type detection with specialized processors</li>
+                        <li><strong>Provider Adaptation</strong> - Automatic formatting for each provider's API requirements</li>
+                        <li><strong>Robust Fallback</strong> - Graceful degradation when advanced processing fails</li>
+                        <li><strong>Cross-Format Support</strong> - Images, PDFs, Office docs, CSV/TSV all work seamlessly</li>
+                    </ul>
+                </div>
 
                 <h2>Quick Start</h2>
 
@@ -296,12 +298,12 @@ pip install abstractcore[all]</code></pre>
                         </a>
 
                         <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Vision Capabilities</h4>
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Vision Capabilities</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis across providers</p>
                         </a>
 
                         <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">⭐ Centralized Configuration</h4>
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Centralized Configuration</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global defaults and settings</p>
                         </a>
 
