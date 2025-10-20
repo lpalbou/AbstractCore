@@ -15,6 +15,9 @@ pip install abstractcore[all]
 ## Core Features
 
 - **[API Reference](docs/api-reference.md)**: Complete Python API with examples
+- **[Centralized Configuration](docs/centralized-config.md)**: Global defaults, app preferences, API key management
+- **[Media Handling System](docs/media-handling-system.md)**: Universal file attachment (images, PDFs, Office docs, CSV) across all providers
+- **[Vision Capabilities](docs/vision-capabilities.md)**: Image analysis across all providers with automatic optimization
 - **[Universal Tool Calling](docs/tool-calling.md)**: @tool decorator works across ALL providers
 - **[Provider Discovery](docs/getting-started.md)**: Centralized registry to programmatically list ALL providers and models
 - **[Session Management](docs/session.md)**: Persistent conversations with analytics and auto-compaction
@@ -54,6 +57,12 @@ pip install abstractcore
 pip install abstractcore[openai]
 pip install abstractcore[anthropic]
 pip install abstractcore[ollama]
+pip install abstractcore[lmstudio]
+pip install abstractcore[mlx]
+pip install abstractcore[huggingface]
+
+# With media handling (images, PDFs, Office docs)
+pip install abstractcore[media]
 
 # With server support
 pip install abstractcore[server]
@@ -70,6 +79,9 @@ pip install abstractcore[all]
 - **Write once, run everywhere**: Same code works with any LLM provider
 - **Production ready**: Built-in error handling, retries, and monitoring
 - **Universal tool calling**: @tool decorator works across ALL providers
+- **Universal media handling**: Simple `@filename` syntax and `media=[]` API for images, PDFs, Office docs
+- **Vision capabilities**: Image analysis across all providers with automatic optimization
+- **Centralized configuration**: Global defaults and app-specific preferences eliminate repetitive setup
 - **Built-in apps**: Ready-to-use CLI tools (summarizer, extractor, judge)
 - **Debug capabilities**: Self-healing JSON and `--debug` mode for troubleshooting
 
@@ -96,6 +108,76 @@ for provider in providers:
     print(f"Features: {', '.join(provider['supported_features'])}")
     print(f"Local: {provider['local_provider']}")
     print(f"Auth Required: {provider['authentication_required']}")
+```
+
+### Centralized Configuration
+```bash
+# Check current configuration status
+abstractcore --status
+
+# Set global fallback model
+abstractcore --set-global-default ollama/llama3:8b
+
+# Set app-specific defaults for optimal performance
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+abstractcore --set-app-default judge anthropic claude-3-5-haiku
+
+# Set API keys
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key
+```
+
+### Media Handling System
+```python
+from abstractcore import create_llm
+
+# Works with any provider - just change the provider name
+llm = create_llm("openai", model="gpt-4o", api_key="your-key")
+
+# Universal media parameter works across all providers
+response = llm.generate(
+    "What's in this image and document?",
+    media=["photo.jpg", "report.pdf"]
+)
+
+# CLI integration with @filename syntax
+# python -m abstractcore.utils.cli --prompt "Analyze @report.pdf and @chart.png"
+
+# Supports: Images (PNG, JPEG, GIF, WEBP), PDFs, Office docs (DOCX, XLSX, PPTX), CSV/TSV
+response = llm.generate(
+    "Compare the data",
+    media=["chart.png", "data.csv", "presentation.pptx"]
+)
+```
+
+### Vision Capabilities
+```python
+from abstractcore import create_llm
+
+# Works with any vision-capable provider
+llm = create_llm("openai", model="gpt-4o")
+
+# Single image analysis
+response = llm.generate(
+    "What objects do you see in this image?",
+    media=["photo.jpg"]
+)
+
+# Multiple images comparison
+response = llm.generate(
+    "Compare these architectural styles and identify differences",
+    media=["building1.jpg", "building2.jpg", "building3.jpg"]
+)
+
+# Cross-provider consistency - same code works everywhere
+openai_response = create_llm("openai", model="gpt-4o").generate("Analyze", media=["chart.png"])
+anthropic_response = create_llm("anthropic", model="claude-3-5-sonnet").generate("Analyze", media=["chart.png"])
+ollama_response = create_llm("ollama", model="qwen2.5vl:7b").generate("Analyze", media=["chart.png"])
+
+# Vision fallback for text-only models (one-time setup)
+# abstractcore --download-vision-model  # Downloads local vision model
+# Now text-only models can process images transparently
 ```
 
 ### Universal Tool Calling with @tool Decorator
@@ -275,6 +357,30 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello!"}]
 )
 
+# File attachments with @filename syntax
+response = client.chat.completions.create(
+    model="openai/gpt-4o",
+    messages=[{"role": "user", "content": "Analyze @report.pdf and @chart.png"}]
+)
+
+# OpenAI Responses API (/v1/responses) with native input_file support
+import requests
+response = requests.post(
+    "http://localhost:8000/v1/responses",
+    json={
+        "model": "gpt-4o",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Analyze this document"},
+                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
+                ]
+            }
+        ]
+    }
+)
+
 # Provider discovery via HTTP API
 # GET /providers - Complete provider metadata
 # GET /providers/ollama/models - Models for specific provider
@@ -359,22 +465,25 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 ### Supported Providers
 | Provider | Features | Default Model |
 |----------|----------|---------------|
-| **OpenAI** | Native tools, streaming, structured output | gpt-5-nano-2025-08-07 |
-| **Anthropic** | Native tools, streaming, structured output | claude-3-5-haiku-latest |
-| **Ollama** | Prompted tools, streaming, local models | qwen3-coder:30b |
-| **LMStudio** | Prompted tools, streaming, local models | llama-3.2-8b-instruct |
-| **MLX** | Prompted tools, streaming, Apple Silicon | qwen3-air-4bit |
-| **HuggingFace** | Prompted tools, streaming, open models | microsoft/DialoGPT-large |
+| **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o), media processing | gpt-5-nano-2025-08-07 |
+| **Anthropic** | Native tools, streaming, structured output, vision (Claude 3.5), media processing | claude-3-5-haiku-latest |
+| **Ollama** | Prompted tools, streaming, local models, vision (qwen2.5vl:7b), media processing | qwen3-coder:30b |
+| **LMStudio** | Prompted tools, streaming, local models, vision (qwen2.5-vl), media processing | llama-3.2-8b-instruct |
+| **MLX** | Prompted tools, streaming, Apple Silicon, vision models, media processing | qwen3-air-4bit |
+| **HuggingFace** | Prompted tools, streaming, open models, vision models, media processing | microsoft/DialoGPT-large |
 
 ### Key Capabilities for AI
 - **137+ models** across 6 providers via centralized registry
+- **Universal media handling** with `media=[]` API and `@filename` CLI syntax
+- **Vision capabilities** across all providers with automatic optimization and fallback
+- **Centralized configuration** with global defaults and app-specific preferences
 - **Real-time tool syntax conversion** for agent CLI compatibility
 - **SOTA 2025 session compaction** with context preservation
 - **Unified token parameters** across all providers
 - **Event-driven architecture** for monitoring and control
 - **Production resilience** with retries and circuit breakers
 - **Self-healing JSON** for robust structured output
-- **OpenAI-compatible server** for multi-language access
+- **OpenAI-compatible server** with /v1/responses endpoint for multi-language access
 
 ---
 
