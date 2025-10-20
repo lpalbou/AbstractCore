@@ -11,10 +11,10 @@ class AbstractCoreNavbar {
             basePath: config.basePath || '',
             // Menu items configuration
             menuItems: config.menuItems || [
-                { text: 'Features', href: 'docs/capabilities.html' },
-                { text: 'Quick Start', href: 'docs/getting-started.html' },
-                { text: 'Documentation', href: 'index.html#docs' },
-                { text: 'Examples', href: 'docs/examples.html' },
+                { text: 'Features', href: '/docs/capabilities.html' },
+                { text: 'Quick Start', href: '/docs/getting-started.html' },
+                { text: 'Documentation', href: '/#docs' },
+                { text: 'Examples', href: '/docs/examples.html' },
                 {
                     text: 'GitHub',
                     href: 'https://github.com/lpalbou/AbstractCore',
