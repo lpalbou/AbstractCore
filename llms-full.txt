@@ -10,11 +10,13 @@ This file contains the complete documentation for AbstractCore, a unified Python
 4. [Media Handling System](#media-handling-system) - Universal file attachment and processing
 5. [Vision Capabilities](#vision-capabilities) - Image analysis across all providers
 6. [Getting Started](#getting-started) - Essential code examples and patterns
-7. [Provider Discovery](#provider-discovery) - Programmatic provider and model discovery
-8. [Built-in CLI Applications](#built-in-cli-applications) - Ready-to-use terminal tools
-9. [Debug & Advanced Features](#debug-capabilities-and-self-healing-json) - Troubleshooting and performance
-10. [Complete CLI Parameters](#complete-cli-parameters-reference) - All available options
-11. [Documentation Index](#documentation-index) - Links to detailed guides
+7. [Provider Health Monitoring](#provider-health-monitoring-v244) - Connectivity checks and fallback strategies (v2.4.4+)
+8. [Token Counting and Usage Tracking](#token-counting-and-usage-tracking-v244) - Input/output token tracking across all providers (v2.4.4+)
+9. [Provider Discovery](#provider-discovery) - Programmatic provider and model discovery
+10. [Built-in CLI Applications](#built-in-cli-applications) - Ready-to-use terminal tools
+11. [Debug & Advanced Features](#debug-capabilities-and-self-healing-json) - Troubleshooting and performance
+12. [Complete CLI Parameters](#complete-cli-parameters-reference) - All available options
+13. [Documentation Index](#documentation-index) - Links to detailed guides
 
 ---
 
@@ -37,6 +39,8 @@ AbstractCore is a comprehensive Python library providing a unified interface to 
 - **Built-in CLI Apps**: Ready-to-use terminal applications (`summarizer`, `extractor`, `judge`) for document processing
 - **HTTP Server**: OpenAI-compatible REST API with provider discovery and unified access
 - **Production Ready**: Robust error handling, retries, circuit breakers, and graceful degradation
+- **Provider Health Checks**: `.health()` method for connectivity monitoring with timeout management (v2.4.4+)
+- **Centralized Token Counting**: Consistent input/output token tracking across all providers with unified TokenUtils infrastructure (v2.4.4+)
 
 ### Supported Providers
 
@@ -360,34 +364,122 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and 
 
 ### How It Works Behind the Scenes
 
-The media system uses a sophisticated multi-layer architecture:
+The media system uses a **four-layer architecture** that processes and adapts content for each provider:
 
-1. **File Attachment Processing**: CLI `@filename` syntax and Python `media=[]` parameter
-2. **Intelligent Processing**: AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text)
-3. **Provider Formatting**: Same content formatted differently for each provider's API
-4. **Graceful Fallback**: Multi-level fallback ensures users always get meaningful results
-
-**Provider-Specific Formatting Example:**
+#### **Layer 1: Input Acceptance (BaseProvider)**
 ```python
-# OpenAI Format (JSON)
-{
-  "role": "user",
-  "content": [
-    {"type": "text", "text": "Analyze these files"},
-    {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0..."}},
-    {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
-  ]
-}
+# Three input formats accepted by media= parameter:
+media = [
+    "file.pdf",                    # File path (string)
+    MediaContent(...),             # MediaContent object
+    {"type": "image", "url": "..."} # Dictionary (converted to MediaContent)
+]
+```
 
-# Anthropic Format (Messages API)
-{
-  "role": "user",
-  "content": [
-    {"type": "text", "text": "Analyze these files"},
-    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0..."}},
-    {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
-  ]
-}
+**Location**: `abstractcore/providers/base.py::_process_media_content()`
+- Accepts file paths, `MediaContent` objects, or dicts
+- Uses `AutoMediaHandler` to process file paths into `MediaContent` objects
+- Returns standardized list of `MediaContent` objects to provider
+
+#### **Layer 2: File Processing (AutoMediaHandler + Processors)**
+```python
+# AutoMediaHandler selects processor based on file type
+# Location: abstractcore/media/auto_handler.py
+
+file_path = "report.pdf"
+→ AutoMediaHandler detects PDF
+→ PDFProcessor extracts text with PyMuPDF4LLM
+→ Returns MediaContent(media_type=DOCUMENT, content="text...", content_format=TEXT)
+
+file_path = "photo.jpg"
+→ AutoMediaHandler detects IMAGE
+→ ImageProcessor loads, optimizes, converts to base64
+→ Returns MediaContent(media_type=IMAGE, content="base64...", content_format=BASE64)
+```
+
+**Available Processors**:
+- `ImageProcessor` (abstractcore/media/processors/image_processor.py): Resolution optimization, format conversion
+- `PDFProcessor` (abstractcore/media/processors/pdf_processor.py): Full text extraction with PyMuPDF4LLM
+- `OfficeProcessor` (abstractcore/media/processors/office_processor.py): DOCX/XLSX/PPTX with Unstructured library
+- `TextProcessor` (abstractcore/media/processors/text_processor.py): Plain text, CSV, JSON, TSV
+
+#### **Layer 3: Provider-Specific Formatting (Provider Handlers)**
+```python
+# Each provider has a specialized handler that formats MediaContent
+# for its specific API requirements
+
+# OpenAI (abstractcore/media/handlers/openai_handler.py)
+OpenAIMediaHandler.create_multimodal_message(text, media_contents)
+→ {
+    "role": "user",
+    "content": [
+      {"type": "text", "text": "Analyze these files"},
+      {"type": "image_url", "image_url": {"url": "data:image/png;base64,iVBORw0..."}},
+      {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
+    ]
+  }
+
+# Anthropic (abstractcore/media/handlers/anthropic_handler.py)
+AnthropicMediaHandler.create_multimodal_message(text, media_contents)
+→ {
+    "role": "user",
+    "content": [
+      {"type": "text", "text": "Analyze these files"},
+      {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0..."}},
+      {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
+    ]
+  }
+
+# Local Providers (abstractcore/media/handlers/local_handler.py)
+LocalMediaHandler.create_multimodal_message(text, media_contents)
+→ For vision models: Uses provider's native vision API (Ollama /api/chat with images)
+→ For text models: Embeds extracted text directly into prompt
+```
+
+#### **Layer 4: API Call (Provider Implementation)**
+```python
+# Provider's _generate_internal() receives formatted message and calls API
+# Location: abstractcore/providers/openai_provider.py, anthropic_provider.py, etc.
+
+# OpenAI Provider (_generate_internal)
+if media:
+    from ..media.handlers import OpenAIMediaHandler
+    media_handler = OpenAIMediaHandler(self.model_capabilities)
+    multimodal_message = media_handler.create_multimodal_message(prompt, media)
+    api_messages.append(multimodal_message)
+# → Calls OpenAI API with formatted message
+
+# Anthropic Provider (_generate_internal)
+if media:
+    from ..media.handlers import AnthropicMediaHandler
+    media_handler = AnthropicMediaHandler(self.model_capabilities)
+    multimodal_message = media_handler.create_multimodal_message(prompt, media)
+    api_messages.append(multimodal_message)
+# → Calls Anthropic API with formatted message
+```
+
+### **Complete Flow Example**
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o")
+response = llm.generate("Analyze these", media=["chart.png", "report.pdf"])
+
+# Flow:
+# 1. BaseProvider._process_media_content(["chart.png", "report.pdf"])
+#    → Uses AutoMediaHandler to detect file types and select processors
+#    → ImageProcessor converts chart.png to base64 MediaContent
+#    → PDFProcessor extracts text from report.pdf to text MediaContent
+#    → Returns [MediaContent(IMAGE, base64...), MediaContent(DOCUMENT, text...)]
+#
+# 2. OpenAIProvider._generate_internal(media=[MediaContent, MediaContent])
+#    → Creates OpenAIMediaHandler
+#    → Formats MediaContent objects into OpenAI API format
+#    → Returns multimodal message with text + image_url + text content
+#
+# 3. OpenAI API call with formatted message
+#    → GPT-4o processes text, image, and PDF content together
 ```
 
 For complete media handling documentation, see: [Media Handling System Guide](docs/media-handling-system.md)
@@ -607,6 +699,150 @@ prod_llm = create_llm("openai", model="gpt-4o-mini", api_key="your-key")
 
 # Cost-sensitive applications (smaller models)
 cost_llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+```
+
+---
+
+## Provider Health Monitoring (v2.4.4+)
+
+Check provider connectivity and availability before making requests. All providers now include a `.health()` method that returns structured health information.
+
+### Basic Health Check
+
+```python
+from abstractcore import create_llm
+
+# Check if provider is online and available
+provider = create_llm("ollama", model="llama2")
+health = provider.health(timeout=3.0)  # 3-second timeout
+
+if health["status"]:
+    print(f"✅ {health['provider']} is healthy")
+    print(f"   Models available: {health['model_count']}")
+    print(f"   Response time: {health['latency_ms']}ms")
+    # Safe to proceed with generation
+    response = provider.generate("Hello!")
+else:
+    print(f"❌ {health['provider']} is offline")
+    print(f"   Error: {health['error']}")
+    # Implement fallback strategy
+```
+
+### Health Check Response Structure
+
+```python
+{
+    "status": bool,              # True if provider is healthy/online
+    "provider": str,             # Provider class name (e.g., "OllamaProvider")
+    "models": List[str] | None,  # Available models if online, None if offline
+    "model_count": int,          # Number of available models (0 if offline)
+    "error": str | None,         # Error message if offline, None if healthy
+    "latency_ms": float          # Health check duration in milliseconds
+}
+```
+
+### Production Pattern: Fallback Chain
+
+```python
+from abstractcore import create_llm
+
+# Try providers in order of preference with automatic fallback
+providers_to_try = [
+    ("ollama", {"model": "llama2"}),
+    ("lmstudio", {"model": "local-model"}),
+    ("openai", {"model": "gpt-4o-mini", "api_key": "sk-..."})
+]
+
+provider = None
+for provider_name, kwargs in providers_to_try:
+    try:
+        candidate = create_llm(provider_name, **kwargs)
+        health = candidate.health(timeout=2.0)
+        if health["status"]:
+            provider = candidate
+            print(f"Using {health['provider']} ({health['model_count']} models)")
+            break
+    except Exception as e:
+        print(f"Skipping {provider_name}: {e}")
+        continue
+
+if provider is None:
+    raise RuntimeError("No healthy providers available")
+
+# Proceed with healthy provider
+response = provider.generate("Hello, world!")
+```
+
+---
+
+## Token Counting and Usage Tracking (v2.4.4+)
+
+All providers now consistently track both input (context) and output (generated) tokens using a centralized token counting infrastructure.
+
+### Token Usage Structure
+
+Every response includes detailed token usage information:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate("Explain quantum computing in simple terms")
+
+# All providers return consistent token usage
+print(f"Input tokens (context): {response.usage['prompt_tokens']}")
+print(f"Output tokens (generated): {response.usage['completion_tokens']}")
+print(f"Total tokens (billing): {response.usage['total_tokens']}")
+```
+
+### Token Counting Methods
+
+- **API Providers** (OpenAI, Anthropic, Ollama, LMStudio): Use exact API-provided token counts
+- **Local Providers** (MLX, HuggingFace): Use centralized `TokenUtils` with content-type detection
+
+```python
+from abstractcore.utils.token_utils import TokenUtils
+
+# Estimate tokens before making request
+text = "Your input text here..."
+estimated = TokenUtils.estimate_tokens(text, model="claude-3-5-haiku-latest")
+print(f"Estimated tokens: {estimated}")
+
+# Content-type aware estimation
+code_text = "def hello(): print('world')"
+code_tokens = TokenUtils.estimate_tokens(code_text, model="gpt-4o")
+# Automatically detects code and applies appropriate density factor
+
+json_text = '{"key": "value", "array": [1, 2, 3]}'
+json_tokens = TokenUtils.estimate_tokens(json_text, model="claude-3-5-haiku")
+# Automatically detects JSON and accounts for structural tokens
+```
+
+### Token Budget Planning
+
+```python
+from abstractcore import create_llm
+
+# Set token limits with unified parameters
+llm = create_llm(
+    "openai",
+    model="gpt-4o",
+    max_tokens=128000,          # Total context window
+    max_output_tokens=16000,    # Maximum generated tokens
+    max_input_tokens=112000     # Maximum input tokens (auto-calculated if not set)
+)
+
+# Track token usage across conversation
+total_input = 0
+total_output = 0
+
+for i in range(5):
+    response = llm.generate(f"Question {i+1}")
+    total_input += response.usage['prompt_tokens']
+    total_output += response.usage['completion_tokens']
+
+print(f"Conversation used {total_input} input + {total_output} output tokens")
+print(f"Remaining budget: {llm.max_tokens - (total_input + total_output)} tokens")
 ```
 
 ---

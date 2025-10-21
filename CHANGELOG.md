@@ -5,7 +5,102 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.5.0] - 2025-10-20
+## [2.4.4] - 2025-10-21
+
+### Added
+
+#### Provider Health Check System
+- **NEW `.health()` Method**: Unified health check interface for all providers
+  - **Structured Response**: Consistent health status format across all providers
+  - **Connectivity Testing**: Uses `list_available_models()` as implicit connectivity test
+  - **Smart Timeout Management**: Configurable timeout (default: 5.0s) with automatic restoration
+  - **Never Throws**: Errors captured in response structure, never raises exceptions
+  - **Rich Information**: Returns status, provider name, model list, model count, error message, and latency
+  - **Universal Compatibility**: Works with all provider types (API, local, server-based)
+  - **Override-able**: Providers can customize health check logic if needed
+
+#### Health Check Response Structure
+```python
+{
+    "status": bool,              # True if provider is healthy/online
+    "provider": str,             # Provider class name (e.g., "OllamaProvider")
+    "models": List[str] | None,  # Available models if online, None if offline
+    "model_count": int,          # Number of models available (0 if offline)
+    "error": str | None,         # Error message if offline, None if healthy
+    "latency_ms": float          # Health check duration in milliseconds
+}
+```
+
+### Fixed
+
+#### HuggingFace Token Counting Consistency
+- **Centralized Token Counter**: Fixed HuggingFace provider to use centralized `TokenUtils` for consistency
+  - **Problem**: HuggingFace was the only provider using provider-specific `tokenizer.encode()` for token counting
+  - **Solution**: Added `_calculate_usage()` method matching MLX provider pattern using `TokenUtils.estimate_tokens()`
+  - **Impact**: All local providers now consistently use centralized token counting infrastructure
+  - **Benefits**:
+    - ✅ Consistency across all providers (MLX, HuggingFace)
+    - ✅ Robustness when tokenizer unavailable (GGUF models)
+    - ✅ Content-type detection for better accuracy (code vs text vs JSON)
+    - ✅ Model-family adjustments (qwen, llama, mistral tokenization patterns)
+
+### Enhanced
+
+#### Token Usage Tracking
+- **Comprehensive Token Capture**: All providers consistently capture THREE token metrics
+  - **prompt_tokens**: Input/context tokens (system prompt + history + current prompt)
+  - **completion_tokens**: Generated/output tokens (model's response)
+  - **total_tokens**: Sum of prompt + completion (used for billing/quotas)
+  - **API Providers**: OpenAI, Anthropic, Ollama, LMStudio use exact API-provided counts
+  - **Local Providers**: MLX, HuggingFace use centralized `TokenUtils` estimation
+
+### Technical
+
+#### Token Counting Implementation
+- **Centralized Infrastructure**: Located at `abstractcore/utils/token_utils.py`
+  - `TokenUtils.estimate_tokens(text, model)`: Fast estimation with content-type detection
+  - `TokenUtils.count_tokens(text, model, method)`: Flexible counting (auto/precise/fast)
+  - `TokenUtils.count_tokens_precise(text, model)`: Accurate counting with tiktoken when available
+  - Multi-tiered strategy: tiktoken (precise) → provider tokenizer → model-aware heuristics → fast fallback
+
+#### Files Modified
+- `abstractcore/providers/base.py`: Added `health()` method (lines 870-965)
+- `abstractcore/providers/huggingface_provider.py`:
+  - Added `_calculate_usage()` method using centralized TokenUtils (lines 890-902)
+  - Updated `_single_generate_transformers()` to use centralized token counting (lines 867-868)
+
+### Benefits
+- **Health Monitoring**: Simple interface to check provider connectivity and availability
+- **Consistency**: Unified token counting across all providers with same methodology
+- **Production Ready**: Built-in timeout management prevents hanging health checks
+- **Developer Experience**: Rich health information enables better error handling and monitoring
+- **Maintainability**: Single centralized token counter to update/improve
+
+### Migration Guide
+
+#### For Health Check Users
+New `.health()` method available on all providers:
+
+```python
+from abstractcore.core.factory import create_llm
+
+# Check single provider
+provider = create_llm("ollama", model="llama2")
+health = provider.health(timeout=3.0)
+
+if health["status"]:
+    print(f"✅ {health['provider']} is healthy!")
+    print(f"   📦 {health['model_count']} models available")
+    print(f"   ⏱️  {health['latency_ms']}ms response time")
+else:
+    print(f"❌ {health['provider']} is offline")
+    print(f"   Error: {health['error']}")
+```
+
+#### For Token Counting
+No changes required - all existing code continues to work. HuggingFace provider now uses the same centralized token counting infrastructure as other local providers, improving consistency and accuracy.
+
+## [2.4.3] - 2025-10-20
 
 ### Major Features
 

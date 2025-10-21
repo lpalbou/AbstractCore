@@ -867,6 +867,103 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """
         pass
 
+    def health(self, timeout: Optional[float] = 5.0) -> Dict[str, Any]:
+        """
+        Check provider health and connectivity.
+
+        This method tests if the provider is online and accessible by attempting
+        to list available models. A successful model listing indicates the provider
+        is healthy and ready to serve requests.
+
+        Args:
+            timeout: Maximum time in seconds to wait for health check (default: 5.0).
+                    None means unlimited timeout (not recommended for health checks).
+
+        Returns:
+            Dict with health status information:
+            {
+                "status": bool,              # True if provider is healthy/online
+                "provider": str,             # Provider class name (e.g., "OpenAIProvider")
+                "models": List[str] | None,  # Available models if online, None if offline
+                "model_count": int,          # Number of models available (0 if offline)
+                "error": str | None,         # Error message if offline, None if healthy
+                "latency_ms": float          # Time taken for health check in milliseconds
+            }
+
+        Example:
+            >>> provider = OllamaProvider(model="llama2")
+            >>> health = provider.health(timeout=3.0)
+            >>> if health["status"]:
+            >>>     print(f"Healthy! {health['model_count']} models available")
+            >>> else:
+            >>>     print(f"Offline: {health['error']}")
+
+        Note:
+            - This method never raises exceptions; errors are captured in the response
+            - Uses list_available_models() as the connectivity test
+            - Providers can override this method for custom health check logic
+        """
+        import time as time_module
+
+        start_time = time_module.time()
+        provider_name = self.__class__.__name__
+
+        try:
+            # Attempt to list models as connectivity test
+            # Store original timeout if provider has HTTP client
+            original_timeout = None
+            timeout_changed = False
+
+            if timeout is not None and hasattr(self, '_timeout'):
+                original_timeout = self._timeout
+                if original_timeout != timeout:
+                    self.set_timeout(timeout)
+                    timeout_changed = True
+
+            try:
+                models = self.list_available_models()
+
+                # Restore original timeout if changed
+                if timeout_changed and original_timeout is not None:
+                    self.set_timeout(original_timeout)
+
+                latency_ms = (time_module.time() - start_time) * 1000
+
+                return {
+                    "status": True,
+                    "provider": provider_name,
+                    "models": models,
+                    "model_count": len(models) if models else 0,
+                    "error": None,
+                    "latency_ms": round(latency_ms, 2)
+                }
+
+            except Exception as e:
+                # Restore original timeout on error
+                if timeout_changed and original_timeout is not None:
+                    try:
+                        self.set_timeout(original_timeout)
+                    except:
+                        pass  # Best effort restoration
+                raise  # Re-raise to be caught by outer handler
+
+        except Exception as e:
+            latency_ms = (time_module.time() - start_time) * 1000
+
+            # Extract meaningful error message
+            error_message = str(e)
+            if not error_message:
+                error_message = f"{type(e).__name__} occurred during health check"
+
+            return {
+                "status": False,
+                "provider": provider_name,
+                "models": None,
+                "model_count": 0,
+                "error": error_message,
+                "latency_ms": round(latency_ms, 2)
+            }
+
     def _needs_tag_rewriting(self, tool_call_tags) -> bool:
         """Check if tag rewriting is needed (tags are non-standard)"""
         try:
