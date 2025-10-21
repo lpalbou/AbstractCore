@@ -56,6 +56,8 @@ The Model Context Protocol (MCP) is an open standard introduced by Anthropic in 
 - **HTTP**: REST-like endpoints with JSON-RPC
 - **WebSocket**: Real-time bidirectional communication
 
+**Critical Gap Identified**: The proposal assumes MCP tools can be executed locally by AbstractCore, but **MCP tools are executed by MCP servers**, not clients. AbstractCore would send JSON-RPC requests to MCP servers, which execute the tools and return results.
+
 ---
 
 ## AbstractCore Architecture Analysis
@@ -133,7 +135,79 @@ AbstractCore's design patterns align perfectly with MCP concepts:
 4. **Configuration-Driven**: Use existing config system for MCP servers
 5. **Security-First**: Implement proper authentication and sandboxing
 
-### Architecture Overview
+### Deep Dive: "MCP Servers as Models" Concept
+
+**Conceptual Justification:**
+
+In AbstractCore's architecture, the `model` parameter serves as a **resource identifier** rather than just a model name. This pattern is already established:
+
+```python
+# Current AbstractCore patterns
+create_llm("openai", model="gpt-4o")           # Model resource
+create_llm("ollama", model="qwen3-coder:30b")  # Local model resource  
+create_llm("huggingface", model="microsoft/DialoGPT-large")  # HF model resource
+create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # MLX model resource
+
+# MCP extension (proposed)
+create_llm("mcp", model="mcp://filesystem")    # MCP server resource
+create_llm("mcp", model="mcp://github")        # MCP server resource
+create_llm("mcp", model="mcp://localhost:3000") # MCP server resource
+```
+
+**Why This Makes Architectural Sense:**
+
+1. **Consistent Resource Addressing**: AbstractCore already uses the model parameter to identify different types of computational resources:
+   - OpenAI models are API endpoints
+   - Ollama models are local processes
+   - HuggingFace models are downloadable resources
+   - MCP servers are external tool providers
+
+2. **URI-Based Identification**: The `mcp://` prefix follows established URI patterns, similar to how AbstractCore handles different resource types:
+   ```python
+   # Existing patterns in AbstractCore
+   "huggingface/microsoft/DialoGPT-large"  # Namespace/resource
+   "ollama/qwen3-coder:30b"               # Provider/resource:version
+   "mlx-community/Qwen3-4B-4bit"          # Community/resource-variant
+   
+   # MCP extension
+   "mcp://filesystem"                      # Protocol/server-name
+   "mcp://github"                         # Protocol/server-name
+   "mcp://localhost:3000"                 # Protocol/host:port
+   ```
+
+3. **Provider Abstraction Consistency**: Each provider type abstracts different computational resources:
+   - **OpenAI Provider**: Abstracts OpenAI API models
+   - **Ollama Provider**: Abstracts local Ollama models
+   - **MCP Provider**: Abstracts MCP server tools
+
+**Technical Implementation:**
+
+```python
+class MCPProvider(BaseProvider):
+    def __init__(self, model: str, **kwargs):
+        # Parse MCP server identifier from model parameter
+        self.server_uri = self._parse_mcp_uri(model)  # "mcp://filesystem" → server config
+        self.server_config = self._load_server_config(self.server_uri)
+        self.mcp_client = MCPClient(self.server_config)
+        
+        # Initialize with server name as "model"
+        super().__init__(model, **kwargs)
+        
+        # Discover tools from MCP server
+        self.available_tools = self._discover_tools()
+    
+    def _parse_mcp_uri(self, model: str) -> str:
+        """Parse MCP URI: mcp://server-name or mcp://host:port"""
+        if not model.startswith("mcp://"):
+            raise ValueError(f"MCP model must start with 'mcp://', got: {model}")
+        return model[6:]  # Remove "mcp://" prefix
+```
+
+This approach maintains AbstractCore's architectural consistency while extending it naturally to support MCP servers.
+
+### Data Flow and Component Integration
+
+**How MCP Provider Connects to AbstractCore Components:**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -158,6 +232,78 @@ AbstractCore's design patterns align perfectly with MCP concepts:
 │  Configuration System                                       │
 │    └── MCP Server Configuration ← NEW                      │
 └─────────────────────────────────────────────────────────────┘
+```
+
+**Detailed Data Flow:**
+
+```
+1. User Request
+   ↓
+2. create_llm("mcp", model="mcp://filesystem")
+   ↓
+3. Factory → Provider Registry → MCPProvider
+   ↓
+4. MCPProvider.__init__():
+   - Parse "mcp://filesystem" → server_id="filesystem"
+   - Load config from ~/.abstractcore/config/abstractcore.json
+   - Initialize MCPClient with server config
+   - Connect to MCP server (stdio/HTTP/WebSocket)
+   - Discover available tools via JSON-RPC
+   - Convert MCP tools → AbstractCore ToolDefinitions
+   ↓
+5. llm.generate("List files in Documents"):
+   - MCPProvider._generate_internal()
+   - Inject discovered tools into system prompt
+   - Use existing UniversalToolHandler for tool formatting
+   - Call underlying LLM (configured via MCP server config)
+   - Parse response for tool calls
+   - Execute MCP tools via MCPClient
+   - Return unified GenerateResponse
+```
+
+**Key Integration Points:**
+
+1. **Configuration Integration**: MCP server configs stored in existing `~/.abstractcore/config/abstractcore.json`
+2. **Tool System Integration**: MCP tools converted to `ToolDefinition` objects, registered in existing `ToolRegistry`
+3. **Provider Integration**: MCPProvider inherits from `BaseProvider`, gets all existing functionality (streaming, retries, etc.)
+4. **Session Integration**: Works seamlessly with `BasicSession` for conversation management
+5. **Server Integration**: Exposed via existing HTTP server endpoints for external access
+
+**Component Interaction Details:**
+
+```python
+# How MCPProvider integrates with existing components:
+
+class MCPProvider(BaseProvider):
+    def __init__(self, model: str, **kwargs):
+        # 1. Use existing configuration system
+        from ..config import get_config_manager
+        config_manager = get_config_manager()
+        server_config = config_manager.get_mcp_server_config(server_id)
+        
+        # 2. Initialize with BaseProvider (gets all existing functionality)
+        super().__init__(model, **kwargs)
+        
+        # 3. Use existing tool system
+        from ..tools import ToolRegistry, ToolDefinition
+        self.tool_registry = ToolRegistry()
+        
+        # 4. Connect to MCP server and discover tools
+        self.mcp_client = MCPClient(server_config)
+        mcp_tools = self.mcp_client.list_tools()
+        
+        # 5. Convert and register tools using existing patterns
+        for mcp_tool in mcp_tools:
+            tool_def = self._convert_mcp_tool(mcp_tool)
+            self.tool_registry.register(tool_def)
+    
+    def _generate_internal(self, prompt, **kwargs):
+        # 6. Use existing tool injection mechanism
+        tools = list(self.tool_registry.list_tools())
+        
+        # 7. Delegate to underlying LLM (configured in MCP server config)
+        underlying_llm = self._get_underlying_llm()
+        return underlying_llm.generate(prompt, tools=tools, **kwargs)
 ```
 
 ### Implementation Strategy
@@ -215,20 +361,37 @@ class MCPClient:
 class MCPToolBridge:
     """Converts MCP tools to AbstractCore ToolDefinitions."""
     
-    @staticmethod
-    def convert_mcp_tool(mcp_tool: MCPTool) -> ToolDefinition:
+    def __init__(self, mcp_client: MCPClient):
+        self.mcp_client = mcp_client
+    
+    def convert_mcp_tool(self, mcp_tool: MCPTool) -> ToolDefinition:
         """Convert MCP tool schema to AbstractCore ToolDefinition."""
         return ToolDefinition(
             name=mcp_tool.name,
             description=mcp_tool.description,
             parameters=mcp_tool.inputSchema,
-            function=lambda **kwargs: MCPToolBridge._execute_mcp_tool(
-                mcp_tool, kwargs
+            function=lambda **kwargs: self._execute_via_mcp_server(
+                mcp_tool.name, kwargs
             )
         )
+    
+    async def _execute_via_mcp_server(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+        """Execute tool via MCP server JSON-RPC call."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": tool_name,
+                "arguments": arguments
+            },
+            "id": self._generate_id()
+        }
+        
+        response = await self.mcp_client.transport.call(request)
+        return response.get("result", "")
 ```
 
-**Justification**: Bridge pattern isolates MCP-specific logic while leveraging AbstractCore's existing tool system. This ensures MCP tools work identically to native tools.
+**Justification**: **Corrected Architecture** - MCP tools are executed by MCP servers via JSON-RPC, not locally by AbstractCore. The bridge pattern now correctly delegates execution to the MCP server while maintaining AbstractCore's tool interface.
 
 #### Phase 2: Configuration Integration (Week 2)
 
@@ -256,16 +419,29 @@ class MCPServerConfig:
       "filesystem": {
         "transport": "stdio",
         "command": ["python", "-m", "mcp_filesystem_server"],
-        "timeout": 30
+        "timeout": 30,
+        "underlying_llm": {
+          "provider": "openai",
+          "model": "gpt-4o-mini"
+        }
       },
       "github": {
         "transport": "http", 
         "url": "http://localhost:3001/mcp",
-        "auth": {"type": "bearer", "token": "..."}
+        "auth": {"type": "bearer", "token": "..."},
+        "underlying_llm": {
+          "provider": "anthropic",
+          "model": "claude-3-5-haiku-latest"
+        }
       }
     },
     "default_timeout": 30,
-    "auto_discover": true
+    "auto_discover": true,
+    "security": {
+      "sandbox_enabled": true,
+      "allowed_servers": ["filesystem", "github"],
+      "max_tool_execution_time": 60
+    }
   }
 }
 ```
@@ -355,6 +531,25 @@ session = BasicSession(
 )
 ```
 
+**Hybrid Architecture (Advanced):**
+```python
+# MCP Provider can delegate to any underlying LLM
+mcp_config = {
+    "filesystem": {
+        "transport": "stdio",
+        "command": ["python", "-m", "mcp_filesystem"],
+        "underlying_llm": {
+            "provider": "openai",
+            "model": "gpt-4o-mini"
+        }
+    }
+}
+
+# This creates an OpenAI LLM with filesystem MCP tools
+llm = create_llm("mcp", model="mcp://filesystem")
+# Internally: OpenAI LLM + MCP filesystem tools
+```
+
 ---
 
 ## Security Considerations
@@ -442,17 +637,160 @@ class MCPValidator:
 
 **Total Estimate: 2-3 weeks**
 
+### Critical Analysis: Streaming Tools Architecture
+
+**Current State Analysis:**
+
+AbstractCore's current streaming architecture reveals important insights about tool execution:
+
+```python
+# Current streaming tool execution pattern (from codebase analysis):
+class UnifiedStreamProcessor:
+    def __init__(self, model_name: str, execute_tools: bool = False):
+        # Note: execute_tools parameter is kept for backward compatibility but ignored
+        # Tool execution is now handled by the client (CLI)
+        self.execute_tools = execute_tools  # Currently ignored!
+```
+
+**Key Finding**: AbstractCore currently does **NOT** stream tool responses. The streaming system:
+
+1. **Streams LLM responses** in real-time
+2. **Detects tool calls** incrementally during streaming
+3. **Executes tools** only after streaming completes
+4. **Appends tool results** as final chunks
+
+**Current Tool Execution Flow:**
+```
+LLM Response Stream → Tool Call Detection → Stream Completion → Tool Execution → Tool Results Appended
+```
+
+**Strategic Decision: Address Streaming Tools Globally First**
+
+**Recommendation**: Implement streaming tool execution for **all tools** before MCP integration, for these reasons:
+
+1. **Architectural Consistency**: MCP tools should behave identically to native tools
+2. **User Experience**: Real-time tool feedback is valuable for all tool types
+3. **Implementation Efficiency**: Solving streaming once benefits all providers
+4. **Testing Simplification**: Easier to test streaming with existing tools first
+
+**Proposed Streaming Tools Architecture:**
+
+```python
+# Enhanced streaming architecture (applies to all tools)
+class StreamingToolExecutor:
+    """Execute tools with real-time streaming of results."""
+    
+    async def execute_tool_streaming(self, tool_call: ToolCall) -> AsyncIterator[ToolResult]:
+        """Execute tool with streaming results."""
+        tool_function = self.get_tool_function(tool_call.name)
+        
+        if self._supports_streaming(tool_function):
+            # Tool supports native streaming
+            async for partial_result in tool_function.stream(**tool_call.arguments):
+                yield ToolResult(
+                    name=tool_call.name,
+                    content=partial_result,
+                    partial=True
+                )
+        else:
+            # Tool doesn't support streaming - execute and yield complete result
+            result = await tool_function(**tool_call.arguments)
+            yield ToolResult(
+                name=tool_call.name,
+                content=result,
+                partial=False
+            )
+
+# Enhanced UnifiedStreamProcessor
+class UnifiedStreamProcessor:
+    def process_stream(self, response_stream, tools):
+        for chunk in response_stream:
+            # Stream LLM content
+            yield chunk
+            
+            # If tool calls detected, execute with streaming
+            if chunk.tool_calls:
+                for tool_call in chunk.tool_calls:
+                    async for tool_result in self.tool_executor.execute_tool_streaming(tool_call):
+                        yield GenerateResponse(
+                            content=f"\n[{tool_result.name}]: {tool_result.content}",
+                            tool_calls=None,
+                            partial=tool_result.partial
+                        )
+```
+
+**Benefits of Global Streaming Tools:**
+
+1. **Immediate Value**: All existing tools get streaming capability
+2. **MCP Compatibility**: MCP tools inherit streaming automatically
+3. **Consistent UX**: All tool types behave identically
+4. **Progressive Enhancement**: Can be implemented incrementally
+
+**Implementation Priority:**
+
+```
+Phase 0: Global Streaming Tools (1 week)
+├── Enhance UnifiedStreamProcessor
+├── Add StreamingToolExecutor
+├── Update all providers to use streaming tools
+└── Test with existing tools (file operations, web requests, etc.)
+
+Phase 1: MCP Core Implementation (1 week)
+├── MCPProvider with streaming tool support
+├── MCP Client with JSON-RPC streaming
+└── Tool bridge with streaming compatibility
+
+Phase 2-3: MCP Advanced Features (1 week)
+├── Configuration and security
+└── HTTP server integration
+```
+
+**MCP-Specific Streaming Considerations:**
+
+```python
+# MCP tools will support streaming via JSON-RPC
+class MCPClient:
+    async def execute_tool_streaming(self, tool_call: ToolCall) -> AsyncIterator[str]:
+        """Execute MCP tool with streaming results."""
+        request = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": tool_call.name,
+                "arguments": tool_call.arguments
+            },
+            "id": self._generate_id()
+        }
+        
+        # Send request and stream response
+        async for chunk in self.transport.call_streaming(request):
+            if chunk.get("result"):
+                yield chunk["result"]
+```
+
+This approach ensures MCP tools integrate seamlessly with a robust, universal streaming architecture.
+
 ### Risk Mitigation
 
 **Technical Risks:**
 - **MCP Protocol Changes**: Use official libraries where possible
 - **Performance Impact**: Implement connection pooling and caching
 - **Security Vulnerabilities**: Comprehensive security review and testing
+- **Network Latency**: MCP server communication adds network overhead
+- **Server Availability**: MCP servers may be unavailable or crash
 
 **Integration Risks:**
 - **Breaking Changes**: Maintain backward compatibility
 - **Configuration Complexity**: Provide sensible defaults and validation
 - **Tool Conflicts**: Implement namespace management
+- **Async/Sync Mismatch**: MCP is async but AbstractCore tools are currently sync
+
+**Missing Considerations Identified:**
+1. **MCP Resources**: The proposal focuses on tools but MCP also provides resources (structured data)
+2. **MCP Prompts**: MCP servers can provide prompt templates that should be integrated
+3. **Connection Management**: Need robust connection pooling and reconnection logic
+4. **Error Handling**: MCP-specific error codes and recovery strategies
+5. **Performance Monitoring**: Track MCP server response times and availability
 
 ---
 
@@ -578,7 +916,13 @@ The proposed MCP integration represents a strategic enhancement to AbstractCore 
 
 The phased implementation approach minimizes risk while delivering incremental value. The security-first design addresses MCP's known vulnerabilities, ensuring enterprise-ready deployment.
 
-**Recommendation**: Proceed with implementation using the proposed provider-based approach, prioritizing security and maintaining AbstractCore's design principles of simplicity and universality.
+**Recommendation**: Proceed with implementation using the proposed provider-based approach, with the following refined strategy:
+
+1. **Phase 0**: Implement global streaming tools architecture (1 week)
+2. **Phase 1**: Implement MCP Provider with streaming support (1 week)  
+3. **Phase 2**: Add configuration, security, and HTTP integration (1 week)
+
+This approach ensures MCP tools integrate seamlessly with a robust, universal streaming architecture while maintaining AbstractCore's design principles of simplicity and universality.
 
 ---
 
@@ -589,6 +933,26 @@ The phased implementation approach minimizes risk while delivering incremental v
 3. **Security Review**: Conduct threat modeling and security design
 4. **Implementation Plan**: Create detailed implementation timeline
 5. **Community Feedback**: Gather input from AbstractCore community
+
+## Critical Corrections and Additions Needed
+
+**Architecture Corrections:**
+1. **Tool Execution**: MCP tools are executed by MCP servers, not locally by AbstractCore
+2. **Async Integration**: Need to address async/sync mismatch between MCP and AbstractCore
+3. **Resource Support**: Add support for MCP resources (structured data), not just tools
+4. **Prompt Templates**: Integrate MCP-provided prompt templates
+
+**Security Enhancements:**
+1. **Connection Security**: Add TLS/SSL for HTTP transport
+2. **Input Validation**: Validate all JSON-RPC requests/responses
+3. **Rate Limiting**: Implement rate limiting for MCP server calls
+4. **Audit Logging**: Log all MCP interactions for security monitoring
+
+**Performance Considerations:**
+1. **Connection Pooling**: Reuse connections to MCP servers
+2. **Caching**: Cache MCP tool/resource discovery results
+3. **Timeout Management**: Implement progressive timeouts
+4. **Health Monitoring**: Monitor MCP server availability and performance
 
 ---
 
