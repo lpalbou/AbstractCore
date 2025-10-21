@@ -111,7 +111,8 @@ Configuration is stored in: `~/.abstractcore/config/abstractcore.json`
 
 ```bash
 # Check current configuration status
-abstractcore --status
+abstractcore --status                         # Configuration CLI
+abstractcore-config --status                  # Same thing (alias for clarity)
 
 # Set global fallback model (used when no app-specific default is configured)
 abstractcore --set-global-default ollama/llama3:8b
@@ -133,6 +134,25 @@ abstractcore --enable-file-logging            # Save logs to files
 # Interactive setup
 abstractcore --configure
 ```
+
+### Interactive Chat CLI
+
+For interactive REPL sessions with LLMs (different from configuration CLI):
+
+```bash
+# Start interactive REPL for chatting with LLMs
+abstractcore-chat                                    # New convenient entry point (v2.4.5+)
+abstractcore-chat --provider ollama --model llama2
+abstractcore-chat --stream
+
+# Alternative (backwards compatible)
+python -m abstractcore.utils.cli --provider openai --model gpt-4o
+python -m abstractcore.utils.cli --prompt "What is Python?"
+```
+
+**Note**: AbstractCore has two separate CLI tools:
+- **Configuration CLI** (`abstractcore` or `abstractcore-config`): Manage settings, API keys, models
+- **Interactive Chat CLI** (`abstractcore-chat`): REPL for conversing with LLMs
 
 ### Configuration Priority System
 
