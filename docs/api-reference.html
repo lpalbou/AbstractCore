@@ -104,6 +104,7 @@
                                 <li><code>api_key</code> (str): API key for cloud providers</li>
                                 <li><code>base_url</code> (str): Custom endpoint URL</li>
                                 <li><code>temperature</code> (float): Sampling temperature (0-2)</li>
+                                <li><code>seed</code> (int): Random seed for deterministic generation (supported by most providers)</li>
                                 <li><code>max_tokens</code> (int): Context window (input + output) - unified across providers</li>
                                 <li><code>max_output_tokens</code> (int): Maximum output tokens - unified parameter</li>
                                 <li><code>max_input_tokens</code> (int): Maximum input tokens (auto-calculated if not set)</li>
@@ -122,11 +123,12 @@
 # Basic usage
 llm = create_llm("openai", model="gpt-4o-mini")
 
-# With unified token management
+# With unified token management and deterministic generation
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     temperature=0.7,
+    seed=42,                    # For deterministic outputs (issues warning on Anthropic)
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000,     # Maximum input tokens (auto-calculated if not set)
@@ -246,7 +248,13 @@ class GenerateResponse:
     finish_reason: Optional[str]   # Why generation stopped
     usage: Optional[Dict[str, int]] # Token usage information
     tool_calls: Optional[List[Dict]] # Tools called by the LLM
-    metadata: Optional[Dict]       # Additional metadata</code></pre>
+    metadata: Optional[Dict]       # Additional metadata
+    
+    # NEW in v2.4.7: Consistent token access across ALL providers
+    input_tokens: int              # Input tokens (always available)
+    output_tokens: int             # Output tokens (always available)
+    total_tokens: int              # Total tokens (always available)
+    gen_time: float                # Generation time in ms (always available)</code></pre>
                         </div>
 
                         <h4>Attributes</h4>
@@ -256,9 +264,29 @@ class GenerateResponse:
                                 <li><code>raw_response</code> (Any): Raw provider response</li>
                                 <li><code>model</code> (str): Model used for generation</li>
                                 <li><code>finish_reason</code> (str): Why generation stopped ("stop", "length", "tool_calls")</li>
-                                <li><code>usage</code> (Dict): Token usage information</li>
+                                <li><code>usage</code> (Dict): Token usage information (provider-specific format)</li>
                                 <li><code>tool_calls</code> (List[Dict]): Tools called by the LLM</li>
                                 <li><code>metadata</code> (Dict): Additional metadata</li>
+                                <li><strong>NEW v2.4.7:</strong> <code>input_tokens</code> (int): Input tokens (consistent across all providers)</li>
+                                <li><strong>NEW v2.4.7:</strong> <code>output_tokens</code> (int): Output tokens (consistent across all providers)</li>
+                                <li><strong>NEW v2.4.7:</strong> <code>total_tokens</code> (int): Total tokens (consistent across all providers)</li>
+                                <li><strong>NEW v2.4.7:</strong> <code>gen_time</code> (float): Generation time in milliseconds (consistent across all providers)</li>
+                            </ul>
+                        </div>
+
+                        <h4>Token Count Sources (NEW in v2.4.7)</h4>
+                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1rem 0;">
+                            <ul style="margin: 0;">
+                                <li><strong>Provider APIs:</strong> OpenAI, Anthropic, LMStudio (native API token counts)</li>
+                                <li><strong>AbstractCore Calculation:</strong> MLX, HuggingFace, Mock (using token_utils.py)</li>
+                                <li><strong>Mixed Sources:</strong> Ollama (combination of provider and calculated tokens)</li>
+                            </ul>
+                        </div>
+
+                        <h4>Methods</h4>
+                        <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
+                            <ul style="margin: 0;">
+                                <li><code>get_summary()</code> (str): Returns comprehensive summary with timing: "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"</li>
                             </ul>
                         </div>
                     </div>
@@ -417,7 +445,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -425,7 +453,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+estimated = estimate_tokens(text, model="claude-haiku-4-5")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings

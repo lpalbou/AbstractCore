@@ -107,6 +107,7 @@
                         <a href="#quick-start" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Quick Start</a>
                         <a href="#tool-decorator" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">The @tool Decorator</a>
                         <a href="#universal-support" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Universal Tool Support</a>
+                        <a href="#built-in-tools" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Built-in Tools</a>
                         <a href="#tool-definition" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Tool Definition</a>
                     </div>
                     <div>
@@ -156,6 +157,64 @@ response = llm.generate(
 
 print(response.content)
 # Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.</code></pre>
+                    </div>
+                </section>
+
+                <section id="built-in-tools">
+                    <h2>Built-in Tools</h2>
+                    <p>AbstractCore includes a comprehensive set of ready-to-use tools in <code>abstractcore.tools.common_tools</code>:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore.tools.common_tools import fetch_url, search_files, read_file, list_files
+
+# Intelligent web content fetching with automatic parsing
+result = fetch_url("https://api.github.com/repos/python/cpython")
+# Automatically detects JSON, HTML, images, PDFs, etc. and provides structured analysis
+
+# File system operations
+files = search_files("def.*fetch", ".", file_pattern="*.py")  # Find function definitions
+content = read_file("config.json")  # Read file contents
+directory_listing = list_files(".", pattern="*.py", recursive=True)
+
+# Use with any LLM
+llm = create_llm("anthropic", model="claude-haiku-4-5")
+response = llm.generate(
+    "Analyze this API response and summarize the key information",
+    tools=[fetch_url]
+)</code></pre>
+                    </div>
+
+                    <h3>Available Built-in Tools</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
+                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">🌐 Web & Network</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li><code>fetch_url</code> - Intelligent web content fetching with automatic content type detection and parsing</li>
+                                <li><code>web_search</code> - Search the web using DuckDuckGo</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">📁 File Operations</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li><code>search_files</code> - Search for text patterns inside files using regex</li>
+                                <li><code>list_files</code> - Find and list files by names/paths using glob patterns</li>
+                                <li><code>read_file</code> - Read file contents with optional line range selection</li>
+                                <li><code>write_file</code> - Write content to files with directory creation</li>
+                                <li><code>edit_file</code> - Edit files using pattern matching and replacement</li>
+                            </ul>
+                        </div>
+                        
+                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">⚙️ System Operations</h4>
+                            <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li><code>execute_command</code> - Execute shell commands safely with security controls</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
+                        <p style="margin: 0; color: #1e40af;"><strong>Note:</strong> Built-in tools include error handling, security controls, and work with all providers and tool syntax rewriting.</p>
                     </div>
                 </section>
 

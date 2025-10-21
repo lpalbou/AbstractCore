@@ -65,19 +65,20 @@
                         Switch between providers with identical code. Perfect for development vs production environments.
                     </p>
                     <div class="example-code">
-                        <pre><code class="language-python"># Development (free, local)
-llm_dev = create_llm("ollama", model="qwen3:4b")
+                        <pre><code class="language-python"># Development (free, local) with deterministic outputs
+llm_dev = create_llm("ollama", model="qwen3:4b", seed=42, temperature=0.0)
 
-# Production (high quality, cloud)
-llm_prod = create_llm("openai", model="gpt-4o-mini")
+# Production (high quality, cloud) with same seed
+llm_prod = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
 
-# Same interface, different capabilities
+# Same interface, deterministic results
 def ask_question(llm, question):
     return llm.generate(question)
 
-# Works with any provider
+# Reproducible outputs across providers
 dev_answer = ask_question(llm_dev, "What is Python?")
-prod_answer = ask_question(llm_prod, "What is Python?")</code></pre>
+prod_answer = ask_question(llm_prod, "What is Python?")
+# Both will give consistent, reproducible answers</code></pre>
                     </div>
                 </div>
 
@@ -163,7 +164,7 @@ def get_weather(city: str) -> str:
     return f"Weather in {city}: 72°F, sunny"
 
 # Create LLM with tools
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 # Complex multi-tool request
 response = llm.generate(
@@ -439,7 +440,7 @@ print(response.content)</code></pre>
 import json
 
 def create_tutoring_session():
-    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
     
     # Create session with system prompt
     session = BasicSession(
@@ -597,6 +598,46 @@ python -m abstractcore.utils.cli --prompt "Verify @chart.png matches @data.xlsx 
                         <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API</p>
                     </a>
                 </div>
+
+                <!-- Built-in Tools Example -->
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Built-in Tools</h3>
+                        <span class="example-badge">New</span>
+                    </div>
+                    <p class="example-description">
+                        Use AbstractCore's comprehensive built-in tools for web scraping, file operations, and system tasks.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.tools.common_tools import fetch_url, search_files, read_file
+
+# Use built-in tools with any provider
+llm = create_llm("anthropic", model="claude-haiku-4-5")
+
+# Web content analysis
+response = llm.generate(
+    "Analyze this API and summarize the key endpoints",
+    tools=[fetch_url]
+)
+
+# File system operations
+response = llm.generate(
+    "Find all Python functions in this project and list their purposes",
+    tools=[search_files, read_file]
+)
+
+# Built-in tools include:
+# - fetch_url: Intelligent web content fetching
+# - search_files: Regex search in files  
+# - read_file: Read file contents
+# - write_file: Write to files
+# - edit_file: Pattern-based file editing
+# - web_search: DuckDuckGo search
+# - execute_command: Safe shell execution</code></pre>
+                    </div>
+                </div>
+
             </div>
         </div>
     </main>
