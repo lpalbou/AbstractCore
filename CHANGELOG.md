@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Enhanced fetch_url Tool Performance
+- **Optimized HTML Parsing**: Added lxml parser support for 2-3x faster HTML processing (with html.parser fallback)
+- **Session-Based Connection Reuse**: Improved network performance through connection pooling
+- **Enhanced Encoding Detection**: Multiple encoding fallback strategies for better text decoding reliability
+- **Improved Content Extraction**: Better main content detection, removes navigation/footer/sidebar elements
+- **Smart Download Chunking**: Optimized chunk sizes based on content type (32KB for binary, 16KB for text)
+- **Better JSON Formatting**: Smart truncation at logical boundaries for improved readability
+
 #### Universal SEED and Temperature Control
 - **Unified Parameter Support**: Added comprehensive `seed` and `temperature` parameter support across all 6 providers
   - **Provider-Level**: All providers now accept `seed` and `temperature` parameters in constructor and generate() calls
