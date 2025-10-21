@@ -66,7 +66,7 @@
                     </p>
                     <div class="example-code">
                         <pre><code class="language-python"># Development (free, local) with deterministic outputs
-llm_dev = create_llm("ollama", model="qwen3:4b", seed=42, temperature=0.0)
+llm_dev = create_llm("ollama", model="llama3.2:3b", seed=42, temperature=0.0)
 
 # Production (high quality, cloud) with same seed
 llm_prod = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
@@ -164,7 +164,7 @@ def get_weather(city: str) -> str:
     return f"Weather in {city}: 72°F, sunny"
 
 # Create LLM with tools
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 
 # Complex multi-tool request
 response = llm.generate(
@@ -440,7 +440,7 @@ print(response.content)</code></pre>
 import json
 
 def create_tutoring_session():
-    llm = create_llm("anthropic", model="claude-haiku-4-5")
+    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
     
     # Create session with system prompt
     session = BasicSession(
@@ -613,7 +613,7 @@ python -m abstractcore.utils.cli --prompt "Verify @chart.png matches @data.xlsx 
 from abstractcore.tools.common_tools import fetch_url, search_files, read_file
 
 # Use built-in tools with any provider
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 
 # Web content analysis
 response = llm.generate(

@@ -99,7 +99,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="anthropic/claude-haiku-4-5",
+    model="anthropic/claude-3-5-haiku-latest",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)</code></pre>
@@ -184,7 +184,7 @@ uvicorn abstractcore.server.app:app --port 3000</code></pre>
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 
 stream = client.chat.completions.create(
-    model="ollama/qwen3-coder:30b",
+    model="ollama/llama3.2:3b",
     messages=[{"role": "user", "content": "Write a story"}],
     stream=True
 )
@@ -344,7 +344,7 @@ response = client.chat.completions.create(
 
 # Multiple files
 response = client.chat.completions.create(
-    model="ollama/qwen3-coder:30b",
+    model="ollama/llama3.2:3b",
     messages=[{"role": "user", "content": "Compare @file1.pdf, @file2.pdf, and @data.csv"}]
 )</code></pre>
                                                 </div>
@@ -416,7 +416,7 @@ curl http://localhost:8000/v1/models?provider=ollama</code></pre>
                                                                             <div class="code-block">
                                                                                 <pre><code class="language-bash">curl http://localhost:8000/providers
 # Returns: Complete provider metadata including:
-# - Model counts (137+ models on our test instance - it will vary on yours depending of the providers and models you install)
+# - Model counts (130+ models on our test instance - it will vary on yours depending of the providers and models you install)
 # - Supported features (tools, streaming, etc.)
 # - Authentication requirements
 # - Local vs cloud provider status</code></pre>
@@ -460,7 +460,7 @@ export OPENAI_API_KEY="unused"
 export ABSTRACTCORE_TOOL_FORMAT="qwen3"  # <|tool_call|>...JSON...</|tool_call|>
 
 # Use with any model
-codex --model "ollama/qwen3-coder:30b" "Write a factorial function"</code></pre>
+codex --model "ollama/llama3.2:3b" "Write a factorial function"</code></pre>
 
                                 <div
                                     style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
@@ -476,7 +476,7 @@ export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
 # Use
-crush --model "anthropic/claude-haiku-4-5" "Explain this code"</code></pre>
+crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"</code></pre>
 
                                         <div
                                             style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
@@ -492,7 +492,7 @@ export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
 # Use
-gemini-cli --model "ollama/qwen3-coder:30b" "Review this project"</code></pre>
+gemini-cli --model "ollama/llama3.2:3b" "Review this project"</code></pre>
 
                                                 <div
                                                     style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -588,7 +588,7 @@ cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
   awk '{sum+=$1} END {print "Total:", sum}'
 
 # Monitor specific model
-grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl</code></pre>
+grep '"model": "llama3.2:3b"' logs/verbatim_*.jsonl</code></pre>
 
                                     <div
                                         style="background: var(--info-bg); border: 2px solid var(--info-text); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -614,9 +614,9 @@ grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl</code></pre>
                             <pre><code class="language-python">import requests
 
 providers = [
-    "ollama/qwen3-coder:30b",
+    "ollama/llama3.2:3b",
     "openai/gpt-4o-mini",
-    "anthropic/claude-haiku-4-5"
+    "anthropic/claude-3-5-haiku-latest"
 ]
 
 def generate_with_fallback(prompt):
@@ -639,13 +639,13 @@ def generate_with_fallback(prompt):
                                 <div class="code-block">
                                     <pre><code class="language-bash"># Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3-coder:30b
+ollama pull llama3.2:3b
 
 # Use via AbstractCore server
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "ollama/qwen3-coder:30b",
+    "model": "ollama/llama3.2:3b",
     "messages": [{"role": "user", "content": "Write a Python function"}]
   }'</code></pre>
                 </section>

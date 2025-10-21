@@ -60,14 +60,14 @@
                 
                 <div class="code-block">
                     <pre><code class="language-bash"># Start the internal CLI
-python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
+python -m abstractcore.utils.cli --provider ollama --model llama3.2:3b
 
 # Or with any provider
 python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini
-python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
+python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest
 
 # With streaming enabled
-python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream</code></pre>
+python -m abstractcore.utils.cli --provider ollama --model llama3.2:3b --stream</code></pre>
                 
                 <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <p style="margin: 0; color: var(--info-text);"><strong>💡 Note:</strong> Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)? See the <a href="server.html" style="color: var(--info-text); text-decoration: underline; font-weight: 600;">Server Documentation</a> for complete setup guides.</p>
@@ -161,7 +161,7 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</co
                 <!-- Compact Command -->
                 <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">🗜️ /compact - Chat History Compaction</h3>
-                    <p>Compacts your chat history using the fast local <code>gemma3:1b</code> model to create a summary while preserving recent exchanges.</p>
+                    <p>Compacts your chat history using the fast local <code>llama3.2:3b</code> model to create a summary while preserving recent exchanges.</p>
                     
                     <div class="code-block">
                         <pre><code class="language-bash"># In the CLI
@@ -170,7 +170,7 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</co
 # Output example:
 🗜️  Compacting chat history...
    Before: 15 messages (~450 tokens)
-   Using gemma3:1b for compaction...
+   Using llama3.2:3b for compaction...
 ✅ Compaction completed in 3.2s
    After: 5 messages (~280 tokens)
    Structure:
@@ -306,7 +306,7 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</co
                     
                     <div class="code-block">
                         <pre><code class="language-bash"># Start CLI with a model that supports auto-compaction
-python -m abstractcore.utils.cli --provider ollama --model gemma3:1b
+python -m abstractcore.utils.cli --provider ollama --model llama3.2:3b
 
 # Have a long conversation...
 👤 You: What is Python?
@@ -375,9 +375,9 @@ python -m abstractcore.utils.cli --provider ollama --model gemma3:1b
                 
                 <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <ul>
-                        <li><strong>Compaction Model:</strong> Uses <code>gemma3:1b</code> for fast, local processing</li>
+                        <li><strong>Compaction Model:</strong> Uses <code>llama3.2:3b</code> for fast, local processing</li>
                         <li><strong>Preservation:</strong> Keeps last 6 messages (3 exchanges) by default</li>
-                        <li><strong>Fallback:</strong> If <code>gemma3:1b</code> unavailable, uses current provider</li>
+                        <li><strong>Fallback:</strong> If <code>llama3.2:3b</code> unavailable, uses current provider</li>
                         <li><strong>Token Estimation:</strong> Provides rough token count estimates</li>
                         <li><strong>Message Types:</strong> Distinguishes between system, user, and assistant messages</li>
                         <li><strong>Error Handling:</strong> Gracefully handles various scenarios with helpful messages</li>

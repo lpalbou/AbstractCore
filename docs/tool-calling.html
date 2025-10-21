@@ -177,7 +177,7 @@ content = read_file("config.json")  # Read file contents
 directory_listing = list_files(".", pattern="*.py", recursive=True)
 
 # Use with any LLM
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 response = llm.generate(
     "Analyze this API response and summarize the key information",
     tools=[fetch_url]
@@ -431,7 +431,7 @@ response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                             <div class="code-block">
                                 <pre><code class="language-python"># Ollama without native tool support
 # AbstractCore handles this automatically
-llm = create_llm("ollama", model="qwen3-coder:30b")
+llm = create_llm("ollama", model="llama3.2:3b")
 response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                             </div>
                         </div>
