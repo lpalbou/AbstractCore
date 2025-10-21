@@ -92,7 +92,7 @@ pip install abstractcore[all]
 from abstractcore import create_llm
 
 # Factory pattern creates appropriate provider
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
@@ -140,7 +140,7 @@ abstractcore --set-global-default ollama/llama3:8b
 # Set app-specific defaults for optimal performance
 abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
-abstractcore --set-app-default judge anthropic claude-3-5-haiku
+abstractcore --set-app-default judge anthropic claude-haiku-4-5
 
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
@@ -202,7 +202,7 @@ response = llm.generate(
 
 # Cross-provider consistency - same code works everywhere
 openai_response = create_llm("openai", model="gpt-4o").generate("Analyze", media=["chart.png"])
-anthropic_response = create_llm("anthropic", model="claude-3-5-sonnet").generate("Analyze", media=["chart.png"])
+anthropic_response = create_llm("anthropic", model="claude-sonnet-4-5").generate("Analyze", media=["chart.png"])
 ollama_response = create_llm("ollama", model="qwen2.5vl:7b").generate("Analyze", media=["chart.png"])
 
 # Vision fallback for text-only models (one-time setup)
@@ -286,7 +286,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000,     # Maximum input tokens (auto-calculated if not set)
@@ -296,7 +296,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+estimated = estimate_tokens(text, model="claude-haiku-4-5")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings - ALL providers track input + output separately
@@ -542,7 +542,7 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 | Provider | Features | SEED Support | Default Model |
 |----------|----------|-------------|---------------|
 | **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o), media processing | ✅ Native | gpt-5-nano-2025-08-07 |
-| **Anthropic** | Native tools, streaming, structured output, vision (Claude 3.5), media processing | ⚠️ Warning* | claude-3-5-haiku-latest |
+| **Anthropic** | Native tools, streaming, structured output, vision (Claude 4.5), media processing | ⚠️ Warning* | claude-haiku-4-5 |
 | **Ollama** | Prompted tools, streaming, local models, vision (qwen2.5vl:7b), media processing | ✅ Native | qwen3-coder:30b |
 | **LMStudio** | Prompted tools, streaming, local models, vision (qwen2.5-vl), media processing | ✅ Native | llama-3.2-8b-instruct |
 | **MLX** | Prompted tools, streaming, Apple Silicon, vision models, media processing | ✅ Native | qwen3-air-4bit |

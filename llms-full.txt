@@ -47,7 +47,7 @@ AbstractCore is a comprehensive Python library providing a unified interface to 
 | Provider | Features | SEED Support |
 |----------|----------|-------------|
 | **OpenAI** | Native tool calls, streaming, structured output, vision (GPT-4o), media processing | ✅ Native |
-| **Anthropic** | Native tool calls, streaming, structured output, vision (Claude 3.5), media processing | ⚠️ Warning* |
+| **Anthropic** | Native tool calls, streaming, structured output, vision (Claude 4.5), media processing | ⚠️ Warning* |
 | **Ollama** | Prompted tool calls, streaming, local models, vision (qwen2.5vl:7b), media processing | ✅ Native |
 | **LMStudio** | Prompted tool calls, streaming, local models, vision (qwen2.5-vl), media processing | ✅ Native |
 | **MLX** | Prompted tool calls, streaming, Apple Silicon, vision models, media processing | ✅ Native |
@@ -122,7 +122,7 @@ abstractcore --set-global-default ollama/llama3:8b
 # Set app-specific defaults for optimal performance
 abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
-abstractcore --set-app-default judge anthropic claude-3-5-haiku
+abstractcore --set-app-default judge anthropic claude-haiku-4-5
 abstractcore --set-app-default cli huggingface unsloth/Qwen3-4B-Instruct-2507-GGUF
 
 # Set API keys
@@ -185,9 +185,9 @@ Set default providers and models for specific AbstractCore applications:
 ```bash
 # Set defaults for individual apps
 abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli anthropic claude-3-5-haiku
+abstractcore --set-app-default cli anthropic claude-haiku-4-5
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
-abstractcore --set-app-default judge anthropic claude-3-5-haiku
+abstractcore --set-app-default judge anthropic claude-haiku-4-5
 
 # View current app defaults
 abstractcore --status
@@ -307,7 +307,7 @@ abstractcore --set-app-default summarizer openai gpt-4o-mini  # Optimize for qua
 # Use different providers for different applications
 abstractcore --set-app-default cli ollama qwen3:4b           # Fast for development
 abstractcore --set-app-default summarizer openai gpt-4o-mini # Quality for documents
-abstractcore --set-app-default judge anthropic claude-3-5-haiku # Detailed analysis
+abstractcore --set-app-default judge anthropic claude-haiku-4-5 # Detailed analysis
 ```
 
 For complete configuration reference, see: [Centralized Configuration Guide](docs/centralized-config.md)
@@ -340,7 +340,7 @@ response = llm.generate(
 )
 
 # Same code works with any provider
-llm = create_llm("anthropic", model="claude-3.5-sonnet")
+llm = create_llm("anthropic", model="claude-sonnet-4-5")
 response = llm.generate(
     "Analyze these materials",
     media=["chart.png", "data.csv", "presentation.pptx"]
@@ -367,7 +367,7 @@ print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding
 # ✅ MLX (Qwen3-4B): Same seed → Identical outputs
 # ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
 # ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
-# ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (issues warning for seed)
+# ⚠️ Anthropic (claude-haiku-4-5): temperature=0 → Consistent outputs (issues warning for seed)
 ```
 
 ### CLI Integration
@@ -661,7 +661,7 @@ from abstractcore import create_llm
 llm = create_llm("openai", model="gpt-4o-mini")
 
 # Anthropic (requires ANTHROPIC_API_KEY)
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 # Ollama (local - ensure Ollama is running)
 llm = create_llm("ollama", model="qwen3-coder:30b")
@@ -743,7 +743,7 @@ dev_llm = create_llm("ollama", model="qwen3:4b")
 prod_llm = create_llm("openai", model="gpt-4o-mini", api_key="your-key")
 
 # Cost-sensitive applications (smaller models)
-cost_llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+cost_llm = create_llm("anthropic", model="claude-haiku-4-5")
 ```
 
 ---
@@ -831,7 +831,7 @@ Every response includes detailed token usage information:
 ```python
 from abstractcore import create_llm
 
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate("Explain quantum computing in simple terms")
 
 # All providers return consistent token usage
@@ -850,7 +850,7 @@ from abstractcore.utils.token_utils import TokenUtils
 
 # Estimate tokens before making request
 text = "Your input text here..."
-estimated = TokenUtils.estimate_tokens(text, model="claude-3-5-haiku-latest")
+estimated = TokenUtils.estimate_tokens(text, model="claude-haiku-4-5")
 print(f"Estimated tokens: {estimated}")
 
 # Content-type aware estimation
@@ -859,7 +859,7 @@ code_tokens = TokenUtils.estimate_tokens(code_text, model="gpt-4o")
 # Automatically detects code and applies appropriate density factor
 
 json_text = '{"key": "value", "array": [1, 2, 3]}'
-json_tokens = TokenUtils.estimate_tokens(json_text, model="claude-3-5-haiku")
+json_tokens = TokenUtils.estimate_tokens(json_text, model="claude-haiku-4-5")
 # Automatically detects JSON and accounts for structural tokens
 ```
 
@@ -1050,7 +1050,7 @@ content = read_file("config.json")  # Read file contents
 directory_listing = list_files(".", pattern="*.py", recursive=True)
 
 # Use with any LLM
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate(
     "Analyze this API response and summarize the key information",
     tools=[fetch_url]
@@ -1851,7 +1851,7 @@ response = client.chat.completions.create(
 
 # Alternative: Use anthropic provider
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-haiku-latest",    # Anthropic provider
+    model="anthropic/claude-haiku-4-5",    # Anthropic provider
     messages=[{"role": "user", "content": "Write code"}],
     max_tokens=8000,
     temperature=0.7
@@ -1927,7 +1927,7 @@ response = client.chat.completions.create(
 
 # Mixed media (images, documents, data files)
 response = client.chat.completions.create(
-    model="anthropic/claude-3.5-sonnet",
+    model="anthropic/claude-sonnet-4-5",
     messages=[{
         "role": "user",
         "content": [
@@ -1981,7 +1981,7 @@ AbstractCore supports OpenAI's planned file format with simplified structure (co
 ```python
 # HTTP/HTTPS URLs
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-haiku-latest",
+    model="anthropic/claude-haiku-4-5",
     messages=[{
         "role": "user",
         "content": [
@@ -2665,7 +2665,7 @@ print(f"Success rate: {health_status['success_rate']}%")
 # Automatic failover based on health
 if not health_status['healthy']:
     # Automatically switch to backup provider
-    backup_llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    backup_llm = create_llm("anthropic", model="claude-haiku-4-5")
     response = backup_llm.generate("Fallback request")
 ```
 
