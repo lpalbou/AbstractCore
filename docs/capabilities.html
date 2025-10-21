@@ -104,7 +104,7 @@ ask_llm("anthropic", "What is Python?")
 ask_llm("ollama", "What is Python?")</code></pre>
                         </div>
                         
-                        <p><strong>Why it's exceptional</strong>: No other library provides truly universal tool calling, streaming, and structured output across all providers.</p>
+                        <p><strong>Key benefit</strong>: Identical API across all providers eliminates provider-specific code.</p>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -118,7 +118,7 @@ ask_llm("ollama", "What is Python?")</code></pre>
                             <li><strong>Event system</strong> for monitoring and alerting</li>
                         </ul>
                         
-                        <p><strong>Why it's exceptional</strong>: Built for production from day one, not research or prototypes.</p>
+                        <p><strong>Key benefit</strong>: Includes error handling, retries, and monitoring required for production use.</p>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -140,7 +140,7 @@ openai_response = openai_llm.generate("Weather in Paris?", tools=[get_weather])
 ollama_response = ollama_llm.generate("Weather in Paris?", tools=[get_weather])</code></pre>
                         </div>
                         
-                        <p><strong>Why it's exceptional</strong>: Most libraries only support OpenAI-style tools. AbstractCore makes ANY model work with tools.</p>
+                        <p><strong>Key benefit</strong>: Works with providers that lack native tool support through intelligent prompting.</p>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -160,11 +160,38 @@ summarizer document.pdf  # Uses configured defaults
 python -m abstractcore.utils.cli --prompt "Hello"  # Uses CLI default</code></pre>
                         </div>
 
-                        <p><strong>Why it's exceptional</strong>: Configuration priority (Explicit > App-Specific > Global > Hardcoded) eliminates repetitive parameter passing while maintaining full control when needed.</p>
+                        <p><strong>Key benefit</strong>: Configuration hierarchy (Explicit > App-Specific > Global > Default) reduces repetitive parameter passing.</p>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">5. Universal Media Handling System</h3>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">5. Deterministic Generation</h3>
+                        <p><strong>What it does</strong>: Provides consistent, reproducible outputs across all providers using seed parameters.</p>
+
+                        <div class="code-block">
+                            <pre><code class="language-python"># Deterministic outputs with seed + temperature=0
+llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+
+# These will produce identical outputs
+response1 = llm.generate("Write exactly 3 words about coding")
+response2 = llm.generate("Write exactly 3 words about coding")
+# response1.content == response2.content (identical outputs)
+
+# Works across providers with same interface
+ollama_llm = create_llm("ollama", model="gemma3:1b", seed=42, temperature=0.0)
+mlx_llm = create_llm("mlx", model="Qwen3-4B", seed=42, temperature=0.0)</code></pre>
+                        </div>
+
+                        <p><strong>Provider Support</strong>:</p>
+                        <ul>
+                            <li>✅ <strong>Native SEED:</strong> OpenAI, Ollama, LMStudio, MLX, HuggingFace</li>
+                            <li>⚠️ <strong>Warning:</strong> Anthropic (doesn't support seed but issues warning; use temperature=0.0 for consistency)</li>
+                        </ul>
+
+                        <p><strong>Key benefit</strong>: Consistent seed parameter support enables reproducible outputs for testing and debugging.</p>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">6. Universal Media Handling System</h3>
                         <p><strong>What it does</strong>: Attach any file type (images, PDFs, Office docs, data) with simple <code>@filename</code> syntax or <code>media=[]</code> parameter.</p>
 
                         <div class="code-block">
@@ -183,7 +210,7 @@ response = llm.generate(
 #            Data (CSV, TSV, TXT, MD, JSON)</code></pre>
                         </div>
 
-                        <p><strong>Why it's exceptional</strong>: Same code works identically across OpenAI, Anthropic, Ollama, and all providers. Automatic processor selection, provider-specific formatting, and graceful fallback.</p>
+                        <p><strong>Key benefit</strong>: Same code works across all providers with automatic format detection and processing.</p>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -207,7 +234,7 @@ response = text_llm.generate(
 # Transparent: vision model analyzes → text model processes description</code></pre>
                         </div>
 
-                        <p><strong>Why it's exceptional</strong>: Automatic image optimization per model, cross-provider consistency, and unique vision fallback system enables ANY model to process images.</p>
+                        <p><strong>Key benefit</strong>: Automatic image optimization and vision fallback enables image processing with text-only models.</p>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -231,7 +258,7 @@ response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
 # Output: <tool_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</tool_call></code></pre>
                         </div>
                         
-                        <p><strong>Why it's exceptional</strong>: Seamless compatibility with any agentic CLI without code changes.</p>
+                        <p><strong>Key benefit</strong>: Compatible with existing agentic CLIs without code changes.</p>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -252,7 +279,7 @@ product = llm.generate(
 )</code></pre>
                         </div>
                         
-                        <p><strong>Why it's exceptional</strong>: Built-in validation retry means higher success rates and less manual error handling.</p>
+                        <p><strong>Key benefit</strong>: Automatic validation and retry reduces manual error handling.</p>
                     </div>
                 </section>
 
@@ -360,6 +387,14 @@ def complex_agent():
                                             <li>Attach images, PDFs, Office docs, data files</li>
                                             <li>Same API across all providers</li>
                                             <li>Automatic processing and formatting</li>
+                                        </ul>
+                                    </li>
+                                    <li style="margin-bottom: 1rem;">
+                                        <strong>Deterministic Generation</strong>
+                                        <ul style="margin-top: 0.5rem;">
+                                            <li>Reproducible outputs with seed parameters</li>
+                                            <li>Empirically verified across all providers</li>
+                                            <li>Essential for testing and debugging</li>
                                         </ul>
                                     </li>
                                     <li>

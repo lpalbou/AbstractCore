@@ -77,7 +77,7 @@
             <div class="doc-content">
                 <section id="unified-parameters">
                     <h2>Unified Token Parameters</h2>
-                    <p>AbstractCore provides a consistent token parameter vocabulary that works across all providers:</p>
+                    <p>AbstractCore provides <strong>consistent token terminology</strong> and <strong>transparent token counting</strong> across all providers:</p>
                     
                     <div class="code-block">
                         <pre><code class="language-python">from abstractcore import create_llm
@@ -85,7 +85,7 @@
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -128,7 +128,7 @@ ollama_llm = create_llm(
 
 # Estimate tokens for input text
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+estimated = estimate_tokens(text, model="claude-haiku-4-5")
 print(f"Estimated tokens: {estimated}")
 
 # Calculate optimal token budget
@@ -144,6 +144,52 @@ print(f"Recommended output limit: {budget.max_output_tokens}")
 if estimated > budget.max_input_tokens:
     print(f"Warning: Input too long ({estimated} > {budget.max_input_tokens})")
     # Truncate or split input</code></pre>
+                    </div>
+                </section>
+
+                <section id="generate-response">
+                    <h2>GenerateResponse Object (NEW in v2.4.7)</h2>
+                    <p>AbstractCore provides a consistent response structure across ALL providers with enhanced token tracking:</p>
+                    
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini", seed=42)
+response = llm.generate("Explain quantum computing")
+
+# GenerateResponse object provides consistent structure across all providers
+print(f"Generated text: {response.content}")         # The actual LLM response
+print(f"Model used: {response.model}")               # Model that generated the response
+print(f"Finish reason: {response.finish_reason}")   # Why generation stopped
+
+# Consistent token access across ALL providers (NEW in v2.4.7)
+print(f"Input tokens: {response.input_tokens}")     # Always available
+print(f"Output tokens: {response.output_tokens}")   # Always available  
+print(f"Total tokens: {response.total_tokens}")     # Always available
+
+# Generation time tracking (NEW in v2.4.7)
+print(f"Generation time: {response.gen_time}ms")    # Always available (rounded to 1 decimal)
+
+# Advanced properties (when applicable)
+print(f"Tool calls: {response.tool_calls}")         # Tools executed (if any)
+print(f"Raw usage: {response.usage}")               # Provider-specific token data
+print(f"Metadata: {response.metadata}")             # Additional context
+
+# Comprehensive summary with timing
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"</code></pre>
+                    </div>
+
+                    <h3>Token Count Sources</h3>
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1rem 0;">
+                        <ul style="margin: 0;">
+                            <li><strong>Provider APIs:</strong> OpenAI, Anthropic, LMStudio (native API token counts)</li>
+                            <li><strong>AbstractCore Calculation:</strong> MLX, HuggingFace, Mock (using token_utils.py)</li>
+                            <li><strong>Mixed Sources:</strong> Ollama (combination of provider and calculated tokens)</li>
+                        </ul>
+                    </div>
+
+                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin: 1rem 0;">
+                        <p style="margin: 0; color: #92400e;"><strong>Backward Compatibility:</strong> Legacy <code>prompt_tokens</code> and <code>completion_tokens</code> keys remain available in <code>response.usage</code> dictionary.</p>
                     </div>
                 </section>
 

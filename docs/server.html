@@ -99,7 +99,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-haiku-latest",
+    model="anthropic/claude-haiku-4-5",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)</code></pre>
@@ -476,7 +476,7 @@ export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
 # Use
-crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"</code></pre>
+crush --model "anthropic/claude-haiku-4-5" "Explain this code"</code></pre>
 
                                         <div
                                             style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
@@ -616,7 +616,7 @@ grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl</code></pre>
 providers = [
     "ollama/qwen3-coder:30b",
     "openai/gpt-4o-mini",
-    "anthropic/claude-3-5-haiku-latest"
+    "anthropic/claude-haiku-4-5"
 ]
 
 def generate_with_fallback(prompt):

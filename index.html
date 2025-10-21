@@ -79,6 +79,18 @@
         .section-description .ai-link:hover {
             background: rgba(102, 126, 234, 0.2);
         }
+        .status-seed {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
+        .status-warning {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -158,15 +170,15 @@
                         <pre><code class="language-python">from abstractcore import create_llm
 
 # Works with any provider - just change the name
-llm = create_llm("anthropic", model="claude-haiku-4.5")
+llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.7, seed=42)
 response = llm.generate("What is the capital of France?")
 print(response.content)
 
 # Switch providers with zero code changes
-llm = create_llm("openai", model="gpt-4o-mini")
-llm = create_llm("ollama", model="qwen3-coder:30b")
+llm = create_llm("openai", model="gpt-4o-mini", seed=42)
+llm = create_llm("ollama", model="qwen3-coder:30b", seed=42)
 
-# Same interface, same results ✨</code></pre>
+# Same interface, deterministic results ✨</code></pre>
                     </div>
                 </div>
             </div>
@@ -408,6 +420,7 @@ print(response.content)</code></pre>
                         <button class="tab-button" data-tab="media">Media Handling</button>
                         <button class="tab-button" data-tab="vision">Vision Capabilities</button>
                         <button class="tab-button" data-tab="tools">Tool Calling</button>
+                        <button class="tab-button" data-tab="deterministic">Deterministic Generation</button>
                         <button class="tab-button" data-tab="server">HTTP Server</button>
                     </div>
                     
@@ -800,7 +813,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-haiku-4.5",
+    model="claude-haiku-4-5",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -808,7 +821,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-haiku-4.5")
+estimated = estimate_tokens(text, model="claude-haiku-4-5")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings
@@ -816,6 +829,72 @@ response = llm.generate("Write a detailed analysis...")
 print(f"Input tokens: {response.usage.input_tokens}")
 print(f"Output tokens: {response.usage.output_tokens}")
 print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="demo-panel" id="deterministic">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">deterministic_generation.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
+
+# Deterministic outputs with seed + temperature=0
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-3.5-turbo&quot;, seed=42, temperature=0.0)
+
+# These will produce identical outputs
+response1 = llm.generate(&quot;Write exactly 3 words about coding&quot;)
+response2 = llm.generate(&quot;Write exactly 3 words about coding&quot;)
+print(f&quot;Response 1: {response1.content}&quot;)  # &quot;Innovative, challenging, rewarding.&quot;
+print(f&quot;Response 2: {response2.content}&quot;)  # &quot;Innovative, challenging, rewarding.&quot;
+
+# Empirically verified deterministic behavior:
+# ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
+# ✅ Ollama (gemma3:1b): Same seed → Identical outputs  
+# ✅ MLX (Qwen3-4B): Same seed → Identical outputs
+# ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
+# ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
+# ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (issues warning for seed)
+
+# Works across all providers with same interface
+ollama_llm = create_llm(&quot;ollama&quot;, model=&quot;gemma3:1b&quot;, seed=42, temperature=0.0)
+mlx_llm = create_llm(&quot;mlx&quot;, model=&quot;Qwen3-4B&quot;, seed=42, temperature=0.0)">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from abstractcore import create_llm
+
+# Deterministic outputs with seed + temperature=0
+llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+
+# These will produce identical outputs
+response1 = llm.generate("Write exactly 3 words about coding")
+response2 = llm.generate("Write exactly 3 words about coding")
+print(f"Response 1: {response1.content}")  # "Innovative, challenging, rewarding."
+print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding."
+
+# Empirically verified deterministic behavior:
+# ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
+# ✅ Ollama (gemma3:1b): Same seed → Identical outputs  
+# ✅ MLX (Qwen3-4B): Same seed → Identical outputs
+# ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
+# ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
+# ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (issues warning for seed)
+
+# Works across all providers with same interface
+ollama_llm = create_llm("ollama", model="gemma3:1b", seed=42, temperature=0.0)
+mlx_llm = create_llm("mlx", model="Qwen3-4B", seed=42, temperature=0.0)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -927,6 +1006,7 @@ response = client.chat.completions.create(
                         <p class="provider-description">gpt-5-nano-2025-08-07, GPT-4o, GPT-4o-mini</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
+                            <span class="status-badge status-seed">🎯 Native SEED</span>
                         </div>
                     </a>
                 </div>
@@ -937,9 +1017,10 @@ response = client.chat.completions.create(
                             <img src="assets/providers/anthropic.svg" alt="Anthropic">
                         </div>
                         <h3 class="provider-name">Anthropic</h3>
-                        <p class="provider-description">claude-sonnet-4.5, claude-opus-4.1, claude-haiku-4.5</p>
+                        <p class="provider-description">claude-sonnet-4-5, claude-haiku-4-5, claude-opus-4-1</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
+                            <span class="status-badge status-warning">⚠️ SEED Warning*</span>
                         </div>
                     </a>
                 </div>
@@ -953,6 +1034,7 @@ response = client.chat.completions.create(
                         <p class="provider-description">qwen3-coder:30b, Local models, privacy-first</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
+                            <span class="status-badge status-seed">🎯 Native SEED</span>
                         </div>
                     </a>
                 </div>
@@ -966,6 +1048,7 @@ response = client.chat.completions.create(
                         <p class="provider-description">qwen/qwen3-next-80b, glm-4.5-air-mlx</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
+                            <span class="status-badge status-seed">🎯 Native SEED</span>
                         </div>
                     </a>
                 </div>
@@ -979,6 +1062,7 @@ response = client.chat.completions.create(
                         <p class="provider-description">mlx-community/gemma-3n-E4B-4bit, mlx-community/Qwen3-4B-Instruct-2507-4bit</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
+                            <span class="status-badge status-seed">🎯 Native SEED</span>
                         </div>
                     </a>
                 </div>
@@ -992,9 +1076,17 @@ response = client.chat.completions.create(
                         <p class="provider-description">meta-llama/Llama-3.1-8B-Instruct, unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF, Open source models</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
+                            <span class="status-badge status-seed">🎯 Native SEED</span>
                         </div>
                     </a>
                 </div>
+            </div>
+            
+            <div style="margin-top: 2rem; padding: 1.5rem; background: var(--background-secondary); border-radius: 0.75rem; border-left: 4px solid #f59e0b;">
+                <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary);">
+                    <strong>*SEED Support Note:</strong> Anthropic doesn't support seed parameters but issues a warning when provided. 
+                    Use <code>temperature=0.0</code> for more consistent outputs with Claude models.
+                </p>
             </div>
         </div>
     </section>

@@ -131,13 +131,19 @@ pip install abstractcore[ollama]</code></pre>
                     <pre><code class="language-python">from abstractcore import create_llm
 
 # Choose your provider (uncomment one):
-llm = create_llm("openai", model="gpt-4o-mini")        # Cloud
-# llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Cloud
-# llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")   # Local
+llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7, seed=42)        # Cloud
+# llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.0)  # Cloud (use temp=0 for consistency)
+# llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", seed=42)   # Local
 
 # Generate your first response
 response = llm.generate("What is the capital of France?")
-print(response.content)</code></pre>
+print(response.content)
+
+# For deterministic outputs across calls
+deterministic_llm = create_llm("openai", model="gpt-4o-mini", temperature=0.0, seed=42)
+response1 = deterministic_llm.generate("Write exactly 3 words about AI")
+response2 = deterministic_llm.generate("Write exactly 3 words about AI")
+# response1.content == response2.content (identical outputs)</code></pre>
                 </div>
 
                 <p>Run it:</p>
@@ -147,8 +153,8 @@ print(response.content)</code></pre>
                 </div>
 
                 <div style="background: linear-gradient(135deg, #10b981, #3b82f6); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0; color: white;">
-                    <h3 style="margin: 0 0 0.5rem 0; color: white;">🎉 Congratulations!</h3>
-                    <p style="margin: 0; color: rgba(255,255,255,0.9);">You've made your first AbstractCore LLM call.</p>
+                    <h3 style="margin: 0 0 0.5rem 0; color: white;">✓ Complete</h3>
+                    <p style="margin: 0; color: rgba(255,255,255,0.9);">Your first AbstractCore LLM call is working.</p>
                 </div>
 
                 <h2>Recommended: Centralized Configuration</h2>
@@ -194,10 +200,10 @@ for provider in providers:
                 <div class="code-block">
                     <pre><code class="language-python">from abstractcore import create_llm
 
-# Same interface, different providers
-openai_llm = create_llm("openai", model="gpt-4o-mini")
-claude_llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
-local_llm = create_llm("ollama", model="qwen3-coder:30b")
+# Same interface, different providers - all support deterministic generation
+openai_llm = create_llm("openai", model="gpt-4o-mini", seed=42)
+claude_llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.0)  # Use temp=0 for consistency
+local_llm = create_llm("ollama", model="qwen3-coder:30b", seed=42)
 
 question = "Explain Python list comprehensions"
 
