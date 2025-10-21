@@ -451,6 +451,10 @@ abstractcore --set-console-log-level NONE     # Disable console logging
 abstractcore --enable-file-logging            # Save logs to files
 abstractcore --enable-debug-logging           # Full debug mode
 
+# Configure vision for image analysis with text-only models
+abstractcore --set-vision-provider ollama qwen2.5vl:7b
+abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
+
 # Set API keys as needed
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic your-anthropic-key
