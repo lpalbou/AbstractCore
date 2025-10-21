@@ -863,6 +863,9 @@ class HuggingFaceProvider(BaseProvider):
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(seed)
 
+            # Track generation time
+            start_time = time.time()
+            
             outputs = self.pipeline(
                 input_text,
                 max_new_tokens=max_new_tokens,
@@ -874,6 +877,8 @@ class HuggingFaceProvider(BaseProvider):
                 truncation=True,
                 return_full_text=False
             )
+            
+            gen_time = round((time.time() - start_time) * 1000, 1)
 
             if outputs and len(outputs) > 0:
                 response_text = outputs[0]['generated_text'].strip()
@@ -885,34 +890,41 @@ class HuggingFaceProvider(BaseProvider):
                     content=response_text,
                     model=self.model,
                     finish_reason="stop",
-                    usage=usage
+                    usage=usage,
+                    gen_time=gen_time
                 )
             else:
                 return GenerateResponse(
                     content="",
                     model=self.model,
-                    finish_reason="stop"
+                    finish_reason="stop",
+                    gen_time=gen_time
                 )
 
         except Exception as e:
+            gen_time = round((time.time() - start_time) * 1000, 1) if 'start_time' in locals() else 0.0
             return GenerateResponse(
                 content=f"Error: {str(e)}",
                 model=self.model,
-                finish_reason="error"
+                finish_reason="error",
+                gen_time=gen_time
             )
 
     def _calculate_usage(self, prompt: str, response: str) -> Dict[str, int]:
         """Calculate token usage using centralized token utilities."""
         from ..utils.token_utils import TokenUtils
 
-        prompt_tokens = TokenUtils.estimate_tokens(prompt, self.model)
-        completion_tokens = TokenUtils.estimate_tokens(response, self.model)
-        total_tokens = prompt_tokens + completion_tokens
+        input_tokens = TokenUtils.estimate_tokens(prompt, self.model)
+        output_tokens = TokenUtils.estimate_tokens(response, self.model)
+        total_tokens = input_tokens + output_tokens
 
         return {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": total_tokens
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            # Keep legacy keys for backward compatibility
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens
         }
 
     def _stream_generate_transformers(self, input_text: str, max_new_tokens: int,

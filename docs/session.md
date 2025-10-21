@@ -24,7 +24,12 @@ response = session.generate("What is Python?", name="alice")
 # 1. Adds your message to history
 # 2. Calls the LLM provider
 # 3. Adds the assistant's response to history
-# 4. Returns the response
+# 4. Returns a GenerateResponse object with full metadata
+
+# Access the response data
+print(f"Response: {response.content}")           # Generated text
+print(f"Tokens used: {response.total_tokens}")  # Token count
+print(f"Generation time: {response.gen_time}ms") # Performance metrics
 ```
 
 ### `add_message()` - For Manual History Management

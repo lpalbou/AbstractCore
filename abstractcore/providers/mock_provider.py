@@ -48,6 +48,12 @@ class MockProvider(BaseProvider):
 
     def _single_response(self, prompt: str, response_model: Optional[Type[BaseModel]] = None) -> GenerateResponse:
         """Generate single mock response"""
+        import time
+        
+        # Simulate generation time (10-100ms for mock)
+        start_time = time.time()
+        time.sleep(0.01 + (len(prompt) % 10) * 0.01)  # 10-100ms based on prompt length
+        gen_time = round((time.time() - start_time) * 1000, 1)
 
         if response_model and PYDANTIC_AVAILABLE:
             # Generate valid JSON for structured output
@@ -59,21 +65,25 @@ class MockProvider(BaseProvider):
             content=content,
             model=self.model,
             finish_reason="stop",
-            usage=self._calculate_mock_usage(prompt, content)
+            usage=self._calculate_mock_usage(prompt, content),
+            gen_time=gen_time
         )
 
     def _calculate_mock_usage(self, prompt: str, response: str) -> Dict[str, int]:
         """Calculate mock token usage using centralized token utilities."""
         from ..utils.token_utils import TokenUtils
         
-        prompt_tokens = TokenUtils.estimate_tokens(prompt, self.model)
-        completion_tokens = TokenUtils.estimate_tokens(response, self.model)
-        total_tokens = prompt_tokens + completion_tokens
+        input_tokens = TokenUtils.estimate_tokens(prompt, self.model)
+        output_tokens = TokenUtils.estimate_tokens(response, self.model)
+        total_tokens = input_tokens + output_tokens
         
         return {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens, 
-            "total_tokens": total_tokens
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            # Keep legacy keys for backward compatibility
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens
         }
 
     def _stream_response(self, prompt: str) -> Iterator[GenerateResponse]:

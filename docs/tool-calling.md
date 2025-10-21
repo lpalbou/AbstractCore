@@ -46,6 +46,11 @@ response = llm.generate(
 
 print(response.content)
 # Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
+
+# The response object contains rich information about tool execution
+print(f"Tools executed: {len(response.tool_calls) if response.tool_calls else 0}")
+print(f"Generation time: {response.gen_time}ms")
+print(f"Summary: {response.get_summary()}")  # Includes tool count
 ```
 
 ## The @tool Decorator

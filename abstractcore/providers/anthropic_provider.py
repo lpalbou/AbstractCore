@@ -186,8 +186,14 @@ class AnthropicProvider(BaseProvider):
             if stream:
                 return self._stream_response(call_params, tools)
             else:
+                # Track generation time
+                start_time = time.time()
                 response = self.client.messages.create(**call_params)
+                gen_time = round((time.time() - start_time) * 1000, 1)
+                
                 formatted = self._format_response(response)
+                # Add generation time to response
+                formatted.gen_time = gen_time
 
                 # Handle tool execution for Anthropic responses
                 if tools and (formatted.has_tool_calls() or

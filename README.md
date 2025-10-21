@@ -61,6 +61,45 @@ response = llm.generate(
 print(response.content)
 ```
 
+### Response Object (GenerateResponse)
+
+Every LLM generation returns a **GenerateResponse** object with consistent structure across all providers:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate("Explain quantum computing in simple terms")
+
+# Core response data
+print(f"Content: {response.content}")               # Generated text
+print(f"Model: {response.model}")                   # Model used
+print(f"Finish reason: {response.finish_reason}")   # Why generation stopped
+
+# Consistent token access across ALL providers (NEW in v2.4.7)
+print(f"Input tokens: {response.input_tokens}")     # Always available
+print(f"Output tokens: {response.output_tokens}")   # Always available  
+print(f"Total tokens: {response.total_tokens}")     # Always available
+
+# Generation time tracking (NEW in v2.4.7)
+print(f"Generation time: {response.gen_time}ms")    # Always available (rounded to 1 decimal)
+
+# Advanced access
+print(f"Tool calls: {response.tool_calls}")         # Tools executed (if any)
+print(f"Raw usage: {response.usage}")               # Provider-specific token data
+print(f"Metadata: {response.metadata}")             # Additional context
+
+# Comprehensive summary
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"
+```
+
+**Token Count Sources:**
+- **Provider APIs**: OpenAI, Anthropic, LMStudio (native API token counts)
+- **AbstractCore Calculation**: MLX, HuggingFace, Mock (using `token_utils.py`)
+- **Mixed Sources**: Ollama (combination of provider and calculated tokens)
+
+**Backward Compatibility**: Legacy `prompt_tokens` and `completion_tokens` keys remain available in `response.usage` dictionary.
+
 ### Built-in Tools
 
 AbstractCore includes a comprehensive set of ready-to-use tools for common tasks:
@@ -177,6 +216,7 @@ response = llm.generate(
 - **Session Management**: Persistent conversations with metadata, analytics, and complete serialization
 - **Structured Responses**: Clean, predictable output formats with Pydantic
 - **Streaming Support**: Real-time token generation for interactive experiences
+- **Consistent Token Terminology**: Unified `input_tokens`, `output_tokens`, `total_tokens` across all providers
 - **Embeddings**: Built-in support for semantic search and RAG applications
 - **Universal Server**: Optional OpenAI-compatible API server with `/v1/responses` endpoint
 

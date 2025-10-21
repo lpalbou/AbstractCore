@@ -169,8 +169,14 @@ class OpenAIProvider(BaseProvider):
             if stream:
                 return self._stream_response(call_params, tools)
             else:
+                # Track generation time
+                start_time = time.time()
                 response = self.client.chat.completions.create(**call_params)
+                gen_time = round((time.time() - start_time) * 1000, 1)
+                
                 formatted = self._format_response(response)
+                # Add generation time to response
+                formatted.gen_time = gen_time
 
                 # Handle tool execution for OpenAI native responses
                 if tools and formatted.has_tool_calls():
@@ -216,13 +222,16 @@ class OpenAIProvider(BaseProvider):
                     "arguments": tc.function.arguments
                 })
 
-        # Build usage dict with detailed breakdown
+        # Build usage dict with consistent terminology
         usage = None
         if hasattr(response, 'usage'):
             usage = {
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+                # Keep legacy keys for backward compatibility
                 "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
+                "completion_tokens": response.usage.completion_tokens
             }
 
             # Add detailed token breakdown for reasoning models

@@ -225,11 +225,14 @@ class OllamaProvider(BaseProvider):
     def _single_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> GenerateResponse:
         """Generate single response"""
         try:
+            # Track generation time
+            start_time = time.time()
             response = self.client.post(
                 f"{self.base_url}{endpoint}",
                 json=payload
             )
             response.raise_for_status()
+            gen_time = round((time.time() - start_time) * 1000, 1)
 
             result = response.json()
 
@@ -246,10 +249,14 @@ class OllamaProvider(BaseProvider):
                 finish_reason="stop",
                 raw_response=result,
                 usage={
+                    "input_tokens": result.get("prompt_eval_count", 0),
+                    "output_tokens": result.get("eval_count", 0),
+                    "total_tokens": result.get("prompt_eval_count", 0) + result.get("eval_count", 0),
+                    # Keep legacy keys for backward compatibility
                     "prompt_tokens": result.get("prompt_eval_count", 0),
-                    "completion_tokens": result.get("eval_count", 0),
-                    "total_tokens": result.get("prompt_eval_count", 0) + result.get("eval_count", 0)
-                }
+                    "completion_tokens": result.get("eval_count", 0)
+                },
+                gen_time=gen_time
             )
 
             # Execute tools if enabled and tools are present

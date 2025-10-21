@@ -297,6 +297,23 @@ llm = create_llm(
     timeout=30              # Request timeout
 )
 
+# Generate response - returns GenerateResponse object
+response = llm.generate("Explain quantum computing in simple terms")
+
+# Core response properties
+print(f"Generated text: {response.content}")         # The actual LLM response
+print(f"Model used: {response.model}")               # Model that generated the response
+print(f"Finish reason: {response.finish_reason}")   # Why generation stopped ("stop", "length", etc.)
+
+# Consistent token access across ALL providers (NEW in v2.4.7)
+print(f"Input tokens: {response.input_tokens}")     # Always available
+print(f"Output tokens: {response.output_tokens}")   # Always available  
+print(f"Total tokens: {response.total_tokens}")     # Always available
+print(f"Generation time: {response.gen_time}ms")    # Always available (rounded to 1 decimal)
+
+# Comprehensive summary with all metrics
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"
+
 # Override parameters per call
 response = llm.generate(
     "Write a haiku about coding",
@@ -315,8 +332,9 @@ response = llm.generate(
 - **`seed`** (integer): Ensures reproducible outputs
   - Same seed + same prompt = same response (when supported)
   - Useful for testing, debugging, and consistent results
-  - Provider support: OpenAI ✅, Anthropic ❌*, HuggingFace ✅, Ollama ✅, LMStudio ✅, MLX ❌*
-  - *Providers marked ❌ log seed for debugging but can't guarantee determinism
+  - Provider support: OpenAI ✅, HuggingFace ✅, Ollama ✅, LMStudio ✅, MLX ✅, Anthropic ⚠️*
+  - *Anthropic issues UserWarning when seed provided (use temperature=0.0 for consistency)
+  - **Empirically verified**: All providers except Anthropic achieve perfect determinism with seed + temperature=0
 
 #### Session-Level Parameters
 
@@ -431,6 +449,44 @@ AbstractCore includes a comprehensive set of tools for file operations, web sear
 **For detailed tool documentation and examples, see:** [`abstractcore/tools/common_tools.py`](../abstractcore/tools/common_tools.py)
 
 > **Note**: This CLI is a basic demonstrator. For production applications requiring complex reasoning or advanced agent behaviors, build custom solutions using the AbstractCore framework directly.
+
+## Understanding GenerateResponse
+
+Every call to `llm.generate()` returns a **GenerateResponse** object with consistent structure:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate("Write a haiku about coding")
+
+# Essential properties (always available)
+print(f"Content: {response.content}")               # Generated text
+print(f"Model: {response.model}")                   # Model used
+print(f"Finish reason: {response.finish_reason}")   # "stop", "length", "tool_calls"
+
+# Token information (consistent across all providers)
+print(f"Input tokens: {response.input_tokens}")     # Tokens in your prompt
+print(f"Output tokens: {response.output_tokens}")   # Tokens in response
+print(f"Total tokens: {response.total_tokens}")     # Combined total
+
+# Performance metrics
+print(f"Generation time: {response.gen_time}ms")    # Time to generate (rounded to 1 decimal)
+
+# Advanced properties (when applicable)
+print(f"Tool calls: {response.tool_calls}")         # Tools executed (if any)
+print(f"Raw response: {response.raw_response}")     # Original provider response
+print(f"Usage details: {response.usage}")           # Provider-specific token data
+print(f"Metadata: {response.metadata}")             # Additional context
+
+# Convenient summary
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 45 | Time: 892.3ms"
+```
+
+**Key Benefits:**
+- **Consistent API**: Same properties across OpenAI, Anthropic, Ollama, MLX, HuggingFace, LMStudio
+- **Rich Metadata**: Access to timing, token counts, and execution details
+- **Actionable Data**: Everything you need for monitoring, debugging, and optimization
 
 ## What's Next?
 

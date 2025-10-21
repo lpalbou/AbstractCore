@@ -4,6 +4,7 @@ LM Studio provider implementation (OpenAI-compatible API).
 
 import httpx
 import json
+import time
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
 
 try:
@@ -225,12 +226,15 @@ class LMStudioProvider(BaseProvider):
             if not hasattr(self, 'client') or self.client is None:
                 raise ProviderAPIError("HTTP client not initialized")
 
+            # Track generation time
+            start_time = time.time()
             response = self.client.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers={"Content-Type": "application/json"}
             )
             response.raise_for_status()
+            gen_time = round((time.time() - start_time) * 1000, 1)
 
             result = response.json()
 
@@ -252,10 +256,14 @@ class LMStudioProvider(BaseProvider):
                 finish_reason=finish_reason,
                 raw_response=result,
                 usage={
+                    "input_tokens": usage.get("prompt_tokens", 0),
+                    "output_tokens": usage.get("completion_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                    # Keep legacy keys for backward compatibility
                     "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0)
-                }
+                    "completion_tokens": usage.get("completion_tokens", 0)
+                },
+                gen_time=gen_time
             )
 
         except AttributeError as e:

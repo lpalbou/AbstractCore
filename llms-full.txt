@@ -44,14 +44,16 @@ AbstractCore is a comprehensive Python library providing a unified interface to 
 
 ### Supported Providers
 
-| Provider | Features |
-|----------|----------|
-| **OpenAI** | Native tool calls, streaming, structured output, vision (GPT-4o), media processing |
-| **Anthropic** | Native tool calls, streaming, structured output, vision (Claude 3.5), media processing |
-| **Ollama** | Prompted tool calls, streaming, local models, vision (qwen2.5vl:7b), media processing |
-| **LMStudio** | Prompted tool calls, streaming, local models, vision (qwen2.5-vl), media processing |
-| **MLX** | Prompted tool calls, streaming, Apple Silicon, vision models, media processing |
-| **HuggingFace** | Prompted tool calls, streaming, open models, vision models, media processing |
+| Provider | Features | SEED Support |
+|----------|----------|-------------|
+| **OpenAI** | Native tool calls, streaming, structured output, vision (GPT-4o), media processing | ✅ Native |
+| **Anthropic** | Native tool calls, streaming, structured output, vision (Claude 3.5), media processing | ⚠️ Warning* |
+| **Ollama** | Prompted tool calls, streaming, local models, vision (qwen2.5vl:7b), media processing | ✅ Native |
+| **LMStudio** | Prompted tool calls, streaming, local models, vision (qwen2.5-vl), media processing | ✅ Native |
+| **MLX** | Prompted tool calls, streaming, Apple Silicon, vision models, media processing | ✅ Native |
+| **HuggingFace** | Prompted tool calls, streaming, open models, vision models, media processing | ✅ Native |
+
+*Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
 
 ---
 
@@ -343,6 +345,29 @@ response = llm.generate(
     "Analyze these materials",
     media=["chart.png", "data.csv", "presentation.pptx"]
 )
+```
+
+### Deterministic Generation
+
+```python
+from abstractcore import create_llm
+
+# Deterministic outputs with seed + temperature=0
+llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+
+# These will produce identical outputs
+response1 = llm.generate("Write exactly 3 words about coding")
+response2 = llm.generate("Write exactly 3 words about coding")
+print(f"Response 1: {response1.content}")  # "Innovative, challenging, rewarding."
+print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding."
+
+# Empirically verified deterministic behavior:
+# ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
+# ✅ Ollama (gemma3:1b): Same seed → Identical outputs  
+# ✅ MLX (Qwen3-4B): Same seed → Identical outputs
+# ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
+# ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
+# ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (issues warning for seed)
 ```
 
 ### CLI Integration
@@ -1352,7 +1377,7 @@ session.compact(
 
 ### Token Management
 
-Unified token parameter vocabulary and budget management across all providers:
+AbstractCore provides **consistent token terminology** and **transparent token counting** across all providers:
 
 ```python
 from abstractcore import create_llm
@@ -1366,6 +1391,37 @@ llm = create_llm(
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
 )
+
+response = llm.generate("Explain quantum computing")
+
+# GenerateResponse object provides consistent structure across all providers
+print(f"Generated text: {response.content}")         # The actual LLM response
+print(f"Model used: {response.model}")               # Model that generated the response
+print(f"Finish reason: {response.finish_reason}")   # Why generation stopped
+
+# Consistent token access across ALL providers (NEW in v2.4.7)
+print(f"Input tokens: {response.input_tokens}")     # Always available
+print(f"Output tokens: {response.output_tokens}")   # Always available  
+print(f"Total tokens: {response.total_tokens}")     # Always available
+
+# Generation time tracking (NEW in v2.4.7)
+print(f"Generation time: {response.gen_time}ms")    # Always available (rounded to 1 decimal)
+
+# Advanced properties (when applicable)
+print(f"Tool calls: {response.tool_calls}")         # Tools executed (if any)
+print(f"Raw usage: {response.usage}")               # Provider-specific token data
+print(f"Metadata: {response.metadata}")             # Additional context
+
+# Comprehensive summary with timing
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"
+```
+
+**Token Count Sources:**
+- **Provider APIs**: OpenAI, Anthropic, LMStudio (native API token counts)
+- **AbstractCore Calculation**: MLX, HuggingFace, Mock (using `token_utils.py`)
+- **Mixed Sources**: Ollama (combination of provider and calculated tokens)
+
+**Backward Compatibility**: Legacy `prompt_tokens` and `completion_tokens` keys remain available in `response.usage` dictionary.
 
 # Token estimation and validation
 text = "Your input text here..."
