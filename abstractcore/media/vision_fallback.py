@@ -31,14 +31,28 @@ class VisionFallbackHandler:
     def __init__(self, config_manager=None):
         """Initialize with configuration manager."""
         if config_manager is None:
-            from abstractcore.config import get_config_manager
-            self.config_manager = get_config_manager()
+            try:
+                from abstractcore.config import get_config_manager
+                self.config_manager = get_config_manager()
+            except ImportError:
+                # Config module not available - use fallback behavior
+                logger.warning("Config module not available, vision fallback disabled")
+                self.config_manager = None
         else:
             self.config_manager = config_manager
 
     @property
     def vision_config(self):
         """Get vision configuration from unified config system."""
+        if self.config_manager is None:
+            # Return a minimal config object when config system is not available
+            class FallbackVisionConfig:
+                strategy = "disabled"
+                caption_provider = None
+                caption_model = None
+                fallback_chain = []
+                local_models_path = None
+            return FallbackVisionConfig()
         return self.config_manager.config.vision
 
     def create_description(self, image_path: str, user_prompt: str = None) -> str:

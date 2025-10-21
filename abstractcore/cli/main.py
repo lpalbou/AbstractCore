@@ -38,7 +38,13 @@ from typing import List, Optional
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from abstractcore.config import get_config_manager
+# Import config manager with fallback
+try:
+    from abstractcore.config import get_config_manager
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+    get_config_manager = None
 
 def download_vision_model(model_name: str = "blip-base-caption") -> bool:
     """Download a vision model for local use."""
@@ -144,10 +150,12 @@ def download_vision_model(model_name: str = "blip-base-caption") -> bool:
         print(f"📁 Model saved to: {models_dir}")
 
         # Configure AbstractCore to use this model
-        from abstractcore.config import get_config_manager
-        config_manager = get_config_manager()
-        # Use the proper HuggingFace model identifier
-        config_manager.set_vision_provider("huggingface", hf_id)
+        if CONFIG_AVAILABLE:
+            config_manager = get_config_manager()
+            # Use the proper HuggingFace model identifier
+            config_manager.set_vision_provider("huggingface", hf_id)
+        else:
+            print("⚠️  Config system not available - manual configuration required")
 
         print(f"✅ Configured AbstractCore to use HuggingFace model: {hf_id}")
         print(f"🎯 Vision fallback is now enabled!")
