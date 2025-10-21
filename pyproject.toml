@@ -59,7 +59,14 @@ Repository = "https://github.com/lpalbou/AbstractCore"
 Changelog = "https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md"
 
 [project.scripts]
+# Configuration CLI (manage AbstractCore settings, API keys, models)
 abstractcore = "abstractcore.cli.main:main"
+abstractcore-config = "abstractcore.cli.main:main"
+
+# Interactive Chat CLI (REPL for LLM interaction)
+abstractcore-chat = "abstractcore.utils.cli:main"
+
+# Built-in Applications
 summarizer = "abstractcore.apps.summarizer:main"
 abstractcore-summarizer = "abstractcore.apps.summarizer:main"
 extractor = "abstractcore.apps.extractor:main"
@@ -182,7 +189,27 @@ full-dev = [
 
 
 [tool.setuptools]
-packages = ["abstractcore", "abstractcore.core", "abstractcore.providers", "abstractcore.tools", "abstractcore.structured", "abstractcore.events", "abstractcore.embeddings", "abstractcore.architectures", "abstractcore.utils", "abstractcore.assets", "abstractcore.server", "abstractcore.apps", "abstractcore.processing", "abstractcore.exceptions", "abstractcore.media"]
+packages = [
+    "abstractcore",
+    "abstractcore.core",
+    "abstractcore.providers",
+    "abstractcore.tools",
+    "abstractcore.structured",
+    "abstractcore.events",
+    "abstractcore.embeddings",
+    "abstractcore.architectures",
+    "abstractcore.utils",
+    "abstractcore.assets",
+    "abstractcore.server",
+    "abstractcore.apps",
+    "abstractcore.processing",
+    "abstractcore.exceptions",
+    "abstractcore.media",
+    "abstractcore.media.processors",
+    "abstractcore.media.handlers",
+    "abstractcore.media.utils",
+    "abstractcore.cli"
+]
 
 [tool.setuptools.dynamic]
 version = {attr = "abstractcore.utils.version.__version__"}
