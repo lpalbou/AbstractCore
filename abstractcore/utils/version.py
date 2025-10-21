@@ -11,4 +11,4 @@ including when the package is installed from PyPI where pyproject.toml is not av
 
 # Package version - update this when releasing new versions
 # This must be manually synchronized with the version in pyproject.toml
-__version__ = "2.4.3"
+__version__ = "2.4.4"

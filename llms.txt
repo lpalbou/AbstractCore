@@ -257,11 +257,30 @@ text = "Your input text here..."
 estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
 print(f"Estimated tokens: {estimated}")
 
-# Budget validation with warnings
+# Budget validation with warnings - ALL providers track input + output separately
 response = llm.generate("Write a detailed analysis...")
-print(f"Input tokens: {response.usage.input_tokens}")
-print(f"Output tokens: {response.usage.output_tokens}")
-print(f"Cost estimate: ${response.usage.cost_usd:.4f}")
+print(f"Input tokens (context): {response.usage['prompt_tokens']}")
+print(f"Output tokens (generated): {response.usage['completion_tokens']}")
+print(f"Total tokens: {response.usage['total_tokens']}")
+```
+
+### Provider Health Monitoring
+```python
+from abstractcore import create_llm
+
+# Check provider connectivity before use
+provider = create_llm("ollama", model="llama2")
+health = provider.health(timeout=3.0)
+
+if health["status"]:
+    print(f"✅ {health['provider']} online: {health['model_count']} models available")
+    print(f"Response time: {health['latency_ms']}ms")
+    # Proceed with generation
+    response = provider.generate("Hello!")
+else:
+    print(f"❌ {health['provider']} offline: {health['error']}")
+    # Fallback to different provider
+    provider = create_llm("openai", model="gpt-4o-mini")
 ```
 
 ### Tool Syntax Rewriting (Real-time Format Conversion)
@@ -484,6 +503,8 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 - **Production resilience** with retries and circuit breakers
 - **Self-healing JSON** for robust structured output
 - **OpenAI-compatible server** with /v1/responses endpoint for multi-language access
+- **Provider health checks** with `.health()` method for connectivity monitoring
+- **Centralized token counting** with consistent input/output token tracking across all providers
 
 ---
 
