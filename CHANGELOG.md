@@ -5,6 +5,14 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.9] - 2025-10-21
+
+### Fixed
+- **Configuration System**: Fixed missing configuration module that caused `'NoneType' object is not callable` error
+  - Renamed `abstractcore/cli` to `abstractcore/config` to match expected import path
+  - Added complete configuration manager implementation with vision, embeddings, and app defaults
+  - Fixed `abstractcore --set-vision-provider` and all other configuration commands
+
 ## [2.4.7] - 2025-10-21
 
 ### Fixed

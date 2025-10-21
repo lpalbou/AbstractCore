@@ -233,10 +233,10 @@ Configure vision processing for text-only models:
 abstractcore --download-vision-model
 
 # Use existing Ollama model
-abstractcore --set-vision-caption qwen2.5vl:7b
+abstractcore --set-vision-provider ollama qwen2.5vl:7b
 
 # Use cloud API
-abstractcore --set-vision-provider openai --model gpt-4o
+abstractcore --set-vision-provider openai gpt-4o
 
 # Disable vision fallback
 abstractcore --disable-vision
@@ -595,9 +595,9 @@ The **Vision Fallback System** enables text-only models to process images throug
 # Configure vision fallback (one-time setup)
 abstractcore --download-vision-model              # Download local model (recommended)
 # OR
-abstractcore --set-vision-caption qwen2.5vl:7b    # Use existing Ollama model
+abstractcore --set-vision-provider ollama qwen2.5vl:7b    # Use existing Ollama model
 # OR
-abstractcore --set-vision-provider openai --model gpt-4o  # Use cloud API
+abstractcore --set-vision-provider openai gpt-4o  # Use cloud API
 ```
 
 ```python

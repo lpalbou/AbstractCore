@@ -61,8 +61,8 @@ Changelog = "https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md"
 
 [project.scripts]
 # Configuration CLI (manage AbstractCore settings, API keys, models)
-abstractcore = "abstractcore.cli.main:main"
-abstractcore-config = "abstractcore.cli.main:main"
+abstractcore = "abstractcore.config.main:main"
+abstractcore-config = "abstractcore.config.main:main"
 
 # Interactive Chat CLI (REPL for LLM interaction)
 abstractcore-chat = "abstractcore.utils.cli:main"
@@ -216,7 +216,7 @@ packages = [
     "abstractcore.media.processors",
     "abstractcore.media.handlers",
     "abstractcore.media.utils",
-    "abstractcore.cli"
+    "abstractcore.config"
 ]
 
 [tool.setuptools.dynamic]
