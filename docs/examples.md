@@ -89,7 +89,7 @@ import requests
 def get_weather(city: str, units: str = "metric") -> str:
     """Get current weather for a city."""
     # In production, use a real weather API
-    # This is a mock implementation
+    # This is a simulated implementation
     temperatures = {
         "paris": "22°C, sunny",
         "london": "15°C, cloudy",

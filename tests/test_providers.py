@@ -1,6 +1,6 @@
 """
 Test all providers with real implementations.
-No mocking - test actual provider connections.
+No mocking - test actual provider connections and functionality.
 """
 
 import pytest

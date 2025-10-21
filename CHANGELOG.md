@@ -17,12 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `GeneratedResponse` now provides `input_tokens`, `output_tokens`, `total_tokens` properties
   - Maintains backward compatibility with legacy `prompt_tokens` and `completion_tokens` keys
   - All providers now use consistent terminology in usage dictionaries
-  - Token counts sourced from: Provider APIs (OpenAI, Anthropic, LMStudio) or AbstractCore's `token_utils.py` (MLX, HuggingFace, Mock)
+  - Token counts sourced from: Provider APIs (OpenAI, Anthropic, LMStudio) or AbstractCore's `token_utils.py` (MLX, HuggingFace)
 
 #### Token Count Source Transparency
 - **Provider-Specific Token Handling**: Clear documentation of token count sources
   - **From Provider APIs**: OpenAI, Anthropic, LMStudio (native API token counts)
-  - **From AbstractCore**: MLX, HuggingFace, Mock providers (calculated using `token_utils.py`)
+  - **From AbstractCore**: MLX, HuggingFace providers (calculated using `token_utils.py`)
   - **Mixed Sources**: Ollama (combination of provider and calculated tokens)
 - **Consistent Interface**: All providers normalized through unified `GeneratedResponse.usage` structure
 
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Universal Timing**: Added `gen_time` property to `GeneratedResponse` across all providers (in milliseconds)
   - **Precise Measurement**: Tracks actual API call duration for network-based providers (OpenAI, Anthropic, LMStudio, Ollama)
   - **Local Processing Time**: Measures inference time for local providers (MLX, HuggingFace)
-  - **Simulated Timing**: Mock provider includes realistic timing simulation for testing
+  - **Simulated Timing**: Local providers include realistic timing simulation
   - **Precision**: Rounded to 1 decimal place for clean, readable output
 - **Performance Insights**: Enables performance monitoring, optimization, and comparative analysis across providers
 - **Summary Integration**: Generation time automatically included in `response.get_summary()` output
@@ -762,7 +762,7 @@ Console scripts remain the same (both `summarizer` and `abstractcore-summarizer`
   - All providers now properly handle `timeout=None` (infinity) as the default
   - **HuggingFace Provider**: Issues warning when non-None timeout is provided (local models don't support timeouts)
   - **MLX Provider**: Issues warning when non-None timeout is provided (local models don't support timeouts)  
-  - **Mock Provider**: Accepts timeout parameters for testing without warnings
+  - **Local Providers**: Accept timeout parameters appropriately
   - **API Providers** (OpenAI, Anthropic, Ollama, LMStudio): Properly pass timeout to HTTP clients
   - Added `_update_http_client_timeout()` method for providers that need to update client timeouts
 - Setting timeout default to None (infinity)

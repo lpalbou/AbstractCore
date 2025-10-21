@@ -128,16 +128,16 @@ class TestStructuredOutputHandler:
         """Test native support detection."""
         handler = StructuredOutputHandler()
 
-        # Mock provider with native support
-        class MockProviderNative:
+        # Test provider with native support
+        class TestProviderNative:
             model_capabilities = {"structured_output": "native"}
 
-        # Mock provider without native support
-        class MockProviderPrompted:
+        # Test provider without native support
+        class TestProviderPrompted:
             model_capabilities = {"structured_output": "prompted"}
 
-        assert handler._has_native_support(MockProviderNative()) is True
-        assert handler._has_native_support(MockProviderPrompted()) is False
+        assert handler._has_native_support(TestProviderNative()) is True
+        assert handler._has_native_support(TestProviderPrompted()) is False
 
     def test_create_schema_prompt(self):
         """Test schema prompt generation."""
@@ -246,10 +246,10 @@ class TestComplexModels:
 
 @pytest.mark.skipif(not PYDANTIC_AVAILABLE, reason="Pydantic not available")
 class TestIntegrationScenarios:
-    """Integration tests with mock providers."""
+    """Integration tests with test providers."""
 
-    def test_mock_native_provider_success(self):
-        """Test successful structured output with mock native provider."""
+    def test_native_provider_success(self):
+        """Test successful structured output with native provider."""
         class MockNativeProvider:
             model_capabilities = {"structured_output": "native"}
 
@@ -274,7 +274,7 @@ class TestIntegrationScenarios:
         assert result.age == 30
         assert result.email == "john@example.com"
 
-    def test_mock_prompted_provider_with_retry(self):
+    def test_prompted_provider_with_retry(self):
         """Test prompted provider with retry on validation failure."""
         class MockPromptedProvider:
             model_capabilities = {"structured_output": "prompted"}

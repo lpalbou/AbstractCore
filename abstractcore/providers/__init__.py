@@ -7,7 +7,6 @@ from .ollama_provider import OllamaProvider
 from .lmstudio_provider import LMStudioProvider
 from .huggingface_provider import HuggingFaceProvider
 from .mlx_provider import MLXProvider
-from .mock_provider import MockProvider
 
 # Provider registry for centralized provider discovery and management
 from .registry import (
@@ -32,7 +31,6 @@ __all__ = [
     'LMStudioProvider',
     'HuggingFaceProvider',
     'MLXProvider',
-    'MockProvider',
 
     # Provider registry
     'ProviderRegistry',

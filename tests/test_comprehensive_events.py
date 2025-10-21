@@ -212,14 +212,17 @@ class TestEventHandlerPatterns:
 class TestProviderEvents:
     """Test events emitted by providers"""
 
-    def test_mock_provider_events(self, event_capture):
-        """Test that mock provider emits expected events"""
+    def test_openai_provider_events(self, event_capture):
+        """Test that OpenAI provider emits expected events"""
         # Register event listener for generation events only (PROVIDER_CREATED removed)
         on_global(EventType.GENERATION_STARTED, event_capture.capture_event)
         on_global(EventType.GENERATION_COMPLETED, event_capture.capture_event)
 
         # Create provider and generate response
-        llm = create_llm("mock", model="test-model")
+        try:
+            llm = create_llm("openai", model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         response = llm.generate("Test prompt")
 
         # Verify generation events were emitted
@@ -302,7 +305,10 @@ class TestStructuredOutputEvents:
         on_global(EventType.VALIDATION_FAILED, event_capture.capture_event)
 
         # Create provider and generate structured response
-        llm = create_llm("mock", model="test-model")
+        try:
+            llm = create_llm("openai", model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
 
         # Test with invalid JSON to trigger validation failure
         with patch.object(llm, '_generate_internal') as mock_generate:

@@ -137,10 +137,13 @@ class TestBasicSession:
 class TestProviderFactory:
     """Test provider factory"""
 
-    def test_create_mock_provider(self):
-        """Test creating mock provider"""
-        provider = create_llm("mock")
-        assert provider is not None
+    def test_create_openai_provider(self):
+        """Test creating OpenAI provider"""
+        try:
+            provider = create_llm("openai")
+            assert provider is not None
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         assert isinstance(provider, AbstractCoreInterface)
 
     def test_create_ollama_provider(self):
@@ -303,9 +306,12 @@ class TestProviderIntegration:
         assert response.content is not None
 
     def test_session_with_provider(self):
-        """Test session with mock provider"""
-        provider = create_llm("mock")
-        session = BasicSession(provider=provider, system_prompt="Test system")
+        """Test session with OpenAI provider"""
+        try:
+            provider = create_llm("openai")
+            session = BasicSession(provider=provider, system_prompt="Test system")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
 
         response = session.generate("Hello")
         assert response is not None

@@ -20,7 +20,7 @@ def test_enhanced_prompt_structure():
         # Create a test LocalMediaHandler for text-only model
         handler = LocalMediaHandler("ollama", {"vision_support": False})
 
-        # Create mock MediaContent
+        # Create test MediaContent
         media_content = MediaContent(
             content="test-image-content",
             media_type=MediaType.IMAGE,
@@ -29,13 +29,13 @@ def test_enhanced_prompt_structure():
             metadata={"file_name": "arc_de_triomphe.jpg"}
         )
 
-        # Set a mock file path
+        # Set a test file path
         media_content.file_path = "/tmp/test_image.jpg"
 
         print("1. Testing prompt construction...")
         print("   User question: 'What is in this image?'")
 
-        # This would normally call the vision fallback, but we'll mock the result
+        # This would normally call the vision fallback, but we'll simulate the result
         # to show the prompt structure without actually processing an image
 
         print("\n2. Expected prompt structure sent to text-only model:")

@@ -82,10 +82,10 @@ def test_tool_call_tags_exact_format():
     # Test rewriting
     content = '<tool_call>{"name": "test"}</tool_call>'
 
-    def mock_stream():
+    def test_stream():
         yield GenerateResponse(content=content, model="test-model")
 
-    results = list(processor.process_stream(mock_stream()))
+    results = list(processor.process_stream(test_stream()))
     full_output = "".join([r.content for r in results if r.content])
 
     # Should have exact tags
@@ -108,11 +108,11 @@ def test_streaming_preserves_tool_calls():
     chunk1 = '<function_call>{"name": '
     chunk2 = '"test", "arguments": {}}</function_call>'
 
-    def mock_stream():
+    def test_stream():
         yield GenerateResponse(content=chunk1, model="test-model")
         yield GenerateResponse(content=chunk2, model="test-model")
 
-    results = list(processor.process_stream(mock_stream()))
+    results = list(processor.process_stream(test_stream()))
     full_output = "".join([r.content for r in results if r.content])
 
     # Tool call must be in output (buffered until complete, then rewritten)
@@ -134,10 +134,10 @@ def test_no_rewriting_without_custom_tags():
 
     content = '<tool_call>{"name": "test"}</tool_call>'
 
-    def mock_stream():
+    def test_stream():
         yield GenerateResponse(content=content, model="test-model")
 
-    results = list(processor.process_stream(mock_stream()))
+    results = list(processor.process_stream(test_stream()))
     full_output = "".join([r.content for r in results if r.content])
 
     # Without custom tags and rewriting, behavior depends on detector mode

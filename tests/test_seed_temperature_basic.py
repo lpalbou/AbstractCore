@@ -13,8 +13,9 @@ from pathlib import Path
 # Add abstractcore to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import pytest
 from abstractcore import create_llm, BasicSession
-from abstractcore.providers.mock_provider import MockProvider
+from abstractcore.providers.openai_provider import OpenAIProvider
 
 
 class TestSeedTemperatureParameters:
@@ -22,8 +23,11 @@ class TestSeedTemperatureParameters:
     
     def test_interface_parameter_inheritance(self):
         """Test that parameters are properly inherited from interface"""
-        # Test with mock provider to avoid external dependencies
-        provider = MockProvider(model="test-model", temperature=0.3, seed=123)
+        # Test with OpenAI provider (skip if not available)
+        try:
+            provider = OpenAIProvider(model="gpt-4o", temperature=0.3, seed=123)
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         
         assert hasattr(provider, 'temperature'), "Provider should have temperature attribute"
         assert hasattr(provider, 'seed'), "Provider should have seed attribute"
@@ -32,14 +36,20 @@ class TestSeedTemperatureParameters:
     
     def test_parameter_defaults(self):
         """Test default parameter values"""
-        provider = MockProvider(model="test-model")
+        try:
+            provider = OpenAIProvider(model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         
         assert provider.temperature == 0.7, "Default temperature should be 0.7"
         assert provider.seed is None, "Default seed should be None"
     
     def test_parameter_override_in_generate(self):
         """Test parameter override in generate() calls"""
-        provider = MockProvider(model="test-model", temperature=0.5, seed=42)
+        try:
+            provider = OpenAIProvider(model="gpt-4o", temperature=0.5, seed=42)
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         
         # Test the _extract_generation_params method directly
         params = provider._extract_generation_params(temperature=0.8, seed=999)
@@ -49,7 +59,10 @@ class TestSeedTemperatureParameters:
     
     def test_session_parameter_persistence(self):
         """Test session-level parameter persistence"""
-        provider = MockProvider(model="test-model")
+        try:
+            provider = OpenAIProvider(model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         session = BasicSession(
             provider=provider,
             temperature=0.2,
@@ -61,7 +74,10 @@ class TestSeedTemperatureParameters:
     
     def test_session_parameter_inheritance(self):
         """Test that session parameters are passed to provider"""
-        provider = MockProvider(model="test-model")
+        try:
+            provider = OpenAIProvider(model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         session = BasicSession(
             provider=provider,
             temperature=0.1,
@@ -86,7 +102,10 @@ class TestSeedTemperatureParameters:
     
     def test_parameter_fallback_hierarchy(self):
         """Test parameter fallback: kwargs -> instance -> defaults"""
-        provider = MockProvider(model="test-model", temperature=0.5, seed=100)
+        try:
+            provider = OpenAIProvider(model="gpt-4o", temperature=0.5, seed=100)
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         
         # Test 1: Use instance values (no kwargs)
         params = provider._extract_generation_params()
@@ -105,7 +124,10 @@ class TestSeedTemperatureParameters:
     
     def test_seed_none_handling(self):
         """Test that seed=None is handled correctly"""
-        provider = MockProvider(model="test-model", seed=None)
+        try:
+            provider = OpenAIProvider(model="gpt-4o", seed=None)
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         
         params = provider._extract_generation_params()
         assert "seed" not in params or params["seed"] is None, "None seed should not be included"
@@ -117,9 +139,12 @@ class TestSeedTemperatureParameters:
     def test_temperature_bounds(self):
         """Test temperature parameter bounds (informational)"""
         # Test that extreme values are accepted (providers handle validation)
-        provider1 = MockProvider(model="test-model", temperature=0.0)
-        provider2 = MockProvider(model="test-model", temperature=1.0)
-        provider3 = MockProvider(model="test-model", temperature=2.0)  # Some providers allow > 1.0
+        try:
+            provider1 = OpenAIProvider(model="gpt-4o", temperature=0.0)
+            provider2 = OpenAIProvider(model="gpt-4o", temperature=1.0)
+            provider3 = OpenAIProvider(model="gpt-4o", temperature=2.0)  # Some providers allow > 1.0
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         
         assert provider1.temperature == 0.0
         assert provider2.temperature == 1.0
@@ -127,9 +152,12 @@ class TestSeedTemperatureParameters:
     
     def test_seed_integer_types(self):
         """Test that various integer types work for seed"""
-        provider1 = MockProvider(model="test-model", seed=42)
-        provider2 = MockProvider(model="test-model", seed=0)
-        provider3 = MockProvider(model="test-model", seed=-1)
+        try:
+            provider1 = OpenAIProvider(model="gpt-4o", seed=42)
+            provider2 = OpenAIProvider(model="gpt-4o", seed=0)
+            provider3 = OpenAIProvider(model="gpt-4o", seed=-1)
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
         
         assert provider1.seed == 42
         assert provider2.seed == 0
@@ -139,12 +167,12 @@ class TestSeedTemperatureParameters:
         """Test that create_llm passes parameters correctly"""
         # This tests the factory function parameter passing
         try:
-            provider = create_llm("mock", model="test-model", temperature=0.25, seed=555)
+            provider = create_llm("openai", model="gpt-4o", temperature=0.25, seed=555)
             assert provider.temperature == 0.25
             assert provider.seed == 555
         except Exception:
-            # If mock provider isn't available through create_llm, skip
-            pytest.skip("Mock provider not available through create_llm")
+            # If OpenAI provider isn't available through create_llm, skip
+            pytest.skip("OpenAI provider not available through create_llm")
 
 
 class TestProviderSpecificBehavior:

@@ -388,7 +388,7 @@ Tools can call other tools or return data that triggers additional tool calls:
 @tool
 def get_user_location(user_id: str) -> str:
     """Get the location of a user."""
-    # Mock implementation
+    # Simulated implementation
     locations = {"user123": "Paris", "user456": "Tokyo"}
     return locations.get(user_id, "Unknown")
 

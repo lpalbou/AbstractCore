@@ -88,11 +88,14 @@ class TestProviderConnectivity:
             else:
                 raise
 
-    def test_mock_connectivity(self):
-        """Test Mock provider can be created."""
-        provider = create_llm("mock", model="test-model")
-        assert provider is not None
-        assert provider.model == "test-model"
+    def test_openai_connectivity(self):
+        """Test OpenAI provider can be created."""
+        try:
+            provider = create_llm("openai", model="gpt-4o")
+            assert provider is not None
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
+        assert provider.model == "gpt-4o"
 
 
 if __name__ == "__main__":

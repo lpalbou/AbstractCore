@@ -289,8 +289,8 @@ class TestRealLLMIntegration:
                 cache_dir=self.cache_dir
             )
 
-            # Use mock LLM to avoid API calls but test structure
-            llm = create_llm("mock")
+            # Use OpenAI LLM for testing structure
+            llm = create_llm("openai")
 
             # Real knowledge base
             knowledge_base = [

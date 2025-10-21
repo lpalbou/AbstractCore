@@ -5,7 +5,7 @@
 AbstractCore provides comprehensive **vision capabilities** that enable seamless image analysis across multiple AI providers and models. The system automatically handles image optimization, provider-specific formatting, and intelligent fallback mechanisms, making it the most robust multimodal AI framework available for production applications.
 
 **Key Metrics:**
-- **7 providers** with vision support: OpenAI, Anthropic, Ollama, LMStudio, HuggingFace, MLX, Mock
+- **6 providers** with vision support: OpenAI, Anthropic, Ollama, LMStudio, HuggingFace, MLX
 - **15+ vision models** supported across cloud and local deployments
 - **6 image formats** with automatic optimization: PNG, JPEG, GIF, WEBP, BMP, TIFF
 - **Automatic resolution optimization** up to 4096x4096 pixels per model capability

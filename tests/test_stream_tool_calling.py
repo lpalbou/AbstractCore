@@ -388,7 +388,7 @@ class TestStreamToolCalling:
         # Always try local providers
         providers_to_test.extend([
             ("ollama", "qwen3-coder:30b", {"base_url": "http://localhost:11434"}),  # Use standardized model
-            ("mock", "test-model", {})
+            ("openai", "gpt-4o-mini", {})
         ])
 
         for provider_name, model, config in providers_to_test:

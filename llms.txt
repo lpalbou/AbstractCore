@@ -17,7 +17,7 @@ pip install abstractcore[all]
 - **[API Reference](docs/api-reference.md)**: Complete Python API with examples
 - **[Centralized Configuration](docs/centralized-config.md)**: Global defaults, app preferences, API key management
 - **[Media Handling System](docs/media-handling-system.md)**: Universal file attachment (images, PDFs, Office docs, CSV) across all providers
-- **[Vision Capabilities](docs/vision-capabilities.md)**: Image analysis across all providers with automatic optimization
+- **[Vision Capabilities](docs/vision-capabilities.md)**: Image analysis across 6 providers with automatic optimization
 - **[Universal Tool Calling](docs/tool-calling.md)**: @tool decorator works across ALL providers
 - **[Provider Discovery](docs/getting-started.md)**: Centralized registry to programmatically list ALL providers and models
 - **[Session Management](docs/session.md)**: Persistent conversations with analytics and auto-compaction
@@ -92,7 +92,7 @@ pip install abstractcore[all]
 from abstractcore import create_llm
 
 # Factory pattern creates appropriate provider
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
 response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
@@ -139,8 +139,8 @@ abstractcore --set-global-default ollama/llama3:8b
 
 # Set app-specific defaults for optimal performance
 abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default extractor ollama qwen3:4b-instruct
-abstractcore --set-app-default judge anthropic claude-haiku-4-5
+abstractcore --set-app-default extractor ollama llama3.2:3b
+abstractcore --set-app-default judge anthropic claude-3-5-haiku-latest
 
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
@@ -202,8 +202,8 @@ response = llm.generate(
 
 # Cross-provider consistency - same code works everywhere
 openai_response = create_llm("openai", model="gpt-4o").generate("Analyze", media=["chart.png"])
-anthropic_response = create_llm("anthropic", model="claude-sonnet-4-5").generate("Analyze", media=["chart.png"])
-ollama_response = create_llm("ollama", model="qwen2.5vl:7b").generate("Analyze", media=["chart.png"])
+anthropic_response = create_llm("anthropic", model="claude-3-5-sonnet-latest").generate("Analyze", media=["chart.png"])
+ollama_response = create_llm("ollama", model="qwen2.5-vl:7b").generate("Analyze", media=["chart.png"])
 
 # Vision fallback for text-only models (one-time setup)
 # abstractcore --download-vision-model  # Downloads local vision model
@@ -221,7 +221,7 @@ def get_weather(city: str) -> str:
     return f"Weather in {city}: 72°F, Sunny"
 
 # Works with ANY provider - OpenAI, Anthropic, Ollama, etc.
-llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+llm = create_llm("ollama", model="llama3.2:3b")
 response = llm.generate(
     "What's the weather in Paris?",
     tools=[get_weather]  # Automatic format detection and conversion
@@ -286,7 +286,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-haiku-4-5",
+    model="claude-3-5-haiku-latest",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000,     # Maximum input tokens (auto-calculated if not set)
@@ -296,7 +296,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-haiku-4-5")
+estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings - ALL providers track input + output separately
@@ -348,14 +348,14 @@ from abstractcore.tools.tag_rewriter import ToolCallTagRewriter
 # Custom tag configuration for any agent framework
 llm = create_llm(
     "ollama",
-    model="qwen3-coder:30b",
+    model="llama3.2:3b",
     tool_call_tags="function_call"  # Converts to: <function_call>...JSON...</function_call>
 )
 
 # Multiple custom formats
 llm = create_llm(
     "mlx",
-    model="qwen3-air-4bit",
+    model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
     tool_call_tags=("[[tool_use]]", "[[/tool_use]]")  # Start and end tags
 )
 
@@ -541,17 +541,17 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 ### Supported Providers
 | Provider | Features | SEED Support | Default Model |
 |----------|----------|-------------|---------------|
-| **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o), media processing | ✅ Native | gpt-5-nano-2025-08-07 |
-| **Anthropic** | Native tools, streaming, structured output, vision (Claude 4.5), media processing | ⚠️ Warning* | claude-haiku-4-5 |
-| **Ollama** | Prompted tools, streaming, local models, vision (qwen2.5vl:7b), media processing | ✅ Native | qwen3-coder:30b |
+| **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o), media processing | ✅ Native | gpt-4o-mini |
+| **Anthropic** | Native tools, streaming, structured output, vision (Claude 3.5), media processing | ⚠️ Warning* | claude-3-5-haiku-latest |
+| **Ollama** | Prompted tools, streaming, local models, vision (qwen2.5vl:7b), media processing | ✅ Native | llama3.2:3b |
 | **LMStudio** | Prompted tools, streaming, local models, vision (qwen2.5-vl), media processing | ✅ Native | llama-3.2-8b-instruct |
-| **MLX** | Prompted tools, streaming, Apple Silicon, vision models, media processing | ✅ Native | qwen3-air-4bit |
-| **HuggingFace** | Prompted tools, streaming, open models, vision models, media processing | ✅ Native | microsoft/DialoGPT-large |
+| **MLX** | Prompted tools, streaming, Apple Silicon, vision models, media processing | ✅ Native | mlx-community/Qwen2.5-Coder-7B-Instruct-4bit |
+| **HuggingFace** | Prompted tools, streaming, open models, vision models, media processing | ✅ Native | unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit |
 
 *Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
 
 ### Key Capabilities for AI
-- **137+ models** across 6 providers via centralized registry
+- **130+ models** across 6 providers via centralized registry
 - **Universal media handling** with `media=[]` API and `@filename` CLI syntax
 - **Vision capabilities** across all providers with automatic optimization and fallback
 - **Centralized configuration** with global defaults and app-specific preferences

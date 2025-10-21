@@ -60,8 +60,8 @@ def sample_media_files():
 
 
 @pytest.fixture
-def mock_provider_response():
-    """Create mock provider response for testing."""
+def test_provider_response():
+    """Create test provider response for testing."""
     from unittest.mock import Mock
 
     response = Mock()

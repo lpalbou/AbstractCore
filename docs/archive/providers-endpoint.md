@@ -167,21 +167,6 @@ ollama serve
 - Excellent for embeddings
 - Active community
 
-### Testing Provider
-
-#### Mock
-- **Name**: `mock`
-- **Type**: Testing/development provider
-- **Models**: Simulated models for testing
-- **Authentication**: None
-- **Cost**: Free
-- **Best For**: Testing, CI/CD, development without external dependencies
-
-**Key Features:**
-- No external dependencies
-- Predictable responses for testing
-- Fast response times
-- No rate limits
 
 ## Example Requests
 

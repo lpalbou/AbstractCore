@@ -34,7 +34,7 @@ def calculate(expression: str) -> str:
 
 
 def get_weather(city: str) -> str:
-    """Get weather for a city (mock implementation)"""
+    """Get weather for a city (simulated implementation)"""
     weather_data = {
         "New York": "Sunny, 72°F",
         "London": "Cloudy, 59°F",

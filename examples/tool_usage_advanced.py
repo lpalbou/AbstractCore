@@ -26,13 +26,13 @@ from abstractcore.tools.core import ToolCall, ToolResult
 
 # Custom tool implementations
 class WeatherAPI:
-    """Mock weather API for demonstration"""
+    """Simulated weather API for demonstration"""
 
     @staticmethod
     def get_weather(location: str, unit: str = "fahrenheit") -> Dict[str, Any]:
         """Simulate weather API call"""
         # In a real implementation, this would call an actual weather API
-        mock_data = {
+        weather_data = {
             "Paris": {"temp": 72 if unit == "fahrenheit" else 22, "condition": "Sunny"},
             "Tokyo": {"temp": 68 if unit == "fahrenheit" else 20, "condition": "Cloudy"},
             "New York": {"temp": 75 if unit == "fahrenheit" else 24, "condition": "Partly Cloudy"},
@@ -42,13 +42,13 @@ class WeatherAPI:
         # Simulate API delay
         time.sleep(0.1)
 
-        for city in mock_data:
+        for city in weather_data:
             if city.lower() in location.lower():
                 return {
                     "location": location,
-                    "temperature": mock_data[city]["temp"],
+                    "temperature": weather_data[city]["temp"],
                     "unit": unit,
-                    "condition": mock_data[city]["condition"],
+                    "condition": weather_data[city]["condition"],
                     "timestamp": time.time()
                 }
 
@@ -61,7 +61,7 @@ class WeatherAPI:
         }
 
 class DatabaseManager:
-    """Mock database for demonstration"""
+    """Simulated database for demonstration"""
 
     def __init__(self):
         self.data = {
@@ -76,7 +76,7 @@ class DatabaseManager:
         }
 
     def query(self, table: str, conditions: Optional[Dict] = None) -> List[Dict]:
-        """Query the mock database"""
+        """Query the simulated database"""
         if table not in self.data:
             raise ValueError(f"Table '{table}' not found")
 
@@ -307,7 +307,7 @@ def custom_tool_handler(tool_call: ToolCall) -> ToolResult:
             weather_data = weather_api.get_weather(location, unit)
 
             if include_forecast:
-                # Add mock forecast data
+                # Add simulated forecast data
                 weather_data["forecast"] = [
                     {"day": "Tomorrow", "temp": weather_data["temperature"] + 2, "condition": "Sunny"},
                     {"day": "Day 2", "temp": weather_data["temperature"] - 1, "condition": "Cloudy"},
@@ -412,10 +412,10 @@ def custom_tool_handler(tool_call: ToolCall) -> ToolResult:
 
             # Simulate file operations (for safety, don't actually perform them)
             if operation == "list":
-                mock_files = ["file1.txt", "file2.py", "data.json", "readme.md"]
+                sample_files = ["file1.txt", "file2.py", "data.json", "readme.md"]
                 return ToolResult(
                     success=True,
-                    output=f"Files in {path}:\n" + "\n".join(f"  - {f}" for f in mock_files),
+                    output=f"Files in {path}:\n" + "\n".join(f"  - {f}" for f in sample_files),
                     execution_time=time.time() - start_time
                 )
             elif operation == "read":

@@ -43,8 +43,11 @@ class TestEmbeddingsLLMIntegration:
             assert len(embedding) == 384
             assert all(isinstance(x, (int, float)) for x in embedding)
 
-            # Create LLM provider (mock to avoid API calls)
-            llm = create_llm("mock")
+            # Create LLM provider (OpenAI if available)
+            try:
+                llm = create_llm("openai")
+            except ImportError:
+                pytest.skip("OpenAI provider not available")
 
             # Verify both work independently
             similarity = embedder.compute_similarity("test 1", "test 2")
@@ -73,7 +76,10 @@ class TestEmbeddingsLLMIntegration:
                 model="sentence-transformers/all-MiniLM-L6-v2",
                 cache_dir=self.cache_dir
             )
-            llm = create_llm("mock")
+            try:
+                llm = create_llm("openai")
+            except ImportError:
+                pytest.skip("OpenAI provider not available")
 
             # Real knowledge base
             knowledge_base = [
@@ -221,7 +227,10 @@ Based on the provided context, please answer the question:"""
                 model="sentence-transformers/all-MiniLM-L6-v2",
                 cache_dir=self.cache_dir
             )
-            llm = create_llm("mock")
+            try:
+                llm = create_llm("openai")
+            except ImportError:
+                pytest.skip("OpenAI provider not available")
             session = BasicSession(llm)
 
             # Test session with embedding-enhanced prompts

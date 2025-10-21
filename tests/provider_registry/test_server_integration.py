@@ -52,10 +52,10 @@ class TestServerProviderIntegration:
     def test_providers_endpoint_uses_registry(self, mock_get_providers):
         """Test that /providers endpoint uses centralized registry."""
         # Mock the registry function
-        mock_providers_data = [
+        test_providers_data = [
             {
-                "name": "mock",
-                "display_name": "Mock Provider",
+                "name": "openai",
+                "display_name": "OpenAI Provider",
                 "type": "llm",
                 "status": "available",
                 "model_count": 3,
@@ -66,7 +66,7 @@ class TestServerProviderIntegration:
                 "installation_extras": None
             }
         ]
-        mock_get_providers.return_value = mock_providers_data
+        mock_get_providers.return_value = test_providers_data
 
         response = self.client.get("/providers")
 
@@ -84,8 +84,8 @@ class TestServerProviderIntegration:
         # Check the response structure
         providers = data["providers"]
         assert len(providers) == 1
-        assert providers[0]["name"] == "mock"
-        assert providers[0]["display_name"] == "Mock Provider"
+        assert providers[0]["name"] == "openai"
+        assert providers[0]["display_name"] == "OpenAI Provider"
 
     @patch('abstractcore.providers.registry.get_available_models_for_provider')
     def test_get_models_from_provider_function(self, mock_get_models):
@@ -94,10 +94,10 @@ class TestServerProviderIntegration:
 
         mock_get_models.return_value = ["model1", "model2", "model3"]
 
-        result = get_models_from_provider("mock")
+        result = get_models_from_provider("openai")
 
         assert result == ["model1", "model2", "model3"]
-        mock_get_models.assert_called_once_with("mock")
+        mock_get_models.assert_called_once_with("openai")
 
     @patch('abstractcore.providers.registry.get_available_models_for_provider')
     def test_get_models_from_provider_error_handling(self, mock_get_models):
@@ -118,14 +118,14 @@ class TestServerProviderIntegration:
     def test_list_all_models_uses_registry_providers(self, mock_get_models, mock_list_providers):
         """Test that listing all models uses registry for provider discovery."""
         # Mock registry provider list
-        mock_list_providers.return_value = ["mock", "openai"]
+        mock_list_providers.return_value = ["openai", "anthropic"]
 
         # Mock models for each provider
         def mock_get_models_side_effect(provider):
-            if provider == "mock":
-                return ["mock-model-1", "mock-model-2"]
-            elif provider == "openai":
+            if provider == "openai":
                 return ["gpt-4", "gpt-3.5-turbo"]
+            elif provider == "anthropic":
+                return ["claude-3-5-sonnet", "claude-3-5-haiku"]
             return []
 
         mock_get_models.side_effect = mock_get_models_side_effect
@@ -140,10 +140,10 @@ class TestServerProviderIntegration:
 
         # Check that models from both providers are included
         model_ids = [model["id"] for model in data["data"]]
-        assert "mock/mock-model-1" in model_ids
-        assert "mock/mock-model-2" in model_ids
         assert "openai/gpt-4" in model_ids
         assert "openai/gpt-3.5-turbo" in model_ids
+        assert "anthropic/claude-3-5-sonnet" in model_ids
+        assert "anthropic/claude-3-5-haiku" in model_ids
 
     def test_providers_endpoint_structure(self):
         """Test the structure of the providers endpoint response."""

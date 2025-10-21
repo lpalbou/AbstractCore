@@ -283,7 +283,7 @@ class TestMediaIntegration:
             invalid_file = Path(self.temp_dir) / "invalid.xyz"
             invalid_file.write_text("not a valid media file")
 
-            # Mock provider to focus on media handling errors
+            # Use mocked provider to focus on media handling errors
             with patch('abstractcore.providers.openai_provider.OpenAI') as mock_openai:
                 mock_client = Mock()
                 mock_openai.return_value = mock_client

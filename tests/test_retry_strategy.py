@@ -420,8 +420,8 @@ class TestRetryManager:
         # No retry_success event in minimal approach - success is implicit
 
 
-class MockProvider(BaseProvider):
-    """Mock provider for testing integration."""
+class TestRetryProvider(BaseProvider):
+    """Test provider for retry integration testing."""
 
     def __init__(self, model: str = "test-model", **kwargs):
         super().__init__(model, **kwargs)
@@ -452,11 +452,11 @@ class TestBaseProviderIntegration:
 
     def test_provider_initialization_with_retry(self):
         """Test provider initializes with retry manager."""
-        provider = MockProvider("test-model")
+        provider = TestRetryProvider("test-model")
 
         assert hasattr(provider, 'retry_manager')
         assert isinstance(provider.retry_manager, RetryManager)
-        assert provider.provider_key == "MockProvider:test-model"
+        assert provider.provider_key == "TestRetryProvider:test-model"
 
     def test_structured_output_retry_strategy_parameter(self):
         """Test passing retry_strategy parameter to generate method."""
@@ -467,7 +467,7 @@ class TestBaseProviderIntegration:
             name: str
             value: int
 
-        provider = MockProvider("test-model")
+        provider = TestRetryProvider("test-model")
         custom_retry = FeedbackRetry(max_attempts=5)
 
         # Test that we can pass retry_strategy parameter without error
@@ -500,7 +500,7 @@ class TestBaseProviderIntegration:
             name: str
             value: int
 
-        provider = MockProvider("test-model")
+        provider = TestRetryProvider("test-model")
 
         def mock_generate(*args, **kwargs):
             return GenerateResponse(
@@ -524,14 +524,14 @@ class TestBaseProviderIntegration:
     def test_provider_custom_retry_config(self):
         """Test provider with custom retry configuration."""
         custom_config = RetryConfig(max_attempts=5)
-        provider = MockProvider("test-model", retry_config=custom_config)
+        provider = TestRetryProvider("test-model", retry_config=custom_config)
 
         assert provider.retry_manager.config.max_attempts == 5
 
     @patch('abstractcore.providers.base.time.sleep')
     def test_provider_retry_on_failure(self, mock_sleep):
         """Test provider retries on API failures."""
-        provider = MockProvider("test-model")
+        provider = TestRetryProvider("test-model")
 
         # Mock _generate_internal to fail then succeed
         original_generate = provider._generate_internal
@@ -555,7 +555,7 @@ class TestBaseProviderIntegration:
 
     def test_provider_no_retry_on_auth_error(self):
         """Test provider doesn't retry on authentication errors."""
-        provider = MockProvider("test-model")
+        provider = TestRetryProvider("test-model")
 
         # Mock _generate_internal to always fail with auth error
         provider._generate_internal = Mock(side_effect=AuthenticationError("Invalid API key"))
@@ -569,7 +569,7 @@ class TestBaseProviderIntegration:
     @patch('abstractcore.events.emit_global')
     def test_provider_retry_events(self, mock_emit):
         """Test provider emits retry events."""
-        provider = MockProvider("test-model")
+        provider = TestRetryProvider("test-model")
 
         # Mock _generate_internal to fail once then succeed
         call_count = 0
@@ -688,7 +688,7 @@ class TestIntegrationScenarios:
     @patch('abstractcore.events.emit_global')
     def test_rate_limit_recovery_scenario(self, mock_emit, mock_sleep):
         """Test realistic rate limit recovery scenario."""
-        provider = MockProvider("gpt-4")
+        provider = TestRetryProvider("gpt-4")
 
         # Simulate rate limit that clears after retries
         call_count = 0
@@ -719,7 +719,7 @@ class TestIntegrationScenarios:
     def test_circuit_breaker_prevents_cascade_failure(self):
         """Test circuit breaker prevents cascade failures."""
         config = RetryConfig(failure_threshold=2, max_attempts=1)
-        provider = MockProvider("failing-model", retry_config=config)
+        provider = TestRetryProvider("failing-model", retry_config=config)
 
         # Mock to always fail
         provider._generate_internal = Mock(side_effect=ProviderAPIError("Service down"))
@@ -740,7 +740,7 @@ class TestIntegrationScenarios:
 
     def test_mixed_error_types_scenario(self):
         """Test handling of mixed error types in sequence."""
-        provider = MockProvider("mixed-errors")
+        provider = TestRetryProvider("mixed-errors")
 
         call_count = 0
         def mixed_errors(*args, **kwargs):

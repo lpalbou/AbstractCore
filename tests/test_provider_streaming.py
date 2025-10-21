@@ -197,9 +197,12 @@ class TestProviderStreaming:
             else:
                 raise
 
-    def test_mock_streaming_basic(self):
-        """Test Mock provider streaming functionality."""
-        provider = create_llm("mock", model="test-model")
+    def test_openai_streaming_basic(self):
+        """Test OpenAI provider streaming functionality."""
+        try:
+            provider = create_llm("openai", model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
 
         # Test streaming
         stream = provider.generate(
@@ -304,7 +307,10 @@ class TestProviderStreaming:
 
     def test_streaming_chunk_structure(self):
         """Test that streaming chunks have proper structure."""
-        provider = create_llm("mock", model="test-model")
+        try:
+            provider = create_llm("openai", model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
 
         stream = provider.generate("Test prompt", stream=True)
 
@@ -321,7 +327,10 @@ class TestProviderStreaming:
 
     def test_streaming_interruption(self):
         """Test that streaming can be interrupted gracefully."""
-        provider = create_llm("mock", model="test-model")
+        try:
+            provider = create_llm("openai", model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
 
         stream = provider.generate("Long response test", stream=True)
 
@@ -337,7 +346,10 @@ class TestProviderStreaming:
 
     def test_streaming_empty_response(self):
         """Test streaming behavior with empty or minimal responses."""
-        provider = create_llm("mock", model="test-model")
+        try:
+            provider = create_llm("openai", model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
 
         stream = provider.generate("", stream=True)  # Empty prompt
 

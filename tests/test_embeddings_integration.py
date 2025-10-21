@@ -204,7 +204,10 @@ class TestLLMEmbeddingIntegration:
                 mock_llm = mock_create_llm.return_value
                 mock_llm.generate.return_value = "Mock response"
 
-                llm = create_llm("mock", model="test")
+                try:
+                    llm = create_llm("openai", model="gpt-4o")
+                except ImportError:
+                    pytest.skip("OpenAI provider not available")
 
                 # Use both independently
                 embedding = embedder.embed("Test text")

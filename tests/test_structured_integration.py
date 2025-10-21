@@ -139,8 +139,8 @@ class TestStructuredOutputUseCases:
             price: float
             category: str
 
-        # Mock provider that extracts product info
-        class MockExtractorProvider:
+        # Test provider that extracts product info
+        class TestExtractorProvider:
             model_capabilities = {"structured_output": "prompted"}
 
             def _generate_internal(self, **kwargs):
@@ -152,7 +152,7 @@ class TestStructuredOutputUseCases:
         from abstractcore.structured.handler import StructuredOutputHandler
 
         handler = StructuredOutputHandler()
-        provider = MockExtractorProvider()
+        provider = TestExtractorProvider()
 
         unstructured_text = """
         Check out these amazing Wireless Headphones!
@@ -180,7 +180,7 @@ class TestStructuredOutputUseCases:
             event_preference: str
             dietary_restrictions: Optional[str] = None
 
-        class MockFormFillerProvider:
+        class TestFormFillerProvider:
             model_capabilities = {"structured_output": "prompted"}
 
             def _generate_internal(self, **kwargs):
@@ -193,7 +193,7 @@ class TestStructuredOutputUseCases:
         from abstractcore.structured.handler import StructuredOutputHandler
 
         handler = StructuredOutputHandler()
-        provider = MockFormFillerProvider()
+        provider = TestFormFillerProvider()
 
         natural_input = """
         I'm Alice Smith, my email is alice@example.com.

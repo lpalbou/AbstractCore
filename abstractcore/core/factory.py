@@ -12,7 +12,7 @@ def create_llm(provider: str, model: Optional[str] = None, **kwargs) -> Abstract
     Create an LLM provider instance with unified token parameter support.
 
     Args:
-        provider: Provider name (openai, anthropic, ollama, huggingface, mlx, lmstudio, mock)
+        provider: Provider name (openai, anthropic, ollama, huggingface, mlx, lmstudio)
         model: Model name (optional, will use provider default)
         **kwargs: Additional configuration including token parameters
 
