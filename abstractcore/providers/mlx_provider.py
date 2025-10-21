@@ -266,6 +266,9 @@ class MLXProvider(BaseProvider):
             mx.random.seed(seed)
             self.logger.debug(f"Set MLX random seed to {seed} for deterministic generation")
 
+        # Track generation time
+        start_time = time.time()
+        
         # Try different MLX API signatures
         try:
             # Try new mlx-lm API
@@ -288,6 +291,8 @@ class MLXProvider(BaseProvider):
                 # Fallback to basic response
                 response_text = prompt + " I am an AI assistant powered by MLX on Apple Silicon."
 
+        gen_time = round((time.time() - start_time) * 1000, 1)
+        
         # Use the full response as-is - preserve all content including thinking
         generated = response_text.strip()
 
@@ -295,21 +300,25 @@ class MLXProvider(BaseProvider):
             content=generated,
             model=self.model,
             finish_reason="stop",
-            usage=self._calculate_usage(prompt, generated)
+            usage=self._calculate_usage(prompt, generated),
+            gen_time=gen_time
         )
 
     def _calculate_usage(self, prompt: str, response: str) -> Dict[str, int]:
         """Calculate token usage using centralized token utilities."""
         from ..utils.token_utils import TokenUtils
         
-        prompt_tokens = TokenUtils.estimate_tokens(prompt, self.model)
-        completion_tokens = TokenUtils.estimate_tokens(response, self.model)
-        total_tokens = prompt_tokens + completion_tokens
+        input_tokens = TokenUtils.estimate_tokens(prompt, self.model)
+        output_tokens = TokenUtils.estimate_tokens(response, self.model)
+        total_tokens = input_tokens + output_tokens
         
         return {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": total_tokens
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            # Keep legacy keys for backward compatibility
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens
         }
 
     def _stream_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float, tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:

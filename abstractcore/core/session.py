@@ -760,7 +760,7 @@ class BasicSession:
                 "tokens_before": original_tokens,
                 "tokens_after": self._estimate_tokens_for_summary(summary_result.summary),
                 "compression_ratio": self._calculate_compression_ratio(original_tokens, summary_result.summary),
-                "generation_time_ms": duration_ms
+                "gen_time": duration_ms
             }
         }
         

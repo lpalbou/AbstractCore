@@ -5,6 +5,36 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.7] - 2025-10-21
+
+### Fixed
+- **Tools Dependencies**: Added missing `requests` dependency to core requirements and created `tools` optional extra for enhanced functionality
+
+### Added
+
+#### Consistent Token Terminology
+- **Unified Token Naming**: Standardized token terminology across AbstractCore to match input parameter naming
+  - `GeneratedResponse` now provides `input_tokens`, `output_tokens`, `total_tokens` properties
+  - Maintains backward compatibility with legacy `prompt_tokens` and `completion_tokens` keys
+  - All providers now use consistent terminology in usage dictionaries
+  - Token counts sourced from: Provider APIs (OpenAI, Anthropic, LMStudio) or AbstractCore's `token_utils.py` (MLX, HuggingFace, Mock)
+
+#### Token Count Source Transparency
+- **Provider-Specific Token Handling**: Clear documentation of token count sources
+  - **From Provider APIs**: OpenAI, Anthropic, LMStudio (native API token counts)
+  - **From AbstractCore**: MLX, HuggingFace, Mock providers (calculated using `token_utils.py`)
+  - **Mixed Sources**: Ollama (combination of provider and calculated tokens)
+- **Consistent Interface**: All providers normalized through unified `GeneratedResponse.usage` structure
+
+#### Generation Time Tracking
+- **Universal Timing**: Added `gen_time` property to `GeneratedResponse` across all providers (in milliseconds)
+  - **Precise Measurement**: Tracks actual API call duration for network-based providers (OpenAI, Anthropic, LMStudio, Ollama)
+  - **Local Processing Time**: Measures inference time for local providers (MLX, HuggingFace)
+  - **Simulated Timing**: Mock provider includes realistic timing simulation for testing
+  - **Precision**: Rounded to 1 decimal place for clean, readable output
+- **Performance Insights**: Enables performance monitoring, optimization, and comparative analysis across providers
+- **Summary Integration**: Generation time automatically included in `response.get_summary()` output
+
 ## [2.4.6] - 2025-10-21
 
 ### Added

@@ -44,6 +44,9 @@ except ImportError:
 from .processing import BasicSummarizer, SummaryStyle, SummaryLength, BasicExtractor
 _has_processing = True
 
+# Tools module (core functionality)
+from .tools import tool
+
 __all__ = [
     'create_llm',
     'BasicSession',
@@ -54,7 +57,8 @@ __all__ = [
     'MessageRole',
     'ModelNotFoundError',
     'ProviderAPIError',
-    'AuthenticationError'
+    'AuthenticationError',
+    'tool'
 ]
 
 if _has_embeddings:

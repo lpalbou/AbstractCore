@@ -109,7 +109,7 @@
                 "tokens_before": { "type": "integer" },
                 "tokens_after": { "type": "integer" },
                 "compression_ratio": { "type": "number" },
-                "generation_time_ms": { "type": "number" }
+                "gen_time": { "type": "number" }
               }
             }
           },

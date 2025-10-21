@@ -91,6 +91,7 @@ class GenerateResponse:
     usage: Optional[Dict[str, int]] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
     metadata: Optional[Dict[str, Any]] = None
+    gen_time: Optional[float] = None  # Generation time in milliseconds
 
     def has_tool_calls(self) -> bool:
         """Check if response contains tool calls"""
@@ -109,6 +110,29 @@ class GenerateResponse:
             parts.append(f"Model: {self.model}")
         if self.usage:
             parts.append(f"Tokens: {self.usage.get('total_tokens', 'unknown')}")
+        if self.gen_time:
+            parts.append(f"Time: {self.gen_time:.1f}ms")
         if self.tool_calls:
             parts.append(f"Tools: {len(self.tool_calls)} executed")
         return " | ".join(parts)
+    
+    @property
+    def input_tokens(self) -> Optional[int]:
+        """Get input tokens with consistent terminology (prompt_tokens or input_tokens)."""
+        if not self.usage:
+            return None
+        return self.usage.get('input_tokens') or self.usage.get('prompt_tokens')
+    
+    @property
+    def output_tokens(self) -> Optional[int]:
+        """Get output tokens with consistent terminology (completion_tokens or output_tokens)."""
+        if not self.usage:
+            return None
+        return self.usage.get('output_tokens') or self.usage.get('completion_tokens')
+    
+    @property
+    def total_tokens(self) -> Optional[int]:
+        """Get total tokens."""
+        if not self.usage:
+            return None
+        return self.usage.get('total_tokens')

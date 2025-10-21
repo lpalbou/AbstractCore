@@ -97,6 +97,24 @@ response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
 
+### Deterministic Generation
+```python
+from abstractcore import create_llm
+
+# Deterministic outputs with seed + temperature=0
+llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+
+# These will produce identical outputs
+response1 = llm.generate("Write exactly 3 words about coding")
+response2 = llm.generate("Write exactly 3 words about coding")
+print(f"Response 1: {response1.content}")  # "Innovative, challenging, rewarding."
+print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding."
+
+# Verified deterministic across providers (except Anthropic)
+# ✅ OpenAI, Ollama, MLX, HuggingFace, LMStudio: Same seed → Identical outputs
+# ⚠️ Anthropic: temperature=0 → Consistent outputs (issues warning for seed)
+```
+
 ### Provider Discovery (Centralized Registry)
 ```python
 from abstractcore.providers import get_all_providers_with_models
@@ -273,7 +291,7 @@ llm = create_llm(
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000,     # Maximum input tokens (auto-calculated if not set)
     temperature=0.7,            # Creativity (0.0-1.0)
-    seed=42                     # Deterministic outputs (when supported)
+    seed=42                     # Deterministic outputs (✅ OpenAI, Ollama, MLX, HuggingFace, LMStudio; ⚠️ Anthropic warns)
 )
 
 # Token estimation and validation
@@ -283,9 +301,24 @@ print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings - ALL providers track input + output separately
 response = llm.generate("Write a detailed analysis...")
-print(f"Input tokens (context): {response.usage['prompt_tokens']}")
-print(f"Output tokens (generated): {response.usage['completion_tokens']}")
-print(f"Total tokens: {response.usage['total_tokens']}")
+
+# Every generate() call returns a GenerateResponse object with consistent structure
+print(f"Generated text: {response.content}")         # The actual LLM response
+print(f"Model used: {response.model}")               # Model that generated the response
+print(f"Finish reason: {response.finish_reason}")   # Why generation stopped
+
+# Consistent token access across ALL providers (NEW in v2.4.7)
+print(f"Input tokens: {response.input_tokens}")     # Always available
+print(f"Output tokens: {response.output_tokens}")   # Always available  
+print(f"Total tokens: {response.total_tokens}")     # Always available
+print(f"Generation time: {response.gen_time}ms")    # Always available (rounded to 1 decimal)
+
+# Comprehensive summary
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"
+
+# Legacy access still works (backward compatibility)
+print(f"Legacy input: {response.usage.get('prompt_tokens')}")
+print(f"Legacy output: {response.usage.get('completion_tokens')}")
 ```
 
 ### Provider Health Monitoring
@@ -506,14 +539,16 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 ```
 
 ### Supported Providers
-| Provider | Features | Default Model |
-|----------|----------|---------------|
-| **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o), media processing | gpt-5-nano-2025-08-07 |
-| **Anthropic** | Native tools, streaming, structured output, vision (Claude 3.5), media processing | claude-3-5-haiku-latest |
-| **Ollama** | Prompted tools, streaming, local models, vision (qwen2.5vl:7b), media processing | qwen3-coder:30b |
-| **LMStudio** | Prompted tools, streaming, local models, vision (qwen2.5-vl), media processing | llama-3.2-8b-instruct |
-| **MLX** | Prompted tools, streaming, Apple Silicon, vision models, media processing | qwen3-air-4bit |
-| **HuggingFace** | Prompted tools, streaming, open models, vision models, media processing | microsoft/DialoGPT-large |
+| Provider | Features | SEED Support | Default Model |
+|----------|----------|-------------|---------------|
+| **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o), media processing | ✅ Native | gpt-5-nano-2025-08-07 |
+| **Anthropic** | Native tools, streaming, structured output, vision (Claude 3.5), media processing | ⚠️ Warning* | claude-3-5-haiku-latest |
+| **Ollama** | Prompted tools, streaming, local models, vision (qwen2.5vl:7b), media processing | ✅ Native | qwen3-coder:30b |
+| **LMStudio** | Prompted tools, streaming, local models, vision (qwen2.5-vl), media processing | ✅ Native | llama-3.2-8b-instruct |
+| **MLX** | Prompted tools, streaming, Apple Silicon, vision models, media processing | ✅ Native | qwen3-air-4bit |
+| **HuggingFace** | Prompted tools, streaming, open models, vision models, media processing | ✅ Native | microsoft/DialoGPT-large |
+
+*Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
 
 ### Key Capabilities for AI
 - **137+ models** across 6 providers via centralized registry
