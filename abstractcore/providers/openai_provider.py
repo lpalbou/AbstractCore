@@ -50,8 +50,7 @@ class OpenAIProvider(BaseProvider):
         # Preflight check: validate model exists
         self._validate_model_exists()
 
-        # Store configuration (remove duplicate max_tokens)
-        self.temperature = kwargs.get("temperature", 0.7)
+        # Store provider-specific configuration
         self.top_p = kwargs.get("top_p", 1.0)
         self.frequency_penalty = kwargs.get("frequency_penalty", 0.0)
         self.presence_penalty = kwargs.get("presence_penalty", 0.0)
@@ -125,6 +124,11 @@ class OpenAIProvider(BaseProvider):
             call_params["top_p"] = kwargs.get("top_p", self.top_p)
             call_params["frequency_penalty"] = kwargs.get("frequency_penalty", self.frequency_penalty)
             call_params["presence_penalty"] = kwargs.get("presence_penalty", self.presence_penalty)
+            
+            # Add seed if provided (OpenAI supports seed for deterministic outputs)
+            seed_value = kwargs.get("seed", self.seed)
+            if seed_value is not None:
+                call_params["seed"] = seed_value
 
         # Handle different token parameter names for different model families
         if self._uses_max_completion_tokens():

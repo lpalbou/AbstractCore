@@ -209,6 +209,16 @@ response = llm.generate(
     tools=[get_weather]  # Automatic format detection and conversion
 )
 
+# Built-in tools available in abstractcore.tools.common_tools
+from abstractcore.tools.common_tools import fetch_url, search_files, read_file
+
+# Intelligent web content fetching with automatic parsing
+result = fetch_url("https://api.github.com/repos/python/cpython")
+# Automatically detects JSON, HTML, images, PDFs, etc.
+
+# Available: fetch_url, search_files, list_files, read_file, write_file, 
+#           edit_file, web_search, execute_command
+
 # Enhanced metadata for complex tools
 @tool(
     description="Search database for records",
@@ -250,18 +260,20 @@ facts = session.extract_facts(entity_types=["person", "organization", "date"])
 session.save("conversation.json", summary=True, assessment=True, facts=True)
 ```
 
-### Token Management (Unified Parameters)
+### Generation Parameters (Unified Interface)
 ```python
 from abstractcore import create_llm
 from abstractcore.utils.token_utils import estimate_tokens
 
-# Unified token parameters work across ALL providers
+# Unified parameters work across ALL providers
 llm = create_llm(
     "anthropic",
     model="claude-3-5-haiku-latest",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
-    max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
+    max_input_tokens=24000,     # Maximum input tokens (auto-calculated if not set)
+    temperature=0.7,            # Creativity (0.0-1.0)
+    seed=42                     # Deterministic outputs (when supported)
 )
 
 # Token estimation and validation

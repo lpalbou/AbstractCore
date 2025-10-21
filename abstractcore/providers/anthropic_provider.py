@@ -47,8 +47,7 @@ class AnthropicProvider(BaseProvider):
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
 
-        # Store configuration (remove duplicate max_tokens)
-        self.temperature = kwargs.get("temperature", 0.7)
+        # Store provider-specific configuration
         self.top_p = kwargs.get("top_p", 1.0)
         self.top_k = kwargs.get("top_k", None)
 
@@ -131,6 +130,19 @@ class AnthropicProvider(BaseProvider):
         # Add top_k if specified
         if kwargs.get("top_k") or self.top_k:
             call_params["top_k"] = kwargs.get("top_k", self.top_k)
+
+        # Handle seed parameter (Anthropic doesn't support seed natively)
+        seed_value = kwargs.get("seed", self.seed)
+        if seed_value is not None:
+            import warnings
+            warnings.warn(
+                f"Seed parameter ({seed_value}) is not supported by Anthropic Claude API. "
+                f"For deterministic outputs, use temperature=0.0 which may provide more consistent results, "
+                f"though true determinism is not guaranteed.",
+                UserWarning,
+                stacklevel=3
+            )
+            self.logger.warning(f"Seed {seed_value} requested but not supported by Anthropic API")
 
         # Handle structured output using the "tool trick"
         structured_tool_name = None

@@ -196,10 +196,15 @@ class LMStudioProvider(BaseProvider):
             "model": self.model,
             "messages": chat_messages,
             "stream": stream,
-            "temperature": kwargs.get("temperature", 0.7),
+            "temperature": kwargs.get("temperature", self.temperature),
             "max_tokens": max_output_tokens,  # LMStudio uses max_tokens for output tokens
             "top_p": kwargs.get("top_p", 0.9),
         }
+
+        # Add seed if provided (LMStudio supports seed via OpenAI-compatible API)
+        seed_value = kwargs.get("seed", self.seed)
+        if seed_value is not None:
+            payload["seed"] = seed_value
 
         if stream:
             # Return streaming response - BaseProvider will handle tag rewriting via UnifiedStreamProcessor

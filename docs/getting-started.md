@@ -291,10 +291,50 @@ from abstractcore import create_llm
 llm = create_llm(
     "openai",
     model="gpt-4o-mini",
-    temperature=0.7,        # Creativity (0-2)
+    temperature=0.7,        # Creativity (0.0-1.0, higher = more creative)
+    seed=42,                # Deterministic outputs (same seed = same response)
     max_tokens=1000,        # Response length limit
     timeout=30              # Request timeout
 )
+
+# Override parameters per call
+response = llm.generate(
+    "Write a haiku about coding",
+    temperature=0.2,        # More focused for this call
+    seed=123                # Different seed for variety
+)
+```
+
+#### Generation Parameters
+
+- **`temperature`** (0.0-1.0): Controls randomness and creativity
+  - `0.0`: Deterministic, focused responses
+  - `0.7`: Balanced creativity (default)
+  - `1.0`: Maximum creativity and randomness
+
+- **`seed`** (integer): Ensures reproducible outputs
+  - Same seed + same prompt = same response (when supported)
+  - Useful for testing, debugging, and consistent results
+  - Provider support: OpenAI ✅, Anthropic ❌*, HuggingFace ✅, Ollama ✅, LMStudio ✅, MLX ❌*
+  - *Providers marked ❌ log seed for debugging but can't guarantee determinism
+
+#### Session-Level Parameters
+
+```python
+from abstractcore import BasicSession
+
+# Set default parameters for entire conversation
+session = BasicSession(
+    provider=llm,
+    temperature=0.5,        # Default for all messages
+    seed=42                 # Consistent across conversation
+)
+
+# Uses session defaults
+response1 = session.generate("Hello!")
+
+# Override for specific message
+response2 = session.generate("Be creative!", temperature=0.9)
 ```
 
 ## Troubleshooting

@@ -11,17 +11,29 @@ import os
 import subprocess
 import requests
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, Union
 import logging
 import platform
 import re
 import time
+import json
+import base64
+from datetime import datetime
+from urllib.parse import urlparse, urljoin
+import mimetypes
 
 try:
     from bs4 import BeautifulSoup
     BS4_AVAILABLE = True
+    # Try to use lxml parser for better performance
+    try:
+        import lxml
+        BS4_PARSER = 'lxml'
+    except ImportError:
+        BS4_PARSER = 'html.parser'
 except ImportError:
     BS4_AVAILABLE = False
+    BS4_PARSER = None
 
 try:
     import psutil
@@ -995,6 +1007,643 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
         return f"Error searching internet: {str(e)}"
 
 
+@tool(
+    description="Fetch and intelligently parse content from URLs with automatic content type detection and metadata extraction",
+    tags=["web", "fetch", "url", "http", "content", "parse", "scraping"],
+    when_to_use="When you need to retrieve and analyze content from specific URLs, including web pages, APIs, documents, or media files",
+    examples=[
+        {
+            "description": "Fetch and parse HTML webpage",
+            "arguments": {
+                "url": "https://example.com/article.html"
+            }
+        },
+        {
+            "description": "Fetch JSON API response",
+            "arguments": {
+                "url": "https://api.github.com/repos/python/cpython",
+                "headers": {"Accept": "application/json"}
+            }
+        },
+        {
+            "description": "POST data to API endpoint",
+            "arguments": {
+                "url": "https://httpbin.org/post",
+                "method": "POST",
+                "data": {"key": "value", "test": "data"}
+            }
+        },
+        {
+            "description": "Fetch binary content with metadata",
+            "arguments": {
+                "url": "https://example.com/document.pdf",
+                "include_binary_preview": True
+            }
+        }
+    ]
+)
+def fetch_url(
+    url: str,
+    method: str = "GET",
+    headers: Optional[Dict[str, str]] = None,
+    data: Optional[Union[Dict[str, Any], str]] = None,
+    timeout: int = 30,
+    max_content_length: int = 10485760,  # 10MB default
+    follow_redirects: bool = True,
+    include_binary_preview: bool = False,
+    extract_links: bool = True,
+    user_agent: str = "AbstractCore-FetchTool/1.0"
+) -> str:
+    """
+    Fetch and intelligently parse content from URLs with comprehensive content type detection.
+    
+    This tool automatically detects content types (HTML, JSON, XML, images, etc.) and provides
+    appropriate parsing with metadata extraction including timestamps and response headers.
+    
+    Args:
+        url: The URL to fetch content from
+        method: HTTP method to use (default: "GET")
+        headers: Optional custom headers to send with the request
+        data: Optional data to send with POST/PUT requests (dict or string)
+        timeout: Request timeout in seconds (default: 30)
+        max_content_length: Maximum content length to fetch in bytes (default: 10MB)
+        follow_redirects: Whether to follow HTTP redirects (default: True)
+        include_binary_preview: Whether to include base64 preview for binary content (default: False)
+        extract_links: Whether to extract links from HTML content (default: True)
+        user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
+    
+    Returns:
+        Formatted string with parsed content, metadata, and analysis or error message
+        
+    Examples:
+        fetch_url("https://api.github.com/repos/python/cpython")  # Fetch and parse JSON API
+        fetch_url("https://example.com", headers={"Accept": "text/html"})  # Fetch HTML with custom headers
+        fetch_url("https://httpbin.org/post", method="POST", data={"test": "value"})  # POST request
+        fetch_url("https://example.com/image.jpg", include_binary_preview=True)  # Fetch image with preview
+    """
+    try:
+        # Validate URL
+        parsed_url = urlparse(url)
+        if not parsed_url.scheme or not parsed_url.netloc:
+            return f"❌ Invalid URL format: {url}"
+        
+        if parsed_url.scheme not in ['http', 'https']:
+            return f"❌ Unsupported URL scheme: {parsed_url.scheme}. Only HTTP and HTTPS are supported."
+        
+        # Prepare request headers
+        request_headers = {
+            'User-Agent': user_agent,
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive'
+        }
+        
+        if headers:
+            request_headers.update(headers)
+        
+        # Prepare request parameters
+        request_params = {
+            'url': url,
+            'method': method.upper(),
+            'headers': request_headers,
+            'timeout': timeout,
+            'allow_redirects': follow_redirects,
+            'stream': True  # Stream to check content length
+        }
+        
+        # Add data for POST/PUT requests
+        if data and method.upper() in ['POST', 'PUT', 'PATCH']:
+            if isinstance(data, dict):
+                # Try JSON first, fallback to form data
+                if request_headers.get('Content-Type', '').startswith('application/json'):
+                    request_params['json'] = data
+                else:
+                    request_params['data'] = data
+            else:
+                request_params['data'] = data
+        
+        # Record fetch timestamp
+        fetch_timestamp = datetime.now().isoformat()
+        
+        # Make the request with session for connection reuse
+        with requests.Session() as session:
+            session.headers.update(request_headers)
+            response = session.request(
+                method=method.upper(),
+                url=url,
+                timeout=timeout,
+                allow_redirects=follow_redirects,
+                stream=True,
+                json=request_params.get('json'),
+                data=request_params.get('data')
+            )
+        
+        # Check response status
+        if not response.ok:
+            return f"❌ HTTP Error {response.status_code}: {response.reason}\n" \
+                   f"URL: {url}\n" \
+                   f"Timestamp: {fetch_timestamp}\n" \
+                   f"Response headers: {dict(response.headers)}"
+        
+        # Get content info
+        content_type = response.headers.get('content-type', '').lower()
+        content_length = response.headers.get('content-length')
+        if content_length:
+            content_length = int(content_length)
+        
+        # Check content length before downloading
+        if content_length and content_length > max_content_length:
+            return f"⚠️  Content too large: {content_length:,} bytes (max: {max_content_length:,})\n" \
+                   f"URL: {url}\n" \
+                   f"Content-Type: {content_type}\n" \
+                   f"Timestamp: {fetch_timestamp}\n" \
+                   f"Use max_content_length parameter to increase limit if needed"
+        
+        # Download content with optimized chunking
+        content_chunks = []
+        downloaded_size = 0
+        
+        # Use larger chunks for better performance
+        chunk_size = 32768 if 'image/' in content_type or 'video/' in content_type else 16384
+        
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if chunk:
+                downloaded_size += len(chunk)
+                if downloaded_size > max_content_length:
+                    return f"⚠️  Content exceeded size limit during download: {downloaded_size:,} bytes (max: {max_content_length:,})\n" \
+                           f"URL: {url}\n" \
+                           f"Content-Type: {content_type}\n" \
+                           f"Timestamp: {fetch_timestamp}"
+                content_chunks.append(chunk)
+        
+        content_bytes = b''.join(content_chunks)
+        actual_size = len(content_bytes)
+        
+        # Detect content type and parse accordingly
+        parsed_content = _parse_content_by_type(content_bytes, content_type, url, extract_links, include_binary_preview)
+        
+        # Build comprehensive response
+        result_parts = []
+        result_parts.append(f"🌐 URL Fetch Results")
+        result_parts.append(f"📍 URL: {response.url}")  # Final URL after redirects
+        if response.url != url:
+            result_parts.append(f"🔄 Original URL: {url}")
+        result_parts.append(f"⏰ Timestamp: {fetch_timestamp}")
+        result_parts.append(f"✅ Status: {response.status_code} {response.reason}")
+        result_parts.append(f"📊 Content-Type: {content_type}")
+        result_parts.append(f"📏 Size: {actual_size:,} bytes")
+        
+        # Add important response headers
+        important_headers = ['server', 'last-modified', 'etag', 'cache-control', 'expires', 'location']
+        response_metadata = []
+        for header in important_headers:
+            value = response.headers.get(header)
+            if value:
+                response_metadata.append(f"  {header.title()}: {value}")
+        
+        if response_metadata:
+            result_parts.append(f"📋 Response Headers:")
+            result_parts.extend(response_metadata)
+        
+        # Add parsed content
+        result_parts.append(f"\n📄 Content Analysis:")
+        result_parts.append(parsed_content)
+        
+        return "\n".join(result_parts)
+        
+    except requests.exceptions.Timeout:
+        return f"⏰ Request timeout after {timeout} seconds\n" \
+               f"URL: {url}\n" \
+               f"Consider increasing timeout parameter"
+    
+    except requests.exceptions.ConnectionError as e:
+        return f"🔌 Connection error: {str(e)}\n" \
+               f"URL: {url}\n" \
+               f"Check network connectivity and URL validity"
+    
+    except requests.exceptions.TooManyRedirects:
+        return f"🔄 Too many redirects\n" \
+               f"URL: {url}\n" \
+               f"Try setting follow_redirects=False to see redirect chain"
+    
+    except requests.exceptions.RequestException as e:
+        return f"❌ Request error: {str(e)}\n" \
+               f"URL: {url}"
+    
+    except Exception as e:
+        return f"❌ Unexpected error fetching URL: {str(e)}\n" \
+               f"URL: {url}"
+
+
+def _parse_content_by_type(content_bytes: bytes, content_type: str, url: str, extract_links: bool = True, include_binary_preview: bool = False) -> str:
+    """
+    Parse content based on detected content type with intelligent fallbacks.
+    
+    This function provides robust content type detection and parsing for various formats
+    including HTML, JSON, XML, plain text, images, and other binary formats.
+    """
+    try:
+        # Normalize content type
+        main_type = content_type.split(';')[0].strip().lower()
+        
+        # Try to decode as text first for text-based formats
+        text_content = None
+        encoding = 'utf-8'
+        
+        # Detect encoding from content-type header
+        if 'charset=' in content_type:
+            try:
+                encoding = content_type.split('charset=')[1].split(';')[0].strip()
+            except:
+                encoding = 'utf-8'
+        
+        # Attempt text decoding for text-based content types with better encoding detection
+        text_based_types = [
+            'text/', 'application/json', 'application/xml', 'application/javascript',
+            'application/rss+xml', 'application/atom+xml', 'application/xhtml+xml'
+        ]
+        
+        is_text_based = any(main_type.startswith(t) for t in text_based_types)
+        
+        if is_text_based:
+            # Try multiple encoding strategies
+            for enc in [encoding, 'utf-8', 'iso-8859-1', 'windows-1252']:
+                try:
+                    text_content = content_bytes.decode(enc)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            else:
+                # Final fallback with error replacement
+                text_content = content_bytes.decode('utf-8', errors='replace')
+        
+        # Parse based on content type
+        if main_type.startswith('text/html') or main_type.startswith('application/xhtml'):
+            return _parse_html_content(text_content, url, extract_links)
+        
+        elif main_type == 'application/json':
+            return _parse_json_content(text_content)
+        
+        elif main_type in ['application/xml', 'text/xml', 'application/rss+xml', 'application/atom+xml']:
+            return _parse_xml_content(text_content)
+        
+        elif main_type.startswith('text/'):
+            return _parse_text_content(text_content, main_type)
+        
+        elif main_type.startswith('image/'):
+            return _parse_image_content(content_bytes, main_type, include_binary_preview)
+        
+        elif main_type == 'application/pdf':
+            return _parse_pdf_content(content_bytes, include_binary_preview)
+        
+        else:
+            return _parse_binary_content(content_bytes, main_type, include_binary_preview)
+    
+    except Exception as e:
+        return f"❌ Error parsing content: {str(e)}\n" \
+               f"Content-Type: {content_type}\n" \
+               f"Content size: {len(content_bytes):,} bytes"
+
+
+def _parse_html_content(html_content: str, url: str, extract_links: bool = True) -> str:
+    """Parse HTML content and extract meaningful information."""
+    if not html_content:
+        return "❌ No HTML content to parse"
+    
+    result_parts = []
+    result_parts.append("🌐 HTML Document Analysis")
+    
+    # Use BeautifulSoup if available for better parsing
+    if BS4_AVAILABLE:
+        try:
+            soup = BeautifulSoup(html_content, BS4_PARSER)
+            
+            # Extract title
+            title = soup.find('title')
+            if title:
+                result_parts.append(f"📰 Title: {title.get_text().strip()}")
+            
+            # Extract meta description
+            meta_desc = soup.find('meta', attrs={'name': 'description'})
+            if meta_desc and meta_desc.get('content'):
+                result_parts.append(f"📝 Description: {meta_desc['content'][:200]}...")
+            
+            # Extract headings
+            headings = []
+            for i in range(1, 7):
+                h_tags = soup.find_all(f'h{i}')
+                for h in h_tags[:5]:  # Limit to first 5 of each level
+                    headings.append(f"H{i}: {h.get_text().strip()[:100]}")
+            
+            if headings:
+                result_parts.append(f"📋 Headings (first 5 per level):")
+                for heading in headings[:10]:  # Limit total headings
+                    result_parts.append(f"  • {heading}")
+            
+            # Extract links if requested
+            if extract_links:
+                links = []
+                for a in soup.find_all('a', href=True)[:20]:  # Limit to first 20 links
+                    href = a['href']
+                    text = a.get_text().strip()[:50]
+                    # Convert relative URLs to absolute
+                    if href.startswith('/'):
+                        href = urljoin(url, href)
+                    elif not href.startswith(('http://', 'https://')):
+                        href = urljoin(url, href)
+                    links.append(f"{text} → {href}")
+                
+                if links:
+                    result_parts.append(f"🔗 Links (first 20):")
+                    for link in links:
+                        result_parts.append(f"  • {link}")
+            
+            # Extract main text content with better cleaning
+            # Remove script, style, nav, footer, header elements for cleaner content
+            for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                element.decompose()
+            
+            # Try to find main content area first
+            main_content = soup.find(['main', 'article']) or soup.find('div', class_=lambda x: x and any(word in x.lower() for word in ['content', 'article', 'post', 'main']))
+            content_soup = main_content if main_content else soup
+            
+            text = content_soup.get_text()
+            # Clean up text more efficiently
+            lines = (line.strip() for line in text.splitlines() if line.strip())
+            text = ' '.join(lines)
+            # Remove excessive whitespace
+            text = ' '.join(text.split())
+            
+            if text:
+                preview_length = 500
+                text_preview = text[:preview_length]
+                if len(text) > preview_length:
+                    text_preview += "..."
+                result_parts.append(f"📄 Text Content Preview:")
+                result_parts.append(f"{text_preview}")
+                result_parts.append(f"📊 Total text length: {len(text):,} characters")
+        
+        except Exception as e:
+            result_parts.append(f"⚠️  BeautifulSoup parsing error: {str(e)}")
+            result_parts.append(f"📄 Raw HTML Preview (first 1000 chars):")
+            result_parts.append(html_content[:1000] + ("..." if len(html_content) > 1000 else ""))
+    
+    else:
+        # Fallback parsing without BeautifulSoup
+        result_parts.append("⚠️  BeautifulSoup not available - using basic parsing")
+        
+        # Extract title with regex
+        import re
+        title_match = re.search(r'<title[^>]*>(.*?)</title>', html_content, re.IGNORECASE | re.DOTALL)
+        if title_match:
+            result_parts.append(f"📰 Title: {title_match.group(1).strip()}")
+        
+        # Show HTML preview
+        result_parts.append(f"📄 HTML Preview (first 1000 chars):")
+        result_parts.append(html_content[:1000] + ("..." if len(html_content) > 1000 else ""))
+    
+    return "\n".join(result_parts)
+
+
+def _parse_json_content(json_content: str) -> str:
+    """Parse JSON content and provide structured analysis."""
+    if not json_content:
+        return "❌ No JSON content to parse"
+    
+    result_parts = []
+    result_parts.append("📊 JSON Data Analysis")
+    
+    try:
+        data = json.loads(json_content)
+        
+        # Analyze JSON structure
+        result_parts.append(f"📋 Structure: {type(data).__name__}")
+        
+        if isinstance(data, dict):
+            result_parts.append(f"🔑 Keys ({len(data)}): {', '.join(list(data.keys())[:10])}")
+            if len(data) > 10:
+                result_parts.append(f"   ... and {len(data) - 10} more keys")
+        elif isinstance(data, list):
+            result_parts.append(f"📝 Array length: {len(data)}")
+            if data and isinstance(data[0], dict):
+                result_parts.append(f"🔑 First item keys: {', '.join(list(data[0].keys())[:10])}")
+        
+        # Pretty print JSON with smart truncation
+        json_str = json.dumps(data, indent=2, ensure_ascii=False, separators=(',', ': '))
+        preview_length = 1500  # Reduced for better readability
+        if len(json_str) > preview_length:
+            # Try to truncate at a logical point (end of object/array)
+            truncate_pos = json_str.rfind('\n', 0, preview_length)
+            if truncate_pos > preview_length - 200:  # If close to limit, use it
+                json_preview = json_str[:truncate_pos] + "\n... (truncated)"
+            else:
+                json_preview = json_str[:preview_length] + "\n... (truncated)"
+        else:
+            json_preview = json_str
+        
+        result_parts.append(f"📄 JSON Content:")
+        result_parts.append(json_preview)
+        result_parts.append(f"📊 Total size: {len(json_content):,} characters")
+    
+    except json.JSONDecodeError as e:
+        result_parts.append(f"❌ JSON parsing error: {str(e)}")
+        result_parts.append(f"📄 Raw content preview (first 1000 chars):")
+        result_parts.append(json_content[:1000] + ("..." if len(json_content) > 1000 else ""))
+    
+    return "\n".join(result_parts)
+
+
+def _parse_xml_content(xml_content: str) -> str:
+    """Parse XML content including RSS/Atom feeds."""
+    if not xml_content:
+        return "❌ No XML content to parse"
+    
+    result_parts = []
+    result_parts.append("📄 XML/RSS/Atom Analysis")
+    
+    try:
+        # Try to detect if it's RSS/Atom
+        if '<rss' in xml_content.lower() or '<feed' in xml_content.lower():
+            result_parts.append("📡 Detected: RSS/Atom Feed")
+        
+        # Basic XML structure analysis
+        import re
+        
+        # Find root element
+        root_match = re.search(r'<([^?\s/>]+)', xml_content)
+        if root_match:
+            result_parts.append(f"🏷️  Root element: <{root_match.group(1)}>")
+        
+        # Count elements (basic)
+        elements = re.findall(r'<([^/\s>]+)', xml_content)
+        if elements:
+            from collections import Counter
+            element_counts = Counter(elements[:50])  # Limit analysis
+            result_parts.append(f"📊 Top elements: {dict(list(element_counts.most_common(10)))}")
+        
+        # Show XML preview
+        preview_length = 1500
+        xml_preview = xml_content[:preview_length]
+        if len(xml_content) > preview_length:
+            xml_preview += "\n... (truncated)"
+        
+        result_parts.append(f"📄 XML Content Preview:")
+        result_parts.append(xml_preview)
+        result_parts.append(f"📊 Total size: {len(xml_content):,} characters")
+    
+    except Exception as e:
+        result_parts.append(f"❌ XML parsing error: {str(e)}")
+        result_parts.append(f"📄 Raw content preview (first 1000 chars):")
+        result_parts.append(xml_content[:1000] + ("..." if len(xml_content) > 1000 else ""))
+    
+    return "\n".join(result_parts)
+
+
+def _parse_text_content(text_content: str, content_type: str) -> str:
+    """Parse plain text content."""
+    if not text_content:
+        return "❌ No text content to parse"
+    
+    result_parts = []
+    result_parts.append(f"📝 Text Content Analysis ({content_type})")
+    
+    # Basic text statistics
+    lines = text_content.splitlines()
+    words = text_content.split()
+    
+    result_parts.append(f"📊 Statistics:")
+    result_parts.append(f"  • Lines: {len(lines):,}")
+    result_parts.append(f"  • Words: {len(words):,}")
+    result_parts.append(f"  • Characters: {len(text_content):,}")
+    
+    # Show text preview
+    preview_length = 2000
+    text_preview = text_content[:preview_length]
+    if len(text_content) > preview_length:
+        text_preview += "\n... (truncated)"
+    
+    result_parts.append(f"📄 Content Preview:")
+    result_parts.append(text_preview)
+    
+    return "\n".join(result_parts)
+
+
+def _parse_image_content(image_bytes: bytes, content_type: str, include_preview: bool = False) -> str:
+    """Parse image content and extract metadata."""
+    result_parts = []
+    result_parts.append(f"🖼️  Image Analysis ({content_type})")
+    
+    result_parts.append(f"📊 Size: {len(image_bytes):,} bytes")
+    
+    # Try to get image dimensions (basic approach)
+    try:
+        if content_type.startswith('image/jpeg') or content_type.startswith('image/jpg'):
+            # Basic JPEG header parsing for dimensions
+            if image_bytes.startswith(b'\xff\xd8\xff'):
+                result_parts.append("✅ Valid JPEG format detected")
+        elif content_type.startswith('image/png'):
+            # Basic PNG header parsing
+            if image_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+                result_parts.append("✅ Valid PNG format detected")
+        elif content_type.startswith('image/gif'):
+            if image_bytes.startswith(b'GIF87a') or image_bytes.startswith(b'GIF89a'):
+                result_parts.append("✅ Valid GIF format detected")
+    except Exception:
+        pass
+    
+    if include_preview:
+        # Provide base64 preview for small images
+        if len(image_bytes) <= 1048576:  # 1MB limit for preview
+            b64_preview = base64.b64encode(image_bytes[:1024]).decode('ascii')  # First 1KB
+            result_parts.append(f"🔍 Base64 Preview (first 1KB):")
+            result_parts.append(f"{b64_preview}...")
+        else:
+            result_parts.append("⚠️  Image too large for base64 preview")
+    
+    result_parts.append("💡 Use image processing tools for detailed analysis")
+    
+    return "\n".join(result_parts)
+
+
+def _parse_pdf_content(pdf_bytes: bytes, include_preview: bool = False) -> str:
+    """Parse PDF content and extract basic metadata."""
+    result_parts = []
+    result_parts.append("📄 PDF Document Analysis")
+    
+    result_parts.append(f"📊 Size: {len(pdf_bytes):,} bytes")
+    
+    # Check PDF header
+    if pdf_bytes.startswith(b'%PDF-'):
+        try:
+            version_line = pdf_bytes[:20].decode('ascii', errors='ignore')
+            result_parts.append(f"✅ Valid PDF format: {version_line.strip()}")
+        except:
+            result_parts.append("✅ Valid PDF format detected")
+    else:
+        result_parts.append("⚠️  Invalid PDF format - missing PDF header")
+    
+    if include_preview:
+        # Show hex preview of first few bytes
+        hex_preview = ' '.join(f'{b:02x}' for b in pdf_bytes[:64])
+        result_parts.append(f"🔍 Hex Preview (first 64 bytes):")
+        result_parts.append(hex_preview)
+    
+    result_parts.append("💡 Use PDF processing tools for text extraction and detailed analysis")
+    
+    return "\n".join(result_parts)
+
+
+def _parse_binary_content(binary_bytes: bytes, content_type: str, include_preview: bool = False) -> str:
+    """Parse generic binary content."""
+    result_parts = []
+    result_parts.append(f"📦 Binary Content Analysis ({content_type})")
+    
+    result_parts.append(f"📊 Size: {len(binary_bytes):,} bytes")
+    
+    # Detect file type by magic bytes
+    magic_signatures = {
+        b'\x50\x4b\x03\x04': 'ZIP archive',
+        b'\x50\x4b\x05\x06': 'ZIP archive (empty)',
+        b'\x50\x4b\x07\x08': 'ZIP archive (spanned)',
+        b'\x1f\x8b\x08': 'GZIP compressed',
+        b'\x42\x5a\x68': 'BZIP2 compressed',
+        b'\x37\x7a\xbc\xaf\x27\x1c': '7-Zip archive',
+        b'\x52\x61\x72\x21\x1a\x07': 'RAR archive',
+        b'\x89\x50\x4e\x47\x0d\x0a\x1a\x0a': 'PNG image',
+        b'\xff\xd8\xff': 'JPEG image',
+        b'\x47\x49\x46\x38': 'GIF image',
+        b'\x25\x50\x44\x46': 'PDF document',
+        b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1': 'Microsoft Office document',
+        b'\x4d\x5a': 'Windows executable'
+    }
+    
+    detected_type = None
+    for signature, file_type in magic_signatures.items():
+        if binary_bytes.startswith(signature):
+            detected_type = file_type
+            break
+    
+    if detected_type:
+        result_parts.append(f"🔍 Detected format: {detected_type}")
+    
+    if include_preview:
+        # Show hex preview
+        hex_preview = ' '.join(f'{b:02x}' for b in binary_bytes[:64])
+        result_parts.append(f"🔍 Hex Preview (first 64 bytes):")
+        result_parts.append(hex_preview)
+        
+        # Try to show any readable ASCII strings
+        try:
+            ascii_preview = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in binary_bytes[:200])
+            if ascii_preview.strip():
+                result_parts.append(f"📝 ASCII Preview (first 200 bytes):")
+                result_parts.append(ascii_preview)
+        except:
+            pass
+    
+    result_parts.append("💡 Use specialized tools for detailed binary analysis")
+    
+    return "\n".join(result_parts)
 
 
 @tool(
@@ -1524,5 +2173,6 @@ __all__ = [
     'write_file',
     'edit_file',
     'web_search',
+    'fetch_url',
     'execute_command'
 ]

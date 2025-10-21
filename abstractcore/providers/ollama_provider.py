@@ -132,10 +132,15 @@ class OllamaProvider(BaseProvider):
             "model": self.model,
             "stream": stream,
             "options": {
-                "temperature": kwargs.get("temperature", 0.7),
+                "temperature": kwargs.get("temperature", self.temperature),
                 "num_predict": max_output_tokens,  # Ollama uses num_predict for max output tokens
             }
         }
+
+        # Add seed if provided (Ollama supports seed for deterministic outputs)
+        seed_value = kwargs.get("seed", self.seed)
+        if seed_value is not None:
+            payload["options"]["seed"] = seed_value
 
         # Add structured output support (Ollama native JSON schema)
         if response_model and PYDANTIC_AVAILABLE:

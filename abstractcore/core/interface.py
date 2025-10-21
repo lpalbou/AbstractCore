@@ -70,6 +70,8 @@ class AbstractCoreInterface(ABC):
                  max_tokens: Optional[int] = None,
                  max_input_tokens: Optional[int] = None,
                  max_output_tokens: int = 2048,
+                 temperature: float = 0.7,
+                 seed: Optional[int] = None,
                  debug: bool = False,
                  **kwargs):
         self.model = model
@@ -79,6 +81,11 @@ class AbstractCoreInterface(ABC):
         self.max_tokens = max_tokens
         self.max_input_tokens = max_input_tokens
         self.max_output_tokens = max_output_tokens
+        
+        # Unified generation parameters
+        self.temperature = temperature
+        self.seed = seed
+        
         self.debug = debug
 
         # Validate token parameters
