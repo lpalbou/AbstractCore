@@ -126,7 +126,7 @@ llm = create_llm("openai", model="gpt-4o-mini")
 # With unified token management and deterministic generation
 llm = create_llm(
     "anthropic",
-    model="claude-haiku-4-5",
+    model="claude-3-5-haiku-latest",
     temperature=0.7,
     seed=42,                    # For deterministic outputs (issues warning on Anthropic)
     max_tokens=32000,           # Context window (input + output)
@@ -138,7 +138,7 @@ llm = create_llm(
 # With tool syntax rewriting for agent CLI compatibility
 llm = create_llm(
     "ollama",
-    model="qwen3-coder:30b",
+    model="llama3.2:3b",
     tool_call_tags="function_call"  # Converts to <function_call>...JSON...</function_call>
 )
 
@@ -445,7 +445,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-haiku-4-5",
+    model="claude-3-5-haiku-latest",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -453,7 +453,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-haiku-4-5")
+estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings

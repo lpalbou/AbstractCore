@@ -146,7 +146,7 @@
                         <div class="stat-label">Providers</div>
                     </div>
                     <div class="stat">
-                        <div class="stat-number">137+</div>
+                        <div class="stat-number">130+</div>
                         <div class="stat-label">Models</div>
                     </div>
                     <div class="stat">
@@ -170,13 +170,13 @@
                         <pre><code class="language-python">from abstractcore import create_llm
 
 # Works with any provider - just change the name
-llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.7, seed=42)
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest", temperature=0.7, seed=42)
 response = llm.generate("What is the capital of France?")
 print(response.content)
 
 # Switch providers with zero code changes
 llm = create_llm("openai", model="gpt-4o-mini", seed=42)
-llm = create_llm("ollama", model="qwen3-coder:30b", seed=42)
+llm = create_llm("ollama", model="llama3.2:3b", seed=42)
 
 # Same interface, deterministic results ✨</code></pre>
                     </div>
@@ -245,7 +245,7 @@ llm = create_llm("ollama", model="qwen3-coder:30b", seed=42)
                     </div>
                     <h3 class="feature-title">Provider Discovery</h3>
                     <p class="feature-description">
-                        Centralized registry with 137+ models across 6 providers. Programmatically discover all available providers and models with comprehensive metadata.
+                        Centralized registry with 130+ models across 6 providers. Programmatically discover all available providers and models with comprehensive metadata.
                     </p>
                 </div>
                 
@@ -442,7 +442,7 @@ abstractcore --set-global-default ollama/llama3:8b
 
 # Set app-specific defaults for optimal performance
 abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli ollama qwen3:4b
+abstractcore --set-app-default cli ollama llama3.2:3b
 
 # Configure vision fallback for text-only models
 abstractcore --download-vision-model  # Download local model
@@ -474,7 +474,7 @@ abstractcore --set-global-default ollama/llama3:8b
 
 # Set app-specific defaults for optimal performance
 abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli ollama qwen3:4b
+abstractcore --set-app-default cli ollama llama3.2:3b
 
 # Configure vision fallback for text-only models
 abstractcore --download-vision-model  # Download local model
@@ -592,7 +592,7 @@ response = ollama_llm.generate(
 
 # Vision fallback for text-only models
 # Configure once: abstractcore --download-vision-model
-text_llm = create_llm(&quot;lmstudio&quot;, model=&quot;qwen/qwen3-next-80b&quot;)  # No native vision
+text_llm = create_llm(&quot;lmstudio&quot;, model=&quot;llama-3.2-8b-instruct&quot;)  # No native vision
 response = text_llm.generate(
     &quot;What's in this image?&quot;,
     media=[&quot;complex_scene.jpg&quot;]
@@ -631,7 +631,7 @@ response = ollama_llm.generate(
 
 # Vision fallback for text-only models
 # Configure once: abstractcore --download-vision-model
-text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No native vision
+text_llm = create_llm("lmstudio", model="llama-3.2-8b-instruct")  # No native vision
 response = text_llm.generate(
     "What's in this image?",
     media=["complex_scene.jpg"]
@@ -667,7 +667,7 @@ def calculate(expression: str) -&gt; float:
 # Custom tag configuration for agent CLI compatibility
 llm = create_llm(
     &quot;ollama&quot;,
-    model=&quot;qwen3-coder:30b&quot;,
+    model=&quot;llama3.2:3b&quot;,
     tool_call_tags=&quot;function_call&quot;  # Converts to &lt;function_call&gt;...&lt;/function_call&gt;
 )
 
@@ -696,7 +696,7 @@ def calculate(expression: str) -> float:
 # Custom tag configuration for agent CLI compatibility
 llm = create_llm(
     "ollama",
-    model="qwen3-coder:30b",
+    model="llama3.2:3b",
     tool_call_tags="function_call"  # Converts to <function_call>...</function_call>
 )
 
@@ -813,7 +813,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-haiku-4-5",
+    model="claude-3-5-haiku-latest",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -821,7 +821,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-haiku-4-5")
+estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings
@@ -855,15 +855,15 @@ print(f&quot;Response 2: {response2.content}&quot;)  # &quot;Innovative, challen
 
 # Empirically verified deterministic behavior:
 # ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-# ✅ Ollama (gemma3:1b): Same seed → Identical outputs  
-# ✅ MLX (Qwen3-4B): Same seed → Identical outputs
+# ✅ Ollama (llama3.2:3b): Same seed → Identical outputs  
+# ✅ MLX (Qwen2.5-Coder-7B): Same seed → Identical outputs
 # ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
 # ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
 # ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (issues warning for seed)
 
 # Works across all providers with same interface
-ollama_llm = create_llm(&quot;ollama&quot;, model=&quot;gemma3:1b&quot;, seed=42, temperature=0.0)
-mlx_llm = create_llm(&quot;mlx&quot;, model=&quot;Qwen3-4B&quot;, seed=42, temperature=0.0)">
+ollama_llm = create_llm(&quot;ollama&quot;, model=&quot;llama3.2:3b&quot;, seed=42, temperature=0.0)
+mlx_llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen2.5-Coder-7B-Instruct-4bit&quot;, seed=42, temperature=0.0)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -886,15 +886,15 @@ print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding
 
 # Empirically verified deterministic behavior:
 # ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-# ✅ Ollama (gemma3:1b): Same seed → Identical outputs  
-# ✅ MLX (Qwen3-4B): Same seed → Identical outputs
+# ✅ Ollama (llama3.2:3b): Same seed → Identical outputs  
+# ✅ MLX (Qwen2.5-Coder-7B): Same seed → Identical outputs
 # ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
 # ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
 # ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (issues warning for seed)
 
 # Works across all providers with same interface
-ollama_llm = create_llm("ollama", model="gemma3:1b", seed=42, temperature=0.0)
-mlx_llm = create_llm("mlx", model="Qwen3-4B", seed=42, temperature=0.0)</code></pre>
+ollama_llm = create_llm("ollama", model="llama3.2:3b", seed=42, temperature=0.0)
+mlx_llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit", seed=42, temperature=0.0)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -935,7 +935,7 @@ response = requests.post(
 import openai
 client = openai.OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=&quot;unused&quot;)
 response = client.chat.completions.create(
-    model=&quot;ollama/qwen3-coder:30b&quot;,
+    model=&quot;ollama/llama3.2:3b&quot;,
     messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Analyze @report.pdf&quot;}]
 )">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -974,7 +974,7 @@ response = requests.post(
 import openai
 client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 response = client.chat.completions.create(
-    model="ollama/qwen3-coder:30b",
+    model="ollama/llama3.2:3b",
     messages=[{"role": "user", "content": "Analyze @report.pdf"}]
 )</code></pre>
                                 </div>
@@ -1017,7 +1017,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/anthropic.svg" alt="Anthropic">
                         </div>
                         <h3 class="provider-name">Anthropic</h3>
-                        <p class="provider-description">claude-sonnet-4-5, claude-haiku-4-5, claude-opus-4-1</p>
+                        <p class="provider-description">claude-3-5-sonnet-latest, claude-3-5-haiku-latest, claude-3-opus</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-warning">⚠️ SEED Warning*</span>
@@ -1031,7 +1031,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/ollama.svg" alt="Ollama">
                         </div>
                         <h3 class="provider-name">Ollama</h3>
-                        <p class="provider-description">qwen3-coder:30b, Local models, privacy-first</p>
+                        <p class="provider-description">llama3.2:3b, Local models, privacy-first</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1045,7 +1045,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/lmstudio.svg" alt="LMStudio">
                         </div>
                         <h3 class="provider-name">LMStudio</h3>
-                        <p class="provider-description">qwen/qwen3-next-80b, glm-4.5-air-mlx</p>
+                        <p class="provider-description">llama-3.2-8b-instruct, Local models</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1059,7 +1059,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/mlx.svg" alt="MLX">
                         </div>
                         <h3 class="provider-name">MLX</h3>
-                        <p class="provider-description">mlx-community/gemma-3n-E4B-4bit, mlx-community/Qwen3-4B-Instruct-2507-4bit</p>
+                        <p class="provider-description">mlx-community/Qwen2.5-Coder-7B-Instruct-4bit, Apple Silicon optimized</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1073,7 +1073,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/huggingface.svg" alt="HuggingFace">
                         </div>
                         <h3 class="provider-name">HuggingFace</h3>
-                        <p class="provider-description">meta-llama/Llama-3.1-8B-Instruct, unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF, Open source models</p>
+                        <p class="provider-description">unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit, Open source models</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1217,7 +1217,7 @@ response = client.chat.completions.create(
                     </p>
                     <div class="example-code">
                         <pre><code class="language-python"># Development (free, local)
-llm_dev = create_llm("ollama", model="qwen3:4b")
+llm_dev = create_llm("ollama", model="llama3.2:3b")
 
 # Production (high quality, cloud)
 llm_prod = create_llm("openai", model="gpt-4o-mini")
@@ -1262,7 +1262,7 @@ uvicorn abstractcore.server.app:app --port 8000
 
 # Use with any OpenAI client
 curl -X POST http://localhost:8000/v1/chat/completions \
-  -d '{"model": "ollama/qwen3-coder:30b", ...}'</code></pre>
+  -d '{"model": "ollama/llama3.2:3b", ...}'</code></pre>
                     </div>
                     <a href="docs/examples.html#api-server" class="example-link">View Full Example →</a>
                 </div>

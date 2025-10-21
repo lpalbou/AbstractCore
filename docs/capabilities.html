@@ -177,8 +177,8 @@ response2 = llm.generate("Write exactly 3 words about coding")
 # response1.content == response2.content (identical outputs)
 
 # Works across providers with same interface
-ollama_llm = create_llm("ollama", model="gemma3:1b", seed=42, temperature=0.0)
-mlx_llm = create_llm("mlx", model="Qwen3-4B", seed=42, temperature=0.0)</code></pre>
+ollama_llm = create_llm("ollama", model="llama3.2:3b", seed=42, temperature=0.0)
+mlx_llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit", seed=42, temperature=0.0)</code></pre>
                         </div>
 
                         <p><strong>Provider Support</strong>:</p>

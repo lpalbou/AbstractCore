@@ -153,7 +153,7 @@ python -c "from abstractcore import create_llm; llm = create_llm('openai', model
                         <h3 style="margin: 0 0 1rem 0;">Model Not Found</h3>
                         <p><strong>Symptoms:</strong></p>
                         <ul>
-                            <li><code>Error: Model 'qwen3-coder:30b' not found</code></li>
+                            <li><code>Error: Model 'llama3.2:3b' not found</code></li>
                             <li><code>Error: Unsupported model</code></li>
                         </ul>
                         
@@ -163,7 +163,7 @@ python -c "from abstractcore import create_llm; llm = create_llm('openai', model
 ollama list
 
 # Pull missing model
-ollama pull qwen3-coder:30b
+ollama pull llama3.2:3b
 
 # Verify Ollama is running
 ollama serve</code></pre>
@@ -174,7 +174,7 @@ ollama serve</code></pre>
 llm = create_llm("openai", model="gpt-4o-mini")  # ✓ Correct
 llm = create_llm("openai", model="gpt4")  # ✗ Wrong
 
-llm = create_llm("anthropic", model="claude-haiku-4-5")  # ✓ Correct
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # ✓ Correct
 llm = create_llm("anthropic", model="claude-3")  # ✗ Wrong</code></pre>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">

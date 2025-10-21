@@ -72,7 +72,7 @@ abstractcore --set-global-default ollama/llama3:8b
 
 # Set app-specific defaults for optimal performance
 abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli ollama qwen3:4b
+abstractcore --set-app-default cli ollama llama3.2:3b
 
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
@@ -114,7 +114,7 @@ abstractcore --set-console-log-level WARNING</code></pre>
 
                 <div class="code-block">
                     <pre><code class="language-bash"># Fast local model for CLI testing
-abstractcore --set-app-default cli ollama qwen3:4b
+abstractcore --set-app-default cli ollama llama3.2:3b
 
 # High-quality cloud model for document summarization
 abstractcore --set-app-default summarizer openai gpt-4o-mini
@@ -213,7 +213,7 @@ abstractcore --status</code></pre>
                     <pre><code class="language-bash"># Optimize for local development
 abstractcore --set-global-default ollama/llama3:8b  # Free local models
 abstractcore --enable-debug-logging                 # Detailed logs for debugging
-abstractcore --set-app-default cli ollama qwen3:4b  # Fast model for CLI testing</code></pre>
+abstractcore --set-app-default cli ollama llama3.2:3b  # Fast model for CLI testing</code></pre>
                 </div>
 
                 <h3>Production Environment</h3>
@@ -228,7 +228,7 @@ abstractcore --set-app-default summarizer openai gpt-4o-mini  # Optimize for qua
                 <h3>Multi-Environment Approach</h3>
                 <div class="code-block">
                     <pre><code class="language-bash"># Use different providers for different applications
-abstractcore --set-app-default cli ollama qwen3:4b           # Fast for development
+abstractcore --set-app-default cli ollama llama3.2:3b           # Fast for development
 abstractcore --set-app-default summarizer openai gpt-4o-mini # Quality for documents
 abstractcore --set-app-default judge anthropic claude-3-5-haiku # Detailed analysis</code></pre>
                 </div>
