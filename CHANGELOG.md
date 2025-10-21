@@ -5,6 +5,71 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.5] - 2025-10-21
+
+### Fixed
+
+#### Critical Package Distribution Bug
+- **Missing Media Subpackages**: Fixed critical package installation bug where media subpackages were not included in distribution
+  - **Issue**: `pyproject.toml` only listed `abstractcore.media` parent package but not its subpackages
+  - **Impact**: Import `from abstractcore import create_llm` failed with `ModuleNotFoundError: No module named 'abstractcore.media.processors'`
+  - **Missing Packages**:
+    - `abstractcore.media.processors` (ImageProcessor, PDFProcessor, OfficeProcessor, TextProcessor)
+    - `abstractcore.media.handlers` (OpenAIMediaHandler, AnthropicMediaHandler, LocalMediaHandler)
+    - `abstractcore.media.utils` (image_scaler utilities)
+  - **Solution**: Explicitly added all media subpackages to packages list in `pyproject.toml`
+  - **Root Cause**: When explicitly listing packages in pyproject.toml, setuptools does NOT auto-discover subpackages
+  - **Workaround for 2.4.4**: Use `from abstractcore.core.factory import create_llm` instead of `from abstractcore import create_llm`
+  - **Credit**: Bug discovered and reported during production deployment testing
+
+#### Missing CLI Package
+- **Missing abstractcore.cli Module**: Fixed missing `abstractcore.cli` package from distribution
+  - **Issue**: CLI entry point `abstractcore` command referenced `abstractcore.cli.main:main` but module was not included in package
+  - **Impact**: Configuration CLI commands would fail after installation from PyPI
+  - **Solution**: Added `abstractcore.cli` to packages list in `pyproject.toml`
+
+### Added
+
+#### CLI Entry Point Improvements
+- **New Entry Points**: Added convenient aliases to clarify CLI purpose and improve user experience
+  - `abstractcore-config`: Alias for `abstractcore` command (configuration CLI for settings, API keys, models)
+  - `abstractcore-chat`: New entry point for interactive REPL (`abstractcore.utils.cli` → LLM interaction)
+  - **Purpose**: Distinguish between configuration CLI (manage settings) and interactive chat CLI (talk to LLMs)
+  - **Backwards Compatible**: All existing commands continue to work (`abstractcore`, `python -m abstractcore.utils.cli`)
+
+### Technical
+
+#### Package Configuration
+- **Updated packages list** in `pyproject.toml` to include all required modules:
+  ```toml
+  packages = [
+      # ... existing packages ...
+      "abstractcore.media",
+      "abstractcore.media.processors",  # ✅ Added
+      "abstractcore.media.handlers",    # ✅ Added
+      "abstractcore.media.utils",       # ✅ Added
+      "abstractcore.cli"                # ✅ Added
+  ]
+  ```
+- **Verification**: All 19 packages now properly included in distribution
+- **Testing**: Recommended to always test `pip install` from built wheel before PyPI release
+
+### Benefits
+- **Installation Works**: Users can now successfully `pip install abstractcore[all]` or `pip install abstractcore[media]`
+- **Complete Media System**: All media processing capabilities (images, PDFs, Office docs) now accessible after installation
+- **Clear CLI Commands**: Users have obvious entry points for different CLI purposes
+- **Production Ready**: Package installation thoroughly tested and verified
+
+### Migration Guide
+
+No migration needed - this is a pure bug fix release. If you experienced installation issues with 2.4.4:
+
+1. **Upgrade**: `pip install --upgrade abstractcore`
+2. **Verify**: `python -c "from abstractcore import create_llm; print('✅ Works!')"`
+3. **Use new CLI aliases** (optional):
+   - `abstractcore-config --status` instead of `abstractcore --status`
+   - `abstractcore-chat` instead of `python -m abstractcore.utils.cli`
+
 ## [2.4.4] - 2025-10-21
 
 ### Added

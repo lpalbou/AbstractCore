@@ -113,7 +113,8 @@ for provider in providers:
 ### Centralized Configuration
 ```bash
 # Check current configuration status
-abstractcore --status
+abstractcore --status                # Configuration CLI
+abstractcore-config --status         # Same thing (alias for clarity)
 
 # Set global fallback model
 abstractcore --set-global-default ollama/llama3:8b
@@ -126,6 +127,17 @@ abstractcore --set-app-default judge anthropic claude-3-5-haiku
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic your-anthropic-key
+```
+
+### Interactive Chat CLI
+```bash
+# Start interactive REPL for chatting with LLMs
+abstractcore-chat                                    # New convenient entry point
+abstractcore-chat --provider ollama --model llama2
+abstractcore-chat --stream
+
+# Alternative (backwards compatible)
+python -m abstractcore.utils.cli --provider openai --model gpt-4o
 ```
 
 ### Media Handling System
