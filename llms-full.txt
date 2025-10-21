@@ -331,7 +331,7 @@ AbstractCore provides a **production-ready unified media handling system** that 
 from abstractcore import create_llm
 
 # Works with any provider - just change the provider name
-llm = create_llm("openai", model="gpt-4o", api_key="your-key")
+llm = create_llm("openai", model="gpt-4o", api_key="your-key", temperature=0.7, seed=42)
 response = llm.generate(
     "What's in this image and document?",
     media=["photo.jpg", "report.pdf"]
@@ -1007,6 +1007,40 @@ def search_database(query: str, table: str = "users") -> str:
     """Search the database for records matching the query."""
     return f"Searching {table} for: {query}"
 ```
+
+### Built-in Tools
+
+AbstractCore includes a comprehensive set of ready-to-use tools in `abstractcore.tools.common_tools`:
+
+```python
+from abstractcore.tools.common_tools import fetch_url, search_files, read_file, list_files
+
+# Intelligent web content fetching with automatic parsing
+result = fetch_url("https://api.github.com/repos/python/cpython")
+# Automatically detects JSON, HTML, images, PDFs, etc. and provides structured analysis
+
+# File system operations
+files = search_files("def.*fetch", ".", file_pattern="*.py")  # Find function definitions
+content = read_file("config.json")  # Read file contents
+directory_listing = list_files(".", pattern="*.py", recursive=True)
+
+# Use with any LLM
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate(
+    "Analyze this API response and summarize the key information",
+    tools=[fetch_url]
+)
+```
+
+**Available Built-in Tools:**
+- `fetch_url` - Intelligent web content fetching with automatic content type detection and parsing
+- `search_files` - Search for text patterns inside files using regex
+- `list_files` - Find and list files by names/paths using glob patterns
+- `read_file` - Read file contents with optional line range selection
+- `write_file` - Write content to files with directory creation
+- `edit_file` - Edit files using pattern matching and replacement
+- `web_search` - Search the web using DuckDuckGo
+- `execute_command` - Execute shell commands safely with security controls
 
 ### Universal Tool Support
 

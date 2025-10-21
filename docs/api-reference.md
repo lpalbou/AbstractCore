@@ -35,7 +35,8 @@ def create_llm(
 **Provider-specific parameters:**
 - `api_key` (str): API key for cloud providers
 - `base_url` (str): Custom endpoint URL
-- `temperature` (float): Sampling temperature (0-2)
+- `temperature` (float): Sampling temperature (0.0-1.0, controls creativity)
+- `seed` (int): Random seed for deterministic outputs (✅ OpenAI, Ollama, MLX, HuggingFace, LMStudio; ⚠️ Anthropic issues warning)
 - `max_tokens` (int): Maximum output tokens
 - `timeout` (int): Request timeout in seconds
 - `top_p` (float): Nucleus sampling parameter
@@ -289,13 +290,19 @@ class BasicSession:
     def __init__(
         self,
         provider: AbstractCoreInterface,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
+        **kwargs
     ):
 ```
 
 **Parameters:**
 - `provider` (AbstractCoreInterface): LLM provider instance
 - `system_prompt` (str, optional): System prompt for the conversation
+- `temperature` (float, optional): Default temperature for all generations (0.0-1.0)
+- `seed` (int, optional): Default seed for deterministic outputs (provider support varies)
+- `**kwargs`: Additional session parameters (tools, timeouts, etc.)
 
 **Attributes:**
 - `messages` (List[Message]): Conversation history
@@ -342,12 +349,14 @@ from abstractcore import create_llm, BasicSession
 llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(
     provider=llm,
-    system_prompt="You are a helpful coding tutor."
+    system_prompt="You are a helpful coding tutor.",
+    temperature=0.3,  # Focused responses
+    seed=42          # Consistent outputs
 )
 
 # Multi-turn conversation
 response1 = session.generate("What are Python decorators?")
-response2 = session.generate("Show me an example")
+response2 = session.generate("Show me an example", temperature=0.7)  # Override for this call
 
 print(f"Conversation has {len(session.messages)} messages")
 

@@ -32,8 +32,23 @@ class BasicSession:
                  tool_timeout: Optional[float] = None,
                  recovery_timeout: Optional[float] = None,
                  auto_compact: bool = False,
-                 auto_compact_threshold: int = 6000):
-        """Initialize basic session"""
+                 auto_compact_threshold: int = 6000,
+                 temperature: Optional[float] = None,
+                 seed: Optional[int] = None):
+        """Initialize basic session
+        
+        Args:
+            provider: LLM provider instance
+            system_prompt: System prompt for the session
+            tools: List of available tools
+            timeout: HTTP request timeout
+            tool_timeout: Tool execution timeout
+            recovery_timeout: Circuit breaker recovery timeout
+            auto_compact: Enable automatic conversation compaction
+            auto_compact_threshold: Token threshold for auto-compaction
+            temperature: Default temperature for generation (0.0-1.0)
+            seed: Default seed for deterministic generation
+        """
 
         self.provider = provider
         self.id = str(uuid.uuid4())
@@ -44,6 +59,10 @@ class BasicSession:
         self.auto_compact = auto_compact
         self.auto_compact_threshold = auto_compact_threshold
         self._original_session = None  # Track if this is a compacted session
+        
+        # Store session-level generation parameters
+        self.temperature = temperature
+        self.seed = seed
         
         # Optional analytics fields
         self.summary = None
@@ -188,6 +207,12 @@ class BasicSession:
 
         # Extract media parameter explicitly (fix for media parameter passing)
         media = kwargs.pop('media', None)
+
+        # Add session-level parameters if not overridden in kwargs
+        if 'temperature' not in kwargs and self.temperature is not None:
+            kwargs['temperature'] = self.temperature
+        if 'seed' not in kwargs and self.seed is not None:
+            kwargs['seed'] = self.seed
 
         # Call provider
         response = self.provider.generate(

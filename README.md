@@ -28,6 +28,21 @@ response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
 
+### Deterministic Generation
+
+```python
+from abstractcore import create_llm
+
+# Deterministic outputs with seed + temperature=0
+llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+
+# These will produce identical outputs
+response1 = llm.generate("Write exactly 3 words about coding")
+response2 = llm.generate("Write exactly 3 words about coding")
+print(f"Response 1: {response1.content}")  # "Innovative, challenging, rewarding."
+print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding."
+```
+
 ### Tool Calling
 
 ```python
@@ -45,6 +60,39 @@ response = llm.generate(
 )
 print(response.content)
 ```
+
+### Built-in Tools
+
+AbstractCore includes a comprehensive set of ready-to-use tools for common tasks:
+
+```python
+from abstractcore.tools.common_tools import fetch_url, search_files, read_file
+
+# Intelligent web content fetching with automatic parsing
+result = fetch_url("https://api.github.com/repos/python/cpython")
+# Automatically detects JSON, HTML, images, PDFs, etc. and provides structured analysis
+
+# File system operations
+files = search_files("def.*fetch", ".", file_pattern="*.py")  # Find function definitions
+content = read_file("config.json")  # Read file contents
+
+# Use with any LLM
+llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+response = llm.generate(
+    "Analyze this API response and summarize the key information",
+    tools=[fetch_url]
+)
+```
+
+**Available Tools:**
+- `fetch_url` - Intelligent web content fetching with automatic content type detection and parsing
+- `search_files` - Search for text patterns inside files using regex
+- `list_files` - Find and list files by names/paths using glob patterns  
+- `read_file` - Read file contents with optional line range selection
+- `write_file` - Write content to files with directory creation
+- `edit_file` - Edit files using pattern matching and replacement
+- `web_search` - Search the web using DuckDuckGo
+- `execute_command` - Execute shell commands safely with security controls
 
 ### Session Management
 
@@ -134,14 +182,16 @@ response = llm.generate(
 
 ## Supported Providers
 
-| Provider | Status | Setup |
-|----------|--------|-------|
-| **OpenAI** | Full | [Get API key](docs/prerequisites.md#openai-setup) |
-| **Anthropic** | Full | [Get API key](docs/prerequisites.md#anthropic-setup) |
-| **Ollama** | Full | [Install guide](docs/prerequisites.md#ollama-setup) |
-| **LMStudio** | Full | [Install guide](docs/prerequisites.md#lmstudio-setup) |
-| **MLX** | Full | [Setup guide](docs/prerequisites.md#mlx-setup) |
-| **HuggingFace** | Full | [Setup guide](docs/prerequisites.md#huggingface-setup) |
+| Provider | Status | SEED Support | Setup |
+|----------|--------|-------------|-------|
+| **OpenAI** | Full | ✅ Native | [Get API key](docs/prerequisites.md#openai-setup) |
+| **Anthropic** | Full | ⚠️ Warning* | [Get API key](docs/prerequisites.md#anthropic-setup) |
+| **Ollama** | Full | ✅ Native | [Install guide](docs/prerequisites.md#ollama-setup) |
+| **LMStudio** | Full | ✅ Native | [Install guide](docs/prerequisites.md#lmstudio-setup) |
+| **MLX** | Full | ✅ Native | [Setup guide](docs/prerequisites.md#mlx-setup) |
+| **HuggingFace** | Full | ✅ Native | [Setup guide](docs/prerequisites.md#huggingface-setup) |
+
+*Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
 
 ## Server Mode (Optional HTTP REST API)
 

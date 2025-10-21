@@ -189,14 +189,15 @@ class MLXProvider(BaseProvider):
         # MLX generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_tokens = self._get_provider_max_tokens_param(generation_kwargs)
-        temperature = kwargs.get("temperature", 0.7)
+        temperature = kwargs.get("temperature", self.temperature)
         top_p = kwargs.get("top_p", 0.9)
+        seed_value = kwargs.get("seed", self.seed)
 
         try:
             if stream:
-                return self._stream_generate_with_tools(full_prompt, max_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'))
+                return self._stream_generate_with_tools(full_prompt, max_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'), seed_value)
             else:
-                response = self._single_generate(full_prompt, max_tokens, temperature, top_p)
+                response = self._single_generate(full_prompt, max_tokens, temperature, top_p, seed_value)
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:
@@ -256,8 +257,14 @@ class MLXProvider(BaseProvider):
 
         return full_prompt
 
-    def _single_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float) -> GenerateResponse:
+    def _single_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float, seed: Optional[int] = None) -> GenerateResponse:
         """Generate single response"""
+
+        # Handle seed parameter (MLX supports seed via mx.random.seed)
+        if seed is not None:
+            import mlx.core as mx
+            mx.random.seed(seed)
+            self.logger.debug(f"Set MLX random seed to {seed} for deterministic generation")
 
         # Try different MLX API signatures
         try:
@@ -305,9 +312,15 @@ class MLXProvider(BaseProvider):
             "total_tokens": total_tokens
         }
 
-    def _stream_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+    def _stream_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float, tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
         """Generate real streaming response using MLX stream_generate with tool tag rewriting support"""
         try:
+            # Handle seed parameter (MLX supports seed via mx.random.seed)
+            if seed is not None:
+                import mlx.core as mx
+                mx.random.seed(seed)
+                self.logger.debug(f"Set MLX random seed to {seed} for deterministic streaming generation")
+
             # Initialize tool tag rewriter if needed
             rewriter = None
             buffer = ""
@@ -366,12 +379,12 @@ class MLXProvider(BaseProvider):
     def _stream_generate_with_tools(self, full_prompt: str, max_tokens: int,
                                    temperature: float, top_p: float,
                                    tools: Optional[List[Dict[str, Any]]] = None,
-                                   tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+                                   tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end"""
         collected_content = ""
 
         # Stream the response content
-        for chunk in self._stream_generate(full_prompt, max_tokens, temperature, top_p, tool_call_tags):
+        for chunk in self._stream_generate(full_prompt, max_tokens, temperature, top_p, tool_call_tags, seed):
             collected_content += chunk.content
             yield chunk
 

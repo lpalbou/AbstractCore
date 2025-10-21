@@ -570,7 +570,31 @@ class BaseProvider(AbstractCoreInterface, ABC):
         result_kwargs = kwargs.copy()
         result_kwargs["max_output_tokens"] = effective_max_output
 
+        # Add unified generation parameters with fallback hierarchy: kwargs → instance → defaults
+        result_kwargs["temperature"] = result_kwargs.get("temperature", self.temperature)
+        if self.seed is not None:
+            result_kwargs["seed"] = result_kwargs.get("seed", self.seed)
+
         return result_kwargs
+
+    def _extract_generation_params(self, **kwargs) -> Dict[str, Any]:
+        """
+        Extract generation parameters with consistent fallback hierarchy.
+        
+        Returns:
+            Dict containing temperature, seed, and other generation parameters
+        """
+        params = {}
+        
+        # Temperature (always present)
+        params["temperature"] = kwargs.get("temperature", self.temperature)
+        
+        # Seed (only if not None)
+        seed_value = kwargs.get("seed", self.seed)
+        if seed_value is not None:
+            params["seed"] = seed_value
+            
+        return params
 
     def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
         """

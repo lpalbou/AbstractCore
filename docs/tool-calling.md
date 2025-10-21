@@ -133,6 +133,33 @@ def search_database(query: str, table: str = "users") -> str:
 - **Examples**: Shown in the system prompt with proper formatting for each architecture
 - **Tags & when_to_use**: Help the LLM understand context and appropriate usage
 
+### Built-in Tools
+
+AbstractCore includes a comprehensive set of ready-to-use tools in `abstractcore.tools.common_tools`:
+
+```python
+from abstractcore.tools.common_tools import fetch_url, search_files, read_file, list_files
+
+# Intelligent web content fetching
+result = fetch_url("https://api.github.com/repos/python/cpython")
+# Automatically detects and parses JSON, HTML, images, PDFs, etc.
+
+# File system operations  
+files = search_files("def.*fetch", ".", file_pattern="*.py")
+content = read_file("config.json")
+directory_listing = list_files(".", pattern="*.py", recursive=True)
+```
+
+**Available Built-in Tools:**
+- `fetch_url` - Intelligent web content fetching with automatic content type detection and parsing
+- `search_files` - Search for text patterns inside files using regex
+- `list_files` - Find and list files by names/paths using glob patterns
+- `read_file` - Read file contents with optional line range selection
+- `write_file` - Write content to files with directory creation
+- `edit_file` - Edit files using pattern matching and replacement
+- `web_search` - Search the web using DuckDuckGo
+- `execute_command` - Execute shell commands safely with security controls
+
 ### Real-World Example
 
 Here's an example from AbstractCore's codebase showing the enhanced `@tool` decorator:

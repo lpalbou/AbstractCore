@@ -68,6 +68,7 @@ class HuggingFaceProvider(BaseProvider):
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
 
+        # Store provider-specific configuration
         self.n_gpu_layers = n_gpu_layers
         self.model_type = None  # Will be "transformers" or "gguf"
         self.device = device
@@ -537,14 +538,15 @@ class HuggingFaceProvider(BaseProvider):
         # Generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_new_tokens = self._get_provider_max_tokens_param(generation_kwargs)
-        temperature = kwargs.get("temperature", 0.7)
+        temperature = kwargs.get("temperature", self.temperature)
         top_p = kwargs.get("top_p", 0.9)
+        seed_value = kwargs.get("seed", self.seed)
 
         try:
             if stream:
-                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'))
+                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'), seed_value)
             else:
-                response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p)
+                response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, seed_value)
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:
@@ -651,10 +653,15 @@ class HuggingFaceProvider(BaseProvider):
         generation_kwargs = {
             "messages": chat_messages,
             "max_tokens": max_output_tokens,  # This is max_output_tokens for llama-cpp
-            "temperature": kwargs.get("temperature", 0.7),
+            "temperature": kwargs.get("temperature", self.temperature),
             "top_p": kwargs.get("top_p", 0.9),
             "stream": stream
         }
+
+        # Add seed if provided (GGUF/llama-cpp supports seed)
+        seed_value = kwargs.get("seed", self.seed)
+        if seed_value is not None:
+            generation_kwargs["seed"] = seed_value
 
         # Handle tools - both native and prompted support
         has_native_tools = False
@@ -846,9 +853,16 @@ class HuggingFaceProvider(BaseProvider):
                     )
 
     def _single_generate_transformers(self, input_text: str, max_new_tokens: int,
-                                     temperature: float, top_p: float) -> GenerateResponse:
+                                     temperature: float, top_p: float, seed: Optional[int] = None) -> GenerateResponse:
         """Generate single response using transformers (original implementation)"""
         try:
+            # Set seed for deterministic generation if provided
+            if seed is not None:
+                import torch
+                torch.manual_seed(seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed)
+
             outputs = self.pipeline(
                 input_text,
                 max_new_tokens=max_new_tokens,
@@ -902,11 +916,11 @@ class HuggingFaceProvider(BaseProvider):
         }
 
     def _stream_generate_transformers(self, input_text: str, max_new_tokens: int,
-                                     temperature: float, top_p: float, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+                                     temperature: float, top_p: float, tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
         """Stream response using transformers (simulated, original implementation) with tool tag rewriting support"""
         try:
             # HuggingFace doesn't have native streaming, so we simulate it
-            full_response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p)
+            full_response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, seed)
 
             if full_response.content:
                 # Apply tool tag rewriting if enabled
@@ -1039,12 +1053,12 @@ class HuggingFaceProvider(BaseProvider):
     def _stream_generate_transformers_with_tools(self, input_text: str, max_new_tokens: int,
                                                temperature: float, top_p: float,
                                                tools: Optional[List[Dict[str, Any]]] = None,
-                                               tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+                                               tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end"""
         collected_content = ""
 
         # Stream the response content
-        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p, tool_call_tags):
+        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p, tool_call_tags, seed):
             collected_content += chunk.content
             yield chunk
 
