@@ -6,7 +6,7 @@ import pytest
 from datetime import datetime
 from abstractcore.core.session import BasicSession
 from abstractcore.core.types import Message
-from abstractcore.providers.mock_provider import MockProvider
+from abstractcore.providers.openai_provider import OpenAIProvider
 
 
 class TestBasicSession:
@@ -65,14 +65,17 @@ class TestBasicSession:
         session.clear_history(keep_system=False)
         assert len(session.messages) == 0
 
-    def test_generation_with_mock_provider(self):
-        """Test generation with mock provider"""
-        provider = MockProvider()
-        session = BasicSession(provider=provider)
+    def test_generation_with_openai_provider(self):
+        """Test generation with OpenAI provider"""
+        try:
+            provider = OpenAIProvider()
+            session = BasicSession(provider=provider)
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
 
         response = session.generate("Hello")
         assert response.content is not None
-        assert "Mock response" in response.content
+        assert len(response.content) > 0
         assert len(session.messages) == 2  # user + assistant
 
     def test_persistence(self, tmp_path):

@@ -1101,7 +1101,6 @@ async def list_providers():
     - **LMStudio**: Local model development and testing platform
     - **MLX**: Apple Silicon optimized local inference
     - **HuggingFace**: Access to HuggingFace models (transformers and embeddings)
-    - **Mock**: Testing provider for development
 
     **Use Cases:**
     - Discover available providers before making requests

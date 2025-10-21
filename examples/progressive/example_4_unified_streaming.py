@@ -54,8 +54,8 @@ def streaming_basics():
 
     # Create streaming-enabled LLM
     llm = create_llm(
-        provider="mock",
-        model="mock-model",
+        provider="openai",
+        model="gpt-4o-mini",
         stream=True  # Enable streaming
     )
 
@@ -144,8 +144,8 @@ def unified_streaming_architecture():
         tool_call_tags="qwen3",  # Use default Qwen format
     )
 
-    def create_mock_stream(content: str) -> Iterator[GenerateResponse]:
-        """Create a mock streaming response."""
+    def create_sample_stream(content: str) -> Iterator[GenerateResponse]:
+        """Create a sample streaming response."""
         # Simulate character-by-character streaming
         for char in content:
             yield GenerateResponse(
@@ -164,7 +164,7 @@ def unified_streaming_architecture():
     test_content = "Let me calculate: <|tool_call|>{\"name\":\"calc\",\"arguments\":{\"expr\":\"2+2\"}}></|tool_call|> Done!"
 
     print("\n📡 Processing unified stream:")
-    stream = create_mock_stream(test_content)
+    stream = create_sample_stream(test_content)
     accumulated = ""
     chunk_count = 0
 
@@ -380,7 +380,7 @@ def real_world_streaming_example():
     print("\n🤖 Simulating Agentic CLI Interaction:")
     print("User: 'Calculate fibonacci(10) and list files in current directory'\n")
 
-    # Mock tools
+    # Sample tools
     @tool
     def fibonacci(n: int) -> int:
         """Calculate fibonacci number."""

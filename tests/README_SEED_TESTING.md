@@ -180,7 +180,7 @@ The basic tests (`test_seed_temperature_basic.py`) are designed to run in CI/CD 
 - Parameter inheritance and defaults
 - Interface contracts
 - Session behavior
-- Mock provider functionality
+- Provider functionality testing
 
 The determinism tests require actual provider setup and are intended for:
 - Development environments

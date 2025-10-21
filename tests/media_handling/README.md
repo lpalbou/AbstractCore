@@ -166,7 +166,7 @@ When adding new tests:
 2. **Use fixtures**: Leverage shared fixtures in `conftest.py`
 3. **Handle dependencies**: Use `pytest.skip` for missing optional deps
 4. **Test error conditions**: Include negative test cases
-5. **Mock external APIs**: Use `unittest.mock` for provider tests
+5. **Mock external APIs**: Use `unittest.mock` for external API tests
 
 ## Real Model Testing
 

@@ -136,19 +136,6 @@ class ProviderRegistry:
             import_path="..providers.huggingface_provider"
         ))
 
-        # Mock Provider
-        self.register_provider(ProviderInfo(
-            name="mock",
-            display_name="Mock",
-            provider_class=None,
-            description="Testing provider for development and unit tests",
-            default_model="mock-model",
-            supported_features=["chat", "completion", "embeddings", "prompted_tools", "streaming", "testing"],
-            authentication_required=False,
-            local_provider=True,
-            installation_extras=None,
-            import_path="..providers.mock_provider"
-        ))
 
     def register_provider(self, provider_info: ProviderInfo):
         """Register a provider in the registry."""
@@ -182,10 +169,7 @@ class ProviderRegistry:
     def _load_provider_class(self, provider_info: ProviderInfo):
         """Dynamically load a provider class."""
         try:
-            if provider_info.name == "mock":
-                from ..providers.mock_provider import MockProvider
-                return MockProvider
-            elif provider_info.name == "openai":
+            if provider_info.name == "openai":
                 from ..providers.openai_provider import OpenAIProvider
                 return OpenAIProvider
             elif provider_info.name == "anthropic":

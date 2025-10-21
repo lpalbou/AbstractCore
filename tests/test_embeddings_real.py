@@ -273,7 +273,7 @@ class TestLLMIntegrationReal:
             # Test that LLM creation doesn't interfere with embeddings
             try:
                 # This might fail if no LLM providers are configured, which is fine
-                llm = create_llm("mock")  # Use mock provider to avoid API calls
+                llm = create_llm("openai")  # Use OpenAI provider if available
                 print("✅ LLM and embeddings can coexist")
             except Exception:
                 print("✅ LLM creation failed as expected (no real providers configured)")

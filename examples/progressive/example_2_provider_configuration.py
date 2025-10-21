@@ -70,14 +70,14 @@ def advanced_provider_configuration():
             presence_penalty=0.1,
             frequency_penalty=0.1,
             # API configuration
-            api_key=os.getenv("OPENAI_API_KEY", "mock-key"),
+            api_key=os.getenv("OPENAI_API_KEY"),
             organization=os.getenv("OPENAI_ORG_ID"),
             timeout=30,  # Request timeout in seconds
         )
         print("   ✅ OpenAI provider configured successfully")
     except ImportError:
-        print("   ⚠️ OpenAI not installed, using mock provider")
-        openai_llm = create_llm("mock", "mock-gpt-4")
+        print("   ⚠️ OpenAI not available, skipping OpenAI demo")
+        openai_llm = None
 
     # Configuration 2: Ollama for local models
     print("\n🔧 Ollama Provider Configuration:")
@@ -96,8 +96,8 @@ def advanced_provider_configuration():
         )
         print("   ✅ Ollama provider configured successfully")
     except (ImportError, ProviderAPIError):
-        print("   ⚠️ Ollama not available, using mock provider")
-        ollama_llm = create_llm("mock", "mock-ollama")
+        print("   ⚠️ Ollama not available, skipping Ollama demo")
+        ollama_llm = None
 
     # Configuration 3: Anthropic with specific version
     print("\n🔧 Anthropic Provider Configuration:")
@@ -114,8 +114,8 @@ def advanced_provider_configuration():
         )
         print("   ✅ Anthropic provider configured successfully")
     except ImportError:
-        print("   ⚠️ Anthropic not installed, using mock provider")
-        anthropic_llm = create_llm("mock", "mock-claude")
+        print("   ⚠️ Anthropic not available, skipping Anthropic demo")
+        anthropic_llm = None
 
     return openai_llm, ollama_llm, anthropic_llm
 
@@ -153,8 +153,8 @@ def retry_strategies_demo():
     # Simulate retry behavior
     print("\n🔄 Simulating retry behavior...")
 
-    class FlakeyMockProvider:
-        """Mock provider that fails intermittently."""
+    class FlakeyTestProvider:
+        """Test provider that fails intermittently."""
         def __init__(self, failure_rate=0.5):
             self.failure_rate = failure_rate
             self.attempt_count = 0
@@ -172,7 +172,7 @@ def retry_strategies_demo():
 
     # In real usage, retry is built into the provider
     # This is a simulation to show the pattern
-    mock_provider = FlakeyMockProvider()
+    test_provider = FlakeyTestProvider()
 
     def retry_with_backoff(func, config=retry_config):
         """Simple retry implementation for demonstration."""
@@ -199,7 +199,7 @@ def retry_strategies_demo():
         raise last_exception
 
     try:
-        result = retry_with_backoff(lambda: mock_provider.generate("test"))
+        result = retry_with_backoff(lambda: test_provider.generate("test"))
         print(f"\n   📝 Final result: {result}")
     except ProviderAPIError as e:
         print(f"\n   ❌ All retries exhausted: {e}")
@@ -329,7 +329,15 @@ def telemetry_and_observability():
     print("\n📊 Starting telemetry collection...")
 
     # Create LLM with telemetry enabled
-    llm = create_llm("mock", "mock-model")
+    # Use first available provider for telemetry demo
+    try:
+        llm = create_llm("openai", "gpt-4o-mini")
+    except ImportError:
+        try:
+            llm = create_llm("ollama", "qwen3-coder:30b")
+        except Exception:
+            print("   ⚠️ No providers available for telemetry demo")
+            return
 
     # Make several requests
     prompts = [
@@ -342,9 +350,9 @@ def telemetry_and_observability():
         print(f"\n   Processing: '{prompt[:30]}...'")
         try:
             response = llm.generate(prompt)
-            # Simulate some token usage for mock provider
+            # Simulate some token usage for test provider
             if not response.usage:
-                # Use centralized token estimation for mock usage
+                # Use centralized token estimation for test usage
                 from abstractcore.utils.token_utils import TokenUtils
                 estimated_tokens = TokenUtils.estimate_tokens(prompt) + TokenUtils.estimate_tokens(response.content or "")
                 response.usage = {"total_tokens": estimated_tokens}
@@ -384,7 +392,15 @@ def performance_optimization_techniques():
     print("   AbstractCore providers automatically manage connection pools")
 
     # Demonstrate connection reuse
-    llm = create_llm("mock", "mock-model")
+    # Use first available provider for telemetry demo
+    try:
+        llm = create_llm("openai", "gpt-4o-mini")
+    except ImportError:
+        try:
+            llm = create_llm("ollama", "qwen3-coder:30b")
+        except Exception:
+            print("   ⚠️ No providers available for telemetry demo")
+            return
 
     print("   Measuring connection reuse benefit...")
     times = []
@@ -471,7 +487,15 @@ def performance_optimization_techniques():
     print("   See example_4_unified_streaming.py for full demonstration")
 
     # Quick streaming demo
-    llm_streaming = create_llm("mock", "mock-model", stream=True)
+    # Use first available provider for streaming demo
+    try:
+        llm_streaming = create_llm("openai", "gpt-4o-mini", stream=True)
+    except ImportError:
+        try:
+            llm_streaming = create_llm("ollama", "qwen3-coder:30b", stream=True)
+        except Exception:
+            print("   ⚠️ No providers available for streaming demo")
+            return
     print("\n   Streaming response:")
     for i, chunk in enumerate("This is a streaming response demo".split()):
         print(f"      Chunk {i+1}: {chunk}")
@@ -495,7 +519,7 @@ def provider_capability_detection():
     print("=" * 70)
 
     providers_to_test = [
-        ("mock", "mock-model"),
+        ("openai", "gpt-4o-mini"),
         # Add real providers if available
     ]
 

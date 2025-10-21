@@ -43,16 +43,20 @@ class ProductReview(BaseModel):
         return v
 
 
-def demo_mock_provider():
-    """Demo with mock provider (no API keys needed)."""
-    print("=== Mock Provider Demo ===")
+def demo_openai_provider_basic():
+    """Basic demo with OpenAI provider (requires API key)."""
+    print("=== OpenAI Provider Basic Demo ===")
+    
+    if not os.getenv("OPENAI_API_KEY"):
+        print("⚠️ OPENAI_API_KEY not set. Skipping OpenAI demo.")
+        return
 
-    # Create mock LLM (no API key required)
-    llm = create_llm("mock")
-
-    # Example 1: Simple user extraction
-    print("\n1. User Information Extraction:")
     try:
+        # Create OpenAI LLM
+        llm = create_llm("openai", model="gpt-4o-mini")
+
+        # Example 1: Simple user extraction
+        print("\n1. User Information Extraction:")
         user = llm.generate(
             "Extract user info: John Smith, 25 years old, john.smith@email.com",
             response_model=User
@@ -60,10 +64,11 @@ def demo_mock_provider():
         print(f"   Name: {user.name}")
         print(f"   Age: {user.age}")
         print(f"   Email: {user.email}")
+        
+    except ImportError:
+        print("⚠️ OpenAI dependencies not installed. Install with: pip install abstractcore[openai]")
     except Exception as e:
         print(f"   Error: {e}")
-
-    print("\nNote: Mock provider returns placeholder data for demonstration.")
 
 
 def demo_openai_provider():
@@ -152,8 +157,9 @@ if __name__ == "__main__":
     print("AbstractCore Structured Output Examples")
     print("=" * 40)
 
-    # Always run mock demo
-    demo_mock_provider()
+    # Run OpenAI demos
+    demo_openai_provider_basic()
+    demo_openai_provider()
 
     # Optionally run real provider demos if API keys are available
     demo_openai_provider()

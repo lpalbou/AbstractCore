@@ -289,7 +289,7 @@ print(f"Usage details: {response.usage}")
 
 **Token Count Sources:**
 - **Provider APIs**: OpenAI, Anthropic, LMStudio (native API token counts)
-- **AbstractCore Calculation**: MLX, HuggingFace, Mock (using `token_utils.py`)
+- **AbstractCore Calculation**: MLX, HuggingFace (using `token_utils.py`)
 - **Mixed Sources**: Ollama (combination of provider and calculated tokens)
 
 **Backward Compatibility**: Legacy `prompt_tokens` and `completion_tokens` keys remain available in `response.usage` dictionary.

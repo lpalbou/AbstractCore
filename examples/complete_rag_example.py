@@ -4,7 +4,7 @@ Complete RAG Application Example
 ===============================
 
 This example demonstrates a complete Retrieval-Augmented Generation (RAG)
-application using AbstractCore Core embeddings with a mock LLM.
+application using AbstractCore Core embeddings with real LLMs.
 
 This is a real, working example you can adapt for production use.
 """
@@ -23,12 +23,12 @@ from abstractcore import create_llm
 class SimpleRAGSystem:
     """A simple but complete RAG system."""
 
-    def __init__(self, embedding_model="sentence-transformers/all-MiniLM-L6-v2", llm_provider="mock"):
+    def __init__(self, embedding_model="sentence-transformers/all-MiniLM-L6-v2", llm_provider="openai"):
         """Initialize the RAG system.
 
         Args:
             embedding_model: Embedding model to use
-            llm_provider: LLM provider (use 'mock' for demo, 'openai'/'anthropic' for production)
+            llm_provider: LLM provider ('openai', 'anthropic', 'ollama', etc.)
         """
         self.embedder = EmbeddingManager(model=embedding_model)
         self.llm = create_llm(llm_provider)
@@ -216,7 +216,7 @@ def main():
 
         print("\n✅ RAG Demo Complete!")
         print("\n🔧 To use with real LLMs:")
-        print("• Replace 'mock' with 'openai' or 'anthropic'")
+        print("• Configure your preferred provider: 'openai', 'anthropic', 'ollama'")
         print("• Add your API key: create_llm('openai', api_key='your-key')")
         print("• Consider using 'embeddinggemma' for better embeddings")
         print("• Scale up knowledge base for production use")

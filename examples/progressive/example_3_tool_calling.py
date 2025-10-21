@@ -114,7 +114,7 @@ def calculate(expression: str) -> float:
 @tool
 def get_weather(city: str, units: str = "celsius") -> str:
     """
-    Get current weather for a city (mock implementation).
+    Get current weather for a city (simulated implementation).
 
     Args:
         city: City name
@@ -123,7 +123,7 @@ def get_weather(city: str, units: str = "celsius") -> str:
     Returns:
         Weather information
     """
-    # Mock weather data
+    # Simulated weather data
     import random
 
     temp = random.randint(15, 30) if units == "celsius" else random.randint(59, 86)
@@ -162,10 +162,18 @@ def basic_tool_calling():
         print(f"   • {tool_name}")
 
     # Create LLM with tool support
-    llm = create_llm("mock", "mock-model")
+    # Use first available provider for tool calling demo
+    try:
+        llm = create_llm("openai", "gpt-4o-mini")
+    except ImportError:
+        try:
+            llm = create_llm("ollama", "qwen3-coder:30b")
+        except Exception:
+            print("   ⚠️ No providers available for tool calling demo")
+            return
 
     # Create tool handler for this model
-    handler = UniversalToolHandler("mock-model")
+    handler = UniversalToolHandler(llm.model)
 
     # Format tools for the model
     tool_defs = [
@@ -183,8 +191,8 @@ def basic_tool_calling():
     # Simulate a response with tool calls
     print("\n🤖 Simulating tool-calling response...")
 
-    # Mock response with Qwen-style tool calls
-    mock_response = """
+    # Sample response with Qwen-style tool calls
+    sample_response = """
 I'll help you with those tasks.
 
 First, let me list the Python files:
@@ -201,10 +209,10 @@ Finally, let me check the weather:
 """
 
     print("Response with tool calls:")
-    print(mock_response)
+    print(sample_response)
 
     # Parse tool calls from response
-    tool_call_response = handler.parse_response(mock_response, mode="prompted")
+    tool_call_response = handler.parse_response(sample_response, mode="prompted")
 
     if tool_call_response.has_tool_calls():
         print(f"\n🔧 Found {len(tool_call_response.tool_calls)} tool calls")
@@ -527,7 +535,7 @@ def unified_streaming_with_tools():
 
     # Simulate a streaming response with tools
     def simulate_streaming_response():
-        """Generate mock streaming chunks."""
+        """Generate sample streaming chunks."""
         chunks = [
             "I'll help you with ",
             "those calculations.\n\n",

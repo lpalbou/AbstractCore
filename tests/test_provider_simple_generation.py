@@ -148,9 +148,12 @@ class TestProviderSimpleGeneration:
             else:
                 raise
 
-    def test_mock_simple_generation(self):
-        """Test Mock provider simple generation."""
-        provider = create_llm("mock", model="test-model")
+    def test_openai_simple_generation(self):
+        """Test OpenAI provider simple generation."""
+        try:
+            provider = create_llm("openai", model="gpt-4o")
+        except ImportError:
+            pytest.skip("OpenAI provider not available")
 
         response = provider.generate("Who are you? Answer in one sentence.")
 

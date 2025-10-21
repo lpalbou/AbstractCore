@@ -252,12 +252,12 @@ def test_ollama_seed_determinism():
 
 def test_session_seed_persistence():
     """Test that session-level seed parameters work correctly"""
-    # Use mock provider for this test to avoid external dependencies
+    # Use OpenAI provider for this test if available
     try:
-        from abstractcore.providers.mock_provider import MockProvider
+        from abstractcore.providers.openai_provider import OpenAIProvider
         
         # Create session with seed
-        provider = MockProvider(model="mock-model", temperature=0.0, seed=42)
+        provider = OpenAIProvider(model="gpt-4o", temperature=0.0, seed=42)
         session = BasicSession(provider=provider, temperature=0.0, seed=42)
         
         # Generate multiple responses
@@ -266,11 +266,11 @@ def test_session_seed_persistence():
             response = session.generate("Test prompt")
             responses.append(response.content)
         
-        # Mock provider should be consistent
-        assert len(set(responses)) <= 2, "Session should maintain some consistency"
+        # With seed, responses should be deterministic
+        assert len(set(responses)) <= 2, "Session should maintain some consistency with seed"
         
     except ImportError:
-        pytest.skip("MockProvider not available")
+        pytest.skip("OpenAI provider not available")
 
 
 def test_temperature_zero_consistency():

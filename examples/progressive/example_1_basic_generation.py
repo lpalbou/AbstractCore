@@ -47,11 +47,11 @@ def basic_generation_example():
     print("EXAMPLE 1: Basic Text Generation")
     print("=" * 70)
 
-    # Create an LLM instance - defaults to mock provider for testing
-    # In production, you'd use: create_llm("openai", "gpt-4o") or similar
+    # Create an LLM instance with OpenAI provider
+    # You can also use: create_llm("anthropic", "claude-3-5-haiku") or similar
     llm = create_llm(
-        provider="mock",
-        model="mock-model",
+        provider="openai",
+        model="gpt-4o-mini",
         max_tokens=2048,        # Total context window budget
         max_output_tokens=500   # Reserve 500 tokens for response
     )
@@ -82,7 +82,17 @@ def explore_response_object():
     print("Understanding the Response Object")
     print("=" * 70)
 
-    llm = create_llm("mock", "mock-model", max_tokens=1000)
+    # Try OpenAI first, fallback to Ollama for local testing
+    try:
+        llm = create_llm("openai", "gpt-4o-mini", max_tokens=1000)
+        print("   Using OpenAI provider")
+    except ImportError:
+        try:
+            llm = create_llm("ollama", "qwen3-coder:30b", max_tokens=1000)
+            print("   Using Ollama provider")
+        except Exception:
+            print("   ⚠️ No providers available. Install OpenAI or Ollama.")
+            return
 
     # Generate with more complex prompt
     prompt = """
@@ -126,11 +136,10 @@ def provider_switching_demo():
     print("Provider Flexibility - Write Once, Run Anywhere")
     print("=" * 70)
 
-    # List of providers to try (mock for demo, but could be real providers)
+    # List of providers to try (real providers for demonstration)
     providers = [
-        ("mock", "mock-gpt-4"),
-        # Uncomment these to test with real providers:
-        # ("openai", "gpt-4o-mini"),
+        ("openai", "gpt-4o-mini"),
+        ("anthropic", "claude-3-5-haiku"),
         # ("anthropic", "claude-3-5-haiku-latest"),
         # ("ollama", "qwen3-coder:30b"),
     ]
@@ -184,8 +193,13 @@ def error_handling_patterns():
         print(f"\n❌ API error: {e}")
         print("   💡 Tip: Check API keys and network connectivity")
     except ImportError:
-        print("\n⚠️ OpenAI not installed - using mock provider instead")
-        llm = create_llm("mock", "mock-model")
+        print("\n⚠️ OpenAI not installed - trying fallback provider")
+        # Fallback to Ollama if OpenAI not available
+        try:
+            llm = create_llm("ollama", "qwen3-coder:30b")
+        except Exception:
+            print("   ⚠️ No providers available. Install OpenAI or Ollama.")
+            return
         response = llm.generate("Hello")
         print(f"   ✅ Fallback response: {response.content}")
 
@@ -196,7 +210,7 @@ def error_handling_patterns():
         ("openai", "gpt-4o-mini"),
         ("anthropic", "claude-3-5-haiku-latest"),
         ("ollama", "qwen3-coder:30b"),
-        ("mock", "mock-model"),  # Always available fallback
+        ("ollama", "qwen3-coder:30b"),  # Local fallback
     ]
 
     for provider, model in fallback_providers:
@@ -227,8 +241,8 @@ def token_management_insights():
     # Strategy 1: Budget + Output Reserve (Recommended)
     print("\n📊 Strategy 1: Total Budget with Output Reserve")
     llm = create_llm(
-        "mock",
-        "mock-model",
+        "openai",
+        "gpt-4o-mini",
         max_tokens=8000,        # Total budget for input + output
         max_output_tokens=2000  # Reserve 2000 for generation
     )
@@ -241,8 +255,8 @@ def token_management_insights():
     # Strategy 2: Explicit Input/Output (Advanced)
     print("\n📊 Strategy 2: Explicit Input and Output Limits")
     llm = create_llm(
-        "mock",
-        "mock-model",
+        "openai",
+        "gpt-4o-mini",
         max_input_tokens=6000,   # Explicit input limit
         max_output_tokens=2000   # Explicit output limit
     )
