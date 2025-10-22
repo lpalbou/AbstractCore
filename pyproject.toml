@@ -74,6 +74,8 @@ extractor = "abstractcore.apps.extractor:main"
 abstractcore-extractor = "abstractcore.apps.extractor:main"
 judge = "abstractcore.apps.judge:main"
 abstractcore-judge = "abstractcore.apps.judge:main"
+deepsearch = "abstractcore.apps.deepsearch:main"
+abstractcore-deepsearch = "abstractcore.apps.deepsearch:main"
 
 [project.optional-dependencies]
 # Individual providers
