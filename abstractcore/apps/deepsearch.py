@@ -512,7 +512,6 @@ Examples:
     try:
         # Initialize LLM
         if args.provider and args.model:
-            print(f"🤖 Initializing {args.provider} with model {args.model}...")
             llm = create_llm(
                 args.provider,
                 model=args.model,
@@ -521,7 +520,6 @@ Examples:
                 timeout=args.timeout
             )
         else:
-            print("🤖 Initializing default LLM (Ollama)...")
             llm = None  # Will use default in BasicDeepSearch
         
         # Initialize Deep Search

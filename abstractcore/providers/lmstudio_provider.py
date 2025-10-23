@@ -25,6 +25,7 @@ class LMStudioProvider(BaseProvider):
 
     def __init__(self, model: str = "local-model", base_url: str = "http://localhost:1234/v1", **kwargs):
         super().__init__(model, **kwargs)
+        self.provider = "lmstudio"
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)

@@ -32,6 +32,7 @@ class AnthropicProvider(BaseProvider):
 
     def __init__(self, model: str = "claude-3-haiku-20240307", api_key: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
+        self.provider = "anthropic"
 
         if not ANTHROPIC_AVAILABLE:
             raise ImportError("Anthropic package not installed. Install with: pip install anthropic")

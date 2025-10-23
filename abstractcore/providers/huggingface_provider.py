@@ -42,7 +42,7 @@ except ImportError:
 class HuggingFaceProvider(BaseProvider):
     """HuggingFace provider with dual support for transformers and GGUF models"""
 
-    def __init__(self, model: str = "Qwen/Qwen3-4B",
+    def __init__(self, model: str = "unsloth/Qwen3-4B-Instruct-2507-GGUF",
                  device: Optional[str] = None,
                  n_gpu_layers: Optional[int] = None,
                  **kwargs):
@@ -61,6 +61,7 @@ class HuggingFaceProvider(BaseProvider):
                 kwargs["max_tokens"] = context_size
 
         super().__init__(model, **kwargs)
+        self.provider = "huggingface"
 
         # Handle timeout parameter for local models
         self._handle_timeout_parameter(kwargs)

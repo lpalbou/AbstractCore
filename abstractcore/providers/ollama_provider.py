@@ -23,8 +23,10 @@ from ..events import EventType
 class OllamaProvider(BaseProvider):
     """Ollama provider for local models with full integration"""
 
-    def __init__(self, model: str = "llama2", base_url: str = "http://localhost:11434", **kwargs):
+    def __init__(self, model: str = "qwen3:4b-instruct-2507-q4_K_M", base_url: str = "http://localhost:11434", **kwargs):
         super().__init__(model, **kwargs)
+        self.provider = "ollama"
+
         self.base_url = base_url.rstrip('/')
         self.client = httpx.Client(timeout=self._timeout)
 

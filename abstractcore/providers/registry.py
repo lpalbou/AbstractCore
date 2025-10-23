@@ -86,7 +86,7 @@ class ProviderRegistry:
             display_name="Ollama",
             provider_class=None,
             description="Local LLM server for running open-source models",
-            default_model="qwen3-coder:30b",
+            default_model="qwen3:4b-instruct-2507-q4_K_M",
             supported_features=["chat", "completion", "embeddings", "prompted_tools", "streaming"],
             authentication_required=False,
             local_provider=True,
@@ -128,7 +128,7 @@ class ProviderRegistry:
             display_name="HuggingFace",
             provider_class=None,
             description="Access to HuggingFace models (transformers and embeddings)",
-            default_model="Qwen/Qwen3-4B/",
+            default_model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
             supported_features=["chat", "completion", "embeddings", "prompted_tools", "local_models"],
             authentication_required=False,  # Optional for public models
             local_provider=True,
