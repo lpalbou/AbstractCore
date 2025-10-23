@@ -13,6 +13,8 @@ import json
 import logging
 import asyncio
 import time
+import re
+import hashlib
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,6 +27,138 @@ from ..utils.structured_logging import get_logger
 from ..tools.common_tools import web_search, fetch_url
 
 logger = get_logger(__name__)
+
+
+class SourceManager:
+    """Manages source collection with strict limits and deduplication"""
+    
+    def __init__(self, max_sources: int):
+        self.max_sources = max_sources
+        self.collected_sources = []
+        self.source_urls = set()  # For deduplication
+        self.source_titles = set()  # Additional deduplication by title
+    
+    def add_source(self, source: Dict[str, Any]) -> bool:
+        """Add source if under limit and not duplicate"""
+        if len(self.collected_sources) >= self.max_sources:
+            logger.debug(f"Source limit reached ({self.max_sources}), skipping: {source.get('url', 'unknown')}")
+            return False
+        
+        url = source.get('url', '')
+        title = source.get('title', '').lower().strip()
+        
+        # Check for URL duplication
+        if url and url in self.source_urls:
+            logger.debug(f"Duplicate URL skipped: {url}")
+            return False
+        
+        # Check for title duplication (similar content from different URLs)
+        if title and title in self.source_titles:
+            logger.debug(f"Duplicate title skipped: {title}")
+            return False
+        
+        self.collected_sources.append(source)
+        if url:
+            self.source_urls.add(url)
+        if title:
+            self.source_titles.add(title)
+        
+        logger.debug(f"Source added ({len(self.collected_sources)}/{self.max_sources}): {title or url}")
+        return True
+    
+    def get_remaining_capacity(self) -> int:
+        return max(0, self.max_sources - len(self.collected_sources))
+    
+    def get_sources(self) -> List[Dict[str, Any]]:
+        return self.collected_sources.copy()
+    
+    def is_full(self) -> bool:
+        return len(self.collected_sources) >= self.max_sources
+
+
+class CitationValidator:
+    """Validates and enforces citations in generated content"""
+    
+    @staticmethod
+    def validate_citations(text: str, sources: List[Dict]) -> Dict[str, Any]:
+        """Check if text contains proper citations for claims"""
+        if not text or not sources:
+            return {
+                'citations_found': 0,
+                'factual_sentences': 0,
+                'citation_ratio': 0.0,
+                'is_adequately_cited': False,
+                'missing_citations': []
+            }
+        
+        source_names = [s.get('title', '').strip() for s in sources if s.get('title')]
+        
+        # Count citation patterns (case-insensitive)
+        citation_patterns = [
+            r'according to \[([^\]]+)\]',
+            r'as reported by \[([^\]]+)\]',
+            r'according to ([^,.]+)',
+            r'as reported by ([^,.]+)',
+            r'\(([^)]+)\)',  # Parenthetical citations
+        ]
+        
+        citations_found = 0
+        cited_sources = set()
+        
+        for pattern in citation_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            citations_found += len(matches)
+            for match in matches:
+                cited_sources.add(match.strip().lower())
+        
+        # Estimate factual claims (sentences with factual indicators)
+        sentences = [s.strip() for s in text.split('.') if s.strip()]
+        factual_indicators = [
+            'show', 'found', 'research', 'study', 'data', 'report', 'analysis', 
+            'indicates', 'reveals', 'demonstrates', 'confirms', 'suggests',
+            'according', 'published', 'announced', 'released', 'stated'
+        ]
+        
+        factual_sentences = []
+        for sentence in sentences:
+            if any(indicator in sentence.lower() for indicator in factual_indicators):
+                factual_sentences.append(sentence)
+        
+        citation_ratio = citations_found / max(len(factual_sentences), 1)
+        
+        # Check which sources are not cited
+        uncited_sources = []
+        for source in source_names:
+            source_lower = source.lower()
+            if not any(source_lower in cited.lower() for cited in cited_sources):
+                uncited_sources.append(source)
+        
+        return {
+            'citations_found': citations_found,
+            'factual_sentences': len(factual_sentences),
+            'citation_ratio': citation_ratio,
+            'is_adequately_cited': citation_ratio >= 0.5,  # 50% threshold
+            'uncited_sources': uncited_sources,
+            'cited_sources': list(cited_sources)
+        }
+    
+    @staticmethod
+    def enhance_text_with_citations(text: str, sources: List[Dict]) -> str:
+        """Enhance text by adding missing citations where appropriate"""
+        if not sources:
+            return text
+        
+        # Simple enhancement: add source list at the end if no citations found
+        validation = CitationValidator.validate_citations(text, sources)
+        
+        if validation['citations_found'] == 0 and sources:
+            source_list = "\n\nSources:\n" + "\n".join([
+                f"- {s.get('title', 'Unknown')}: {s.get('url', 'No URL')}"
+                for s in sources[:5]  # Limit to top 5 sources
+            ])
+            return text + source_list
+        
+        return text
 
 
 # Pydantic models for structured output
@@ -140,7 +274,8 @@ class BasicDeepSearch:
         max_parallel_searches: int = 5,
         full_text_extraction: bool = False,
         reflexive_mode: bool = False,
-        max_reflexive_iterations: int = 2
+        max_reflexive_iterations: int = 2,
+        temperature: float = 0.1  # Low temperature for consistency
     ):
         """Initialize the deep search system
         
@@ -153,6 +288,7 @@ class BasicDeepSearch:
             full_text_extraction: Whether to extract full text content from pages (default False)
             reflexive_mode: Whether to enable reflexive research that analyzes gaps and refines (default False)
             max_reflexive_iterations: Maximum number of reflexive refinement cycles (default 2)
+            temperature: LLM temperature for consistency (default 0.1 for deterministic outputs)
         """
         if llm is None:
             try:
@@ -161,6 +297,7 @@ class BasicDeepSearch:
                     model="qwen3:4b-instruct-2507-q4_K_M", 
                     max_tokens=max_tokens, 
                     max_output_tokens=max_output_tokens, 
+                    temperature=temperature,  # Use consistent low temperature
                     timeout=timeout
                 )
             except Exception as e:
@@ -189,6 +326,7 @@ class BasicDeepSearch:
         self.full_text_extraction = full_text_extraction
         self.reflexive_mode = reflexive_mode
         self.max_reflexive_iterations = max_reflexive_iterations
+        self.temperature = temperature
         self.retry_strategy = FeedbackRetry(max_attempts=3)
 
     def research(
@@ -218,6 +356,10 @@ class BasicDeepSearch:
         start_time = time.time()
         
         try:
+            # Initialize source manager with strict limits
+            source_manager = SourceManager(max_sources)
+            logger.info(f"🎯 Initialized source manager with limit: {max_sources}")
+            
             # Stage 1: Planning
             logger.info("📋 Stage 1: Planning research approach...")
             research_plan = self._create_research_plan(query, focus_areas, search_depth)
@@ -228,7 +370,7 @@ class BasicDeepSearch:
             
             # Stage 3: Web Exploration
             logger.info("🌐 Stage 3: Exploring web sources...")
-            findings = self._explore_web_sources(research_plan)
+            findings = self._explore_web_sources(research_plan, source_manager)
             
             # Stage 4: Report Generation
             logger.info("📝 Stage 4: Generating research report...")
@@ -414,7 +556,7 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                 ][:queries_per_task]
                 logger.info(f"📝 Using fallback queries for {sub_task.id}: {sub_task.search_queries}")
 
-    def _explore_web_sources(self, research_plan: ResearchPlan) -> List[ResearchFinding]:
+    def _explore_web_sources(self, research_plan: ResearchPlan, source_manager: SourceManager) -> List[ResearchFinding]:
         """Stage 3: Execute web searches and gather evidence"""
         
         all_findings = []
@@ -428,12 +570,17 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
         # Sort by priority (1=high priority first)
         search_tasks.sort(key=lambda x: x[2])
         
-        # Execute searches in parallel
+        # Execute searches in parallel with source limit management
         with ThreadPoolExecutor(max_workers=self.max_parallel_searches) as executor:
             # Submit search tasks
             future_to_task = {}
             for sub_task_id, query, priority in search_tasks:
-                future = executor.submit(self._execute_search, sub_task_id, query)
+                # Check if we still have capacity
+                if source_manager.is_full():
+                    logger.info(f"🎯 Source limit reached ({source_manager.max_sources}), stopping search submission")
+                    break
+                    
+                future = executor.submit(self._execute_search, sub_task_id, query, source_manager)
                 future_to_task[future] = (sub_task_id, query)
             
             # Collect results as they complete
@@ -442,9 +589,14 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                 try:
                     findings = future.result()
                     all_findings.extend(findings)
-                    logger.debug(f"Completed search for {sub_task_id}: {query}")
+                    logger.debug(f"Completed search for {sub_task_id}: {query} - {len(findings)} findings")
                 except Exception as e:
                     logger.warning(f"Search failed for {sub_task_id} '{query}': {e}")
+                
+                # Early termination if source limit reached
+                if source_manager.is_full():
+                    logger.info(f"🎯 Source limit reached ({source_manager.max_sources}), stopping early")
+                    break
         
         # Update sub-tasks with their findings
         findings_by_task = {}
@@ -461,7 +613,7 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
         logger.info(f"🌐 Gathered {len(all_findings)} findings from web exploration")
         return all_findings
 
-    def _execute_search(self, sub_task_id: str, query: str) -> List[ResearchFinding]:
+    def _execute_search(self, sub_task_id: str, query: str, source_manager: SourceManager) -> List[ResearchFinding]:
         """Execute a single web search and extract findings"""
         
         findings = []
@@ -495,8 +647,13 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                     logger.info(f"✅ Created synthetic finding from search results")
                 return findings
             
-            # Fetch content from promising URLs
-            for i, (url, title) in enumerate(urls[:3]):  # Limit to top 3 results per query
+            # Fetch content from promising URLs with source manager control
+            for i, (url, title) in enumerate(urls):
+                # Check source manager capacity before processing
+                if source_manager.is_full():
+                    logger.info(f"🎯 Source limit reached, stopping URL processing for query: {query}")
+                    break
+                    
                 try:
                     logger.debug(f"🌐 Fetching content from URL {i+1}: {url}")
                     content = fetch_url(url, timeout=15)
@@ -514,16 +671,30 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                         relevant_content = self._extract_relevant_content(content, query)
                     
                     if relevant_content:
-                        finding = ResearchFinding(
-                            source_url=url,
-                            title=title,
-                            content=relevant_content,
-                            relevance_score=0.8,  # Could be improved with semantic scoring
-                            timestamp=timestamp,
-                            sub_task_id=sub_task_id
-                        )
-                        findings.append(finding)
-                        logger.info(f"✅ Created finding from {url}")
+                        # Create source for manager validation
+                        source_data = {
+                            'url': url,
+                            'title': title,
+                            'content': relevant_content,
+                            'relevance_score': 0.8,
+                            'timestamp': timestamp,
+                            'sub_task_id': sub_task_id
+                        }
+                        
+                        # Try to add to source manager (handles deduplication and limits)
+                        if source_manager.add_source(source_data):
+                            finding = ResearchFinding(
+                                source_url=url,
+                                title=title,
+                                content=relevant_content,
+                                relevance_score=0.8,
+                                timestamp=timestamp,
+                                sub_task_id=sub_task_id
+                            )
+                            findings.append(finding)
+                            logger.info(f"✅ Added finding from {url} ({len(source_manager.get_sources())}/{source_manager.max_sources})")
+                        else:
+                            logger.debug(f"🎯 Source not added (duplicate or limit reached): {url}")
                     else:
                         logger.debug(f"⚠️ No relevant content extracted from {url}")
                         
@@ -981,11 +1152,40 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
                 if source_entry not in sources:
                     sources.append(source_entry)
             
+            # Validate and enhance citations in the generated content
+            detailed_analysis = report_data.get("detailed_analysis", "")
+            key_findings = report_data.get("key_findings", [])
+            
+            # Validate citations in detailed analysis
+            citation_validation = CitationValidator.validate_citations(detailed_analysis, sources)
+            logger.info(f"📊 Citation validation: {citation_validation['citations_found']} citations found, "
+                       f"{citation_validation['citation_ratio']:.2f} ratio, "
+                       f"adequately cited: {citation_validation['is_adequately_cited']}")
+            
+            # Enhance content if citations are insufficient
+            if not citation_validation['is_adequately_cited']:
+                logger.warning("⚠️ Insufficient citations detected, enhancing content")
+                detailed_analysis = CitationValidator.enhance_text_with_citations(detailed_analysis, sources)
+                
+                # Also enhance key findings if they lack citations
+                enhanced_findings = []
+                for finding in key_findings:
+                    if isinstance(finding, str):
+                        finding_validation = CitationValidator.validate_citations(finding, sources)
+                        if finding_validation['citations_found'] == 0:
+                            enhanced_finding = CitationValidator.enhance_text_with_citations(finding, sources[:2])  # Limit to top 2 sources
+                            enhanced_findings.append(enhanced_finding)
+                        else:
+                            enhanced_findings.append(finding)
+                    else:
+                        enhanced_findings.append(finding)
+                key_findings = enhanced_findings
+            
             report = ResearchReport(
                 title=report_data.get("title", f"Research Report: {research_plan.original_query}"),
                 executive_summary=report_data.get("executive_summary", ""),
-                key_findings=report_data.get("key_findings", []),
-                detailed_analysis=report_data.get("detailed_analysis", ""),
+                key_findings=key_findings,
+                detailed_analysis=detailed_analysis,
                 conclusions=report_data.get("conclusions", ""),
                 sources=sources,
                 methodology=report_data.get("methodology", "Web-based research using multi-stage pipeline"),
