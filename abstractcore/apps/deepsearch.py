@@ -475,6 +475,13 @@ Examples:
         help='Maximum number of reflexive refinement cycles (default: 2)'
     )
     
+    parser.add_argument(
+        '--temperature',
+        type=float,
+        default=0.1,
+        help='LLM temperature for consistency (default: 0.1, range: 0.0-1.0)'
+    )
+    
     # Utility options
     parser.add_argument(
         '--verbose',
@@ -526,7 +533,8 @@ Examples:
             max_parallel_searches=args.parallel_searches,
             full_text_extraction=args.full_text,
             reflexive_mode=args.reflexive,
-            max_reflexive_iterations=args.max_reflexive_iterations
+            max_reflexive_iterations=args.max_reflexive_iterations,
+            temperature=args.temperature
         )
         
         # Parse focus areas
