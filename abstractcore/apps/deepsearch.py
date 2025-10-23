@@ -86,6 +86,11 @@ def save_report(report, output_path: str, format_type: str) -> None:
             markdown_content = format_report_as_markdown(report_data)
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
+        elif output_path.lower().endswith('.html'):
+            # Convert to HTML format
+            html_content = format_report_as_html(report_data)
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(html_content)
         else:
             # Default to JSON
             with open(output_file, 'w', encoding='utf-8') as f:
@@ -143,7 +148,8 @@ def format_report_as_markdown(report_data: Dict[str, Any]) -> str:
         for i, source in enumerate(report_data['sources'], 1):
             title = source.get('title', 'Untitled')
             url = source.get('url', '')
-            md_lines.append(f"{i}. [{title}]({url})")
+            relevance = source.get('relevance', 0)
+            md_lines.append(f"{i}. [{title}]({url}) (Relevance: {relevance:.2f})")
         md_lines.append("")
     
     # Methodology
@@ -161,6 +167,101 @@ def format_report_as_markdown(report_data: Dict[str, Any]) -> str:
         md_lines.append("")
     
     return "\n".join(md_lines)
+
+
+def format_report_as_html(report_data: Dict[str, Any]) -> str:
+    """Convert report data to HTML format"""
+    
+    html_parts = []
+    
+    # HTML header
+    html_parts.append("""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Search Report</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+        h2 { color: #34495e; margin-top: 30px; }
+        .section { margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+        .finding { margin-bottom: 15px; padding: 10px; background: white; border-left: 4px solid #3498db; }
+        .source { margin-bottom: 10px; padding: 10px; background: white; border-radius: 4px; }
+        .source a { color: #3498db; text-decoration: none; }
+        .source a:hover { text-decoration: underline; }
+        .relevance { color: #7f8c8d; font-size: 0.9em; }
+        .metadata { color: #7f8c8d; font-size: 0.9em; margin-top: 20px; }
+    </style>
+</head>
+<body>""")
+    
+    # Title
+    html_parts.append(f"<h1>{report_data.get('title', 'Research Report')}</h1>")
+    
+    # Executive Summary
+    if report_data.get('executive_summary'):
+        html_parts.append('<div class="section">')
+        html_parts.append('<h2>📊 Executive Summary</h2>')
+        html_parts.append(f"<p>{report_data['executive_summary']}</p>")
+        html_parts.append('</div>')
+    
+    # Key Findings
+    if report_data.get('key_findings'):
+        html_parts.append('<div class="section">')
+        html_parts.append('<h2>🎯 Key Findings</h2>')
+        for i, finding in enumerate(report_data['key_findings'], 1):
+            html_parts.append(f'<div class="finding">{i}. {finding}</div>')
+        html_parts.append('</div>')
+    
+    # Detailed Analysis
+    if report_data.get('detailed_analysis'):
+        html_parts.append('<div class="section">')
+        html_parts.append('<h2>📝 Detailed Analysis</h2>')
+        # Convert newlines to paragraphs
+        analysis = report_data['detailed_analysis'].replace('\n\n', '</p><p>').replace('\n', '<br>')
+        html_parts.append(f"<p>{analysis}</p>")
+        html_parts.append('</div>')
+    
+    # Conclusions
+    if report_data.get('conclusions'):
+        html_parts.append('<div class="section">')
+        html_parts.append('<h2>💡 Conclusions</h2>')
+        conclusions = report_data['conclusions'].replace('\n\n', '</p><p>').replace('\n', '<br>')
+        html_parts.append(f"<p>{conclusions}</p>")
+        html_parts.append('</div>')
+    
+    # Sources
+    if report_data.get('sources'):
+        html_parts.append('<div class="section">')
+        html_parts.append(f'<h2>📚 Sources ({len(report_data["sources"])} total)</h2>')
+        for i, source in enumerate(report_data['sources'], 1):
+            title = source.get('title', 'Untitled')
+            url = source.get('url', '')
+            relevance = source.get('relevance', 0)
+            html_parts.append(f'''<div class="source">
+                {i}. <a href="{url}" target="_blank">{title}</a>
+                <div class="relevance">Relevance: {relevance:.2f}</div>
+            </div>''')
+        html_parts.append('</div>')
+    
+    # Methodology and Limitations
+    if report_data.get('methodology') or report_data.get('limitations'):
+        html_parts.append('<div class="section">')
+        html_parts.append('<h2>📋 Methodology & Limitations</h2>')
+        if report_data.get('methodology'):
+            html_parts.append(f"<p><strong>Methodology:</strong> {report_data['methodology']}</p>")
+        if report_data.get('limitations'):
+            html_parts.append(f"<p><strong>Limitations:</strong> {report_data['limitations']}</p>")
+        html_parts.append('</div>')
+    
+    # Footer
+    html_parts.append('<div class="metadata">')
+    html_parts.append('<p>Generated by AbstractCore Deep Search</p>')
+    html_parts.append('</div>')
+    html_parts.append('</body></html>')
+    
+    return '\n'.join(html_parts)
 
 
 def print_report(report, format_type: str) -> None:
@@ -201,15 +302,10 @@ def print_report(report, format_type: str) -> None:
             for i, finding in enumerate(report_data['key_findings'], 1):
                 print(f"{i}. {finding}")
         
-        # Detailed Analysis (truncated for console)
+        # Detailed Analysis (show full content)
         if report_data.get('detailed_analysis'):
             print(f"\n📝 DETAILED ANALYSIS")
-            analysis = report_data['detailed_analysis']
-            if len(analysis) > 1000:
-                print(f"{analysis[:1000]}...")
-                print(f"\n[Analysis truncated - use --output to save full report]")
-            else:
-                print(analysis)
+            print(report_data['detailed_analysis'])
         
         # Conclusions
         if report_data.get('conclusions'):
@@ -219,14 +315,11 @@ def print_report(report, format_type: str) -> None:
         # Sources
         if report_data.get('sources'):
             print(f"\n📚 SOURCES ({len(report_data['sources'])} total)")
-            for i, source in enumerate(report_data['sources'][:10], 1):  # Show first 10
+            for i, source in enumerate(report_data['sources'], 1):  # Show ALL sources
                 title = source.get('title', 'Untitled')
                 url = source.get('url', '')
                 print(f"{i}. {title}")
                 print(f"   🔗 {url}")
-            
-            if len(report_data['sources']) > 10:
-                print(f"   ... and {len(report_data['sources']) - 10} more sources")
         
         # Methodology and Limitations
         if report_data.get('methodology') or report_data.get('limitations'):
@@ -305,7 +398,14 @@ Examples:
     parser.add_argument(
         '--output',
         type=str,
-        help='Output file path (supports .json and .md formats)'
+        help='Output file path (supports .json, .md, .html, .txt formats)'
+    )
+    
+    parser.add_argument(
+        '--output-format',
+        choices=['text', 'json', 'markdown', 'html'],
+        default='text',
+        help='Console output format (default: text)'
     )
     
     # LLM configuration
@@ -356,6 +456,25 @@ Examples:
         help='Maximum parallel web searches (default: 5)'
     )
     
+    parser.add_argument(
+        '--full-text',
+        action='store_true',
+        help='Extract full text content from web pages (slower but more comprehensive)'
+    )
+    
+    parser.add_argument(
+        '--reflexive',
+        action='store_true',
+        help='Enable reflexive mode - analyzes limitations and performs targeted refinement searches'
+    )
+    
+    parser.add_argument(
+        '--max-reflexive-iterations',
+        type=int,
+        default=2,
+        help='Maximum number of reflexive refinement cycles (default: 2)'
+    )
+    
     # Utility options
     parser.add_argument(
         '--verbose',
@@ -404,7 +523,10 @@ Examples:
             max_tokens=args.max_tokens,
             max_output_tokens=args.max_output_tokens,
             timeout=args.timeout,
-            max_parallel_searches=args.parallel_searches
+            max_parallel_searches=args.parallel_searches,
+            full_text_extraction=args.full_text,
+            reflexive_mode=args.reflexive,
+            max_reflexive_iterations=args.max_reflexive_iterations
         )
         
         # Parse focus areas
@@ -420,6 +542,10 @@ Examples:
         print(f"📝 Format: {args.format}")
         print(f"✅ Verification: {'Disabled' if args.no_verification else 'Enabled'}")
         print(f"⚡ Parallel Searches: {args.parallel_searches}")
+        print(f"📄 Text Extraction: {'Full Text' if args.full_text else 'Preview (1000 chars)'}")
+        print(f"🔄 Reflexive Mode: {'Enabled' if args.reflexive else 'Disabled'}")
+        if args.reflexive:
+            print(f"🔁 Max Reflexive Iterations: {args.max_reflexive_iterations}")
         
         # Start research
         start_time = time.time()
@@ -440,7 +566,37 @@ Examples:
         # Output results
         if args.output:
             save_report(report, args.output, args.format)
+        
+        # Console output based on format
+        if args.output_format == 'json':
+            # JSON output to console
+            if hasattr(report, 'model_dump'):
+                report_data = report.model_dump()
+            elif hasattr(report, 'dict'):
+                report_data = report.dict()
+            else:
+                report_data = report
+            print(json.dumps(report_data, indent=2, ensure_ascii=False))
+        elif args.output_format == 'markdown':
+            # Markdown output to console
+            if hasattr(report, 'model_dump'):
+                report_data = report.model_dump()
+            elif hasattr(report, 'dict'):
+                report_data = report.dict()
+            else:
+                report_data = report
+            print(format_report_as_markdown(report_data))
+        elif args.output_format == 'html':
+            # HTML output to console
+            if hasattr(report, 'model_dump'):
+                report_data = report.model_dump()
+            elif hasattr(report, 'dict'):
+                report_data = report.dict()
+            else:
+                report_data = report
+            print(format_report_as_html(report_data))
         else:
+            # Default text output
             print_report(report, args.format)
         
         # Summary statistics
