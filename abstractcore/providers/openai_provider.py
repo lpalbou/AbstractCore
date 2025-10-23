@@ -32,6 +32,7 @@ class OpenAIProvider(BaseProvider):
 
     def __init__(self, model: str = "gpt-3.5-turbo", api_key: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
+        self.provider = "openai"
 
         if not OPENAI_AVAILABLE:
             raise ImportError("OpenAI package not installed. Install with: pip install openai")

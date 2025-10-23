@@ -38,6 +38,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
     def __init__(self, model: str, **kwargs):
         AbstractCoreInterface.__init__(self, model, **kwargs)
+        self.provider = None
 
         # Setup structured logging
         self.logger = get_logger(self.__class__.__name__)

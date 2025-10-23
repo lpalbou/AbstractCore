@@ -23,6 +23,7 @@ class MLXProvider(BaseProvider):
 
     def __init__(self, model: str = "mlx-community/Mistral-7B-Instruct-v0.1-4bit", **kwargs):
         super().__init__(model, **kwargs)
+        self.provider = "mlx"
 
         # Handle timeout parameter for local models
         self._handle_timeout_parameter(kwargs)

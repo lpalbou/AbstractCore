@@ -300,6 +300,7 @@ class BasicDeepSearch:
                     temperature=temperature,  # Use consistent low temperature
                     timeout=timeout
                 )
+                
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'qwen3:4b-instruct-2507-q4_K_M': {e}\n\n"
@@ -328,6 +329,7 @@ class BasicDeepSearch:
         self.max_reflexive_iterations = max_reflexive_iterations
         self.temperature = temperature
         self.retry_strategy = FeedbackRetry(max_attempts=3)
+        print(f"🤖 Initialized LLM: {self.llm.provider} {self.llm.model}")
 
     def research(
         self,
