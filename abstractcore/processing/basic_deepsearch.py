@@ -27,6 +27,29 @@ from ..tools.common_tools import web_search, fetch_url
 logger = get_logger(__name__)
 
 
+# Pydantic models for structured output
+class ResearchSubTaskModel(BaseModel):
+    """Pydantic model for research sub-task (for structured output)"""
+    id: str = Field(description="Unique task identifier")
+    question: str = Field(description="Specific research question")
+    focus_area: str = Field(description="Focus area this task addresses")
+    priority: int = Field(description="Priority level (1=high, 2=medium, 3=low)", ge=1, le=3)
+
+
+class ResearchPlanModel(BaseModel):
+    """Pydantic model for research plan (for structured output)"""
+    research_objective: str = Field(description="Clear research objective")
+    sub_tasks: List[ResearchSubTaskModel] = Field(description="List of research sub-tasks")
+    focus_areas: List[str] = Field(description="Key focus areas for research")
+    search_strategy: str = Field(description="Search strategy", default="parallel")
+    estimated_time_minutes: int = Field(description="Estimated time in minutes", gt=0)
+
+
+class SearchQueriesModel(BaseModel):
+    """Pydantic model for search queries (for structured output)"""
+    queries: List[str] = Field(description="List of specific search queries", min_items=1, max_items=5)
+
+
 @dataclass
 class ResearchSubTask:
     """Represents a single research sub-task"""
@@ -114,7 +137,10 @@ class BasicDeepSearch:
         max_tokens: int = 32000,
         max_output_tokens: int = 8000,
         timeout: Optional[float] = None,
-        max_parallel_searches: int = 5
+        max_parallel_searches: int = 5,
+        full_text_extraction: bool = False,
+        reflexive_mode: bool = False,
+        max_reflexive_iterations: int = 2
     ):
         """Initialize the deep search system
         
@@ -124,6 +150,9 @@ class BasicDeepSearch:
             max_output_tokens: Maximum tokens for LLM output generation (default 8000)
             timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
             max_parallel_searches: Maximum number of parallel web searches (default 5)
+            full_text_extraction: Whether to extract full text content from pages (default False)
+            reflexive_mode: Whether to enable reflexive research that analyzes gaps and refines (default False)
+            max_reflexive_iterations: Maximum number of reflexive refinement cycles (default 2)
         """
         if llm is None:
             try:
@@ -157,6 +186,9 @@ class BasicDeepSearch:
             self.llm = llm
 
         self.max_parallel_searches = max_parallel_searches
+        self.full_text_extraction = full_text_extraction
+        self.reflexive_mode = reflexive_mode
+        self.max_reflexive_iterations = max_reflexive_iterations
         self.retry_strategy = FeedbackRetry(max_attempts=3)
 
     def research(
@@ -207,6 +239,11 @@ class BasicDeepSearch:
                 logger.info("✅ Stage 5: Verifying findings...")
                 report = self._verify_report(report, findings)
             
+            # Stage 6: Reflexive improvement (if enabled)
+            if self.reflexive_mode:
+                logger.info("🔄 Stage 6: Reflexive analysis and refinement...")
+                report = self._reflexive_refinement(report, research_plan, findings)
+            
             elapsed_time = time.time() - start_time
             logger.info(f"✨ Deep search completed in {elapsed_time:.1f} seconds")
             
@@ -252,37 +289,29 @@ For each sub-task, provide:
 - The focus area it addresses
 - Priority level (1=high, 2=medium, 3=low)
 
-Format your response as JSON with this structure:
-{{
-    "research_objective": "Clear research objective",
-    "sub_tasks": [
-        {{
-            "id": "task_1",
-            "question": "Specific research question",
-            "focus_area": "Focus area name",
-            "priority": 1
-        }}
-    ],
-    "focus_areas": ["area1", "area2", "area3"],
-    "search_strategy": "parallel",
-    "estimated_time_minutes": {config['time_estimate']}
-}}
-
-Ensure questions are specific, actionable, and cover different aspects of the research topic.
+Requirements:
+- Create exactly {config['sub_tasks']} sub-tasks
+- Questions must be specific and actionable
+- Each sub-task should have a distinct focus area
+- Estimated time should be realistic for the search depth
 """
 
         try:
-            response = self.llm.generate(planning_prompt, temperature=0.3)
-            plan_data = json.loads(response.content)
+            # Use structured output for reliable JSON parsing
+            plan_model = self.llm.generate(
+                planning_prompt, 
+                temperature=0.3,
+                response_model=ResearchPlanModel
+            )
             
-            # Create ResearchSubTask objects
+            # Convert Pydantic model to dataclass objects
             sub_tasks = []
-            for task_data in plan_data["sub_tasks"]:
+            for task_model in plan_model.sub_tasks:
                 sub_task = ResearchSubTask(
-                    id=task_data["id"],
-                    question=task_data["question"],
-                    focus_area=task_data["focus_area"],
-                    priority=task_data.get("priority", 2),
+                    id=task_model.id,
+                    question=task_model.question,
+                    focus_area=task_model.focus_area,
+                    priority=task_model.priority,
                     search_queries=[],
                     findings=[],
                     status="pending"
@@ -291,17 +320,17 @@ Ensure questions are specific, actionable, and cover different aspects of the re
             
             research_plan = ResearchPlan(
                 original_query=query,
-                research_objective=plan_data["research_objective"],
+                research_objective=plan_model.research_objective,
                 sub_tasks=sub_tasks,
-                estimated_time_minutes=plan_data.get("estimated_time_minutes", config['time_estimate']),
-                focus_areas=plan_data["focus_areas"],
-                search_strategy=plan_data.get("search_strategy", "parallel")
+                estimated_time_minutes=plan_model.estimated_time_minutes,
+                focus_areas=plan_model.focus_areas,
+                search_strategy=plan_model.search_strategy
             )
             
             logger.info(f"📋 Created research plan with {len(sub_tasks)} sub-tasks")
             return research_plan
             
-        except (json.JSONDecodeError, KeyError) as e:
+        except Exception as e:
             logger.error(f"Failed to parse research plan: {e}")
             # Fallback to simple plan
             return self._create_fallback_plan(query, focus_areas, search_depth)
@@ -353,9 +382,6 @@ Create search queries that:
 4. Are specific enough to find relevant information
 5. Avoid generic terms that might return irrelevant results
 
-Format as a JSON list of strings:
-["query 1", "query 2", "query 3"]
-
 Examples of good search queries for quantum computing:
 - "quantum computing hardware advances 2024"
 - "quantum computer error correction breakthrough 2024"
@@ -367,12 +393,17 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
 """
 
             try:
-                response = self.llm.generate(query_prompt, temperature=0.5)
-                queries = json.loads(response.content)
-                sub_task.search_queries = queries[:queries_per_task]
+                # Use structured output for reliable parsing
+                queries_model = self.llm.generate(
+                    query_prompt, 
+                    temperature=0.5,
+                    response_model=SearchQueriesModel
+                )
+                
+                sub_task.search_queries = queries_model.queries[:queries_per_task]
                 logger.info(f"📝 Generated queries for {sub_task.id}: {sub_task.search_queries}")
                 
-            except (json.JSONDecodeError, KeyError) as e:
+            except Exception as e:
                 logger.warning(f"Failed to parse queries for {sub_task.id}, using fallback")
                 # Improved fallback queries with better specificity
                 base_topic = research_plan.original_query.replace("What are the latest developments in ", "").replace("?", "")
@@ -474,8 +505,13 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                         logger.debug(f"⚠️ Skipping URL due to fetch error or short content: {url}")
                         continue
                     
-                    # Extract relevant content using LLM
-                    relevant_content = self._extract_relevant_content(content, query)
+                    # Extract relevant content using structured parsing or LLM
+                    if self.full_text_extraction:
+                        # For full text mode, use custom fetch with more content
+                        relevant_content = self._extract_relevant_content_full_text(content, query, url)
+                    else:
+                        # Standard mode with structured parsing
+                        relevant_content = self._extract_relevant_content(content, query)
                     
                     if relevant_content:
                         finding = ResearchFinding(
@@ -544,7 +580,259 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
         return urls
 
     def _extract_relevant_content(self, content: str, query: str) -> str:
-        """Extract relevant content from fetched web page"""
+        """Extract relevant content from fetched web page using structured parsing"""
+        
+        # First, try to parse the structured output from fetch_url
+        structured_content = self._parse_fetch_url_output(content)
+        
+        if structured_content:
+            # Use structured data for more efficient extraction
+            return self._extract_from_structured_content(structured_content, query)
+        else:
+            # Fallback to LLM-based extraction for unstructured content
+            return self._extract_with_llm(content, query)
+    
+    def _parse_fetch_url_output(self, content: str) -> Optional[Dict[str, Any]]:
+        """Parse structured output from fetch_url tool"""
+        try:
+            # Look for the structured sections in fetch_url output
+            if "📄 Content Analysis:" not in content:
+                return None
+            
+            structured = {}
+            lines = content.split('\n')
+            
+            for i, line in enumerate(lines):
+                line = line.strip()
+                
+                # Extract title
+                if line.startswith('📰 Title:'):
+                    structured['title'] = line.replace('📰 Title:', '').strip()
+                
+                # Extract description
+                elif line.startswith('📝 Description:'):
+                    structured['description'] = line.replace('📝 Description:', '').strip()
+                
+                # Extract headings
+                elif line.startswith('📋 Headings'):
+                    headings = []
+                    j = i + 1
+                    while j < len(lines) and lines[j].strip().startswith('•'):
+                        heading = lines[j].strip().replace('• ', '')
+                        headings.append(heading)
+                        j += 1
+                    structured['headings'] = headings
+                
+                # Extract text content preview
+                elif line.startswith('📄 Text Content Preview:'):
+                    # Collect multiple lines of text content
+                    text_lines = []
+                    j = i + 1
+                    while j < len(lines) and not lines[j].strip().startswith(('📊', '📄', '🔗', '📋', '📰', '📝')):
+                        if lines[j].strip():  # Skip empty lines
+                            text_lines.append(lines[j].strip())
+                        j += 1
+                    if text_lines:
+                        structured['text_preview'] = ' '.join(text_lines)
+            
+            # Store raw content for full text extraction if needed
+            if self.full_text_extraction:
+                structured['_raw_content'] = content
+            
+            return structured if structured else None
+            
+        except Exception as e:
+            logger.debug(f"Failed to parse fetch_url output: {e}")
+            return None
+    
+    def _extract_from_structured_content(self, structured: Dict[str, Any], query: str) -> str:
+        """Extract relevant information from structured content"""
+        
+        # Build content summary from structured data
+        content_parts = []
+        
+        # Add title if relevant
+        title = structured.get('title', '')
+        if title and any(word.lower() in title.lower() for word in query.split()):
+            content_parts.append(f"**Title:** {title}")
+        
+        # Add description if available
+        description = structured.get('description', '')
+        if description:
+            content_parts.append(f"**Summary:** {description}")
+        
+        # Add relevant headings
+        headings = structured.get('headings', [])
+        relevant_headings = []
+        query_words = [word.lower() for word in query.split()]
+        
+        for heading in headings[:10]:  # Limit to first 10 headings
+            if any(word in heading.lower() for word in query_words):
+                relevant_headings.append(heading)
+        
+        if relevant_headings:
+            content_parts.append(f"**Key Sections:** {'; '.join(relevant_headings[:5])}")
+        
+        # Add text preview (longer or full text based on mode)
+        text_preview = structured.get('text_preview', '')
+        if text_preview:
+            if self.full_text_extraction:
+                # In full text mode, try to get more content from fetch_url
+                full_text = self._extract_full_text_from_fetch_output(structured.get('_raw_content', ''))
+                if full_text and len(full_text) > len(text_preview):
+                    content_parts.append(f"**Full Content:** {full_text}")
+                else:
+                    content_parts.append(f"**Content:** {text_preview}")
+            else:
+                # Standard mode: use longer preview (up to 1000 chars)
+                preview = text_preview[:1000] + "..." if len(text_preview) > 1000 else text_preview
+                content_parts.append(f"**Content:** {preview}")
+        
+        if not content_parts:
+            return None
+        
+        # Combine and validate relevance
+        combined_content = '\n'.join(content_parts)
+        
+        # Quick relevance check - if query words appear in the content
+        query_words_lower = [word.lower() for word in query.split() if len(word) > 2]
+        content_lower = combined_content.lower()
+        
+        relevance_score = sum(1 for word in query_words_lower if word in content_lower) / len(query_words_lower)
+        
+        if relevance_score < 0.2:  # Less than 20% of query words found
+            return None
+        
+        return combined_content
+    
+    def _extract_full_text_from_fetch_output(self, raw_content: str) -> str:
+        """Extract full clean text content from fetch_url output"""
+        if not raw_content or "📄 Text Content Preview:" not in raw_content:
+            return ""
+        
+        try:
+            # Find the text content section
+            lines = raw_content.split('\n')
+            text_lines = []
+            in_text_section = False
+            
+            for line in lines:
+                line_stripped = line.strip()
+                
+                # Start collecting after "Text Content Preview:"
+                if line_stripped.startswith('📄 Text Content Preview:'):
+                    in_text_section = True
+                    continue
+                
+                # Stop at next section or metadata
+                elif in_text_section and line_stripped.startswith(('📊', '📄', '🔗', '📋', '📰', '📝', '⏰', '✅')):
+                    break
+                
+                # Collect text lines
+                elif in_text_section and line_stripped:
+                    # Skip obvious metadata or navigation
+                    if not any(skip in line_stripped.lower() for skip in [
+                        'total text length:', 'characters', 'download image', 
+                        'press inquiries', 'contact:', 'email:', 'phone:', 
+                        'breadcrumb', 'navigation', 'menu', 'footer'
+                    ]):
+                        text_lines.append(line_stripped)
+            
+            if text_lines:
+                full_text = ' '.join(text_lines)
+                # Clean up excessive whitespace
+                full_text = ' '.join(full_text.split())
+                return full_text
+            
+            return ""
+            
+        except Exception as e:
+            logger.debug(f"Failed to extract full text: {e}")
+            return ""
+    
+    def _extract_relevant_content_full_text(self, content: str, query: str, url: str) -> str:
+        """Extract relevant content using full text mode with custom processing"""
+        
+        # First try structured parsing
+        structured_content = self._parse_fetch_url_output(content)
+        
+        if structured_content:
+            # Get the full text if available
+            full_text = self._extract_full_text_from_fetch_output(content)
+            
+            if full_text and len(full_text) > 200:
+                # Use LLM to extract relevant parts from the full text
+                llm_result = self._extract_with_llm_full_text(full_text, query)
+                if llm_result:
+                    return llm_result
+            
+            # Always try structured extraction as fallback
+            structured_result = self._extract_from_structured_content(structured_content, query)
+            if structured_result:
+                return structured_result
+        
+        # Final fallback to standard LLM extraction
+        return self._extract_with_llm(content, query)
+    
+    def _extract_with_llm_full_text(self, full_text: str, query: str) -> str:
+        """Extract relevant content from full text using LLM"""
+        
+        # Limit content length for LLM processing (but allow more than standard mode)
+        max_length = 15000  # 3x more than standard mode
+        if len(full_text) > max_length:
+            # Try to truncate at sentence boundary
+            truncated = full_text[:max_length]
+            last_period = truncated.rfind('.')
+            if last_period > max_length - 500:  # If period is reasonably close to end
+                full_text = truncated[:last_period + 1]
+            else:
+                full_text = truncated + "..."
+        
+        extraction_prompt = f"""
+Extract the most relevant and comprehensive information from this full text content for the research query.
+
+RESEARCH QUERY: {query}
+
+FULL TEXT CONTENT:
+{full_text}
+
+Extract 3-5 key points that directly answer or relate to the research query. 
+Focus on:
+- Specific facts, data, statistics, and recent developments
+- Technical details and performance metrics
+- Key findings and authoritative statements
+- Recent breakthroughs or announcements
+- Comparative information and benchmarks
+
+Format as a comprehensive summary (max 800 words) with the most important information.
+Include specific details like numbers, dates, company names, and technical specifications.
+If the content is not relevant to the query, respond with "NOT_RELEVANT".
+"""
+
+        try:
+            response = self.llm.generate(extraction_prompt, temperature=0.2)
+            
+            # Extract text from response (handle different response object types)
+            if hasattr(response, 'text'):
+                response_text = response.text
+            elif hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+            
+            extracted = response_text.strip()
+            
+            if extracted == "NOT_RELEVANT" or len(extracted) < 100:
+                return None
+                
+            return extracted
+            
+        except Exception as e:
+            logger.debug(f"Full text extraction failed: {e}")
+            return None
+    
+    def _extract_with_llm(self, content: str, query: str) -> str:
+        """Fallback LLM-based extraction for unstructured content"""
         
         # Limit content length for processing
         if len(content) > 8000:
@@ -568,7 +856,16 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
 
         try:
             response = self.llm.generate(extraction_prompt, temperature=0.2)
-            extracted = response.content.strip()
+            
+            # Extract text from response (handle different response object types)
+            if hasattr(response, 'text'):
+                response_text = response.text
+            elif hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+            
+            extracted = response_text.strip()
             
             if extracted == "NOT_RELEVANT" or len(extracted) < 50:
                 return None
@@ -600,6 +897,26 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
                 findings_by_task[task_id] = []
             findings_by_task[task_id].append(finding)
         
+        # Collect research context for specific methodology/limitations
+        search_queries_used = []
+        for sub_task in research_plan.sub_tasks:
+            if sub_task.search_queries:
+                search_queries_used.extend(sub_task.search_queries)
+        
+        successful_extractions = len([f for f in findings if f.content and len(f.content.strip()) > 50])
+        total_sources_attempted = len(findings)
+        failed_extractions = total_sources_attempted - successful_extractions
+        
+        research_context = {
+            'total_sources_found': total_sources_attempted,
+            'successful_extractions': successful_extractions,
+            'failed_extractions': failed_extractions,
+            'search_queries_used': search_queries_used,
+            'extraction_method': 'full_text' if self.full_text_extraction else 'preview',
+            'focus_areas': research_plan.focus_areas,
+            'sub_tasks_count': len(research_plan.sub_tasks)
+        }
+        
         # Prepare findings summary for the LLM
         findings_summary = []
         total_findings_count = 0
@@ -623,17 +940,23 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
         
         # Generate report based on format
         if output_format == "executive":
-            report_prompt = self._get_executive_report_prompt(research_plan, findings_text)
+            report_prompt = self._get_executive_report_prompt(research_plan, findings_text, research_context)
         elif output_format == "narrative":
-            report_prompt = self._get_narrative_report_prompt(research_plan, findings_text)
+            report_prompt = self._get_narrative_report_prompt(research_plan, findings_text, research_context)
         else:  # structured
-            report_prompt = self._get_structured_report_prompt(research_plan, findings_text)
+            report_prompt = self._get_structured_report_prompt(research_plan, findings_text, research_context)
         
         try:
             response = self.llm.generate(report_prompt, temperature=0.3)
             
             # Extract JSON from response (handle cases where LLM adds extra text)
-            response_text = response.content.strip()
+            # Extract text from response (handle different response object types)
+            if hasattr(response, 'text'):
+                response_text = response.text.strip()
+            elif hasattr(response, 'content'):
+                response_text = response.content.strip()
+            else:
+                response_text = str(response).strip()
             
             # Try to find JSON in the response
             json_start = response_text.find('{')
@@ -694,9 +1017,28 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
             limitations="Complete inability to access web sources severely limits the scope and reliability of this research. No factual claims can be made without source verification."
         )
 
-    def _get_structured_report_prompt(self, research_plan: ResearchPlan, findings_text: str) -> str:
+    def _get_structured_report_prompt(self, research_plan: ResearchPlan, findings_text: str, research_context: Dict[str, Any] = None) -> str:
         """Get prompt for structured report generation"""
         
+        # Build research context information
+        context_info = ""
+        if research_context:
+            total_sources = research_context.get('total_sources_found', 0)
+            successful_extractions = research_context.get('successful_extractions', 0)
+            failed_extractions = research_context.get('failed_extractions', 0)
+            search_queries_used = research_context.get('search_queries_used', [])
+            extraction_method = research_context.get('extraction_method', 'standard')
+            
+            context_info = f"""
+RESEARCH PROCESS CONTEXT:
+- Total sources discovered: {total_sources}
+- Successfully analyzed: {successful_extractions}
+- Failed to access: {failed_extractions}
+- Extraction method: {extraction_method}
+- Search queries executed: {len(search_queries_used)}
+- Key search terms: {', '.join(search_queries_used[:5]) if search_queries_used else 'None'}
+"""
+
         return f"""
 Generate a comprehensive research report based on the findings below. 
 
@@ -704,7 +1046,7 @@ IMPORTANT: Respond with ONLY valid JSON, no additional text before or after.
 
 RESEARCH OBJECTIVE: {research_plan.research_objective}
 ORIGINAL QUERY: {research_plan.original_query}
-
+{context_info}
 RESEARCH FINDINGS:
 {findings_text}
 
@@ -713,33 +1055,54 @@ Create a structured research report with this EXACT JSON format:
     "title": "Descriptive report title about {research_plan.original_query}",
     "executive_summary": "2-3 sentence summary of key insights from the research findings",
     "key_findings": [
-        "Key finding 1 with specific details from sources",
-        "Key finding 2 with specific details from sources",
-        "Key finding 3 with specific details from sources"
+        "Key finding 1 with specific details and citation (according to Source Name)",
+        "Key finding 2 with specific details and citation (according to Source Name)",
+        "Key finding 3 with specific details and citation (according to Source Name)"
     ],
-    "detailed_analysis": "Comprehensive analysis section (3-4 paragraphs) that synthesizes the findings, identifies patterns, and provides context based on the research sources",
+    "detailed_analysis": "Comprehensive analysis section (3-4 paragraphs) that synthesizes the findings, identifies patterns, and provides context. MUST include citations like 'according to [Source Name]' or 'as reported by [Source Name]' for every claim and fact",
     "conclusions": "Clear conclusions and implications (2-3 paragraphs) based on the evidence gathered",
-    "methodology": "Web-based research using multi-stage pipeline with parallel search execution",
-    "limitations": "Research limitations and caveats including source accessibility and scope"
+    "methodology": "Detailed description of the specific research approach used, including: search strategies employed, number of sources analyzed, types of sources accessed, any challenges encountered, and verification methods applied",
+    "limitations": "Specific limitations encountered during THIS research, including: sources that were inaccessible, information gaps identified, potential biases in available sources, temporal constraints, and areas requiring further investigation"
 }}
 
 CRITICAL REQUIREMENTS:
 - Respond with ONLY the JSON object, no other text
 - Base all content strictly on the provided findings
-- Include specific facts, data, and examples from the sources
+- ALWAYS include proper citations for every claim using source titles or "according to [Source]"
+- Include specific facts, data, and examples from the sources WITH citations
 - Use proper JSON formatting with escaped quotes if needed
 - Do not include markdown formatting or code blocks
+- Every key finding and analysis point MUST reference its source
 """
 
-    def _get_executive_report_prompt(self, research_plan: ResearchPlan, findings_text: str) -> str:
+    def _get_executive_report_prompt(self, research_plan: ResearchPlan, findings_text: str, research_context: Dict[str, Any] = None) -> str:
         """Get prompt for executive report generation"""
         
+        # Build research context information
+        context_info = ""
+        if research_context:
+            total_sources = research_context.get('total_sources_found', 0)
+            successful_extractions = research_context.get('successful_extractions', 0)
+            failed_extractions = research_context.get('failed_extractions', 0)
+            search_queries_used = research_context.get('search_queries_used', [])
+            extraction_method = research_context.get('extraction_method', 'standard')
+            
+            context_info = f"""
+RESEARCH PROCESS CONTEXT:
+- Total sources discovered: {total_sources}
+- Successfully analyzed: {successful_extractions}
+- Failed to access: {failed_extractions}
+- Extraction method: {extraction_method}
+- Search queries executed: {len(search_queries_used)}
+- Key search terms: {', '.join(search_queries_used[:5]) if search_queries_used else 'None'}
+"""
+
         return f"""
 Generate a concise executive research report based on the findings below.
 
 RESEARCH OBJECTIVE: {research_plan.research_objective}
 ORIGINAL QUERY: {research_plan.original_query}
-
+{context_info}
 RESEARCH FINDINGS:
 {findings_text}
 
@@ -753,8 +1116,8 @@ Create an executive-style report with the following JSON format:
     ],
     "detailed_analysis": "2-3 paragraphs of focused analysis on the most critical aspects",
     "conclusions": "Clear, actionable conclusions and recommendations",
-    "methodology": "Brief methodology note",
-    "limitations": "Key limitations to consider"
+    "methodology": "Concise description of research approach: sources analyzed, search methods used, and verification applied",
+    "limitations": "Specific limitations from this research: inaccessible sources, information gaps, or areas needing further study"
 }}
 
 Guidelines:
@@ -763,17 +1126,38 @@ Guidelines:
 - Keep language clear and executive-friendly
 - Highlight trends, opportunities, and risks
 - Be concise but comprehensive
+- ALWAYS cite sources for every claim using "according to [Source]" or similar
+- Include proper attribution for all facts and data points
 """
 
-    def _get_narrative_report_prompt(self, research_plan: ResearchPlan, findings_text: str) -> str:
+    def _get_narrative_report_prompt(self, research_plan: ResearchPlan, findings_text: str, research_context: Dict[str, Any] = None) -> str:
         """Get prompt for narrative report generation"""
         
+        # Build research context information
+        context_info = ""
+        if research_context:
+            total_sources = research_context.get('total_sources_found', 0)
+            successful_extractions = research_context.get('successful_extractions', 0)
+            failed_extractions = research_context.get('failed_extractions', 0)
+            search_queries_used = research_context.get('search_queries_used', [])
+            extraction_method = research_context.get('extraction_method', 'standard')
+            
+            context_info = f"""
+RESEARCH PROCESS CONTEXT:
+- Total sources discovered: {total_sources}
+- Successfully analyzed: {successful_extractions}
+- Failed to access: {failed_extractions}
+- Extraction method: {extraction_method}
+- Search queries executed: {len(search_queries_used)}
+- Key search terms: {', '.join(search_queries_used[:5]) if search_queries_used else 'None'}
+"""
+
         return f"""
 Generate a narrative research report based on the findings below.
 
 RESEARCH OBJECTIVE: {research_plan.research_objective}
 ORIGINAL QUERY: {research_plan.original_query}
-
+{context_info}
 RESEARCH FINDINGS:
 {findings_text}
 
@@ -787,8 +1171,8 @@ Create a narrative-style report with the following JSON format:
     ],
     "detailed_analysis": "Comprehensive narrative analysis (4-5 paragraphs) that weaves together the findings into a coherent story, showing how different aspects connect and build upon each other",
     "conclusions": "Narrative conclusions that bring the story together and point toward future implications",
-    "methodology": "Story of how the research was conducted",
-    "limitations": "Honest discussion of what the research couldn't uncover"
+    "methodology": "Narrative account of the research journey: what sources were explored, how information was gathered, challenges faced, and methods used to verify findings",
+    "limitations": "Honest reflection on what this specific research couldn't uncover: missing perspectives, inaccessible information, temporal constraints, and areas requiring deeper investigation"
 }}
 
 Guidelines:
@@ -797,6 +1181,8 @@ Guidelines:
 - Use storytelling techniques to make the report compelling
 - Maintain objectivity while being engaging
 - Create a logical flow from introduction to conclusion
+- ALWAYS include proper citations throughout the narrative using source titles
+- Attribute all facts, quotes, and data to their specific sources
 """
 
     def _create_fallback_report(self, research_plan: ResearchPlan, findings: List[ResearchFinding]) -> ResearchReport:
@@ -855,7 +1241,16 @@ Provide verification results as JSON:
 
         try:
             response = self.llm.generate(verification_prompt, temperature=0.2)
-            verification = json.loads(response.content)
+            
+            # Extract text from response (handle different response object types)
+            if hasattr(response, 'text'):
+                response_text = response.text
+            elif hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+            
+            verification = json.loads(response_text)
             
             # Add verification metadata to report
             if hasattr(report, 'metadata'):
@@ -874,3 +1269,154 @@ Provide verification results as JSON:
             report.limitations += " Report verification could not be completed."
         
         return report
+
+    def _reflexive_refinement(
+        self, 
+        initial_report: ResearchReport, 
+        research_plan: ResearchPlan, 
+        existing_findings: List[ResearchFinding]
+    ) -> ResearchReport:
+        """Stage 6: Reflexive analysis and iterative improvement"""
+        
+        current_report = initial_report
+        current_findings = existing_findings.copy()
+        
+        for iteration in range(self.max_reflexive_iterations):
+            logger.info(f"🔄 Reflexive iteration {iteration + 1}/{self.max_reflexive_iterations}")
+            
+            # Analyze gaps and limitations
+            gaps = self._analyze_research_gaps(current_report, research_plan)
+            
+            if not gaps or len(gaps) == 0:
+                logger.info("✅ No significant gaps identified - reflexive analysis complete")
+                break
+                
+            logger.info(f"🎯 Identified {len(gaps)} research gaps to address")
+            
+            # Execute targeted searches for gaps
+            new_findings = self._execute_gap_searches(gaps, research_plan.original_query)
+            
+            if new_findings:
+                logger.info(f"📚 Found {len(new_findings)} additional sources")
+                current_findings.extend(new_findings)
+                
+                # Regenerate report with enhanced findings
+                current_report = self._generate_report(research_plan, current_findings, "structured")
+                
+                # Update methodology to reflect reflexive process
+                current_report.methodology += f" Enhanced through {iteration + 1} reflexive analysis cycle(s) addressing identified gaps."
+            else:
+                logger.info("⚠️ No additional sources found for identified gaps")
+                break
+        
+        return current_report
+
+    def _analyze_research_gaps(self, report: ResearchReport, research_plan: ResearchPlan) -> List[Dict[str, Any]]:
+        """Analyze methodology and limitations to identify actionable research gaps"""
+        
+        gap_analysis_prompt = f"""
+Analyze this research report to identify SPECIFIC, ACTIONABLE information gaps that could be addressed with targeted web searches.
+
+ORIGINAL QUERY: {research_plan.original_query}
+
+CURRENT METHODOLOGY: {report.methodology}
+
+CURRENT LIMITATIONS: {report.limitations}
+
+CURRENT KEY FINDINGS: {report.key_findings}
+
+FOCUS AREAS EXPLORED: {research_plan.focus_areas}
+
+Identify gaps that are:
+1. SPECIFIC enough to generate targeted search queries
+2. IMPORTANT for answering the original query
+3. FEASIBLE to find through web search
+4. NOT already covered in current findings
+
+For each gap, provide:
+- gap_type: "missing_perspective", "insufficient_data", "outdated_info", "alternative_viewpoint", "technical_detail", "recent_development"
+- description: What specific information is missing
+- importance: 1-10 scale (10 = critical for answering original query)
+- search_strategy: Specific approach to find this information
+- target_queries: 2-3 specific search queries to address this gap
+
+Return ONLY a JSON array of gaps (max 5 most important):
+[
+  {{
+    "gap_type": "missing_perspective",
+    "description": "Lack of industry expert opinions on quantum computing timeline",
+    "importance": 8,
+    "search_strategy": "Search for expert interviews, industry reports, and analyst predictions",
+    "target_queries": ["quantum computing expert predictions 2024", "industry analysis quantum timeline", "quantum computing roadmap enterprise"]
+  }}
+]
+
+CRITICAL: Return ONLY the JSON array, no other text.
+"""
+        
+        try:
+            response = self.llm.generate(gap_analysis_prompt)
+            
+            # Extract text from response (handle GenerateResponse objects)
+            if hasattr(response, 'text'):
+                response_text = response.text
+            elif hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+            
+            # Extract JSON from response
+            import json
+            import re
+            
+            # Find JSON array in response
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if json_match:
+                gaps_data = json.loads(json_match.group())
+                
+                # Filter gaps by importance (only keep high-importance ones)
+                important_gaps = [gap for gap in gaps_data if gap.get('importance', 0) >= 6]
+                
+                logger.info(f"🔍 Gap analysis identified {len(important_gaps)} high-priority gaps")
+                return important_gaps
+            else:
+                logger.warning("No valid JSON found in gap analysis response")
+                return []
+                
+        except Exception as e:
+            logger.warning(f"Gap analysis failed: {e}")
+            return []
+
+    def _execute_gap_searches(self, gaps: List[Dict[str, Any]], original_query: str) -> List[ResearchFinding]:
+        """Execute targeted searches to address identified gaps"""
+        
+        new_findings = []
+        
+        for gap in gaps:
+            gap_type = gap.get('gap_type', 'unknown')
+            description = gap.get('description', '')
+            target_queries = gap.get('target_queries', [])
+            
+            logger.info(f"🎯 Addressing gap: {gap_type} - {description}")
+            
+            # Execute searches for this gap
+            for query in target_queries[:2]:  # Limit to 2 queries per gap
+                try:
+                    logger.info(f"🔍 Gap search: {query}")
+                    
+                    # Use existing search infrastructure
+                    gap_findings = self._execute_search(query, f"gap_{gap_type}")
+                    
+                    if gap_findings:
+                        # Mark findings as gap-addressing
+                        for finding in gap_findings:
+                            finding.sub_task_id = f"reflexive_gap_{gap_type}"
+                            
+                        new_findings.extend(gap_findings)
+                        logger.info(f"✅ Found {len(gap_findings)} sources for gap: {description}")
+                    
+                except Exception as e:
+                    logger.warning(f"Gap search failed for '{query}': {e}")
+                    continue
+        
+        return new_findings

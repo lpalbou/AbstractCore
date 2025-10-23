@@ -14,6 +14,7 @@ BasicDeepSearch implements a state-of-the-art four-stage research pipeline:
 ## Key Features
 
 - **Autonomous Research**: Minimal human intervention required
+- **Reflexive Research**: Analyzes limitations and performs targeted refinement searches
 - **Parallel Execution**: Multiple web searches run simultaneously for speed
 - **Structured Output**: Professional reports with citations and analysis
 - **Verification Layer**: Optional fact-checking and validation
@@ -50,6 +51,57 @@ deepsearch "current market trends" \
   --depth brief \
   --no-verification \
   --parallel-searches 10
+
+# Reflexive mode - analyzes gaps and refines research automatically
+deepsearch "quantum computing breakthroughs" --reflexive
+deepsearch "AI safety research" --reflexive --max-reflexive-iterations 3
+
+# Full-text extraction with reflexive improvement
+deepsearch "climate change solutions" --full-text --reflexive
+```
+
+## Reflexive Research Mode
+
+**Reflexive mode** (`--reflexive`) enables **adaptive, self-improving research** that learns from its own limitations and iteratively refines the results.
+
+### How It Works
+
+1. **Standard Research**: Executes the normal 4-stage pipeline
+2. **Gap Analysis**: LLM analyzes the "Methodology & Limitations" section to identify specific information gaps
+3. **Targeted Refinement**: Generates focused search queries to address identified gaps
+4. **Iterative Improvement**: Repeats until no significant gaps remain or max iterations reached
+
+### Gap Types Identified
+
+- **Missing Perspectives**: Lack of expert opinions or alternative viewpoints
+- **Insufficient Data**: Areas where more quantitative information is needed
+- **Outdated Information**: When current findings may be superseded by recent developments
+- **Technical Details**: Missing technical specifications or implementation details
+- **Recent Developments**: Gaps in coverage of latest news or research
+
+### Example Reflexive Analysis
+
+```
+Initial Research: "quantum computing timeline"
+├── Finds general information about quantum computing progress
+├── Limitations: "Limited coverage of recent commercial developments"
+└── Reflexive Gap Analysis:
+    ├── Gap: "Missing industry expert predictions for 2025-2030"
+    ├── Searches: ["quantum computing expert predictions 2025", "industry roadmap quantum timeline"]
+    └── Result: Enhanced report with expert opinions and commercial timelines
+```
+
+### Configuration
+
+```bash
+# Enable reflexive mode with default 2 iterations
+deepsearch "AI safety research" --reflexive
+
+# Custom iteration limit
+deepsearch "climate solutions" --reflexive --max-reflexive-iterations 3
+
+# Combine with other advanced features
+deepsearch "quantum breakthroughs" --reflexive --full-text --max-sources 20
 ```
 
 ## Python API Usage
@@ -79,6 +131,25 @@ from abstractcore.processing import BasicDeepSearch
 
 # Custom LLM configuration
 llm = create_llm("openai", model="gpt-4o-mini", max_tokens=32000)
+
+# Reflexive research configuration
+searcher = BasicDeepSearch(
+    llm=llm,
+    reflexive_mode=True,
+    max_reflexive_iterations=3,
+    full_text_extraction=True
+)
+
+# Conduct reflexive research
+report = searcher.research(
+    "What are the current challenges in AI safety research?",
+    focus_areas=["alignment", "robustness", "interpretability"],
+    output_format="structured"
+)
+
+print(f"Methodology: {report.methodology}")
+print(f"Limitations: {report.limitations}")
+print(f"Sources analyzed: {len(report.sources)}")
 
 # Initialize with custom settings
 searcher = BasicDeepSearch(

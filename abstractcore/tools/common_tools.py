@@ -1277,17 +1277,23 @@ def _parse_content_by_type(content_bytes: bytes, content_type: str, url: str, ex
                 # Final fallback with error replacement
                 text_content = content_bytes.decode('utf-8', errors='replace')
         
-        # Parse based on content type
+        # Parse based on content type with fallback content detection
         if main_type.startswith('text/html') or main_type.startswith('application/xhtml'):
             return _parse_html_content(text_content, url, extract_links)
         
         elif main_type == 'application/json':
             return _parse_json_content(text_content)
         
-        elif main_type in ['application/xml', 'text/xml', 'application/rss+xml', 'application/atom+xml']:
+        elif main_type in ['application/xml', 'text/xml', 'application/rss+xml', 'application/atom+xml', 'application/soap+xml']:
             return _parse_xml_content(text_content)
         
         elif main_type.startswith('text/'):
+            # For generic text types, check if it's actually XML or JSON
+            if text_content and text_content.strip():
+                if _is_xml_content(text_content):
+                    return _parse_xml_content(text_content)
+                elif _is_json_content(text_content):
+                    return _parse_json_content(text_content)
             return _parse_text_content(text_content, main_type)
         
         elif main_type.startswith('image/'):
@@ -1305,10 +1311,90 @@ def _parse_content_by_type(content_bytes: bytes, content_type: str, url: str, ex
                f"Content size: {len(content_bytes):,} bytes"
 
 
+def _is_xml_content(content: str) -> bool:
+    """Detect if content is XML rather than HTML."""
+    if not content:
+        return False
+    
+    content_lower = content.lower().strip()
+    
+    # Check for XML declaration
+    if content_lower.startswith('<?xml'):
+        return True
+    
+    # Check for common XML root elements without HTML indicators
+    xml_indicators = ['<rss', '<feed', '<urlset', '<sitemap', '<soap:', '<xml']
+    html_indicators = ['<!doctype html', '<html', '<head>', '<body>', '<div', '<span', '<p>', '<a ']
+    
+    # Look at the first 1000 characters for indicators
+    sample = content_lower[:1000]
+    
+    # If we find HTML indicators, it's likely HTML
+    if any(indicator in sample for indicator in html_indicators):
+        return False
+    
+    # If we find XML indicators without HTML indicators, it's likely XML
+    if any(indicator in sample for indicator in xml_indicators):
+        return True
+    
+    # Check if it starts with a root element that looks like XML
+    import re
+    root_match = re.search(r'<([^?\s/>]+)', content)
+    if root_match:
+        root_element = root_match.group(1).lower()
+        # Common XML root elements that are not HTML
+        xml_roots = ['rss', 'feed', 'urlset', 'sitemap', 'configuration', 'data', 'response']
+        if root_element in xml_roots:
+            return True
+    
+    return False
+
+
+def _is_json_content(content: str) -> bool:
+    """Detect if content is JSON."""
+    if not content:
+        return False
+    
+    content_stripped = content.strip()
+    
+    # Quick check for JSON structure
+    if (content_stripped.startswith('{') and content_stripped.endswith('}')) or \
+       (content_stripped.startswith('[') and content_stripped.endswith(']')):
+        try:
+            import json
+            json.loads(content_stripped)
+            return True
+        except (json.JSONDecodeError, ValueError):
+            pass
+    
+    return False
+
+
+def _get_appropriate_parser(content: str) -> str:
+    """Get the appropriate BeautifulSoup parser for the content."""
+    if not BS4_AVAILABLE:
+        return None
+    
+    # If lxml is available and content looks like XML, use xml parser
+    if 'lxml' in BS4_PARSER and _is_xml_content(content):
+        try:
+            import lxml
+            return 'xml'
+        except ImportError:
+            pass
+    
+    # Default to the configured parser (lxml or html.parser)
+    return BS4_PARSER
+
+
 def _parse_html_content(html_content: str, url: str, extract_links: bool = True) -> str:
     """Parse HTML content and extract meaningful information."""
     if not html_content:
         return "❌ No HTML content to parse"
+    
+    # Detect if content is actually XML (fallback detection)
+    if _is_xml_content(html_content):
+        return _parse_xml_content(html_content)
     
     result_parts = []
     result_parts.append("🌐 HTML Document Analysis")
@@ -1316,7 +1402,16 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True)
     # Use BeautifulSoup if available for better parsing
     if BS4_AVAILABLE:
         try:
-            soup = BeautifulSoup(html_content, BS4_PARSER)
+            # Choose appropriate parser based on content analysis
+            parser = _get_appropriate_parser(html_content)
+            
+            # Suppress XML parsing warnings when using HTML parser on XML content
+            import warnings
+            from bs4 import XMLParsedAsHTMLWarning
+            
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+                soup = BeautifulSoup(html_content, parser)
             
             # Extract title
             title = soup.find('title')
