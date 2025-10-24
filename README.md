@@ -158,7 +158,7 @@ loaded_session = BasicSession.load('conversation.json', provider=llm)
 
 ### Media Handling
 
-AbstractCore provides **unified media handling** across all providers with **automatic maximum resolution optimization** for best results. Upload images, PDFs, and documents using the same simple API regardless of your provider.
+AbstractCore provides unified media handling across all providers with automatic resolution optimization. Upload images, PDFs, and documents using the same simple API regardless of your provider.
 
 ```python
 from abstractcore import create_llm
@@ -196,7 +196,7 @@ response = llm.generate(
 - **Smart Resolution**: Automatically uses maximum resolution supported by each model
 - **Format Support**: PNG, JPEG, GIF, WEBP, BMP, TIFF images; PDF, TXT, MD, CSV, TSV, JSON documents
 - **Office Documents**: DOCX, XLSX, PPT (with `pip install abstractcore[all]`)
-- **Vision Optimization**: Model-specific image processing for best vision results
+- **Vision Optimization**: Model-specific image processing for vision results
 
 **Provider compatibility:**
 - **High-resolution vision**: GPT-4o (up to 4096x4096), Claude 3.5 Sonnet (up to 1568x1568)
@@ -210,8 +210,8 @@ response = llm.generate(
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
 - **Centralized Configuration**: Global defaults and app-specific preferences at `~/.abstractcore/config/abstractcore.json`
 - **Intelligent Media Handling**: Upload images, PDFs, and documents with automatic maximum resolution optimization
-- **Vision Model Support**: Smart image processing at each model's maximum capability for best results
-- **Document Processing**: Advanced PDF extraction (PyMuPDF4LLM), Office documents (DOCX/XLSX/PPT), CSV/TSV analysis
+- **Vision Model Support**: Smart image processing at each model's maximum capability
+- **Document Processing**: PDF extraction (PyMuPDF4LLM), Office documents (DOCX/XLSX/PPT), CSV/TSV analysis
 - **Unified Tools**: Consistent tool calling across all providers
 - **Session Management**: Persistent conversations with metadata, analytics, and complete serialization
 - **Structured Responses**: Clean, predictable output formats with Pydantic
@@ -274,7 +274,7 @@ response = client.chat.completions.create(
 - Building web applications that need HTTP API
 - Multi-language access (not just Python)
 
-## Internal CLI (Optional Interactive Testing Tool)
+## AbstractCore CLI (Optional Interactive Testing Tool)
 
 AbstractCore includes a **built-in CLI** for interactive testing, development, and conversation management. This is an internal testing tool, distinct from external agentic CLIs.
 
@@ -294,6 +294,7 @@ python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-l
 - Chat history compaction and management
 - Fact extraction from conversations
 - Conversation quality evaluation (LLM-as-a-judge)
+- Intent analysis and deception detection
 - Tool call testing and debugging
 - System prompt management
 - Multiple provider support
@@ -302,12 +303,13 @@ python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-l
 - `/compact` - Compress chat history while preserving context
 - `/facts [file]` - Extract structured facts from conversation
 - `/judge` - Evaluate conversation quality with feedback
+- `/intent [participant]` - Analyze psychological intents and detect deception
 - `/history [n]` - View conversation history
 - `/stream` - Toggle real-time streaming
 - `/system [prompt]` - Show or change system prompt
 - `/status` - Show current provider, model, and capabilities
 
-**Full Documentation:** [Internal CLI Guide](docs/internal-cli.md)
+**Full Documentation:** [AbstractCore CLI Guide](docs/acore-cli.md)
 
 **When to use the CLI:**
 - Interactive development and testing
@@ -318,7 +320,7 @@ python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-l
 
 ## Built-in Applications (Ready-to-Use CLI Tools)
 
-AbstractCore includes **three specialized command-line applications** for common LLM tasks. These are production-ready tools that can be used directly from the terminal without any Python programming.
+AbstractCore includes **four specialized command-line applications** for common LLM tasks. These are production-ready tools that can be used directly from the terminal without any Python programming.
 
 ### Available Applications
 
@@ -327,6 +329,7 @@ AbstractCore includes **three specialized command-line applications** for common
 | **Summarizer** | Document summarization | `summarizer` |
 | **Extractor** | Entity and relationship extraction | `extractor` |
 | **Judge** | Text evaluation and scoring | `judge` |
+| **Intent Analyzer** | Psychological intent analysis & deception detection | `intent` |
 
 ### Quick Usage Examples
 
@@ -345,6 +348,11 @@ extractor doc.txt --iterate 3 --mode thorough --verbose
 judge essay.txt --criteria clarity,accuracy,coherence --context "academic writing"
 judge code.py --context "code review" --format plain --verbose
 judge proposal.md --custom-criteria has_examples,covers_risks --output assessment.json
+
+# Intent analysis with psychological insights and deception detection
+intent conversation.txt --focus-participant user --depth comprehensive
+intent email.txt --format plain --context document --verbose
+intent chat_log.json --conversation-mode --provider lmstudio --model qwen/qwen3-30b-a3b-2507
 ```
 
 ### Installation & Setup
@@ -359,6 +367,7 @@ pip install abstractcore[all]
 summarizer --help
 extractor --help  
 judge --help
+intent --help
 ```
 
 ### Alternative Usage Methods
@@ -368,11 +377,13 @@ judge --help
 summarizer document.txt
 extractor report.pdf
 judge essay.md
+intent conversation.txt
 
 # Method 2: Via Python module
 python -m abstractcore.apps summarizer document.txt
 python -m abstractcore.apps extractor report.pdf
 python -m abstractcore.apps judge essay.md
+python -m abstractcore.apps intent conversation.txt
 ```
 
 ### Key Parameters
@@ -414,10 +425,11 @@ python -m abstractcore.apps judge essay.md
 
 ### Full Documentation
 
-Each application has comprehensive documentation with examples and advanced usage:
+Each application has documentation with examples and usage information:
 
 - **[Summarizer Guide](docs/apps/basic-summarizer.md)** - Document summarization with multiple strategies
 - **[Extractor Guide](docs/apps/basic-extractor.md)** - Entity and relationship extraction
+- **[Intent Analyzer Guide](docs/apps/basic-intent.md)** - Psychological intent analysis and deception detection
 - **[Judge Guide](docs/apps/basic-judge.md)** - Text evaluation and scoring systems
 
 **When to use the apps:**
@@ -566,7 +578,7 @@ llm = create_llm("anthropic", model="claude-3.5-sonnet")
 response = llm.generate(analysis_prompt, media=documents)
 
 # Automatic format handling:
-# - PDF: Advanced text extraction with PyMuPDF4LLM
+# - PDF: Text extraction with PyMuPDF4LLM
 # - Excel: Table parsing with pandas
 # - PowerPoint: Slide content extraction with unstructured
 ```
@@ -674,7 +686,7 @@ pip install abstractcore[all]
 
 **Media processing extras:**
 ```bash
-# For advanced PDF processing
+# For PDF processing
 pip install pymupdf4llm
 
 # For Office documents (DOCX, XLSX, PPT)

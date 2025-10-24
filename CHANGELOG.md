@@ -5,6 +5,20 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2025-10-24
+
+### Added
+- New `intent` CLI application for analyzing conversation intents and detecting deception patterns
+- `/intent` command in interactive CLI to analyze participant motivations in real-time conversations
+- Support for multi-participant conversation analysis with focus on specific participants
+
+### Changed
+- Renamed "Internal CLI" to "AbstractCore CLI" throughout documentation
+- File renamed: `docs/internal-cli.md` → `docs/acore-cli.md`
+
+### Fixed
+- Updated all documentation cross-references to use new CLI naming
+
 ## [2.4.9] - 2025-10-21
 
 ### Fixed
@@ -1258,7 +1272,7 @@ Server API endpoints remain compatible. New features:
 - **Updated Model References**: Modernized documentation to use current recommended models
   - Updated `docs/getting-started.md` to use `qwen3:4b-instruct-2507-q4_K_M` (default) and `qwen3-coder:30b` (premium)
   - Replaced outdated `qwen2.5-coder:7b` references throughout getting started guide
-  - Added proper cross-references to reorganized documentation (`server.md`, `internal-cli.md`)
+  - Added proper cross-references to reorganized documentation (`server.md`, `acore-cli.md`)
   - Enhanced "What's Next?" section with links to universal API server and CLI documentation
 
 - **Cross-Reference Validation**: Verified all documentation links and anchors

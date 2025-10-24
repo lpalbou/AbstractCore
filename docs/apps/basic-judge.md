@@ -1,6 +1,6 @@
 # BasicJudge - LLM-as-a-Judge for Objective Evaluation
 
-BasicJudge is a production-ready LLM-as-a-judge tool for objective evaluation and critical assessment. It provides structured, transparent evaluation with constructive skepticism, delivering clear, simple and actionable feedback using state-of-the-art evaluation practices.
+BasicJudge is a production-ready LLM-as-a-judge tool for objective evaluation and critical assessment. It provides structured, transparent evaluation with constructive skepticism, delivering clear, simple and actionable feedback using established evaluation practices.
 
 ## Quick Start
 
@@ -53,14 +53,14 @@ pip install abstractcore[openai,anthropic]
 - **Setup**: `ollama pull qwen3:4b-instruct-2507-q4_K_M`
 
 **For Best Evaluation Quality**:
-- **`qwen3-coder:30b`**: Excellent for detailed assessment (requires 32GB RAM)
+- **`qwen3-coder:30b`**: Good for detailed assessment (requires 32GB RAM)
 - **`gpt-oss:120b`**: Highest quality evaluation (requires 120GB RAM)
 
 **For Production**: Cloud providers (OpenAI GPT-4o-mini, Claude) offer the most reliable and consistent evaluation.
 
 ## Evaluation Framework
 
-BasicJudge implements state-of-the-art LLM-as-a-judge practices with structured assessment and chain-of-thought reasoning.
+BasicJudge implements LLM-as-a-judge practices with structured assessment and chain-of-thought reasoning.
 
 ### Core Evaluation Criteria
 

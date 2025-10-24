@@ -17,6 +17,7 @@ Set default providers and models for specific AbstractCore applications:
 abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-app-default cli anthropic claude-3-5-haiku
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+abstractcore --set-app-default intent lmstudio qwen/qwen3-30b-a3b-2507
 
 # View current app defaults
 abstractcore --status
@@ -153,7 +154,7 @@ abstractcore --enable-streaming    # Enable streaming by default
 abstractcore --disable-streaming   # Disable streaming by default
 ```
 
-**Note**: Streaming only affects CLI behavior. Apps (summarizer, extractor, judge) don't support streaming because they need complete structured outputs.
+**Note**: Streaming only affects CLI behavior. Apps (summarizer, extractor, judge, intent) don't support streaming because they need complete structured outputs.
 
 ## Priority System
 

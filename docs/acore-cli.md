@@ -1,10 +1,10 @@
-# AbstractCore Internal CLI
+# AbstractCore CLI (acore-cli)
 
 AbstractCore includes a built-in CLI tool for testing, demonstration, and interactive conversations. This is AbstractCore's internal testing CLI, not to be confused with external agentic CLIs like Codex or Gemini CLI.
 
 ## Overview
 
-The AbstractCore internal CLI provides advanced chat history management and system control commands for interactive testing of LLM providers.
+The AbstractCore internal CLI provides chat history management and system control commands for interactive testing of LLM providers.
 
 **Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)?**
 → **See [Server Documentation](server.md)** for complete setup guides.
@@ -98,11 +98,72 @@ Extracts facts from your conversation history as simple triples (subject-predica
 📌 Note: This is a demonstrator showing LLM-as-a-judge capabilities for objective assessment.
 ```
 
+### `/intent [participant]` - Analyze Conversation Intents
+
+**NEW**: Analyzes the psychological intents and motivations behind conversation messages, including deception detection. This provides insights into communication patterns and underlying goals.
+
+```bash
+# In the CLI
+/intent                    # Analyze all participants
+/intent user              # Focus on user intents only
+/intent assistant         # Focus on assistant intents only
+
+# Output example:
+🎯 Analyzing user intents in conversation...
+   Processing 8 messages...
+✅ Intent analysis completed in 45.3s
+
+🎯 CONVERSATION INTENT ANALYSIS
+============================================================
+
+👤 USER INTENTS:
+────────────────────────────────────────
+🎯 Primary Intent: Problem Solving
+   Description: The user is seeking to resolve a technical issue by requesting specific guidance and clarification.
+   Underlying Goal: To gain competence and confidence in handling similar problems independently.
+   Emotional Undertone: Curious and determined
+   Confidence: 0.95 | Urgency: 0.70
+
+🔍 DECEPTION ANALYSIS:
+   Deception Likelihood: 0.05
+   Narrative Consistency: 0.95
+   Temporal Coherence: 0.98
+   Emotional Congruence: 0.92
+   Evidence Indicating Authenticity:
+     • Direct questions show genuine information-seeking
+     • Consistent follow-up questions demonstrate engagement
+     • Acknowledgment of gaps in knowledge
+
+🔄 Secondary Intents:
+   1. Validation Seeking
+      Goal: To confirm understanding and receive reassurance about approach
+      Confidence: 0.80
+   2. Relationship Building
+      Goal: To establish rapport and demonstrate engagement
+      Confidence: 0.65
+
+💡 Suggested Response Approach:
+   Provide clear, step-by-step guidance with examples. Acknowledge their learning progress and offer additional resources for independent exploration.
+
+📊 Analysis: 45 words | Complexity: 0.60 | Confidence: 0.92 | Time: 45.3s
+
+============================================================
+💡 Note: This analysis identifies underlying motivations and goals behind communication
+```
+
+**Key Features:**
+- **17 Intent Types**: From basic information-seeking to complex psychological patterns like face-saving and blame deflection
+- **Deception Detection**: Authenticity assessment with narrative consistency analysis
+- **Multi-Participant Support**: Analyze conversations with multiple participants separately
+- **Psychological Depth**: Surface, underlying, or comprehensive analysis levels
+- **Evidence-Based**: Concrete textual evidence supporting assessments
+
 **When to use:**
-- Get objective feedback on discussion quality
-- Understand strengths and areas for improvement in conversations
-- Demonstrate LLM-as-a-judge evaluation capabilities
-- Practice critical assessment and constructive feedback
+- Understanding customer communication patterns and needs
+- Analyzing team dynamics and collaboration effectiveness  
+- Detecting potential deception or authenticity in communications
+- Improving response strategies based on underlying motivations
+- Training and research in communication analysis
 
 ```bash
 # In the CLI
