@@ -39,7 +39,7 @@ except ImportError:
 
 from .. import create_llm, BasicSession
 from ..tools.common_tools import list_files, read_file, write_file, execute_command, search_files
-from ..processing import BasicExtractor, BasicJudge
+from ..processing import BasicExtractor, BasicJudge, BasicIntentAnalyzer
 
 
 class SimpleCLI:
@@ -193,6 +193,10 @@ class SimpleCLI:
             print("                           • /facts          - Display in chat")
             print("                           • /facts data     - Save as data.jsonld")
             print("  /judge                   Evaluate conversation quality")
+            print("  /intent [participant]    Analyze intents behind conversation")
+            print("                           • /intent         - Analyze all participants")
+            print("                           • /intent user    - Focus on user intents")
+            print("                           • /intent assistant - Focus on assistant intents")
             
             print("\n⚙️  CONFIGURATION")
             print("─" * 50)
@@ -316,6 +320,17 @@ class SimpleCLI:
 
         elif cmd == 'judge':
             self.handle_judge()
+
+        elif cmd.startswith('intent'):
+            # Parse /intent [participant] command
+            parts = cmd.split()
+            if len(parts) == 1:
+                # No participant specified - analyze all
+                self.handle_intent(None)
+            else:
+                # Participant specified
+                participant = parts[1]
+                self.handle_intent(participant)
 
         elif cmd.startswith('system'):
             # Parse /system [prompt] command
@@ -619,6 +634,103 @@ class SimpleCLI:
 
         except Exception as e:
             print(f"❌ Conversation evaluation failed: {e}")
+            if self.debug_mode:
+                import traceback
+                traceback.print_exc()
+
+    def handle_intent(self, focus_participant: str = None):
+        """Handle /intent [participant] command - analyze intents behind conversation"""
+        messages = self.session.get_messages()
+
+        if len(messages) <= 1:  # Only system message
+            print("📝 No conversation history to analyze intents from")
+            return
+
+        try:
+            if focus_participant:
+                print(f"🎯 Analyzing {focus_participant} intents in conversation...")
+            else:
+                print("🎯 Analyzing conversation intents for all participants...")
+
+            # Create intent analyzer using current provider for consistency
+            analyzer = BasicIntentAnalyzer(self.provider)
+
+            # Convert session messages to the format expected by intent analyzer
+            conversation_messages = [msg for msg in messages if msg.role != 'system']
+            message_dicts = [{"role": msg.role, "content": msg.content} for msg in conversation_messages]
+
+            if not message_dicts:
+                print("📝 No substantive conversation content found")
+                return
+
+            print(f"   Processing {len(message_dicts)} messages...")
+
+            start_time = time.time()
+
+            # Analyze conversation intents
+            from ..processing.basic_intent import IntentDepth
+            results = analyzer.analyze_conversation_intents(
+                messages=message_dicts,
+                focus_participant=focus_participant,
+                depth=IntentDepth.UNDERLYING
+            )
+
+            duration = time.time() - start_time
+            print(f"✅ Intent analysis completed in {duration:.1f}s")
+
+            if not results:
+                print("❌ No intents could be analyzed from the conversation")
+                return
+
+            # Display results in a conversational format
+            print("\n🎯 CONVERSATION INTENT ANALYSIS")
+            print("=" * 60)
+
+            for participant, analysis in results.items():
+                print(f"\n👤 {participant.upper()} INTENTS:")
+                print("─" * 40)
+                
+                # Primary Intent
+                primary = analysis.primary_intent
+                print(f"🎯 Primary Intent: {primary.intent_type.value.replace('_', ' ').title()}")
+                print(f"   Description: {primary.description}")
+                print(f"   Underlying Goal: {primary.underlying_goal}")
+                print(f"   Emotional Undertone: {primary.emotional_undertone}")
+                print(f"   Confidence: {primary.confidence:.2f} | Urgency: {primary.urgency_level:.2f}")
+                
+                # Secondary Intents (show top 2 for brevity)
+                if analysis.secondary_intents:
+                    print(f"\n🔄 Secondary Intents:")
+                    for i, intent in enumerate(analysis.secondary_intents[:2], 1):
+                        print(f"   {i}. {intent.intent_type.value.replace('_', ' ').title()}")
+                        print(f"      Goal: {intent.underlying_goal}")
+                        print(f"      Confidence: {intent.confidence:.2f}")
+                
+                # Key contextual factors (show top 3)
+                if analysis.contextual_factors:
+                    print(f"\n🌍 Key Context Factors:")
+                    for factor in analysis.contextual_factors[:3]:
+                        print(f"   • {factor}")
+                
+                # Response approach
+                print(f"\n💡 Suggested Response Approach:")
+                # Truncate long response approaches for readability
+                response_approach = analysis.suggested_response_approach
+                if len(response_approach) > 200:
+                    response_approach = response_approach[:197] + "..."
+                print(f"   {response_approach}")
+                
+                # Analysis metadata
+                print(f"\n📊 Analysis: {analysis.word_count_analyzed} words | "
+                      f"Complexity: {analysis.intent_complexity:.2f} | "
+                      f"Confidence: {analysis.overall_confidence:.2f} | "
+                      f"Time: {duration:.1f}s")
+
+            print("\n" + "=" * 60)
+            print("💡 Note: This analysis identifies underlying motivations and goals behind communication")
+
+        except Exception as e:
+            print(f"❌ Intent analysis failed: {e}")
             if self.debug_mode:
                 import traceback
                 traceback.print_exc()
@@ -1337,6 +1449,7 @@ Key Commands:
   /compact [focus]                Compress chat history with optional focus
   /facts [file]                   Extract knowledge facts
   /judge                          Evaluate conversation quality
+  /intent [participant]           Analyze conversation intents and motivations
   /system [prompt]                View/change system prompt
 
 Tools: list_files, search_files, read_file, write_file, execute_command

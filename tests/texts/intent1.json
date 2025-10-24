@@ -1,0 +1,174 @@
+{
+  "schema_version": "session-archive/v1",
+  "session": {
+    "id": "intent_analysis_example_001",
+    "created_at": "2024-10-24T10:31:00.000Z",
+    "provider": "huggingface",
+    "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "model_params": null,
+    "system_prompt": "You are analyzing a workplace conversation between Alex (team lead) and Ben (team member) regarding a late report submission.",
+    "tool_registry": null,
+    "settings": {
+      "auto_compact": false,
+      "auto_compact_threshold": 6000
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are analyzing a workplace conversation between Alex (team lead) and Ben (team member) regarding a late report submission.",
+      "timestamp": "2024-10-24T10:31:00.000Z",
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "content": "Hey Alex, quick question – did you get that report I sent over?",
+      "timestamp": "2024-10-24T10:31:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Team member who forgot to submit report, trying to cover mistake",
+        "time": "10:31 AM"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Which report? The weekly numbers?",
+      "timestamp": "2024-10-24T10:32:00.000Z",
+      "metadata": {
+        "name": "Alex",
+        "context": "Team lead, busy, needs report for 11 AM meeting",
+        "time": "10:32 AM"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Yeah, that's the one.",
+      "timestamp": "2024-10-24T10:32:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Confirming which report",
+        "time": "10:32 AM"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "No, haven't seen it. I'm checking my email and the shared drive now... nothing. It was due at 9, man. I'm waiting on it to prep for my 11 AM meeting.",
+      "timestamp": "2024-10-24T10:33:00.000Z",
+      "metadata": {
+        "name": "Alex",
+        "context": "Expressing frustration about missing report, time pressure",
+        "time": "10:33 AM"
+      }
+    },
+    {
+      "role": "user",
+      "content": "That is so weird. I definitely sent it.",
+      "timestamp": "2024-10-24T10:33:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Deflecting responsibility, claiming he sent it",
+        "time": "10:33 AM"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "When?",
+      "timestamp": "2024-10-24T10:34:00.000Z",
+      "metadata": {
+        "name": "Alex",
+        "context": "Pressing for details, skeptical",
+        "time": "10:34 AM"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Must have been just before 9. I was having a ton of trouble with my internet this morning, it kept dropping. I thought it went through, but maybe the file was too big and it timed out?",
+      "timestamp": "2024-10-24T10:34:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Creating elaborate excuse, blaming technical issues",
+        "time": "10:34 AM"
+      }
+    },
+    {
+      "role": "user",
+      "content": "I'm looking at my 'sent' folder and... oh, you've got to be kidding me. It's sitting in my outbox. It must have gotten stuck.",
+      "timestamp": "2024-10-24T10:35:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Fake discovery of the problem, maintaining technical excuse",
+        "time": "10:35 AM"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Ugh, classic.",
+      "timestamp": "2024-10-24T10:35:00.000Z",
+      "metadata": {
+        "name": "Alex",
+        "context": "Expressing mild frustration but accepting the excuse",
+        "time": "10:35 AM"
+      }
+    },
+    {
+      "role": "user",
+      "content": "My connection just stabilized. I'm re-sending it right now. It should be in your inbox in about 10 seconds.",
+      "timestamp": "2024-10-24T10:36:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Taking action to resolve, maintaining technical narrative",
+        "time": "10:36 AM"
+      }
+    },
+    {
+      "role": "user",
+      "content": "...Aaand sent. Can you confirm you got it?",
+      "timestamp": "2024-10-24T10:36:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Seeking confirmation, showing urgency to resolve",
+        "time": "10:36 AM"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Loading... yep, got it.",
+      "timestamp": "2024-10-24T10:37:00.000Z",
+      "metadata": {
+        "name": "Alex",
+        "context": "Confirming receipt, relief",
+        "time": "10:37 AM"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Thank god. So sorry about that, Alex. I'll make sure to double-check from the office hotspot next time. Technology, right?",
+      "timestamp": "2024-10-24T10:37:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Apologizing while reinforcing technical excuse, seeking solidarity",
+        "time": "10:37 AM"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "No worries, just glad I have it now. Thanks for chasing it up.",
+      "timestamp": "2024-10-24T10:38:00.000Z",
+      "metadata": {
+        "name": "Alex",
+        "context": "Accepting apology graciously, showing appreciation",
+        "time": "10:38 AM"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Of course! Wouldn't want to hold you up.",
+      "timestamp": "2024-10-24T10:38:00.000Z",
+      "metadata": {
+        "name": "Ben",
+        "context": "Final reassurance, showing consideration for Alex's time",
+        "time": "10:38 AM"
+      }
+    }
+  ]
+}

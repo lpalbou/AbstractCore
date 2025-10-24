@@ -166,15 +166,19 @@ class ResearchSubTaskModel(BaseModel):
     """Pydantic model for research sub-task (for structured output)"""
     id: str = Field(description="Unique task identifier")
     question: str = Field(description="Specific research question")
-    focus_area: str = Field(description="Focus area this task addresses")
-    priority: int = Field(description="Priority level (1=high, 2=medium, 3=low)", ge=1, le=3)
+    theme: str = Field(description="Research theme this task addresses")
+    priority: int = Field(description="Priority level (1=essential, 2=important, 3=supplementary)", ge=1, le=3)
 
+class ResearchThemeModel(BaseModel):
+    """Pydantic model for research theme (for structured output)"""
+    name: str = Field(description="Theme name")
+    questions: List[str] = Field(description="3 specific research questions for this theme", min_items=3, max_items=3)
+    priority: int = Field(description="Theme priority (1=essential, 2=important, 3=supplementary)", ge=1, le=3)
 
 class ResearchPlanModel(BaseModel):
     """Pydantic model for research plan (for structured output)"""
     research_objective: str = Field(description="Clear research objective")
-    sub_tasks: List[ResearchSubTaskModel] = Field(description="List of research sub-tasks")
-    focus_areas: List[str] = Field(description="Key focus areas for research")
+    themes: List[ResearchThemeModel] = Field(description="Research themes with questions")
     search_strategy: str = Field(description="Search strategy", default="parallel")
     estimated_time_minutes: int = Field(description="Estimated time in minutes", gt=0)
 
@@ -275,7 +279,8 @@ class BasicDeepSearch:
         full_text_extraction: bool = False,
         reflexive_mode: bool = False,
         max_reflexive_iterations: int = 2,
-        temperature: float = 0.1  # Low temperature for consistency
+        temperature: float = 0.1,  # Low temperature for consistency
+        debug_mode: bool = False
     ):
         """Initialize the deep search system
         
@@ -289,6 +294,7 @@ class BasicDeepSearch:
             reflexive_mode: Whether to enable reflexive research that analyzes gaps and refines (default False)
             max_reflexive_iterations: Maximum number of reflexive refinement cycles (default 2)
             temperature: LLM temperature for consistency (default 0.1 for deterministic outputs)
+            debug_mode: Enable comprehensive debug logging (default False)
         """
         if llm is None:
             try:
@@ -328,8 +334,19 @@ class BasicDeepSearch:
         self.reflexive_mode = reflexive_mode
         self.max_reflexive_iterations = max_reflexive_iterations
         self.temperature = temperature
+        self.debug_mode = debug_mode
         self.retry_strategy = FeedbackRetry(max_attempts=3)
         print(f"🤖 Initialized LLM: {self.llm.provider} {self.llm.model}")
+        
+        # Debug tracking
+        if self.debug_mode:
+            self.debug_info = {
+                'all_queries': [],
+                'all_urls_found': [],
+                'relevance_assessments': [],
+                'accepted_sources': [],
+                'rejected_sources': []
+            }
 
     def research(
         self,
@@ -370,6 +387,24 @@ class BasicDeepSearch:
             logger.info("❓ Stage 2: Developing search questions...")
             self._develop_search_questions(research_plan, max_sources)
             
+            # Debug: Show all generated queries
+            if self.debug_mode:
+                print("\n" + "="*80)
+                print("🔍 DEBUG: ALL GENERATED SEARCH QUERIES")
+                print("="*80)
+                for i, sub_task in enumerate(research_plan.sub_tasks, 1):
+                    print(f"\n📋 Sub-task {i}: {sub_task.question}")
+                    print(f"🎯 Focus: {sub_task.focus_area}")
+                    print(f"🔍 Queries ({len(sub_task.search_queries)}):")
+                    for j, query in enumerate(sub_task.search_queries, 1):
+                        print(f"   {j}. \"{query}\"")
+                        self.debug_info['all_queries'].append({
+                            'sub_task_id': sub_task.id,
+                            'sub_task_question': sub_task.question,
+                            'query': query
+                        })
+                print("="*80)
+            
             # Stage 3: Web Exploration
             logger.info("🌐 Stage 3: Exploring web sources...")
             findings = self._explore_web_sources(research_plan, source_manager)
@@ -391,6 +426,10 @@ class BasicDeepSearch:
             elapsed_time = time.time() - start_time
             logger.info(f"✨ Deep search completed in {elapsed_time:.1f} seconds")
             
+            # Debug: Show comprehensive summary
+            if self.debug_mode:
+                self._print_debug_summary()
+            
             return report
             
         except Exception as e:
@@ -405,6 +444,11 @@ class BasicDeepSearch:
     ) -> ResearchPlan:
         """Stage 1: Create a structured research plan"""
         
+        # Detect query type and get appropriate focus areas
+        query_type = self._detect_query_type(query)
+        if not focus_areas:
+            focus_areas = self._get_focus_areas_by_type(query_type)
+        
         # Determine number of sub-tasks based on search depth
         depth_config = {
             "brief": {"sub_tasks": 3, "time_estimate": 5},
@@ -414,30 +458,40 @@ class BasicDeepSearch:
         config = depth_config.get(search_depth, depth_config["standard"])
         
         planning_prompt = f"""
-You are a research planning expert. Create a structured research plan for the following query.
+You are an expert research strategist. Analyze the following research query and create a comprehensive research plan.
 
-RESEARCH QUERY: {query}
-FOCUS AREAS: {focus_areas or "Not specified - determine automatically"}
+RESEARCH QUERY: "{query}"
 SEARCH DEPTH: {search_depth}
 TARGET SUB-TASKS: {config['sub_tasks']}
 
-Create a research plan with the following structure:
+Your task is to intelligently decompose this query into focused research themes and specific sub-questions.
 
-1. RESEARCH OBJECTIVE: Clear, specific objective (1-2 sentences)
-2. SUB-TASKS: Break down into {config['sub_tasks']} specific research sub-tasks
-3. FOCUS AREAS: Identify 3-5 key focus areas if not provided
-4. SEARCH STRATEGY: Choose breadth_first, depth_first, or parallel
+INSTRUCTIONS:
+1. First, identify the key themes/dimensions that need to be researched to fully answer this query
+2. For each theme, generate 3 specific, actionable research questions
+3. Prioritize the themes based on their importance to answering the original query
+4. Ensure the questions are diverse and cover different aspects of the topic
 
-For each sub-task, provide:
-- A clear, specific research question
-- The focus area it addresses
-- Priority level (1=high, 2=medium, 3=low)
+RESEARCH OBJECTIVE: Write a clear 1-2 sentence objective that captures what we're trying to learn.
 
-Requirements:
-- Create exactly {config['sub_tasks']} sub-tasks
-- Questions must be specific and actionable
-- Each sub-task should have a distinct focus area
-- Estimated time should be realistic for the search depth
+THEMES & SUB-QUESTIONS:
+For each theme you identify, provide:
+- Theme name (e.g., "Technical Overview", "Historical Context", "Current Applications")  
+- 3 specific research questions for that theme
+- Priority level (1=essential, 2=important, 3=supplementary)
+
+REQUIREMENTS:
+- Generate exactly {config['sub_tasks']} total sub-questions across all themes
+- Each question should be specific enough to guide targeted web searches
+- Questions should be complementary, not overlapping
+- Adapt the themes naturally to the query - don't force artificial categories
+- For person queries: focus on biography, work, impact, affiliations, recent activities
+- For concept queries: focus on definition, applications, development, current state, implications
+- For technology queries: focus on how it works, use cases, advantages/limitations, market adoption
+- For location queries: focus on geography, culture, economy, politics, current events
+- For organization queries: focus on mission, leadership, products/services, market position, recent news
+
+The themes should emerge naturally from understanding what someone would want to know about this specific topic.
 """
 
         try:
@@ -450,24 +504,32 @@ Requirements:
             
             # Convert Pydantic model to dataclass objects
             sub_tasks = []
-            for task_model in plan_model.sub_tasks:
-                sub_task = ResearchSubTask(
-                    id=task_model.id,
-                    question=task_model.question,
-                    focus_area=task_model.focus_area,
-                    priority=task_model.priority,
-                    search_queries=[],
-                    findings=[],
-                    status="pending"
-                )
-                sub_tasks.append(sub_task)
+            focus_areas = []
+            task_counter = 1
+            
+            for theme_model in plan_model.themes:
+                focus_areas.append(theme_model.name)
+                
+                # Create sub-tasks from theme questions
+                for question in theme_model.questions:
+                    sub_task = ResearchSubTask(
+                        id=f"task_{task_counter}",
+                        question=question,
+                        focus_area=theme_model.name,
+                        priority=theme_model.priority,
+                        search_queries=[],
+                        findings=[],
+                        status="pending"
+                    )
+                    sub_tasks.append(sub_task)
+                    task_counter += 1
             
             research_plan = ResearchPlan(
                 original_query=query,
                 research_objective=plan_model.research_objective,
                 sub_tasks=sub_tasks,
                 estimated_time_minutes=plan_model.estimated_time_minutes,
-                focus_areas=plan_model.focus_areas,
+                focus_areas=focus_areas,
                 search_strategy=plan_model.search_strategy
             )
             
@@ -572,6 +634,15 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
         # Sort by priority (1=high priority first)
         search_tasks.sort(key=lambda x: x[2])
         
+        # Global URL deduplication across all sub-tasks
+        processed_urls = set()
+        
+        if self.debug_mode:
+            print(f"\n🔍 DEBUG: Starting web exploration with {len(search_tasks)} search tasks")
+            print(f"🎯 Source limit: {source_manager.max_sources}")
+            for i, (sub_task_id, query, priority) in enumerate(search_tasks, 1):
+                print(f"   {i}. [{sub_task_id}] \"{query}\" (Priority: {priority})")
+        
         # Execute searches in parallel with source limit management
         with ThreadPoolExecutor(max_workers=self.max_parallel_searches) as executor:
             # Submit search tasks
@@ -582,7 +653,7 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                     logger.info(f"🎯 Source limit reached ({source_manager.max_sources}), stopping search submission")
                     break
                     
-                future = executor.submit(self._execute_search, sub_task_id, query, source_manager)
+                future = executor.submit(self._execute_search, sub_task_id, query, source_manager, processed_urls)
                 future_to_task[future] = (sub_task_id, query)
             
             # Collect results as they complete
@@ -615,7 +686,7 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
         logger.info(f"🌐 Gathered {len(all_findings)} findings from web exploration")
         return all_findings
 
-    def _execute_search(self, sub_task_id: str, query: str, source_manager: SourceManager) -> List[ResearchFinding]:
+    def _execute_search(self, sub_task_id: str, query: str, source_manager: SourceManager, processed_urls: set) -> List[ResearchFinding]:
         """Execute a single web search and extract findings"""
         
         findings = []
@@ -631,6 +702,34 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
             # Parse search results to extract URLs and content
             urls = self._extract_urls_from_search(search_results)
             logger.info(f"🔗 Extracted {len(urls)} URLs from search results")
+            
+            # Deduplicate URLs globally across all sub-tasks
+            original_count = len(urls)
+            urls = [(url, title) for url, title in urls if url not in processed_urls]
+            deduplicated_count = len(urls)
+            
+            # Add new URLs to processed set
+            for url, title in urls:
+                processed_urls.add(url)
+            
+            if self.debug_mode and original_count > deduplicated_count:
+                print(f"\n🔄 DEBUG: URL Deduplication for query \"{query}\":")
+                print(f"   📊 Original URLs: {original_count}")
+                print(f"   📊 After deduplication: {deduplicated_count}")
+                print(f"   📊 Duplicates removed: {original_count - deduplicated_count}")
+            
+            # Debug: Show all URLs found for this query
+            if self.debug_mode:
+                print(f"\n🔍 DEBUG: URLs found for query \"{query}\":")
+                for i, (url, title) in enumerate(urls, 1):
+                    print(f"   {i}. {title}")
+                    print(f"      🔗 {url}")
+                    self.debug_info['all_urls_found'].append({
+                        'query': query,
+                        'sub_task_id': sub_task_id,
+                        'url': url,
+                        'title': title
+                    })
             
             if not urls:
                 logger.warning(f"⚠️ No URLs found in search results for query: {query}")
@@ -673,32 +772,86 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                         relevant_content = self._extract_relevant_content(content, query)
                     
                     if relevant_content:
-                        # Create source for manager validation
-                        source_data = {
-                            'url': url,
-                            'title': title,
-                            'content': relevant_content,
-                            'relevance_score': 0.8,
-                            'timestamp': timestamp,
-                            'sub_task_id': sub_task_id
-                        }
+                        # Use LLM to assess content relevance and quality
+                        quality_assessment = self._assess_content_relevance(relevant_content, query, title)
                         
-                        # Try to add to source manager (handles deduplication and limits)
-                        if source_manager.add_source(source_data):
-                            finding = ResearchFinding(
-                                source_url=url,
-                                title=title,
-                                content=relevant_content,
-                                relevance_score=0.8,
-                                timestamp=timestamp,
-                                sub_task_id=sub_task_id
-                            )
-                            findings.append(finding)
-                            logger.info(f"✅ Added finding from {url} ({len(source_manager.get_sources())}/{source_manager.max_sources})")
+                        # Debug: Show relevance assessment details
+                        if self.debug_mode:
+                            print(f"\n🧠 DEBUG: Relevance Assessment for {title}")
+                            print(f"   🔗 URL: {url}")
+                            print(f"   📊 Relevant: {quality_assessment['is_relevant']}")
+                            print(f"   📈 Score: {quality_assessment['relevance_score']:.2f}")
+                            print(f"   💭 Reason: {quality_assessment['reason']}")
+                            print(f"   📝 Content preview: {relevant_content[:200]}...")
+                            
+                            self.debug_info['relevance_assessments'].append({
+                                'url': url,
+                                'title': title,
+                                'query': query,
+                                'is_relevant': quality_assessment['is_relevant'],
+                                'relevance_score': quality_assessment['relevance_score'],
+                                'reason': quality_assessment['reason'],
+                                'content_preview': relevant_content[:200]
+                            })
+                        
+                        if quality_assessment['is_relevant']:
+                            # Create source for manager validation
+                            source_data = {
+                                'url': url,
+                                'title': title,
+                                'content': relevant_content,
+                                'relevance_score': quality_assessment['relevance_score'],
+                                'timestamp': timestamp,
+                                'sub_task_id': sub_task_id
+                            }
+                            
+                            # Try to add to source manager (handles deduplication and limits)
+                            if source_manager.add_source(source_data):
+                                finding = ResearchFinding(
+                                    source_url=url,
+                                    title=title,
+                                    content=relevant_content,
+                                    relevance_score=quality_assessment['relevance_score'],
+                                    timestamp=timestamp,
+                                    sub_task_id=sub_task_id
+                                )
+                                findings.append(finding)
+                                logger.info(f"✅ Added relevant finding from {url} (score: {quality_assessment['relevance_score']:.2f}) ({len(source_manager.get_sources())}/{source_manager.max_sources})")
+                                
+                                if self.debug_mode:
+                                    self.debug_info['accepted_sources'].append({
+                                        'url': url,
+                                        'title': title,
+                                        'relevance_score': quality_assessment['relevance_score'],
+                                        'reason': 'Accepted by source manager'
+                                    })
+                            else:
+                                logger.debug(f"🎯 Source not added (duplicate or limit reached): {url}")
+                                if self.debug_mode:
+                                    self.debug_info['rejected_sources'].append({
+                                        'url': url,
+                                        'title': title,
+                                        'relevance_score': quality_assessment['relevance_score'],
+                                        'reason': 'Duplicate or source limit reached'
+                                    })
                         else:
-                            logger.debug(f"🎯 Source not added (duplicate or limit reached): {url}")
+                            logger.info(f"🚫 Content filtered out from {url}: {quality_assessment['reason']}")
+                            if self.debug_mode:
+                                self.debug_info['rejected_sources'].append({
+                                    'url': url,
+                                    'title': title,
+                                    'relevance_score': quality_assessment['relevance_score'],
+                                    'reason': f"Not relevant: {quality_assessment['reason']}"
+                                })
                     else:
                         logger.debug(f"⚠️ No relevant content extracted from {url}")
+                        if self.debug_mode:
+                            self.debug_info['rejected_sources'].append({
+                                'url': url,
+                                'title': title,
+                                'relevance_score': 0.0,
+                                'reason': 'No relevant content could be extracted'
+                            })
                         
                 except Exception as e:
                     logger.warning(f"Failed to fetch {url}: {e}")
@@ -709,6 +862,381 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
         
         logger.info(f"📊 Search completed for '{query}': {len(findings)} findings")
         return findings
+
+    def _check_authority_indicators(self, title: str, content: str, query: str) -> Dict[str, Any]:
+        """Check for high-authority source indicators that should be prioritized"""
+        
+        title_lower = title.lower()
+        content_lower = content.lower()
+        query_lower = query.lower()
+        
+        # Extract potential person name from query
+        query_words = query_lower.split()
+        potential_names = [word for word in query_words if word.istitle() or len(word) > 3]
+        
+        # High-authority indicators
+        authority_indicators = [
+            # Academic/Professional profiles
+            ('google scholar', 0.95, 'Official Google Scholar profile'),
+            ('orcid', 0.95, 'Official ORCID researcher profile'),
+            ('researchgate', 0.90, 'ResearchGate academic profile'),
+            ('linkedin', 0.85, 'Professional LinkedIn profile'),
+            ('academia.edu', 0.85, 'Academia.edu academic profile'),
+            
+            # Institutional websites
+            ('university', 0.90, 'University/academic institution'),
+            ('institute', 0.90, 'Research institute'),
+            ('laboratory', 0.85, 'Research laboratory'),
+            ('.edu', 0.90, 'Educational institution domain'),
+            ('.ac.', 0.90, 'Academic institution domain'),
+            
+            # Personal/official websites
+            ('personal website', 0.95, 'Personal/official website'),
+            ('official site', 0.95, 'Official website'),
+        ]
+        
+        # Check for personal name match in title/content
+        name_match_score = 0.0
+        if potential_names:
+            for name in potential_names:
+                if name in title_lower or name in content_lower:
+                    name_match_score = 0.8
+                    break
+        
+        # Check authority indicators
+        for indicator, base_score, reason in authority_indicators:
+            if indicator in title_lower or indicator in content_lower:
+                final_score = min(1.0, base_score + name_match_score * 0.2)
+                return {
+                    'is_high_authority': True,
+                    'authority_score': final_score,
+                    'reason': reason + (f' with name match' if name_match_score > 0 else '')
+                }
+        
+        # Check for personal domain (e.g., lpalbou.info)
+        if any(name in title_lower for name in potential_names if len(name) > 3):
+            return {
+                'is_high_authority': True,
+                'authority_score': 0.95,
+                'reason': 'Personal domain/website matching query subject'
+            }
+        
+        return {
+            'is_high_authority': False,
+            'authority_score': 0.0,
+            'reason': 'No high-authority indicators found'
+        }
+
+    def _assess_content_relevance(self, content: str, query: str, title: str) -> Dict[str, Any]:
+        """Use LLM to quickly assess if content is relevant to the research query"""
+        
+        # First check for high-authority sources that should be prioritized
+        authority_indicators = self._check_authority_indicators(title, content, query)
+        if authority_indicators['is_high_authority']:
+            return {
+                'is_relevant': True,
+                'relevance_score': authority_indicators['authority_score'],
+                'reason': f"High-authority source: {authority_indicators['reason']}"
+            }
+        
+        # Limit content for efficient assessment
+        assessment_content = content[:1500] + "..." if len(content) > 1500 else content
+        
+        assessment_prompt = f"""
+Assess if this content contains meaningful information related to the research query.
+
+RESEARCH QUERY: {query}
+SOURCE TITLE: {title}
+
+CONTENT:
+{assessment_content}
+
+Respond with ONLY a JSON object in this exact format:
+{{
+    "is_relevant": true/false,
+    "relevance_score": 0.0-1.0,
+    "reason": "brief explanation"
+}}
+
+CRITICAL: Mark as RELEVANT (true) if the content:
+- Contains ANY substantive information that could help answer or relate to the query
+- Provides facts, data, explanations, or details about the query topic
+- Is from authoritative sources (official websites, academic profiles, institutional pages)
+- Has meaningful textual content beyond navigation elements
+- Shows biographical, professional, or academic information when querying about a person
+
+Mark as NOT RELEVANT (false) ONLY if the content:
+- Is completely unrelated to the query topic (different person, concept, etc.)
+- Contains ONLY navigation menus, headers, footers, or structural elements
+- Shows clear error messages, access restrictions, or "page not found" 
+- Is purely promotional/advertising without ANY informational value
+- Discusses entirely different subjects with no connection to the query
+
+BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
+"""
+
+        try:
+            response = self.llm.generate(assessment_prompt, temperature=0.1)
+            
+            # Extract text from response (handle different response types)
+            if hasattr(response, 'text'):
+                response_text = response.text
+            elif hasattr(response, 'content'):
+                response_text = response.content
+            else:
+                response_text = str(response)
+            
+            # Parse JSON from response
+            import json
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
+            
+            if json_start != -1 and json_end > json_start:
+                json_text = response_text[json_start:json_end]
+                assessment = json.loads(json_text)
+                
+                # Validate and normalize
+                if 'is_relevant' in assessment and 'relevance_score' in assessment:
+                    assessment['relevance_score'] = max(0.0, min(1.0, float(assessment['relevance_score'])))
+                    assessment['reason'] = assessment.get('reason', 'No reason provided')
+                    return assessment
+            
+            # Fallback if JSON parsing fails
+            logger.debug(f"Content relevance assessment JSON parsing failed, using fallback")
+            return self._fallback_relevance_assessment(content, query)
+            
+        except Exception as e:
+            logger.debug(f"Content relevance assessment failed: {e}")
+            return self._fallback_relevance_assessment(content, query)
+    
+    def _fallback_relevance_assessment(self, content: str, query: str) -> Dict[str, Any]:
+        """Fallback relevance assessment using general content quality heuristics"""
+        
+        content_lower = content.lower()
+        words = content.split()
+        word_count = len(words)
+        
+        # Check for obvious error/empty content indicators
+        error_indicators = [
+            'page not found', '404 error', '403 error', '500 error',
+            'access denied', 'login required', 'sign in required',
+            'javascript required', 'cookies required', 'enable javascript',
+            'subscribe to continue', 'sign up to read', 'premium content',
+            'page does not exist', 'content not available'
+        ]
+        
+        has_errors = any(indicator in content_lower for indicator in error_indicators)
+        
+        # Check for navigation-heavy content (low information density)
+        navigation_indicators = ['home', 'about', 'contact', 'menu', 'navigation', 'footer', 'header']
+        nav_count = sum(1 for indicator in navigation_indicators if indicator in content_lower)
+        nav_ratio = nav_count / max(word_count, 1)
+        
+        # Basic content quality assessment
+        if has_errors:
+            return {
+                'is_relevant': False,
+                'relevance_score': 0.0,
+                'reason': 'Contains error messages or access restrictions'
+            }
+        
+        if word_count < 10:
+            return {
+                'is_relevant': False,
+                'relevance_score': 0.0,
+                'reason': f'Too little content ({word_count} words)'
+            }
+        
+        if nav_ratio > 0.3:  # More than 30% navigation terms
+            return {
+                'is_relevant': False,
+                'relevance_score': 0.2,
+                'reason': 'Content appears to be mostly navigation elements'
+            }
+        
+        # If content passes basic quality checks, calculate relevance
+        query_words = [word.lower().strip('.,!?;:"()[]{}') for word in query.split() if len(word) > 2]
+        
+        if not query_words:
+            # If query has no meaningful words, accept content based on quality
+            relevance_score = 0.7 if word_count >= 50 else 0.5
+            return {
+                'is_relevant': True,
+                'relevance_score': relevance_score,
+                'reason': f'Query has no key terms, accepting based on content quality ({word_count} words)'
+            }
+        
+        # Calculate keyword overlap
+        matches = sum(1 for word in query_words if word in content_lower)
+        keyword_relevance = matches / len(query_words)
+        
+        # Content length bonus (longer content more likely to be informative)
+        length_bonus = min(0.3, word_count / 200)  # Up to 0.3 bonus for 200+ words
+        
+        final_relevance = keyword_relevance + length_bonus
+        is_relevant = final_relevance >= 0.4  # Require meaningful keyword overlap, don't accept long irrelevant content
+        
+        return {
+            'is_relevant': is_relevant,
+            'relevance_score': min(1.0, final_relevance),
+            'reason': f'{matches}/{len(query_words)} keywords, {word_count} words, score: {final_relevance:.2f}'
+        }
+
+    def _print_debug_summary(self):
+        """Print comprehensive debug summary"""
+        print("\n" + "="*80)
+        print("🔍 DEBUG SUMMARY: COMPLETE RESEARCH PROCESS")
+        print("="*80)
+        
+        # Query summary
+        print(f"\n📋 TOTAL QUERIES GENERATED: {len(self.debug_info['all_queries'])}")
+        query_by_subtask = {}
+        for q in self.debug_info['all_queries']:
+            subtask = q['sub_task_question']
+            if subtask not in query_by_subtask:
+                query_by_subtask[subtask] = []
+            query_by_subtask[subtask].append(q['query'])
+        
+        for subtask, queries in query_by_subtask.items():
+            print(f"\n🎯 {subtask}")
+            for i, query in enumerate(queries, 1):
+                print(f"   {i}. \"{query}\"")
+        
+        # URL summary
+        print(f"\n🔗 TOTAL URLS DISCOVERED: {len(self.debug_info['all_urls_found'])}")
+        urls_by_query = {}
+        for url_info in self.debug_info['all_urls_found']:
+            query = url_info['query']
+            if query not in urls_by_query:
+                urls_by_query[query] = []
+            urls_by_query[query].append((url_info['title'], url_info['url']))
+        
+        for query, urls in urls_by_query.items():
+            print(f"\n🔍 Query: \"{query}\" → {len(urls)} URLs")
+            for i, (title, url) in enumerate(urls, 1):
+                print(f"   {i}. {title}")
+                print(f"      🔗 {url}")
+        
+        # Relevance assessment summary
+        print(f"\n🧠 RELEVANCE ASSESSMENTS: {len(self.debug_info['relevance_assessments'])}")
+        relevant_count = sum(1 for a in self.debug_info['relevance_assessments'] if a['is_relevant'])
+        irrelevant_count = len(self.debug_info['relevance_assessments']) - relevant_count
+        
+        print(f"   ✅ Relevant: {relevant_count}")
+        print(f"   ❌ Not Relevant: {irrelevant_count}")
+        
+        if self.debug_info['relevance_assessments']:
+            print(f"\n📊 DETAILED ASSESSMENTS:")
+            for i, assessment in enumerate(self.debug_info['relevance_assessments'], 1):
+                status = "✅" if assessment['is_relevant'] else "❌"
+                print(f"\n   {i}. {status} {assessment['title']}")
+                print(f"      🔗 {assessment['url']}")
+                print(f"      📈 Score: {assessment['relevance_score']:.2f}")
+                print(f"      💭 Reason: {assessment['reason']}")
+                print(f"      📝 Preview: {assessment['content_preview']}...")
+        
+        # Final source summary
+        print(f"\n📚 FINAL SOURCES:")
+        print(f"   ✅ Accepted: {len(self.debug_info['accepted_sources'])}")
+        print(f"   ❌ Rejected: {len(self.debug_info['rejected_sources'])}")
+        
+        if self.debug_info['accepted_sources']:
+            print(f"\n✅ ACCEPTED SOURCES:")
+            for i, source in enumerate(self.debug_info['accepted_sources'], 1):
+                print(f"   {i}. {source['title']} (Score: {source['relevance_score']:.2f})")
+                print(f"      🔗 {source['url']}")
+                print(f"      ✅ {source['reason']}")
+        
+        if self.debug_info['rejected_sources']:
+            print(f"\n❌ REJECTED SOURCES:")
+            for i, source in enumerate(self.debug_info['rejected_sources'], 1):
+                print(f"   {i}. {source['title']} (Score: {source['relevance_score']:.2f})")
+                print(f"      🔗 {source['url']}")
+                print(f"      ❌ {source['reason']}")
+        
+        print("\n" + "="*80)
+        print("🔍 END DEBUG SUMMARY")
+        print("="*80)
+
+    def _detect_query_type(self, query: str) -> str:
+        """Detect the type of query to generate appropriate research plan"""
+        query_lower = query.lower()
+        
+        # Person indicators
+        person_indicators = [
+            'who is', 'biography of', 'background of', 'profile of',
+            'researcher', 'scientist', 'professor', 'dr.', 'phd'
+        ]
+        
+        # Concept/idea indicators  
+        concept_indicators = [
+            'what is', 'explain', 'definition of', 'concept of', 'theory of',
+            'how does', 'why does', 'principle of', 'mechanism of'
+        ]
+        
+        # Location/country indicators
+        location_indicators = [
+            'country', 'city', 'region', 'geography of', 'history of',
+            'economy of', 'politics of', 'culture of'
+        ]
+        
+        # Technology/product indicators
+        technology_indicators = [
+            'technology', 'software', 'algorithm', 'method', 'technique',
+            'system', 'platform', 'tool', 'framework'
+        ]
+        
+        # Company/organization indicators
+        organization_indicators = [
+            'company', 'organization', 'institution', 'startup', 'business',
+            'corporation', 'agency', 'foundation'
+        ]
+        
+        # Check for patterns
+        if any(indicator in query_lower for indicator in person_indicators):
+            return "person"
+        elif any(indicator in query_lower for indicator in concept_indicators):
+            return "concept"
+        elif any(indicator in query_lower for indicator in location_indicators):
+            return "location"
+        elif any(indicator in query_lower for indicator in technology_indicators):
+            return "technology"
+        elif any(indicator in query_lower for indicator in organization_indicators):
+            return "organization"
+        else:
+            # Default based on query structure
+            words = query_lower.split()
+            if len(words) <= 3 and any(word.istitle() for word in query.split()):
+                return "person"  # Likely a name
+            else:
+                return "concept"  # General topic
+
+    def _get_focus_areas_by_type(self, query_type: str) -> List[str]:
+        """Get appropriate focus areas based on query type"""
+        focus_areas_map = {
+            "person": [
+                "Professional Biography", "Academic Output", "Industry Impact", 
+                "Public Presence", "Professional Affiliations"
+            ],
+            "concept": [
+                "Definition & Overview", "Historical Development", "Key Applications",
+                "Current Research", "Future Implications"
+            ],
+            "location": [
+                "Geography & Demographics", "History & Culture", "Economy & Politics",
+                "Current Events", "International Relations"
+            ],
+            "technology": [
+                "Technical Overview", "Development History", "Current Applications",
+                "Market Analysis", "Future Trends"
+            ],
+            "organization": [
+                "Company Overview", "Business Model", "Leadership & History",
+                "Market Position", "Recent Developments"
+            ]
+        }
+        
+        return focus_areas_map.get(query_type, focus_areas_map["concept"])
 
     def _extract_urls_from_search(self, search_results: str) -> List[tuple]:
         """Extract URLs and titles from search results"""
@@ -1183,15 +1711,36 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
                         enhanced_findings.append(finding)
                 key_findings = enhanced_findings
             
+            # Ensure all fields are properly formatted for Pydantic validation
+            def ensure_string(value, default=""):
+                """Convert list or other types to string"""
+                if isinstance(value, list):
+                    return " ".join(str(item) for item in value)
+                elif value is None:
+                    return default
+                else:
+                    return str(value)
+            
+            def ensure_list(value, default=None):
+                """Ensure value is a list"""
+                if default is None:
+                    default = []
+                if isinstance(value, list):
+                    return value
+                elif isinstance(value, str):
+                    return [value] if value else default
+                else:
+                    return default
+            
             report = ResearchReport(
-                title=report_data.get("title", f"Research Report: {research_plan.original_query}"),
-                executive_summary=report_data.get("executive_summary", ""),
-                key_findings=key_findings,
-                detailed_analysis=detailed_analysis,
-                conclusions=report_data.get("conclusions", ""),
+                title=ensure_string(report_data.get("title"), f"Research Report: {research_plan.original_query}"),
+                executive_summary=ensure_string(report_data.get("executive_summary"), ""),
+                key_findings=ensure_list(key_findings, []),
+                detailed_analysis=ensure_string(detailed_analysis, ""),
+                conclusions=ensure_string(report_data.get("conclusions"), ""),
                 sources=sources,
-                methodology=report_data.get("methodology", "Web-based research using multi-stage pipeline"),
-                limitations=report_data.get("limitations", "Limited to publicly available web sources")
+                methodology=ensure_string(report_data.get("methodology"), "Web-based research using multi-stage pipeline"),
+                limitations=ensure_string(report_data.get("limitations"), "Limited to publicly available web sources")
             )
             
             return report
