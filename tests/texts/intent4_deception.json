@@ -1,0 +1,104 @@
+{
+  "schema_version": "session-archive/v1",
+  "session": {
+    "id": "intent_analysis_deception_004",
+    "created_at": "2024-10-24T16:00:00.000Z",
+    "provider": "huggingface",
+    "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "model_params": null,
+    "system_prompt": "You are analyzing a conversation between Mark (employee) and Jennifer (HR manager) about expense reports.",
+    "tool_registry": null,
+    "settings": {
+      "auto_compact": false,
+      "auto_compact_threshold": 6000
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are analyzing a conversation between Mark (employee) and Jennifer (HR manager) about expense reports.",
+      "timestamp": "2024-10-24T16:00:00.000Z",
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "content": "Jennifer: Mark, I need to discuss some irregularities in your expense reports from the past three months. There are several restaurant charges that seem unusually high for business meals.",
+      "timestamp": "2024-10-24T16:00:30.000Z",
+      "metadata": {
+        "participant": "jennifer"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Mark: Oh, those? Yeah, those were all legitimate business meals with clients. You know how expensive restaurants can be these days, especially when you're entertaining important prospects.",
+      "timestamp": "2024-10-24T16:00:45.000Z",
+      "metadata": {
+        "participant": "mark"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Jennifer: I see. Can you tell me about the $180 dinner at Le Bernardin on March 15th? Who was the client?",
+      "timestamp": "2024-10-24T16:01:00.000Z",
+      "metadata": {
+        "participant": "jennifer"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Mark: That was with... let me think... Johnson from Acme Corp. We were discussing the Q2 contract renewal. It was a crucial meeting, and you know how these high-end clients expect to be treated well.",
+      "timestamp": "2024-10-24T16:01:20.000Z",
+      "metadata": {
+        "participant": "mark"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Jennifer: Interesting. I just spoke with Johnson yesterday, and he mentioned he was out of the country the entire month of March for a family emergency. He said he hasn't met with anyone from our company since February.",
+      "timestamp": "2024-10-24T16:01:40.000Z",
+      "metadata": {
+        "participant": "jennifer"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Mark: Oh, wait, you're right! I'm getting my dates mixed up. That dinner was actually with... Smith from TechGlobal. Johnson and Smith, you know how these client names can blur together when you're managing so many accounts.",
+      "timestamp": "2024-10-24T16:02:00.000Z",
+      "metadata": {
+        "participant": "mark"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Jennifer: Mark, we don't have any client named Smith at TechGlobal. In fact, TechGlobal isn't even one of our clients. I have the complete client list right here.",
+      "timestamp": "2024-10-24T16:02:20.000Z",
+      "metadata": {
+        "participant": "jennifer"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Mark: Look, Jennifer, I think there might be some confusion here. I have so many meetings and dinners, sometimes the details get fuzzy. But I can assure you that every expense I submitted was for legitimate business purposes. Maybe I should go back and check my calendar to get the exact details straight.",
+      "timestamp": "2024-10-24T16:02:45.000Z",
+      "metadata": {
+        "participant": "mark"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Jennifer: Mark, I need you to be completely honest with me. Was this dinner actually a business expense, or was it personal?",
+      "timestamp": "2024-10-24T16:03:00.000Z",
+      "metadata": {
+        "participant": "jennifer"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Mark: I understand your concern, but I'm telling you it was business-related. Maybe it wasn't with a client directly, but it could have been with a potential partner or vendor. I network a lot for the company, and sometimes these relationships are more informal than what shows up in our official client database.",
+      "timestamp": "2024-10-24T16:03:25.000Z",
+      "metadata": {
+        "participant": "mark"
+      }
+    }
+  ]
+}
