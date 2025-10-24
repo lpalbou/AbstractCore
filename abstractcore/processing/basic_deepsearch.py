@@ -247,25 +247,31 @@ class BasicDeepSearch:
     - Structured output with citations
     - Configurable search depth and focus
     - Verification and fact-checking
+    - Multiple research modes for different speed/quality trade-offs
+
+    Research Modes:
+    - "standard": Default behavior (backward compatible)
+    - "enhanced": Iterative refinement with intent analysis and token budgeting
+    - "fast": Speed-optimized with reduced queries and streamlined processing
 
     Examples:
         >>> searcher = BasicDeepSearch()
         
-        # Basic research query
+        # Basic research query (standard mode)
         >>> report = searcher.research("What are the latest developments in quantum computing?")
+        
+        # Enhanced mode with iterative refinement
+        >>> searcher = BasicDeepSearch(research_mode="enhanced")
+        >>> report = searcher.research("Complex research topic")
+        
+        # Fast mode for quick results
+        >>> searcher = BasicDeepSearch(research_mode="fast")
+        >>> report = searcher.research("Simple query")
         
         # Research with specific focus
         >>> report = searcher.research(
         ...     "Impact of AI on healthcare", 
         ...     focus_areas=["medical diagnosis", "drug discovery", "patient care"]
-        ... )
-        
-        # Deep research with custom parameters
-        >>> report = searcher.research(
-        ...     "Sustainable energy solutions 2025",
-        ...     max_sources=20,
-        ...     search_depth="comprehensive",
-        ...     include_verification=True
         ... )
     """
 
@@ -280,7 +286,12 @@ class BasicDeepSearch:
         reflexive_mode: bool = False,
         max_reflexive_iterations: int = 2,
         temperature: float = 0.1,  # Low temperature for consistency
-        debug_mode: bool = False
+        debug_mode: bool = False,
+        # New unified mode parameters
+        research_mode: str = "standard",  # "standard", "enhanced", "fast"
+        token_budget: int = 50000,
+        enable_intent_analysis: bool = None,  # Auto-determined by mode if None
+        enable_iterative_refinement: bool = None  # Auto-determined by mode if None
     ):
         """Initialize the deep search system
         
@@ -295,6 +306,10 @@ class BasicDeepSearch:
             max_reflexive_iterations: Maximum number of reflexive refinement cycles (default 2)
             temperature: LLM temperature for consistency (default 0.1 for deterministic outputs)
             debug_mode: Enable comprehensive debug logging (default False)
+            research_mode: Research mode - "standard" (default), "enhanced", or "fast"
+            token_budget: Maximum tokens for enhanced mode (default 50000)
+            enable_intent_analysis: Enable intent analysis (auto-determined by mode if None)
+            enable_iterative_refinement: Enable iterative refinement (auto-determined by mode if None)
         """
         if llm is None:
             try:
@@ -336,7 +351,36 @@ class BasicDeepSearch:
         self.temperature = temperature
         self.debug_mode = debug_mode
         self.retry_strategy = FeedbackRetry(max_attempts=3)
+        
+        # Configure research mode
+        self.research_mode = research_mode.lower()
+        self.token_budget = token_budget
+        self.tokens_used = 0
+        
+        # Auto-configure features based on mode
+        if enable_intent_analysis is None:
+            self.enable_intent_analysis = (self.research_mode == "enhanced")
+        else:
+            self.enable_intent_analysis = enable_intent_analysis
+            
+        if enable_iterative_refinement is None:
+            self.enable_iterative_refinement = (self.research_mode == "enhanced")
+        else:
+            self.enable_iterative_refinement = enable_iterative_refinement
+        
+        # Initialize intent analyzer if needed
+        self.intent_analyzer = None
+        if self.enable_intent_analysis:
+            try:
+                from .basic_intent import BasicIntentAnalyzer, IntentContext, IntentDepth
+                self.intent_analyzer = BasicIntentAnalyzer(llm=self.llm)
+                logger.info("✅ Intent analysis enabled")
+            except Exception as e:
+                logger.warning(f"Intent analysis disabled due to error: {e}")
+                self.enable_intent_analysis = False
+        
         print(f"🤖 Initialized LLM: {self.llm.provider} {self.llm.model}")
+        print(f"🎯 Research mode: {self.research_mode}")
         
         # Debug tracking
         if self.debug_mode:
@@ -371,10 +415,29 @@ class BasicDeepSearch:
         Returns:
             ResearchReport object or dictionary with research findings
         """
-        logger.info(f"🔍 Starting deep search research: {query}")
+        logger.info(f"🔍 Starting deep search research ({self.research_mode} mode): {query}")
         start_time = time.time()
         
         try:
+            # Mode-specific preprocessing
+            if self.enable_intent_analysis and self.intent_analyzer:
+                enhanced_query = self._analyze_intent_and_enhance_query(query)
+                if enhanced_query != query:
+                    logger.info(f"🧠 Query enhanced based on intent analysis")
+                    query = enhanced_query
+            
+            # Adjust parameters based on mode
+            if self.research_mode == "fast":
+                # Fast mode: reduce source limit and disable some features
+                max_sources = min(max_sources, 6)
+                include_verification = False
+                logger.info(f"🏃 Fast mode: reduced to {max_sources} sources, verification disabled")
+            elif self.research_mode == "enhanced":
+                # Enhanced mode: streamlined for speed with refinement
+                max_sources = min(max_sources, 6)  # Reduce sources like fast mode
+                include_verification = False
+                logger.info(f"🔄 Enhanced mode: streamlined with {max_sources} sources, verification disabled")
+            
             # Initialize source manager with strict limits
             source_manager = SourceManager(max_sources)
             logger.info(f"🎯 Initialized source manager with limit: {max_sources}")
@@ -385,7 +448,11 @@ class BasicDeepSearch:
             
             # Stage 2: Question Development
             logger.info("❓ Stage 2: Developing search questions...")
-            self._develop_search_questions(research_plan, max_sources)
+            if self.research_mode in ["fast", "enhanced"]:
+                # Both fast and enhanced modes use streamlined query generation
+                self._develop_search_questions_fast(research_plan, max_sources)
+            else:
+                self._develop_search_questions(research_plan, max_sources)
             
             # Debug: Show all generated queries
             if self.debug_mode:
@@ -418,10 +485,28 @@ class BasicDeepSearch:
                 logger.info("✅ Stage 5: Verifying findings...")
                 report = self._verify_report(report, findings)
             
-            # Stage 6: Reflexive improvement (if enabled)
-            if self.reflexive_mode:
+            # Stage 6: Mode-specific post-processing
+            if self.research_mode == "enhanced" and self.enable_iterative_refinement:
+                # Enhanced mode: smart single-pass refinement (only if we have budget)
+                estimated_tokens = len(str(report)) // 4
+                self.tokens_used += estimated_tokens
+                
+                if self.tokens_used < self.token_budget * 0.8:
+                    logger.info("🔄 Stage 6: Enhanced mode refinement...")
+                    report = self._smart_single_pass_refinement(query, report)
+                else:
+                    logger.info("⚠️ Skipping refinement due to token budget")
+            elif self.reflexive_mode:
+                # Legacy reflexive mode (if explicitly enabled)
                 logger.info("🔄 Stage 6: Reflexive analysis and refinement...")
                 report = self._reflexive_refinement(report, research_plan, findings)
+            
+            # Add mode metadata
+            if hasattr(report, 'methodology'):
+                mode_info = f" Research mode: {self.research_mode}"
+                if self.research_mode == "enhanced":
+                    mode_info += f", token usage: {self.tokens_used}/{self.token_budget}"
+                report.methodology += mode_info + "."
             
             elapsed_time = time.time() - start_time
             logger.info(f"✨ Deep search completed in {elapsed_time:.1f} seconds")
@@ -2171,3 +2256,128 @@ CRITICAL: Return ONLY the JSON array, no other text.
                     continue
         
         return new_findings
+
+    # ============================================================================
+    # Enhanced Mode Methods (from enhanced_deepsearch.py and optimized_deepsearch.py)
+    # ============================================================================
+    
+    def _analyze_intent_and_enhance_query(self, query: str) -> str:
+        """Enhanced mode: Intent-aware planning"""
+        try:
+            from .basic_intent import IntentContext, IntentDepth
+            
+            # Analyze user intent
+            intent_analysis = self.intent_analyzer.analyze_intent(
+                query,
+                context_type=IntentContext.STANDALONE,
+                depth=IntentDepth.UNDERLYING
+            )
+            
+            primary_intent = intent_analysis.primary_intent
+            logger.info(f"🧠 Detected intent: {primary_intent.intent_type.value} (confidence: {primary_intent.confidence:.2f})")
+            
+            # Enhance query based on intent
+            if primary_intent.intent_type.value in ["information_seeking", "problem_solving"]:
+                enhancement_prompt = f"""
+                The user asked: "{query}"
+                
+                Their underlying goal is: {primary_intent.underlying_goal}
+                Intent type: {primary_intent.intent_type.value}
+                
+                Rewrite this as a more specific, research-focused query that addresses their underlying goal.
+                If the original query is already well-formed, return it unchanged.
+                
+                Respond with just the enhanced query, no explanation.
+                """
+                
+                response = self.llm.generate(enhancement_prompt)
+                enhanced_query = response.content if hasattr(response, 'content') else str(response)
+                enhanced_query = enhanced_query.strip()
+                
+                # Clean up the response (remove quotes if present)
+                if enhanced_query.startswith('"') and enhanced_query.endswith('"'):
+                    enhanced_query = enhanced_query[1:-1]
+                
+                # Track token usage
+                self.tokens_used += len(enhanced_query) // 4
+                
+                return enhanced_query
+            
+        except Exception as e:
+            logger.warning(f"Intent analysis failed: {e}")
+        
+        return query  # Return original query if enhancement fails
+    
+    def _smart_single_pass_refinement(self, query: str, report: ResearchReport) -> ResearchReport:
+        """Enhanced mode: Smart single-pass refinement"""
+        
+        # Single gap analysis (not iterative)
+        gap_prompt = f"""
+        Query: {query}
+        Current findings: {report.key_findings}
+        
+        Is there ONE critical gap that would significantly improve this research?
+        Respond with either:
+        1. A specific search query to address the gap, OR
+        2. "COMPLETE" if research is sufficient
+        
+        Be selective - only suggest if truly important.
+        """
+        
+        try:
+            response = self.llm.generate(gap_prompt)
+            gap_response = response.content if hasattr(response, 'content') else str(response)
+            gap_response = gap_response.strip()
+            
+            # Update token count
+            self.tokens_used += len(gap_response) // 4
+            
+            if gap_response.upper() != "COMPLETE" and len(gap_response) > 10:
+                logger.info(f"🎯 Single refinement search: {gap_response[:50]}...")
+                
+                # Quick targeted search
+                search_results = web_search(gap_response, num_results=2)  # Only 2 results for speed
+                
+                if search_results and "Error" not in search_results:
+                    # Simple enhancement: add to executive summary
+                    enhancement = f" Additional research reveals: {search_results[:200]}..."
+                    if len(report.executive_summary) < 800:  # Only if not too long
+                        report.executive_summary += enhancement
+                        logger.info("✅ Report enhanced with targeted search")
+            
+        except Exception as e:
+            logger.warning(f"Single-pass refinement failed: {e}")
+        
+        return report
+    
+    def _develop_search_questions_fast(self, research_plan, max_sources: int) -> None:
+        """Fast mode: Generate fewer, better queries per task"""
+        
+        # Reduce queries per task for speed (2→1 query per task)
+        queries_per_task = 1  # Single best query per task
+        
+        for sub_task in research_plan.sub_tasks:
+            query_prompt = f"""
+            Generate 1 highly effective search query for this research question:
+            
+            QUESTION: {sub_task.question}
+            FOCUS: {sub_task.focus_area}
+            CONTEXT: {research_plan.original_query}
+            
+            Create the single most effective search query that will find the best sources.
+            Make it specific, current (2024-2025), and likely to return high-quality results.
+            
+            Respond with just the search query, no explanation.
+            """
+
+            try:
+                response = self.llm.generate(query_prompt, temperature=0.3)
+                query_text = response.content if hasattr(response, 'content') else str(response)
+                sub_task.search_queries = [query_text.strip()]
+                logger.info(f"📝 Fast query for {sub_task.id}: {sub_task.search_queries[0]}")
+                
+            except Exception as e:
+                logger.warning(f"Fast query generation failed for {sub_task.id}: {e}")
+                # Fallback to simple query
+                base_topic = research_plan.original_query.replace("?", "")
+                sub_task.search_queries = [f"{base_topic} {sub_task.focus_area} 2024"]
