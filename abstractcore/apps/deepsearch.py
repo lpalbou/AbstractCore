@@ -489,6 +489,12 @@ Examples:
         help='Show detailed progress information'
     )
     
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Show comprehensive debug information: all queries, URLs, relevance assessments, and processing decisions'
+    )
+    
     args = parser.parse_args()
     
     # Validate arguments
@@ -532,7 +538,8 @@ Examples:
             full_text_extraction=args.full_text,
             reflexive_mode=args.reflexive,
             max_reflexive_iterations=args.max_reflexive_iterations,
-            temperature=args.temperature
+            temperature=args.temperature,
+            debug_mode=args.debug
         )
         
         # Parse focus areas
