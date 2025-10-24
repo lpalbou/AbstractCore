@@ -480,23 +480,28 @@ class BasicIntentAnalyzer:
         # Deception analysis is always integrated into intent analysis
         deception_instruction = """
 
-DECEPTION & AUTHENTICITY ANALYSIS: As part of your intent analysis, evaluate the authenticity and potential deceptive elements:
+DECEPTION ANALYSIS: Always evaluate authenticity with healthy skepticism.
 
-Analyze these psychological indicators:
-1. NARRATIVE CONSISTENCY: Check for internal contradictions, timeline inconsistencies, or logical gaps
-2. LINGUISTIC MARKERS: Look for hedging language ("I think", "maybe"), deflection, over-elaboration, or unusual specificity
-3. TEMPORAL COHERENCE: Evaluate if the sequence of events makes logical sense
-4. EMOTIONAL CONGRUENCE: Assess if stated emotions align with the content and context
-5. PARAPRAXIS: Notice any slips, corrections, or unintended revelations
+Key principles:
+1. Check for contradictions within the conversation
+2. Ask: "What does this person gain by lying here?"
+3. Be suspicious of overly complex explanations for simple failures
+4. Confident, detailed stories can mask deception - don't trust them blindly
+5. Look for what consequences they're trying to avoid
 
-For each intent, provide:
-- Deception likelihood (0-1 scale) - this should influence your overall confidence assessment
-- Specific linguistic markers that suggest deception or honesty
-- Evidence indicating potential deception (contradictions, deflection, over-elaboration, inconsistencies)
-- Evidence indicating authenticity (consistency, accountability, directness, emotional congruence)
-- Narrative consistency and temporal/emotional coherence evaluation
+Red flags:
+- Timeline inconsistencies or contradictions
+- Elaborate technical excuses for basic mistakes
+- Shifting blame to multiple external factors
+- Claims that can't be easily verified
 
-IMPORTANT: Deception analysis should inform your intent classification and confidence scores. High deception likelihood may indicate face-saving, blame-deflection, or outright deceptive intents."""
+For deception analysis, assess:
+- Likelihood of deception (0-1 scale)
+- What motive exists for lying in this context
+- Whether the explanation is unnecessarily complex
+- Evidence for/against authenticity
+
+Note: If someone admits past deception to a third party, that admission itself is likely honest."""
 
         prompt = f"""Analyze the following text to identify and understand the intents, motivations, and goals behind the communication.
 
