@@ -506,6 +506,12 @@ python -m abstractcore.apps intent tests/texts/intent2.json --focus-participant 
 - **Defensive Communication**: Linguistic markers reveal defensive posturing and fault avoidance
 - **Professional Image Protection**: Multiple intents converge on maintaining competent appearance despite failure
 
+**Model Performance Notes:**
+- **Premium models** (qwen/qwen3-30b-a3b-2507, GPT-4o) show higher sensitivity to deception patterns
+- **Fast models** (unsloth/Qwen3-4B-Instruct) provide consistent baseline detection with good performance
+- **Model choice impacts**: Deception likelihood scores may vary by 0.1-0.3 between models for the same content
+- **Recommendation**: Use premium models for critical deception analysis, fast models for high-volume processing
+
 ### Customer Support Analysis
 
 ```python
@@ -591,7 +597,7 @@ for participant, analysis in results.items():
 
 ## CLI Integration
 
-Use the `/intent` command in AbstractCore's interactive CLI:
+The intent analyzer is fully integrated into AbstractCore's CLI with the `/intent` command:
 
 ```bash
 # Start interactive CLI
@@ -602,6 +608,13 @@ python -m abstractcore.utils.cli --provider ollama --model gemma3:1b-it-qat
 /intent user              # Focus on user intents only
 /intent assistant         # Focus on assistant intents only
 ```
+
+**CLI Intent Analysis Features:**
+- **Real-time Analysis**: Analyze ongoing conversations as they develop
+- **Participant Focus**: Target specific participants for detailed psychological analysis
+- **Integrated Deception Detection**: Automatic authenticity assessment in conversational context
+- **Session Continuity**: Intent analysis considers full conversation history and context
+- **Provider Consistency**: Uses the same LLM provider as your conversation for coherent analysis
 
 ## Event Monitoring
 
@@ -666,7 +679,7 @@ except Exception as e:
 Model                           Speed    Quality  Cost    Best For
 unsloth/Qwen3-4B-Instruct      Fast     High     Free    Production, high-volume
 gemma3:1b-it-qat              Fast     High     Free    Basic intent analysis
-qwen3-coder:30b               Slow     Premium  Free    Complex psychology
+qwen/qwen3-30b-a3b-2507       Medium   Premium  Free    Sophisticated deception detection
 GPT-4o-mini                   Medium   Premium  Paid    Nuanced insights
 Claude-3.5                    Medium   Premium  Paid    Deep analysis
 ```
