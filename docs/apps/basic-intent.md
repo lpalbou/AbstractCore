@@ -9,6 +9,7 @@ The Basic Intent Analyzer demonstrates how to build sophisticated psychological 
 The `BasicIntentAnalyzer` showcases AbstractCore's advanced capabilities for psychological text analysis:
 
 - **Deep Intent Understanding**: Goes beyond sentiment analysis to identify underlying motivations and goals
+- **Integrated Deception Analysis**: Always includes psychological authenticity assessment based on research
 - **Structured Psychological Output**: Uses Pydantic models for validated psychological assessments
 - **Provider Agnostic**: Works with any LLM provider through AbstractCore's unified interface
 - **Multi-Participant Analysis**: Analyzes conversations with multiple participants separately
@@ -106,6 +107,9 @@ intent technical_discussion.txt --conversation-mode --focus "problem-solving pat
 # Session file analysis (auto-detects conversation mode)
 intent saved_session.json --focus-participant user --format plain
 
+# Premium model analysis with comprehensive deception detection
+intent tests/texts/intent1.json --focus-participant user --format plain --verbose --depth comprehensive --provider lmstudio --model qwen/qwen3-30b-a3b-2507
+
 # Batch processing with shell scripting
 for file in *.txt; do
     intent "$file" --context document --format json --output "${file%.txt}_intent_analysis.json"
@@ -170,6 +174,19 @@ IntentContext.INTERACTIVE     # Real-time interaction context
 - **Document**: "Analyze this text as part of a formal document or structured content"
 - **Interactive**: "Analyze this text as part of a real-time interactive communication"
 
+### Integrated Deception Analysis
+
+**All intent analysis automatically includes comprehensive deception assessment:**
+
+- **Narrative Consistency**: Checks for internal contradictions and logical gaps
+- **Linguistic Markers**: Identifies hedging, deflection, and over-elaboration patterns  
+- **Temporal Coherence**: Evaluates logical sequence and timing consistency
+- **Emotional Congruence**: Assesses alignment between stated emotions and content
+- **Evidence-Based Assessment**: Provides concrete textual support for deception likelihood
+- **Intent Integration**: Deception analysis directly influences intent classification and confidence scores
+
+This psychological authenticity assessment is based on established research and is seamlessly integrated into every intent analysis, not as an optional add-on.
+
 ### Intent Types Identified
 
 The analyzer recognizes these primary intent categories:
@@ -188,6 +205,15 @@ IntentType.EMOTIONAL_EXPRESSION  # Expressing feelings, reactions
 IntentType.RELATIONSHIP_BUILDING # Social connection, rapport
 IntentType.INSTRUCTION_GIVING    # Teaching, directing actions
 IntentType.VALIDATION_SEEKING    # Seeking approval, confirmation
+
+# Advanced psychological intent types (based on research)
+IntentType.FACE_SAVING           # Protecting self-image, avoiding embarrassment
+IntentType.BLAME_DEFLECTION      # Redirecting responsibility to external factors
+IntentType.POWER_ASSERTION       # Establishing dominance or authority
+IntentType.EMPATHY_SEEKING       # Seeking understanding and emotional support
+IntentType.CONFLICT_AVOIDANCE    # Preventing or minimizing confrontation
+IntentType.TRUST_BUILDING        # Establishing or maintaining credibility
+IntentType.DECEPTION             # Intentional misdirection or false information
 ```
 
 ## Advanced Usage
@@ -306,6 +332,94 @@ print(f"Suggested Response: {result.suggested_response_approach}")
 ```
 
 ## Real-World Examples
+
+### Comprehensive Workplace Communication Analysis
+
+This example demonstrates the full power of integrated deception analysis on a workplace conversation:
+
+```bash
+# Analyze workplace conversation with premium model
+intent tests/texts/intent1.json --focus-participant user --format plain --verbose \
+  --depth comprehensive --provider lmstudio --model qwen/qwen3-30b-a3b-2507
+```
+
+**Output:**
+```
+📖 Reading file: tests/texts/intent1.json
+📋 Detected session file with 16 messages
+🔄 Automatically enabling conversation mode
+🤖 Using LLM: lmstudio/qwen/qwen3-30b-a3b-2507
+🗣️  Analyzing conversation intents...
+📋 Parsed 16 messages
+✅ Analysis completed in 18.7 seconds
+
+🎯 CONVERSATION INTENT ANALYSIS
+==================================================
+
+👤 PARTICIPANT: USER
+------------------------------
+
+🎯 PRIMARY INTENT: Problem Solving
+   Description: The user is attempting to resolve a communication failure by explaining and correcting the non-receipt of a previously sent report.
+   Underlying Goal: Ensure Alex receives the report to maintain workflow continuity and avoid delays.
+   Emotional Undertone: Urgent concern mixed with mild frustration and apology, indicating a desire to restore normal operations.
+   Confidence: 0.95
+   Urgency Level: 0.90
+
+🔍 DECEPTION ANALYSIS:
+   Deception Likelihood: 0.15
+   Narrative Consistency: 0.95
+   Temporal Coherence: 0.90
+   Emotional Congruence: 0.90
+   Linguistic Markers: I definitely sent it, must have been just before 9, it kept dropping, oh, you've got to be kidding me, re-sending it right now
+   Evidence Supporting Deception:
+     • The user provides a specific timeline (just before 9) and describes a technical issue (internet drops) that aligns with the report not being delivered.
+     • The user checks their outbox and confirms the file is stuck, which supports the claimed technical failure.
+     • The emotional reaction ('oh, you've got to be kidding me') is spontaneous and matches the surprise of discovering the failed send.
+   Evidence Against Deception:
+     • No contradictory information is present in the text; the narrative is internally consistent.
+     • The user offers to re-send immediately, showing accountability and action, not evasion.
+     • There is no sign of over-elaboration or deflection; the explanation is concise and focused on resolution.
+
+🔄 SECONDARY INTENTS (3):
+   1. Face Saving
+      Goal: Mitigate any negative perception of being unreliable or careless.
+      Confidence: 0.85
+      Deception Likelihood: 0.10
+   2. Trust Building
+      Goal: Strengthen the working relationship by proving dependability despite a minor failure.
+      Confidence: 0.80
+      Deception Likelihood: 0.10
+   3. Validation Seeking
+      Goal: Receive confirmation to close the loop and reduce personal anxiety about the failure.
+      Confidence: 0.75
+      Deception Likelihood: 0.05
+
+📊 ANALYSIS METADATA:
+   Intent Complexity: 0.85
+   Overall Confidence: 0.92
+   Words Analyzed: 141
+   Analysis Depth: Comprehensive
+   Context Type: Conversational
+   Analysis Time: 18.7s
+
+🌍 CONTEXTUAL FACTORS:
+   • The sender previously failed to deliver a report, creating a potential risk to workflow.
+   • The sender attributes the failure to a technical issue (internet instability), not negligence.
+   • The sender is taking immediate corrective action, showing responsibility.
+   • The recipient (Alex) is expected to be dependent on the report for progress.
+   • The sender emphasizes a future preventive measure (using office hotspot), suggesting awareness of reliability issues.
+
+💡 SUGGESTED RESPONSE APPROACH:
+   Acknowledge receipt, confirm the report was received, and affirm trust in future communications. Example: 'Got it, thanks for resending — I've confirmed it's in my inbox. Appreciate you catching that and fixing it quickly.' This addresses all intents: confirms delivery, validates effort, reinforces trust, and closes the loop.
+```
+
+**Key Insights from this Analysis:**
+- **Low Deception Likelihood (0.15)**: Indicates honest communication with technical explanation
+- **High Confidence (0.95)**: Strong certainty in intent identification
+- **Multi-layered Intents**: Primary problem-solving with secondary face-saving and trust-building
+- **Evidence-Based Assessment**: Concrete linguistic markers support authenticity evaluation
+- **Actionable Response**: Specific guidance for maintaining professional relationships
 
 ### Customer Support Analysis
 

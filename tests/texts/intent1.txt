@@ -1,8 +1,6 @@
 The Characters
-
-Alex: Team lead, very busy, needs a report submitted by 9 AM.
-
-Ben: Team member who completely forgot to submit the report.
+- Alex: Team lead, very busy, needs a report submitted by 9 AM.
+- Ben: Team member who completely forgot to submit the report.
 
 The Scene : It's 10:30 AM. Ben has just finished the report that was due 90 minutes ago and is now trying to cover his mistake. The conversation takes place on the company's instant messaging app.
 

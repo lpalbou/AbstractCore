@@ -22,6 +22,8 @@ Options:
     --timeout <seconds>             HTTP timeout for LLM providers (default: 300)
     --help                          Show this help message
 
+Note: Deception analysis based on psychological markers is always included in intent analysis.
+
 Examples:
     # Single text analysis
     python -m abstractcore.apps.intent "I was wondering if you could help me understand this concept?"
@@ -34,6 +36,9 @@ Examples:
     python -m abstractcore.apps.intent email.txt --context document --focus "business objectives" --output analysis.json
     python -m abstractcore.apps.intent chat.txt --context conversational --depth surface --format plain
     python -m abstractcore.apps.intent query.txt --provider openai --model gpt-4o-mini --depth comprehensive
+    
+    # Comprehensive psychological analysis (includes deception assessment)
+    python -m abstractcore.apps.intent suspicious_message.txt --depth comprehensive
 """
 
 import argparse
@@ -258,6 +263,28 @@ def _format_single_analysis_plain(analysis, analysis_time: float = None) -> list
     lines.append(f"   Confidence: {analysis.primary_intent.confidence:.2f}")
     lines.append(f"   Urgency Level: {analysis.primary_intent.urgency_level:.2f}")
     
+    # Deception Analysis for Primary Intent (always included)
+    if analysis.primary_intent.deception_analysis:
+        deception = analysis.primary_intent.deception_analysis
+        lines.append(f"\n🔍 DECEPTION ANALYSIS:")
+        lines.append(f"   Deception Likelihood: {deception.deception_likelihood:.2f}")
+        lines.append(f"   Narrative Consistency: {deception.narrative_consistency:.2f}")
+        lines.append(f"   Temporal Coherence: {deception.temporal_coherence:.2f}")
+        lines.append(f"   Emotional Congruence: {deception.emotional_congruence:.2f}")
+        
+        if deception.linguistic_markers:
+            lines.append(f"   Linguistic Markers: {', '.join(deception.linguistic_markers)}")
+        
+        if deception.supporting_evidence:
+            lines.append(f"   Evidence Supporting Deception:")
+            for evidence in deception.supporting_evidence:
+                lines.append(f"     • {evidence}")
+        
+        if deception.contradicting_evidence:
+            lines.append(f"   Evidence Against Deception:")
+            for evidence in deception.contradicting_evidence:
+                lines.append(f"     • {evidence}")
+    
     # Secondary Intents
     if analysis.secondary_intents:
         lines.append(f"\n🔄 SECONDARY INTENTS ({len(analysis.secondary_intents)}):")
@@ -265,6 +292,13 @@ def _format_single_analysis_plain(analysis, analysis_time: float = None) -> list
             lines.append(f"   {i}. {intent.intent_type.value.replace('_', ' ').title()}")
             lines.append(f"      Goal: {intent.underlying_goal}")
             lines.append(f"      Confidence: {intent.confidence:.2f}")
+            
+            # Deception analysis for secondary intents (always included)
+            if intent.deception_analysis:
+                deception = intent.deception_analysis
+                lines.append(f"      Deception Likelihood: {deception.deception_likelihood:.2f}")
+                if deception.linguistic_markers:
+                    lines.append(f"      Linguistic Markers: {', '.join(deception.linguistic_markers[:2])}")  # Limit for brevity
     
     # Analysis Metadata
     lines.append(f"\n📊 ANALYSIS METADATA:")
@@ -323,6 +357,7 @@ Examples:
         default='underlying',
         help='Analysis depth (default: underlying)'
     )
+    
     
     parser.add_argument(
         '--focus',
@@ -518,7 +553,7 @@ Examples:
             if args.verbose:
                 print(f"📋 Parsed {len(messages)} messages")
             
-            # Analyze conversation intents
+            # Analyze conversation intents (deception analysis always included)
             result = analyzer.analyze_conversation_intents(
                 messages=messages,
                 focus_participant=args.focus_participant,
@@ -528,7 +563,7 @@ Examples:
             if args.verbose:
                 print("🎯 Analyzing text intents...")
             
-            # Analyze single text
+            # Analyze single text (deception analysis always included)
             result = analyzer.analyze_intent(
                 text=input_text,
                 context_type=context_type,
