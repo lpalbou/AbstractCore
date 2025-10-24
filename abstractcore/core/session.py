@@ -894,3 +894,48 @@ class BasicSession:
         }
         
         return self.facts
+
+    def analyze_intents(self, 
+                       focus_participant: Optional[str] = None,
+                       depth: str = "underlying",
+                       context_type: str = "conversational") -> Dict[str, Any]:
+        """
+        Analyze intents in the conversation using BasicIntentAnalyzer.
+        
+        Args:
+            focus_participant: Optional role to focus analysis on (e.g., "user", "assistant")
+            depth: Depth of intent analysis ("surface", "underlying", "comprehensive")
+            context_type: Context type for analysis ("conversational" is default for sessions)
+            
+        Returns:
+            Dict containing intent analysis results for each participant
+        """
+        if not self.messages:
+            return {}
+            
+        if not self.provider:
+            raise ValueError("No provider available for intent analysis")
+        
+        try:
+            from ..processing import BasicIntentAnalyzer, IntentDepth, IntentContext
+        except ImportError:
+            raise ImportError("BasicIntentAnalyzer not available")
+        
+        # Create intent analyzer
+        analyzer = BasicIntentAnalyzer(self.provider)
+        
+        # Convert depth and context strings to enums
+        depth_enum = IntentDepth(depth)
+        context_enum = IntentContext(context_type)
+        
+        # Convert session messages to the format expected by analyze_conversation_intents
+        message_dicts = [{"role": msg.role, "content": msg.content} for msg in self.messages]
+        
+        # Analyze conversation intents
+        results = analyzer.analyze_conversation_intents(
+            messages=message_dicts,
+            focus_participant=focus_participant,
+            depth=depth_enum
+        )
+        
+        return results

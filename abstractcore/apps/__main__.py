@@ -9,11 +9,13 @@ Available apps:
     summarizer    - Document summarization tool
     extractor     - Entity and relationship extraction tool
     judge         - Text evaluation and scoring tool
+    intent        - Intent analysis and motivation identification tool
 
 Examples:
     python -m abstractcore.apps summarizer document.txt
     python -m abstractcore.apps extractor report.txt --format json-ld
     python -m abstractcore.apps judge essay.txt --criteria clarity,accuracy
+    python -m abstractcore.apps intent "I need help with this problem" --depth comprehensive
     python -m abstractcore.apps <app> --help
 """
 
@@ -43,9 +45,14 @@ def main():
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         from .judge import main as judge_main
         judge_main()
+    elif app_name == "intent":
+        # Remove the app name from sys.argv and run intent analyzer
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        from .intent import main as intent_main
+        intent_main()
     else:
         print(f"Unknown app: {app_name}")
-        print("\nAvailable apps: summarizer, extractor, judge")
+        print("\nAvailable apps: summarizer, extractor, judge, intent")
         sys.exit(1)
 
 if __name__ == "__main__":
