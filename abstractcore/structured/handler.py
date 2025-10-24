@@ -6,6 +6,7 @@ import json
 import re
 import time
 from typing import Type, Dict, Any, Optional
+from enum import Enum
 from pydantic import BaseModel, ValidationError
 
 from .retry import FeedbackRetry
@@ -69,6 +70,9 @@ class StructuredOutputHandler:
                         max_retries=self.retry_strategy.max_attempts)
 
         try:
+            # Store provider for schema generation
+            self.current_provider = provider
+            
             # Strategy 1: Use native support if available
             if self._has_native_support(provider):
                 self.logger.debug("Using native structured output support",
@@ -242,6 +246,9 @@ class StructuredOutputHandler:
                 # Try parsing the extracted JSON
                 try:
                     data = json.loads(json_content)
+                    # Preprocess enum responses if we have mappings
+                    if hasattr(self, '_enum_mappings') and self._enum_mappings:
+                        data = self._preprocess_enum_response(data, self._enum_mappings)
                     result = response_model.model_validate(data)
                 except (json.JSONDecodeError, ValidationError) as parse_error:
                     # Try to fix the JSON
@@ -254,6 +261,9 @@ class StructuredOutputHandler:
                     if fixed_json:
                         try:
                             data = json.loads(fixed_json)
+                            # Preprocess enum responses if we have mappings
+                            if hasattr(self, '_enum_mappings') and self._enum_mappings:
+                                data = self._preprocess_enum_response(data, self._enum_mappings)
                             result = response_model.model_validate(data)
                             self.logger.info("JSON self-fix successful", attempt=attempt + 1)
                         except (json.JSONDecodeError, ValidationError) as fix_error:
@@ -350,6 +360,14 @@ class StructuredOutputHandler:
             Enhanced prompt with schema information
         """
         schema = response_model.model_json_schema()
+        
+        # For prompted providers, simplify enum schemas to avoid LLM confusion
+        # Store original enum mappings for response preprocessing
+        if hasattr(self, 'current_provider') and not self._has_native_support(self.current_provider):
+            schema, self._enum_mappings = self._simplify_enum_schemas(schema)
+        else:
+            self._enum_mappings = {}
+        
         model_name = response_model.__name__
 
         # Create example from schema
@@ -433,3 +451,113 @@ Important: Return ONLY the JSON object, no additional text or formatting."""
 
         # If nothing found, try the original content
         return content
+
+    def _simplify_enum_schemas(self, schema: Dict[str, Any]) -> tuple[Dict[str, Any], Dict[str, Dict[str, str]]]:
+        """
+        Simplify enum schemas for prompted providers while preserving enum mappings.
+        
+        Args:
+            schema: Original JSON schema
+            
+        Returns:
+            Tuple of (simplified_schema, enum_mappings)
+            enum_mappings maps field_paths to {enum_notation: enum_value}
+        """
+        if '$defs' not in schema:
+            return schema, {}
+        
+        # Find enum definitions and build mappings
+        enum_mappings = {}
+        enum_refs_to_simplify = {}
+        
+        for def_name, def_schema in schema['$defs'].items():
+            if def_schema.get('type') == 'string' and 'enum' in def_schema:
+                ref_key = f"#/$defs/{def_name}"
+                enum_values = def_schema['enum']
+                
+                # Build mapping from Python enum notation to actual values
+                enum_class_name = def_name
+                field_mappings = {}
+                for value in enum_values:
+                    # Map both "EnumClass.VALUE_NAME" and "<EnumClass.VALUE_NAME: 'value'>" patterns
+                    enum_notation = f"{enum_class_name}.{value.upper().replace(' ', '_')}"
+                    field_mappings[enum_notation] = value
+                    # Also handle the repr format
+                    repr_notation = f"<{enum_class_name}.{value.upper().replace(' ', '_')}: '{value}'>"
+                    field_mappings[repr_notation] = value
+                
+                enum_refs_to_simplify[ref_key] = {
+                    'type': 'string',
+                    'description': f"Use one of: {', '.join(enum_values)}. IMPORTANT: Use the exact string values, not Python enum notation.",
+                    'enum': enum_values
+                }
+                
+                # Store mappings by reference for later use
+                enum_mappings[ref_key] = field_mappings
+        
+        # Create simplified schema by replacing enum references
+        def replace_enum_refs(obj, path=""):
+            if isinstance(obj, dict):
+                if '$ref' in obj and obj['$ref'] in enum_refs_to_simplify:
+                    # Store the field path for this enum reference
+                    if path:
+                        enum_mappings[path] = enum_mappings[obj['$ref']]
+                    return enum_refs_to_simplify[obj['$ref']]
+                return {k: replace_enum_refs(v, f"{path}.{k}" if path else k) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [replace_enum_refs(item, path) for item in obj]
+            return obj
+        
+        simplified_schema = replace_enum_refs(schema)
+        
+        # Remove the $defs section since we've inlined the enum definitions
+        if '$defs' in simplified_schema:
+            # Only remove enum definitions, keep other definitions
+            remaining_defs = {k: v for k, v in simplified_schema['$defs'].items() 
+                            if not (v.get('type') == 'string' and 'enum' in v)}
+            if remaining_defs:
+                simplified_schema['$defs'] = remaining_defs
+            else:
+                del simplified_schema['$defs']
+        
+        return simplified_schema, enum_mappings
+
+    def _preprocess_enum_response(self, data: Dict[str, Any], enum_mappings: Dict[str, Dict[str, str]]) -> Dict[str, Any]:
+        """
+        Preprocess LLM response to convert Python enum notation back to valid enum values.
+        
+        Args:
+            data: Parsed JSON data from LLM
+            enum_mappings: Mappings from field paths to enum notation conversions
+            
+        Returns:
+            Preprocessed data with enum notations converted to valid values
+        """
+        if not enum_mappings:
+            return data
+        
+        def convert_enum_values(obj, path=""):
+            if isinstance(obj, dict):
+                result = {}
+                for key, value in obj.items():
+                    field_path = f"{path}.{key}" if path else key
+                    
+                    # Check if this field has enum mappings
+                    field_mappings = None
+                    for enum_path, mappings in enum_mappings.items():
+                        if field_path in enum_path or enum_path in field_path:
+                            field_mappings = mappings
+                            break
+                    
+                    if field_mappings and isinstance(value, str):
+                        # Try to convert enum notation to actual value
+                        converted_value = field_mappings.get(value, value)
+                        result[key] = converted_value
+                    else:
+                        result[key] = convert_enum_values(value, field_path)
+                return result
+            elif isinstance(obj, list):
+                return [convert_enum_values(item, path) for item in obj]
+            return obj
+        
+        return convert_enum_values(data)

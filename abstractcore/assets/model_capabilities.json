@@ -584,6 +584,22 @@
       "aliases": [],
       "max_tokens": 40960
     },
+    "qwen3-30b-a3b-2507": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "notes": "Qwen3-30B-A3B-Instruct-2507 with enhanced reasoning, coding, and mathematical skills. Supports up to 256K context, extendable to 1M tokens",
+      "source": "Alibaba Qwen3 2507 release",
+      "canonical_name": "qwen3-30b-a3b-2507",
+      "aliases": [
+        "qwen/qwen3-30b-a3b-2507"
+      ],
+      "max_tokens": 262144
+    },
     "qwen3-coder-30b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
