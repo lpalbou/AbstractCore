@@ -61,8 +61,8 @@ class DeceptionIndicators(BaseModel):
     linguistic_markers: List[str] = Field(description="Specific linguistic indicators of potential deception", max_length=5)
     temporal_coherence: float = Field(description="Logical flow and timing consistency (0-1)", ge=0, le=1)
     emotional_congruence: float = Field(description="Alignment between stated emotions and content (0-1)", ge=0, le=1)
-    supporting_evidence: List[str] = Field(description="Evidence supporting the deception assessment", max_length=3)
-    contradicting_evidence: List[str] = Field(description="Evidence against deception", max_length=3)
+    deception_evidence: List[str] = Field(description="Evidence indicating potential deception (contradictions, deflection, inconsistencies)", max_length=3)
+    authenticity_evidence: List[str] = Field(description="Evidence indicating authenticity (consistency, accountability, directness)", max_length=3)
 
 
 class IdentifiedIntent(BaseModel):
@@ -129,7 +129,8 @@ class BasicIntentAnalyzer:
         max_chunk_size: int = 8000,
         max_tokens: int = 32000,
         max_output_tokens: int = 8000,
-        timeout: Optional[float] = None
+        timeout: Optional[float] = None,
+        debug: bool = False
     ):
         """
         Initialize the intent analyzer
@@ -140,6 +141,7 @@ class BasicIntentAnalyzer:
             max_tokens: Maximum total tokens for LLM context (default 32000)
             max_output_tokens: Maximum tokens for LLM output generation (default 8000)
             timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
+            debug: Enable debug output including raw LLM responses (default False)
         """
         if llm is None:
             try:
@@ -172,6 +174,7 @@ class BasicIntentAnalyzer:
         else:
             self.llm = llm
         self.max_chunk_size = max_chunk_size
+        self.debug = debug
 
         # Default retry strategy with 3 attempts
         self.retry_strategy = FeedbackRetry(max_attempts=3)
@@ -237,8 +240,28 @@ class BasicIntentAnalyzer:
         # Build the prompt based on parameters (deception analysis always included)
         prompt = self._build_prompt(text, context_type, depth, focus)
 
+        if self.debug:
+            print(f"\n🔧 DEBUG: Prompt sent to LLM:")
+            print("=" * 80)
+            print(prompt)
+            print("=" * 80)
+
         # Use AbstractCore's structured output with retry strategy
-        response = self.llm.generate(prompt, response_model=LLMIntentOutput, retry_strategy=self.retry_strategy)
+        try:
+            response = self.llm.generate(prompt, response_model=LLMIntentOutput, retry_strategy=self.retry_strategy)
+        except Exception as e:
+            if self.debug:
+                print(f"\n❌ DEBUG: LLM generation failed with error: {e}")
+                # Try to get the raw response if available
+                try:
+                    raw_response = self.llm.generate(prompt)
+                    print(f"\n🔧 DEBUG: Raw LLM response (without structured output):")
+                    print("=" * 80)
+                    print(raw_response.content if hasattr(raw_response, 'content') else str(raw_response))
+                    print("=" * 80)
+                except Exception as raw_e:
+                    print(f"❌ DEBUG: Could not get raw response: {raw_e}")
+            raise
 
         # Extract the structured output
         llm_result = None
@@ -305,7 +328,7 @@ class BasicIntentAnalyzer:
 
             # Use a simplified output model for chunks
             class ChunkIntentAnalysis(BaseModel):
-                primary_intent_type: IntentType
+                primary_intent_type: str
                 intent_description: str
                 underlying_goal: str
                 confidence: float = Field(ge=0, le=1)
@@ -323,7 +346,7 @@ class BasicIntentAnalyzer:
                              chunk_number=i+1, 
                              total_chunks=len(chunks))
                 chunk_analyses.append(ChunkIntentAnalysis(
-                    primary_intent_type=IntentType.INFORMATION_SHARING,
+                    primary_intent_type="information_sharing",
                     intent_description=f"Section {i+1} intent analysis unavailable",
                     underlying_goal="Content processing failed",
                     confidence=0.1
@@ -331,7 +354,7 @@ class BasicIntentAnalyzer:
 
         # Step 2: Combine chunk analyses (Reduce phase)
         combined_analysis = "\n\n".join([
-            f"Section {i+1}:\nIntent Type: {ca.primary_intent_type.value}\nDescription: {ca.intent_description}\nUnderlying Goal: {ca.underlying_goal}\nConfidence: {ca.confidence:.2f}"
+            f"Section {i+1}:\nIntent Type: {ca.primary_intent_type}\nDescription: {ca.intent_description}\nUnderlying Goal: {ca.underlying_goal}\nConfidence: {ca.confidence:.2f}"
             for i, ca in enumerate(chunk_analyses)
         ])
 
@@ -469,7 +492,8 @@ Analyze these psychological indicators:
 For each intent, provide:
 - Deception likelihood (0-1 scale) - this should influence your overall confidence assessment
 - Specific linguistic markers that suggest deception or honesty
-- Evidence supporting and contradicting deception
+- Evidence indicating potential deception (contradictions, deflection, over-elaboration, inconsistencies)
+- Evidence indicating authenticity (consistency, accountability, directness, emotional congruence)
 - Narrative consistency and temporal/emotional coherence evaluation
 
 IMPORTANT: Deception analysis should inform your intent classification and confidence scores. High deception likelihood may indicate face-saving, blame-deflection, or outright deceptive intents."""
@@ -505,7 +529,15 @@ Requirements:
 - Focus on actionable insights for responding appropriately
 - When deception analysis is requested, provide evidence-based psychological assessment
 
-Generate a comprehensive structured analysis of the intents behind this communication."""
+Generate a comprehensive structured analysis of the intents behind this communication.
+
+CRITICAL JSON FORMAT REQUIREMENTS:
+- Respond with ONLY valid JSON - no other text before or after
+- Use double quotes for all strings and keys
+
+- All field names must match exactly: primary_intent, secondary_intents, intent_complexity, etc.
+- Arrays must use square brackets [], objects must use curly braces {{}}
+- No trailing commas, no comments, pure JSON only"""
 
         return prompt
 
@@ -574,7 +606,15 @@ Requirements:
 - Provide confidence scores and contextual factors
 - Suggest an appropriate response approach
 
-Create a unified intent analysis that captures the complete communication's purposes and motivations."""
+Create a unified intent analysis that captures the complete communication's purposes and motivations.
+
+CRITICAL JSON FORMAT REQUIREMENTS:
+- Respond with ONLY valid JSON - no other text before or after
+- Use double quotes for all strings and keys
+
+- All field names must match exactly: primary_intent, secondary_intents, intent_complexity, etc.
+- Arrays must use square brackets [], objects must use curly braces {{}}
+- No trailing commas, no comments, pure JSON only"""
 
     def analyze_conversation_intents(
         self,

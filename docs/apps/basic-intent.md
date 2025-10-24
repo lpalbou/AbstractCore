@@ -339,8 +339,7 @@ This example demonstrates the full power of integrated deception analysis on a w
 
 ```bash
 # Analyze workplace conversation with premium model
-intent tests/texts/intent1.json --focus-participant user --format plain --verbose \
-  --depth comprehensive --provider lmstudio --model qwen/qwen3-30b-a3b-2507
+python -m abstractcore.apps intent tests/texts/intent1.json --focus-participant user --format plain --verbose --depth comprehensive --provider lmstudio --model openai/gpt-oss-20b
 ```
 
 **Output:**
@@ -348,11 +347,10 @@ intent tests/texts/intent1.json --focus-participant user --format plain --verbos
 📖 Reading file: tests/texts/intent1.json
 📋 Detected session file with 16 messages
 🔄 Automatically enabling conversation mode
-🤖 Using LLM: lmstudio/qwen/qwen3-30b-a3b-2507
+🤖 Using LLM: lmstudio/openai/gpt-oss-20b
 🗣️  Analyzing conversation intents...
 📋 Parsed 16 messages
-✅ Analysis completed in 18.7 seconds
-
+✅ Analysis completed in 11.8 seconds
 🎯 CONVERSATION INTENT ANALYSIS
 ==================================================
 
@@ -360,66 +358,153 @@ intent tests/texts/intent1.json --focus-participant user --format plain --verbos
 ------------------------------
 
 🎯 PRIMARY INTENT: Problem Solving
-   Description: The user is attempting to resolve a communication failure by explaining and correcting the non-receipt of a previously sent report.
-   Underlying Goal: Ensure Alex receives the report to maintain workflow continuity and avoid delays.
-   Emotional Undertone: Urgent concern mixed with mild frustration and apology, indicating a desire to restore normal operations.
+   Description: The sender is trying to resolve the issue of whether the report was received and ensure it reaches the recipient.
+   Underlying Goal: To confirm delivery of the report and eliminate uncertainty about its receipt.
+   Emotional Undertone: Frustration followed by relief and apology
    Confidence: 0.95
-   Urgency Level: 0.90
+   Urgency Level: 0.80
 
 🔍 DECEPTION ANALYSIS:
-   Deception Likelihood: 0.15
-   Narrative Consistency: 0.95
-   Temporal Coherence: 0.90
+   Deception Likelihood: 0.10
+   Narrative Consistency: 0.90
+   Temporal Coherence: 0.95
    Emotional Congruence: 0.90
-   Linguistic Markers: I definitely sent it, must have been just before 9, it kept dropping, oh, you've got to be kidding me, re-sending it right now
-   Evidence Supporting Deception:
-     • The user provides a specific timeline (just before 9) and describes a technical issue (internet drops) that aligns with the report not being delivered.
-     • The user checks their outbox and confirms the file is stuck, which supports the claimed technical failure.
-     • The emotional reaction ('oh, you've got to be kidding me') is spontaneous and matches the surprise of discovering the failed send.
-   Evidence Against Deception:
-     • No contradictory information is present in the text; the narrative is internally consistent.
-     • The user offers to re-send immediately, showing accountability and action, not evasion.
-     • There is no sign of over-elaboration or deflection; the explanation is concise and focused on resolution.
+   Linguistic Markers: maybe, just before 9
+   Evidence Indicating Deception:
+     • Possible over-elaboration about timing
+     • Deflection when the report was not in sent folder
+   Evidence Indicating Authenticity:
+     • Direct admission of internet trouble
+     • Clear steps taken to resend the file
+     • Apology and promise to double-check
 
 🔄 SECONDARY INTENTS (3):
    1. Face Saving
-      Goal: Mitigate any negative perception of being unreliable or careless.
+      Goal: To avoid blame or negative perception from the recipient.
       Confidence: 0.85
-      Deception Likelihood: 0.10
-   2. Trust Building
-      Goal: Strengthen the working relationship by proving dependability despite a minor failure.
-      Confidence: 0.80
-      Deception Likelihood: 0.10
-   3. Validation Seeking
-      Goal: Receive confirmation to close the loop and reduce personal anxiety about the failure.
-      Confidence: 0.75
       Deception Likelihood: 0.05
+      Linguistic Markers: sorry, thank god
+   2. Trust Building
+      Goal: To maintain a trustworthy relationship with the recipient.
+      Confidence: 0.75
+      Deception Likelihood: 0.07
+      Linguistic Markers: will make sure, next time
+   3. Emotional Expression
+      Goal: To communicate feelings and possibly elicit empathy from the recipient.
+      Confidence: 0.60
+      Deception Likelihood: 0.02
+      Linguistic Markers: tonight, technology
 
 📊 ANALYSIS METADATA:
-   Intent Complexity: 0.85
+   Intent Complexity: 0.60
    Overall Confidence: 0.92
    Words Analyzed: 141
    Analysis Depth: Comprehensive
    Context Type: Conversational
-   Analysis Time: 18.7s
+   Analysis Time: 11.8s
 
 🌍 CONTEXTUAL FACTORS:
-   • The sender previously failed to deliver a report, creating a potential risk to workflow.
-   • The sender attributes the failure to a technical issue (internet instability), not negligence.
-   • The sender is taking immediate corrective action, showing responsibility.
-   • The recipient (Alex) is expected to be dependent on the report for progress.
-   • The sender emphasizes a future preventive measure (using office hotspot), suggesting awareness of reliability issues.
+   • Technical internet issues
+   • File size potentially causing timeout
+   • Outbox retention indicating email not sent
+   • Urgency to deliver report for a task
 
 💡 SUGGESTED RESPONSE APPROACH:
-   Acknowledge receipt, confirm the report was received, and affirm trust in future communications. Example: 'Got it, thanks for resending — I've confirmed it's in my inbox. Appreciate you catching that and fixing it quickly.' This addresses all intents: confirms delivery, validates effort, reinforces trust, and closes the loop.
+   Acknowledge receipt, express appreciation for the quick resend, reassure that the file was received without issues, and offer any further assistance if needed.
 ```
 
 **Key Insights from this Analysis:**
-- **Low Deception Likelihood (0.15)**: Indicates honest communication with technical explanation
+- **Low Deception Likelihood (0.10)**: Indicates honest communication with technical explanation
 - **High Confidence (0.95)**: Strong certainty in intent identification
 - **Multi-layered Intents**: Primary problem-solving with secondary face-saving and trust-building
 - **Evidence-Based Assessment**: Concrete linguistic markers support authenticity evaluation
 - **Actionable Response**: Specific guidance for maintaining professional relationships
+
+### Workplace Blame Deflection Analysis
+
+This second example demonstrates the analyzer's ability to detect deceptive communication patterns and blame deflection:
+
+```bash
+# Analyze assistant communication showing deflection patterns
+python -m abstractcore.apps intent tests/texts/intent2.json --focus-participant assistant --format plain --verbose --depth comprehensive --provider lmstudio --model openai/gpt-oss-20b
+```
+
+**Output:**
+```
+📖 Reading file: tests/texts/intent2.json
+📋 Detected session file with 11 messages
+🔄 Automatically enabling conversation mode
+🤖 Using LLM: lmstudio/openai/gpt-oss-20b
+🗣️  Analyzing conversation intents...
+📋 Parsed 11 messages
+✅ Analysis completed in 12.6 seconds
+🎯 CONVERSATION INTENT ANALYSIS
+==================================================
+
+👤 PARTICIPANT: ASSISTANT
+------------------------------
+
+🎯 PRIMARY INTENT: Blame Deflection
+   Description: The speaker attempts to shift responsibility for the messy launch files onto external factors and downplays personal fault.
+   Underlying Goal: Maintain a competent image by avoiding admission of failure or negligence.
+   Emotional Undertone: Frustration mixed with defensiveness
+   Confidence: 0.88
+   Urgency Level: 0.70
+
+🔍 DECEPTION ANALYSIS:
+   Deception Likelihood: 0.32
+   Narrative Consistency: 0.75
+   Temporal Coherence: 0.80
+   Emotional Congruence: 0.60
+   Linguistic Markers: I tried, not my fault, exploded, deflection
+   Evidence Indicating Deception:
+     • Contradiction between claiming effort and denying fault
+     • Deflection of blame onto external events
+   Evidence Indicating Authenticity:
+     • Acknowledgement of effort
+     • Directness in stating actions taken
+
+🔄 SECONDARY INTENTS (3):
+   1. Information Sharing
+      Goal: Keep David informed so he can take action or adjust expectations.
+      Confidence: 0.78
+      Deception Likelihood: 0.15
+      Linguistic Markers: total mess, buried
+   2. Emotional Expression
+      Goal: Vent feelings to reduce personal tension and possibly elicit empathy from David.
+      Confidence: 0.65
+      Deception Likelihood: 0.10
+      Linguistic Markers: manic, buried
+   3. Relationship Building
+      Goal: Maintain a positive professional relationship despite the mishap.
+      Confidence: 0.50
+      Deception Likelihood: 0.20
+      Linguistic Markers: you wouldn't believe it, You're so good at handling that account
+
+📊 ANALYSIS METADATA:
+   Intent Complexity: 0.72
+   Overall Confidence: 0.84
+   Words Analyzed: 136
+   Analysis Depth: Comprehensive
+   Context Type: Conversational
+   Analysis Time: 12.6s
+
+🌍 CONTEXTUAL FACTORS:
+   • High-stakes product launch
+   • Internal communication with colleague David
+   • Presence of external obstacles (engineer Mark, fire drill)
+   • Need to maintain professional reputation
+
+💡 SUGGESTED RESPONSE APPROACH:
+   Acknowledge the frustration, clarify what actions have been taken so far, gently probe for any gaps in effort to assess responsibility, and offer concrete next steps or assistance. Show empathy while steering the conversation toward resolution rather than blame.
+```
+
+**Key Insights from this Contrasting Analysis:**
+- **Higher Deception Likelihood (0.32)**: Indicates potential dishonesty and responsibility avoidance
+- **Blame Deflection Pattern**: Primary intent focused on shifting responsibility to external factors
+- **Lower Emotional Congruence (0.60)**: Suggests misalignment between stated emotions and actual content
+- **Defensive Communication**: Linguistic markers reveal defensive posturing and fault avoidance
+- **Professional Image Protection**: Multiple intents converge on maintaining competent appearance despite failure
 
 ### Customer Support Analysis
 

@@ -275,14 +275,14 @@ def _format_single_analysis_plain(analysis, analysis_time: float = None) -> list
         if deception.linguistic_markers:
             lines.append(f"   Linguistic Markers: {', '.join(deception.linguistic_markers)}")
         
-        if deception.supporting_evidence:
-            lines.append(f"   Evidence Supporting Deception:")
-            for evidence in deception.supporting_evidence:
+        if deception.deception_evidence:
+            lines.append(f"   Evidence Indicating Deception:")
+            for evidence in deception.deception_evidence:
                 lines.append(f"     • {evidence}")
         
-        if deception.contradicting_evidence:
-            lines.append(f"   Evidence Against Deception:")
-            for evidence in deception.contradicting_evidence:
+        if deception.authenticity_evidence:
+            lines.append(f"   Evidence Indicating Authenticity:")
+            for evidence in deception.authenticity_evidence:
                 lines.append(f"     • {evidence}")
     
     # Secondary Intents
@@ -435,6 +435,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Show debug information including raw LLM responses and JSON parsing details'
+    )
+    
+    parser.add_argument(
         '--timeout',
         type=int,
         default=300,
@@ -524,7 +530,8 @@ Examples:
             max_chunk_size=args.chunk_size,
             max_tokens=args.max_tokens,
             max_output_tokens=args.max_output_tokens,
-            timeout=args.timeout
+            timeout=args.timeout,
+            debug=args.debug
         )
         
         # Convert string enums
