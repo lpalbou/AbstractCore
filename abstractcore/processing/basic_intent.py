@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 
 
 class IntentType(Enum):
-    """Primary intent categories"""
+    """Primary intent categories based on psychological research"""
     INFORMATION_SEEKING = "information_seeking"      # Asking questions, requesting data
     INFORMATION_SHARING = "information_sharing"      # Providing facts, explanations
     PROBLEM_SOLVING = "problem_solving"              # Seeking or offering solutions
@@ -29,6 +29,14 @@ class IntentType(Enum):
     RELATIONSHIP_BUILDING = "relationship_building"  # Social connection, rapport
     INSTRUCTION_GIVING = "instruction_giving"        # Teaching, directing actions
     VALIDATION_SEEKING = "validation_seeking"        # Seeking approval, confirmation
+    # New intent types from psychological research
+    FACE_SAVING = "face_saving"                      # Protecting self-image, avoiding embarrassment
+    BLAME_DEFLECTION = "blame_deflection"            # Redirecting responsibility to external factors
+    POWER_ASSERTION = "power_assertion"              # Establishing dominance or authority
+    EMPATHY_SEEKING = "empathy_seeking"              # Seeking understanding and emotional support
+    CONFLICT_AVOIDANCE = "conflict_avoidance"        # Preventing or minimizing confrontation
+    TRUST_BUILDING = "trust_building"                # Establishing or maintaining credibility
+    DECEPTION = "deception"                          # Intentional misdirection or false information
 
 
 class IntentDepth(Enum):
@@ -46,6 +54,17 @@ class IntentContext(Enum):
     INTERACTIVE = "interactive"   # Real-time interaction context
 
 
+class DeceptionIndicators(BaseModel):
+    """Deception analysis indicators based on psychological research"""
+    deception_likelihood: float = Field(description="Likelihood of deceptive intent (0-1)", ge=0, le=1)
+    narrative_consistency: float = Field(description="Internal consistency of the narrative (0-1)", ge=0, le=1)
+    linguistic_markers: List[str] = Field(description="Specific linguistic indicators of potential deception", max_length=5)
+    temporal_coherence: float = Field(description="Logical flow and timing consistency (0-1)", ge=0, le=1)
+    emotional_congruence: float = Field(description="Alignment between stated emotions and content (0-1)", ge=0, le=1)
+    supporting_evidence: List[str] = Field(description="Evidence supporting the deception assessment", max_length=3)
+    contradicting_evidence: List[str] = Field(description="Evidence against deception", max_length=3)
+
+
 class IdentifiedIntent(BaseModel):
     """Single identified intent with details"""
     intent_type: IntentType = Field(description="Primary intent category")
@@ -54,6 +73,7 @@ class IdentifiedIntent(BaseModel):
     underlying_goal: str = Field(description="What the person ultimately wants to achieve")
     emotional_undertone: str = Field(description="Emotional context or undertone")
     urgency_level: float = Field(description="How urgent or pressing this intent is (0-1)", ge=0, le=1)
+    deception_analysis: DeceptionIndicators = Field(description="Deception evaluation based on psychological markers - always included in intent analysis")
 
 
 class LLMIntentOutput(BaseModel):
@@ -173,7 +193,7 @@ class BasicIntentAnalyzer:
             focus: Optional specific aspect to focus on (e.g., "business motivations", "emotional drivers")
 
         Returns:
-            IntentAnalysisOutput: Structured intent analysis with metadata
+            IntentAnalysisOutput: Structured intent analysis with metadata including deception assessment
 
         Example:
             >>> from abstractcore import create_llm
@@ -214,7 +234,7 @@ class BasicIntentAnalyzer:
     ) -> IntentAnalysisOutput:
         """Analyze intent for a single chunk of text"""
 
-        # Build the prompt based on parameters
+        # Build the prompt based on parameters (deception analysis always included)
         prompt = self._build_prompt(text, context_type, depth, focus)
 
         # Use AbstractCore's structured output with retry strategy
@@ -434,10 +454,30 @@ class BasicIntentAnalyzer:
         if focus:
             focus_instruction = f"\nPay special attention to: {focus}\nEnsure the analysis addresses this focus area thoroughly."
 
+        # Deception analysis is always integrated into intent analysis
+        deception_instruction = """
+
+DECEPTION & AUTHENTICITY ANALYSIS: As part of your intent analysis, evaluate the authenticity and potential deceptive elements:
+
+Analyze these psychological indicators:
+1. NARRATIVE CONSISTENCY: Check for internal contradictions, timeline inconsistencies, or logical gaps
+2. LINGUISTIC MARKERS: Look for hedging language ("I think", "maybe"), deflection, over-elaboration, or unusual specificity
+3. TEMPORAL COHERENCE: Evaluate if the sequence of events makes logical sense
+4. EMOTIONAL CONGRUENCE: Assess if stated emotions align with the content and context
+5. PARAPRAXIS: Notice any slips, corrections, or unintended revelations
+
+For each intent, provide:
+- Deception likelihood (0-1 scale) - this should influence your overall confidence assessment
+- Specific linguistic markers that suggest deception or honesty
+- Evidence supporting and contradicting deception
+- Narrative consistency and temporal/emotional coherence evaluation
+
+IMPORTANT: Deception analysis should inform your intent classification and confidence scores. High deception likelihood may indicate face-saving, blame-deflection, or outright deceptive intents."""
+
         prompt = f"""Analyze the following text to identify and understand the intents, motivations, and goals behind the communication.
 
 {context_instructions[context_type]}
-{depth_instructions[depth]}{focus_instruction}
+{depth_instructions[depth]}{focus_instruction}{deception_instruction}
 
 Text to analyze:
 {text}
@@ -451,7 +491,7 @@ Your task is to identify:
 6. RESPONSE APPROACH: How someone should respond to address these intents effectively
 
 For each intent, consider:
-- What type of intent it is (information seeking, problem solving, persuasion, etc.)
+- What type of intent it is (information seeking, problem solving, persuasion, face-saving, deception, etc.)
 - How confident you are in identifying this intent
 - What emotional undertones are present
 - How urgent or pressing this intent seems to be
@@ -463,6 +503,7 @@ Requirements:
 - Evaluate the complexity and layering of multiple intents
 - Provide confidence scores for your assessments
 - Focus on actionable insights for responding appropriately
+- When deception analysis is requested, provide evidence-based psychological assessment
 
 Generate a comprehensive structured analysis of the intents behind this communication."""
 
@@ -550,7 +591,7 @@ Create a unified intent analysis that captures the complete communication's purp
             depth: Depth of intent analysis to perform
 
         Returns:
-            Dict mapping participant roles to their intent analyses
+            Dict mapping participant roles to their intent analyses (including deception assessment)
 
         Example:
             >>> analyzer = BasicIntentAnalyzer()
@@ -591,7 +632,7 @@ Create a unified intent analysis that captures the complete communication's purp
                         message_count=len(participant_messages[role]),
                         text_length=len(combined_text))
             
-            # Analyze with conversational context
+            # Analyze with conversational context (deception analysis always included)
             analysis = self.analyze_intent(
                 combined_text,
                 context_type=IntentContext.CONVERSATIONAL,

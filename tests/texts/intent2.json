@@ -1,0 +1,124 @@
+{
+  "schema_version": "session-archive/v1",
+  "session": {
+    "id": "intent_analysis_example_002",
+    "created_at": "2024-10-24T14:30:00.000Z",
+    "provider": "huggingface",
+    "model": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "model_params": null,
+    "system_prompt": "You are analyzing a workplace conversation between David (A-player account manager) and Maria (colleague who was supposed to cover a client call) regarding a missed client check-in.",
+    "tool_registry": null,
+    "settings": {
+      "auto_compact": false,
+      "auto_compact_threshold": 6000
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are analyzing a workplace conversation between David (A-player account manager) and Maria (colleague who was supposed to cover a client call) regarding a missed client check-in.",
+      "timestamp": "2024-10-24T14:30:00.000Z",
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "content": "Hey Maria, quick one. I just got an email from Henderson. He said he never got his check-in call yesterday. What happened?",
+      "timestamp": "2024-10-24T14:30:00.000Z",
+      "metadata": {
+        "name": "David",
+        "context": "A-player account manager, concerned about client complaint, seeking factual information",
+        "tone": "Direct but professional inquiry"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Oh, hey David! Gosh, yesterday was just manic, you wouldn't believe it. The new product launch files are a total mess.",
+      "timestamp": "2024-10-24T14:30:30.000Z",
+      "metadata": {
+        "name": "Maria",
+        "context": "Colleague who missed the call, immediately deflecting to other issues",
+        "tone": "Deflective, avoiding direct answer"
+      }
+    },
+    {
+      "role": "user",
+      "content": "I heard. But what about the Henderson call? Did you not get a chance to connect?",
+      "timestamp": "2024-10-24T14:31:00.000Z",
+      "metadata": {
+        "name": "David",
+        "context": "Redirecting conversation back to the specific issue",
+        "tone": "Persistent but still professional"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "No, I mean, I definitely tried to get a hold of them. I had that slot blocked off for you.",
+      "timestamp": "2024-10-24T14:31:30.000Z",
+      "metadata": {
+        "name": "Maria",
+        "context": "Claiming she tried while being vague about actual actions",
+        "tone": "Defensive, using vague language"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Tried? What do you mean? Did you call and it went to voicemail?",
+      "timestamp": "2024-10-24T14:32:00.000Z",
+      "metadata": {
+        "name": "David",
+        "context": "Pressing for specific details about what 'tried' means",
+        "tone": "Seeking clarification, becoming more direct"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "You know how that office is, they're always impossible to reach. Honestly, David, I don't know how you manage them. You're so good at handling that account.",
+      "timestamp": "2024-10-24T14:32:30.000Z",
+      "metadata": {
+        "name": "Maria",
+        "context": "Deflecting blame to client, using flattery to change subject",
+        "tone": "Deflective, using compliments as distraction"
+      }
+    },
+    {
+      "role": "user",
+      "content": "So... you didn't actually speak to anyone?",
+      "timestamp": "2024-10-24T14:33:00.000Z",
+      "metadata": {
+        "name": "David",
+        "context": "Direct question cutting through the deflection",
+        "tone": "Direct, seeking clear yes/no answer"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "Like I said, that part of the afternoon just got completely buried. I must have just gotten pulled into the fire drill with the launch. Did you hear what Mark from engineering said?",
+      "timestamp": "2024-10-24T14:33:30.000Z",
+      "metadata": {
+        "name": "Maria",
+        "context": "Still avoiding direct answer, introducing new distraction topic",
+        "tone": "Evasive, attempting topic change"
+      }
+    },
+    {
+      "role": "user",
+      "content": "Okay. So you didn't make the call.",
+      "timestamp": "2024-10-24T14:34:00.000Z",
+      "metadata": {
+        "name": "David",
+        "context": "Making a direct statement based on the evasive responses",
+        "tone": "Conclusive, cutting through evasion"
+      }
+    },
+    {
+      "role": "assistant",
+      "content": "I didn't say that! I said I tried. It wasn't my fault the whole afternoon exploded. Anyway, it was just a routine check-in, right? No big deal. I can call him right now for you.",
+      "timestamp": "2024-10-24T14:34:30.000Z",
+      "metadata": {
+        "name": "Maria",
+        "context": "Defensive reaction, minimizing importance, offering to fix now",
+        "tone": "Defensive, minimizing, deflecting responsibility"
+      }
+    }
+  ]
+}
