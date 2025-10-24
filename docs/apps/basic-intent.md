@@ -1,12 +1,12 @@
 # Basic Intent Analyzer
 
-The Basic Intent Analyzer demonstrates how to build sophisticated psychological analysis capabilities on top of AbstractCore using advanced zero-shot structured prompting techniques for understanding human motivations and goals.
+The Basic Intent Analyzer demonstrates how to build psychological analysis capabilities on top of AbstractCore using zero-shot structured prompting techniques for understanding human motivations and goals.
 
-**💡 Recommended Setup**: For best performance, use the free local model `gemma3:1b-it-qat` with Ollama, which provides fast processing (25-30s), high quality (93%+ confidence), and zero API costs for intent analysis.
+**💡 Recommended Setup**: For good performance, use the free local model `gemma3:1b-it-qat` with Ollama, which provides fast processing (25-30s), high quality (93%+ confidence), and zero API costs for intent analysis.
 
 ## Overview
 
-The `BasicIntentAnalyzer` showcases AbstractCore's advanced capabilities for psychological text analysis:
+The `BasicIntentAnalyzer` showcases AbstractCore's capabilities for psychological text analysis:
 
 - **Deep Intent Understanding**: Goes beyond sentiment analysis to identify underlying motivations and goals
 - **Integrated Deception Analysis**: Always includes psychological authenticity assessment based on research
@@ -667,19 +667,19 @@ except Exception as e:
 
 **Recommended for Production:**
 - **HuggingFace unsloth/Qwen3-4B-Instruct-2507-GGUF**: Fast (25-30s), high quality (93%+ confidence), cost-effective
-- **Ollama gemma3:1b-it-qat**: Fast alternative, excellent for basic intent analysis
+- **Ollama gemma3:1b-it-qat**: Fast alternative, good for basic intent analysis
 - **Ollama qwen3-coder:30b**: Premium quality for complex psychological analysis
 
 **Cloud Alternatives:**
-- **OpenAI GPT-4o-mini**: Excellent for nuanced psychological insights
-- **Anthropic Claude**: Superior for analytical and comprehensive depth analysis
+- **OpenAI GPT-4o-mini**: Good for nuanced psychological insights
+- **Anthropic Claude**: Good for analytical and comprehensive depth analysis
 
 **Performance Comparison:**
 ```
 Model                           Speed    Quality  Cost    Best For
 unsloth/Qwen3-4B-Instruct      Fast     High     Free    Production, high-volume
 gemma3:1b-it-qat              Fast     High     Free    Basic intent analysis
-qwen/qwen3-30b-a3b-2507       Medium   Premium  Free    Sophisticated deception detection
+qwen/qwen3-30b-a3b-2507       Medium   Premium  Free    Deception detection
 GPT-4o-mini                   Medium   Premium  Paid    Nuanced insights
 Claude-3.5                    Medium   Premium  Paid    Deep analysis
 ```
@@ -687,7 +687,7 @@ Claude-3.5                    Medium   Premium  Paid    Deep analysis
 ### Cost Optimization
 
 ```python
-# Free local processing with excellent quality
+# Free local processing with good quality
 llm = create_llm("huggingface", model="unsloth/Qwen3-4B-Instruct-2507-GGUF")
 analyzer = BasicIntentAnalyzer(llm)
 
@@ -714,7 +714,7 @@ For long documents:
 
 ### Prompt Engineering
 
-The intent analyzer uses sophisticated prompts that:
+The intent analyzer uses prompts that:
 
 - **Adapt to depth**: Different psychological analysis levels for surface vs comprehensive
 - **Scale with context**: Appropriate guidance for standalone vs conversational analysis
@@ -881,7 +881,7 @@ class CustomIntentAnalyzer(BasicIntentAnalyzer):
 
 ## Conclusion
 
-The Basic Intent Analyzer demonstrates how AbstractCore's infrastructure enables building sophisticated psychological analysis capabilities with minimal complexity. It showcases:
+The Basic Intent Analyzer demonstrates how AbstractCore's infrastructure enables building psychological analysis capabilities with minimal complexity. It showcases:
 
 - **Deep psychological insights** with comprehensive intent understanding
 - **Clean API design** with powerful psychological customization options

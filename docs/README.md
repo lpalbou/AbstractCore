@@ -34,7 +34,7 @@ Complete navigation guide for AbstractCore documentation.
 ### Advanced Topics
 
 - **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
-- **[Internal CLI](internal-cli.md)** - Built-in CLI tool for testing and exploration
+- **[AbstractCore CLI](acore-cli.md)** - Built-in CLI tool for testing and exploration
 
 ## 🌐 Server (Optional HTTP REST API)
 
@@ -122,10 +122,11 @@ docs/
 │   ├── apps/                   # Production-ready CLI applications
 │   │   ├── basic-summarizer.md     # Document summarization
 │   │   ├── basic-extractor.md      # Entity/relationship extraction
-│   │   └── basic-judge.md          # Text evaluation and scoring
+│   │   ├── basic-judge.md          # Text evaluation and scoring
+│   │   └── basic-intent.md         # Intent analysis & deception detection
 │
 ├── Specialized/
-│   ├── internal-cli.md         # Interactive CLI tool for development
+│   ├── acore-cli.md           # Interactive CLI tool for development
 │   ├── architecture.md         # System architecture
 │   ├── comparison.md           # vs alternatives
 │   └── chat-compaction.md      # History management
@@ -220,7 +221,7 @@ docs/
 ### For Advanced Users
 1. [Architecture](architecture.md) - Understand system
 2. [Tool Call Syntax Rewriting](tool-syntax-rewriting.md) - Format conversion
-3. [Internal CLI](internal-cli.md) - Advanced CLI usage
+3. [AbstractCore CLI](acore-cli.md) - Advanced CLI usage
 4. [Capabilities](capabilities.md) - Deep dive into features
 
 ## 🔗 External Links

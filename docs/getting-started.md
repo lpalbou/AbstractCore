@@ -334,7 +334,7 @@ response = llm.generate(
   - Useful for testing, debugging, and consistent results
   - Provider support: OpenAI ✅, HuggingFace ✅, Ollama ✅, LMStudio ✅, MLX ✅, Anthropic ⚠️*
   - *Anthropic issues UserWarning when seed provided (use temperature=0.0 for consistency)
-  - **Empirically verified**: All providers except Anthropic achieve perfect determinism with seed + temperature=0
+  - **Empirically verified**: All providers except Anthropic achieve determinism with seed + temperature=0
 
 #### Session-Level Parameters
 
@@ -406,7 +406,7 @@ class User(BaseModel):
 
 For quick testing and exploration, AbstractCore includes a basic CLI tool:
 
-**[📋 Complete Internal CLI Guide →](internal-cli.md)**
+**[📋 Complete AbstractCore CLI Guide →](acore-cli.md)**
 
 ```bash
 # Interactive chat with any provider
@@ -429,9 +429,11 @@ python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-l
 - `/stream` - Toggle streaming mode
 - `/debug` - Toggle debug output
 - `/history [n]` - Show conversation history or last n interactions
+- `/intent [participant]` - Analyze psychological intents and detect deception
+- `/facts [file]` - Extract structured facts from conversation
+- `/judge` - Evaluate conversation quality with feedback
 - `/model <provider:model>` - Switch providers/models
 - `/compact` - Compact chat history using fast local model
-- `/facts [file]` - Extract facts from conversation (display or save as JSON-LD)
 - `/system [prompt]` - Show or change system prompt
 
 **Built-in Tools:**
@@ -448,7 +450,7 @@ AbstractCore includes a comprehensive set of tools for file operations, web sear
 
 **For detailed tool documentation and examples, see:** [`abstractcore/tools/common_tools.py`](../abstractcore/tools/common_tools.py)
 
-> **Note**: This CLI is a basic demonstrator. For production applications requiring complex reasoning or advanced agent behaviors, build custom solutions using the AbstractCore framework directly.
+> **Note**: This CLI is a basic demonstrator. For production applications requiring complex reasoning or multi-step agent behaviors, build custom solutions using the AbstractCore framework directly.
 
 ## Understanding GenerateResponse
 
@@ -496,7 +498,7 @@ Now that you have the basics:
 2. **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
 3. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
 4. **[Provider Setup](prerequisites.md)** - Detailed provider configuration
-5. **[Use Internal CLI](internal-cli.md)** - Built-in testing CLI with advanced features
+5. **[Use AbstractCore CLI](acore-cli.md)** - Built-in testing CLI with advanced features
 6. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and cannot do
 7. **[Read the API Reference](api-reference.md)** - Complete API documentation
 8. **[Check Advanced Features](../README.md#core-features)** - Embeddings, events, retry logic
