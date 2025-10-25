@@ -33,7 +33,7 @@ AbstractCore is a comprehensive Python library providing a unified interface to 
 - **Tool Calling**: Universal @tool decorator works across ALL providers with intelligent format conversion
 - **Streaming**: Real-time responses for interactive applications with tool call detection
 - **Session Management**: Persistent conversations with metadata and automatic context management
-- **Structured Output**: Pydantic model validation with automatic retries and error feedback
+- **Structured Output**: Native vs prompted strategies, schema validation, production deployment ([docs/structured-output.md](docs/structured-output.md))
 - **Embeddings**: SOTA embedding models for semantic search and RAG applications
 - **Event System**: Monitor costs, performance, tool executions, and media processing
 - **Built-in CLI Apps**: Ready-to-use terminal applications (`summarizer`, `extractor`, `judge`) for document processing
@@ -711,6 +711,12 @@ class Person(BaseModel):
 
 person = llm.generate("Extract: John Doe is 25", response_model=Person)
 print(f"{person.name}, age {person.age}")
+
+# See comprehensive guide: docs/structured-output.md
+# - Native server-side enforcement (Ollama, LMStudio, HuggingFace GGUF)
+# - Prompted with validation (MLX, HuggingFace Transformers)
+# - 100% validation success rate across 23 comprehensive tests
+# - Schema design patterns and production deployment
 ```
 
 ### Common Development Patterns

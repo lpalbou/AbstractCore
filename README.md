@@ -631,6 +631,8 @@ review = llm.generate(
 print(f"{review.title}: {review.rating}/5")
 ```
 
+[Learn more about Structured Output](docs/structured-output.md)
+
 ### 7. Universal API Server
 
 ```bash
