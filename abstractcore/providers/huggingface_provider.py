@@ -482,9 +482,9 @@ class HuggingFaceProvider(BaseProvider):
         """Generate response using appropriate backend"""
 
         if self.model_type == "gguf":
-            return self._generate_gguf(prompt, messages, system_prompt, tools, media, stream, **kwargs)
+            return self._generate_gguf(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
         else:
-            return self._generate_transformers(prompt, messages, system_prompt, tools, media, stream, **kwargs)
+            return self._generate_transformers(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
 
     def _generate_transformers(self,
                                prompt: str,
@@ -493,6 +493,7 @@ class HuggingFaceProvider(BaseProvider):
                                tools: Optional[List[Dict[str, Any]]] = None,
                                media: Optional[List['MediaContent']] = None,
                                stream: bool = False,
+                               response_model: Optional[Type[BaseModel]] = None,
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using transformers backend (original implementation)"""
 
@@ -569,6 +570,7 @@ class HuggingFaceProvider(BaseProvider):
                        tools: Optional[List[Dict[str, Any]]] = None,
                        media: Optional[List['MediaContent']] = None,
                        stream: bool = False,
+                       response_model: Optional[Type[BaseModel]] = None,
                        **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using GGUF backend with llama-cpp-python"""
 
@@ -663,6 +665,19 @@ class HuggingFaceProvider(BaseProvider):
         seed_value = kwargs.get("seed", self.seed)
         if seed_value is not None:
             generation_kwargs["seed"] = seed_value
+
+        # Add native structured output support (llama-cpp-python format)
+        # llama-cpp-python supports native structured outputs using the response_format parameter
+        # This provides server-side guaranteed schema compliance
+        if response_model and PYDANTIC_AVAILABLE:
+            json_schema = response_model.model_json_schema()
+            generation_kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_model.__name__,
+                    "schema": json_schema
+                }
+            }
 
         # Handle tools - both native and prompted support
         has_native_tools = False

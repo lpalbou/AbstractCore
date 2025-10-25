@@ -213,9 +213,9 @@ def list_files(directory: str = ".") -> str:
         files = []
         for item in path.iterdir():
             if item.is_file():
-                files.append(f"📄 {item.name}")
+                files.append(f"FILE: {item.name}")
             elif item.is_dir():
-                files.append(f"📁 {item.name}/")
+                files.append(f"DIR: {item.name}/")
 
         return f"Contents of {directory}:\n" + "\n".join(sorted(files))
     except Exception as e:
@@ -274,7 +274,7 @@ print(response.content)
 
 Tool call syntax rewriting enables AbstractCore to work seamlessly with any agentic CLI by converting tool calls to the expected format in real-time. This happens automatically during generation, including streaming.
 
-> **📋 Related**: [Tool Call Syntax Rewriting Guide](tool-syntax-rewriting.md)
+> **Related**: [Tool Call Syntax Rewriting Guide](tool-syntax-rewriting.md)
 
 ### Codex CLI Integration (Default Format)
 
@@ -350,7 +350,7 @@ for chunk in llm.generate(
     if chunk.tool_calls:
         for tool_call in chunk.tool_calls:
             result = tool_call.execute()
-            print(f"\n🛠️ Tool executed: {result}")
+            print(f"\n[TOOL] Executed: {result}")
 
 print("\n")
 # Shows: <function_call>{"name": "calculate", "arguments": {"expression": "15 * 23"}}</function_call>
@@ -435,7 +435,7 @@ from abstractcore.events import EventType, on_global
 # Monitor tool usage across different formats
 def log_tool_calls(event):
     for call in event.data.get('tool_calls', []):
-        print(f"🔧 {call.name} executed for CLI format: {llm.tool_call_tags}")
+        print(f"[TOOL] {call.name} executed for CLI format: {llm.tool_call_tags}")
 
 on_global(EventType.TOOL_COMPLETED, log_tool_calls)
 
@@ -447,13 +447,13 @@ for format_name in ["qwen3", "llama3", "xml"]:
 ```
 
 **Key Benefits**:
-- ✅ **Zero Configuration**: Default format works with most CLIs
-- ✅ **Real-Time Processing**: No post-processing delays
-- ✅ **Streaming Compatible**: Works perfectly with streaming mode
-- ✅ **Universal Support**: All providers and models supported
-- ✅ **Format Flexibility**: Predefined formats + custom tags
+- Zero configuration: Default format works with most CLIs
+- Real-time processing: No post-processing delays
+- Streaming compatible: Works with streaming mode
+- Universal support: All providers and models supported
+- Format flexibility: Predefined formats plus custom tags
 
-> **📋 Related**: [Tool Call Tag Rewriting Guide](tool-syntax-rewriting.md) | [Unified Streaming Architecture](architecture.md#unified-streaming-architecture)
+> **Related**: [Tool Call Syntax Rewriting Guide](tool-syntax-rewriting.md) | [Unified Streaming Architecture](architecture.md#unified-streaming-architecture)
 
 ## Structured Output Examples
 
@@ -564,7 +564,7 @@ catalog = llm.generate(
 
 print(f"Total products: {catalog.total_count}")
 for product in catalog.products:
-    status = "✅ In Stock" if product.in_stock else "❌ Out of Stock"
+    status = "In Stock" if product.in_stock else "Out of Stock"
     print(f"- {product.name}: ${product.price} ({product.category}) - {status}")
 ```
 
@@ -660,7 +660,7 @@ def streaming_with_insights(prompt):
     # Supports any provider: OpenAI, Anthropic, Ollama, MLX
     llm = create_llm("openai", model="gpt-4o-mini")
 
-    print("🤖 Generating response...")
+    print("Generating response...")
 
     start_time = time.time()
     chunks = []
@@ -674,13 +674,13 @@ def streaming_with_insights(prompt):
         if len(chunks) % 10 == 0:
             current_time = time.time() - start_time
             chars_generated = sum(len(c.content) for c in chunks)
-            print(f"\n📊 Progress: {len(chunks)} chunks, {chars_generated} chars, {current_time:.1f}s")
+            print(f"\n[PROGRESS] {len(chunks)} chunks, {chars_generated} chars, {current_time:.1f}s")
 
     # Final performance summary
     total_time = time.time() - start_time
     total_chars = sum(len(chunk.content) for chunk in chunks)
 
-    print(f"\n\n🚀 Streaming Stats:")
+    print(f"\n\n[STATS] Streaming Performance:")
     print(f"- Total Chunks: {len(chunks)}")
     print(f"- Total Characters: {total_chars}")
     print(f"- Duration: {total_time:.2f}s")
@@ -729,7 +729,7 @@ weather_tool = {
 # Works identically across providers
 llm = create_llm("ollama", model="qwen2.5-coder:7b")
 
-print("🤖 AI Assistant: ", end="", flush=True)
+print("AI Assistant: ", end="", flush=True)
 for chunk in llm.generate(
     "What time is it right now? And can you tell me the weather in New York?",
     tools=[time_tool, weather_tool],
@@ -742,16 +742,16 @@ for chunk in llm.generate(
     if chunk.tool_calls:
         for tool_call in chunk.tool_calls:
             result = tool_call.execute()
-            print(f"\n🛠️ Tool Result: {result}")
+            print(f"\n[TOOL] Result: {result}")
 
 print("\n")  # Newline after streaming
 
 # Features:
-# ✅ Real-time tool call detection
-# ✅ Immediate mid-stream tool execution
-# ✅ Zero buffering overhead
-# ✅ Works with OpenAI, Anthropic, Ollama, MLX
-# ✅ Consistent behavior across all providers
+# - Real-time tool call detection
+# - Immediate mid-stream tool execution
+# - Zero buffering overhead
+# - Works with OpenAI, Anthropic, Ollama, MLX
+# - Consistent behavior across all providers
 ```
 
 ### Performance-Optimized Streaming
@@ -772,7 +772,7 @@ def compare_providers(prompt):
         try:
             llm = create_llm(provider, model=model)
 
-            print(f"\n📊 Testing {provider.upper()} - {model}")
+            print(f"\n[TEST] {provider.upper()} - {model}")
             start_time = time.time()
 
             chunks = []
@@ -783,27 +783,27 @@ def compare_providers(prompt):
             total_time = time.time() - start_time
             total_chars = sum(len(chunk.content) for chunk in chunks)
 
-            print(f"\n\n🚀 {provider.upper()} Performance:")
+            print(f"\n\n[PERF] {provider.upper()} Performance:")
             print(f"- Chunks: {len(chunks)}")
             print(f"- Characters: {total_chars}")
             print(f"- Duration: {total_time:.2f}s")
             print(f"- Speed: {total_chars/total_time:.0f} chars/sec")
 
         except Exception as e:
-            print(f"❌ {provider} failed: {e}")
+            print(f"[ERROR] {provider} failed: {e}")
 
 # Compare streaming performance
 compare_providers("Write a creative short story about artificial intelligence")
 ```
 
 **Streaming Features**:
-- ⚡ First chunk in <10ms
-- 🔧 Unified strategy across ALL providers
-- 🛠️ Real-time tool call detection
-- 📊 Mid-stream tool execution
-- 💨 Zero buffering overhead
-- 🚀 Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
-- 🔒 Robust error handling for malformed responses
+- First chunk in <10ms
+- Unified strategy across all providers
+- Real-time tool call detection
+- Mid-stream tool execution
+- Zero buffering overhead
+- Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
+- Robust error handling for malformed responses
 
 ## Session Management
 
@@ -993,10 +993,10 @@ class CostMonitor:
                 'tokens_output': event.tokens_output
             })
 
-            print(f"💰 Cost: ${event.cost_usd:.4f} | Total: ${self.total_cost:.4f}")
+            print(f"[COST] ${event.cost_usd:.4f} | Total: ${self.total_cost:.4f}")
 
             if self.total_cost > self.budget_limit:
-                print(f"🚨 BUDGET EXCEEDED! ${self.total_cost:.4f} > ${self.budget_limit}")
+                print(f"[WARN] BUDGET EXCEEDED: ${self.total_cost:.4f} > ${self.budget_limit}")
 
     def get_report(self):
         """Get cost report."""
@@ -1020,7 +1020,7 @@ for i in range(3):
 
 # Get report
 report = monitor.get_report()
-print(f"\n📊 Final Report:")
+print(f"\n[REPORT] Final Cost Summary:")
 print(f"Total cost: ${report['total_cost']:.4f}")
 print(f"Requests: {report['total_requests']}")
 print(f"Average per request: ${report['average_cost']:.4f}")
@@ -1045,9 +1045,9 @@ class LoadBalancer:
                 llm = create_llm(provider_name, model=model)
                 self.providers.append((llm, provider_name, model))
                 self.weights.append(1.0)  # Equal weight initially
-                print(f"✅ {provider_name} ({model}) ready")
+                print(f"[OK] {provider_name} ({model}) ready")
             except Exception as e:
-                print(f"❌ {provider_name} ({model}) failed: {e}")
+                print(f"[FAIL] {provider_name} ({model}) failed: {e}")
 
     def generate(self, prompt, **kwargs):
         """Generate using weighted random selection."""
@@ -1068,11 +1068,11 @@ class LoadBalancer:
             response = llm.generate(prompt, **kwargs)
             duration = time.time() - start_time
 
-            print(f"✅ {provider_name} responded in {duration:.2f}s")
+            print(f"[OK] {provider_name} responded in {duration:.2f}s")
             return response
 
         except Exception as e:
-            print(f"❌ {provider_name} failed: {e}")
+            print(f"[FAIL] {provider_name} failed: {e}")
             # Remove failed provider temporarily
             idx = self.providers.index(provider_data)
             self.weights[idx] *= 0.1  # Reduce weight dramatically
@@ -1194,7 +1194,7 @@ class ChatInterface:
 chat_interface = ChatInterface()
 
 with gr.Blocks(title="AbstractCore Chat") as demo:
-    gr.Markdown("# 🤖 AbstractCore Chat Interface")
+    gr.Markdown("# AbstractCore Chat Interface")
 
     chatbot = gr.Chatbot(label="Conversation", height=400)
     msg = gr.Textbox(
@@ -1250,7 +1250,7 @@ def display_response(response, title="AI Response"):
     """
     display(HTML(html))
 
-print("✅ AbstractCore setup complete!")
+print("AbstractCore setup complete!")
 
 # Cell 2: Basic Usage
 response = llm.generate("Explain quantum computing in simple terms")

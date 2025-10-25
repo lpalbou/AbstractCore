@@ -121,7 +121,7 @@ def monitor_compaction(event):
         print(f"   Messages: {event.data.get('original_message_count')}")
         print(f"   Tokens: ~{event.data.get('original_tokens_estimate')}")
     elif event.type == EventType.COMPACTION_COMPLETED:
-        print(f"✅ Compaction completed in {event.data.get('duration_ms'):.0f}ms")
+        print(f"[OK] Compaction completed in {event.data.get('duration_ms'):.0f}ms")
         print(f"   Compression: {event.data.get('compression_ratio', 1):.1f}x")
 
 # Register event handlers
@@ -225,7 +225,7 @@ compacted = session.compact(
     focus="customer issue, attempted solutions, and current status"
 )
 
-# Perfect for maintaining support context while managing token limits
+# Suitable for maintaining support context while managing token limits
 ```
 
 ### Educational Conversation
@@ -352,7 +352,7 @@ compacted = session.compact()
 
 Chat history compaction enables unlimited conversation length while maintaining essential context. The implementation follows SOTA 2025 best practices for conversational AI systems, providing intelligent summarization that preserves conversational flow and key information.
 
-Perfect for:
+Suitable for:
 - **Long-running conversations** that exceed model context limits
 - **Cost optimization** by reducing token usage
 - **Context preservation** while managing memory constraints

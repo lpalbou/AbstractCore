@@ -1,6 +1,6 @@
 # Prerequisites & Setup Guide
 
-This guide walks you through setting up AbstractCore with different LLM providers. Choose the provider(s) that best fit your needs - you can use multiple providers in the same application.
+This guide walks you through setting up AbstractCore with different LLM providers. Choose the provider(s) that suitable for your needs - you can use multiple providers in the same application.
 
 ## Quick Decision Guide
 
@@ -150,7 +150,7 @@ ollama serve
 
 ```bash
 # Recommended starter models (verified available)
-ollama pull qwen3-coder:30b      # 18GB - Excellent for code, works great with AbstractCore
+ollama pull qwen3-coder:30b      # 18GB - Suitable for code, works great with AbstractCore
 ollama pull qwen3:4b-instruct-2507-q4_K_M     # 4GB - AbstractCore default, balanced performance
 ollama pull gemma3:1b            # 815MB - Very fast, good quality
 ollama pull cogito:3b            # 2.2GB - Good general purpose
@@ -177,14 +177,14 @@ print(response.content)
 
 #### Model Selection Guide
 
-| Model | Size | RAM Needed | Speed | Best For |
+| Model | Size | RAM Needed | Speed | Primary Use Cases |
 |-------|------|------------|-------|----------|
-| `gemma3:270m-it-qat` | 241MB | 2GB | ⚡⚡⚡ | Ultra-fast testing |
-| `qwen3:4b-instruct-2507-q4_K_M` | 4GB | 8GB | ⚡⚡ | AbstractCore default, balanced performance |
-| `gemma3:1b` | 815MB | 4GB | ⚡⚡⚡ | Fast general purpose |
-| `cogito:3b` | 2.2GB | 6GB | ⚡⚡ | Balanced quality/speed |
-| `granite3.3:2b` | 1.5GB | 6GB | ⚡⚡ | Good reasoning |
-| `qwen3-coder:30b` | 18GB | 32GB | ⚡ | Code generation, complex tasks |
+| `gemma3:270m-it-qat` | 241MB | 2GB | Fast | Ultra-fast testing |
+| `qwen3:4b-instruct-2507-q4_K_M` | 4GB | 8GB | Medium | AbstractCore default, balanced performance |
+| `gemma3:1b` | 815MB | 4GB | Fast | Fast general purpose |
+| `cogito:3b` | 2.2GB | 6GB | Medium | Balanced quality/speed |
+| `granite3.3:2b` | 1.5GB | 6GB | Medium | Good reasoning |
+| `qwen3-coder:30b` | 18GB | 32GB | Slow | Code generation, complex tasks |
 
 ### MLX Setup (Apple Silicon)
 
@@ -225,7 +225,7 @@ print(response.content)
 
 **Popular MLX Models**:
 - `mlx-community/Llama-3.2-3B-Instruct-4bit` - 1.8GB, fast
-- `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` - 4.2GB, excellent for code
+- `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` - 4.2GB, suitable for code
 - `mlx-community/Llama-3.1-8B-Instruct-4bit` - 4.7GB, high quality
 
 ### LMStudio Setup
@@ -403,10 +403,10 @@ def test_provider(provider_name, model, **kwargs):
         print(f"\n🧪 Testing {provider_name} with {model}...")
         llm = create_llm(provider_name, model=model, **kwargs)
         response = llm.generate("Say 'Hello from AbstractCore!'")
-        print(f"✅ {provider_name}: {response.content}")
+        print(f"[OK] {provider_name}: {response.content}")
         return True
     except Exception as e:
-        print(f"❌ {provider_name}: {e}")
+        print(f"[FAIL] {provider_name}: {e}")
         return False
 
 def main():
@@ -444,11 +444,11 @@ def main():
     print("Test Results:")
     working = [name for name, success in results.items() if success]
     if working:
-        print(f"✅ Working providers: {', '.join(working)}")
+        print(f"[OK] Working providers: {', '.join(working)}")
     else:
-        print("❌ No providers working")
+        print("[FAIL] No providers working")
 
-    print("\n💡 Next steps:")
+    print("\n[INFO] Next steps:")
     print("- Add API keys for cloud providers")
     print("- Install Ollama and download models")
     print("- Start LMStudio local server")
@@ -499,4 +499,4 @@ python test_setup.py
 - Be careful exposing servers to network (use authentication)
 - Consider firewall rules for production deployments
 
-This setup guide should get you running with any AbstractCore provider. Choose what works best for your use case - you can always add more providers later!
+This setup guide should get you running with any AbstractCore provider. Choose what works well for your use case - you can always add more providers later!

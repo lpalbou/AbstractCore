@@ -129,7 +129,7 @@ class ProviderRegistry:
             provider_class=None,
             description="Access to HuggingFace models (transformers and embeddings)",
             default_model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
-            supported_features=["chat", "completion", "embeddings", "prompted_tools", "local_models"],
+            supported_features=["chat", "completion", "embeddings", "prompted_tools", "local_models", "structured_output"],
             authentication_required=False,  # Optional for public models
             local_provider=True,
             installation_extras="huggingface",

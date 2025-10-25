@@ -170,12 +170,12 @@ for chunk in llm.generate(
 ```
 
 **Streaming Features**:
-- ⚡ First chunk in <10ms
+- First chunk in <10ms
 - 🔧 Unified strategy across providers
 - 🛠️ Real-time tool call detection
-- 📊 Mid-stream tool execution
+- Mid-stream tool execution
 - 💨 Zero buffering overhead
-- 🚀 Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
+- Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - 🔒 Robust error handling for malformed responses
 
 #### get_capabilities()

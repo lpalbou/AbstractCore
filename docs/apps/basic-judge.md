@@ -52,7 +52,7 @@ pip install abstractcore[openai,anthropic]
 - **Temperature**: 0.1 (low for consistent evaluation)
 - **Setup**: `ollama pull qwen3:4b-instruct-2507-q4_K_M`
 
-**For Best Evaluation Quality**:
+**For Optimal Evaluation Quality**:
 - **`qwen3-coder:30b`**: Good for detailed assessment (requires 32GB RAM)
 - **`gpt-oss:120b`**: Highest quality evaluation (requires 120GB RAM)
 
@@ -183,7 +183,7 @@ criteria = JudgmentCriteria(
 from abstractcore import create_llm
 from abstractcore.processing import BasicJudge, create_judge
 
-# RECOMMENDED: Use cloud providers for best evaluation quality
+# RECOMMENDED: Use cloud providers for optimal evaluation quality
 llm = create_llm("openai", model="gpt-4o-mini", temperature=0.1)
 judge = BasicJudge(llm)
 
@@ -417,7 +417,7 @@ judge README.md --focus "technicalities, architectural diagrams and data flow, e
   - "Lacks technical comparisons with SOTA approaches like LangChain, LlamaIndex"
   - "No explanation of how tool calling is unified across providers"
 
-**Key Insight**: Focus areas become the **primary evaluation targets**. Even excellent documentation gets lower scores when it lacks the specified focus areas.
+**Key Insight**: Focus areas become the **primary evaluation targets**. Even high quality documentation gets lower scores when it lacks the specified focus areas.
 
 > **Fun Fact**: We used our own judge to evaluate our README.md with focus on "architectural diagrams and SOTA comparisons" and got a humbling 3/5 score. Turns out eany documentation can be improved! 😅
 
@@ -532,10 +532,10 @@ results = judge.evaluate_files(
 
 # Analyze results
 problematic_files = [r for r in results if r['overall_score'] < 3]
-excellent_files = [r for r in results if r['overall_score'] >= 4]
+high_quality_files = [r for r in results if r['overall_score'] >= 4]
 
 print(f"Files needing attention: {len(problematic_files)}")
-print(f"High-quality files: {len(excellent_files)}")
+print(f"High-quality files: {len(high_quality_files)}")
 ```
 
 ### Example 4: Academic Writing Evaluation
@@ -613,10 +613,10 @@ criteria = JudgmentCriteria(
 ### 3. Evaluation Context Guidelines
 
 **Be Specific:**
-- ✅ "code review for production deployment"
-- ✅ "user-facing API documentation"
-- ✅ "academic research proposal"
-- ❌ "general review"
+- "code review for production deployment"
+- "user-facing API documentation"
+- "academic research proposal"
+- "general review"
 
 **Match Context to Criteria:**
 - Code reviews: focus on soundness, clarity, effectiveness
@@ -754,10 +754,10 @@ def grade_assignment(student_submission, rubric_reference):
 | Model | Content Length | Evaluation Time | Quality |
 |-------|----------------|-----------------|---------|
 | `qwen3:4b-instruct-2507-q4_K_M` | 500 chars | 30-40 seconds | Good |
-| `qwen3-coder:30b` | 500 chars | 60-90 seconds | Excellent |
-| `gpt-oss:120b` | 500 chars | 90-120 seconds | Best |
-| `gpt-4o-mini` | 500 chars | 15-30 seconds | Best |
-| `claude-3-5-haiku` | 500 chars | 10-25 seconds | Best |
+| `qwen3-coder:30b` | 500 chars | 60-90 seconds | High |
+| `gpt-oss:120b` | 500 chars | 90-120 seconds | Optimal |
+| `gpt-4o-mini` | 500 chars | 15-30 seconds | Optimal |
+| `claude-3-5-haiku` | 500 chars | 10-25 seconds | Optimal |
 
 ### Memory Usage
 

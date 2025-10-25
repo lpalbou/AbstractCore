@@ -350,14 +350,14 @@ python -m abstractcore.apps intent tests/texts/intent1.json --focus-participant 
 🤖 Using LLM: lmstudio/openai/gpt-oss-20b
 🗣️  Analyzing conversation intents...
 📋 Parsed 16 messages
-✅ Analysis completed in 11.8 seconds
-🎯 CONVERSATION INTENT ANALYSIS
+Analysis completed in 11.8 seconds
+CONVERSATION INTENT ANALYSIS
 ==================================================
 
 👤 PARTICIPANT: USER
 ------------------------------
 
-🎯 PRIMARY INTENT: Problem Solving
+PRIMARY INTENT: Problem Solving
    Description: The sender is trying to resolve the issue of whether the report was received and ensure it reaches the recipient.
    Underlying Goal: To confirm delivery of the report and eliminate uncertainty about its receipt.
    Emotional Undertone: Frustration followed by relief and apology
@@ -437,14 +437,14 @@ python -m abstractcore.apps intent tests/texts/intent2.json --focus-participant 
 🤖 Using LLM: lmstudio/openai/gpt-oss-20b
 🗣️  Analyzing conversation intents...
 📋 Parsed 11 messages
-✅ Analysis completed in 12.6 seconds
-🎯 CONVERSATION INTENT ANALYSIS
+Analysis completed in 12.6 seconds
+CONVERSATION INTENT ANALYSIS
 ==================================================
 
 👤 PARTICIPANT: ASSISTANT
 ------------------------------
 
-🎯 PRIMARY INTENT: Blame Deflection
+PRIMARY INTENT: Blame Deflection
    Description: The speaker attempts to shift responsibility for the messy launch files onto external factors and downplays personal fault.
    Underlying Goal: Maintain a competent image by avoiding admission of failure or negligence.
    Emotional Undertone: Frustration mixed with defensiveness
@@ -627,7 +627,7 @@ def monitor_intent_analysis(event):
     if event.type == EventType.BEFORE_GENERATE:
         print("🔄 Starting intent analysis...")
     elif event.type == EventType.AFTER_GENERATE:
-        print(f"✅ Completed in {event.duration_ms}ms")
+        print(f"Completed in {event.duration_ms}ms")
 
 on_global(EventType.BEFORE_GENERATE, monitor_intent_analysis)
 on_global(EventType.AFTER_GENERATE, monitor_intent_analysis)

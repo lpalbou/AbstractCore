@@ -41,8 +41,8 @@ pip install abstractcore[openai,anthropic]
 - **Speed**: Good balance of speed and quality
 - **Setup**: `ollama pull qwen3:4b-instruct-2507-q4_K_M`
 
-**For Best Performance**:
-- **`qwen3-coder:30b`**: Excellent for structured JSON-LD output (requires 32GB RAM)
+**For Optimal Performance**:
+- **`qwen3-coder:30b`**: High quality for structured JSON-LD output (requires 32GB RAM)
 - **`gpt-oss:120b`**: Highest quality extraction (requires 120GB RAM)
 
 **For Production**: Cloud providers (OpenAI GPT-4o-mini, Claude) offer the most reliable JSON-LD generation.
@@ -435,10 +435,10 @@ llm = create_llm("ollama", model="qwen3-coder:30b")  # 18GB, free
 llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")  # 4GB, balanced
 ```
 
-**Reality Check:**
-- ✅ **Cloud models**: Excellent at complex JSON-LD with schema.org vocabulary
+**Note:**
+- **Cloud models**: High quality at complex JSON-LD with schema.org vocabulary
 - ⚠️ **Local models**: Good for simple facts, struggle with complex structured formats
-- 💡 **Best approach**: Use cloud models for production knowledge graphs, local models for simple extraction
+- **Best approach**: Use cloud models for production knowledge graphs, local models for simple extraction
 
 ### 2. Document Processing
 
@@ -696,10 +696,10 @@ def process_documents(file_paths):
 | Model | Text Length | Extraction Time | Quality |
 |-------|-------------|-----------------|---------|
 | `qwen3:4b-instruct-2507-q4_K_M` | 1000 chars | 3-7 seconds | Good |
-| `qwen3-coder:30b` | 1000 chars | 8-15 seconds | Excellent |
-| `gpt-oss:120b` | 1000 chars | 10-20 seconds | Best |
-| `gpt-4o-mini` | 1000 chars | 3-8 seconds | Best |
-| `claude-3-5-haiku` | 1000 chars | 2-6 seconds | Best |
+| `qwen3-coder:30b` | 1000 chars | 8-15 seconds | High quality |
+| `gpt-oss:120b` | 1000 chars | 10-20 seconds | Optimal |
+| `gpt-4o-mini` | 1000 chars | 3-8 seconds | Optimal |
+| `claude-3-5-haiku` | 1000 chars | 2-6 seconds | Optimal |
 
 ### Memory Usage
 

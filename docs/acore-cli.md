@@ -34,18 +34,18 @@ Compacts your chat history using the fast local `gemma3:1b` model to create a su
 /compact
 
 # Output example:
-🗜️  Compacting chat history...
+[COMPACT] Compacting chat history...
    Before: 15 messages (~450 tokens)
    Using gemma3:1b for compaction...
-✅ Compaction completed in 3.2s
+[OK] Compaction completed in 3.2s
    After: 5 messages (~280 tokens)
    Structure:
-   1. ⚙️  System prompt
-   2. 📚 Conversation summary (1,200 chars)
-   3. 👤 How do I handle errors in Python?
-   4. 🤖 You can use try/except blocks...
-   5. 👤 What about logging?
-   💡 Note: Token count may increase initially due to detailed summary
+   1. [SYS] System prompt
+   2. [SUMMARY] Conversation summary (1,200 chars)
+   3. User: How do I handle errors in Python?
+   4. Assistant: You can use try/except blocks...
+   5. User: What about logging?
+   [NOTE] Note: Token count may increase initially due to detailed summary
        but will decrease significantly as conversation continues
 ```
 
@@ -67,13 +67,13 @@ Extracts facts from your conversation history as simple triples (subject-predica
 /judge
 
 # Output example:
-⚖️  Evaluating conversation quality...
+[JUDGE] Evaluating conversation quality...
    Analyzing 450 characters of conversation...
-✅ Evaluation completed in 35.2s
+[OK] Evaluation completed in 35.2s
 
-📊 Overall Discussion Quality: 4/5
+[STATS] Overall Discussion Quality: 4/5
 
-📈 Quality Dimensions:
+[METRICS] Quality Dimensions:
    Clarity      : 5/5
    Coherence    : 4/5
    Actionability: 3/5
@@ -82,20 +82,20 @@ Extracts facts from your conversation history as simple triples (subject-predica
    Soundness    : 4/5
    Simplicity   : 5/5
 
-✅ Conversation Strengths:
+[OK] Conversation Strengths:
    • The discussion maintains clear focus and addresses questions directly
    • Explanations are well-structured and easy to follow
    • Technical concepts are explained in accessible language
 
-💡 Suggestions for Better Discussions:
+[NOTE] Suggestions for Better Discussions:
    • Include more specific examples to illustrate key points
    • Add actionable next steps or recommendations where appropriate
    • Consider exploring alternative approaches or edge cases
 
-🤔 Assessment Summary:
+[ANALYSIS] Assessment Summary:
    The conversation demonstrates strong clarity and relevance with well-structured exchanges.
 
-📌 Note: This is a demonstrator showing LLM-as-a-judge capabilities for objective assessment.
+[INFO] Note: This is a demonstrator showing LLM-as-a-judge capabilities for objective assessment.
 ```
 
 ### `/intent [participant]` - Analyze Conversation Intents
@@ -109,22 +109,22 @@ Extracts facts from your conversation history as simple triples (subject-predica
 /intent assistant         # Focus on assistant intents only
 
 # Output example:
-🎯 Analyzing user intents in conversation...
+[INTENT] Analyzing user intents in conversation...
    Processing 8 messages...
-✅ Intent analysis completed in 45.3s
+[OK] Intent analysis completed in 45.3s
 
-🎯 CONVERSATION INTENT ANALYSIS
+[INTENT] CONVERSATION INTENT ANALYSIS
 ============================================================
 
-👤 USER INTENTS:
+User: USER INTENTS:
 ────────────────────────────────────────
-🎯 Primary Intent: Problem Solving
+[INTENT] Primary Intent: Problem Solving
    Description: The user is seeking to resolve a technical issue by requesting specific guidance and clarification.
    Underlying Goal: To gain competence and confidence in handling similar problems independently.
    Emotional Undertone: Curious and determined
    Confidence: 0.95 | Urgency: 0.70
 
-🔍 DECEPTION ANALYSIS:
+[DETECT] DECEPTION ANALYSIS:
    Deception Likelihood: 0.05
    Narrative Consistency: 0.95
    Temporal Coherence: 0.98
@@ -134,7 +134,7 @@ Extracts facts from your conversation history as simple triples (subject-predica
      • Consistent follow-up questions demonstrate engagement
      • Acknowledgment of gaps in knowledge
 
-🔄 Secondary Intents:
+[SECONDARY] Secondary Intents:
    1. Validation Seeking
       Goal: To confirm understanding and receive reassurance about approach
       Confidence: 0.80
@@ -142,13 +142,13 @@ Extracts facts from your conversation history as simple triples (subject-predica
       Goal: To establish rapport and demonstrate engagement
       Confidence: 0.65
 
-💡 Suggested Response Approach:
+[NOTE] Suggested Response Approach:
    Provide clear, step-by-step guidance with examples. Acknowledge their learning progress and offer additional resources for independent exploration.
 
-📊 Analysis: 45 words | Complexity: 0.60 | Confidence: 0.92 | Time: 45.3s
+[STATS] Analysis: 45 words | Complexity: 0.60 | Confidence: 0.92 | Time: 45.3s
 
 ============================================================
-💡 Note: This analysis identifies underlying motivations and goals behind communication
+[NOTE] Note: This analysis identifies underlying motivations and goals behind communication
 ```
 
 **Key Features:**
@@ -170,17 +170,17 @@ Extracts facts from your conversation history as simple triples (subject-predica
 /facts
 
 # Output example:
-🔍 Extracting facts from conversation history...
+[DETECT] Extracting facts from conversation history...
    Processing 415 characters of conversation...
-✅ Fact extraction completed in 4.5s
+[OK] Fact extraction completed in 4.5s
 
-📋 Facts extracted from conversation:
+[FACTS] Facts extracted from conversation:
 ==================================================
  1. OpenAI creates GPT-4
  2. Microsoft Copilot uses GPT-4
  3. Google develops TensorFlow
 ==================================================
-📊 Found 3 entities and 2 relationships
+[STATS] Found 3 entities and 2 relationships
 ```
 
 ```bash
@@ -188,11 +188,11 @@ Extracts facts from your conversation history as simple triples (subject-predica
 /facts myconversation
 
 # Output example:
-🔍 Extracting facts from conversation history...
+[DETECT] Extracting facts from conversation history...
    Processing 415 characters of conversation...
-✅ Fact extraction completed in 3.3s
-💾 Facts saved to myconversation.jsonld
-📊 Saved 3 entities and 2 relationships as JSON-LD
+[OK] Fact extraction completed in 3.3s
+[SAVE] Facts saved to myconversation.jsonld
+[STATS] Saved 3 entities and 2 relationships as JSON-LD
 ```
 
 **When to use:**
@@ -210,8 +210,8 @@ Toggle real-time streaming of responses. You can also start with streaming enabl
 /stream
 
 # Output examples:
-🌊 Stream mode: ON
-🌊 Stream mode: OFF
+[STREAM] Stream mode: ON
+[STREAM] Stream mode: OFF
 ```
 
 **Two ways to enable streaming:**
@@ -221,10 +221,10 @@ Toggle real-time streaming of responses. You can also start with streaming enabl
 python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream
 
 # Method 2: Toggle during conversation
-👤 You: /stream
-🌊 Stream mode: ON
-👤 You: Write a haiku about programming
-🤖 Assistant: Code flows like a stream... [appears word by word]
+User: You: /stream
+[STREAM] Stream mode: ON
+User: You: Write a haiku about programming
+Assistant: Assistant: Code flows like a stream... [appears word by word]
 ```
 
 **When to use:**
@@ -253,10 +253,10 @@ Shows conversation history verbatim without truncation or numbering.
 
 📜 Last 2 interactions:
 
-👤 You:
+User: You:
 How do I create a function in Python?
 
-🤖 Assistant:
+Assistant: Assistant:
 You create functions in Python using the 'def' keyword:
 
 def my_function(parameter1, parameter2):
@@ -265,10 +265,10 @@ def my_function(parameter1, parameter2):
 
 Functions help organize code and avoid repetition.
 
-👤 You:
+User: You:
 What about error handling?
 
-🤖 Assistant:
+Assistant: Assistant:
 Python uses try/except blocks for error handling:
 
 try:
@@ -278,7 +278,7 @@ except Exception as e:
 
 This allows you to handle errors gracefully.
 
-📊 Total tokens estimate: ~150
+[STATS] Total tokens estimate: ~150
 ```
 
 **After using /compact, /history shows both summary and recent messages:**
@@ -287,20 +287,20 @@ This allows you to handle errors gracefully.
 
 📜 Conversation History:
 
-📚 Earlier Conversation Summary:
+[SUMMARY] Earlier Conversation Summary:
 ──────────────────────────────────────────────────
 The conversation covered Python basics, including variable types,
-control structures, and best practices for writing clean code. The
+control structures, and recommended practices for writing clean code. The
 user asked about functions and we discussed function definition,
 parameters, and return values in detail.
 ──────────────────────────────────────────────────
 
 💬 Recent Conversation:
 
-👤 You:
+User: You:
 What about error handling?
 
-🤖 Assistant:
+Assistant: Assistant:
 Python uses try/except blocks for error handling:
 
 try:
@@ -310,7 +310,7 @@ except Exception as e:
 
 This allows you to handle errors gracefully.
 
-📊 Total tokens estimate: ~850
+[STATS] Total tokens estimate: ~850
 ```
 
 **Features:**
@@ -338,7 +338,7 @@ Control the system prompt that guides the AI's behavior.
 /system You are a Python expert focused on data science and machine learning.
 
 # Output example for show:
-⚙️  Current System Prompt:
+[SYS] Current System Prompt:
 ==================================================
 📝 Fixed Part:
 You are a helpful AI assistant.
@@ -349,7 +349,7 @@ You are a helpful AI assistant.
 ==================================================
 
 # Output example for change:
-✅ System prompt updated!
+[OK] System prompt updated!
 📝 Old: You are a helpful AI assistant.
 📝 New: You are a Python expert focused on data science and machine learning.
 ```
@@ -400,8 +400,8 @@ Test tool call tag rewriting with custom tags to verify compatibility with diffe
 📝 Opening Tag: '<function_call>'
 📝 Closing Tag: '</function_call>'
 ============================================================
-🤖 Testing with openai:gpt-4o-mini
-🌊 Streaming: OFF
+Assistant: Testing with openai:gpt-4o-mini
+[STREAM] Streaming: OFF
 📝 Prompt: Please help me with two tasks:
 1. Get the current weather for Paris
 2. Calculate what 15 * 23 equals
@@ -410,18 +410,18 @@ Use the available tools to help me with these tasks.
 
 ============================================================
 🔧 Testing with custom tool call tags...
-🤖 Assistant (with custom tags): <function_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</function_call>
+Assistant: Assistant (with custom tags): <function_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</function_call>
 
 🔧 Testing without custom tags (default behavior)...
-🤖 Assistant (default): <|tool_call|>{"name": "get_weather", "arguments": {"location": "Paris"}}</|tool_call|>
+Assistant: Assistant (default): <|tool_call|>{"name": "get_weather", "arguments": {"location": "Paris"}}</|tool_call|>
 
 ============================================================
-📊 Summary:
+[STATS] Summary:
    Model: openai:gpt-4o-mini
    Streaming: OFF
    Custom tags: '<function_call>'...'</function_call>'
-   Custom tags found: ✅ YES
-   Default tags found: ✅ YES
+   Custom tags found: [OK] YES
+   Default tags found: [OK] YES
 ```
 
 **When to use:**
@@ -440,27 +440,27 @@ Use the available tools to help me with these tasks.
 python -m abstractcore.utils.cli --provider ollama --model gemma3:1b
 
 # Have a long conversation...
-👤 You: What is Python?
-🤖 Assistant: Python is a high-level programming language...
+User: You: What is Python?
+Assistant: Assistant: Python is a high-level programming language...
 
-👤 You: What about data types?
-🤖 Assistant: Python has several built-in data types...
+User: You: What about data types?
+Assistant: Assistant: Python has several built-in data types...
 
 # Check history
-👤 You: /history 2
+User: You: /history 2
 
 # Change system prompt for specific task
-👤 You: /system You are an expert Python tutor focused on data science.
+User: You: /system You are an expert Python tutor focused on data science.
 
 # Compact when needed
-👤 You: /compact
+User: You: /compact
 
 # Extract facts from the conversation
-👤 You: /facts
+User: You: /facts
 
 # Continue conversation with preserved context and new system prompt
-👤 You: Can you explain more about functions?
-🤖 Assistant: [Responds as Python tutor, refers to previous conversation context]
+User: You: Can you explain more about functions?
+Assistant: Assistant: [Responds as Python tutor, refers to previous conversation context]
 ```
 
 ### Best Practices
@@ -482,14 +482,14 @@ If the AI is calling tools unnecessarily (like the example where it called `list
 
 ```bash
 # Check current system prompt to understand behavior
-👤 You: /system
+User: You: /system
 
 # Update to prevent unnecessary tool calls
-👤 You: /system You are a helpful AI assistant. Only use tools when explicitly requested by the user or when necessary to answer a specific question. Do not demonstrate tool capabilities unprompted.
+User: You: /system You are a helpful AI assistant. Only use tools when explicitly requested by the user or when necessary to answer a specific question. Do not demonstrate tool capabilities unprompted.
 
 # Now the AI will be less likely to call tools unnecessarily
-👤 You: Who are you?
-🤖 Assistant: I am an AI assistant. [No tool calls]
+User: You: Who are you?
+Assistant: Assistant: I am an AI assistant. [No tool calls]
 ```
 
 ### Technical Details

@@ -2,7 +2,7 @@
 
 The Basic Summarizer demonstrates how to build sophisticated text processing capabilities on top of AbstractCore using clean, zero-shot structured prompting techniques.
 
-**💡 Recommended Setup**: For best performance, use the free local model `gemma3:1b-it-qat` with Ollama, which provides fast processing (29s), high quality (95% confidence), and zero API costs.
+**Recommended Setup**: For optimal performance, use the free local model `gemma3:1b-it-qat` with Ollama, which provides fast processing (29s), high quality (95% confidence), and zero API costs.
 
 ## Overview
 
@@ -302,7 +302,7 @@ def monitor_summarization(event):
     if event.type == EventType.BEFORE_GENERATE:
         print("🔄 Starting summarization...")
     elif event.type == EventType.AFTER_GENERATE:
-        print(f"✅ Completed in {event.duration_ms}ms")
+        print(f"Completed in {event.duration_ms}ms")
 
 on_global(EventType.BEFORE_GENERATE, monitor_summarization)
 on_global(EventType.AFTER_GENERATE, monitor_summarization)
@@ -342,7 +342,7 @@ except Exception as e:
 
 **Recommended for Production:**
 - **Ollama gemma3:1b-it-qat**: Fast (29s), high quality (95% confidence), cost-effective local processing
-- **Ollama qwen3-coder:30b**: Premium quality (98% confidence), slower (119s), best for critical tasks
+- **Ollama qwen3-coder:30b**: Premium quality (98% confidence), slower (119s), suitable for critical tasks
 
 **Cloud Alternatives:**
 - **OpenAI GPT-4o-mini**: Excellent quality with API costs, good for low-volume
@@ -350,7 +350,7 @@ except Exception as e:
 
 **Performance Comparison:**
 ```
-Model              Speed    Quality  Cost    Best For
+Model              Speed    Quality  Cost    Suitable For
 gemma3:1b-it-qat  Fast     High     Free    Production, high-volume
 qwen3-coder:30b   Slow     Premium  Free    Critical accuracy
 GPT-4o-mini       Medium   High     Paid    Occasional use
@@ -360,7 +360,7 @@ Claude-3.5        Medium   High     Paid    Narrative summaries
 ### Cost Optimization
 
 ```python
-# Free local processing with excellent quality
+# Free local processing with high quality
 llm = create_llm("ollama", model="gemma3:1b-it-qat")  # Fast, free, high quality
 summarizer = BasicSummarizer(llm)
 

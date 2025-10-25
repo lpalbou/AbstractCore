@@ -5,6 +5,27 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.2] - 2025-10-25
+
+### Added
+- **Native Structured Output Support for HuggingFace GGUF Models**: HuggingFace provider now supports server-side schema enforcement for GGUF models via llama-cpp-python's `response_format` parameter
+  - GGUF models loaded through HuggingFace provider automatically get native structured output support
+  - Uses the same OpenAI-compatible `response_format` parameter as LMStudio
+  - Provides guaranteed schema compliance without retry logic needed
+  - Transformers models continue to use prompted approach as fallback
+  - Provider registry updated to advertise structured output capability
+
+### Changed
+- **StructuredOutputHandler**: Enhanced provider detection to identify HuggingFace GGUF models as having native support
+  - Checks for `model_type == "gguf"` to determine native support capability
+  - GGUF models benefit from llama-cpp-python's constrained sampling
+  - Transformers models automatically use prompted fallback strategy
+
+### Fixed
+- **HuggingFace Provider**: Added missing `response_model` parameter propagation through internal generation methods
+  - Fixed `_generate_internal()` to pass `response_model` to both GGUF and transformers backends
+  - Both `_generate_gguf()` and `_generate_transformers()` now accept and handle `response_model` parameter
+
 ## [2.5.1] - 2025-10-24
 
 ### Added

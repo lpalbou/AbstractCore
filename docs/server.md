@@ -901,13 +901,13 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Why AbstractCore Server?
 
-✅ **Universal**: One API for all providers  
-✅ **OpenAI Compatible**: Drop-in replacement  
-✅ **Simple**: Clean, focused endpoints  
-✅ **Fast**: Lightweight, high-performance  
-✅ **Debuggable**: Comprehensive logging  
-✅ **CLI Ready**: Codex, Gemini CLI, Crush support  
-✅ **Production Ready**: Docker, multi-worker, health checks  
+- **Universal**: One API for all providers  
+- **OpenAI Compatible**: Drop-in replacement  
+- **Simple**: Clean, focused endpoints  
+- **Fast**: Lightweight, high-performance  
+- **Debuggable**: Comprehensive logging  
+- **CLI Ready**: Codex, Gemini CLI, Crush support  
+- **Production Ready**: Docker, multi-worker, health checks  
 
 ---
 
@@ -921,4 +921,4 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ---
 
-**AbstractCore Server** - One server, all models, any client. 🚀
+**AbstractCore Server** - One server, all models, any client.

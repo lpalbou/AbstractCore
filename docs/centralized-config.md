@@ -505,9 +505,9 @@ If apps don't use configured defaults:
 When models fail to initialize, apps show configuration guidance:
 
 ```
-❌ Failed to initialize LLM 'openai/gpt-4o-mini': API key not configured
+[ERROR] Failed to initialize LLM 'openai/gpt-4o-mini': API key not configured
 
-💡 Solutions:
+[INFO] Solutions:
    - Set API key: abstractcore --set-api-key openai sk-...
    - Use different provider: summarizer document.txt --provider ollama --model llama3:8b
 

@@ -224,12 +224,12 @@ response = llm.generate(
 
 | Provider | Status | SEED Support | Setup |
 |----------|--------|-------------|-------|
-| **OpenAI** | Full | ✅ Native | [Get API key](docs/prerequisites.md#openai-setup) |
-| **Anthropic** | Full | ⚠️ Warning* | [Get API key](docs/prerequisites.md#anthropic-setup) |
-| **Ollama** | Full | ✅ Native | [Install guide](docs/prerequisites.md#ollama-setup) |
-| **LMStudio** | Full | ✅ Native | [Install guide](docs/prerequisites.md#lmstudio-setup) |
-| **MLX** | Full | ✅ Native | [Setup guide](docs/prerequisites.md#mlx-setup) |
-| **HuggingFace** | Full | ✅ Native | [Setup guide](docs/prerequisites.md#huggingface-setup) |
+| **OpenAI** | Full | Native | [Get API key](docs/prerequisites.md#openai-setup) |
+| **Anthropic** | Full | Warning* | [Get API key](docs/prerequisites.md#anthropic-setup) |
+| **Ollama** | Full | Native | [Install guide](docs/prerequisites.md#ollama-setup) |
+| **LMStudio** | Full | Native | [Install guide](docs/prerequisites.md#lmstudio-setup) |
+| **MLX** | Full | Native | [Setup guide](docs/prerequisites.md#mlx-setup) |
+| **HuggingFace** | Full | Native | [Setup guide](docs/prerequisites.md#huggingface-setup) |
 
 *Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
 
