@@ -46,12 +46,12 @@ AbstractCore is a comprehensive Python library providing a unified interface to 
 
 | Provider | Features | SEED Support |
 |----------|----------|-------------|
-| **OpenAI** | Native tool calls, streaming, native structured output, vision (GPT-4o), media processing | ✅ Native |
+| **OpenAI** | Native tool calls, streaming, native structured output, vision (GPT-4o), media processing | Supported: Native |
 | **Anthropic** | Native tool calls, streaming, native structured output, vision (Claude 4.5), media processing | ⚠️ Warning* |
-| **Ollama** | Prompted tool calls, streaming, native structured output, local models, vision (qwen2.5vl:7b), media processing | ✅ Native |
-| **LMStudio** | Prompted tool calls, streaming, native structured output, local models, vision (qwen2.5-vl), media processing | ✅ Native |
-| **MLX** | Prompted tool calls, streaming, Apple Silicon, vision models, media processing | ✅ Native |
-| **HuggingFace** | Prompted tool calls, streaming, open models, vision models, media processing | ✅ Native |
+| **Ollama** | Prompted tool calls, streaming, native structured output, local models, vision (qwen2.5vl:7b), media processing | Supported: Native |
+| **LMStudio** | Prompted tool calls, streaming, native structured output, local models, vision (qwen2.5-vl), media processing | Supported: Native |
+| **MLX** | Prompted tool calls, streaming, Apple Silicon, vision models, media processing | Supported: Native |
+| **HuggingFace** | Prompted tool calls, streaming, open models, vision models, media processing | Supported: Native |
 
 *Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
 
@@ -259,7 +259,7 @@ abstractcore --status
 ```
 
 This displays a hierarchical dashboard showing:
-- 🎯 Application Defaults (CLI, Summarizer, Extractor, Judge)
+- [CONFIG] Application Defaults (CLI, Summarizer, Extractor, Judge)
 - 🌐 Global Fallback settings
 - 👁️ Media Processing configuration
 - 🔑 Provider Access (API key status)
@@ -362,11 +362,11 @@ print(f"Response 1: {response1.content}")  # "Innovative, challenging, rewarding
 print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding."
 
 # Empirically verified deterministic behavior:
-# ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-# ✅ Ollama (gemma3:1b): Same seed → Identical outputs  
-# ✅ MLX (Qwen3-4B): Same seed → Identical outputs
-# ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
-# ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
+# Verified: OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
+# Verified: Ollama (gemma3:1b): Same seed → Identical outputs  
+# Verified: MLX (Qwen3-4B): Same seed → Identical outputs
+# Verified: HuggingFace: Same seed → Identical outputs (transformers + GGUF)
+# Verified: LMStudio: Same seed → Identical outputs (OpenAI-compatible)
 # ⚠️ Anthropic (claude-haiku-4-5): temperature=0 → Consistent outputs (issues warning for seed)
 ```
 
@@ -762,13 +762,13 @@ provider = create_llm("ollama", model="llama2")
 health = provider.health(timeout=3.0)  # 3-second timeout
 
 if health["status"]:
-    print(f"✅ {health['provider']} is healthy")
+    print(f"Supported: {health['provider']} is healthy")
     print(f"   Models available: {health['model_count']}")
     print(f"   Response time: {health['latency_ms']}ms")
     # Safe to proceed with generation
     response = provider.generate("Hello!")
 else:
-    print(f"❌ {health['provider']} is offline")
+    print(f"Not Supported: {health['provider']} is offline")
     print(f"   Error: {health['error']}")
     # Implement fallback strategy
 ```
@@ -2036,7 +2036,7 @@ response = client.chat.completions.create(
 )
 ```
 
-**Perfect Consistency with image_url:**
+**Consistent Behavior with image_url:**
 ```python
 # Images and files use identical URL pattern
 content = [

@@ -110,7 +110,7 @@ AbstractCore's vision system is built on a **layered architecture** that provide
 - Advanced reasoning with visual inputs
 - Document and chart analysis
 - Multi-image comparison
-- Excellent text extraction from images
+- High-quality text extraction from images
 
 **Ollama Features:**
 - Local processing with privacy
@@ -133,7 +133,7 @@ AbstractCore's vision system is built on a **layered architecture** that provide
 1. **OpenAI GPT-4o** `gpt-4o`
    - **Best for**: General vision tasks, multiple images, high accuracy
    - **Resolution**: Up to 4096×4096 pixels
-   - **Strengths**: Excellent object detection, text recognition, scene understanding
+   - **Strengths**: Strong object detection, text recognition, scene understanding
    - **Cost**: $$$
 
 2. **Anthropic Claude 3.5 Sonnet** `claude-3-5-sonnet-20241022`
@@ -147,7 +147,7 @@ AbstractCore's vision system is built on a **layered architecture** that provide
 1. **Qwen2.5-VL 7B** `qwen2.5vl:7b` (Ollama) / `qwen/qwen2.5-vl-7b` (LMStudio)
    - **Best for**: General vision, local deployment, cost efficiency
    - **Resolution**: Up to 3584×3584 pixels
-   - **Strengths**: Excellent performance-to-size ratio, multilingual
+   - **Strengths**: Strong performance-to-size ratio, multilingual
    - **Cost**: Free (local)
 
 2. **LLaMA 3.2 Vision 11B** `llama3.2-vision:11b`
@@ -176,8 +176,8 @@ AbstractCore's vision system is built on a **layered architecture** that provide
 
 | Model | Provider | Size | Speed | Accuracy | Resolution | Cost | Best Use Case |
 |-------|----------|------|-------|----------|------------|------|---------------|
-| GPT-4o | OpenAI | Cloud | Fast | Excellent | 4096px | $$$ | Production apps |
-| Claude 3.5 Sonnet | Anthropic | Cloud | Fast | Excellent | 1568px | $$ | Document analysis |
+| GPT-4o | OpenAI | Cloud | Fast | High | 4096px | $$$ | Production apps |
+| Claude 3.5 Sonnet | Anthropic | Cloud | Fast | High | 1568px | $$ | Document analysis |
 | Qwen2.5-VL 7B | Ollama/LMStudio | 7B | Medium | Very Good | 3584px | Free | Local deployment |
 | LLaMA 3.2 Vision 11B | Ollama | 11B | Slow | Very Good | 560px | Free | Quality local |
 | Claude 3 Haiku | Anthropic | Cloud | Very Fast | Good | 1568px | $ | Fast tasks |
@@ -244,7 +244,7 @@ AbstractCore's vision system is built on a **layered architecture** that provide
 
 ### Overview
 
-The **Vision Fallback System** is a groundbreaking feature that enables text-only models to process images through a transparent two-stage pipeline.
+The **Vision Fallback System** is a feature that enables text-only models to process images through a transparent two-stage pipeline.
 
 ### How It Works
 
@@ -287,13 +287,13 @@ abstractcore --set-vision-provider anthropic --model claude-3.5-sonnet
 
 | Model Type | Model Name | Size | Quality | Speed | Cost |
 |------------|------------|------|---------|-------|------|
-| **Downloaded** | BLIP Base | 990MB | Excellent | Medium | Free |
+| **Downloaded** | BLIP Base | 990MB | High | Medium | Free |
 | **Downloaded** | ViT-GPT2 | 500MB | Good | Fast | Free |
 | **Downloaded** | GIT Base | 400MB | Basic | Fast | Free |
-| **Ollama** | qwen2.5vl:7b | 4.7GB | Excellent | Medium | Free |
+| **Ollama** | qwen2.5vl:7b | 4.7GB | High | Medium | Free |
 | **Ollama** | llama3.2-vision:11b | 7.9GB | Very Good | Slow | Free |
-| **Cloud** | GPT-4o | Cloud | Excellent | Fast | $$$ |
-| **Cloud** | Claude 3.5 Sonnet | Cloud | Excellent | Fast | $$ |
+| **Cloud** | GPT-4o | Cloud | High | Fast | $$$ |
+| **Cloud** | Claude 3.5 Sonnet | Cloud | High | Fast | $$ |
 
 ### Usage Example
 
@@ -671,7 +671,7 @@ async def process_image_batch(images, batch_size=6):
 
 2. **Structured Requests**
    ```python
-   # Excellent: Structured output format
+   # Recommended: Structured output format
    prompt = """
    Analyze this medical chart and provide:
    1. Patient vitals (heart rate, blood pressure, temperature)
@@ -1137,18 +1137,18 @@ AbstractCore is exploring partnerships with:
 
 AbstractCore's vision capabilities represent the most comprehensive and robust multimodal AI framework available today. With support for **7 providers**, **15+ models**, **automatic optimization**, and **intelligent fallback systems**, developers can build production-ready vision applications with confidence.
 
-The system's **universal API design** means your code works identically across all providers, while **automatic resolution optimization** ensures the best possible results from each model. The **vision fallback system** is particularly groundbreaking, enabling any text-only model to process images seamlessly.
+The system's **universal API design** means your code works identically across all providers, while **automatic resolution optimization** ensures optimal results from each model. The **vision fallback system** is transparently, enabling any text-only model to process images seamlessly.
 
 Whether you're building consumer applications, enterprise solutions, or research platforms, AbstractCore provides the reliability, performance, and flexibility needed for modern AI applications.
 
 ### Key Takeaways
 
-- ✅ **Universal Compatibility**: Same code works across 7 providers and 15+ models
-- ✅ **Automatic Optimization**: Images automatically optimized for each model's capabilities
-- ✅ **Intelligent Fallback**: Text-only models can process images transparently
-- ✅ **Production Ready**: Comprehensive testing, error handling, and monitoring
-- ✅ **Performance Optimized**: Efficient processing with configurable batching
-- ✅ **Future Proof**: Regular updates and expanding model support
+- **Universal Compatibility**: Same code works across 7 providers and 15+ models
+- **Automatic Optimization**: Images automatically optimized for each model's capabilities
+- **Intelligent Fallback**: Text-only models can process images transparently
+- **Production Ready**: Comprehensive testing, error handling, and monitoring
+- **Performance Optimized**: Efficient processing with configurable batching
+- **Future Proof**: Regular updates and expanding model support
 
 Get started today and experience the future of multimodal AI development with AbstractCore.
 

@@ -129,7 +129,7 @@ class StructuredOutputHandler:
         """
         Check if provider has native structured output support.
 
-        Checks both provider type (Ollama and LMStudio always have native support)
+        Checks both provider type (Ollama, LMStudio, and HuggingFace GGUF always have native support)
         and model capabilities configuration as fallback.
 
         Args:
@@ -143,6 +143,12 @@ class StructuredOutputHandler:
         provider_name = provider.__class__.__name__
         if provider_name in ['OllamaProvider', 'LMStudioProvider']:
             return True
+
+        # HuggingFaceProvider with GGUF models (via llama-cpp-python) supports native structured outputs
+        if provider_name == 'HuggingFaceProvider':
+            # Check if it's a GGUF model - these use llama-cpp-python which supports native structured outputs
+            if hasattr(provider, 'model_type') and provider.model_type == 'gguf':
+                return True
 
         # For other providers, check model capabilities
         capabilities = getattr(provider, 'model_capabilities', {})

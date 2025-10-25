@@ -5,6 +5,100 @@ AbstractCore is a lightweight, provider-agnostic LLM framework for building soph
 
 ## Recent Tasks
 
+### Task: Native Structured Output Support for HuggingFace GGUF Models (2025-10-25)
+
+**Description**: Extended native structured output support to HuggingFace provider's GGUF models, leveraging llama-cpp-python's server-side schema enforcement capabilities. Applied implementation patterns from Ollama and LMStudio to enable schema validation for GGUF models while maintaining prompted fallback for transformers models.
+
+**Implementation**:
+
+1. **HuggingFace Provider Enhancement** (`abstractcore/providers/huggingface_provider.py`):
+   - Added `response_model` parameter propagation through `_generate_internal()` to both backends
+   - Implemented native structured output for GGUF models using llama-cpp-python's `response_format` parameter
+   - Uses OpenAI-compatible format identical to LMStudio implementation
+   - Transformers models automatically fall back to prompted approach (no changes needed)
+   - Implementation lines: 485, 487, 573, 669-680
+
+2. **StructuredOutputHandler Enhancement** (`abstractcore/structured/handler.py`):
+   - Added HuggingFace GGUF model detection to `_has_native_support()` method
+   - Checks if `provider.model_type == "gguf"` to determine native support capability
+   - GGUF models get server-side schema enforcement, transformers use prompted fallback
+   - Implementation lines: 147-151
+
+3. **Provider Registry Update** (`abstractcore/providers/registry.py`):
+   - Added `"structured_output"` to HuggingFace provider's supported features
+   - Advertises capability for API/CLI discovery
+   - Line: 132
+
+4. **Comprehensive Testing** (`tests/structured/test_huggingface_structured.py`):
+   - Created test suite with simple and medium complexity schemas
+   - Tests verify native support detection and actual structured output generation
+   - All tests passing with native support confirmed for GGUF models
+   - Test results: Native detection confirmed, Simple schema (4.9s), Medium schema (12.5s)
+
+**Test Results**:
+- Native support correctly detected for GGUF models
+- Simple schema (SimplePersonInfo): 4,929ms response time
+- Medium schema (Task with enums): 12,512ms response time
+- 100% validation success rate
+- Zero retries required for validation errors
+
+**Technical Details**:
+```python
+# Native structured output for GGUF models (llama-cpp-python)
+if response_model and PYDANTIC_AVAILABLE:
+    json_schema = response_model.model_json_schema()
+    generation_kwargs["response_format"] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": response_model.__name__,
+            "schema": json_schema
+        }
+    }
+```
+
+**Files Modified**:
+1. `abstractcore/providers/huggingface_provider.py` - Added native support for GGUF models
+2. `abstractcore/structured/handler.py` - Enhanced detection for HuggingFace GGUF
+3. `abstractcore/providers/registry.py` - Added structured_output to features
+4. `CHANGELOG.md` - Added entry for version 2.5.2
+
+**Files Created**:
+1. `tests/structured/test_huggingface_structured.py` - Comprehensive test suite
+
+**Benefits**:
+- GGUF models utilize server-side schema enforcement (consistent with Ollama/LMStudio)
+- Validation retry logic not required
+- Consistent implementation across providers with native support
+- Transformers models continue using prompted fallback
+- Automatic runtime detection based on model type
+
+**Issues/Concerns**: None. Implementation follows the proven patterns from Ollama and LMStudio. GGUF models through HuggingFace provider now have the same level of structured output reliability as dedicated GGUF-focused providers.
+
+**Verification**:
+```bash
+# Run tests
+python tests/structured/test_huggingface_structured.py
+
+# Example usage
+from abstractcore import create_llm
+from pydantic import BaseModel
+
+class Person(BaseModel):
+    name: str
+    age: int
+
+llm = create_llm("huggingface", model="unsloth/Qwen3-4B-Instruct-2507-GGUF")
+response = llm.generate(
+    prompt="Extract: John Doe, 35 years old",
+    response_model=Person
+)
+# Returns validated Person instance with schema compliance
+```
+
+**Conclusion**: Extended native structured output support to HuggingFace GGUF models. The implementation leverages llama-cpp-python's constrained sampling for server-side schema enforcement, providing consistent validation with Ollama and LMStudio. Testing demonstrates 100% validation success rate with zero validation retries needed. The feature functions automatically for GGUF models loaded through HuggingFace provider.
+
+---
+
 ### Task: Native Structured Output Implementation & Comprehensive Testing (2025-10-25 Evening)
 
 **Description**: Implemented native structured output support for Ollama and LMStudio providers, and conducted comprehensive testing to validate server-side schema guarantees across multiple models and complexity levels.

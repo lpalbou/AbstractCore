@@ -10,7 +10,7 @@ Complete navigation guide for AbstractCore documentation.
 2. **[Getting Started](getting-started.md)** - 5-minute quick start with core concepts and examples
 3. **[Troubleshooting](troubleshooting.md)** - Fix common issues quickly
 
-## 📚 Core Library (Python API)
+## Core Library (Python API)
 
 **AbstractCore is primarily a Python library for programmatic LLM usage.**
 
@@ -36,7 +36,7 @@ Complete navigation guide for AbstractCore documentation.
 - **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
 - **[AbstractCore CLI](acore-cli.md)** - Built-in CLI tool for testing and exploration
 
-## 🌐 Server (Optional HTTP REST API)
+## Server (Optional HTTP REST API)
 
 **The server is an optional component that provides OpenAI-compatible HTTP endpoints.**
 
@@ -50,7 +50,7 @@ Complete navigation guide for AbstractCore documentation.
   - Agentic CLI integration (Codex, Crush, Gemini CLI)
   - Deployment (Docker, production, cloud)
 
-## 🛠️ Built-in Applications (CLI Tools)
+## Built-in Applications (CLI Tools)
 
 **AbstractCore includes three production-ready command-line applications for common LLM tasks.**
 
@@ -79,7 +79,7 @@ judge essay.txt --criteria clarity,accuracy --provider ollama
 - **Batch processing**: Handle multiple files at once
 - **Production ready**: Robust error handling and logging
 
-## 🔧 Specialized Topics
+## Specialized Topics
 
 ### Architecture & Design
 
@@ -87,7 +87,7 @@ judge essay.txt --criteria clarity,accuracy --provider ollama
 - **[Comparison](comparison.md)** - Compare AbstractCore with alternatives
 - **[Chat Compaction](chat-compaction.md)** - Manage conversation history efficiently
 
-## 🐛 Troubleshooting & Help
+## Troubleshooting & Help
 
 - **[Troubleshooting](troubleshooting.md)** - Comprehensive troubleshooting guide:
   - Installation issues
@@ -97,7 +97,7 @@ judge essay.txt --criteria clarity,accuracy --provider ollama
   - Performance issues
   - Debug techniques
 
-## 📁 Documentation Structure
+## Documentation Structure
 
 ```
 docs/
@@ -109,14 +109,14 @@ docs/
 │   └── troubleshooting.md      # Common issues
 │
 ├── Core Library (Python)/
-│   ├── api-reference.md        # Python API reference ⭐
+│   ├── api-reference.md        # Python API reference 
 │   ├── embeddings.md           # Embeddings guide
 │   ├── examples.md             # Code examples
 │   ├── capabilities.md         # What AbstractCore can do
 │   └── tool-syntax-rewriting.md  # Tool format conversion
 │
 ├── Server (Optional HTTP REST API)/
-│   └── server.md               # Complete server documentation ⭐
+│   └── server.md               # Complete server documentation 
 │
 ├── Built-in Applications (CLI Tools)/
 │   ├── apps/                   # Production-ready CLI applications
@@ -139,7 +139,7 @@ docs/
 - **`api-reference.md`** = Python library API (functions, classes)
 - **`server.md`** = HTTP REST API (endpoints, requests)
 
-## 🎯 Quick Navigation
+## Quick Navigation
 
 ### I want to...
 
@@ -204,7 +204,7 @@ docs/
 - Setup → [Prerequisites](prerequisites.md#mlx-setup)
 - HuggingFace Setup → [Prerequisites](prerequisites.md#huggingface-setup)
 
-## 📖 Reading Paths
+## Reading Paths
 
 ### For Beginners
 1. [Prerequisites](prerequisites.md) - Setup
@@ -224,13 +224,13 @@ docs/
 3. [AbstractCore CLI](acore-cli.md) - Advanced CLI usage
 4. [Capabilities](capabilities.md) - Deep dive into features
 
-## 🔗 External Links
+## External Links
 
 - **GitHub Repository**: [lpalbou/AbstractCore](https://github.com/lpalbou/AbstractCore)
 - **Issues**: [Report bugs](https://github.com/lpalbou/AbstractCore/issues)
 - **Discussions**: [Get help](https://github.com/lpalbou/AbstractCore/discussions)
 
-## 📝 Document Status
+## Document Status
 
 | Document | Type | Status | Last Updated |
 |----------|------|--------|--------------|

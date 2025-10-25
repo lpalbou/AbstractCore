@@ -196,7 +196,7 @@ report = searcher.research(
 ### Executive
 - Concise, business-focused format
 - Emphasizes strategic insights and implications
-- Perfect for decision-makers
+- Suitable for decision-makers
 
 ### Narrative
 - Engaging, story-driven format

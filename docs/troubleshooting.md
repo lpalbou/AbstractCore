@@ -772,39 +772,39 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 Follow these best practices to avoid issues:
 
 ### Configuration Management
-- ✅ Use environment variables for API keys
-- ✅ Never commit credentials to version control
-- ✅ Use `.env` files (add to `.gitignore`)
-- ✅ Implement configuration validation
-- ✅ Use secret management in production
+- Use environment variables for API keys
+- Never commit credentials to version control
+- Use `.env` files (add to `.gitignore`)
+- Implement configuration validation
+- Use secret management in production
 
 ### Tool Development
-- ✅ Always use `@tool` decorator
-- ✅ Add type hints to all parameters
-- ✅ Write clear docstrings
-- ✅ Handle edge cases and errors
-- ✅ Test tools independently first
+- Always use `@tool` decorator
+- Add type hints to all parameters
+- Write clear docstrings
+- Handle edge cases and errors
+- Test tools independently first
 
 ### Error Handling
-- ✅ Always use try/except blocks
-- ✅ Implement provider fallback strategies
-- ✅ Log errors systematically
-- ✅ Design for graceful degradation
-- ✅ Monitor error rates in production
+- Always use try/except blocks
+- Implement provider fallback strategies
+- Log errors systematically
+- Design for graceful degradation
+- Monitor error rates in production
 
 ### Performance
-- ✅ Always set `max_tokens`
-- ✅ Use streaming for long responses
-- ✅ Batch similar requests when possible
-- ✅ Monitor memory usage
-- ✅ Profile slow operations
+- Always set `max_tokens`
+- Use streaming for long responses
+- Batch similar requests when possible
+- Monitor memory usage
+- Profile slow operations
 
 ### Security
-- ✅ Validate all user inputs
-- ✅ Sanitize file paths and commands
-- ✅ Use least privilege principle
-- ✅ Regular security audits
-- ✅ Keep dependencies updated
+- Validate all user inputs
+- Sanitize file paths and commands
+- Use least privilege principle
+- Regular security audits
+- Keep dependencies updated
 
 ---
 

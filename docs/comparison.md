@@ -27,7 +27,7 @@ This guide compares AbstractCore with other popular LLM frameworks to help you c
 
 #### When to choose LiteLLM:
 ```python
-# LiteLLM is perfect for simple API compatibility
+# LiteLLM is suitable for simple API compatibility
 from litellm import completion
 
 # Same API for all providers - that's it
@@ -288,35 +288,35 @@ print(response.content)
 ```
 Your App → AbstractCore → LLM Provider
 ```
-**Best choice**: AbstractCore
+**Recommended for**: AbstractCore
 **Why**: Simple, reliable, production-ready
 
 ### API Compatibility Only
 ```
 Your App → LiteLLM → Multiple Providers
 ```
-**Best choice**: LiteLLM
+**Recommended for**: LiteLLM
 **Why**: Massive provider support, minimal overhead
 
 ### Complex RAG System
 ```
 Documents → LlamaIndex → Vector DB → Query Engine
 ```
-**Best choice**: LlamaIndex
+**Recommended for**: LlamaIndex
 **Why**: Full RAG pipeline with document processing
 
 ### Agent Workflows
 ```
 Task → LangGraph → Multi-step Agent → Tools
 ```
-**Best choice**: LangGraph or AbstractAgent
+**Recommended for**: LangGraph or AbstractAgent
 **Why**: State management and workflow orchestration
 
 ### Full Application Framework
 ```
 Complex App → LangChain → Everything
 ```
-**Best choice**: LangChain
+**Recommended for**: LangChain
 **Why**: Comprehensive ecosystem
 
 ## Decision Matrix
@@ -419,4 +419,4 @@ Choose the right tool for your specific needs, and don't hesitate to combine the
 
 ---
 
-**The key insight**: Every framework has trade-offs. AbstractCore prioritizes reliability and simplicity over feature completeness, making it an excellent foundation for production LLM applications.
+**The key insight**: Every framework has trade-offs. AbstractCore prioritizes reliability and simplicity over feature completeness, making it an strong foundation for production LLM applications.

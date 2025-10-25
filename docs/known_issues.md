@@ -80,7 +80,7 @@ Similar naming patterns between text-only and vision-capable Granite models.
 - Updated test configurations to use correct model
 - Added clear documentation of vision vs text-only variants
 
-**Status**: ✅ Resolved
+**Status**: Resolved
 
 ## Media Handling Issues
 
@@ -103,7 +103,7 @@ Implemented provider-specific vision handling using correct HuggingFace format:
 }
 ```
 
-**Status**: ✅ Resolved
+**Status**: Resolved
 
 ## Testing Framework Issues
 
@@ -117,7 +117,7 @@ Path resolution only checked for `_mp.jpg` suffix, missing `_wh.jpg`, `_sc.jpg`,
 **Solution**:
 Simplified to direct filepath specification: `--image tests/vision_examples/mystery4_wh.jpg`
 
-**Status**: ✅ Resolved
+**Status**: Resolved
 
 ---
 

@@ -12,7 +12,7 @@ AbstractCore is **production-ready LLM infrastructure**. It provides a unified, 
 - **Simplicity over complexity**
 - **Provider agnostic**
 
-## ✅ What AbstractCore Does Well
+## What AbstractCore Does Well
 
 ### 1. Universal LLM Provider Interface
 
@@ -175,7 +175,7 @@ intent email.txt --format plain --context document --verbose
 
 **Why this helps**: Provides ready-to-use CLI tools that work with any LLM provider.
 
-## ❌ What AbstractCore Does NOT Do
+## What AbstractCore Does NOT Do
 
 Understanding limitations is crucial for choosing the right tool.
 
@@ -287,7 +287,7 @@ template = PromptTemplate("Translate '{text}' to {language}")  # Not provided
 
 ## When to Choose AbstractCore
 
-### ✅ Choose AbstractCore When You Need:
+### Choose AbstractCore When You Need:
 
 1. **Reliable LLM Infrastructure**
    - Production-ready error handling and retry logic
@@ -313,7 +313,7 @@ template = PromptTemplate("Translate '{text}' to {language}")  # Not provided
    - Real-time responses that handle tools correctly
    - Proper streaming implementation across providers
 
-### ❌ Don't Choose AbstractCore When You Need:
+### Don't Choose AbstractCore When You Need:
 
 1. **Full RAG Frameworks** → Use LlamaIndex or LangChain
 2. **Complex Agent Workflows** → Use AbstractAgent or LangGraph

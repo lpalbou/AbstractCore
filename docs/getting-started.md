@@ -67,7 +67,7 @@ python first_llm.py
 # Output: The capital of France is Paris.
 ```
 
-**Congratulations!** You've made your first AbstractCore LLM call.
+You've made your first AbstractCore LLM call.
 
 ## Core Concepts (5-Minute Tour)
 
@@ -117,7 +117,7 @@ print(f"Rating: {review.rating}/5")
 print(f"Summary: {review.summary}")
 ```
 
-**No more string parsing!** AbstractCore handles JSON validation and retries automatically.
+AbstractCore handles JSON validation and retries automatically.
 
 ### 3. Tool Calling
 
@@ -164,7 +164,7 @@ print(weather_tool.name)  # "get_weather"
 print(weather_tool.description)  # "Get current weather for a specified city."
 ```
 
-> **🏷️ Advanced Tool Features**:
+> **Advanced Tool Features**:
 > - `@tool` automatically generates ToolDefinition
 > - Supports complex type hints and docstrings
 > - Automatic parameter extraction

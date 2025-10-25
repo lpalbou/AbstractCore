@@ -159,11 +159,11 @@ All providers (except Anthropic) achieve true determinism with `seed + temperatu
 
 ```python
 # Verified with actual API calls (100% success rate):
-✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-✅ Ollama (gemma3:1b): Same seed → Identical outputs  
-✅ MLX (Qwen3-4B): Same seed → Identical outputs
-✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
-✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
+[VERIFIED] OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
+[VERIFIED] Ollama (gemma3:1b): Same seed → Identical outputs  
+[VERIFIED] MLX (Qwen3-4B): Same seed → Identical outputs
+[VERIFIED] HuggingFace: Same seed → Identical outputs (transformers + GGUF)
+[VERIFIED] LMStudio: Same seed → Identical outputs (OpenAI-compatible)
 ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (no seed support)
 ```
 

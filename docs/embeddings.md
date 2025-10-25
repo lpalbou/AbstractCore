@@ -55,7 +55,7 @@ AbstractCore supports multiple embedding providers:
 
 Local sentence-transformers models with ONNX acceleration for 2-3x speedup.
 
-| Model | Size | Dimensions | Languages | Best For |
+| Model | Size | Dimensions | Languages | Primary Use Cases |
 |-------|------|------------|-----------|----------|
 | **all-minilm** (default) | 90M | 384 | English | Fast local development, testing |
 | **qwen3-embedding** | 1.5B | 1536 | 100+ | Qwen-based multilingual, instruction-tuned |
@@ -111,11 +111,11 @@ embedder = EmbeddingManager(
 
 ### Provider Comparison
 
-| Provider | Speed | Setup | Privacy | Cost | Best For |
+| Provider | Speed | Setup | Privacy | Cost | Primary Use Cases |
 |----------|-------|-------|---------|------|----------|
-| **HuggingFace** | ⚡⚡⚡ | Easy | Full | Free | Development, production |
-| **Ollama** | ⚡⚡ | Medium | Full | Free | Privacy, custom models |
-| **LMStudio** | ⚡⚡ | Easy (GUI) | Full | Free | GUI management, testing |
+| **HuggingFace** | Fast | Easy | Full | Free | Development, production |
+| **Ollama** | Medium | Medium | Full | Free | Privacy, custom models |
+| **LMStudio** | Medium | Easy (GUI) | Full | Free | GUI management, testing |
 
 ## Core Features
 
@@ -187,7 +187,7 @@ embedder = EmbeddingManager()
 
 # Document collection
 documents = [
-    "Python is excellent for data science and machine learning applications",
+    "Python is strong for data science and machine learning applications",
     "JavaScript enables interactive web pages and modern frontend development",
     "React is a popular library for building user interfaces with JavaScript",
     "SQL databases store and query structured data efficiently",
@@ -526,7 +526,7 @@ print(f"Calls per second: {stats['calls_per_second']:.1f}")
 
 ## When to Use Embeddings
 
-### ✅ Good Use Cases
+### Good Use Cases
 
 - **Semantic Search**: Find relevant documents based on meaning, not keywords
 - **RAG Applications**: Select relevant context for language model queries
@@ -535,7 +535,7 @@ print(f"Calls per second: {stats['calls_per_second']:.1f}")
 - **Duplicate Detection**: Find near-duplicate content
 - **Multi-language Search**: Search across different languages
 
-### ❌ Not Ideal For
+### Not Ideal For
 
 - **Exact Matching**: Use traditional text search for exact matches
 - **Structured Data**: Use SQL databases for structured queries
@@ -584,7 +584,7 @@ curl -X POST http://localhost:8000/v1/embeddings \
 
 ### LMStudio Features
 - **GUI Management**: Easy model loading via GUI
-- **Testing Friendly**: Perfect for experimentation
+- **Testing Friendly**: Suitable for experimentation
 - **OpenAI Compatible**: Standard API format
 
 ## Next Steps
