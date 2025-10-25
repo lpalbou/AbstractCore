@@ -316,7 +316,7 @@
     "llama-3.2-1b": {
       "max_output_tokens": 2048,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -329,7 +329,7 @@
     "llama-3.2-3b": {
       "max_output_tokens": 2048,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -342,7 +342,7 @@
     "llama-3.2-11b-vision": {
       "max_output_tokens": 2048,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": true,
       "image_resolutions": [
@@ -358,7 +358,7 @@
     "llama-3.3-70b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": true,
       "vision_support": false,
       "audio_support": false,
@@ -371,7 +371,7 @@
     "llama-3.1-8b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": true,
       "vision_support": false,
       "audio_support": false,
@@ -384,7 +384,7 @@
     "llama-3.1-70b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": true,
       "vision_support": false,
       "audio_support": false,
@@ -397,7 +397,7 @@
     "llama-3.1-405b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": true,
       "vision_support": false,
       "audio_support": false,
@@ -426,7 +426,7 @@
     "qwen2.5-0.5b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -439,7 +439,7 @@
     "qwen2.5-1.5b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -452,7 +452,7 @@
     "qwen2.5-3b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -465,7 +465,7 @@
     "qwen2.5-7b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -478,7 +478,7 @@
     "qwen2.5-14b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -491,7 +491,7 @@
     "qwen2.5-32b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -504,7 +504,7 @@
     "qwen2.5-72b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -517,7 +517,7 @@
     "qwen3-0.6b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -531,7 +531,7 @@
     "qwen3-1.7b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -545,7 +545,7 @@
     "qwen3-4b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -559,7 +559,7 @@
     "qwen3-32b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -573,7 +573,7 @@
     "qwen3-30b-a3b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -587,7 +587,7 @@
     "qwen3-30b-a3b-2507": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -603,7 +603,7 @@
     "qwen3-coder-30b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": true,
       "vision_support": false,
       "audio_support": false,
@@ -616,7 +616,7 @@
     "qwen2-vl": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": true,
       "image_resolutions": [
@@ -659,7 +659,7 @@
     "phi-3-mini": {
       "max_output_tokens": 4096,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -672,7 +672,7 @@
     "phi-3-small": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -684,7 +684,7 @@
     "phi-3-medium": {
       "max_output_tokens": 4096,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -696,7 +696,7 @@
     "phi-3.5-mini": {
       "max_output_tokens": 4096,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -708,7 +708,7 @@
     "phi-3.5-moe": {
       "max_output_tokens": 4096,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -721,7 +721,7 @@
     "phi-3-vision": {
       "max_output_tokens": 4096,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": true,
       "image_resolutions": [
@@ -736,7 +736,7 @@
     "phi-4": {
       "max_output_tokens": 16000,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -749,7 +749,7 @@
     "mistral-7b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -957,7 +957,7 @@
     "gemma-2b": {
       "max_output_tokens": 8192,
       "tool_support": "none",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -969,7 +969,7 @@
     "gemma-7b": {
       "max_output_tokens": 8192,
       "tool_support": "none",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -1018,7 +1018,7 @@
     "codegemma": {
       "max_output_tokens": 8192,
       "tool_support": "none",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -1049,7 +1049,7 @@
     "glm-4": {
       "max_output_tokens": 4096,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -1101,7 +1101,7 @@
     "qwen3": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
-      "structured_output": "prompted",
+      "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
