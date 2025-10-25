@@ -46,10 +46,10 @@ AbstractCore is a comprehensive Python library providing a unified interface to 
 
 | Provider | Features | SEED Support |
 |----------|----------|-------------|
-| **OpenAI** | Native tool calls, streaming, structured output, vision (GPT-4o), media processing | ✅ Native |
-| **Anthropic** | Native tool calls, streaming, structured output, vision (Claude 4.5), media processing | ⚠️ Warning* |
-| **Ollama** | Prompted tool calls, streaming, local models, vision (qwen2.5vl:7b), media processing | ✅ Native |
-| **LMStudio** | Prompted tool calls, streaming, local models, vision (qwen2.5-vl), media processing | ✅ Native |
+| **OpenAI** | Native tool calls, streaming, native structured output, vision (GPT-4o), media processing | ✅ Native |
+| **Anthropic** | Native tool calls, streaming, native structured output, vision (Claude 4.5), media processing | ⚠️ Warning* |
+| **Ollama** | Prompted tool calls, streaming, native structured output, local models, vision (qwen2.5vl:7b), media processing | ✅ Native |
+| **LMStudio** | Prompted tool calls, streaming, native structured output, local models, vision (qwen2.5-vl), media processing | ✅ Native |
 | **MLX** | Prompted tool calls, streaming, Apple Silicon, vision models, media processing | ✅ Native |
 | **HuggingFace** | Prompted tool calls, streaming, open models, vision models, media processing | ✅ Native |
 

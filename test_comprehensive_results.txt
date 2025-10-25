@@ -1,0 +1,62 @@
+
+================================================================================
+COMPREHENSIVE NATIVE STRUCTURED OUTPUT TESTING
+================================================================================
+
+📊 Testing Ollama Simple Schemas...
+✅ ollama/qwen3:4b-instruct-2507-q4_K_M/simple - Success on attempt 1 (4290ms)
+✅ ollama/qwen3:4b-instruct-2507-q4_K_M/simple - Success on attempt 1 (439ms)
+✅ ollama/gpt-oss:20b/simple - Success on attempt 1 (8473ms)
+✅ ollama/gpt-oss:20b/simple - Success on attempt 1 (3965ms)
+
+📊 Testing Ollama Medium Schemas...
+✅ ollama/qwen3:4b-instruct-2507-q4_K_M/medium - Success on attempt 1 (7018ms)
+✅ ollama/qwen3:4b-instruct-2507-q4_K_M/medium - Success on attempt 1 (2123ms)
+✅ ollama/gpt-oss:20b/medium - Success on attempt 1 (11531ms)
+✅ ollama/gpt-oss:20b/medium - Success on attempt 1 (9051ms)
+
+📊 Testing Ollama Complex Schemas...
+✅ ollama/qwen3:4b-instruct-2507-q4_K_M/complex - Success on attempt 1 (163556ms)
+✅ ollama/gpt-oss:20b/complex - Success on attempt 1 (17831ms)
+
+📊 Testing LMStudio Simple Schemas...
+✅ lmstudio/qwen/qwen3-4b-2507/simple - Success on attempt 1 (671ms)
+✅ lmstudio/qwen/qwen3-4b-2507/simple - Success on attempt 1 (681ms)
+✅ lmstudio/openai/gpt-oss-20b/simple - Success on attempt 1 (1614ms)
+✅ lmstudio/openai/gpt-oss-20b/simple - Success on attempt 1 (933ms)
+
+📊 Testing LMStudio Medium Schemas...
+✅ lmstudio/qwen/qwen3-4b-2507/medium - Success on attempt 1 (3340ms)
+✅ lmstudio/qwen/qwen3-4b-2507/medium - Success on attempt 1 (4230ms)
+✅ lmstudio/openai/gpt-oss-20b/medium - Success on attempt 1 (146408ms)
+✅ lmstudio/openai/gpt-oss-20b/medium - Success on attempt 1 (2873ms)
+
+📊 Testing LMStudio Complex Schemas...
+✅ lmstudio/qwen/qwen3-4b-2507/complex - Success on attempt 1 (9194ms)
+✅ lmstudio/openai/gpt-oss-20b/complex - Success on attempt 1 (144470ms)
+
+================================================================================
+TEST RESULTS SUMMARY
+================================================================================
+
+Total Tests: 20
+Overall Success Rate: 100.0%
+
+--- By Provider ---
+Ollama: 100.0% success, 22828ms avg, 0.0% needed retries
+Lmstudio: 100.0% success, 31442ms avg, 0.0% needed retries
+
+--- By Complexity ---
+Simple: 100.0% success, 0.0% needed retries
+Medium: 100.0% success, 0.0% needed retries
+Complex: 100.0% success, 0.0% needed retries
+
+--- By Model ---
+qwen3:4b-instruct-2507-q4_K_M: 100.0% success, 35485ms avg
+gpt-oss:20b: 100.0% success, 10170ms avg
+qwen/qwen3-4b-2507: 100.0% success, 3623ms avg
+openai/gpt-oss-20b: 100.0% success, 59260ms avg
+
+✅ Results saved to: test_results_native_structured.json
+
+================================================================================

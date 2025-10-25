@@ -11,13 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `intent` CLI application for analyzing conversation intents and detecting deception patterns
 - `/intent` command in interactive CLI to analyze participant motivations in real-time conversations
 - Support for multi-participant conversation analysis with focus on specific participants
+- **Native Structured Output Support**: LMStudio provider now supports server-side schema enforcement via OpenAI-compatible `response_format` parameter
+  - Structured outputs are now guaranteed to match the provided schema without retry logic
+  - Works seamlessly with Pydantic models through the existing `response_model` parameter
+  - Provider registry updated to advertise structured output capability
 
 ### Changed
 - Renamed "Internal CLI" to "AbstractCore CLI" throughout documentation
 - File renamed: `docs/internal-cli.md` → `docs/acore-cli.md`
+- **Model Capabilities**: Updated 50+ Ollama-compatible models to report native structured output support (Llama, Qwen, Gemma, Mistral, Phi families)
+  - This reflects the actual server-side schema enforcement capabilities these models have when used with Ollama
+- **Provider Registry**: Added `"structured_output"` to supported features for both Ollama and LMStudio providers
 
 ### Fixed
 - Updated all documentation cross-references to use new CLI naming
+- **Ollama Provider**: Improved documentation of native structured output implementation (was already correct, now better documented)
+- **StructuredOutputHandler**: Enhanced provider detection logic to correctly identify Ollama and LMStudio as having native support regardless of configuration
 
 ## [2.4.9] - 2025-10-21
 

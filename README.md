@@ -214,7 +214,7 @@ response = llm.generate(
 - **Document Processing**: PDF extraction (PyMuPDF4LLM), Office documents (DOCX/XLSX/PPT), CSV/TSV analysis
 - **Unified Tools**: Consistent tool calling across all providers
 - **Session Management**: Persistent conversations with metadata, analytics, and complete serialization
-- **Structured Responses**: Clean, predictable output formats with Pydantic
+- **Native Structured Output**: Server-side schema enforcement for Ollama and LMStudio (OpenAI and Anthropic also supported)
 - **Streaming Support**: Real-time token generation for interactive experiences
 - **Consistent Token Terminology**: Unified `input_tokens`, `output_tokens`, `total_tokens` across all providers
 - **Embeddings**: Built-in support for semantic search and RAG applications
