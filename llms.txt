@@ -373,7 +373,7 @@ for chunk in llm.generate("Use the calculator tool", tools=[calculate], stream=T
     print(chunk.content, end="", flush=True)
 ```
 
-### Structured Output with Automatic Retry
+### Structured Output with Native Support
 ```python
 from pydantic import BaseModel
 from abstractcore import create_llm
@@ -382,12 +382,14 @@ class Person(BaseModel):
     name: str
     age: int
 
-# Automatic validation and retry on failures
+# Ollama and LMStudio use native server-side schema enforcement
+# OpenAI and Anthropic also support native structured outputs
+llm = create_llm("ollama", model="qwen3:4b")
 person = llm.generate(
     "Extract: John Doe is 25 years old",
     response_model=Person
 )
-print(f"{person.name}, age {person.age}")
+print(f"{person.name}, age {person.age}")  # Guaranteed schema compliance
 ```
 
 ### CLI Applications (Terminal & Python)
@@ -541,10 +543,10 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 ### Supported Providers
 | Provider | Features | SEED Support | Default Model |
 |----------|----------|-------------|---------------|
-| **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o), media processing | ✅ Native | gpt-4o-mini |
-| **Anthropic** | Native tools, streaming, structured output, vision (Claude 3.5), media processing | ⚠️ Warning* | claude-3-5-haiku-latest |
-| **Ollama** | Prompted tools, streaming, local models, vision (qwen2.5vl:7b), media processing | ✅ Native | llama3.2:3b |
-| **LMStudio** | Prompted tools, streaming, local models, vision (qwen2.5-vl), media processing | ✅ Native | llama-3.2-8b-instruct |
+| **OpenAI** | Native tools, streaming, native structured output, vision (GPT-4o), media processing | ✅ Native | gpt-4o-mini |
+| **Anthropic** | Native tools, streaming, native structured output, vision (Claude 3.5), media processing | ⚠️ Warning* | claude-3-5-haiku-latest |
+| **Ollama** | Prompted tools, streaming, native structured output, local models, vision (qwen2.5vl:7b), media processing | ✅ Native | llama3.2:3b |
+| **LMStudio** | Prompted tools, streaming, native structured output, local models, vision (qwen2.5-vl), media processing | ✅ Native | llama-3.2-8b-instruct |
 | **MLX** | Prompted tools, streaming, Apple Silicon, vision models, media processing | ✅ Native | mlx-community/Qwen2.5-Coder-7B-Instruct-4bit |
 | **HuggingFace** | Prompted tools, streaming, open models, vision models, media processing | ✅ Native | unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit |
 
