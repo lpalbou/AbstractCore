@@ -34,6 +34,8 @@ Ready-to-use terminal tools - no Python code required:
 - **[Summarizer](docs/apps/basic-summarizer.md)**: `summarizer document.pdf --style executive`
 - **[Extractor](docs/apps/basic-extractor.md)**: `extractor report.txt --format json-ld --focus technology`
 - **[Judge](docs/apps/basic-judge.md)**: `judge essay.txt --criteria clarity,accuracy --context "academic writing"`
+- **[Intent Analyzer](docs/apps/basic-intent.md)**: `intent conversation.txt --focus-participant user --depth comprehensive`
+- **[Deep Search](docs/apps/basic-deepsearch.md)**: `deepsearch "quantum computing 2024" --research-mode enhanced --depth comprehensive`
 
 ## Optional Components
 
@@ -408,16 +410,30 @@ judge essay.txt --criteria clarity,accuracy --context "academic writing"
 
 ```python
 # Python API usage
-from abstractcore.processing import BasicSummarizer, BasicExtractor, BasicJudge
+from abstractcore.processing import (
+    BasicSummarizer, BasicExtractor, BasicJudge,
+    BasicIntentAnalyzer, BasicDeepSearch
+)
 
+# Document summarization
 summarizer = BasicSummarizer()
 summary = summarizer.summarize(text, style="executive", length="brief")
 
+# Entity extraction
 extractor = BasicExtractor()
 kg = extractor.extract(text, output_format="jsonld")
 
+# Text evaluation
 judge = BasicJudge()
 assessment = judge.evaluate(text, context="code review", focus="error handling")
+
+# Intent analysis with deception detection
+analyzer = BasicIntentAnalyzer()
+intent = analyzer.analyze_intent(text, depth="underlying")
+
+# Autonomous research
+searcher = BasicDeepSearch(research_mode="enhanced")
+report = searcher.research("quantum computing 2024", max_sources=15)
 ```
 
 ### HTTP Server (OpenAI-Compatible)

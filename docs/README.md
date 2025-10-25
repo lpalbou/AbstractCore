@@ -53,7 +53,7 @@ Complete navigation guide for AbstractCore documentation.
 
 ## Built-in Applications (CLI Tools)
 
-**AbstractCore includes three production-ready command-line applications for common LLM tasks.**
+**AbstractCore includes five production-ready command-line applications for common LLM tasks.**
 
 ### Quick Start with Apps
 
@@ -62,9 +62,11 @@ Complete navigation guide for AbstractCore documentation.
 pip install abstractcore[all]
 
 # Direct terminal usage (no Python code needed)
-summarizer document.pdf --provider openai --model gpt-4o-mini
-extractor research_paper.pdf --format json-ld --provider anthropic  
-judge essay.txt --criteria clarity,accuracy --provider ollama
+summarizer document.pdf
+extractor research_paper.pdf --format json-ld
+judge essay.txt --criteria clarity,accuracy
+intent conversation.txt --depth comprehensive --conversation-mode
+deepsearch "quantum computing 2024" --depth comprehensive
 ```
 
 ### Application Documentation
@@ -72,9 +74,11 @@ judge essay.txt --criteria clarity,accuracy --provider ollama
 - **[Summarizer Guide](apps/basic-summarizer.md)** - Document summarization with multiple strategies
 - **[Extractor Guide](apps/basic-extractor.md)** - Entity and relationship extraction from text
 - **[Judge Guide](apps/basic-judge.md)** - Text evaluation and scoring systems
+- **[Intent Analyzer Guide](apps/basic-intent.md)** - Psychological intent analysis and deception detection
+- **[Deep Search Guide](apps/basic-deepsearch.md)** - Autonomous multi-stage research with citations and verification
 
 **Key Features:**
-- **Direct CLI usage**: `summarizer`, `extractor`, `judge` commands
+- **Direct CLI usage**: `summarizer`, `extractor`, `judge`, `intent`, `deepsearch` commands
 - **Provider agnostic**: Works with any configured LLM provider
 - **Multiple formats**: PDF, TXT, MD, DOCX support
 - **Batch processing**: Handle multiple files at once
@@ -125,7 +129,8 @@ docs/
 │   │   ├── basic-summarizer.md     # Document summarization
 │   │   ├── basic-extractor.md      # Entity/relationship extraction
 │   │   ├── basic-judge.md          # Text evaluation and scoring
-│   │   └── basic-intent.md         # Intent analysis & deception detection
+│   │   ├── basic-intent.md         # Intent analysis & deception detection
+│   │   └── basic-deepsearch.md     # Autonomous research agent
 │
 ├── Specialized/
 │   ├── acore-cli.md           # Interactive CLI tool for development
@@ -152,8 +157,10 @@ docs/
 
 **Use Built-in Apps (CLI Tools):**
 - Summarize documents → [Summarizer Guide](apps/basic-summarizer.md)
-- Extract entities → [Extractor Guide](apps/basic-extractor.md)  
+- Extract entities → [Extractor Guide](apps/basic-extractor.md)
 - Evaluate text → [Judge Guide](apps/basic-judge.md)
+- Analyze intent → [Intent Analyzer Guide](apps/basic-intent.md)
+- Conduct research → [Deep Search Guide](apps/basic-deepsearch.md)
 - Quick start → `pip install abstractcore[all]` then `summarizer --help`
 
 **Use Core Library (Python):**

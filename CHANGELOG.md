@@ -5,6 +5,30 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.3] - 2025-10-26
+
+### Added
+- Comprehensive documentation for `BasicDeepSearch` autonomous research agent
+  - Three research modes: standard (default), enhanced (AI-optimized), fast (speed-optimized)
+  - Reflexive mode for iterative gap analysis and refinement (separate from research modes)
+  - Four-stage pipeline: planning, question development, web exploration, report generation
+  - Source deduplication (URL and title), citation validation (50% threshold), authority indicators
+  - Debug mode with comprehensive tracking of queries, URLs, relevance assessments, and decisions
+  - Full documentation at `docs/apps/basic-deepsearch.md`
+- Documentation for `BasicIntentAnalyzer` psychological analysis tool
+  - 17 intent types based on psychological research
+  - Integrated deception detection on all analyses
+  - Three analysis depths: surface, underlying, comprehensive
+  - Four context types: standalone, conversational, document, interactive
+  - Conversation analysis with participant focus
+  - Automatic document chunking for long texts
+- Updated `llms.txt` and `llms-full.txt` with BasicIntent and BasicDeepSearch usage examples
+- Added both applications to README.md, docs/README.md, and docs/capabilities.md
+
+### Changed
+- Updated Built-in Applications count from 3 to 5 applications across documentation
+- Enhanced application import examples in llms documentation files
+
 ## [2.5.2] - 2025-10-26
 
 ### Added
@@ -50,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `pip install abstractcore[huggingface]` now includes Outlines for native structured output
   - `pip install abstractcore[mlx]` now includes Outlines for native structured output
   - Base installation remains lightweight - Outlines only installed when needed
+- Updated Built-in Applications count from 3 to 5 applications across documentation
+- Enhanced application import examples in llms documentation files
 
 ### Fixed
 - **HuggingFace Provider**: Added missing `response_model` parameter propagation through internal generation methods
