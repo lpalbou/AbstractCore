@@ -33,15 +33,33 @@ BasicDeepSearch implements a four-stage research pipeline:
 
 BasicDeepSearch offers three distinct research modes optimized for different use cases. Each mode adjusts source limits, query generation, and processing strategies.
 
+### Exact Mode Behavior Comparison
+
+| **Parameter** | **Standard Mode** | **Fast Mode** | **Enhanced Mode** |
+|--------------|------------------|---------------|-------------------|
+| **CLI Flag** | `--research-mode standard` (default) | `--research-mode fast` | `--research-mode enhanced` |
+| **Max Sources** | User-configurable (default: 15) | **Hard-coded to 10** | **Hard-coded to 6** |
+| **Queries per Sub-task** | 2+ diverse queries | 1 focused query | 1 focused query |
+| **Query Generation** | `_develop_search_questions()` | `_develop_search_questions_fast()` | `_develop_search_questions_fast()` |
+| **Verification/Fact-checking** | Enabled (default) | **Disabled** | **Disabled** |
+| **Intent Analysis** | Disabled | Disabled | **Enabled** (auto) |
+| **Iterative Refinement** | Disabled | Disabled | **Enabled** (auto) |
+| **Token Budget Tracking** | N/A | N/A | Yes (default: 50,000) |
+| **Typical Time** | ~10 minutes | ~7 minutes | ~8 minutes |
+| **Best For** | Comprehensive coverage | **Balanced speed/coverage** | AI-optimized quality |
+
+**Note**: User can override auto-enabled features with `--enable-intent-analysis`, `--disable-intent-analysis`, `--enable-iterative-refinement`, `--disable-iterative-refinement` flags.
+
 ### Standard Mode (Default)
 **Best for**: Comprehensive research with maximum coverage
 
-**Features**:
-- Uses full source limit (configurable via `--max-sources`, default: 15)
-- Generates 2+ diverse queries per sub-task for breadth
-- Optional verification and fact-checking enabled
-- No automatic query enhancement
-- No automatic refinement
+**Exact Behavior** (lines 430-455 in basic_deepsearch.py):
+- **Max Sources**: Uses user-provided `--max-sources` value (default: 15, range: 1-100)
+- **Query Generation**: Calls `_develop_search_questions()` which generates `max(2, max_sources // len(sub_tasks))` queries per sub-task
+- **Verification**: `include_verification` parameter respected (enabled by default unless `--no-verification` flag)
+- **Intent Analysis**: `enable_intent_analysis=None` (not auto-enabled, must use `--enable-intent-analysis` to activate)
+- **Iterative Refinement**: `enable_iterative_refinement=None` (not auto-enabled, must use `--enable-iterative-refinement` to activate)
+- **Token Budgeting**: Not tracked
 
 **Typical Time**: ~10 minutes for standard depth
 
@@ -70,17 +88,18 @@ report = searcher.research(
 ### Enhanced Mode
 **Best for**: AI-optimized research with intelligent query enhancement and refinement
 
-**Features**:
-- **Intent Analysis**: Automatically analyzes query intent and enhances clarity
-- **Smart Refinement**: Single-pass gap analysis with targeted improvement
-- **Token Budgeting**: Tracks token usage against 50,000 token budget
-- Streamlined execution: 6 sources (reduced for efficiency)
-- Single best query per sub-task (focused approach)
-- Verification disabled for speed
+**Exact Behavior** (lines 430-498 in basic_deepsearch.py):
+- **Max Sources**: **Force-limited to 6** via `max_sources = min(max_sources, 6)` (ignores user `--max-sources` if higher)
+- **Query Generation**: Calls `_develop_search_questions_fast()` which generates **1 query per sub-task**
+- **Verification**: **Force-disabled** via `include_verification = False` (ignores `--no-verification` flag)
+- **Intent Analysis**: **Auto-enabled** via `enable_intent_analysis = (research_mode == "enhanced")` unless explicitly overridden
+- **Iterative Refinement**: **Auto-enabled** via `enable_iterative_refinement = (research_mode == "enhanced")` unless explicitly overridden
+- **Token Budgeting**: Tracked via `token_budget` parameter (default: 50,000, range: 1,000-500,000)
+- **Refinement Condition**: Only runs if `tokens_used < token_budget * 0.8` (80% threshold)
 
 **Unique Capabilities**:
-1. **Intent-Aware Planning**: Detects intent type (information seeking, problem solving, etc.) and rewrites queries for better specificity
-2. **Gap-Aware Refinement**: Analyzes generated report for one critical gap, performs targeted search if needed, enhances with findings
+1. **Intent-Aware Planning** (line 424): Calls `_analyze_intent_and_enhance_query()` to detect intent type and rewrite query
+2. **Gap-Aware Refinement** (line 496): Calls `_smart_single_pass_refinement()` to analyze ONE critical gap and enhance report
 
 **Typical Time**: ~8 minutes for standard depth
 
@@ -109,16 +128,20 @@ print(f"Tokens used: {searcher.tokens_used}/{searcher.token_budget}")
 ```
 
 ### Fast Mode
-**Best for**: Quick overviews and rapid exploration
+**Best for**: Balanced speed and coverage - intermediary between Standard and Enhanced
 
-**Features**:
-- Speed-optimized: 6 sources maximum (hard-coded limit)
-- Single best query per sub-task (eliminates redundancy)
-- Verification disabled for speed
-- No intent analysis or refinement
-- Streamlined processing throughout
+**Exact Behavior** (lines 430-455 in basic_deepsearch.py):
+- **Max Sources**: **Force-limited to 10** via `max_sources = min(max_sources, 10)` (intermediary between Standard's 15 and Enhanced's 6)
+- **Query Generation**: Calls `_develop_search_questions_fast()` which generates **1 query per sub-task** (faster than Standard's 2+)
+- **Verification**: **Force-disabled** via `include_verification = False` (saves time vs Standard)
+- **Intent Analysis**: `enable_intent_analysis=None` (not auto-enabled, must use `--enable-intent-analysis` to activate)
+- **Iterative Refinement**: `enable_iterative_refinement=None` (not auto-enabled, must use `--enable-iterative-refinement` to activate)
+- **Token Budgeting**: Not tracked
+- **Processing**: Streamlined query generation with reasonable source coverage
 
-**Typical Time**: ~5 minutes for brief depth
+**Typical Time**: ~7 minutes for standard depth
+
+**Why 10 Sources?**: Provides significantly better coverage than Enhanced mode (6 sources) while being faster than Standard mode (15 sources). This makes Fast mode a practical middle-ground option rather than just a crippled version of Enhanced.
 
 **Example**:
 ```bash
@@ -236,10 +259,12 @@ report = searcher.research("Quick but thorough research")
 
 ## CLI Usage
 
+**Default Provider**: The CLI app uses `ollama/qwen3:4b-instruct-2507-q4_K_M` by default unless configured otherwise via `abstractcore --set-default-model` or specified with `--provider` and `--model` flags.
+
 ### Basic Usage
 
 ```bash
-# Simple research query (standard mode)
+# Simple research query (standard mode, uses default provider)
 deepsearch "What are the latest developments in quantum computing?"
 
 # Research with specific focus areas
@@ -250,6 +275,9 @@ deepsearch "sustainable energy 2025" \
   --depth comprehensive \
   --format executive \
   --output report.json
+
+# Use custom provider/model
+deepsearch "AI trends 2024" --provider openai --model gpt-4o-mini
 ```
 
 ### Mode Selection
@@ -285,6 +313,21 @@ deepsearch "technical topic" --full-text
 deepsearch "complex topic" \
   --reflexive \
   --max-reflexive-iterations 3
+
+# Manual mode overrides - enable intent analysis in standard mode
+deepsearch "AI safety research" \
+  --research-mode standard \
+  --enable-intent-analysis
+
+# Manual mode overrides - disable refinement in enhanced mode
+deepsearch "quick analysis" \
+  --research-mode enhanced \
+  --disable-iterative-refinement
+
+# Enhanced mode with custom token budget
+deepsearch "comprehensive analysis" \
+  --research-mode enhanced \
+  --token-budget 75000
 
 # Combine modes for maximum capability
 deepsearch "comprehensive analysis" \
@@ -625,7 +668,11 @@ FINAL SOURCES:
 - `--research-mode`: Research mode (standard, enhanced, fast)
 - `--reflexive`: Enable reflexive mode
 - `--max-reflexive-iterations`: Reflexive iteration limit (default: 2)
-- `--token-budget`: Token budget for enhanced mode (default: 50000)
+- `--token-budget`: Token budget for enhanced mode (default: 50000, range: 1000-500000)
+- `--enable-intent-analysis`: Manually enable intent analysis (auto-enabled in enhanced mode)
+- `--disable-intent-analysis`: Manually disable intent analysis (overrides mode defaults)
+- `--enable-iterative-refinement`: Manually enable iterative refinement (auto-enabled in enhanced mode)
+- `--disable-iterative-refinement`: Manually disable iterative refinement (overrides mode defaults)
 
 ### Performance Settings
 - `--parallel-searches` / `max_parallel_searches`: Concurrent web searches (1-20, default: 5)

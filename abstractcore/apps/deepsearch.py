@@ -19,6 +19,12 @@ Options:
     --timeout <seconds>         HTTP timeout for LLM providers (default: 300)
     --max-tokens <tokens>       Maximum total tokens for LLM context (default: 32000)
     --max-output-tokens <tokens> Maximum tokens for LLM output generation (default: 8000)
+    --research-mode <mode>      Research mode: standard (full sources), enhanced (AI-optimized), fast (speed-optimized) (default: standard)
+    --token-budget <tokens>     Token budget for enhanced mode (default: 50000)
+    --enable-intent-analysis    Enable intent analysis (auto-enabled in enhanced mode)
+    --disable-intent-analysis   Disable intent analysis (overrides mode default)
+    --enable-iterative-refinement  Enable iterative refinement (auto-enabled in enhanced mode)
+    --disable-iterative-refinement Disable iterative refinement (overrides mode default)
     --help                      Show this help message
 
 Examples:
@@ -27,6 +33,8 @@ Examples:
     python -m abstractcore.apps.deepsearch "sustainable energy 2025" --format executive --output report.json
     python -m abstractcore.apps.deepsearch "blockchain technology trends" --max-sources 25 --verbose
     python -m abstractcore.apps.deepsearch "climate change solutions" --provider openai --model gpt-4o-mini --depth comprehensive
+    python -m abstractcore.apps.deepsearch "AI regulations 2024" --research-mode enhanced --token-budget 75000
+    python -m abstractcore.apps.deepsearch "quick tech overview" --research-mode fast
 """
 
 import argparse
@@ -38,6 +46,25 @@ from typing import Optional, List, Dict, Any
 
 from ..processing import BasicDeepSearch
 from ..core.factory import create_llm
+
+
+def get_app_defaults(app_name: str) -> tuple[str, str]:
+    """Get default provider and model for an app."""
+    try:
+        from ..config import get_config_manager
+        config_manager = get_config_manager()
+        return config_manager.get_app_default(app_name)
+    except Exception:
+        # Fallback to hardcoded defaults if config unavailable
+        hardcoded_defaults = {
+            'summarizer': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+            'extractor': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+            'judge': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+            'intent': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+            'deepsearch': ('ollama', 'qwen3:4b-instruct-2507-q4_K_M'),
+            'cli': ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'),
+        }
+        return hardcoded_defaults.get(app_name, ('huggingface', 'unsloth/Qwen3-4B-Instruct-2507-GGUF'))
 
 
 def timeout_type(value):
@@ -357,6 +384,11 @@ Examples:
   %(prog)s "AI impact on healthcare" --focus "diagnosis,treatment,ethics" --depth comprehensive
   %(prog)s "sustainable energy 2025" --format executive --output report.json
   %(prog)s "blockchain technology trends" --max-sources 25 --verbose
+
+Research Mode Examples:
+  %(prog)s "AI regulations 2024" --research-mode enhanced --token-budget 75000
+  %(prog)s "quick tech overview" --research-mode fast
+  %(prog)s "comprehensive analysis" --research-mode standard --enable-intent-analysis
         """
     )
     
@@ -481,14 +513,61 @@ Examples:
         default=0.1,
         help='LLM temperature for consistency (default: 0.1, range: 0.0-1.0)'
     )
-    
+
+    # Research mode options
+    parser.add_argument(
+        '--research-mode',
+        choices=['standard', 'enhanced', 'fast'],
+        default='standard',
+        help='Research mode: standard (full sources), enhanced (AI-optimized with intent analysis), fast (speed-optimized) (default: standard)'
+    )
+
+    parser.add_argument(
+        '--token-budget',
+        type=int,
+        default=50000,
+        help='Token budget for enhanced mode (default: 50000)'
+    )
+
+    # Intent analysis options (mutually exclusive)
+    intent_group = parser.add_mutually_exclusive_group()
+    intent_group.add_argument(
+        '--enable-intent-analysis',
+        action='store_true',
+        dest='enable_intent_analysis',
+        help='Enable intent analysis (auto-enabled in enhanced mode)'
+    )
+    intent_group.add_argument(
+        '--disable-intent-analysis',
+        action='store_false',
+        dest='enable_intent_analysis',
+        help='Disable intent analysis (overrides mode default)'
+    )
+    parser.set_defaults(enable_intent_analysis=None)
+
+    # Iterative refinement options (mutually exclusive)
+    refinement_group = parser.add_mutually_exclusive_group()
+    refinement_group.add_argument(
+        '--enable-iterative-refinement',
+        action='store_true',
+        dest='enable_iterative_refinement',
+        help='Enable iterative refinement (auto-enabled in enhanced mode)'
+    )
+    refinement_group.add_argument(
+        '--disable-iterative-refinement',
+        action='store_false',
+        dest='enable_iterative_refinement',
+        help='Disable iterative refinement (overrides mode default)'
+    )
+    parser.set_defaults(enable_iterative_refinement=None)
+
     # Utility options
     parser.add_argument(
         '--verbose',
         action='store_true',
         help='Show detailed progress information'
     )
-    
+
     parser.add_argument(
         '--debug',
         action='store_true',
@@ -501,13 +580,17 @@ Examples:
     if (args.provider and not args.model) or (args.model and not args.provider):
         print("❌ Error: Both --provider and --model must be specified together")
         sys.exit(1)
-    
+
     if args.max_sources < 1 or args.max_sources > 100:
         print("❌ Error: --max-sources must be between 1 and 100")
         sys.exit(1)
-    
+
     if args.parallel_searches < 1 or args.parallel_searches > 20:
         print("❌ Error: --parallel-searches must be between 1 and 20")
+        sys.exit(1)
+
+    if args.token_budget < 1000 or args.token_budget > 500000:
+        print("❌ Error: --token-budget must be between 1,000 and 500,000")
         sys.exit(1)
     
     # Configure logging level
@@ -518,17 +601,24 @@ Examples:
     try:
         # Initialize LLM
         if args.provider and args.model:
-            llm = create_llm(
-                args.provider,
-                model=args.model,
-                max_tokens=args.max_tokens,
-                max_output_tokens=args.max_output_tokens,
-                timeout=args.timeout
-            )
+            provider = args.provider
+            model = args.model
         else:
-            llm = None  # Will use default in BasicDeepSearch
-        
-        # Initialize Deep Search
+            # Use app defaults
+            provider, model = get_app_defaults('deepsearch')
+
+        if args.verbose:
+            print(f"🤖 Using LLM: {provider}/{model}")
+
+        llm = create_llm(
+            provider=provider,
+            model=model,
+            max_tokens=args.max_tokens,
+            max_output_tokens=args.max_output_tokens,
+            timeout=args.timeout
+        )
+
+        # Initialize Deep Search with all parameters
         searcher = BasicDeepSearch(
             llm=llm,
             max_tokens=args.max_tokens,
@@ -539,7 +629,11 @@ Examples:
             reflexive_mode=args.reflexive,
             max_reflexive_iterations=args.max_reflexive_iterations,
             temperature=args.temperature,
-            debug_mode=args.debug
+            debug_mode=args.debug,
+            research_mode=args.research_mode,
+            token_budget=args.token_budget,
+            enable_intent_analysis=args.enable_intent_analysis,
+            enable_iterative_refinement=args.enable_iterative_refinement
         )
         
         # Parse focus areas
@@ -550,12 +644,29 @@ Examples:
         
         # Display research configuration
         print(f"🔍 Research Query: {args.query}")
+        print(f"📊 Research Mode: {args.research_mode.upper()}")
         print(f"📊 Depth: {args.depth}")
         print(f"📚 Max Sources: {args.max_sources}")
         print(f"📝 Format: {args.format}")
         print(f"✅ Verification: {'Disabled' if args.no_verification else 'Enabled'}")
         print(f"⚡ Parallel Searches: {args.parallel_searches}")
         print(f"📄 Text Extraction: {'Full Text' if args.full_text else 'Preview (1000 chars)'}")
+
+        # Research mode specific options
+        if args.research_mode == 'enhanced':
+            print(f"💰 Token Budget: {args.token_budget:,}")
+            intent_status = 'Enabled' if args.enable_intent_analysis is True else ('Disabled' if args.enable_intent_analysis is False else 'Auto (Enabled)')
+            refinement_status = 'Enabled' if args.enable_iterative_refinement is True else ('Disabled' if args.enable_iterative_refinement is False else 'Auto (Enabled)')
+            print(f"🧠 Intent Analysis: {intent_status}")
+            print(f"🔄 Iterative Refinement: {refinement_status}")
+        elif args.enable_intent_analysis is not None or args.enable_iterative_refinement is not None:
+            # Show manual overrides for other modes
+            if args.enable_intent_analysis is not None:
+                print(f"🧠 Intent Analysis: {'Enabled' if args.enable_intent_analysis else 'Disabled'} (manual override)")
+            if args.enable_iterative_refinement is not None:
+                print(f"🔄 Iterative Refinement: {'Enabled' if args.enable_iterative_refinement else 'Disabled'} (manual override)")
+
+        # Reflexive mode
         print(f"🔄 Reflexive Mode: {'Enabled' if args.reflexive else 'Disabled'}")
         if args.reflexive:
             print(f"🔁 Max Reflexive Iterations: {args.max_reflexive_iterations}")

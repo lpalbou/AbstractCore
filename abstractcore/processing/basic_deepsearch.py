@@ -428,13 +428,13 @@ class BasicDeepSearch:
             
             # Adjust parameters based on mode
             if self.research_mode == "fast":
-                # Fast mode: reduce source limit and disable some features
-                max_sources = min(max_sources, 6)
+                # Fast mode: intermediary between standard and enhanced (10 sources, balanced)
+                max_sources = min(max_sources, 10)
                 include_verification = False
                 logger.info(f"🏃 Fast mode: reduced to {max_sources} sources, verification disabled")
             elif self.research_mode == "enhanced":
-                # Enhanced mode: streamlined for speed with refinement
-                max_sources = min(max_sources, 6)  # Reduce sources like fast mode
+                # Enhanced mode: streamlined for speed with refinement (6 sources, AI-optimized)
+                max_sources = min(max_sources, 6)
                 include_verification = False
                 logger.info(f"🔄 Enhanced mode: streamlined with {max_sources} sources, verification disabled")
             

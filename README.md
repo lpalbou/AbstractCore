@@ -356,7 +356,7 @@ intent email.txt --format plain --context document --verbose
 intent chat_log.json --conversation-mode --provider lmstudio --model qwen/qwen3-30b-a3b-2507
 
 # Autonomous research with comprehensive reports and citations
-deepsearch "quantum computing developments 2024" --research-mode enhanced
+deepsearch "quantum computing developments 2024" --research-mode enhanced --token-budget 75000
 deepsearch "AI impact on healthcare" --focus "diagnosis,treatment,ethics" --depth comprehensive
 deepsearch "market trends" --research-mode fast --depth brief --output report.json
 ```
