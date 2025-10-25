@@ -6,16 +6,20 @@ Usage:
     python -m abstractcore.apps <app_name> [options]
 
 Available apps:
-    summarizer    - Document summarization tool
-    extractor     - Entity and relationship extraction tool
-    judge         - Text evaluation and scoring tool
-    intent        - Intent analysis and motivation identification tool
+    summarizer     - Document summarization tool
+    extractor      - Entity and relationship extraction tool
+    judge          - Text evaluation and scoring tool
+    intent         - Intent analysis and motivation identification tool
+    deepsearch     - Deep research with multi-stage pipeline (V1)
+    deepsearchv2   - Deep research with iterative learning (V2 - recommended)
 
 Examples:
     python -m abstractcore.apps summarizer document.txt
     python -m abstractcore.apps extractor report.txt --format json-ld
     python -m abstractcore.apps judge essay.txt --criteria clarity,accuracy
     python -m abstractcore.apps intent "I need help with this problem" --depth comprehensive
+    python -m abstractcore.apps deepsearch "What are the latest AI developments?"
+    python -m abstractcore.apps deepsearchv2 "What are the latest AI developments?"
     python -m abstractcore.apps <app> --help
 """
 
@@ -50,9 +54,19 @@ def main():
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         from .intent import main as intent_main
         intent_main()
+    elif app_name == "deepsearch":
+        # Remove the app name from sys.argv and run deep search V1
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        from .deepsearch import main as deepsearch_main
+        deepsearch_main()
+    elif app_name == "deepsearchv2":
+        # Remove the app name from sys.argv and run deep search V2
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        from .deepsearchv2 import main as deepsearchv2_main
+        deepsearchv2_main()
     else:
         print(f"Unknown app: {app_name}")
-        print("\nAvailable apps: summarizer, extractor, judge, intent")
+        print("\nAvailable apps: summarizer, extractor, judge, intent, deepsearch, deepsearchv2")
         sys.exit(1)
 
 if __name__ == "__main__":

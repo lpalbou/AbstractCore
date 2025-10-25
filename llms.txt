@@ -35,7 +35,7 @@ Ready-to-use terminal tools - no Python code required:
 - **[Extractor](docs/apps/basic-extractor.md)**: `extractor report.txt --format json-ld --focus technology`
 - **[Judge](docs/apps/basic-judge.md)**: `judge essay.txt --criteria clarity,accuracy --context "academic writing"`
 - **[Intent Analyzer](docs/apps/basic-intent.md)**: `intent conversation.txt --focus-participant user --depth comprehensive`
-- **[Deep Search](docs/apps/basic-deepsearch.md)**: `deepsearch "quantum computing 2024" --research-mode enhanced --depth comprehensive`
+- **[Deep Search](docs/apps/basic-deepsearch.md)**: `deepsearch "quantum computing 2024" --research-mode enhanced --token-budget 75000 --depth comprehensive`
 
 ## Optional Components
 
@@ -432,8 +432,17 @@ analyzer = BasicIntentAnalyzer()
 intent = analyzer.analyze_intent(text, depth="underlying")
 
 # Autonomous research
-searcher = BasicDeepSearch(research_mode="enhanced")
+searcher = BasicDeepSearch(
+    research_mode="enhanced",            # standard, enhanced, fast
+    token_budget=50000,                  # Token budget (1000-500000)
+    enable_intent_analysis=None,         # None=auto, True=force, False=disable
+    enable_iterative_refinement=None     # None=auto, True=force, False=disable
+)
 report = searcher.research("quantum computing 2024", max_sources=15)
+
+# Mode comparison: standard (15 sources, 2+ queries/task, ~10min) vs
+#                  fast (10 sources, 1 query/task, ~7min, balanced) vs
+#                  enhanced (6 sources, 1 query/task, ~8min, AI-optimized)
 ```
 
 ### HTTP Server (OpenAI-Compatible)

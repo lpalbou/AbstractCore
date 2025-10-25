@@ -41,6 +41,12 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
+try:
+    from requests_html import HTMLSession
+    REQUESTS_HTML_AVAILABLE = True
+except ImportError:
+    REQUESTS_HTML_AVAILABLE = False
+
 # Import our enhanced tool decorator
 from abstractcore.tools.core import tool
 
@@ -1008,9 +1014,9 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
 
 
 @tool(
-    description="Fetch and intelligently parse content from URLs with automatic content type detection and metadata extraction",
-    tags=["web", "fetch", "url", "http", "content", "parse", "scraping"],
-    when_to_use="When you need to retrieve and analyze content from specific URLs, including web pages, APIs, documents, or media files",
+    description="Fetch and intelligently parse content from URLs with automatic content type detection, metadata extraction, and optional JavaScript rendering",
+    tags=["web", "fetch", "url", "http", "content", "parse", "scraping", "javascript"],
+    when_to_use="When you need to retrieve and analyze content from specific URLs, including web pages, APIs, documents, or media files. Use render_js=True for JavaScript-heavy sites like Google Scholar, dynamic SPAs, or sites that load content via AJAX",
     examples=[
         {
             "description": "Fetch and parse HTML webpage",
@@ -1039,6 +1045,22 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
                 "url": "https://example.com/document.pdf",
                 "include_binary_preview": True
             }
+        },
+        {
+            "description": "Fetch JavaScript-rendered page (e.g., Google Scholar, SPAs)",
+            "arguments": {
+                "url": "https://scholar.google.com/citations?user=USERID",
+                "render_js": True
+            }
+        },
+        {
+            "description": "Fetch dynamic content with custom JS rendering",
+            "arguments": {
+                "url": "https://example.com/dynamic-page",
+                "render_js": True,
+                "js_timeout": 20,
+                "js_sleep": 2
+            }
         }
     ]
 )
@@ -1052,14 +1074,21 @@ def fetch_url(
     follow_redirects: bool = True,
     include_binary_preview: bool = False,
     extract_links: bool = True,
-    user_agent: str = "AbstractCore-FetchTool/1.0"
+    user_agent: str = "AbstractCore-FetchTool/1.0",
+    render_js: bool = False,
+    js_timeout: int = 20,
+    js_sleep: int = 2
 ) -> str:
     """
     Fetch and intelligently parse content from URLs with comprehensive content type detection.
-    
+
     This tool automatically detects content types (HTML, JSON, XML, images, etc.) and provides
     appropriate parsing with metadata extraction including timestamps and response headers.
-    
+
+    For JavaScript-heavy sites (SPAs, dynamic content), use render_js=True to execute JavaScript
+    and retrieve fully rendered content. This uses a headless browser (Chromium) which downloads
+    automatically on first use (~141MB).
+
     Args:
         url: The URL to fetch content from
         method: HTTP method to use (default: "GET")
@@ -1071,25 +1100,47 @@ def fetch_url(
         include_binary_preview: Whether to include base64 preview for binary content (default: False)
         extract_links: Whether to extract links from HTML content (default: True)
         user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
-    
+        render_js: Enable JavaScript rendering for dynamic content (default: False)
+            Note: Requires requests-html library and downloads Chromium (~141MB) on first use
+        js_timeout: JavaScript rendering timeout in seconds (default: 20)
+        js_sleep: Seconds to wait after page load for JavaScript to execute (default: 2)
+
     Returns:
         Formatted string with parsed content, metadata, and analysis or error message
-        
+
     Examples:
         fetch_url("https://api.github.com/repos/python/cpython")  # Fetch and parse JSON API
         fetch_url("https://example.com", headers={"Accept": "text/html"})  # Fetch HTML with custom headers
         fetch_url("https://httpbin.org/post", method="POST", data={"test": "value"})  # POST request
         fetch_url("https://example.com/image.jpg", include_binary_preview=True)  # Fetch image with preview
+        fetch_url("https://scholar.google.com/citations?user=ID", render_js=True)  # JavaScript-rendered page
     """
     try:
         # Validate URL
         parsed_url = urlparse(url)
         if not parsed_url.scheme or not parsed_url.netloc:
             return f"❌ Invalid URL format: {url}"
-        
+
         if parsed_url.scheme not in ['http', 'https']:
             return f"❌ Unsupported URL scheme: {parsed_url.scheme}. Only HTTP and HTTPS are supported."
-        
+
+        # JavaScript rendering path (uses requests-html)
+        if render_js:
+            return _fetch_url_with_js(
+                url=url,
+                method=method,
+                headers=headers,
+                data=data,
+                timeout=timeout,
+                max_content_length=max_content_length,
+                follow_redirects=follow_redirects,
+                include_binary_preview=include_binary_preview,
+                extract_links=extract_links,
+                user_agent=user_agent,
+                js_timeout=js_timeout,
+                js_sleep=js_sleep
+            )
+
         # Prepare request headers
         request_headers = {
             'User-Agent': user_agent,
@@ -1178,7 +1229,22 @@ def fetch_url(
         
         content_bytes = b''.join(content_chunks)
         actual_size = len(content_bytes)
-        
+
+        # Check for empty content (e.g., anti-bot protection, 202 responses)
+        if actual_size == 0:
+            return f"⚠️  Empty Response Received\n" \
+                   f"URL: {url}\n" \
+                   f"Status: {response.status_code} {response.reason}\n" \
+                   f"Content-Type: {content_type}\n" \
+                   f"Timestamp: {fetch_timestamp}\n" \
+                   f"\n" \
+                   f"💡 This often indicates:\n" \
+                   f"  • Anti-bot protection (try render_js=True with longer wait times)\n" \
+                   f"  • Site requires authentication or cookies\n" \
+                   f"  • Pure JavaScript SPA that needs browser rendering\n" \
+                   f"\n" \
+                   f"Try: fetch_url(url, render_js=True, js_sleep=10)"
+
         # Detect content type and parse accordingly
         parsed_content = _parse_content_by_type(content_bytes, content_type, url, extract_links, include_binary_preview)
         
@@ -1421,60 +1487,65 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True)
             # Extract meta description
             meta_desc = soup.find('meta', attrs={'name': 'description'})
             if meta_desc and meta_desc.get('content'):
-                result_parts.append(f"📝 Description: {meta_desc['content'][:200]}...")
-            
+                result_parts.append(f"📝 Description: {meta_desc['content']}")
+
             # Extract headings
             headings = []
             for i in range(1, 7):
                 h_tags = soup.find_all(f'h{i}')
-                for h in h_tags[:5]:  # Limit to first 5 of each level
-                    headings.append(f"H{i}: {h.get_text().strip()[:100]}")
-            
+                for h in h_tags[:10]:  # Increased from 5 to 10 per level
+                    headings.append(f"H{i}: {h.get_text().strip()[:150]}")  # Increased from 100 to 150
+
             if headings:
-                result_parts.append(f"📋 Headings (first 5 per level):")
-                for heading in headings[:10]:  # Limit total headings
+                result_parts.append(f"📋 Headings (top {min(len(headings), 20)}):")
+                for heading in headings[:20]:  # Increased from 10 to 20
                     result_parts.append(f"  • {heading}")
-            
+
             # Extract links if requested
             if extract_links:
                 links = []
-                for a in soup.find_all('a', href=True)[:20]:  # Limit to first 20 links
+                for a in soup.find_all('a', href=True)[:30]:  # Increased from 20 to 30
                     href = a['href']
-                    text = a.get_text().strip()[:50]
-                    # Convert relative URLs to absolute
-                    if href.startswith('/'):
-                        href = urljoin(url, href)
-                    elif not href.startswith(('http://', 'https://')):
-                        href = urljoin(url, href)
-                    links.append(f"{text} → {href}")
-                
+                    text = a.get_text().strip()[:80]  # Increased from 50 to 80
+                    # Skip javascript:void(0) and anchor-only links
+                    if href and href != 'javascript:void(0)' and not href.startswith('#'):
+                        # Convert relative URLs to absolute
+                        if href.startswith('/'):
+                            href = urljoin(url, href)
+                        elif not href.startswith(('http://', 'https://', 'mailto:', 'tel:')):
+                            href = urljoin(url, href)
+                        links.append(f"{text} → {href}")
+
                 if links:
-                    result_parts.append(f"🔗 Links (first 20):")
+                    result_parts.append(f"🔗 Links (first {len(links)}):")
                     for link in links:
                         result_parts.append(f"  • {link}")
-            
+
             # Extract main text content with better cleaning
-            # Remove script, style, nav, footer, header elements for cleaner content
-            for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            # Remove script, style, nav, footer, header, aside, noscript elements for cleaner content
+            for element in soup(["script", "style", "nav", "footer", "header", "aside", "noscript"]):
                 element.decompose()
-            
+
             # Try to find main content area first
             main_content = soup.find(['main', 'article']) or soup.find('div', class_=lambda x: x and any(word in x.lower() for word in ['content', 'article', 'post', 'main']))
             content_soup = main_content if main_content else soup
-            
-            text = content_soup.get_text()
+
+            text = content_soup.get_text(separator=' ', strip=True)
             # Clean up text more efficiently
             lines = (line.strip() for line in text.splitlines() if line.strip())
             text = ' '.join(lines)
             # Remove excessive whitespace
             text = ' '.join(text.split())
-            
+
             if text:
-                preview_length = 500
+                # Show up to 5000 characters as user requested
+                preview_length = 5000
                 text_preview = text[:preview_length]
                 if len(text) > preview_length:
                     text_preview += "..."
-                result_parts.append(f"📄 Text Content Preview:")
+                    result_parts.append(f"📄 Text Content (first {preview_length:,} characters):")
+                else:
+                    result_parts.append(f"📄 Text Content (complete):")
                 result_parts.append(f"{text_preview}")
                 result_parts.append(f"📊 Total text length: {len(text):,} characters")
         
@@ -2258,6 +2329,297 @@ def _assess_command_risk(command: str) -> str:
         return "medium"
 
     return "low"
+
+
+def _fetch_url_with_js(
+    url: str,
+    method: str = "GET",
+    headers: Optional[Dict[str, str]] = None,
+    data: Optional[Union[Dict[str, Any], str]] = None,
+    timeout: int = 30,
+    max_content_length: int = 10485760,
+    follow_redirects: bool = True,
+    include_binary_preview: bool = False,
+    extract_links: bool = True,
+    user_agent: str = "AbstractCore-FetchTool/1.0",
+    js_timeout: int = 20,
+    js_sleep: int = 2
+) -> str:
+    """
+    Fetch URL with JavaScript rendering using requests-html.
+
+    This internal function uses a headless browser (Chromium) to execute JavaScript
+    and retrieve fully rendered content from dynamic websites.
+
+    Args:
+        Same as fetch_url(), plus:
+        js_timeout: JavaScript rendering timeout in seconds
+        js_sleep: Seconds to wait after page load for JavaScript to execute
+
+    Returns:
+        Formatted string with parsed content, metadata, and analysis
+    """
+    # Check if requests-html is available
+    if not REQUESTS_HTML_AVAILABLE:
+        return f"❌ JavaScript rendering requires the 'requests-html' library\n" \
+               f"Install it with: pip install requests-html lxml_html_clean\n" \
+               f"Note: First use will download Chromium (~141MB)\n" \
+               f"\n" \
+               f"Alternatively, use render_js=False (default) for static content fetching"
+
+    try:
+        # Record fetch timestamp
+        fetch_timestamp = datetime.now().isoformat()
+
+        # Create session
+        session = HTMLSession()
+
+        # Prepare request headers
+        request_headers = {
+            'User-Agent': user_agent,
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive'
+        }
+
+        if headers:
+            request_headers.update(headers)
+
+        # Make initial request
+        if method.upper() == "GET":
+            response = session.get(url, headers=request_headers, timeout=timeout, allow_redirects=follow_redirects)
+        elif method.upper() == "POST":
+            # Prepare POST data
+            post_data = data if data else {}
+            if isinstance(data, dict):
+                response = session.post(url, json=data, headers=request_headers, timeout=timeout, allow_redirects=follow_redirects)
+            else:
+                response = session.post(url, data=data, headers=request_headers, timeout=timeout, allow_redirects=follow_redirects)
+        else:
+            # Other methods not fully supported with JS rendering
+            return f"⚠️  JavaScript rendering only supports GET and POST methods\n" \
+                   f"Requested method: {method}\n" \
+                   f"Use render_js=False for other HTTP methods"
+
+        # Check response status
+        if not response.ok:
+            session.close()
+            return f"❌ HTTP Error {response.status_code}: {response.reason}\n" \
+                   f"URL: {url}\n" \
+                   f"Timestamp: {fetch_timestamp}"
+
+        # Get initial content info
+        content_type = response.headers.get('content-type', '').lower()
+
+        # Check if we got empty content (anti-bot protection)
+        try:
+            initial_size = len(response.html.html)
+        except Exception as empty_error:
+            session.close()
+            if "Document is empty" in str(empty_error):
+                return f"⚠️  Empty Response - Likely Anti-Bot Protection\n" \
+                       f"URL: {url}\n" \
+                       f"Status: {response.status_code} {response.reason}\n" \
+                       f"Content-Type: {content_type}\n" \
+                       f"Timestamp: {fetch_timestamp}\n" \
+                       f"\n" \
+                       f"💡 The server returned 0 bytes (common with Semantic Scholar, CloudFlare protection)\n" \
+                       f"   This indicates:\n" \
+                       f"     • Anti-bot/DDoS protection blocking automated access\n" \
+                       f"     • Site requires browser cookies, authentication, or JavaScript challenges\n" \
+                       f"     • requests-html/pyppeteer may be detected and blocked\n" \
+                       f"\n" \
+                       f"   Possible solutions:\n" \
+                       f"     • Access the site manually in a browser\n" \
+                       f"     • Use a full browser automation tool (Playwright, Selenium)\n" \
+                       f"     • Contact site for API access\n" \
+                       f"     • Try from a different IP/network"
+            else:
+                return f"❌ Error accessing HTML: {str(empty_error)}\n" \
+                       f"URL: {url}"
+
+        # Render JavaScript
+        logger.info(f"Rendering JavaScript for {url} (timeout={js_timeout}s, sleep={js_sleep}s)")
+        try:
+            response.html.render(timeout=js_timeout, sleep=js_sleep, scrolldown=1)
+        except Exception as render_error:
+            logger.warning(f"JavaScript rendering warning: {str(render_error)}")
+            # Continue with partial rendering rather than failing completely
+
+        # Get rendered content
+        rendered_html = response.html.html
+        rendered_size = len(rendered_html)
+
+        # Parse the rendered HTML
+        parsed_content = _parse_html_content_from_requests_html(
+            response.html,
+            url,
+            extract_links
+        )
+
+        # Build comprehensive response
+        result_parts = []
+        result_parts.append(f"🌐 URL Fetch Results (JavaScript Rendered)")
+        result_parts.append(f"📍 URL: {response.url}")  # Final URL after redirects
+        if str(response.url) != url:
+            result_parts.append(f"🔄 Original URL: {url}")
+        result_parts.append(f"⏰ Timestamp: {fetch_timestamp}")
+        result_parts.append(f"✅ Status: {response.status_code} {response.reason}")
+        result_parts.append(f"📊 Content-Type: {content_type}")
+        result_parts.append(f"📏 Size: {initial_size:,} bytes (before JS) → {rendered_size:,} bytes (after JS)")
+
+        # Add rendering stats
+        size_increase = rendered_size - initial_size
+        if size_increase > 0:
+            result_parts.append(f"🔄 JavaScript added {size_increase:,} bytes of content")
+        elif size_increase < 0:
+            result_parts.append(f"🔄 JavaScript removed {abs(size_increase):,} bytes of content")
+
+        # Add parsed content
+        result_parts.append(f"\n📄 Content Analysis:")
+        result_parts.append(parsed_content)
+
+        # Clean up
+        session.close()
+
+        return "\n".join(result_parts)
+
+    except Exception as e:
+        # Make sure to close session on error
+        try:
+            session.close()
+        except:
+            pass
+
+        return f"❌ JavaScript rendering error: {str(e)}\n" \
+               f"URL: {url}\n" \
+               f"Consider using render_js=False for static content fetching"
+
+
+def _parse_html_content_from_requests_html(html_obj, url: str, extract_links: bool = True) -> str:
+    """
+    Parse HTML content from requests-html HTMLResponse object.
+
+    This is optimized for requests-html's HTML object which already has
+    parsed structure and query capabilities. Properly cleans HTML by removing
+    scripts, styles, and non-content elements before text extraction.
+
+    Args:
+        html_obj: requests-html HTML object
+        url: The URL being fetched (for resolving relative links)
+        extract_links: Whether to extract links
+
+    Returns:
+        Formatted string with HTML analysis
+    """
+    result_parts = []
+    result_parts.append("🌐 HTML Document Analysis")
+
+    try:
+        # Extract title
+        title_elements = html_obj.find('title', first=True)
+        if title_elements:
+            result_parts.append(f"📰 Title: {title_elements.text.strip()}")
+
+        # Extract meta description
+        meta_desc = html_obj.find('meta[name=\"description\"]', first=True)
+        if meta_desc:
+            content = meta_desc.attrs.get('content', '')
+            if content:
+                result_parts.append(f"📝 Description: {content}")
+
+        # Extract headings
+        headings = []
+        for i in range(1, 7):
+            h_tags = html_obj.find(f'h{i}')
+            for h in h_tags[:10]:  # Increased from 5 to 10 per level
+                text = h.text.strip()[:150]  # Increased from 100 to 150
+                if text:
+                    headings.append(f"H{i}: {text}")
+
+        if headings:
+            result_parts.append(f"📋 Headings (top {min(len(headings), 20)}):")
+            for heading in headings[:20]:  # Increased from 10 to 20
+                result_parts.append(f"  • {heading}")
+
+        # Extract links if requested
+        if extract_links:
+            links = []
+            for a in html_obj.find('a')[:30]:  # Increased from 20 to 30
+                href = a.attrs.get('href', '')
+                text = a.text.strip()[:80]  # Increased from 50 to 80
+                if href and href != 'javascript:void(0)' and not href.startswith('#'):
+                    # Convert relative URLs to absolute
+                    if href.startswith('/'):
+                        href = urljoin(url, href)
+                    elif not href.startswith(('http://', 'https://', 'mailto:', 'tel:')):
+                        href = urljoin(url, href)
+                    if text:
+                        links.append(f"{text} → {href}")
+                    else:
+                        links.append(f"→ {href}")
+
+            if links:
+                result_parts.append(f"🔗 Links (first {len(links)}):")
+                for link in links:
+                    result_parts.append(f"  • {link}")
+
+        # Get CLEAN text content by parsing with BeautifulSoup
+        if BS4_AVAILABLE:
+            try:
+                # Parse the HTML with BeautifulSoup for better cleaning
+                soup = BeautifulSoup(html_obj.html, BS4_PARSER)
+
+                # Remove script, style, nav, footer, header, aside elements for clean content
+                for element in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'noscript']):
+                    element.decompose()
+
+                # Try to find main content area first for better extraction
+                main_content = soup.find(['main', 'article']) or \
+                              soup.find('div', class_=lambda x: x and any(word in x.lower() for word in ['content', 'article', 'post', 'main', 'body']))
+
+                content_soup = main_content if main_content else soup.body if soup.body else soup
+
+                # Extract clean text
+                text = content_soup.get_text(separator=' ', strip=True)
+
+                # Clean up whitespace more aggressively
+                lines = (line.strip() for line in text.splitlines() if line.strip())
+                text = ' '.join(lines)
+                text = ' '.join(text.split())  # Collapse multiple spaces
+
+            except Exception as parse_error:
+                # Fallback to basic text extraction
+                logger.warning(f"BeautifulSoup parsing failed: {parse_error}, using fallback")
+                text = html_obj.text
+                lines = (line.strip() for line in text.splitlines() if line.strip())
+                text = ' '.join(lines)
+                text = ' '.join(text.split())
+        else:
+            # Fallback without BeautifulSoup
+            text = html_obj.text
+            lines = (line.strip() for line in text.splitlines() if line.strip())
+            text = ' '.join(lines)
+            text = ' '.join(text.split())
+
+        if text:
+            # Show up to 5000 characters as user requested
+            preview_length = 5000
+            text_preview = text[:preview_length]
+            if len(text) > preview_length:
+                text_preview += "..."
+                result_parts.append(f"📄 Text Content (first {preview_length:,} characters):")
+            else:
+                result_parts.append(f"📄 Text Content (complete):")
+
+            result_parts.append(f"{text_preview}")
+            result_parts.append(f"📊 Total text length: {len(text):,} characters")
+
+    except Exception as e:
+        result_parts.append(f"⚠️  Error parsing HTML: {str(e)}")
+        logger.error(f"HTML parsing error: {str(e)}", exc_info=True)
+
+    return "\n".join(result_parts)
 
 
 # Export all tools for easy importing

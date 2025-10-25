@@ -1753,12 +1753,18 @@ judge essay.md --criteria soundness
 intent conversation.txt --focus-participant user
 deepsearch "research query" --research-mode enhanced
 
+# Deep search with advanced options
+deepsearch "AI safety research" --research-mode enhanced --token-budget 75000
+deepsearch "quick overview" --research-mode fast
+deepsearch "comprehensive study" --research-mode standard --enable-intent-analysis
+deepsearch "analysis" --research-mode enhanced --disable-iterative-refinement
+
 # Method 2: Via Python module
 python -m abstractcore.apps.summarizer document.txt --style executive
 python -m abstractcore.apps.extractor report.pdf --format triples
 python -m abstractcore.apps.judge essay.md --criteria soundness
 python -m abstractcore.apps.intent conversation.txt --focus-participant user
-python -m abstractcore.apps.deepsearch "research query" --research-mode enhanced
+python -m abstractcore.apps.deepsearch "research query" --research-mode enhanced --token-budget 75000
 ```
 
 ### Python API
@@ -1869,12 +1875,15 @@ from abstractcore.processing import BasicDeepSearch
 
 # Initialize with research mode
 searcher = BasicDeepSearch(
-    research_mode="enhanced",     # standard, enhanced, fast
-    reflexive_mode=True,          # Enable iterative gap analysis
-    max_reflexive_iterations=2,   # Number of refinement cycles
-    full_text_extraction=True,    # Deep content extraction
-    max_parallel_searches=5,      # Parallel web searches
-    debug_mode=False              # Comprehensive debug tracking
+    research_mode="enhanced",              # standard, enhanced, fast
+    token_budget=50000,                    # Token budget for enhanced mode (1000-500000)
+    enable_intent_analysis=None,           # None=auto by mode, True=force enable, False=disable
+    enable_iterative_refinement=None,      # None=auto by mode, True=force enable, False=disable
+    reflexive_mode=True,                   # Enable iterative gap analysis (separate feature)
+    max_reflexive_iterations=2,            # Number of refinement cycles
+    full_text_extraction=True,             # Deep content extraction (15k vs 8k chars)
+    max_parallel_searches=5,               # Parallel web searches (1-20)
+    debug_mode=False                       # Comprehensive debug tracking
 )
 
 # Conduct research
@@ -1896,10 +1905,20 @@ for source in report.sources:
     print(f"  - {source['title']} ({source['relevance']:.2f})")
 ```
 
-**Research Modes**:
-- **Standard** (default): Full source limit, multiple queries per task, optional verification
-- **Enhanced**: Intent analysis + smart refinement + token budgeting (6 sources, streamlined)
-- **Fast**: Speed-optimized, single query per task (6 sources, verification disabled)
+**Research Modes** (exact behavior):
+
+| Parameter | Standard | Fast | Enhanced |
+|-----------|----------|------|----------|
+| Max Sources | User-configurable (default: 15) | Hard-coded to 10 | Hard-coded to 6 |
+| Queries/Task | 2+ diverse | 1 focused | 1 focused |
+| Verification | Enabled (default) | Disabled | Disabled |
+| Intent Analysis | Disabled | Disabled | Auto-enabled |
+| Iterative Refinement | Disabled | Disabled | Auto-enabled |
+| Token Tracking | No | No | Yes (50k default) |
+| Time | ~10 min | ~7 min | ~8 min |
+| Best For | Comprehensive | Balanced speed/coverage | AI-optimized |
+
+**Override Flags**: Use `--enable-intent-analysis`, `--disable-intent-analysis`, `--enable-iterative-refinement`, `--disable-iterative-refinement` to override mode defaults
 
 **Reflexive Mode** (separate feature):
 - Analyzes report gaps after initial research

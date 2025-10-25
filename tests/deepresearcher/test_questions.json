@@ -1,0 +1,81 @@
+{
+  "test_questions": [
+    {
+      "id": "tech_quantum",
+      "category": "technical_scientific",
+      "difficulty": "high",
+      "query": "What are the latest advances in quantum error correction?",
+      "expected_themes": ["quantum computing", "error correction", "qubits", "fault tolerance", "topological codes"],
+      "min_sources": 5,
+      "min_confidence": 0.6,
+      "description": "Tests technical depth and current knowledge"
+    },
+    {
+      "id": "comp_ai_regulations",
+      "category": "comparative_analysis",
+      "difficulty": "high",
+      "query": "How does the EU AI Act compare to China's AI regulations?",
+      "expected_themes": ["EU AI Act", "China AI regulations", "governance", "compliance", "comparison"],
+      "min_sources": 8,
+      "min_confidence": 0.65,
+      "description": "Tests multi-hop reasoning and comparative analysis"
+    },
+    {
+      "id": "current_llm_developments",
+      "category": "current_events",
+      "difficulty": "medium",
+      "query": "What are the implications of recent developments in large language models?",
+      "expected_themes": ["language models", "AI", "implications", "recent developments", "safety"],
+      "min_sources": 6,
+      "min_confidence": 0.6,
+      "description": "Tests ability to find and synthesize recent information"
+    },
+    {
+      "id": "abstract_consciousness",
+      "category": "abstract_concepts",
+      "difficulty": "high",
+      "query": "What are the leading theories on machine consciousness and artificial sentience?",
+      "expected_themes": ["consciousness", "sentience", "AI philosophy", "cognitive science", "theories"],
+      "min_sources": 5,
+      "min_confidence": 0.55,
+      "description": "Tests handling of abstract, philosophical topics"
+    },
+    {
+      "id": "simple_ml_basics",
+      "category": "simple_factual",
+      "difficulty": "low",
+      "query": "What is deep learning and how does it differ from traditional machine learning?",
+      "expected_themes": ["deep learning", "machine learning", "neural networks", "differences"],
+      "min_sources": 4,
+      "min_confidence": 0.7,
+      "description": "Tests basic factual research capability"
+    }
+  ],
+  "model_configurations": [
+    {
+      "provider": "ollama",
+      "model": "qwen3:4b-instruct-2507-q4_K_M",
+      "description": "Baseline small model",
+      "expected_performance": "fast but may struggle with complex structured outputs"
+    },
+    {
+      "provider": "lmstudio",
+      "model": "qwen/qwen3-30b-a3b-2507",
+      "description": "Large Qwen model via LMStudio",
+      "expected_performance": "better structured output handling, slower"
+    },
+    {
+      "provider": "lmstudio",
+      "model": "openai/gpt-oss-20b",
+      "description": "GPT OSS model via LMStudio",
+      "expected_performance": "good balance of speed and capability"
+    }
+  ],
+  "test_parameters": {
+    "temperature_variants": [0.1, 0.3],
+    "max_sources": [10, 15, 20],
+    "timeout": 300,
+    "max_react_iterations": [2, 3],
+    "description": "Parameter variations to test robustness"
+  }
+}
