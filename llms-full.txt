@@ -1750,27 +1750,177 @@ judge src/main.py --context "code review" --focus "error handling,documentation"
 summarizer document.txt --style executive
 extractor report.pdf --format triples
 judge essay.md --criteria soundness
+intent conversation.txt --focus-participant user
+deepsearch "research query" --research-mode enhanced
 
 # Method 2: Via Python module
 python -m abstractcore.apps.summarizer document.txt --style executive
 python -m abstractcore.apps.extractor report.pdf --format triples
 python -m abstractcore.apps.judge essay.md --criteria soundness
+python -m abstractcore.apps.intent conversation.txt --focus-participant user
+python -m abstractcore.apps.deepsearch "research query" --research-mode enhanced
 ```
 
 ### Python API
 
 ```python
-from abstractcore.processing import BasicSummarizer, BasicExtractor, BasicJudge
+from abstractcore.processing import (
+    BasicSummarizer, BasicExtractor, BasicJudge,
+    BasicIntentAnalyzer, BasicDeepSearch
+)
 
-# Use programmatically
+# Document summarization
 summarizer = BasicSummarizer()
 summary = summarizer.summarize(text, style="executive", length="brief")
 
+# Entity extraction
 extractor = BasicExtractor()
 kg = extractor.extract(text, output_format="jsonld")
 
+# Text evaluation
 judge = BasicJudge()
 assessment = judge.evaluate(text, context="code review", focus="error handling")
+
+# Intent analysis with psychological insights and deception detection
+from abstractcore.processing import BasicIntentAnalyzer, IntentContext, IntentDepth
+
+analyzer = BasicIntentAnalyzer()
+result = analyzer.analyze_intent(
+    text,
+    context_type=IntentContext.CONVERSATIONAL,  # standalone, conversational, document, interactive
+    depth=IntentDepth.UNDERLYING,               # surface, underlying, comprehensive
+    focus="management concerns"
+)
+print(f"Primary intent: {result.primary_intent.intent_type.value}")
+print(f"Deception likelihood: {result.primary_intent.deception_analysis.deception_likelihood:.2f}")
+
+# Autonomous multi-stage research
+searcher = BasicDeepSearch(
+    research_mode="enhanced",    # standard, enhanced, fast
+    reflexive_mode=True,         # Enable gap analysis and refinement
+    max_parallel_searches=5
+)
+report = searcher.research(
+    "quantum computing developments 2024",
+    max_sources=15,
+    search_depth="standard",     # brief, standard, comprehensive
+    output_format="structured"   # structured, narrative, executive
+)
+print(f"Title: {report.title}")
+print(f"Sources: {len(report.sources)}")
+```
+
+### Intent Analysis (BasicIntentAnalyzer)
+
+Analyzes psychological intents and motivations behind text with deception detection:
+
+```python
+from abstractcore.processing import BasicIntentAnalyzer, IntentContext, IntentDepth
+
+# Initialize (defaults to Ollama gemma3:1b-it-qat)
+analyzer = BasicIntentAnalyzer()
+
+# Basic usage
+result = analyzer.analyze_intent("I was wondering if you could help me...")
+
+# Advanced usage with all parameters
+result = analyzer.analyze_intent(
+    text="Complex conversation text",
+    context_type=IntentContext.CONVERSATIONAL,  # Type of context
+    depth=IntentDepth.COMPREHENSIVE,            # Analysis depth
+    focus="business motivations"                # Optional focus area
+)
+
+# Access results
+primary = result.primary_intent
+print(f"Intent type: {primary.intent_type.value}")
+print(f"Confidence: {primary.confidence:.2f}")
+print(f"Underlying goal: {primary.underlying_goal}")
+print(f"Deception likelihood: {primary.deception_analysis.deception_likelihood:.2f}")
+print(f"Authenticity evidence: {primary.deception_analysis.authenticity_evidence}")
+
+# Analyze conversation with multiple participants
+messages = [
+    {"role": "user", "content": "Message 1"},
+    {"role": "assistant", "content": "Response 1"},
+    {"role": "user", "content": "Message 2"}
+]
+results = analyzer.analyze_conversation_intents(
+    messages,
+    focus_participant="user",  # Analyze specific participant
+    depth=IntentDepth.UNDERLYING
+)
+```
+
+**Features**:
+- 17 intent types based on psychological research
+- Integrated deception detection on all analyses
+- Automatic document chunking for long texts
+- Conversation analysis with participant focus
+- Three analysis depths (surface, underlying, comprehensive)
+- Four context types (standalone, conversational, document, interactive)
+
+### Deep Search (BasicDeepSearch)
+
+Autonomous research agent with four-stage pipeline:
+
+```python
+from abstractcore.processing import BasicDeepSearch
+
+# Initialize with research mode
+searcher = BasicDeepSearch(
+    research_mode="enhanced",     # standard, enhanced, fast
+    reflexive_mode=True,          # Enable iterative gap analysis
+    max_reflexive_iterations=2,   # Number of refinement cycles
+    full_text_extraction=True,    # Deep content extraction
+    max_parallel_searches=5,      # Parallel web searches
+    debug_mode=False              # Comprehensive debug tracking
+)
+
+# Conduct research
+report = searcher.research(
+    query="What are the latest developments in quantum computing?",
+    focus_areas=["hardware", "algorithms", "applications"],  # Optional focus
+    max_sources=15,               # Source limit (adjustable in standard mode)
+    search_depth="standard",      # brief (3 tasks), standard (5), comprehensive (8)
+    include_verification=True,    # Fact-checking
+    output_format="structured"    # structured, narrative, executive
+)
+
+# Access results
+print(f"Title: {report.title}")
+print(f"Executive Summary: {report.executive_summary}")
+print(f"Key Findings: {report.key_findings}")
+print(f"Sources: {len(report.sources)}")
+for source in report.sources:
+    print(f"  - {source['title']} ({source['relevance']:.2f})")
+```
+
+**Research Modes**:
+- **Standard** (default): Full source limit, multiple queries per task, optional verification
+- **Enhanced**: Intent analysis + smart refinement + token budgeting (6 sources, streamlined)
+- **Fast**: Speed-optimized, single query per task (6 sources, verification disabled)
+
+**Reflexive Mode** (separate feature):
+- Analyzes report gaps after initial research
+- Performs targeted searches to address gaps
+- Iterates until no significant gaps or max iterations reached
+- Can combine with any research mode
+
+**Four-Stage Pipeline**:
+1. **Planning**: Decomposes query into themes and sub-tasks
+2. **Question Development**: Generates specific search queries
+3. **Web Exploration**: Parallel searches with strict deduplication
+4. **Report Generation**: Synthesizes findings with citations
+
+**Features**:
+- Strict source deduplication (URL and title)
+- Authority indicator detection (Google Scholar, universities: 0.90-0.95 scores)
+- Citation validation and enhancement (50% threshold)
+- Debug mode tracks all queries, URLs, assessments, and decisions
+- Three output formats with proper citations
+- Gap analysis with 6 gap types (reflexive mode)
+- Token budgeting for enhanced mode (default: 50,000 tokens)
 ```
 
 ---

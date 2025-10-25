@@ -320,7 +320,7 @@ python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-l
 
 ## Built-in Applications (Ready-to-Use CLI Tools)
 
-AbstractCore includes **four specialized command-line applications** for common LLM tasks. These are production-ready tools that can be used directly from the terminal without any Python programming.
+AbstractCore includes **five specialized command-line applications** for common LLM tasks. These are production-ready tools that can be used directly from the terminal without any Python programming.
 
 ### Available Applications
 
@@ -330,6 +330,7 @@ AbstractCore includes **four specialized command-line applications** for common 
 | **Extractor** | Entity and relationship extraction | `extractor` |
 | **Judge** | Text evaluation and scoring | `judge` |
 | **Intent Analyzer** | Psychological intent analysis & deception detection | `intent` |
+| **Deep Search** | Autonomous multi-stage research with citations | `deepsearch` |
 
 ### Quick Usage Examples
 
@@ -353,6 +354,11 @@ judge proposal.md --custom-criteria has_examples,covers_risks --output assessmen
 intent conversation.txt --focus-participant user --depth comprehensive
 intent email.txt --format plain --context document --verbose
 intent chat_log.json --conversation-mode --provider lmstudio --model qwen/qwen3-30b-a3b-2507
+
+# Autonomous research with comprehensive reports and citations
+deepsearch "quantum computing developments 2024" --research-mode enhanced
+deepsearch "AI impact on healthcare" --focus "diagnosis,treatment,ethics" --depth comprehensive
+deepsearch "market trends" --research-mode fast --depth brief --output report.json
 ```
 
 ### Installation & Setup
@@ -365,9 +371,10 @@ pip install abstractcore[all]
 
 # Apps are immediately available
 summarizer --help
-extractor --help  
+extractor --help
 judge --help
 intent --help
+deepsearch --help
 ```
 
 ### Alternative Usage Methods
@@ -378,12 +385,14 @@ summarizer document.txt
 extractor report.pdf
 judge essay.md
 intent conversation.txt
+deepsearch "research query"
 
 # Method 2: Via Python module
 python -m abstractcore.apps summarizer document.txt
 python -m abstractcore.apps extractor report.pdf
 python -m abstractcore.apps judge essay.md
 python -m abstractcore.apps intent conversation.txt
+python -m abstractcore.apps deepsearch "research query"
 ```
 
 ### Key Parameters
@@ -414,6 +423,16 @@ python -m abstractcore.apps intent conversation.txt
 - `--format` - Output format: `json`, `plain`, `yaml`
 - `--include-criteria` - Include detailed criteria explanations
 
+**Deep Search Parameters:**
+- `--research-mode` - Research mode: `standard` (default), `enhanced` (intent analysis), `fast` (speed-optimized)
+- `--depth` - Research depth: `brief` (3 tasks), `standard` (5 tasks), `comprehensive` (8 tasks)
+- `--max-sources` - Maximum sources to gather (1-100, default: 15)
+- `--format` - Output format: `structured`, `narrative`, `executive`
+- `--focus` - Comma-separated focus areas for targeted research
+- `--reflexive` - Enable multi-iteration gap analysis and refinement
+- `--full-text` - Enable deep content extraction (15,000 chars vs 8,000)
+- `--debug` - Show comprehensive tracking of queries, URLs, and decisions
+
 ### Key Features
 
 - **Provider Agnostic**: Works with any configured LLM provider (OpenAI, Anthropic, Ollama, etc.)
@@ -431,6 +450,7 @@ Each application has documentation with examples and usage information:
 - **[Extractor Guide](docs/apps/basic-extractor.md)** - Entity and relationship extraction
 - **[Intent Analyzer Guide](docs/apps/basic-intent.md)** - Psychological intent analysis and deception detection
 - **[Judge Guide](docs/apps/basic-judge.md)** - Text evaluation and scoring systems
+- **[Deep Search Guide](docs/apps/basic-deepsearch.md)** - Autonomous multi-stage research with citations and verification
 
 **When to use the apps:**
 - Processing documents without writing code

@@ -167,6 +167,11 @@ judge code.py --context "code review" --format plain
 # Intent analysis and deception detection
 intent conversation.txt --focus-participant user --depth comprehensive
 intent email.txt --format plain --context document --verbose
+
+# Autonomous research with comprehensive reports and citations
+deepsearch "quantum computing developments 2024" --research-mode enhanced
+deepsearch "AI impact on healthcare" --focus "diagnosis,treatment,ethics" --depth comprehensive
+deepsearch "market trends" --research-mode fast --depth brief --output report.json
 ```
 
 **Available Applications:**
@@ -174,6 +179,7 @@ intent email.txt --format plain --context document --verbose
 - **Extractor**: Entity and relationship extraction with multiple output formats
 - **Judge**: Text evaluation with custom criteria and scoring rubrics
 - **Intent Analyzer**: Psychological intent analysis with deception detection
+- **Deep Search**: Autonomous multi-stage research with citations, verification, and gap analysis
 
 **Why this helps**: Provides ready-to-use CLI tools that work with any LLM provider.
 
