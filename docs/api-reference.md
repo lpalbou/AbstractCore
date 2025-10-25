@@ -132,6 +132,8 @@ person = llm.generate(
 print(f"{person.name}, age {person.age}")
 ```
 
+> **See**: [Structured Output Guide](structured-output.md) for comprehensive documentation
+
 **Tool Calling:**
 ```python
 def get_weather(city: str) -> str:

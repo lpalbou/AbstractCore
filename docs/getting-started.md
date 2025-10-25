@@ -119,6 +119,8 @@ print(f"Summary: {review.summary}")
 
 AbstractCore handles JSON validation and retries automatically.
 
+> **Learn more**: [Structured Output Guide](structured-output.md) - Native vs prompted strategies, schema design, performance optimization
+
 ### 3. Tool Calling
 
 Let your LLM call functions with the `@tool` decorator:

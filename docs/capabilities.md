@@ -118,6 +118,8 @@ product = llm.generate(
 
 **Why this helps**: Built-in validation retry reduces manual error handling.
 
+> **See**: [Structured Output Guide](structured-output.md) for native vs prompted strategies, schema design, and production deployment
+
 ### 5. Streaming with Tool Support
 
 **What it does**: Real-time response streaming that properly handles tool calls.

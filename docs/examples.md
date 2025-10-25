@@ -457,6 +457,8 @@ for format_name in ["qwen3", "llama3", "xml"]:
 
 ## Structured Output Examples
 
+> **Complete Guide**: [Structured Output Documentation](structured-output.md) - Native vs prompted strategies, provider support, schema design best practices
+
 ### User Profile Extraction
 
 ```python

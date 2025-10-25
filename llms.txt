@@ -22,7 +22,7 @@ pip install abstractcore[all]
 - **[Provider Discovery](docs/getting-started.md)**: Centralized registry to programmatically list ALL providers and models
 - **[Session Management](docs/session.md)**: Persistent conversations with analytics and auto-compaction
 - **[Streaming](docs/api-reference.md)**: Real-time responses across all providers
-- **[Structured Output](docs/getting-started.md)**: Pydantic validation with auto-retry
+- **[Structured Output](docs/structured-output.md)**: Native vs prompted strategies, schema validation, production deployment
 - **[Embeddings](docs/embeddings.md)**: SOTA models for semantic search and RAG
 - **[Token Management](docs/token-management.md)**: Unified parameter vocabulary with budget validation
 - **[Tool Syntax Rewriting](docs/tool-calling.md)**: Real-time format conversion for agent CLI compatibility
@@ -390,6 +390,12 @@ person = llm.generate(
     response_model=Person
 )
 print(f"{person.name}, age {person.age}")  # Schema validation with retry
+
+# See comprehensive guide: docs/structured-output.md
+# - Native vs prompted strategies across all providers
+# - Schema design best practices
+# - Performance benchmarks (100% validation success rate)
+# - Production deployment guidelines
 ```
 
 ### CLI Applications (Terminal & Python)

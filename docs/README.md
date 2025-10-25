@@ -18,6 +18,7 @@ Complete navigation guide for AbstractCore documentation.
 
 - **[Getting Started](getting-started.md)** - Quick start, core concepts, common patterns
 - **[Prerequisites](prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- **[Structured Output](structured-output.md)** - Pydantic models, schema validation, native vs prompted strategies
 - **[Session Management](session.md)** - Persistent conversations, serialization, and analytics
 - **[Embeddings](embeddings.md)** - Vector embeddings, semantic search, RAG applications
 - **[Examples](examples.md)** - Real-world use cases and code samples
@@ -109,7 +110,8 @@ docs/
 │   └── troubleshooting.md      # Common issues
 │
 ├── Core Library (Python)/
-│   ├── api-reference.md        # Python API reference 
+│   ├── api-reference.md        # Python API reference
+│   ├── structured-output.md    # Structured output with Pydantic
 │   ├── embeddings.md           # Embeddings guide
 │   ├── examples.md             # Code examples
 │   ├── capabilities.md         # What AbstractCore can do
@@ -157,7 +159,7 @@ docs/
 **Use Core Library (Python):**
 - Switch between providers → [Getting Started](getting-started.md#providers-and-models)
 - Use tool calling → [Getting Started](getting-started.md#tool-calling)
-- Get structured outputs → [Getting Started](getting-started.md#structured-output)
+- Get structured outputs → [Structured Output](structured-output.md)
 - Stream responses → [Getting Started](getting-started.md#streaming)
 - Generate embeddings → [Embeddings](embeddings.md)
 - See Python API → [Python API Reference](api-reference.md)
