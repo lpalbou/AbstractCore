@@ -145,9 +145,11 @@ class OllamaProvider(BaseProvider):
             payload["options"]["seed"] = seed_value
 
         # Add structured output support (Ollama native JSON schema)
+        # Ollama accepts the full JSON schema in the "format" parameter
+        # This provides server-side guaranteed schema compliance
         if response_model and PYDANTIC_AVAILABLE:
             json_schema = response_model.model_json_schema()
-            payload["format"] = json_schema
+            payload["format"] = json_schema  # Pass the full schema, not just "json"
 
         # Use chat format by default (recommended by Ollama docs), especially when tools are present
         # Only use generate format for very simple cases without tools or messages

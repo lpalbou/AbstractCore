@@ -129,12 +129,22 @@ class StructuredOutputHandler:
         """
         Check if provider has native structured output support.
 
+        Checks both provider type (Ollama and LMStudio always have native support)
+        and model capabilities configuration as fallback.
+
         Args:
             provider: The LLM provider instance
 
         Returns:
             True if provider supports native structured outputs
         """
+        # Ollama and LMStudio always support native structured outputs
+        # via the format and response_format parameters respectively
+        provider_name = provider.__class__.__name__
+        if provider_name in ['OllamaProvider', 'LMStudioProvider']:
+            return True
+
+        # For other providers, check model capabilities
         capabilities = getattr(provider, 'model_capabilities', {})
         return capabilities.get("structured_output") == "native"
 

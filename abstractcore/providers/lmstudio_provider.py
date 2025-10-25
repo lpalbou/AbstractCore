@@ -208,6 +208,19 @@ class LMStudioProvider(BaseProvider):
         if seed_value is not None:
             payload["seed"] = seed_value
 
+        # Add structured output support (OpenAI-compatible format)
+        # LMStudio supports native structured outputs using the response_format parameter
+        # This provides server-side guaranteed schema compliance
+        if response_model and PYDANTIC_AVAILABLE:
+            json_schema = response_model.model_json_schema()
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_model.__name__,
+                    "schema": json_schema
+                }
+            }
+
         if stream:
             # Return streaming response - BaseProvider will handle tag rewriting via UnifiedStreamProcessor
             return self._stream_generate(payload)
