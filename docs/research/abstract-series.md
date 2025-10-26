@@ -88,3 +88,8 @@ Below are the components and their characteristics.
 - stats(tool_id) : the statistics on the tool usage, success rate and quality assessments
 - protect(tool_id) : make a tool read-only
 - unprotect(tool_id) : make a tool read & write
+
+## AbstractFlow
+
+## AbstractTUI
+

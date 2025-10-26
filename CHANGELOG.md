@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Native Structured Output Support for HuggingFace GGUF Models**: HuggingFace provider now supports server-side schema enforcement for GGUF models via llama-cpp-python's `response_format` parameter
   - GGUF models loaded through HuggingFace provider automatically get native structured output support
   - Uses the same OpenAI-compatible `response_format` parameter as LMStudio
-  - Provides guaranteed schema compliance without retry logic needed
+  - Server-side schema enforcement validates output against the provided schema
   - Transformers models continue to use prompted approach as fallback
   - Provider registry updated to advertise structured output capability
 
@@ -20,11 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Checks for `model_type == "gguf"` to determine native support capability
   - GGUF models benefit from llama-cpp-python's constrained sampling
   - Transformers models automatically use prompted fallback strategy
+- **Model Capabilities**: Verified and documented native structured output support for Ollama and LMStudio providers
+  - Ollama: Confirmed correct implementation using `format` parameter with full JSON schema
+  - LMStudio: Documented existing OpenAI-compatible `response_format` implementation
+  - Both providers leverage server-side schema enforcement for schema compliance
 
 ### Fixed
 - **HuggingFace Provider**: Added missing `response_model` parameter propagation through internal generation methods
   - Fixed `_generate_internal()` to pass `response_model` to both GGUF and transformers backends
   - Both `_generate_gguf()` and `_generate_transformers()` now accept and handle `response_model` parameter
+- **Provider Registry**: Added `"structured_output"` to supported features for Ollama, LMStudio, and HuggingFace providers
+  - Ensures accurate capability reporting for structured output functionality
 
 ## [2.5.1] - 2025-10-24
 
