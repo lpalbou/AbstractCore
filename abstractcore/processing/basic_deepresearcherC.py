@@ -121,11 +121,18 @@ class GapWithSource(BaseModel):
     evidence_ids: List[int] = Field(description="Evidence piece numbers that raised this gap (optional, can be empty)")
 
 
+class DetailedSection(BaseModel):
+    """Section of detailed report - SIMPLE SCHEMA"""
+    heading: str = Field(description="Section heading")
+    content: str = Field(description="Detailed content for this section")
+
+
 class SynthesisModel(BaseModel):
     """Final synthesis - SIMPLE SCHEMA"""
     title: str = Field(description="Report title")
     summary: str = Field(description="Executive summary")
     findings_with_sources: List[FindingWithSource] = Field(description="Key findings with source attribution")
+    detailed_sections: List[DetailedSection] = Field(description="3-5 detailed report sections")
     gaps_with_sources: List[GapWithSource] = Field(description="Knowledge gaps with source attribution")
     confidence: float = Field(description="Overall confidence")
 
@@ -136,6 +143,7 @@ class ResearchOutput(BaseModel):
     summary: str
     key_findings: List[str]
     sources_selected: List[Dict[str, Any]]
+    detailed_report: Dict[str, Any]
     research_metadata: Dict[str, Any]
     knowledge_gaps: List[str]
     confidence_score: float
@@ -310,6 +318,15 @@ class BasicDeepResearcherC:
                 }
                 for ev in self.evidence
             ],
+            detailed_report={
+                "sections": [
+                    {
+                        "heading": section.heading,
+                        "content": section.content
+                    }
+                    for section in final_report.detailed_sections
+                ]
+            },
             knowledge_gaps=all_final_gaps,  # Only unresolved gaps
             confidence_score=final_report.confidence,
             research_metadata={
@@ -1026,6 +1043,12 @@ Return assessment."""
                         evidence_ids=[]
                     )
                 ],
+                detailed_sections=[
+                    DetailedSection(
+                        heading="Research Status",
+                        content="No reliable information was found for this query. This may indicate an unknown topic or very limited online presence. No detailed analysis can be provided without verified sources."
+                    )
+                ],
                 gaps_with_sources=[GapWithSource(gap=f"Complete information gap for: {self.context.query}", evidence_ids=[])],
                 confidence=0.0
             )
@@ -1053,8 +1076,19 @@ Create a synthesis with:
 1. title: Descriptive report title
 2. summary: 2-3 sentence executive summary
 3. findings_with_sources: 3-7 key findings, EACH with evidence_ids listing which evidence numbers ([1], [2], etc.) support it
-4. gaps_with_sources: Knowledge gaps, EACH with evidence_ids of sources that raised the question (can be empty if gap is general)
-5. confidence: Overall confidence 0-1
+4. detailed_sections: 3-5 detailed sections with heading and content
+   - Organize evidence into logical sections (e.g., Background, Key Contributions, Current Work, etc.)
+   - Each section should have 2-4 paragraphs of detailed analysis
+   - Base all statements on evidence provided
+   - Use conservative language (no over-inference)
+5. gaps_with_sources: Knowledge gaps, EACH with evidence_ids of sources that raised the question (can be empty if gap is general)
+6. confidence: Overall confidence 0-1
+
+SECTION REQUIREMENTS:
+- Create logical sections based on the evidence (not predetermined headings)
+- Each section: 150-300 words of detailed analysis
+- Ground all statements in evidence (cite evidence numbers if helpful for clarity)
+- Use cautious language for indirect evidence
 
 CRITICAL REQUIREMENTS FOR CONSERVATIVE GROUNDING:
 - Base findings ONLY on what is EXPLICITLY stated in evidence
@@ -1143,6 +1177,12 @@ Examples of CONSERVATIVE synthesis:
                 title=f"Research Report: {self.context.query}",
                 summary=f"Based on {len(self.evidence)} verified sources.",
                 findings_with_sources=fallback_findings,
+                detailed_sections=[
+                    DetailedSection(
+                        heading="Research Summary",
+                        content=f"This report is based on {len(self.evidence)} verified sources. Structured synthesis generation encountered issues, but key findings have been extracted from the evidence."
+                    )
+                ],
                 gaps_with_sources=[GapWithSource(gap="Some details may require further research", evidence_ids=[])],
                 confidence=sum(e.relevance_score for e in self.evidence) / len(self.evidence)
             )
@@ -1154,6 +1194,12 @@ Examples of CONSERVATIVE synthesis:
                     FindingWithSource(
                         finding="Unable to generate structured synthesis",
                         evidence_ids=[]
+                    )
+                ],
+                detailed_sections=[
+                    DetailedSection(
+                        heading="Synthesis Error",
+                        content="Synthesis generation encountered an error. The system was unable to generate a structured report from the evidence collected. This may be due to model limitations or unexpected response format."
                     )
                 ],
                 gaps_with_sources=[GapWithSource(gap="Synthesis error", evidence_ids=[])],
