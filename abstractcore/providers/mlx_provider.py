@@ -11,6 +11,14 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
+
+# Try to import Outlines (native structured output for MLX models)
+try:
+    import outlines
+    OUTLINES_AVAILABLE = True
+except ImportError:
+    OUTLINES_AVAILABLE = False
+
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
@@ -21,12 +29,19 @@ from ..events import EventType
 class MLXProvider(BaseProvider):
     """MLX provider for Apple Silicon models with full integration"""
 
-    def __init__(self, model: str = "mlx-community/Mistral-7B-Instruct-v0.1-4bit", **kwargs):
+    def __init__(self, model: str = "mlx-community/Mistral-7B-Instruct-v0.1-4bit",
+                 structured_output_method: str = "auto", **kwargs):
         super().__init__(model, **kwargs)
         self.provider = "mlx"
 
         # Handle timeout parameter for local models
         self._handle_timeout_parameter(kwargs)
+
+        # Structured output method: "auto", "native_outlines", "prompted"
+        # auto: Use Outlines if available, otherwise prompted (default)
+        # native_outlines: Force Outlines (error if unavailable)
+        # prompted: Always use prompted fallback (fastest, still 100% success)
+        self.structured_output_method = structured_output_method
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
@@ -144,7 +159,7 @@ class MLXProvider(BaseProvider):
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
-        """Internal generation with MLX"""
+        """Internal generation with MLX and optional Outlines native structured output"""
 
         if not self.llm or not self.tokenizer:
             return GenerateResponse(
@@ -152,6 +167,64 @@ class MLXProvider(BaseProvider):
                 model=self.model,
                 finish_reason="error"
             )
+
+        # Native structured output via Outlines (if configured and available)
+        should_use_outlines = (
+            response_model and
+            PYDANTIC_AVAILABLE and
+            not stream and
+            self.structured_output_method != "prompted"  # Skip if explicitly prompted
+        )
+
+        if should_use_outlines:
+            # Check if Outlines is required but unavailable
+            if self.structured_output_method == "native_outlines" and not OUTLINES_AVAILABLE:
+                return GenerateResponse(
+                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install abstractcore[mlx]",
+                    model=self.model,
+                    finish_reason="error"
+                )
+
+            # Try Outlines if available (auto or native_outlines mode)
+            if OUTLINES_AVAILABLE:
+                try:
+                    # Cache Outlines MLX model wrapper to avoid re-initialization
+                    if not hasattr(self, '_outlines_model') or self._outlines_model is None:
+                        self.logger.debug("Creating Outlines MLX model wrapper for native structured output")
+                        self._outlines_model = outlines.from_mlxlm(self.llm, self.tokenizer)
+
+                    # Build full prompt (same as normal generation)
+                    processed_prompt = prompt
+                    full_prompt = self._build_prompt(processed_prompt, messages, system_prompt, tools)
+
+                    # Create constrained generator with JSON schema
+                    self.logger.debug(f"Using Outlines native structured output for {response_model.__name__}")
+                    generator = self._outlines_model(
+                        full_prompt,
+                        outlines.json_schema(response_model),
+                        max_tokens=kwargs.get("max_tokens", self.max_tokens or 512)
+                    )
+
+                    # Validate and return
+                    validated_obj = response_model.model_validate(generator)
+
+                    return GenerateResponse(
+                        content=validated_obj.model_dump_json(),
+                        model=self.model,
+                        finish_reason="stop",
+                        validated_object=validated_obj
+                    )
+                except Exception as e:
+                    # If native_outlines was explicitly requested, don't fall back
+                    if self.structured_output_method == "native_outlines":
+                        return GenerateResponse(
+                            content=f"Error: Outlines native structured output failed: {str(e)}",
+                            model=self.model,
+                            finish_reason="error"
+                        )
+                    # Otherwise fall back to prompted approach
+                    self.logger.debug(f"Outlines generation failed, falling back to prompted: {e}")
+                    # Continue with normal generation below
 
         # Handle media content first if present
         processed_prompt = prompt
