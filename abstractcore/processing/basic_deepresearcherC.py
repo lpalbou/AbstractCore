@@ -115,12 +115,18 @@ class FindingWithSource(BaseModel):
     evidence_ids: List[int] = Field(description="Evidence piece numbers that support this finding")
 
 
+class GapWithSource(BaseModel):
+    """Knowledge gap with source attribution - SIMPLE SCHEMA"""
+    gap: str = Field(description="The knowledge gap or unanswered question")
+    evidence_ids: List[int] = Field(description="Evidence piece numbers that raised this gap (optional, can be empty)")
+
+
 class SynthesisModel(BaseModel):
     """Final synthesis - SIMPLE SCHEMA"""
     title: str = Field(description="Report title")
     summary: str = Field(description="Executive summary")
     findings_with_sources: List[FindingWithSource] = Field(description="Key findings with source attribution")
-    gaps: List[str] = Field(description="Knowledge gaps")
+    gaps_with_sources: List[GapWithSource] = Field(description="Knowledge gaps with source attribution")
     confidence: float = Field(description="Overall confidence")
 
 
@@ -280,8 +286,11 @@ class BasicDeepResearcherC:
             if gap_data["status"] == "active"
         ]
 
-        # Add synthesis gaps (from final report) but merge with active gaps
-        all_final_gaps = list(set(unresolved_gaps + final_report.gaps))
+        # Extract gap text from gaps_with_sources
+        synthesis_gaps = [g.gap for g in final_report.gaps_with_sources]
+
+        # Merge synthesis gaps with unresolved active gaps (already have source attribution in active_gaps)
+        all_final_gaps = list(set(unresolved_gaps + synthesis_gaps))
 
         # Extract findings from findings_with_sources structure
         key_findings_list = [f.finding for f in final_report.findings_with_sources]
@@ -806,6 +815,25 @@ Assess:
 3. credibility_score: 0-1 how credible/authoritative
 4. facts: List 2-3 key facts IF relevant, empty list otherwise
 
+CRITICAL RULES FOR EXTRACTING FACTS:
+- Extract ONLY what is EXPLICITLY stated in the content
+- DO NOT infer roles, positions, or actions from indirect evidence
+- If content shows person commenting/sharing → say "X commented on/shared Y"
+- If content shows person authored/created → say "X authored/created Y"
+- If content is person's official profile/bio → state what it says
+- Use cautious language ("appears to", "is associated with") if uncertain
+- DO NOT assume authorship/creation from discussion/commentary
+
+Examples of CORRECT extraction:
+✅ "X shared a LinkedIn post about Cellosaurus" (if they shared)
+✅ "X posted about ChatGPT usage in Reactome" (if they posted)
+✅ "X is listed as author on paper Y" (if author list shows this)
+✅ "X's profile states they work at Z" (if official bio says this)
+
+Examples of WRONG extraction:
+❌ "X is lead developer of Cellosaurus" (if they only commented)
+❌ "X integrated ChatGPT into Reactome" (if they only shared article)
+
 Return assessment."""
 
             response = self.llm.generate(prompt, response_model=SourceRelevanceModel)
@@ -998,13 +1026,15 @@ Return assessment."""
                         evidence_ids=[]
                     )
                 ],
-                gaps=[f"Complete information gap for: {self.context.query}"],
+                gaps_with_sources=[GapWithSource(gap=f"Complete information gap for: {self.context.query}", evidence_ids=[])],
                 confidence=0.0
             )
 
         # Build evidence summary with NUMBERED sources
         evidence_summary = []
+        evidence_urls = {}  # Map evidence ID to URL
         for i, ev in enumerate(self.evidence[:15], 1):  # Top 15 sources
+            evidence_urls[i] = ev.url
             evidence_summary.append(
                 f"[{i}] URL: {ev.url}\n"
                 f"    Facts: {'; '.join(ev.key_facts[:3])}"
@@ -1023,14 +1053,31 @@ Create a synthesis with:
 1. title: Descriptive report title
 2. summary: 2-3 sentence executive summary
 3. findings_with_sources: 3-7 key findings, EACH with evidence_ids listing which evidence numbers ([1], [2], etc.) support it
-4. gaps: Knowledge gaps we couldn't address
+4. gaps_with_sources: Knowledge gaps, EACH with evidence_ids of sources that raised the question (can be empty if gap is general)
 5. confidence: Overall confidence 0-1
 
-CRITICAL REQUIREMENTS:
-- Base findings ONLY on the evidence provided
+CRITICAL REQUIREMENTS FOR CONSERVATIVE GROUNDING:
+- Base findings ONLY on what is EXPLICITLY stated in evidence
+- DO NOT make inferences beyond what sources explicitly state
 - For EACH finding, specify which evidence numbers (e.g., [1, 3, 5]) support it
 - Every finding MUST have at least one evidence_id
-- Do not add information not present in sources"""
+- If evidence says "X shared Y" → finding should say "X shared Y" (NOT "X created Y")
+- If evidence says "X posted about Y" → finding should say "X discussed Y" (NOT "X did Y")
+- Use cautious language for indirect evidence ("appears to", "is associated with", "has engaged with")
+- Do NOT combine weak evidence to make strong claims
+
+GAP SOURCE ATTRIBUTION:
+- For EACH gap, identify which evidence numbers raised the question
+- Example: If evidence [5] mentions "thesis on Alpha Shapes" → gap should have evidence_ids: [5]
+- If gap is general (not from specific evidence), leave evidence_ids empty
+- Clean out gaps that are ALREADY covered by findings (don't list as gaps if we have answers!)
+
+Examples of CONSERVATIVE synthesis:
+✅ CORRECT: "X shared LinkedIn posts about Cellosaurus and Reactome, indicating interest in these projects"
+❌ WRONG: "X is the lead developer of Cellosaurus" (if evidence only shows sharing/commenting)
+
+✅ CORRECT: "X has engaged with LLM integration in biocuration, as evidenced by posts discussing ChatGPT usage"
+❌ WRONG: "X integrated ChatGPT into Reactome" (if evidence only shows discussion)"""
 
         response = self.llm.generate(prompt, response_model=SynthesisModel)
 
@@ -1055,6 +1102,30 @@ CRITICAL REQUIREMENTS:
                     self.finding_to_source[finding_obj.finding] = "UNKNOWN"
                     logger.warning(f"⚠️ Finding has no evidence IDs: {finding_obj.finding[:80]}")
 
+            # Link gaps to their source origins
+            for gap_obj in response.gaps_with_sources:
+                source_urls = []
+                if gap_obj.evidence_ids:
+                    # Get URLs for all evidence IDs that raised this gap
+                    for ev_id in gap_obj.evidence_ids:
+                        if ev_id in evidence_urls:
+                            source_urls.append(evidence_urls[ev_id])
+                        elif 1 <= ev_id <= len(self.evidence):
+                            source_urls.append(self.evidence[ev_id - 1].url)
+
+                # Update or create gap tracking with source attribution
+                self.active_gaps[gap_obj.gap] = {
+                    "status": "active",
+                    "source_urls": source_urls,
+                    "related_findings": [],
+                    "dimension": "synthesis"
+                }
+
+                if source_urls:
+                    logger.debug(f"✅ Linked gap to {len(source_urls)} source(s): {gap_obj.gap[:60]}...")
+                else:
+                    logger.debug(f"⚠️ Gap has no source attribution: {gap_obj.gap[:60]}...")
+
             return response
         elif hasattr(response, 'content'):
             # Fallback: create simple synthesis with atomic findings
@@ -1072,7 +1143,7 @@ CRITICAL REQUIREMENTS:
                 title=f"Research Report: {self.context.query}",
                 summary=f"Based on {len(self.evidence)} verified sources.",
                 findings_with_sources=fallback_findings,
-                gaps=["Some details may require further research"],
+                gaps_with_sources=[GapWithSource(gap="Some details may require further research", evidence_ids=[])],
                 confidence=sum(e.relevance_score for e in self.evidence) / len(self.evidence)
             )
         else:
@@ -1085,6 +1156,6 @@ CRITICAL REQUIREMENTS:
                         evidence_ids=[]
                     )
                 ],
-                gaps=["Synthesis error"],
+                gaps_with_sources=[GapWithSource(gap="Synthesis error", evidence_ids=[])],
                 confidence=0.5
             )
