@@ -48,10 +48,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
         self.architecture_config = get_architecture_format(self.architecture)
         self.model_capabilities = get_model_capabilities(model)
 
-        # Setup timeout configuration
-        # Default to None for unlimited timeout
-        self._timeout = kwargs.get('timeout', None)  # Default None for unlimited HTTP requests
-        self._tool_timeout = kwargs.get('tool_timeout', None)  # Default None for unlimited tool execution
+        # Setup timeout configuration with priority: kwargs > config > default (600s)
+        # Load timeout from centralized config if not explicitly provided
+        config_timeout = None
+        config_tool_timeout = None
+        try:
+            from ..config import get_config_manager
+            config_manager = get_config_manager()
+            config_timeout = config_manager.get_default_timeout()
+            config_tool_timeout = config_manager.get_tool_timeout()
+        except Exception:
+            # If config not available, use hardcoded defaults
+            config_timeout = 600.0  # 10 minutes
+            config_tool_timeout = 600.0  # 10 minutes
+
+        self._timeout = kwargs.get('timeout', config_timeout)
+        self._tool_timeout = kwargs.get('tool_timeout', config_tool_timeout)
 
         # Setup tool execution mode
         # execute_tools: True = AbstractCore executes tools (legacy mode)
