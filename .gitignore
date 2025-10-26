@@ -188,6 +188,7 @@ test_logs/
 *CLAUDE.md
 
 TODO.md
-config/
+# User configuration files (in home directory, not source code)
+.abstractcore/
 
 untracked/

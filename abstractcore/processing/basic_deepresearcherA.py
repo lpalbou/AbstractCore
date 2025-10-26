@@ -345,8 +345,20 @@ Return a structured plan with main_objective, thoughts, and exploration_strategy
             reverse=True
         )[:self.max_parallel_paths]
 
-        if thought_tree.exploration_strategy == "parallel":
+        # CONCURRENCY FIX: Force sequential exploration for LMStudio provider
+        # to avoid concurrent structured output JSON corruption issues
+        provider_name = getattr(self.llm, 'provider', '').lower()
+        force_sequential = provider_name in ['lmstudio', 'lmstudioprovider']
+        
+        if force_sequential:
+            logger.info("🔧 Using sequential exploration (LMStudio concurrency fix)")
+            exploration_strategy = "sequential"
+        else:
+            exploration_strategy = thought_tree.exploration_strategy
+
+        if exploration_strategy == "parallel":
             # Parallel exploration
+            logger.info("🔄 Using parallel exploration")
             with ThreadPoolExecutor(max_workers=self.max_parallel_paths) as executor:
                 futures = []
                 for idx, thought in enumerate(thoughts_to_explore):
@@ -361,6 +373,7 @@ Return a structured plan with main_objective, thoughts, and exploration_strategy
                         logger.error(f"ReAct loop failed: {e}")
         else:
             # Sequential exploration
+            logger.info("🔄 Using sequential exploration")
             for idx, thought in enumerate(thoughts_to_explore):
                 node_id = f"thought_{idx}"
                 self._react_loop(node_id, thought, max_depth)
@@ -548,14 +561,14 @@ Source Title: {source.get('title', 'Unknown')}
 Source URL: {source.get('url', 'Unknown')}
 Snippet: {source.get('snippet', 'No snippet')}
 
-Evaluate:
-1. Is this source relevant to the research aspect?
-2. What's the relevance score (0-1)?
-3. What's your confidence in the source credibility (0-1)?
-4. What are 1-3 key insights this source might provide?
-5. Do claims need verification from other sources?
+Provide a structured assessment with these specific fields:
+- is_relevant: true or false - whether this source is relevant to "{aspect}"
+- relevance_score: number between 0.0 and 1.0 - how relevant is this source
+- confidence_score: number between 0.0 and 1.0 - how credible is this source
+- key_insights: list of 1-3 strings - what insights this source might provide
+- needs_verification: true or false - whether claims need verification
 
-Return a structured assessment."""
+Return ONLY the JSON object with these exact fields, no additional text."""
 
             try:
                 response = self.llm.generate(prompt, response_model=SourceRelevanceModel, retry_strategy=self.retry_strategy)

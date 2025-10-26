@@ -156,6 +156,36 @@ abstractcore --disable-streaming   # Disable streaming by default
 
 **Note**: Streaming only affects CLI behavior. Apps (summarizer, extractor, judge, intent) don't support streaming because they need complete structured outputs.
 
+### Timeout Configuration
+
+Configure HTTP request and tool execution timeouts:
+
+```bash
+# Set HTTP request timeout (in seconds)
+abstractcore --set-default-timeout 600     # 10 minutes (default)
+abstractcore --set-default-timeout 300     # 5 minutes
+abstractcore --set-default-timeout 1800    # 30 minutes
+
+# Set tool execution timeout (in seconds)
+abstractcore --set-tool-timeout 600        # 10 minutes (default)
+abstractcore --set-tool-timeout 120        # 2 minutes
+abstractcore --set-tool-timeout 900        # 15 minutes
+
+# Check current timeout settings
+abstractcore --status
+```
+
+**Default values:**
+- HTTP request timeout: 600 seconds (10 minutes)
+- Tool execution timeout: 600 seconds (10 minutes)
+
+**Use cases:**
+- **Short timeouts (60-300s)**: Fast API calls, quick tools, development testing
+- **Medium timeouts (300-600s)**: Standard production use, most API calls
+- **Long timeouts (600-1800s)**: Deep research, large file processing, complex tool chains
+
+**Note**: Timeout values are in seconds. Explicit timeout parameters in code (e.g., `create_llm(timeout=120)`) always override config values.
+
 ## Priority System
 
 AbstractCore uses a clear priority hierarchy for configuration:
@@ -213,6 +243,7 @@ This displays:
 - API key status
 - Cache directories
 - Logging configuration
+- Timeout configuration
 - Configuration file location
 
 ## Interactive Configuration
@@ -254,7 +285,11 @@ abstractcore --enable-file-logging
 # 6. Enable streaming for interactive CLI
 abstractcore --stream on
 
-# 7. Verify configuration
+# 7. Configure timeouts (optional - defaults are usually fine)
+abstractcore --set-default-timeout 600    # 10 minutes (default)
+abstractcore --set-tool-timeout 600       # 10 minutes (default)
+
+# 8. Verify configuration
 abstractcore --status
 ```
 
@@ -269,6 +304,10 @@ abstractcore --set-log-base-dir ./logs
 # Use local models to avoid API costs
 abstractcore --set-global-default ollama/llama3:8b
 abstractcore --set-app-default summarizer ollama qwen3:4b-instruct
+
+# Use shorter timeouts for faster failure detection
+abstractcore --set-default-timeout 120    # 2 minutes for quick feedback
+abstractcore --set-tool-timeout 180       # 3 minutes for tools
 ```
 
 ### Production Environment
@@ -283,6 +322,10 @@ abstractcore --set-console-log-level WARNING
 abstractcore --set-file-log-level INFO
 abstractcore --enable-file-logging
 abstractcore --set-log-base-dir /var/log/abstractcore
+
+# Set longer timeouts for production workloads
+abstractcore --set-default-timeout 900    # 15 minutes for complex API calls
+abstractcore --set-tool-timeout 1200      # 20 minutes for long-running tools
 ```
 
 ## Configuration File Format
@@ -347,6 +390,10 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
     "console_json": false,
     "file_json": true
   },
+  "timeouts": {
+    "default_timeout": 600.0,
+    "tool_timeout": 600.0
+  },
   "streaming": {
     "cli_stream_default": false
   },
@@ -402,6 +449,12 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **verbatim_enabled**: Whether to capture full prompts/responses (`true`/`false`)
 - **console_json**: Use JSON format for console output (`true`/`false`)
 - **file_json**: Use JSON format for file output (`true`/`false`)
+
+### Timeouts Section
+- **default_timeout**: Default HTTP request timeout in seconds (default: `600.0` = 10 minutes)
+- **tool_timeout**: Tool execution timeout in seconds (default: `600.0` = 10 minutes)
+
+**Note**: Timeout values are in seconds. The default of 600 seconds (10 minutes) applies to both HTTP requests and tool execution. You can configure these independently based on your needs. Explicit timeout parameters in code always override config values.
 
 ### Streaming Section
 - **cli_stream_default**: Default streaming mode for CLI (`true`/`false`)
@@ -477,6 +530,34 @@ abstractcore --disable-file-logging
 # Note: --debug parameter in apps will still override NONE
 # This maintains the priority system: explicit parameters > config defaults
 ```
+
+### How to Configure Timeouts
+
+To adjust timeout values for different environments:
+
+```bash
+# Standard production (default - usually best)
+abstractcore --set-default-timeout 600    # 10 minutes
+abstractcore --set-tool-timeout 600       # 10 minutes
+
+# Fast development/testing
+abstractcore --set-default-timeout 120    # 2 minutes
+abstractcore --set-tool-timeout 180       # 3 minutes
+
+# Long-running production workloads
+abstractcore --set-default-timeout 1800   # 30 minutes
+abstractcore --set-tool-timeout 3600      # 1 hour
+
+# Verify timeout settings
+abstractcore --status
+```
+
+**When to adjust timeouts:**
+- **Decrease timeouts**: Development testing, want fast failure feedback
+- **Keep defaults (600s)**: Standard production use, most API calls
+- **Increase timeouts**: Deep research, large file processing, complex tool chains
+
+**Note**: Timeouts are in seconds. In code, use `create_llm(timeout=120)` to override config values for specific instances.
 
 ## Troubleshooting
 

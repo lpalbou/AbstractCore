@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.5.3] - 2025-10-26
 
 ### Added
+- **Centralized Timeout Configuration**: Global timeout management for all providers with sensible 10-minute defaults
+  - `TimeoutConfig` dataclass added to centralized configuration system
+  - Two independent timeout parameters:
+    * `default_timeout`: HTTP request timeout (default: 600 seconds / 10 minutes)
+    * `tool_timeout`: Tool execution timeout (default: 600 seconds / 10 minutes)
+  - CLI configuration commands:
+    * `abstractcore --set-default-timeout SECONDS` - Configure HTTP timeout
+    * `abstractcore --set-tool-timeout SECONDS` - Configure tool execution timeout
+    * `abstractcore --status` - View current timeout settings
+  - Priority system: Explicit parameters > Config values > Defaults (600s)
+  - BaseProvider integration: All providers automatically inherit centralized timeout configuration
+  - Graceful fallback: Uses hardcoded 600s default if config unavailable
+  - Comprehensive test suite: 20 tests covering all timeout functionality
+  - Full documentation at `docs/centralized-config.md` with usage examples and recommendations
 - Comprehensive documentation for `BasicDeepSearch` autonomous research agent
   - Three research modes: standard (default), enhanced (AI-optimized), fast (speed-optimized)
   - Reflexive mode for iterative gap analysis and refinement (separate from research modes)
@@ -26,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added both applications to README.md, docs/README.md, and docs/capabilities.md
 
 ### Changed
+- **BaseProvider**: Enhanced timeout initialization with centralized config integration (lines 51-66)
+  - Reads timeout from centralized config when not explicitly provided in kwargs
+  - Maintains backward compatibility with existing code
+  - All providers (OpenAI, Ollama, Anthropic, LMStudio, HuggingFace, MLX) benefit automatically
+- **Configuration Status Display**: Added timeout section to `abstractcore --status` output
+  - Shows HTTP request timeout and tool execution timeout with user-friendly formatting
+  - Displays values in both minutes and seconds (e.g., "10m (600.0s)")
+  - Added to ADVANCED CONFIGURATION section with clear visual hierarchy
 - Updated Built-in Applications count from 3 to 5 applications across documentation
 - Enhanced application import examples in llms documentation files
 

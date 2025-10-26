@@ -1,0 +1,1 @@
+"""Configuration tests for AbstractCore."""
