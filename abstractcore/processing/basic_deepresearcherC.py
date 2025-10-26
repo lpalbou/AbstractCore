@@ -217,6 +217,7 @@ class BasicDeepResearcherC:
         self.react_steps: List[ReActStep] = []
         self.evidence: List[SourceEvidence] = []
         self.seen_urls: Set[str] = set()
+        self.active_gaps: Dict[str, str] = {}  # gap_text -> status (active/resolved)
 
         logger.info(f"🤖 Initialized BasicDeepResearcherC with {self.llm.provider}/{self.llm.model}")
         logger.info(f"🎯 Strategy: Adaptive ReAct | Max iterations: {max_iterations} | Max sources: {max_sources}")
@@ -245,6 +246,7 @@ class BasicDeepResearcherC:
         self.react_steps = []
         self.evidence = []
         self.seen_urls = set()
+        self.active_gaps = {}
 
         # Phase 1: Understand the query
         logger.info("🧠 Phase 1: Understanding query...")
@@ -264,6 +266,15 @@ class BasicDeepResearcherC:
 
         duration = time.time() - start_time
 
+        # Collect only unresolved gaps for final report
+        unresolved_gaps = [
+            gap_text for gap_text, status in self.active_gaps.items()
+            if status == "active"
+        ]
+
+        # Add synthesis gaps (from final report) but merge with active gaps
+        all_final_gaps = list(set(unresolved_gaps + final_report.gaps))
+
         # Build output
         output = ResearchOutput(
             title=final_report.title,
@@ -279,7 +290,7 @@ class BasicDeepResearcherC:
                 }
                 for ev in self.evidence
             ],
-            knowledge_gaps=final_report.gaps,
+            knowledge_gaps=all_final_gaps,  # Only unresolved gaps
             confidence_score=final_report.confidence,
             research_metadata={
                 "strategy": "adaptive_react",
@@ -288,6 +299,8 @@ class BasicDeepResearcherC:
                 "research_tasks": len(self.tasks),
                 "evidence_pieces": len(self.evidence),
                 "urls_explored": len(self.seen_urls),
+                "gaps_resolved": sum(1 for status in self.active_gaps.values() if status == "resolved"),
+                "gaps_remaining": len(unresolved_gaps),
                 "model_used": f"{self.llm.provider}/{self.llm.model}"
             }
         )
@@ -500,13 +513,42 @@ Return ONLY concepts, dimensions, and gaps lists. Keep each item concise (1-3 wo
         return pending_tasks[0]
 
     def _generate_queries_for_task(self, task: ResearchTask) -> List[str]:
-        """Generate search queries for a task"""
+        """Generate search queries for a task using accumulated knowledge gaps and findings"""
+
+        # Collect ONLY ACTIVE (unresolved) knowledge gaps
+        active_gap_list = [
+            gap_text for gap_text, status in self.active_gaps.items()
+            if status == "active"
+        ]
+
+        # Collect key findings so far for refinement
+        existing_findings = []
+        for evidence in self.evidence[:10]:  # Top 10 findings
+            if evidence.key_facts:
+                existing_findings.append(evidence.key_facts[0])
+
+        # Build context sections
+        gaps_context = ""
+        if active_gap_list:
+            recent_gaps = active_gap_list[-5:]  # Last 5 ACTIVE gaps
+            gaps_context = f"\n\nKnowledge gaps to investigate (UNRESOLVED):\n" + "\n".join(f"- {gap}" for gap in recent_gaps)
+
+        findings_context = ""
+        if existing_findings and self.enable_depth:
+            findings_context = f"\n\nExisting findings to refine/deepen:\n" + "\n".join(f"- {finding[:100]}" for finding in existing_findings[:3])
+
         prompt = f"""Generate 2-3 specific search queries for this research dimension:
 
 Query context: {self.context.query}
-Research dimension: {task.dimension}
+Research dimension: {task.dimension}{gaps_context}{findings_context}
 
-Generate diverse queries that would find authoritative information.
+Your queries should:
+1. Target unanswered questions from knowledge gaps (if any)
+2. Deepen understanding of existing findings (if any)
+3. Find authoritative, credible sources
+
+Note: Some gaps may remain unfilled (no evidence exists) - this is acceptable.
+
 Return ONLY a list of query strings, one per line."""
 
         try:
@@ -671,23 +713,91 @@ Return assessment."""
         return observation
 
     def _adapt_plan(self, task: ResearchTask, new_evidence: List[SourceEvidence]) -> tuple[str, List[str]]:
-        """ADAPT: Update plan based on observations"""
+        """ADAPT: Update plan based on observations and identify remaining gaps"""
         task.findings = [{"evidence": e} for e in new_evidence]
         task.confidence = sum(e.relevance_score for e in new_evidence) / max(len(new_evidence), 1)
 
-        adaptation = f"Task '{task.dimension}' completed with {len(new_evidence)} sources."
+        adaptation = f"Task '{task.dimension}' completed with {len(new_evidence)} sources (confidence: {task.confidence:.2f})."
 
-        # Identify new gaps
+        # Check if new evidence resolves any existing gaps
+        self._check_gap_resolution(new_evidence, task)
+
+        # Identify new gaps based on what we learned
         new_gaps = []
+
         if not new_evidence:
-            new_gaps.append(f"No information found for: {task.dimension}")
-        elif task.confidence < 0.7:
-            new_gaps.append(f"Low confidence for: {task.dimension}")
+            # No evidence found - could mean:
+            # 1. Information doesn't exist online
+            # 2. Need better search queries
+            # 3. Topic is legitimately unknown/unverifiable
+            gap_text = f"No verifiable information found for: {task.dimension}"
+            new_gaps.append(gap_text)
+            self.active_gaps[gap_text] = "active"
+
+        elif task.confidence < 0.6:
+            # Low confidence - need more investigation
+            # Extract what's missing from the evidence we do have
+            found_topics = set()
+            for ev in new_evidence:
+                for fact in ev.key_facts:
+                    # Simple keyword extraction
+                    found_topics.update(fact.lower().split()[:5])
+
+            gap_text = f"Insufficient detail on: {task.dimension} (needs refinement)"
+            new_gaps.append(gap_text)
+            self.active_gaps[gap_text] = "active"
+
+        elif task.confidence < 0.8:
+            # Medium confidence - we have something but could be better
+            # This is actually OK - not adding to gaps
+            # But we might want to refine if enable_depth is True
+            if self.enable_depth and len(self.evidence) < self.max_sources * 0.7:
+                gap_text = f"Could deepen understanding of: {task.dimension}"
+                new_gaps.append(gap_text)
+                self.active_gaps[gap_text] = "active"
+
+        # If we found good evidence (confidence >= 0.8), no new gaps for this dimension
+        # The iteration will naturally continue to other dimensions or refinement
 
         if self.debug:
-            logger.debug(f"ADAPT: {adaptation}")
+            logger.debug(f"ADAPT: {adaptation} | New gaps: {len(new_gaps)}")
 
         return adaptation, new_gaps
+
+    def _check_gap_resolution(self, new_evidence: List[SourceEvidence], task: ResearchTask):
+        """Check if new evidence resolves any active gaps"""
+        if not new_evidence or not self.active_gaps:
+            return
+
+        # Extract key topics from new evidence
+        evidence_topics = set()
+        for ev in new_evidence:
+            # Extract from title
+            evidence_topics.update(ev.title.lower().split())
+            # Extract from facts
+            for fact in ev.key_facts:
+                evidence_topics.update(fact.lower().split())
+
+        # Check each active gap
+        gaps_to_resolve = []
+        for gap_text, status in list(self.active_gaps.items()):
+            if status != "active":
+                continue
+
+            # Simple keyword matching to see if gap is addressed
+            gap_keywords = set(gap_text.lower().split())
+
+            # If the current task dimension is mentioned in the gap
+            # AND we found evidence with good confidence, mark as resolved
+            if task.dimension.lower() in gap_text.lower():
+                if task.confidence >= 0.7:  # Good evidence found
+                    gaps_to_resolve.append(gap_text)
+                    if self.debug:
+                        logger.debug(f"📋 Gap RESOLVED: {gap_text[:80]}...")
+
+        # Mark gaps as resolved
+        for gap in gaps_to_resolve:
+            self.active_gaps[gap] = "resolved"
 
     def _check_convergence(self) -> bool:
         """Check if research has converged"""
