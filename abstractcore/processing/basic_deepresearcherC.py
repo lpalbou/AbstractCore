@@ -109,11 +109,17 @@ class SourceRelevanceModel(BaseModel):
     facts: List[str] = Field(description="Key facts")
 
 
+class FindingWithSource(BaseModel):
+    """Finding with source attribution - SIMPLE SCHEMA"""
+    finding: str = Field(description="The key finding statement")
+    evidence_ids: List[int] = Field(description="Evidence piece numbers that support this finding")
+
+
 class SynthesisModel(BaseModel):
     """Final synthesis - SIMPLE SCHEMA"""
     title: str = Field(description="Report title")
     summary: str = Field(description="Executive summary")
-    findings: List[str] = Field(description="Key findings")
+    findings_with_sources: List[FindingWithSource] = Field(description="Key findings with source attribution")
     gaps: List[str] = Field(description="Knowledge gaps")
     confidence: float = Field(description="Overall confidence")
 
@@ -217,7 +223,8 @@ class BasicDeepResearcherC:
         self.react_steps: List[ReActStep] = []
         self.evidence: List[SourceEvidence] = []
         self.seen_urls: Set[str] = set()
-        self.active_gaps: Dict[str, str] = {}  # gap_text -> status (active/resolved)
+        self.active_gaps: Dict[str, Dict[str, Any]] = {}  # gap_text -> {status, source_urls, related_findings}
+        self.finding_to_source: Dict[str, str] = {}  # finding_text -> source_url (for traceability)
 
         logger.info(f"🤖 Initialized BasicDeepResearcherC with {self.llm.provider}/{self.llm.model}")
         logger.info(f"🎯 Strategy: Adaptive ReAct | Max iterations: {max_iterations} | Max sources: {max_sources}")
@@ -247,6 +254,7 @@ class BasicDeepResearcherC:
         self.evidence = []
         self.seen_urls = set()
         self.active_gaps = {}
+        self.finding_to_source = {}
 
         # Phase 1: Understand the query
         logger.info("🧠 Phase 1: Understanding query...")
@@ -268,18 +276,21 @@ class BasicDeepResearcherC:
 
         # Collect only unresolved gaps for final report
         unresolved_gaps = [
-            gap_text for gap_text, status in self.active_gaps.items()
-            if status == "active"
+            gap_text for gap_text, gap_data in self.active_gaps.items()
+            if gap_data["status"] == "active"
         ]
 
         # Add synthesis gaps (from final report) but merge with active gaps
         all_final_gaps = list(set(unresolved_gaps + final_report.gaps))
 
+        # Extract findings from findings_with_sources structure
+        key_findings_list = [f.finding for f in final_report.findings_with_sources]
+
         # Build output
         output = ResearchOutput(
             title=final_report.title,
             summary=final_report.summary,
-            key_findings=final_report.findings,
+            key_findings=key_findings_list,
             sources_selected=[
                 {
                     "url": ev.url,
@@ -299,7 +310,7 @@ class BasicDeepResearcherC:
                 "research_tasks": len(self.tasks),
                 "evidence_pieces": len(self.evidence),
                 "urls_explored": len(self.seen_urls),
-                "gaps_resolved": sum(1 for status in self.active_gaps.values() if status == "resolved"),
+                "gaps_resolved": sum(1 for gap_data in self.active_gaps.values() if gap_data["status"] == "resolved"),
                 "gaps_remaining": len(unresolved_gaps),
                 "model_used": f"{self.llm.provider}/{self.llm.model}"
             }
@@ -430,22 +441,33 @@ Return ONLY concepts, dimensions, and gaps lists. Keep each item concise (1-3 wo
 
     def _react_loop(self):
         """
-        Phase 3: Execute ReAct (Reason-Act-Observe-Adapt) loop
+        Phase 3: Execute ReAct (Reason-Act-Observe-Adapt) loop with phased strategy
+
+        PHASE 1 (iter 1-3, sources < 10): EXPLORATION - Cast wide net, find diverse sources
+        PHASE 2 (iter 3-5, sources >= 10): DEEPENING - Use findings to go deeper
+        PHASE 3 (iter 5+): VALIDATION - Critically evaluate gaps
 
         Continues until we reach max_sources OR all tasks completed OR max_iterations
         """
         iteration = 0
         max_total_iterations = self.max_iterations * 2  # Allow more iterations to reach source target
+        min_sources_threshold = min(10, self.max_sources)  # Critical threshold
 
         while iteration < max_total_iterations:
             iteration += 1
 
-            # Check if we have enough sources FIRST (primary goal)
+            # Determine research phase
+            phase = self._determine_research_phase(iteration, len(self.evidence))
+
+            # Check if we have enough sources - but be AGGRESSIVE if below threshold
             if len(self.evidence) >= self.max_sources:
                 logger.info(f"✅ Reached target of {self.max_sources} sources")
                 break
 
-            logger.info(f"🔄 ReAct iteration {iteration} | Sources: {len(self.evidence)}/{self.max_sources}")
+            if len(self.evidence) < min_sources_threshold:
+                logger.info(f"⚡ EXPLORATION MODE: {len(self.evidence)}/{min_sources_threshold} sources - seeking more angles")
+
+            logger.info(f"🔄 ReAct iteration {iteration} ({phase}) | Sources: {len(self.evidence)}/{self.max_sources}")
 
             # REASON: Analyze current state and decide next action
             reasoning = self._reason_about_state(iteration)
@@ -453,10 +475,15 @@ Return ONLY concepts, dimensions, and gaps lists. Keep each item concise (1-3 wo
             # ACT: Execute searches and fetch content
             active_task = self._select_next_task()
             if not active_task:
-                logger.info("✅ All tasks completed or no promising tasks remain")
-                break
+                # If no tasks but sources < threshold, generate exploratory queries
+                if len(self.evidence) < min_sources_threshold:
+                    logger.info(f"⚡ No tasks remain but only {len(self.evidence)} sources - exploring new angles")
+                    active_task = self._generate_exploratory_task(iteration, phase)
+                else:
+                    logger.info("✅ All tasks completed or no promising tasks remain")
+                    break
 
-            queries = self._generate_queries_for_task(active_task)
+            queries = self._generate_queries_for_task(active_task, phase=phase, iteration=iteration)
             active_task.queries = queries
             active_task.status = "active"
 
@@ -502,6 +529,23 @@ Return ONLY concepts, dimensions, and gaps lists. Keep each item concise (1-3 wo
 
         return reasoning
 
+    def _determine_research_phase(self, iteration: int, source_count: int) -> str:
+        """
+        Determine current research phase based on iteration and source count
+
+        EXPLORATION (iter 1-3 OR sources < 10): Cast wide net
+        DEEPENING (iter 3-5 AND sources >= 10): Go deeper on findings
+        VALIDATION (iter 5+): Critically evaluate gaps
+        """
+        min_threshold = min(10, self.max_sources)
+
+        if source_count < min_threshold or iteration <= 3:
+            return "EXPLORATION"
+        elif iteration <= 5:
+            return "DEEPENING"
+        else:
+            return "VALIDATION"
+
     def _select_next_task(self) -> Optional[ResearchTask]:
         """Select next task to execute based on priority"""
         pending_tasks = [t for t in self.tasks if t.status == "pending"]
@@ -512,42 +556,148 @@ Return ONLY concepts, dimensions, and gaps lists. Keep each item concise (1-3 wo
         pending_tasks.sort(key=lambda t: t.priority, reverse=True)
         return pending_tasks[0]
 
-    def _generate_queries_for_task(self, task: ResearchTask) -> List[str]:
-        """Generate search queries for a task using accumulated knowledge gaps and findings"""
+    def _generate_exploratory_task(self, iteration: int, phase: str) -> ResearchTask:
+        """
+        Generate a new exploratory task when existing tasks are exhausted but source count is low
 
-        # Collect ONLY ACTIVE (unresolved) knowledge gaps
-        active_gap_list = [
-            gap_text for gap_text, status in self.active_gaps.items()
-            if status == "active"
+        This helps find unexplored angles and diverse sources
+        """
+        # Analyze what we've covered so far
+        covered_topics = set()
+        for task in self.tasks:
+            covered_topics.add(task.dimension.lower())
+
+        for ev in self.evidence:
+            for fact in ev.key_facts:
+                covered_topics.update(fact.lower().split()[:5])
+
+        # Create exploratory task
+        task = ResearchTask(
+            id=f"exploratory_{iteration}",
+            dimension=f"unexplored angles and perspectives",
+            queries=[],
+            priority=0.9  # High priority to reach source threshold
+        )
+
+        logger.info(f"📐 Generated exploratory task to find new angles (iteration {iteration})")
+        return task
+
+    def _get_phase_instructions(self, phase: str, current_sources: int, target_sources: int) -> str:
+        """Get phase-specific query generation instructions"""
+
+        if phase == "EXPLORATION":
+            return f"""PRIORITY: Find DIVERSE sources quickly! ({current_sources}/{target_sources} sources so far)
+
+Your queries should:
+1. CAST A WIDE NET - explore different angles and perspectives
+2. Seek VARIETY - academic, news, technical docs, expert opinions
+3. Find AUTHORITATIVE sources - credible, well-cited content
+4. Avoid repetition - try NEW search angles if previous ones didn't yield sources
+
+NOTE: We need at least 10 sources minimum. Be AGGRESSIVE in finding diverse, credible sources."""
+
+        elif phase == "DEEPENING":
+            return f"""PRIORITY: DEEPEN understanding using multi-hop reasoning ({current_sources}/{target_sources} sources)
+
+Your queries should:
+1. BUILD ON existing findings - use discoveries to find related topics
+2. Follow CITATION CHAINS - "who cites this?", "what does this reference?"
+3. Explore IMPLICATIONS - "how does this apply to X?", "what does this enable?"
+4. Find SPECIALIZED sources - deep dives into specific aspects
+
+NOTE: We have enough sources, now go DEEPER into what we've found."""
+
+        elif phase == "VALIDATION":
+            return f"""PRIORITY: VALIDATE gaps and VERIFY findings ({current_sources}/{target_sources} sources)
+
+Your queries should:
+1. CRITICALLY EVALUATE gaps - are they real questions or based on false assumptions?
+2. CROSS-REFERENCE findings - do multiple sources agree?
+3. Test gap VALIDITY - "does X actually exist?", "is this question answerable?"
+4. Seek CONFLICTING evidence - find counter-arguments or corrections
+
+NOTE: Some gaps may not be real questions. Validate whether they're worth pursuing."""
+
+        return ""
+
+    def _generate_queries_for_task(self, task: ResearchTask, phase: str = "EXPLORATION", iteration: int = 1) -> List[str]:
+        """
+        Generate search queries for a task using phase-aware strategy
+
+        EXPLORATION: Broad, diverse queries to find many sources
+        DEEPENING: Focused queries building on existing findings
+        VALIDATION: Critical queries to evaluate gap validity
+        """
+
+        # Collect ONLY ACTIVE (unresolved) knowledge gaps WITH their source URLs
+        active_gaps_with_sources = [
+            (gap_text, gap_data["source_urls"], gap_data["related_findings"])
+            for gap_text, gap_data in self.active_gaps.items()
+            if gap_data["status"] == "active"
         ]
 
-        # Collect key findings so far for refinement
-        existing_findings = []
+        # Collect key findings so far WITH their source URLs for refinement
+        existing_findings_with_sources = []
         for evidence in self.evidence[:10]:  # Top 10 findings
             if evidence.key_facts:
-                existing_findings.append(evidence.key_facts[0])
+                for fact in evidence.key_facts[:1]:  # Top fact from each source
+                    existing_findings_with_sources.append((fact, evidence.url))
 
-        # Build context sections
+        # Build phase-specific context and instructions
+        phase_instructions = self._get_phase_instructions(phase, len(self.evidence), self.max_sources)
+
+        # Build context sections based on phase priority
         gaps_context = ""
-        if active_gap_list:
-            recent_gaps = active_gap_list[-5:]  # Last 5 ACTIVE gaps
-            gaps_context = f"\n\nKnowledge gaps to investigate (UNRESOLVED):\n" + "\n".join(f"- {gap}" for gap in recent_gaps)
-
         findings_context = ""
-        if existing_findings and self.enable_depth:
-            findings_context = f"\n\nExisting findings to refine/deepen:\n" + "\n".join(f"- {finding[:100]}" for finding in existing_findings[:3])
 
-        prompt = f"""Generate 2-3 specific search queries for this research dimension:
+        if phase == "EXPLORATION":
+            # EXPLORATION: Priority is diverse angles, gaps secondary
+            if task.dimension and "unexplored" not in task.dimension:
+                gaps_context = f"\n\nCurrent focus: {task.dimension}"
+            if active_gaps_with_sources:
+                top_gaps = active_gaps_with_sources[:3]  # Just top 3 to maintain diversity
+                gaps_context += f"\n\nAreas needing coverage:\n" + "\n".join(f"- {gap[0]}" for gap in top_gaps)
+
+        elif phase == "DEEPENING":
+            # DEEPENING: Priority is multi-hop reasoning from findings
+            # CRITICAL: Include source URLs to start from!
+            if existing_findings_with_sources:
+                findings_context = f"\n\nDeepen understanding by building on these findings:\n"
+                for finding, source_url in existing_findings_with_sources[:3]:
+                    findings_context += f"- {finding[:100]}\n  SOURCE: {source_url}\n  ACTION: Use this source as starting point for deeper exploration\n"
+
+            if active_gaps_with_sources:
+                gaps_context = f"\n\nRemaining questions to address:\n"
+                for gap_text, source_urls, related_findings in active_gaps_with_sources[:3]:
+                    gaps_context += f"- {gap_text}\n"
+                    if source_urls:
+                        gaps_context += f"  RELATED SOURCES: {', '.join(source_urls[:2])}\n"
+
+        elif phase == "VALIDATION":
+            # VALIDATION: Priority is critical evaluation of gaps
+            # CRITICAL: Include source URLs for verification!
+            if active_gaps_with_sources:
+                gaps_context = f"\n\nCritically evaluate these gaps (are they real questions or false assumptions?):\n"
+                for gap_text, source_urls, related_findings in active_gaps_with_sources[:5]:
+                    gaps_context += f"- {gap_text}\n"
+                    if source_urls:
+                        gaps_context += f"  START FROM SOURCES: {', '.join(source_urls[:2])}\n"
+                        gaps_context += f"  VERIFY: Can these sources answer this? Or is the gap invalid?\n"
+                    else:
+                        gaps_context += f"  NO SOURCES YET: Search to validate if this gap is real\n"
+
+            if existing_findings_with_sources:
+                findings_context = f"\n\nVerify and cross-reference these findings:\n"
+                for finding, source_url in existing_findings_with_sources[:2]:
+                    findings_context += f"- {finding[:80]}\n  FROM: {source_url}\n  VERIFY: Find conflicting or confirming evidence\n"
+
+        prompt = f"""Generate 2-3 specific search queries for this research task:
 
 Query context: {self.context.query}
 Research dimension: {task.dimension}{gaps_context}{findings_context}
 
-Your queries should:
-1. Target unanswered questions from knowledge gaps (if any)
-2. Deepen understanding of existing findings (if any)
-3. Find authoritative, credible sources
-
-Note: Some gaps may remain unfilled (no evidence exists) - this is acceptable.
+CURRENT RESEARCH PHASE: {phase}
+{phase_instructions}
 
 Return ONLY a list of query strings, one per line."""
 
@@ -690,6 +840,10 @@ Return assessment."""
                 timestamp=datetime.now().isoformat()
             )
 
+            # CRITICAL: Track finding->source mapping for traceability
+            for fact in assessment.facts:
+                self.finding_to_source[fact] = url
+
             logger.info(f"✅ Evidence: {title[:50]}... (rel: {assessment.relevance_score:.2f})")
 
             return evidence
@@ -732,29 +886,54 @@ Return assessment."""
             # 3. Topic is legitimately unknown/unverifiable
             gap_text = f"No verifiable information found for: {task.dimension}"
             new_gaps.append(gap_text)
-            self.active_gaps[gap_text] = "active"
+            self.active_gaps[gap_text] = {
+                "status": "active",
+                "source_urls": [],  # No sources led to this gap
+                "related_findings": [],
+                "dimension": task.dimension
+            }
 
         elif task.confidence < 0.6:
             # Low confidence - need more investigation
             # Extract what's missing from the evidence we do have
             found_topics = set()
+            source_urls = []
+            related_findings = []
+
             for ev in new_evidence:
+                source_urls.append(ev.url)
                 for fact in ev.key_facts:
                     # Simple keyword extraction
                     found_topics.update(fact.lower().split()[:5])
+                    related_findings.append(fact)
 
             gap_text = f"Insufficient detail on: {task.dimension} (needs refinement)"
             new_gaps.append(gap_text)
-            self.active_gaps[gap_text] = "active"
+            self.active_gaps[gap_text] = {
+                "status": "active",
+                "source_urls": source_urls,  # Sources that partially covered this
+                "related_findings": related_findings[:3],  # Top 3 related findings
+                "dimension": task.dimension
+            }
 
         elif task.confidence < 0.8:
             # Medium confidence - we have something but could be better
             # This is actually OK - not adding to gaps
             # But we might want to refine if enable_depth is True
             if self.enable_depth and len(self.evidence) < self.max_sources * 0.7:
+                source_urls = [ev.url for ev in new_evidence]
+                related_findings = []
+                for ev in new_evidence:
+                    related_findings.extend(ev.key_facts[:2])
+
                 gap_text = f"Could deepen understanding of: {task.dimension}"
                 new_gaps.append(gap_text)
-                self.active_gaps[gap_text] = "active"
+                self.active_gaps[gap_text] = {
+                    "status": "active",
+                    "source_urls": source_urls,  # Sources to build upon
+                    "related_findings": related_findings[:3],
+                    "dimension": task.dimension
+                }
 
         # If we found good evidence (confidence >= 0.8), no new gaps for this dimension
         # The iteration will naturally continue to other dimensions or refinement
@@ -780,8 +959,8 @@ Return assessment."""
 
         # Check each active gap
         gaps_to_resolve = []
-        for gap_text, status in list(self.active_gaps.items()):
-            if status != "active":
+        for gap_text, gap_data in list(self.active_gaps.items()):
+            if gap_data["status"] != "active":
                 continue
 
             # Simple keyword matching to see if gap is addressed
@@ -795,9 +974,9 @@ Return assessment."""
                     if self.debug:
                         logger.debug(f"📋 Gap RESOLVED: {gap_text[:80]}...")
 
-        # Mark gaps as resolved
+        # Mark gaps as resolved (update status field)
         for gap in gaps_to_resolve:
-            self.active_gaps[gap] = "resolved"
+            self.active_gaps[gap]["status"] = "resolved"
 
     def _check_convergence(self) -> bool:
         """Check if research has converged"""
@@ -806,24 +985,29 @@ Return assessment."""
 
     def _synthesize_with_grounding(self) -> SynthesisModel:
         """
-        Phase 4: Synthesize findings with mandatory grounding
+        Phase 4: Synthesize findings with mandatory grounding and source attribution
         """
         if not self.evidence:
             logger.warning("⚠️ No evidence found - cannot synthesize grounded report")
             return SynthesisModel(
                 title=f"Research Report: {self.context.query}",
                 summary="No reliable information was found for this query. This may indicate an unknown topic or very limited online presence.",
-                findings=["No verifiable information found"],
+                findings_with_sources=[
+                    FindingWithSource(
+                        finding="No verifiable information found",
+                        evidence_ids=[]
+                    )
+                ],
                 gaps=[f"Complete information gap for: {self.context.query}"],
                 confidence=0.0
             )
 
-        # Build evidence summary
+        # Build evidence summary with NUMBERED sources
         evidence_summary = []
         for i, ev in enumerate(self.evidence[:15], 1):  # Top 15 sources
             evidence_summary.append(
-                f"{i}. {ev.title[:80]} (relevance: {ev.relevance_score:.2f})\n"
-                f"   Facts: {'; '.join(ev.key_facts[:2])}"
+                f"[{i}] URL: {ev.url}\n"
+                f"    Facts: {'; '.join(ev.key_facts[:3])}"
             )
 
         evidence_text = "\n".join(evidence_summary)
@@ -832,28 +1016,62 @@ Return assessment."""
 
 Research query: {self.context.query}
 
-VERIFIED EVIDENCE:
+VERIFIED EVIDENCE (numbered):
 {evidence_text}
 
 Create a synthesis with:
 1. title: Descriptive report title
 2. summary: 2-3 sentence executive summary
-3. findings: 3-7 key findings (MUST be supported by evidence above)
+3. findings_with_sources: 3-7 key findings, EACH with evidence_ids listing which evidence numbers ([1], [2], etc.) support it
 4. gaps: Knowledge gaps we couldn't address
 5. confidence: Overall confidence 0-1
 
-CRITICAL: Base findings ONLY on the evidence provided. Do not add information not present in sources."""
+CRITICAL REQUIREMENTS:
+- Base findings ONLY on the evidence provided
+- For EACH finding, specify which evidence numbers (e.g., [1, 3, 5]) support it
+- Every finding MUST have at least one evidence_id
+- Do not add information not present in sources"""
 
         response = self.llm.generate(prompt, response_model=SynthesisModel)
 
         if isinstance(response, SynthesisModel):
+            # Rebuild finding_to_source map with synthesized findings
+            self.finding_to_source = {}  # Clear old atomic findings
+            for finding_obj in response.findings_with_sources:
+                # Map finding to the FIRST supporting source URL
+                if finding_obj.evidence_ids:
+                    # Get the first valid evidence ID
+                    for ev_id in finding_obj.evidence_ids:
+                        if 1 <= ev_id <= len(self.evidence):
+                            source_url = self.evidence[ev_id - 1].url
+                            self.finding_to_source[finding_obj.finding] = source_url
+                            logger.debug(f"✅ Mapped finding to source: {source_url}")
+                            break
+                    else:
+                        # No valid evidence ID
+                        self.finding_to_source[finding_obj.finding] = "UNKNOWN"
+                        logger.warning(f"⚠️ Finding has no valid evidence IDs: {finding_obj.finding[:80]}")
+                else:
+                    self.finding_to_source[finding_obj.finding] = "UNKNOWN"
+                    logger.warning(f"⚠️ Finding has no evidence IDs: {finding_obj.finding[:80]}")
+
             return response
         elif hasattr(response, 'content'):
-            # Fallback: create simple synthesis
+            # Fallback: create simple synthesis with atomic findings
+            fallback_findings = []
+            for i, e in enumerate(self.evidence[:5]):
+                if e.key_facts:
+                    finding = e.key_facts[0]
+                    fallback_findings.append(FindingWithSource(
+                        finding=finding,
+                        evidence_ids=[i + 1]
+                    ))
+                    self.finding_to_source[finding] = e.url
+
             return SynthesisModel(
                 title=f"Research Report: {self.context.query}",
                 summary=f"Based on {len(self.evidence)} verified sources.",
-                findings=[f"{e.key_facts[0]}" for e in self.evidence[:5] if e.key_facts],
+                findings_with_sources=fallback_findings,
                 gaps=["Some details may require further research"],
                 confidence=sum(e.relevance_score for e in self.evidence) / len(self.evidence)
             )
@@ -861,7 +1079,12 @@ CRITICAL: Base findings ONLY on the evidence provided. Do not add information no
             return SynthesisModel(
                 title=f"Research Report: {self.context.query}",
                 summary="Synthesis generation failed.",
-                findings=["Unable to generate structured synthesis"],
+                findings_with_sources=[
+                    FindingWithSource(
+                        finding="Unable to generate structured synthesis",
+                        evidence_ids=[]
+                    )
+                ],
                 gaps=["Synthesis error"],
                 confidence=0.5
             )
