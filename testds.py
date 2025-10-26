@@ -11,8 +11,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize (any model/provider works)
 model = "openai/gpt-oss-20b"
-model = "openai/gpt-4o-mini"
 model = "qwen/qwen3-next-80b"
+model = "qwen/qwen3-30b-a3b-2507"
+#model = "gpt-4o-mini"
 llm = create_llm("lmstudio", model=model)
 
 logger.info(f"🔍 LLM created successfully")
@@ -42,7 +43,7 @@ def debug_generate(*args, **kwargs):
 
 llm.generate = debug_generate
 
-researcher = BasicDeepResearcherB(llm, max_sources=25)
+researcher = BasicDeepResearcherA(llm, max_sources=25)
 
 # Research topic
 topic = "Laurent-Philippe Albou"
@@ -110,14 +111,14 @@ import signal
 import threading
 
 def timeout_handler(signum, frame):
-    raise TimeoutError("Research timed out after 5 minutes")
+    raise TimeoutError("Research timed out after 10 minutes")
 
 def run_research_with_timeout():
     """Run research with a timeout to prevent hanging."""
     try:
-        # Set a 5-minute timeout
+        # Set a 10-minute timeout
         signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(600)  # 5 minutes
+        signal.alarm(600)  # 10 minutes (600 seconds)
         
         result = researcher.research(topic)
         signal.alarm(0)  # Cancel the alarm
@@ -149,7 +150,9 @@ safe_modelname = re.sub(r'[^\w\s-]', '', model).strip()
 safe_modelname = re.sub(r'[-\s]+', '_', safe_modelname).lower()
 safe_filename = re.sub(r'[^\w\s-]', '', topic).strip()
 safe_filename = re.sub(r'[-\s]+', '_', safe_filename).lower()
-json_filename = f"{safe_filename}_{safe_modelname}_result.json"
+import uuid
+uid = uuid.uuid4().hex[:8]
+json_filename = f"{safe_filename}_{safe_modelname}_result_{uid}.json"
 
 # Only save results if research was successful
 if 'result' in locals() and result is not None:

@@ -162,7 +162,7 @@ class BasicDeepResearcherB:
         max_output_tokens: int = 8000,
         timeout: Optional[float] = None,
         max_sources: int = 20,
-        quality_threshold: float = 0.7,
+        quality_threshold: float = 0.3,  # Lowered from 0.7 to prevent all sources being rejected
         extract_full_content: bool = True,
         search_provider: str = "duckduckgo",
         search_api_key: Optional[str] = None,
@@ -209,12 +209,14 @@ class BasicDeepResearcherB:
 
         self.max_sources = max_sources
         self.quality_threshold = quality_threshold
+        # Safety check: if threshold too high and no sources pass, warn user
+        self._warn_no_sources = True
         self.extract_full_content = extract_full_content
         self.search_provider = search_provider
         self.search_api_key = search_api_key
         self.temperature = temperature
         self.debug = debug
-        self.retry_strategy = FeedbackRetry(max_attempts=3)
+        self.retry_strategy = FeedbackRetry(max_attempts=1)  # Reduced from 3 to 1 for speed
 
         # Initialize helpers
         try:
@@ -264,10 +266,11 @@ class BasicDeepResearcherB:
         self.seen_urls = set()
         self.content_cache = {}
 
-        # Phase 1: Analyze intent and create plan
-        logger.info("🧠 Phase 1: Analyzing intent and creating plan")
-        if self.intent_analyzer:
-            intent = self._analyze_query_intent(query)
+        # Phase 1: Create research plan (skip intent analysis for speed)
+        logger.info("🧠 Phase 1: Creating research plan")
+        # Skipping intent analysis - saves 60-80 seconds
+        # if self.intent_analyzer:
+        #     intent = self._analyze_query_intent(query)
         research_plan = self._create_hierarchical_plan(query, focus_areas, depth)
 
         # Phase 2: Execute plan with progressive refinement
@@ -289,10 +292,20 @@ class BasicDeepResearcherB:
         duration = time.time() - start_time
 
         # Build output
+        # Extract findings - handle different dict key formats
+        key_findings = []
+        for item in final_report.main_findings:
+            if isinstance(item, dict):
+                # Try different possible keys
+                finding = item.get('finding') or item.get('key_finding') or item.get('content') or str(next(iter(item.values())))
+                key_findings.append(finding)
+            else:
+                key_findings.append(str(item))
+
         output = ResearchOutput(
             title=final_report.title,
             summary=final_report.executive_summary,
-            key_findings=[f"{item['finding']}" for item in final_report.main_findings],
+            key_findings=key_findings,
             sources_probed=self.sources_probed,
             sources_selected=self.sources_selected,
             detailed_report={
@@ -336,33 +349,22 @@ class BasicDeepResearcherB:
             return None
 
     def _create_hierarchical_plan(self, query: str, focus_areas: Optional[List[str]], depth: str) -> ResearchPlanModel:
-        """Create structured hierarchical research plan"""
+        """Create structured hierarchical research plan (simplified for speed)"""
         focus_context = ""
         if focus_areas:
             focus_context = f"\n\nFocus Areas: {', '.join(focus_areas)}"
 
-        prompt = f"""Create a comprehensive hierarchical research plan for this question.
+        # Simplified prompt - reduced from detailed instructions to concise format
+        prompt = f"""Create a research plan for: {query}
+Depth: {depth}{focus_context}
 
-Research Question: {query}
-Depth Level: {depth}{focus_context}
+Generate:
+1. Research goal (one sentence)
+2. 3-4 research categories
+3. 5-8 specific questions to answer
+4. Question dependencies (optional)
 
-Create a structured plan with:
-1. Clear research goal statement
-2. 3-5 main research categories (themes to explore)
-3. 8-15 atomic questions (specific, answerable questions)
-   - Each question should be self-contained and specific
-   - Assign to appropriate category
-   - Set priority (1=critical, 2=important, 3=supplementary)
-4. Dependencies between questions (which must be answered first)
-5. Estimated depth needed
-
-Atomic questions should be:
-- Specific and concrete (not broad)
-- Independently answerable
-- Collectively comprehensive
-- Prioritized by importance
-
-Return a structured plan."""
+Keep questions focused and independently answerable."""
 
         response = self.llm.generate(prompt, response_model=ResearchPlanModel, retry_strategy=self.retry_strategy)
 
@@ -438,6 +440,15 @@ Return a structured plan."""
 
         # Assess quality
         high_quality_sources = self._assess_source_quality(sources, question)
+
+        # CRITICAL: If no sources pass quality check, include top sources anyway!
+        if len(high_quality_sources) == 0 and len(sources) > 0:
+            logger.warning(f"⚠️  No sources passed quality threshold ({self.quality_threshold}), including top 3 anyway to prevent hallucination!")
+            high_quality_sources = sources[:3]
+            # Mark as lower quality
+            for src in high_quality_sources:
+                src['quality_score'] = 0.5
+                src['note'] = 'Included despite low quality score to prevent hallucination'
 
         # Extract and analyze content
         for source in high_quality_sources[:5]:  # Top 5 per question
@@ -570,21 +581,13 @@ Return structured queries."""
         high_quality = []
 
         for source in sources:
-            prompt = f"""Assess the quality of this source for answering: {question.question}
+            # Simplified prompt for speed (reduced from detailed quality assessment)
+            prompt = f"""Is this source useful for: {question.question}?
 
 Title: {source.get('title', 'Unknown')}
-URL: {source.get('url', 'Unknown')}
 Snippet: {source.get('snippet', 'No snippet')}
 
-Evaluate:
-1. Credibility score (0-1): Based on domain authority, publication type
-2. Recency score (0-1): How current is the information
-3. Relevance score (0-1): How relevant to the question
-4. Authority indicators (up to 3): Why this source is authoritative
-5. Red flags (up to 3): Any quality concerns
-6. Should include: Whether to include this source
-
-Return structured assessment."""
+Rate relevance (0-1) and say if it should be included."""
 
             try:
                 response = self.llm.generate(prompt, response_model=SourceQualityModel, retry_strategy=self.retry_strategy)

@@ -13,6 +13,7 @@ from .basic_deepsearchv2 import BasicDeepSearchV2
 from .basic_intent import BasicIntentAnalyzer, IntentType, IntentDepth, IntentContext, IdentifiedIntent, IntentAnalysisOutput
 from .basic_deepresearcherA import BasicDeepResearcherA
 from .basic_deepresearcherB import BasicDeepResearcherB
+from .basic_deepresearcherC import BasicDeepResearcherC
 
 __all__ = [
     'BasicSummarizer', 'SummaryStyle', 'SummaryLength',
@@ -21,5 +22,5 @@ __all__ = [
     'BasicDeepSearch', 'ResearchReport', 'ResearchFinding', 'ResearchPlan', 'ResearchSubTask',
     'BasicDeepSearchV2',
     'BasicIntentAnalyzer', 'IntentType', 'IntentDepth', 'IntentContext', 'IdentifiedIntent', 'IntentAnalysisOutput',
-    'BasicDeepResearcherA', 'BasicDeepResearcherB'
+    'BasicDeepResearcherA', 'BasicDeepResearcherB', 'BasicDeepResearcherC'
 ]
