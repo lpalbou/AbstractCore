@@ -20,7 +20,7 @@ researcher = BasicDeepResearcherC(
 )
 
 # Define query and model info
-query = "Laurent-Philippe Albou"
+query = "Create a comprehensive guide about BAML and how it differs frm outlines"
 model_name = "qwen/qwen3-30b-a3b-2507"
 
 # Run research
@@ -65,6 +65,27 @@ for i, gap in enumerate(result.knowledge_gaps, 1):
             print(f"   📋 RELATED FINDINGS:")
             for finding in gap_data['related_findings'][:2]:  # Show top 2
                 print(f"      - {finding[:80]}...")
+
+print(f"\n{'='*80}")
+print("ALL SOURCES USED")
+print(f"{'='*80}")
+for i, source in enumerate(result.sources_selected, 1):
+    print(f"\n{i}. {source.get('title', 'No title')}")
+    print(f"   URL: {source.get('url', 'No URL')}")
+    print(f"   Relevance: {source.get('relevance', 0):.2f}")
+    print(f"   Credibility: {source.get('credibility', 0):.2f}")
+    if source.get('excerpt'):
+        print(f"   Excerpt: {source['excerpt'][:150]}...")
+
+print(f"\n{'='*80}")
+print("DETAILED RESEARCH REPORT")
+print(f"{'='*80}")
+if hasattr(result, 'detailed_report') and result.detailed_report:
+    for section in result.detailed_report.get("sections", []):
+        print(f"\n## {section['heading']}")
+        print(f"{section['content']}")
+else:
+    print("\nNo detailed report available.")
 
 print(f"\n{'='*80}")
 print("SOURCE ATTRIBUTION SUMMARY")
@@ -134,6 +155,9 @@ result_data = {
         "finding_to_source_map": dict(researcher.finding_to_source),
         "gap_details": {gap: data for gap, data in researcher.active_gaps.items()}
     },
+
+    # DETAILED REPORT
+    "detailed_report": result.detailed_report,
 
     # BACKWARD COMPATIBILITY (original fields)
     "key_findings": result.key_findings,
