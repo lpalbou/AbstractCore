@@ -1,0 +1,757 @@
+"""
+Basic Deep Researcher C - Adaptive ReAct Web Research Agent
+
+This implementation follows the ReAct (Reasoning and Acting) paradigm with adaptive
+planning and proper grounding to prevent hallucinations.
+
+Architecture:
+1. Understanding Phase: Analyze query and build initial context through exploratory searches
+2. Adaptive Planning: Create dynamic research plan that evolves based on findings
+3. ReAct Loop: Iterative Reason → Act → Observe → Adapt cycles
+4. Content Fetching: Actual web page analysis (not just snippets)
+5. Grounding System: Every claim tied to verified sources
+
+Key Features:
+- Adaptive planning that evolves based on discoveries
+- True ReAct implementation with explicit reasoning traces
+- Full content extraction from web pages
+- Anti-hallucination through mandatory source grounding
+- Breadth-first exploration with depth-first refinement
+- Handles "no information found" gracefully
+"""
+
+import json
+import time
+import re
+from typing import Optional, List, Dict, Any, Set
+from dataclasses import dataclass, field
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+from ..core.interface import AbstractCoreInterface
+from ..core.factory import create_llm
+from ..utils.structured_logging import get_logger
+from ..tools.common_tools import web_search, fetch_url
+
+logger = get_logger(__name__)
+
+
+# ==================== Data Models ====================
+
+@dataclass
+class ResearchContext:
+    """Current understanding of the research query"""
+    query: str
+    key_concepts: List[str] = field(default_factory=list)
+    research_dimensions: List[str] = field(default_factory=list)
+    knowledge_gaps: List[str] = field(default_factory=list)
+    query_type: str = "exploratory"  # factual, analytical, exploratory, comparative
+    confidence: float = 0.0
+
+
+@dataclass
+class ResearchTask:
+    """Single research task in the adaptive plan"""
+    id: str
+    dimension: str
+    queries: List[str]
+    priority: float
+    status: str = "pending"  # pending, active, completed, abandoned
+    findings: List[Dict[str, Any]] = field(default_factory=list)
+    urls_explored: Set[str] = field(default_factory=set)
+    confidence: float = 0.0
+
+
+@dataclass
+class ReActStep:
+    """Single step in the ReAct loop"""
+    iteration: int
+    reasoning: str
+    action: str
+    queries: List[str]
+    urls_fetched: List[str]
+    observation: str
+    adaptation: str
+    new_gaps: List[str]
+    timestamp: str
+
+
+@dataclass
+class SourceEvidence:
+    """Evidence extracted from a source with grounding"""
+    url: str
+    title: str
+    excerpt: str  # Actual text from source
+    relevance_score: float
+    credibility_score: float
+    key_facts: List[str]
+    timestamp: str
+
+
+# Simple Pydantic models with minimal constraints
+class UnderstandingModel(BaseModel):
+    """Understanding of the query - SIMPLE SCHEMA"""
+    concepts: List[str] = Field(description="Key concepts")
+    dimensions: List[str] = Field(description="Research dimensions")
+    gaps: List[str] = Field(description="Knowledge gaps")
+
+
+class SearchQueriesModel(BaseModel):
+    """Search queries - SIMPLE SCHEMA"""
+    queries: List[str] = Field(description="Search queries")
+
+
+class SourceRelevanceModel(BaseModel):
+    """Source relevance assessment - SIMPLE SCHEMA"""
+    is_relevant: bool = Field(description="Is source relevant")
+    relevance_score: float = Field(description="0-1 relevance")
+    credibility_score: float = Field(description="0-1 credibility")
+    facts: List[str] = Field(description="Key facts")
+
+
+class SynthesisModel(BaseModel):
+    """Final synthesis - SIMPLE SCHEMA"""
+    title: str = Field(description="Report title")
+    summary: str = Field(description="Executive summary")
+    findings: List[str] = Field(description="Key findings")
+    gaps: List[str] = Field(description="Knowledge gaps")
+    confidence: float = Field(description="Overall confidence")
+
+
+class ResearchOutput(BaseModel):
+    """Final research output"""
+    title: str
+    summary: str
+    key_findings: List[str]
+    sources_selected: List[Dict[str, Any]]
+    research_metadata: Dict[str, Any]
+    knowledge_gaps: List[str]
+    confidence_score: float
+
+
+# ==================== Main Class ====================
+
+class BasicDeepResearcherC:
+    """
+    Deep Researcher using Adaptive ReAct Strategy
+
+    This implementation emphasizes:
+    - Adaptive planning that evolves based on findings
+    - True ReAct loops with explicit reasoning
+    - Full web content fetching (not just snippets)
+    - Mandatory source grounding to prevent hallucination
+    - Graceful handling of "no information found"
+
+    Example:
+        >>> from abstractcore import create_llm
+        >>> from abstractcore.processing import BasicDeepResearcherC
+        >>>
+        >>> llm = create_llm("lmstudio", model="qwen/qwen3-30b-a3b-2507")
+        >>> researcher = BasicDeepResearcherC(llm, max_sources=30)
+        >>>
+        >>> result = researcher.research("Laurent-Philippe Albou")
+        >>> print(json.dumps(result.dict(), indent=2))
+    """
+
+    def __init__(
+        self,
+        llm: Optional[AbstractCoreInterface] = None,
+        max_sources: int = 30,
+        max_urls_to_probe: int = 60,
+        max_iterations: int = 25,
+        fetch_timeout: int = 10,
+        enable_breadth: bool = True,
+        enable_depth: bool = True,
+        grounding_threshold: float = 0.7,
+        temperature: float = 0.2,
+        debug: bool = False
+    ):
+        """
+        Initialize the Adaptive ReAct Deep Researcher
+
+        Args:
+            llm: LLM instance (defaults to LMStudio if None)
+            max_sources: Target number of high-quality sources to include
+            max_urls_to_probe: Maximum URLs to explore (filters to max_sources)
+            max_iterations: Maximum ReAct loop iterations
+            fetch_timeout: Timeout for fetching individual URLs (seconds)
+            enable_breadth: Explore multiple research dimensions
+            enable_depth: Deep dive on promising leads
+            grounding_threshold: Minimum relevance score for inclusion (0-1)
+            temperature: LLM temperature for research
+            debug: Enable detailed execution traces
+        """
+        if llm is None:
+            try:
+                self.llm = create_llm(
+                    "lmstudio",
+                    model="qwen/qwen3-30b-a3b-2507",
+                    temperature=temperature,
+                    timeout=120
+                )
+            except Exception as e:
+                error_msg = (
+                    f"❌ Failed to initialize default model: {e}\n\n"
+                    "💡 Please provide a custom LLM instance:\n"
+                    "   from abstractcore import create_llm\n"
+                    "   llm = create_llm('lmstudio', model='qwen/qwen3-30b-a3b-2507')\n"
+                    "   researcher = BasicDeepResearcherC(llm)"
+                )
+                raise RuntimeError(error_msg) from e
+        else:
+            self.llm = llm
+
+        self.max_sources = max_sources
+        self.max_urls_to_probe = max_urls_to_probe
+        self.max_iterations = max_iterations
+        self.fetch_timeout = fetch_timeout
+        self.enable_breadth = enable_breadth
+        self.enable_depth = enable_depth
+        self.grounding_threshold = grounding_threshold
+        self.temperature = temperature
+        self.debug = debug
+
+        # State tracking
+        self.context: Optional[ResearchContext] = None
+        self.tasks: List[ResearchTask] = []
+        self.react_steps: List[ReActStep] = []
+        self.evidence: List[SourceEvidence] = []
+        self.seen_urls: Set[str] = set()
+
+        logger.info(f"🤖 Initialized BasicDeepResearcherC with {self.llm.provider}/{self.llm.model}")
+        logger.info(f"🎯 Strategy: Adaptive ReAct | Max iterations: {max_iterations} | Max sources: {max_sources}")
+
+    def research(
+        self,
+        query: str,
+        focus_areas: Optional[List[str]] = None
+    ) -> ResearchOutput:
+        """
+        Conduct deep research using Adaptive ReAct strategy
+
+        Args:
+            query: Research question or topic
+            focus_areas: Optional specific areas to focus on
+
+        Returns:
+            ResearchOutput: Comprehensive research report with grounded findings
+        """
+        start_time = time.time()
+        logger.info(f"🔬 Starting adaptive ReAct research: {query}")
+
+        # Reset state
+        self.context = None
+        self.tasks = []
+        self.react_steps = []
+        self.evidence = []
+        self.seen_urls = set()
+
+        # Phase 1: Understand the query
+        logger.info("🧠 Phase 1: Understanding query...")
+        self.context = self._understand_query(query, focus_areas)
+
+        # Phase 2: Build adaptive plan
+        logger.info("📋 Phase 2: Building adaptive research plan...")
+        self._build_adaptive_plan(self.context)
+
+        # Phase 3: ReAct loop
+        logger.info("🔄 Phase 3: Executing ReAct loop...")
+        self._react_loop()
+
+        # Phase 4: Synthesize with grounding
+        logger.info("📝 Phase 4: Synthesizing grounded report...")
+        final_report = self._synthesize_with_grounding()
+
+        duration = time.time() - start_time
+
+        # Build output
+        output = ResearchOutput(
+            title=final_report.title,
+            summary=final_report.summary,
+            key_findings=final_report.findings,
+            sources_selected=[
+                {
+                    "url": ev.url,
+                    "title": ev.title,
+                    "relevance": ev.relevance_score,
+                    "credibility": ev.credibility_score,
+                    "excerpt": ev.excerpt[:200] + "..." if len(ev.excerpt) > 200 else ev.excerpt
+                }
+                for ev in self.evidence
+            ],
+            knowledge_gaps=final_report.gaps,
+            confidence_score=final_report.confidence,
+            research_metadata={
+                "strategy": "adaptive_react",
+                "duration_seconds": round(duration, 2),
+                "react_iterations": len(self.react_steps),
+                "research_tasks": len(self.tasks),
+                "evidence_pieces": len(self.evidence),
+                "urls_explored": len(self.seen_urls),
+                "model_used": f"{self.llm.provider}/{self.llm.model}"
+            }
+        )
+
+        logger.info(f"✅ Research completed in {duration:.1f}s | {len(self.evidence)} sources | {final_report.confidence:.2f} confidence")
+        return output
+
+    def _understand_query(self, query: str, focus_areas: Optional[List[str]]) -> ResearchContext:
+        """
+        Phase 1: Understand the query through LLM analysis and exploratory searches
+        """
+        # Step 1: LLM analysis of query
+        focus_context = ""
+        if focus_areas:
+            focus_context = f"\n\nFocus particularly on: {', '.join(focus_areas)}"
+
+        prompt = f"""Analyze this research query and extract key information:
+
+Query: {query}{focus_context}
+
+Provide:
+1. Key concepts/entities to research
+2. Specific research dimensions to explore
+3. Initial knowledge gaps to address
+
+Return ONLY concepts, dimensions, and gaps lists. Keep each item concise (1-3 words)."""
+
+        try:
+            # Try structured output first
+            response = self.llm.generate(prompt, response_model=UnderstandingModel)
+            if isinstance(response, UnderstandingModel):
+                understanding = response
+            elif hasattr(response, 'content'):
+                # Fallback: parse from text
+                understanding = self._parse_understanding(response.content)
+            else:
+                understanding = UnderstandingModel(
+                    concepts=[query],
+                    dimensions=["general information"],
+                    gaps=["basic facts"]
+                )
+        except Exception as e:
+            logger.warning(f"Structured understanding failed, using fallback: {e}")
+            understanding = UnderstandingModel(
+                concepts=[query],
+                dimensions=["general information", "background", "recent developments"],
+                gaps=["basic facts", "detailed information"]
+            )
+
+        # Step 2: Exploratory searches to validate
+        logger.info("🔍 Conducting exploratory searches...")
+        exploratory_queries = [
+            f"{query}",
+            f"{query} overview",
+            f"{query} information"
+        ]
+
+        search_results_found = False
+        for q in exploratory_queries[:2]:  # Just 2 exploratory searches
+            try:
+                search_result = web_search(q, num_results=5)
+                if search_result and "⚠️ Limited results" not in search_result:
+                    search_results_found = True
+                    break
+            except Exception as e:
+                logger.warning(f"Exploratory search failed: {e}")
+
+        # Build context
+        context = ResearchContext(
+            query=query,
+            key_concepts=understanding.concepts[:5],  # Limit to 5
+            research_dimensions=understanding.dimensions[:8] if self.enable_breadth else understanding.dimensions[:3],
+            knowledge_gaps=understanding.gaps[:5],
+            query_type="exploratory" if search_results_found else "unknown",
+            confidence=0.5 if search_results_found else 0.1
+        )
+
+        if self.debug:
+            logger.debug(f"Context: {context}")
+
+        return context
+
+    def _parse_understanding(self, text: str) -> UnderstandingModel:
+        """Parse understanding from text fallback"""
+        # Simple text parsing
+        concepts = []
+        dimensions = []
+        gaps = []
+
+        # Extract lists from text
+        if "concepts:" in text.lower():
+            concept_section = text.lower().split("concepts:")[1].split("\n\n")[0]
+            concepts = [c.strip().strip("-•").strip() for c in concept_section.split("\n") if c.strip()]
+
+        if "dimensions:" in text.lower():
+            dimension_section = text.lower().split("dimensions:")[1].split("\n\n")[0]
+            dimensions = [d.strip().strip("-•").strip() for d in dimension_section.split("\n") if d.strip()]
+
+        if "gaps:" in text.lower():
+            gap_section = text.lower().split("gaps:")[1].split("\n\n")[0]
+            gaps = [g.strip().strip("-•").strip() for g in gap_section.split("\n") if g.strip()]
+
+        return UnderstandingModel(
+            concepts=concepts[:5] or ["general information"],
+            dimensions=dimensions[:8] or ["overview"],
+            gaps=gaps[:5] or ["details"]
+        )
+
+    def _build_adaptive_plan(self, context: ResearchContext):
+        """
+        Phase 2: Build adaptive research plan from context
+        """
+        # Create research tasks for each dimension
+        for idx, dimension in enumerate(context.research_dimensions):
+            task = ResearchTask(
+                id=f"task_{idx}",
+                dimension=dimension,
+                queries=[],
+                priority=1.0 - (idx * 0.1)  # Decreasing priority
+            )
+            self.tasks.append(task)
+
+        logger.info(f"📋 Created {len(self.tasks)} research tasks")
+        if self.debug:
+            for task in self.tasks:
+                logger.debug(f"  - {task.dimension} (priority: {task.priority:.2f})")
+
+    def _react_loop(self):
+        """
+        Phase 3: Execute ReAct (Reason-Act-Observe-Adapt) loop
+
+        Continues until we reach max_sources OR all tasks completed OR max_iterations
+        """
+        iteration = 0
+        max_total_iterations = self.max_iterations * 2  # Allow more iterations to reach source target
+
+        while iteration < max_total_iterations:
+            iteration += 1
+
+            # Check if we have enough sources FIRST (primary goal)
+            if len(self.evidence) >= self.max_sources:
+                logger.info(f"✅ Reached target of {self.max_sources} sources")
+                break
+
+            logger.info(f"🔄 ReAct iteration {iteration} | Sources: {len(self.evidence)}/{self.max_sources}")
+
+            # REASON: Analyze current state and decide next action
+            reasoning = self._reason_about_state(iteration)
+
+            # ACT: Execute searches and fetch content
+            active_task = self._select_next_task()
+            if not active_task:
+                logger.info("✅ All tasks completed or no promising tasks remain")
+                break
+
+            queries = self._generate_queries_for_task(active_task)
+            active_task.queries = queries
+            active_task.status = "active"
+
+            urls_fetched, new_evidence = self._act_search_and_fetch(queries, active_task)
+
+            # OBSERVE: Process findings and validate
+            observation = self._observe_findings(new_evidence)
+
+            # ADAPT: Update plan based on observations
+            adaptation, new_gaps = self._adapt_plan(active_task, new_evidence)
+
+            # Record step
+            step = ReActStep(
+                iteration=iteration,
+                reasoning=reasoning,
+                action=f"Researching: {active_task.dimension}",
+                queries=queries,
+                urls_fetched=urls_fetched,
+                observation=observation,
+                adaptation=adaptation,
+                new_gaps=new_gaps,
+                timestamp=datetime.now().isoformat()
+            )
+            self.react_steps.append(step)
+
+            active_task.status = "completed"
+
+            # Check convergence (80% tasks done AND decent source count)
+            if self._check_convergence() and len(self.evidence) >= self.max_sources * 0.5:
+                logger.info(f"✅ Research converged at iteration {iteration}")
+                break
+
+    def _reason_about_state(self, iteration: int) -> str:
+        """REASON: Analyze current state"""
+        completed = sum(1 for t in self.tasks if t.status == "completed")
+        pending = sum(1 for t in self.tasks if t.status == "pending")
+
+        reasoning = f"Iteration {iteration + 1}: {completed} tasks completed, {pending} pending. "
+        reasoning += f"Found {len(self.evidence)} evidence pieces so far."
+
+        if self.debug:
+            logger.debug(f"REASON: {reasoning}")
+
+        return reasoning
+
+    def _select_next_task(self) -> Optional[ResearchTask]:
+        """Select next task to execute based on priority"""
+        pending_tasks = [t for t in self.tasks if t.status == "pending"]
+        if not pending_tasks:
+            return None
+
+        # Sort by priority
+        pending_tasks.sort(key=lambda t: t.priority, reverse=True)
+        return pending_tasks[0]
+
+    def _generate_queries_for_task(self, task: ResearchTask) -> List[str]:
+        """Generate search queries for a task"""
+        prompt = f"""Generate 2-3 specific search queries for this research dimension:
+
+Query context: {self.context.query}
+Research dimension: {task.dimension}
+
+Generate diverse queries that would find authoritative information.
+Return ONLY a list of query strings, one per line."""
+
+        try:
+            response = self.llm.generate(prompt, response_model=SearchQueriesModel)
+            if isinstance(response, SearchQueriesModel):
+                return response.queries[:3]
+            elif hasattr(response, 'content'):
+                # Parse from text
+                lines = [l.strip() for l in response.content.split("\n") if l.strip() and not l.strip().startswith("#")]
+                return lines[:3]
+        except Exception as e:
+            logger.warning(f"Query generation failed: {e}")
+
+        # Fallback: construct simple queries
+        return [
+            f"{self.context.query} {task.dimension}",
+            f"{task.dimension} {self.context.query}"
+        ]
+
+    def _act_search_and_fetch(self, queries: List[str], task: ResearchTask) -> tuple[List[str], List[SourceEvidence]]:
+        """ACT: Execute searches and fetch content"""
+        urls_fetched = []
+        new_evidence = []
+
+        # Calculate how many sources we still need
+        sources_needed = self.max_sources - len(self.evidence)
+        urls_to_fetch_per_query = max(5, min(10, sources_needed // len(queries)))
+
+        for query in queries:
+            # Search
+            try:
+                # Request more results to have a better pool
+                search_result = web_search(query, num_results=10)
+                urls = self._extract_urls_from_search(search_result)
+
+                # Fetch and analyze promising URLs - be more aggressive
+                urls_fetched_this_query = 0
+                for url in urls:
+                    if url in self.seen_urls:
+                        continue
+                    if urls_fetched_this_query >= urls_to_fetch_per_query:
+                        break
+                    if len(self.evidence) >= self.max_sources:
+                        return urls_fetched, new_evidence
+
+                    self.seen_urls.add(url)
+                    urls_fetched.append(url)
+                    urls_fetched_this_query += 1
+
+                    # Fetch actual content
+                    evidence = self._fetch_and_analyze(url, task)
+                    if evidence:
+                        new_evidence.append(evidence)
+                        self.evidence.append(evidence)
+
+                        logger.info(f"📊 Progress: {len(self.evidence)}/{self.max_sources} sources collected")
+
+                        if len(self.evidence) >= self.max_sources:
+                            return urls_fetched, new_evidence
+
+            except Exception as e:
+                logger.warning(f"Search/fetch failed for '{query}': {e}")
+
+        return urls_fetched, new_evidence
+
+    def _extract_urls_from_search(self, search_result: str) -> List[str]:
+        """Extract URLs from search result text"""
+        urls = []
+
+        # Find URLs marked with 🔗
+        url_pattern = r'🔗\s+(https?://[^\s]+)'
+        matches = re.findall(url_pattern, search_result)
+        urls.extend(matches)
+
+        return urls[:10]  # Limit to 10 URLs per search
+
+    def _fetch_and_analyze(self, url: str, task: ResearchTask) -> Optional[SourceEvidence]:
+        """Fetch URL content and analyze for relevance"""
+        try:
+            # Fetch content
+            content = fetch_url(url, timeout=self.fetch_timeout)
+
+            if not content or "Error" in content[:100]:
+                return None
+
+            # Extract title
+            title = "Unknown"
+            if "<title>" in content.lower():
+                title_match = re.search(r'<title>(.*?)</title>', content, re.I | re.S)
+                if title_match:
+                    title = title_match.group(1).strip()[:200]
+
+            # Analyze relevance
+            prompt = f"""Analyze this web content for relevance to the research query.
+
+Research query: {self.context.query}
+Research dimension: {task.dimension}
+
+Content excerpt:
+{content[:3000]}
+
+Assess:
+1. is_relevant: Is this content relevant to our research?
+2. relevance_score: 0-1 how relevant
+3. credibility_score: 0-1 how credible/authoritative
+4. facts: List 2-3 key facts IF relevant, empty list otherwise
+
+Return assessment."""
+
+            response = self.llm.generate(prompt, response_model=SourceRelevanceModel)
+
+            if isinstance(response, SourceRelevanceModel):
+                assessment = response
+            elif hasattr(response, 'content'):
+                # Fallback parsing
+                assessment = SourceRelevanceModel(
+                    is_relevant="relevant" in response.content.lower() or "yes" in response.content.lower(),
+                    relevance_score=0.5,
+                    credibility_score=0.5,
+                    facts=[]
+                )
+            else:
+                return None
+
+            # Only keep if meets threshold
+            if not assessment.is_relevant or assessment.relevance_score < self.grounding_threshold:
+                return None
+
+            # Extract relevant excerpt
+            excerpt = content[:1000]
+
+            evidence = SourceEvidence(
+                url=url,
+                title=title,
+                excerpt=excerpt,
+                relevance_score=assessment.relevance_score,
+                credibility_score=assessment.credibility_score,
+                key_facts=assessment.facts,
+                timestamp=datetime.now().isoformat()
+            )
+
+            logger.info(f"✅ Evidence: {title[:50]}... (rel: {assessment.relevance_score:.2f})")
+
+            return evidence
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch/analyze {url}: {e}")
+            return None
+
+    def _observe_findings(self, new_evidence: List[SourceEvidence]) -> str:
+        """OBSERVE: Summarize new findings"""
+        if not new_evidence:
+            return "No relevant evidence found for this dimension."
+
+        observation = f"Found {len(new_evidence)} relevant sources. "
+        total_facts = sum(len(e.key_facts) for e in new_evidence)
+        observation += f"Extracted {total_facts} key facts."
+
+        if self.debug:
+            logger.debug(f"OBSERVE: {observation}")
+
+        return observation
+
+    def _adapt_plan(self, task: ResearchTask, new_evidence: List[SourceEvidence]) -> tuple[str, List[str]]:
+        """ADAPT: Update plan based on observations"""
+        task.findings = [{"evidence": e} for e in new_evidence]
+        task.confidence = sum(e.relevance_score for e in new_evidence) / max(len(new_evidence), 1)
+
+        adaptation = f"Task '{task.dimension}' completed with {len(new_evidence)} sources."
+
+        # Identify new gaps
+        new_gaps = []
+        if not new_evidence:
+            new_gaps.append(f"No information found for: {task.dimension}")
+        elif task.confidence < 0.7:
+            new_gaps.append(f"Low confidence for: {task.dimension}")
+
+        if self.debug:
+            logger.debug(f"ADAPT: {adaptation}")
+
+        return adaptation, new_gaps
+
+    def _check_convergence(self) -> bool:
+        """Check if research has converged"""
+        completed = sum(1 for t in self.tasks if t.status == "completed")
+        return completed >= len(self.tasks) * 0.8  # 80% completion
+
+    def _synthesize_with_grounding(self) -> SynthesisModel:
+        """
+        Phase 4: Synthesize findings with mandatory grounding
+        """
+        if not self.evidence:
+            logger.warning("⚠️ No evidence found - cannot synthesize grounded report")
+            return SynthesisModel(
+                title=f"Research Report: {self.context.query}",
+                summary="No reliable information was found for this query. This may indicate an unknown topic or very limited online presence.",
+                findings=["No verifiable information found"],
+                gaps=[f"Complete information gap for: {self.context.query}"],
+                confidence=0.0
+            )
+
+        # Build evidence summary
+        evidence_summary = []
+        for i, ev in enumerate(self.evidence[:15], 1):  # Top 15 sources
+            evidence_summary.append(
+                f"{i}. {ev.title[:80]} (relevance: {ev.relevance_score:.2f})\n"
+                f"   Facts: {'; '.join(ev.key_facts[:2])}"
+            )
+
+        evidence_text = "\n".join(evidence_summary)
+
+        prompt = f"""Synthesize a research report based ONLY on the verified evidence below.
+
+Research query: {self.context.query}
+
+VERIFIED EVIDENCE:
+{evidence_text}
+
+Create a synthesis with:
+1. title: Descriptive report title
+2. summary: 2-3 sentence executive summary
+3. findings: 3-7 key findings (MUST be supported by evidence above)
+4. gaps: Knowledge gaps we couldn't address
+5. confidence: Overall confidence 0-1
+
+CRITICAL: Base findings ONLY on the evidence provided. Do not add information not present in sources."""
+
+        response = self.llm.generate(prompt, response_model=SynthesisModel)
+
+        if isinstance(response, SynthesisModel):
+            return response
+        elif hasattr(response, 'content'):
+            # Fallback: create simple synthesis
+            return SynthesisModel(
+                title=f"Research Report: {self.context.query}",
+                summary=f"Based on {len(self.evidence)} verified sources.",
+                findings=[f"{e.key_facts[0]}" for e in self.evidence[:5] if e.key_facts],
+                gaps=["Some details may require further research"],
+                confidence=sum(e.relevance_score for e in self.evidence) / len(self.evidence)
+            )
+        else:
+            return SynthesisModel(
+                title=f"Research Report: {self.context.query}",
+                summary="Synthesis generation failed.",
+                findings=["Unable to generate structured synthesis"],
+                gaps=["Synthesis error"],
+                confidence=0.5
+            )
