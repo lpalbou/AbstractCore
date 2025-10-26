@@ -17,6 +17,8 @@ AbstractCore is made possible by the incredible work of open-source communities,
 - **[PyTorch](https://github.com/pytorch/pytorch)** - Tensors and Dynamic neural networks in Python
 - **[MLX](https://github.com/ml-explore/mlx)** - Array framework for Apple Silicon
 - **[sentence-transformers](https://github.com/UKPLab/sentence-transformers)** - SOTA sentence, text and image embeddings
+- **[llama-cpp-python](https://github.com/abetlen/llama-cpp-python)** - Python bindings for llama.cpp with native structured output support
+- **[Outlines](https://github.com/dottxt-ai/outlines)** - Structured text generation with constrained decoding for LLMs
 
 ### Testing and Development
 - **[pytest](https://github.com/pytest-dev/pytest)** - The pytest framework makes it easy to write small tests

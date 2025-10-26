@@ -35,6 +35,13 @@ try:
 except ImportError:
     LLAMACPP_AVAILABLE = False
 
+# Try to import Outlines (native structured output for transformers models)
+try:
+    import outlines
+    OUTLINES_AVAILABLE = True
+except ImportError:
+    OUTLINES_AVAILABLE = False
+
 # We no longer download models - cache-only approach
 # huggingface_hub not required for basic operation
 
@@ -45,6 +52,7 @@ class HuggingFaceProvider(BaseProvider):
     def __init__(self, model: str = "unsloth/Qwen3-4B-Instruct-2507-GGUF",
                  device: Optional[str] = None,
                  n_gpu_layers: Optional[int] = None,
+                 structured_output_method: str = "auto",
                  **kwargs):
 
         # Handle legacy context_size parameter with deprecation warning
@@ -65,6 +73,13 @@ class HuggingFaceProvider(BaseProvider):
 
         # Handle timeout parameter for local models
         self._handle_timeout_parameter(kwargs)
+
+        # Structured output method: "auto", "native_outlines", "prompted"
+        # auto: Use Outlines if available (for transformers), otherwise prompted (default)
+        # native_outlines: Force Outlines (error if unavailable)
+        # prompted: Always use prompted fallback (fastest for transformers, still 100% success)
+        # Note: GGUF models always use llama-cpp-python native support regardless of this setting
+        self.structured_output_method = structured_output_method
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
@@ -495,7 +510,7 @@ class HuggingFaceProvider(BaseProvider):
                                stream: bool = False,
                                response_model: Optional[Type[BaseModel]] = None,
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
-        """Generate using transformers backend (original implementation)"""
+        """Generate using transformers backend with optional Outlines native structured output"""
 
         if not self.pipeline:
             return GenerateResponse(
@@ -503,6 +518,66 @@ class HuggingFaceProvider(BaseProvider):
                 model=self.model,
                 finish_reason="error"
             )
+
+        # Native structured output via Outlines (if configured and available)
+        should_use_outlines = (
+            response_model and
+            PYDANTIC_AVAILABLE and
+            not stream and
+            self.structured_output_method != "prompted"  # Skip if explicitly prompted
+        )
+
+        if should_use_outlines:
+            # Check if Outlines is required but unavailable
+            if self.structured_output_method == "native_outlines" and not OUTLINES_AVAILABLE:
+                return GenerateResponse(
+                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install abstractcore[huggingface]",
+                    model=self.model,
+                    finish_reason="error"
+                )
+
+            # Try Outlines if available (auto or native_outlines mode)
+            if OUTLINES_AVAILABLE:
+                try:
+                    # Cache Outlines model wrapper to avoid re-initialization
+                    if not hasattr(self, '_outlines_model') or self._outlines_model is None:
+                        self.logger.debug("Creating Outlines model wrapper for native structured output")
+                        self._outlines_model = outlines.from_transformers(
+                            self.model_instance,
+                            self.tokenizer
+                        )
+
+                    # Build input text (same as normal generation)
+                    input_text = self._build_input_text_transformers(prompt, messages, system_prompt, tools)
+
+                    # Create constrained generator with JSON schema
+                    self.logger.debug(f"Using Outlines native structured output for {response_model.__name__}")
+                    generator = self._outlines_model(
+                        input_text,
+                        outlines.json_schema(response_model),
+                        max_tokens=kwargs.get("max_tokens", self.max_tokens or 512)
+                    )
+
+                    # Validate and return
+                    validated_obj = response_model.model_validate(generator)
+
+                    return GenerateResponse(
+                        content=validated_obj.model_dump_json(),
+                        model=self.model,
+                        finish_reason="stop",
+                        validated_object=validated_obj
+                    )
+                except Exception as e:
+                    # If native_outlines was explicitly requested, don't fall back
+                    if self.structured_output_method == "native_outlines":
+                        return GenerateResponse(
+                            content=f"Error: Outlines native structured output failed: {str(e)}",
+                            model=self.model,
+                            finish_reason="error"
+                        )
+                    # Otherwise fall back to prompted approach
+                    self.logger.debug(f"Outlines generation failed, falling back to prompted: {e}")
+                    # Continue with normal generation below
 
         # Build input text with tool and media support
         # Handle media content first if present

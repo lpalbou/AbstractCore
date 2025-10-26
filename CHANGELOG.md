@@ -5,7 +5,7 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.5.2] - 2025-10-25
+## [2.5.2] - 2025-10-26
 
 ### Added
 - **Native Structured Output Support for HuggingFace GGUF Models**: HuggingFace provider now supports server-side schema enforcement for GGUF models via llama-cpp-python's `response_format` parameter
@@ -14,23 +14,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Server-side schema enforcement validates output against the provided schema
   - Transformers models continue to use prompted approach as fallback
   - Provider registry updated to advertise structured output capability
+- **Native Structured Output via Outlines for HuggingFace Transformers**: HuggingFace Transformers models now support native structured output via optional Outlines integration
+  - Constrained decoding ensures 100% schema compliance without validation retries
+  - Optional dependency - only installed with `pip install abstractcore[huggingface]`
+  - Automatic detection and activation when Outlines is available
+  - Graceful fallback to prompted approach if Outlines not installed
+  - Works with any transformers-compatible model
+  - Server-side logit filtering guarantees valid token selection
+- **Native Structured Output via Outlines for MLX**: MLX models now support native structured output via optional Outlines integration
+  - Constrained decoding on Apple Silicon with 100% schema compliance
+  - Optional dependency - only installed with `pip install abstractcore[mlx]`
+  - Automatic detection and activation when Outlines is available
+  - Graceful fallback to prompted approach if Outlines not installed
+  - Optimized for Apple M-series processors
+  - Zero validation retries required
 
 ### Changed
-- **StructuredOutputHandler**: Enhanced provider detection to identify HuggingFace GGUF models as having native support
-  - Checks for `model_type == "gguf"` to determine native support capability
+- **StructuredOutputHandler**: Enhanced provider detection to identify HuggingFace GGUF models, Transformers with Outlines, and MLX with Outlines as having native support
+  - Checks for `model_type == "gguf"` to determine GGUF native support
+  - Checks for `model_type == "transformers"` with Outlines availability for Transformers native support
+  - Checks for Outlines availability for MLX native support
   - GGUF models benefit from llama-cpp-python's constrained sampling
-  - Transformers models automatically use prompted fallback strategy
+  - Transformers and MLX models benefit from Outlines constrained decoding when available
+  - Automatic fallback to prompted strategy if Outlines not installed
+- **Structured Output Control**: Added `structured_output_method` parameter to HuggingFace and MLX providers for explicit control
+  - `"auto"` (default): Use Outlines if available, fallback to prompted
+  - `"native_outlines"`: Force Outlines usage (error if unavailable)
+  - `"prompted"`: Always use prompted fallback (recommended - fastest, 100% success)
+  - Allows users to optimize for performance vs theoretical guarantees
 - **Model Capabilities**: Verified and documented native structured output support for Ollama and LMStudio providers
   - Ollama: Confirmed correct implementation using `format` parameter with full JSON schema
   - LMStudio: Documented existing OpenAI-compatible `response_format` implementation
   - Both providers leverage server-side schema enforcement for schema compliance
+- **Dependencies**: Added Outlines as optional dependency for HuggingFace and MLX providers
+  - `pip install abstractcore[huggingface]` now includes Outlines for native structured output
+  - `pip install abstractcore[mlx]` now includes Outlines for native structured output
+  - Base installation remains lightweight - Outlines only installed when needed
 
 ### Fixed
 - **HuggingFace Provider**: Added missing `response_model` parameter propagation through internal generation methods
   - Fixed `_generate_internal()` to pass `response_model` to both GGUF and transformers backends
   - Both `_generate_gguf()` and `_generate_transformers()` now accept and handle `response_model` parameter
-- **Provider Registry**: Added `"structured_output"` to supported features for Ollama, LMStudio, and HuggingFace providers
+- **Provider Registry**: Added `"structured_output"` to supported features for Ollama, LMStudio, HuggingFace, and MLX providers
   - Ensures accurate capability reporting for structured output functionality
+
+### Performance Notes
+
+**Surprising Findings from Comprehensive Testing** (October 26, 2025):
+
+Extensive testing on Apple Silicon M4 Max revealed unexpected performance characteristics:
+
+**MLX Provider** (mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit):
+- **Prompted fallback**: 745-4,193ms, 100% success rate
+- **Outlines native**: 2,031-9,840ms, 100% success rate
+- **Overhead**: 173-409% slower with Outlines constrained generation
+- **Conclusion**: Both approaches achieve 100% schema compliance, but prompted is 2-5x faster
+
+**Key Insight**: The prompted approach (client-side validation) achieves identical 100% success rate at significantly better performance than Outlines' server-side constrained generation. This is contrary to typical expectations where server-side constraints should be more reliable.
+
+**Recommendation**:
+- Default to `structured_output_method="prompted"` for best performance with proven reliability
+- Use `structured_output_method="native_outlines"` only when theoretical guarantees are required despite performance cost
+- The `"auto"` setting uses Outlines if installed, which may impact performance without improving reliability
+
+This finding suggests that for these specific models and use cases, the overhead of constrained decoding outweighs its benefits when client-side validation already achieves 100% success.
 
 ## [2.5.1] - 2025-10-24
 
