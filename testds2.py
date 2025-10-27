@@ -1,11 +1,29 @@
 import json
 import re
+import sys
 from datetime import datetime
 from abstractcore import create_llm
 from abstractcore.processing import BasicDeepResearcherC
 
+# Check command line arguments
+if len(sys.argv) != 2:
+    print("Usage: python testds2.py '<query>'")
+    print("Example: python testds2.py 'Create a comprehensive guide about BAML'")
+    sys.exit(1)
+
+# Get query from command line argument
+query = sys.argv[1]
+model_name = "qwen/qwen3-30b-a3b-2507"
+
+print(f"{'='*80}")
+print(f"DEEP RESEARCH SESSION")
+print(f"{'='*80}")
+print(f"Query: {query}")
+print(f"Model: {model_name}")
+print(f"{'='*80}")
+
 # Initialize with LMStudio + qwen3-30b
-llm = create_llm("lmstudio", model="qwen/qwen3-30b-a3b-2507")
+llm = create_llm("lmstudio", model=model_name)
 
 researcher = BasicDeepResearcherC(
     llm=llm,
@@ -18,10 +36,6 @@ researcher = BasicDeepResearcherC(
     grounding_threshold=0.7,  # Min relevance for inclusion (0-1)
     debug=False               # Detailed execution traces
 )
-
-# Define query and model info
-query = "Create a comprehensive guide about BAML and how it differs frm outlines"
-model_name = "qwen/qwen3-30b-a3b-2507"
 
 # Run research
 result = researcher.research(query)
