@@ -86,19 +86,6 @@ class SourceEvidence:
     credibility_score: float
     key_facts: List[str]
     timestamp: str
-    # Optional fields for instructional content
-    code_blocks: List[str] = None
-    commands: List[str] = None
-    steps: List[str] = None
-
-    def __post_init__(self):
-        # Initialize empty lists if None
-        if self.code_blocks is None:
-            self.code_blocks = []
-        if self.commands is None:
-            self.commands = []
-        if self.steps is None:
-            self.steps = []
 
 
 # Simple Pydantic models with minimal constraints
@@ -114,31 +101,12 @@ class SearchQueriesModel(BaseModel):
     queries: List[str] = Field(description="Search queries")
 
 
-class QueryIntent(BaseModel):
-    """Query intent classification for adaptive research strategy - SIMPLE SCHEMA"""
-    primary_intent: str = Field(description="Main intent: informational, instructional, comparative, or research")
-    secondary_intent: Optional[str] = Field(default=None, description="Secondary intent if hybrid query")
-
-    requires_code_examples: bool = Field(description="Query needs code blocks and syntax")
-    requires_step_by_step: bool = Field(description="Query needs numbered tutorial steps")
-    requires_configuration: bool = Field(description="Query needs setup/install instructions")
-    requires_comparison_table: bool = Field(description="Query needs side-by-side comparison")
-
-    primary_goal: str = Field(description="What user wants to achieve")
-    instructional_format: Optional[str] = Field(default=None, description="tutorial, quickstart, or reference if instructional")
-    comparison_targets: List[str] = Field(default_factory=list, description="Items being compared if comparative")
-
-
 class SourceRelevanceModel(BaseModel):
     """Source relevance assessment - SIMPLE SCHEMA"""
     is_relevant: bool = Field(description="Is source relevant")
     relevance_score: float = Field(description="0-1 relevance")
     credibility_score: float = Field(description="0-1 credibility")
     facts: List[str] = Field(description="Key facts")
-    # Optional fields for instructional content
-    code_blocks: List[str] = Field(default_factory=list, description="Code examples with language context")
-    commands: List[str] = Field(default_factory=list, description="Installation/setup commands")
-    steps: List[str] = Field(default_factory=list, description="Numbered tutorial steps")
 
 
 class FindingWithSource(BaseModel):
@@ -271,8 +239,6 @@ class BasicDeepResearcherC:
         self.seen_urls: Set[str] = set()
         self.active_gaps: Dict[str, Dict[str, Any]] = {}  # gap_text -> {status, source_urls, related_findings}
         self.finding_to_source: Dict[str, str] = {}  # finding_text -> source_url (for traceability)
-        self.query_intent: Optional[QueryIntent] = None  # Classified query intent
-        self.synthesis_format: str = "reference"  # Format used: "tutorial", "comparison", or "reference"
 
         logger.info(f"🤖 Initialized BasicDeepResearcherC with {self.llm.provider}/{self.llm.model}")
         logger.info(f"🎯 Strategy: Adaptive ReAct | Max iterations: {max_iterations} | Max sources: {max_sources}")
@@ -294,17 +260,6 @@ class BasicDeepResearcherC:
         """
         start_time = time.time()
         logger.info(f"🔬 Starting adaptive ReAct research: {query}")
-
-        # Phase 0: Classify query intent
-        logger.info("📋 Phase 0: Analyzing query intent...")
-        self.query_intent = self._analyze_query_intent(query)
-
-        if self.debug:
-            logger.info(f"   ✅ Intent: {self.query_intent.primary_intent}")
-            if self.query_intent.secondary_intent:
-                logger.info(f"   ✅ Secondary: {self.query_intent.secondary_intent}")
-            logger.info(f"   📋 Code needed: {self.query_intent.requires_code_examples}")
-            logger.info(f"   📋 Steps needed: {self.query_intent.requires_step_by_step}")
 
         # Reset state
         self.context = None
@@ -332,19 +287,6 @@ class BasicDeepResearcherC:
         final_report = self._synthesize_with_grounding()
 
         duration = time.time() - start_time
-
-        # Detect instructional content gaps (Phase 4)
-        instructional_gaps, instructional_metadata = self._detect_instructional_gaps()
-
-        # Add instructional gaps to active_gaps
-        for gap in instructional_gaps:
-            if gap not in self.active_gaps:
-                self.active_gaps[gap] = {
-                    "status": "active",
-                    "source_urls": [],  # System-detected, not from specific source
-                    "related_findings": [],
-                    "dimension": "instructional_coverage"
-                }
 
         # Collect only unresolved gaps for final report
         unresolved_gaps = [
@@ -396,83 +338,12 @@ class BasicDeepResearcherC:
                 "urls_explored": len(self.seen_urls),
                 "gaps_resolved": sum(1 for gap_data in self.active_gaps.values() if gap_data["status"] == "resolved"),
                 "gaps_remaining": len(unresolved_gaps),
-                "model_used": f"{self.llm.provider}/{self.llm.model}",
-                **instructional_metadata  # Add Phase 4 instructional quality metadata
+                "model_used": f"{self.llm.provider}/{self.llm.model}"
             }
         )
 
         logger.info(f"✅ Research completed in {duration:.1f}s | {len(self.evidence)} sources | {final_report.confidence:.2f} confidence")
         return output
-
-    def _analyze_query_intent(self, query: str) -> QueryIntent:
-        """
-        Classify query to determine research and synthesis strategy
-
-        Args:
-            query: The research query
-
-        Returns:
-            QueryIntent with classification and requirements
-        """
-        if self.debug:
-            logger.info("📋 Analyzing query intent...")
-
-        prompt = f"""Analyze this query and classify its intent:
-
-Query: "{query}"
-
-INTENT TYPES:
-1. INFORMATIONAL: "What is X?", "Explain Y" → Deliver facts, architecture, concepts
-2. INSTRUCTIONAL: "How do I X?", "Create a guide for Y", "Tutorial on Z" → Deliver code, steps, commands
-3. COMPARATIVE: "Compare X and Y", "X vs Y", "Differences between" → Deliver comparison, pros/cons
-4. RESEARCH: "Everything about X", "Comprehensive analysis" → Deliver in-depth analysis
-
-DETECTION PATTERNS:
-- "how to", "how do I", "create a guide", "write a tutorial", "build" → INSTRUCTIONAL
-- "compare", "vs", "versus", "differs from", "difference between" → COMPARATIVE
-- "what is", "explain", "describe", "define" → INFORMATIONAL
-- "comprehensive", "research", "deep dive", "everything about" → RESEARCH
-
-REQUIREMENTS DETECTION:
-- Code examples needed: Programming terms (agent, function, code, API, library, framework)
-- Step-by-step needed: "how to", "guide", "tutorial", "build", "create"
-- Configuration needed: "setup", "install", "configure", "initialize"
-- Comparison needed: "compare", "vs", "differs"
-
-HYBRID QUERIES:
-- Query may have BOTH instructional AND comparative components
-- Example: "Guide to BAML and how it differs from outlines"
-  - Primary: INSTRUCTIONAL (guide to BAML)
-  - Secondary: COMPARATIVE (differs from outlines)
-
-For comparison targets, extract the specific items being compared (e.g., ["BAML", "Outlines"])
-
-Classify the query above. Return structured intent classification."""
-
-        try:
-            intent = self.llm.generate(prompt, response_model=QueryIntent)
-
-            if self.debug:
-                logger.info(f"   ✅ Primary intent: {intent.primary_intent}")
-                if intent.secondary_intent:
-                    logger.info(f"   ✅ Secondary intent: {intent.secondary_intent}")
-                logger.info(f"   📋 Requires code: {intent.requires_code_examples}")
-                logger.info(f"   📋 Requires steps: {intent.requires_step_by_step}")
-
-            return intent
-
-        except Exception as e:
-            logger.warning(f"⚠️ Intent classification failed: {e}. Defaulting to informational.")
-            # Fallback to informational intent
-            return QueryIntent(
-                primary_intent="informational",
-                requires_code_examples=False,
-                requires_step_by_step=False,
-                requires_configuration=False,
-                requires_comparison_table=False,
-                primary_goal="Understand the topic",
-                comparison_targets=[]
-            )
 
     def _understand_query(self, query: str, focus_areas: Optional[List[str]]) -> ResearchContext:
         """
@@ -960,9 +831,6 @@ Assess:
 2. relevance_score: 0-1 how relevant
 3. credibility_score: 0-1 how credible/authoritative
 4. facts: List 2-3 key facts IF relevant, empty list otherwise
-5. code_blocks: Extract code examples ONLY if query is instructional (empty list for informational queries)
-6. commands: Extract installation/setup commands ONLY if query is instructional (empty list otherwise)
-7. steps: Extract numbered tutorial steps ONLY if query is instructional (empty list otherwise)
 
 CRITICAL RULES FOR EXTRACTING FACTS:
 - Extract ONLY what is EXPLICITLY stated in the content
@@ -982,15 +850,6 @@ Examples of CORRECT extraction:
 Examples of WRONG extraction:
 ❌ "X is lead developer of Cellosaurus" (if they only commented)
 ❌ "X integrated ChatGPT into Reactome" (if they only shared article)
-
-INSTRUCTIONAL CONTENT EXTRACTION (ONLY for how-to/tutorial queries):
-If query asks "how to" or requires code examples:
-- code_blocks: Extract complete code snippets with context (e.g., "Python: import langgraph...")
-- commands: Extract shell commands (e.g., "pip install langgraph", "npm run build")
-- steps: Extract numbered instructions (e.g., "1. Install dependencies", "2. Create config file")
-
-If query is informational (what/who/explain):
-- Leave code_blocks, commands, steps as empty lists
 
 Return assessment."""
 
@@ -1023,10 +882,7 @@ Return assessment."""
                 relevance_score=assessment.relevance_score,
                 credibility_score=assessment.credibility_score,
                 key_facts=assessment.facts,
-                timestamp=datetime.now().isoformat(),
-                code_blocks=assessment.code_blocks if hasattr(assessment, 'code_blocks') else [],
-                commands=assessment.commands if hasattr(assessment, 'commands') else [],
-                steps=assessment.steps if hasattr(assessment, 'steps') else []
+                timestamp=datetime.now().isoformat()
             )
 
             # CRITICAL: Track finding->source mapping for traceability
@@ -1167,345 +1023,15 @@ Return assessment."""
         for gap in gaps_to_resolve:
             self.active_gaps[gap]["status"] = "resolved"
 
-    def _detect_instructional_gaps(self) -> tuple[List[str], Dict[str, Any]]:
-        """
-        Detect gaps in instructional content coverage.
-
-        Returns:
-            tuple: (list of gap descriptions, metadata dict)
-        """
-        gaps = []
-        metadata = {}
-
-        # Only run for instructional queries
-        if not self.query_intent or self.query_intent.primary_intent != "instructional":
-            return gaps, metadata
-
-        if not self.evidence:
-            return gaps, metadata
-
-        # Calculate code coverage
-        total_sources = len(self.evidence)
-        sources_with_code = sum(1 for ev in self.evidence if ev.code_blocks)
-        sources_with_commands = sum(1 for ev in self.evidence if ev.commands)
-        sources_with_steps = sum(1 for ev in self.evidence if ev.steps)
-
-        code_coverage = sources_with_code / total_sources if total_sources > 0 else 0
-
-        # Store metadata
-        metadata["code_coverage_pct"] = round(code_coverage * 100, 1)
-        metadata["sources_with_code"] = sources_with_code
-        metadata["sources_with_commands"] = sources_with_commands
-        metadata["sources_with_steps"] = sources_with_steps
-        metadata["total_sources"] = total_sources
-        metadata["synthesis_format"] = self.synthesis_format
-
-        # Check for low code coverage
-        if code_coverage < 0.3:
-            gaps.append(
-                f"Low code coverage: Only {code_coverage*100:.0f}% of sources ({sources_with_code}/{total_sources}) "
-                f"contain code examples. Tutorial may lack executable examples."
-            )
-            if self.debug:
-                logger.warning(f"⚠️ Low code coverage detected: {code_coverage*100:.0f}%")
-
-        # Check for installation commands
-        has_install = sources_with_commands > 0
-        metadata["has_installation_commands"] = has_install
-
-        if not has_install and self.query_intent.requires_configuration:
-            gaps.append(
-                "No installation or setup commands found in sources. "
-                "Users may not know how to get started with dependencies."
-            )
-            if self.debug:
-                logger.warning("⚠️ No installation commands found")
-
-        # Check for step-by-step instructions
-        has_steps = sources_with_steps > 0
-        metadata["has_tutorial_steps"] = has_steps
-
-        if not has_steps and self.query_intent.requires_step_by_step:
-            gaps.append(
-                "No step-by-step tutorial found in sources. "
-                "May be difficult for beginners to follow without guided instructions."
-            )
-            if self.debug:
-                logger.warning("⚠️ No tutorial steps found")
-
-        # Check if synthesis used tutorial format when it should have
-        if self.synthesis_format != "tutorial" and code_coverage > 0:
-            gaps.append(
-                f"Sources contain code ({code_coverage*100:.0f}% coverage) but tutorial format was not used. "
-                f"Output is reference-style rather than actionable tutorial."
-            )
-            if self.debug:
-                logger.warning(f"⚠️ Format mismatch: {self.synthesis_format} instead of tutorial")
-
-        # Log summary
-        if self.debug and gaps:
-            logger.info(f"📋 Detected {len(gaps)} instructional content gaps")
-        elif self.debug:
-            logger.info(f"✅ No instructional content gaps detected (coverage: {code_coverage*100:.0f}%)")
-
-        metadata["instructional_gaps_detected"] = len(gaps)
-
-        return gaps, metadata
-
     def _check_convergence(self) -> bool:
         """Check if research has converged"""
         completed = sum(1 for t in self.tasks if t.status == "completed")
         return completed >= len(self.tasks) * 0.8  # 80% completion
 
-    def _synthesize_instructional(self) -> SynthesisModel:
-        """
-        Generate tutorial-style synthesis for instructional queries.
-        Uses extracted code_blocks, commands, and steps from evidence.
-        """
-        if not self.evidence:
-            return self._synthesize_with_grounding()  # Fallback to default
-
-        # Collect all instructional content from evidence
-        all_code_blocks = []
-        all_commands = []
-        all_steps = []
-        evidence_urls = {}
-
-        for i, ev in enumerate(self.evidence, 1):
-            evidence_urls[i] = ev.url
-            if ev.code_blocks:
-                all_code_blocks.extend([(i, code) for code in ev.code_blocks])
-            if ev.commands:
-                all_commands.extend([(i, cmd) for cmd in ev.commands])
-            if ev.steps:
-                all_steps.extend([(i, step) for step in ev.steps])
-
-        # If no instructional content found, fall back to reference format
-        if not (all_code_blocks or all_commands or all_steps):
-            if self.debug:
-                logger.info("⚠️ No code/commands/steps found - falling back to reference format")
-            self.synthesis_format = "reference"
-            return self._synthesize_with_grounding()
-
-        self.synthesis_format = "tutorial"
-        if self.debug:
-            logger.info(f"📝 Using tutorial synthesis: {len(all_code_blocks)} code blocks, {len(all_commands)} commands, {len(all_steps)} steps")
-
-        # Build evidence summary
-        evidence_summary = []
-        for i, ev in enumerate(self.evidence[:15], 1):
-            evidence_summary.append(
-                f"[{i}] URL: {ev.url}\n"
-                f"    Facts: {'; '.join(ev.key_facts[:3])}\n"
-                f"    Code blocks: {len(ev.code_blocks)} | Commands: {len(ev.commands)} | Steps: {len(ev.steps)}"
-            )
-
-        evidence_text = "\n".join(evidence_summary)
-
-        # Format code blocks for prompt
-        code_examples = "\n".join([f"[From source {i}] {code}" for i, code in all_code_blocks[:10]])
-        command_examples = "\n".join([f"[From source {i}] {cmd}" for i, cmd in all_commands[:10]])
-        step_examples = "\n".join([f"[From source {i}] {step}" for i, step in all_steps[:10]])
-
-        prompt = f"""Create a TUTORIAL-STYLE research report for: {self.context.query}
-
-VERIFIED EVIDENCE (numbered):
-{evidence_text}
-
-EXTRACTED CODE EXAMPLES:
-{code_examples if code_examples else "None"}
-
-EXTRACTED COMMANDS:
-{command_examples if command_examples else "None"}
-
-EXTRACTED TUTORIAL STEPS:
-{step_examples if step_examples else "None"}
-
-Create a tutorial synthesis with:
-1. title: Tutorial-style title (e.g., "How to ...")
-2. summary: 2-3 sentence executive summary emphasizing this is a tutorial
-3. findings_with_sources: 3-7 key findings with evidence_ids
-4. detailed_sections: 4-5 tutorial sections with these headings:
-   - "Prerequisites and Installation" (required dependencies, installation commands)
-   - "Quick Start" (minimal working example)
-   - "Step-by-Step Tutorial" (detailed walkthrough with code)
-   - "Complete Example" (full working code)
-   - "Common Issues and Tips" (troubleshooting)
-5. gaps_with_sources: Knowledge gaps with evidence_ids
-6. confidence: Overall confidence 0-1
-
-CRITICAL REQUIREMENTS:
-- Use ACTUAL code from evidence, not generated code
-- Include installation commands from evidence
-- Follow tutorial steps from evidence
-- Ground ALL code/commands in evidence (cite [1], [2], etc.)
-- Each section: 150-300 words with code examples
-- Maintain conservative grounding (no over-inference)
-
-SECTION CONTENT REQUIREMENTS:
-- Prerequisites: List dependencies + installation commands from evidence
-- Quick Start: Show simplest working example (5-10 lines of actual code)
-- Step-by-Step: Follow extracted steps, include code for each
-- Complete Example: Combine code blocks into full working example
-- Common Issues: Based on evidence mentions of problems/solutions
-
-Remember: Use ONLY code/commands/steps FROM EVIDENCE! Do not generate new code."""
-
-        response = self.llm.generate(prompt, response_model=SynthesisModel)
-
-        if isinstance(response, SynthesisModel):
-            # Map findings and gaps to sources (same as default)
-            self.finding_to_source = {}
-            for finding_obj in response.findings_with_sources:
-                if finding_obj.evidence_ids:
-                    for ev_id in finding_obj.evidence_ids:
-                        if 1 <= ev_id <= len(self.evidence):
-                            self.finding_to_source[finding_obj.finding] = self.evidence[ev_id - 1].url
-                            break
-
-            for gap_obj in response.gaps_with_sources:
-                source_urls = []
-                if gap_obj.evidence_ids:
-                    for ev_id in gap_obj.evidence_ids:
-                        if 1 <= ev_id <= len(self.evidence):
-                            source_urls.append(self.evidence[ev_id - 1].url)
-                self.active_gaps[gap_obj.gap] = {
-                    "status": "active",
-                    "source_urls": source_urls,
-                    "related_findings": [],
-                    "dimension": "synthesis"
-                }
-
-            return response
-        else:
-            # Fallback to default synthesis
-            return self._synthesize_with_grounding()
-
-    def _synthesize_comparative(self) -> SynthesisModel:
-        """
-        Generate comparison-style synthesis for comparative queries.
-        Creates side-by-side analysis of comparison targets.
-        """
-        if not self.evidence or not self.query_intent or not self.query_intent.comparison_targets:
-            return self._synthesize_with_grounding()  # Fallback
-
-        self.synthesis_format = "comparison"
-        targets = self.query_intent.comparison_targets
-        if self.debug:
-            logger.info(f"📊 Using comparison synthesis for: {' vs '.join(targets)}")
-
-        # Build evidence summary
-        evidence_summary = []
-        evidence_urls = {}
-        for i, ev in enumerate(self.evidence[:15], 1):
-            evidence_urls[i] = ev.url
-            evidence_summary.append(
-                f"[{i}] URL: {ev.url}\n"
-                f"    Facts: {'; '.join(ev.key_facts[:3])}"
-            )
-
-        evidence_text = "\n".join(evidence_summary)
-
-        prompt = f"""Create a COMPARISON-STYLE research report for: {self.context.query}
-
-Comparing: {' vs '.join(targets)}
-
-VERIFIED EVIDENCE (numbered):
-{evidence_text}
-
-Create a comparison synthesis with:
-1. title: Comparison-focused title (e.g., "X vs Y: ...")
-2. summary: 2-3 sentence executive summary highlighting comparison
-3. findings_with_sources: 3-7 key findings with evidence_ids
-4. detailed_sections: 4-5 comparison sections with these headings:
-   - "Overview: {targets[0]} and {targets[1]}" (brief intro to each)
-   - "Feature Comparison" (side-by-side feature analysis)
-   - "Strengths and Weaknesses" (pros/cons for each)
-   - "Use Cases and Recommendations" (when to use each)
-   - "Performance and Scalability" (if applicable)
-5. gaps_with_sources: Knowledge gaps with evidence_ids
-6. confidence: Overall confidence 0-1
-
-COMPARISON REQUIREMENTS:
-- Create side-by-side analysis in each section
-- Compare features, performance, ease of use, etc.
-- Provide balanced view (not biased)
-- Base ALL comparisons on evidence (cite [1], [2], etc.)
-- Each section: 150-300 words
-- Maintain conservative grounding (no over-inference)
-
-SECTION CONTENT REQUIREMENTS:
-- Overview: Introduce each item with key characteristics
-- Features: Compare capabilities side-by-side
-- Strengths/Weaknesses: Balanced pros/cons for each
-- Use Cases: Specific scenarios where each excels
-- Performance: Comparative performance data if available
-
-Remember: Base ALL comparisons on evidence! No speculation."""
-
-        response = self.llm.generate(prompt, response_model=SynthesisModel)
-
-        if isinstance(response, SynthesisModel):
-            # Map findings and gaps to sources (same as default)
-            self.finding_to_source = {}
-            for finding_obj in response.findings_with_sources:
-                if finding_obj.evidence_ids:
-                    for ev_id in finding_obj.evidence_ids:
-                        if 1 <= ev_id <= len(self.evidence):
-                            self.finding_to_source[finding_obj.finding] = self.evidence[ev_id - 1].url
-                            break
-
-            for gap_obj in response.gaps_with_sources:
-                source_urls = []
-                if gap_obj.evidence_ids:
-                    for ev_id in gap_obj.evidence_ids:
-                        if 1 <= ev_id <= len(self.evidence):
-                            source_urls.append(self.evidence[ev_id - 1].url)
-                self.active_gaps[gap_obj.gap] = {
-                    "status": "active",
-                    "source_urls": source_urls,
-                    "related_findings": [],
-                    "dimension": "synthesis"
-                }
-
-            return response
-        else:
-            # Fallback to default synthesis
-            return self._synthesize_with_grounding()
-
     def _synthesize_with_grounding(self) -> SynthesisModel:
         """
         Phase 4: Synthesize findings with mandatory grounding and source attribution
-
-        Adaptive synthesis based on query intent:
-        - Instructional queries → Tutorial format (if code available)
-        - Comparative queries → Comparison format
-        - Informational queries → Reference format (default)
         """
-        # Check for adaptive synthesis based on query intent
-        if self.query_intent:
-            # Check for instructional queries with code
-            if self.query_intent.primary_intent == "instructional":
-                has_code = any(ev.code_blocks or ev.commands or ev.steps for ev in self.evidence)
-                if has_code:
-                    if self.debug:
-                        logger.info("🎯 Routing to tutorial synthesis (instructional + code)")
-                    return self._synthesize_instructional()
-                else:
-                    if self.debug:
-                        logger.info("⚠️ Instructional query but no code found - using reference format")
-
-            # Check for comparative queries
-            elif self.query_intent.primary_intent == "comparative":
-                if self.debug:
-                    logger.info("🎯 Routing to comparison synthesis")
-                return self._synthesize_comparative()
-
-        # Default: Reference format
-        self.synthesis_format = "reference"
-        if self.debug:
-            logger.info("📄 Using reference synthesis format (default)")
-
         if not self.evidence:
             logger.warning("⚠️ No evidence found - cannot synthesize grounded report")
             return SynthesisModel(
