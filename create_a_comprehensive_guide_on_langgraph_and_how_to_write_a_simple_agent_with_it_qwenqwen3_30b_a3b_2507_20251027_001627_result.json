@@ -1,0 +1,200 @@
+{
+  "topic": "Create a comprehensive guide on LangGraph and how to write a simple agent with it",
+  "model": "qwen/qwen3-30b-a3b-2507",
+  "timestamp": "2025-10-27T00:16:27.209944",
+  "title": "Comprehensive Guide to LangGraph: Architecture, Capabilities, and Implementation for Simple Agent Development",
+  "confidence_score": 0.9,
+  "sources_count": 30,
+  "findings_count": 7,
+  "key_findings_with_sources": [
+    {
+      "finding": "LangGraph is a graph-based framework for building agent orchestration workflows with structured, stateful execution.",
+      "source_url": "https://www.ibm.com/think/topics/langgraph",
+      "is_grounded": true
+    },
+    {
+      "finding": "LangGraph supports persistent context, enabling long-term interactions and durable execution across agent steps.",
+      "source_url": "https://www.langchain.com/langgraph",
+      "is_grounded": true
+    },
+    {
+      "finding": "LangGraph integrates with LLMs and supports tool calling, allowing agents to perform tasks such as data retrieval and API interactions.",
+      "source_url": "https://www.ibm.com/think/topics/langgraph",
+      "is_grounded": true
+    },
+    {
+      "finding": "LangGraph enables human-in-the-loop control, allowing users to guide, moderate, and intervene during agent execution.",
+      "source_url": "https://www.langchain.com/langgraph",
+      "is_grounded": true
+    },
+    {
+      "finding": "LangGraph provides built-in memory and state management, which supports structured output and complex agent behaviors.",
+      "source_url": "https://docs.langchain.com/oss/python/langgraph/overview",
+      "is_grounded": true
+    },
+    {
+      "finding": "Multiple tutorials and developer guides demonstrate LangGraph’s use in creating multi-agent systems, including shared state and agent classes.",
+      "source_url": "https://www.geeksforgeeks.org/artificial-intelligence/building-a-multi-agent-ai-with-langgraph/",
+      "is_grounded": true
+    },
+    {
+      "finding": "LangGraph offers multiple API styles, including functional, event-driven (Pregel), and low-level constructs like nodes and edges.",
+      "source_url": "https://blog.langchain.com/how-to-think-about-agent-frameworks/",
+      "is_grounded": true
+    }
+  ],
+  "knowledge_gaps_with_sources": [
+    {
+      "gap": "No direct explanation is provided on how interrupts are handled or how human-in-the-loop moderation is technically implemented.",
+      "status": "active",
+      "related_source_urls": [
+        "https://www.langchain.com/langgraph",
+        "https://blog.langchain.com/how-to-think-about-agent-frameworks/"
+      ],
+      "related_findings": [],
+      "has_source_context": true
+    },
+    {
+      "gap": "The specific implementation details of shared state mechanisms in LangGraph are not elaborated in the provided evidence.",
+      "status": "active",
+      "related_source_urls": [
+        "https://www.geeksforgeeks.org/artificial-intelligence/building-a-multi-agent-ai-with-langgraph/",
+        "https://dotzlaw.com/ai-2/combining-the-power-of-langgraph-with-pydantic-ai-agents/"
+      ],
+      "related_findings": [],
+      "has_source_context": true
+    },
+    {
+      "gap": "There is no information on performance benchmarks or scalability testing for LangGraph in large-scale multi-agent environments.",
+      "status": "active",
+      "related_source_urls": [
+        "https://scalexi.medium.com/comparing-llm-agent-frameworks-langgraph-vs-autogen-vs-crew-ai-part-i-92234321eb6b",
+        "https://galileo.ai/blog/mastering-agents-langgraph-vs-autogen-vs-crew"
+      ],
+      "related_findings": [],
+      "has_source_context": true
+    }
+  ],
+  "source_attribution": {
+    "total_findings_tracked": 7,
+    "total_gaps_tracked": 3,
+    "findings_with_sources": 7,
+    "gaps_with_source_context": 3,
+    "finding_to_source_map": {
+      "LangGraph is a graph-based framework for building agent orchestration workflows with structured, stateful execution.": "https://www.ibm.com/think/topics/langgraph",
+      "LangGraph supports persistent context, enabling long-term interactions and durable execution across agent steps.": "https://www.langchain.com/langgraph",
+      "LangGraph integrates with LLMs and supports tool calling, allowing agents to perform tasks such as data retrieval and API interactions.": "https://www.ibm.com/think/topics/langgraph",
+      "LangGraph enables human-in-the-loop control, allowing users to guide, moderate, and intervene during agent execution.": "https://www.langchain.com/langgraph",
+      "LangGraph provides built-in memory and state management, which supports structured output and complex agent behaviors.": "https://docs.langchain.com/oss/python/langgraph/overview",
+      "Multiple tutorials and developer guides demonstrate LangGraph’s use in creating multi-agent systems, including shared state and agent classes.": "https://www.geeksforgeeks.org/artificial-intelligence/building-a-multi-agent-ai-with-langgraph/",
+      "LangGraph offers multiple API styles, including functional, event-driven (Pregel), and low-level constructs like nodes and edges.": "https://blog.langchain.com/how-to-think-about-agent-frameworks/"
+    },
+    "gap_details": {
+      "The specific implementation details of shared state mechanisms in LangGraph are not elaborated in the provided evidence.": {
+        "status": "active",
+        "source_urls": [
+          "https://www.geeksforgeeks.org/artificial-intelligence/building-a-multi-agent-ai-with-langgraph/",
+          "https://dotzlaw.com/ai-2/combining-the-power-of-langgraph-with-pydantic-ai-agents/"
+        ],
+        "related_findings": [],
+        "dimension": "synthesis"
+      },
+      "No direct explanation is provided on how interrupts are handled or how human-in-the-loop moderation is technically implemented.": {
+        "status": "active",
+        "source_urls": [
+          "https://www.langchain.com/langgraph",
+          "https://blog.langchain.com/how-to-think-about-agent-frameworks/"
+        ],
+        "related_findings": [],
+        "dimension": "synthesis"
+      },
+      "There is no information on performance benchmarks or scalability testing for LangGraph in large-scale multi-agent environments.": {
+        "status": "active",
+        "source_urls": [
+          "https://scalexi.medium.com/comparing-llm-agent-frameworks-langgraph-vs-autogen-vs-crew-ai-part-i-92234321eb6b",
+          "https://galileo.ai/blog/mastering-agents-langgraph-vs-autogen-vs-crew"
+        ],
+        "related_findings": [],
+        "dimension": "synthesis"
+      }
+    }
+  },
+  "detailed_report": {
+    "sections": [
+      {
+        "heading": "Background and Core Architecture",
+        "content": "LangGraph is a Python-based, open-source framework within the LangChain OSS ecosystem, designed for constructing AI agents using a graph-based architecture [2, 7]. It is described as a low-level agent orchestration framework that enables the creation of stateful, cyclic, and multi-actor LLM applications [5]. The framework’s structure is built around nodes and edges, with workflows defined using a declarative syntax that supports conditional and fixed edges [10]. This architecture facilitates structured, deterministic workflows, which is a key differentiator from other agent frameworks [9]. The framework has evolved to include version 1.0, indicating a matured and stable release [7]. LangGraph is used to build complex AI workflows, particularly those requiring long-term state management and coordinated agent behavior [6, 12]. It is associated with the broader LangChain ecosystem, suggesting integration points with other LangChain components [7]. The framework supports various execution modes, including functional API and event-driven (Pregel-style) patterns, offering flexibility in how agents are composed and executed [10]."
+      },
+      {
+        "heading": "Key Features and Functional Capabilities",
+        "content": "LangGraph supports a suite of features that enhance agent control and reliability. It provides built-in persistence, enabling durable execution and state retention across multiple agent steps, which is critical for long-term interactions [1, 7]. The framework supports streaming, which improves user experience by enabling real-time output during agent execution [1]. It includes mechanisms for memory, caching, and time travel, allowing agents to revisit prior states or modify past decisions under specific conditions [7, 14]. LangGraph is designed to support multi-agent systems, as demonstrated in tutorials that implement agent classes such as Code Generator, Documentation Writer, and Test Writer, with data passed through a shared state [3]. The framework also includes monitoring mechanisms to track agent behavior and workflow progress [2]. Tool integration is a core component, enabling agents to call external tools and perform actions like data retrieval and API interactions [2, 14]. These features collectively support structured, complex workflows that require high controllability, as noted in comparisons that position LangGraph as offering superior control over frameworks like Autogen and CrewAI [9]."
+      },
+      {
+        "heading": "Implementation and Developer Guidance",
+        "content": "Several published tutorials provide structured guidance for implementing LangGraph. These include step-by-step walkthroughs covering dependency installation, library import, environment setup, and workflow execution [3, 4, 6]. The process typically involves defining graph state, creating nodes (e.g., agent functions), and connecting them with edges to form a workflow [4]. A Mermaid diagram is used in one guide to visually represent the graph flow, aiding in understanding the control structure [4]. A four-layer architecture combining LangGraph and Pydantic AI agents has been proposed, focusing on state transitions, data flow, and error handling mechanisms [13]. These resources suggest a developer-centric approach to building agents, with emphasis on reusable components and modular design. The framework’s integration with Pydantic is highlighted as a way to build production-ready systems, leveraging Pydantic for schema validation and type safety [13]. The documentation includes dedicated sections on workflows, memory, and subgraphs, indicating a comprehensive structure for application development [7]. Although not all guides demonstrate end-to-end agent behavior, they collectively show a path from basic setup to functional agent workflows."
+      },
+      {
+        "heading": "Evaluation and Positioning in the Agent Framework Landscape",
+        "content": "LangGraph is positioned as a leading framework in the open-source AI agent space, particularly noted for its structured approach and high degree of control over agent behavior [8, 9]. It is compared favorably to frameworks like Autogen and CrewAI, with evaluations highlighting its ability to manage complex, deterministic workflows and converge to termination states reliably [9]. The framework is described as suitable for applications requiring structured, stateful execution, making it ideal for enterprise or production-level systems [14]. However, one evaluation notes that its architecture may be perceived as complex or overwhelming, suggesting a steeper learning curve compared to alternatives [11]. Despite this, LangGraph’s integration with LLMs, support for tool calling, and built-in persistence are seen as strengths that justify its use in advanced agent development [2, 12]. A JavaScript version, LangGraph.js, is also noted as a leading framework in that language, indicating cross-language adoption and relevance [15]. The framework’s GitHub repository is referenced in a comparison, suggesting active development and community engagement [8]. Overall, LangGraph appears to be a mature, well-documented option for developers aiming to build customizable, human-guided agents with long-term memory and structured control."
+      }
+    ]
+  },
+  "key_findings": [
+    "LangGraph is a graph-based framework for building agent orchestration workflows with structured, stateful execution.",
+    "LangGraph supports persistent context, enabling long-term interactions and durable execution across agent steps.",
+    "LangGraph integrates with LLMs and supports tool calling, allowing agents to perform tasks such as data retrieval and API interactions.",
+    "LangGraph enables human-in-the-loop control, allowing users to guide, moderate, and intervene during agent execution.",
+    "LangGraph provides built-in memory and state management, which supports structured output and complex agent behaviors.",
+    "Multiple tutorials and developer guides demonstrate LangGraph’s use in creating multi-agent systems, including shared state and agent classes.",
+    "LangGraph offers multiple API styles, including functional, event-driven (Pregel), and low-level constructs like nodes and edges."
+  ],
+  "knowledge_gaps": [
+    "No direct explanation is provided on how interrupts are handled or how human-in-the-loop moderation is technically implemented.",
+    "The specific implementation details of shared state mechanisms in LangGraph are not elaborated in the provided evidence.",
+    "There is no information on performance benchmarks or scalability testing for LangGraph in large-scale multi-agent environments."
+  ],
+  "sources_selected": [
+    "{'url': 'https://www.langchain.com/langgraph', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.langchain.com/langgraph\\n⏰ Timestamp: 2025-10-26T23:58:11.270008\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 85,857 bytes\\n📋 Response Headers:\\n  Last-Modifi...'}",
+    "{'url': 'https://www.ibm.com/think/topics/langgraph', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.ibm.com/think/topics/langgraph\\n⏰ Timestamp: 2025-10-26T23:58:16.414564\\n✅ Status: 200 OK\\n📊 Content-Type: text/html;charset=utf-8\\n📏 Size: 290,342 bytes\\n📋 Response ...'}",
+    "{'url': 'https://www.geeksforgeeks.org/artificial-intelligence/building-a-multi-agent-ai-with-langgraph/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.geeksforgeeks.org/artificial-intelligence/building-a-multi-agent-ai-with-langgraph/\\n⏰ Timestamp: 2025-10-26T23:58:20.470925\\n✅ Status: 200 OK\\n📊 Content-Type: text...'}",
+    "{'url': 'https://www.c-sharpcorner.com/article/building-langgraph-with-langchain-a-complete-developer-guide/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.c-sharpcorner.com/article/building-langgraph-with-langchain-a-complete-developer-guide/\\n⏰ Timestamp: 2025-10-26T23:58:35.133716\\n✅ Status: 200 OK\\n📊 Content-Type: ...'}",
+    "{'url': 'https://realpython.com/langgraph-python/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://realpython.com/langgraph-python/\\n⏰ Timestamp: 2025-10-26T23:58:39.790460\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 287,954 bytes\\n📋 Response H...'}",
+    "{'url': 'https://www.codecademy.com/article/building-ai-workflow-with-langgraph', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.codecademy.com/article/building-ai-workflow-with-langgraph\\n⏰ Timestamp: 2025-10-26T23:58:44.955808\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Si...'}",
+    "{'url': 'https://docs.langchain.com/oss/python/langgraph/overview', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.98, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://docs.langchain.com/oss/python/langgraph/overview\\n⏰ Timestamp: 2025-10-26T23:58:52.139234\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 333,407 by...'}",
+    "{'url': 'https://langfuse.com/blog/2025-03-19-ai-agent-comparison', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://langfuse.com/blog/2025-03-19-ai-agent-comparison\\n⏰ Timestamp: 2025-10-26T23:58:58.990330\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 74,868 byt...'}",
+    "{'url': 'https://scalexi.medium.com/comparing-llm-agent-frameworks-langgraph-vs-autogen-vs-crew-ai-part-i-92234321eb6b', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://scalexi.medium.com/comparing-llm-agent-frameworks-langgraph-vs-autogen-vs-crew-ai-part-i-92234321eb6b\\n⏰ Timestamp: 2025-10-26T23:59:02.145238\\n✅ Status: 200 OK\\n📊 Cont...'}",
+    "{'url': 'https://blog.langchain.com/how-to-think-about-agent-frameworks/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://blog.langchain.com/how-to-think-about-agent-frameworks/\\n⏰ Timestamp: 2025-10-26T23:59:06.393542\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 73,...'}",
+    "{'url': 'https://langwatch.ai/blog/best-ai-agent-frameworks-in-2025-comparing-langgraph-dspy-crewai-agno-and-more', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://langwatch.ai/blog/best-ai-agent-frameworks-in-2025-comparing-langgraph-dspy-crewai-agno-and-more\\n⏰ Timestamp: 2025-10-26T23:59:11.371116\\n✅ Status: 200 OK\\n📊 Content-T...'}",
+    "{'url': 'https://composio.dev/blog/openai-agents-sdk-vs-langgraph-vs-autogen-vs-crewai', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://composio.dev/blog/openai-agents-sdk-vs-langgraph-vs-autogen-vs-crewai\\n⏰ Timestamp: 2025-10-26T23:59:15.104520\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 862,...'}",
+    "{'url': 'https://dotzlaw.com/ai-2/combining-the-power-of-langgraph-with-pydantic-ai-agents/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://dotzlaw.com/ai-2/combining-the-power-of-langgraph-with-pydantic-ai-agents/\\n⏰ Timestamp: 2025-10-26T23:59:22.502849\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charse...'}",
+    "{'url': 'https://galileo.ai/blog/mastering-agents-langgraph-vs-autogen-vs-crew', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://galileo.ai/blog/mastering-agents-langgraph-vs-autogen-vs-crew\\n⏰ Timestamp: 2025-10-26T23:59:29.003453\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 555,363 byte...'}",
+    "{'url': 'https://mastra.ai/blog/choosing-a-js-agent-framework', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.95, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://mastra.ai/blog/choosing-a-js-agent-framework\\n⏰ Timestamp: 2025-10-26T23:59:32.637633\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 174,509 bytes\\n...'}",
+    "{'url': 'https://arxiv.org/abs/2412.03801', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.95, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://arxiv.org/abs/2412.03801\\n⏰ Timestamp: 2025-10-26T23:59:39.237700\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 48,015 bytes\\n📋 Response Headers:\\n ...'}",
+    "{'url': 'https://docs.langchain.com/oss/javascript/langgraph/workflows-agents', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.98, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://docs.langchain.com/oss/javascript/langgraph/workflows-agents\\n⏰ Timestamp: 2025-10-26T23:59:51.880948\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size...'}",
+    "{'url': 'https://medium.com/@gopikwork/building-agentic-memory-patterns-with-strands-and-langgraph-3cc8389b350d', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://medium.com/@gopikwork/building-agentic-memory-patterns-with-strands-and-langgraph-3cc8389b350d\\n⏰ Timestamp: 2025-10-27T00:00:01.202329\\n✅ Status: 200 OK\\n📊 Content-Typ...'}",
+    "{'url': 'https://github.com/sushmitanandi/langgraph-multi-agent', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://github.com/sushmitanandi/langgraph-multi-agent\\n⏰ Timestamp: 2025-10-27T00:00:06.150813\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 246,425 byte...'}",
+    "{'url': 'https://medium.com/@sushmita2310/building-multi-agent-systems-with-langgraph-a-step-by-step-guide-d14088e90f72', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://medium.com/@sushmita2310/building-multi-agent-systems-with-langgraph-a-step-by-step-guide-d14088e90f72\\n⏰ Timestamp: 2025-10-27T00:00:16.063379\\n✅ Status: 200 OK\\n📊 Con...'}",
+    "{'url': 'https://blog.langchain.com/langgraph-multi-agent-workflows/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://blog.langchain.com/langgraph-multi-agent-workflows/\\n⏰ Timestamp: 2025-10-27T00:00:29.043638\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 46,322 ...'}",
+    "{'url': 'https://dev.to/hulk-pham/building-a-multi-agent-ai-with-langgraph-a-comprehensive-guide-57nj', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://dev.to/hulk-pham/building-a-multi-agent-ai-with-langgraph-a-comprehensive-guide-57nj\\n⏰ Timestamp: 2025-10-27T00:01:52.790094\\n✅ Status: 200 OK\\n📊 Content-Type: text/ht...'}",
+    "{'url': 'https://arize.com/blog-course/llm-agent-how-to-set-up/comparing-agent-frameworks/', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.95, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://arize.com/blog-course/llm-agent-how-to-set-up/comparing-agent-frameworks/\\n⏰ Timestamp: 2025-10-27T00:02:32.212449\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset...'}",
+    "{'url': 'https://blog.premai.io/open-source-agentic-frameworks-langgraph-vs-crewai-more/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://blog.premai.io/open-source-agentic-frameworks-langgraph-vs-crewai-more/\\n⏰ Timestamp: 2025-10-27T00:03:02.648692\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=u...'}",
+    "{'url': 'https://github.com/Abeshith/LangGraph', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://github.com/Abeshith/LangGraph\\n⏰ Timestamp: 2025-10-27T00:03:57.356682\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 290,820 bytes\\n📋 Response Head...'}",
+    "{'url': 'https://deepwiki.com/langchain-ai/langgraphjs/2.1-stategraph', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://deepwiki.com/langchain-ai/langgraphjs/2.1-stategraph\\n⏰ Timestamp: 2025-10-27T00:13:01.232927\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 937,33...'}",
+    "{'url': 'https://www.baihezi.com/mirrors/langgraph/how-tos/state-model/index.html', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.baihezi.com/mirrors/langgraph/how-tos/state-model/index.html\\n⏰ Timestamp: 2025-10-27T00:13:29.156725\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 704,077 b...'}",
+    "{'url': 'https://deepwiki.com/langchain-ai/langchain-academy/3.1-stategraph-and-messagesstate', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://deepwiki.com/langchain-ai/langchain-academy/3.1-stategraph-and-messagesstate\\n⏰ Timestamp: 2025-10-27T00:14:05.406744\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; char...'}",
+    "{'url': 'https://deepwiki.com/langchain-ai/agent-inbox-langgraph-example/3.1-state-management', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://deepwiki.com/langchain-ai/agent-inbox-langgraph-example/3.1-state-management\\n⏰ Timestamp: 2025-10-27T00:14:27.085884\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; char...'}",
+    "{'url': 'https://gyliu513.github.io/jekyll/update/2025/08/04/langgraph-ai-workflow.html', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://gyliu513.github.io/jekyll/update/2025/08/04/langgraph-ai-workflow.html\\n⏰ Timestamp: 2025-10-27T00:14:45.442001\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=ut...'}"
+  ],
+  "summary": "LangGraph is an open-source, graph-based framework within the LangChain OSS ecosystem designed for building structured, stateful, and controllable AI agents. It supports multi-agent workflows, persistent context, streaming, and human-in-the-loop control, making it suitable for complex, deterministic agent applications. This report synthesizes verified information to outline LangGraph’s core architecture, key features, and practical implementation using step-by-step tutorials.",
+  "research_metadata": {
+    "strategy": "adaptive_react",
+    "duration_seconds": 1105.19,
+    "react_iterations": 3,
+    "research_tasks": 8,
+    "evidence_pieces": 30,
+    "urls_explored": 43,
+    "gaps_resolved": 0,
+    "gaps_remaining": 3,
+    "model_used": "lmstudio/qwen/qwen3-30b-a3b-2507"
+  }
+}

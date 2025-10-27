@@ -1,0 +1,134 @@
+{
+  "topic": "Create a comprehensive guide about BAML",
+  "model": "qwen/qwen3-30b-a3b-2507",
+  "timestamp": "2025-10-26T23:29:40.070637",
+  "title": "Comprehensive Guide to BAML: Distinguishing Between the Financial Institution and the Technical Framework",
+  "confidence_score": 0.95,
+  "sources_count": 30,
+  "findings_count": 6,
+  "key_findings_with_sources": [
+    {
+      "finding": "BAML refers to Bank of America Merrill Lynch, a major investment bank listed in a technology skills analysis by eFinancialCareers.",
+      "source_url": "https://www.efinancialcareers.co.uk/news/2015/04/the-top-ten-technology-skills-at-baml-barclays-credit-suisse-citi-goldman-sachs-jpmorgan-morgan-stanley-and-ubs",
+      "is_grounded": true
+    },
+    {
+      "finding": "BAML is a domain-specific language used to structure AI prompts into functions with defined inputs and outputs, as described by BoundaryML and its documentation.",
+      "source_url": "https://thedataexchange.media/baml-revolution-in-ai-engineering/",
+      "is_grounded": true
+    },
+    {
+      "finding": "BAML is used in WPF (Windows Presentation Foundation) applications to store compiled XAML UI definitions in binary format, enhancing runtime performance.",
+      "source_url": "https://stackoverflow.com/questions/634121/what-is-baml-file",
+      "is_grounded": true
+    },
+    {
+      "finding": "BAML can be decompiled back to human-readable XAML using tools like dotPeek, ILSpy, or MSBuild tasks for debugging or analysis.",
+      "source_url": "https://stackoverflow.com/questions/117469/baml-decompiler-viewer",
+      "is_grounded": true
+    },
+    {
+      "finding": "BAML is integrated into technical workflows involving FastAPI, Cytoscape, and Neo4j to convert unstructured web data into structured graph data.",
+      "source_url": "https://neo4j.com/blog/developer/unstructured-structured-baml-neo4j/",
+      "is_grounded": true
+    },
+    {
+      "finding": "BAML's use in AI development includes schema-aligned parsing, type safety, and built-in production features to address challenges in LLM workflows.",
+      "source_url": "https://docs.boundaryml.com/guide/introduction/why-baml",
+      "is_grounded": true
+    }
+  ],
+  "knowledge_gaps_with_sources": [],
+  "source_attribution": {
+    "total_findings_tracked": 6,
+    "total_gaps_tracked": 0,
+    "findings_with_sources": 6,
+    "gaps_with_source_context": 0,
+    "finding_to_source_map": {
+      "BAML refers to Bank of America Merrill Lynch, a major investment bank listed in a technology skills analysis by eFinancialCareers.": "https://www.efinancialcareers.co.uk/news/2015/04/the-top-ten-technology-skills-at-baml-barclays-credit-suisse-citi-goldman-sachs-jpmorgan-morgan-stanley-and-ubs",
+      "BAML is a domain-specific language used to structure AI prompts into functions with defined inputs and outputs, as described by BoundaryML and its documentation.": "https://thedataexchange.media/baml-revolution-in-ai-engineering/",
+      "BAML is used in WPF (Windows Presentation Foundation) applications to store compiled XAML UI definitions in binary format, enhancing runtime performance.": "https://stackoverflow.com/questions/634121/what-is-baml-file",
+      "BAML can be decompiled back to human-readable XAML using tools like dotPeek, ILSpy, or MSBuild tasks for debugging or analysis.": "https://stackoverflow.com/questions/117469/baml-decompiler-viewer",
+      "BAML is integrated into technical workflows involving FastAPI, Cytoscape, and Neo4j to convert unstructured web data into structured graph data.": "https://neo4j.com/blog/developer/unstructured-structured-baml-neo4j/",
+      "BAML's use in AI development includes schema-aligned parsing, type safety, and built-in production features to address challenges in LLM workflows.": "https://docs.boundaryml.com/guide/introduction/why-baml"
+    },
+    "gap_details": {}
+  },
+  "detailed_report": {
+    "sections": [
+      {
+        "heading": "Background: Dual Meanings of BAML",
+        "content": "The acronym BAML appears to represent two distinct entities based on verified sources. One is Bank of America Merrill Lynch (BAML), a major investment bank. This interpretation is supported by eFinancialCareers, a recognized source in financial services, which includes BAML in a bank-by-bank analysis of top technology skills in the investment banking sector. The report notes that BAML, alongside institutions like Goldman Sachs and JPMorgan, is listed as a top-tier bank in terms of technology proficiency, suggesting the bank’s emphasis on technical capabilities. This context frames BAML as a financial institution within the global banking landscape. Conversely, another meaning of BAML emerges from technical documentation and developer communities. Here, BAML refers to a domain-specific language associated with BoundaryML, a company focused on AI engineering. This interpretation is reinforced by multiple sources, including the BoundaryML documentation, which describes BAML as a tool for transforming AI prompts into structured functions. The existence of two distinct meanings for BAML necessitates careful contextual interpretation to avoid confusion between a financial institution and a software framework."
+      },
+      {
+        "heading": "Technical BAML in WPF and .NET Development",
+        "content": "BAML (Binary Application Markup Language) is a compiled format used in .NET applications, particularly within Windows Presentation Foundation (WPF) environments. It is generated during the build process by the WPF XAML compiler (XamlCompiler) when XAML (eXtensible Application Markup Language) is converted into a binary representation. This binary format, BAML, is used at runtime to instantiate user interfaces more efficiently than parsing raw text-based XAML, thereby reducing overhead. The conversion process is supported by tools in the .NET SDK, including the XAML compiler (xamlc) and MSBuild tasks, as noted in multiple sources. BAML files are stored as resources within .NET assemblies and can be decompiled back into XAML using various tools such as dotPeek, ILSpy, or custom MSBuild scripts. These decompilation methods are primarily used for debugging, analysis, or reverse engineering purposes. The fact that BAML files can be decompiled into valid XAML, as discussed on Stack Overflow, confirms that BAML is not a proprietary or encrypted format, but a structured binary representation of UI definitions. This technical usage is consistent across multiple sources and is not linked to the financial institution BAML."
+      },
+      {
+        "heading": "BAML in AI Development and Data Processing",
+        "content": "A separate and distinct use of BAML is observed in the context of artificial intelligence and structured data processing. Here, BAML is presented as a domain-specific language developed by BoundaryML to address challenges in production-ready structured extraction from large language models (LLMs). The documentation on the BoundaryML website emphasizes that BAML provides schema-aligned parsing (SAP), type safety across all components, and built-in production features. These features are designed to mitigate common issues in LLM workflows, such as prompt uncertainty, complex error handling, testing difficulties, and multi-model management. The integration of BAML into technical workflows has been demonstrated in a tutorial published on the Neo4j Developer Blog, where BAML is used in conjunction with FastAPI and Cytoscape to transform unstructured web page data into structured graph data for ingestion into a Neo4j database. This application showcases BAML’s role in parsing and structuring unstructured data, indicating its utility beyond traditional UI development. The framework’s emphasis on reliability and type safety suggests it is targeted at professional software development, particularly in AI-driven data engineering."
+      },
+      {
+        "heading": "Clarifying the Relationship Between Entities",
+        "content": "Despite both entities sharing the same acronym, no evidence suggests a direct or operational connection between Bank of America Merrill Lynch and the technical BAML framework developed by BoundaryML. The financial institution BAML is referenced in a 2015 article from eFinancialCareers, which discusses technology skills in major investment banks. This context is entirely financial and does not reference any involvement in software development, AI, or .NET technologies. In contrast, the technical BAML is documented in developer resources and company websites, including BoundaryML’s own documentation and external technical blogs. The association of BAML with WPF, XAML, and .NET is well-established through multiple technical sources. No evidence links BAML the bank to BAML the language, nor does any source suggest that the financial institution uses or contributes to the development of the AI-oriented BAML framework. Therefore, the two usages of BAML appear to be independent, with no verified overlap in purpose, development, or application. This distinction is critical for accurate interpretation in technical, academic, or professional contexts."
+      },
+      {
+        "heading": "Tooling and Reverse Engineering of BAML",
+        "content": "The technical BAML format is subject to reverse engineering and analysis using available software tools. BAML files, being binary representations of XAML, can be decompiled into human-readable XAML code using tools such as dotPeek, ILSpy, or custom MSBuild tasks. dotPeek, a free .NET decompiler, is explicitly noted for its ability to decompile .NET assemblies, including BAML files, and to convert them into C# code or rebuild them as Visual Studio projects. This capability supports debugging, analysis, and learning in WPF and .NET application development. Similarly, Stack Overflow discussions confirm that decompilation of complex BAML files into valid XAML is feasible, though often requires careful handling due to the structure of compiled resources. These tools and methods indicate that BAML is not a closed or inaccessible format, but one designed for integration within the .NET ecosystem. The availability of decompilation utilities underscores the transparency and interoperability of BAML within the software development lifecycle, particularly for maintenance and troubleshooting of WPF-based applications."
+      }
+    ]
+  },
+  "key_findings": [
+    "BAML refers to Bank of America Merrill Lynch, a major investment bank listed in a technology skills analysis by eFinancialCareers.",
+    "BAML is a domain-specific language used to structure AI prompts into functions with defined inputs and outputs, as described by BoundaryML and its documentation.",
+    "BAML is used in WPF (Windows Presentation Foundation) applications to store compiled XAML UI definitions in binary format, enhancing runtime performance.",
+    "BAML can be decompiled back to human-readable XAML using tools like dotPeek, ILSpy, or MSBuild tasks for debugging or analysis.",
+    "BAML is integrated into technical workflows involving FastAPI, Cytoscape, and Neo4j to convert unstructured web data into structured graph data.",
+    "BAML's use in AI development includes schema-aligned parsing, type safety, and built-in production features to address challenges in LLM workflows."
+  ],
+  "knowledge_gaps": [],
+  "sources_selected": [
+    "{'url': 'https://bambuser.com/docs/video-consultation/shopify-guide/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://bambuser.com/docs/video-consultation/shopify-guide/\\n⏰ Timestamp: 2025-10-26T23:18:16.771280\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 748,045 bytes\\n📋 Respon...'}",
+    "{'url': 'https://bambuser.com/docs/live/conversion-tracking/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.98, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://bambuser.com/docs/live/conversion-tracking/\\n⏰ Timestamp: 2025-10-26T23:18:22.414787\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 79,083 bytes\\n📋 Response Header...'}",
+    "{'url': 'https://www.geekiest.net/post/Free-NET-decompiler', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.8, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.geekiest.net/post/Free-NET-decompiler\\n⏰ Timestamp: 2025-10-26T23:18:29.715786\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 25,326 bytes\\n📋 Re...'}",
+    "{'url': 'http://www.geekiest.net/post/Free-NET-decompiler', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.8, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: http://www.geekiest.net/post/Free-NET-decompiler\\n⏰ Timestamp: 2025-10-26T23:18:35.488045\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 25,306 bytes\\n📋 Res...'}",
+    "{'url': 'https://thedataexchange.media/baml-revolution-in-ai-engineering/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://thedataexchange.media/baml-revolution-in-ai-engineering/\\n⏰ Timestamp: 2025-10-26T23:19:03.980459\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 93...'}",
+    "{'url': 'https://www.efinancialcareers.co.uk/news/2015/04/the-top-ten-technology-skills-at-baml-barclays-credit-suisse-citi-goldman-sachs-jpmorgan-morgan-stanley-and-ubs', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.efinancialcareers.co.uk/news/2015/04/the-top-ten-technology-skills-at-baml-barclays-credit-suisse-citi-goldman-sachs-jpmorgan-morgan-stanley-and-ubs\\n⏰ Timestamp:...'}",
+    "{'url': 'https://stackoverflow.com/questions/634121/what-is-baml-file', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://stackoverflow.com/questions/634121/what-is-baml-file\\n⏰ Timestamp: 2025-10-26T23:19:32.433565\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 244,78...'}",
+    "{'url': 'https://stackoverflow.com/questions/934945/compile-xaml-into-baml', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://stackoverflow.com/questions/934945/compile-xaml-into-baml\\n⏰ Timestamp: 2025-10-26T23:19:43.958810\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 2...'}",
+    "{'url': 'https://stackoverflow.com/questions/117469/baml-decompiler-viewer', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://stackoverflow.com/questions/117469/baml-decompiler-viewer\\n⏰ Timestamp: 2025-10-26T23:19:55.403433\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 2...'}",
+    "{'url': 'https://stackoverflow.com/questions/36464666/convert-xaml-to-baml', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://stackoverflow.com/questions/36464666/convert-xaml-to-baml\\n⏰ Timestamp: 2025-10-26T23:19:59.306745\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 1...'}",
+    "{'url': 'https://stackoverflow.com/questions/6355873/how-to-decompile-complex-baml-to-valid-xaml', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://stackoverflow.com/questions/6355873/how-to-decompile-complex-baml-to-valid-xaml\\n⏰ Timestamp: 2025-10-26T23:20:07.240811\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; c...'}",
+    "{'url': 'https://stackoverflow.com/questions/4014054/how-to-convert-an-assemblies-baml-to-xaml', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.95, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://stackoverflow.com/questions/4014054/how-to-convert-an-assemblies-baml-to-xaml\\n⏰ Timestamp: 2025-10-26T23:20:23.228485\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; cha...'}",
+    "{'url': 'https://boundaryml.com/podcast/2025-09-23-evals-for-classification', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.95, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://boundaryml.com/podcast/2025-09-23-evals-for-classification\\n⏰ Timestamp: 2025-10-26T23:21:31.351669\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: ...'}",
+    "{'url': 'https://docs.boundaryml.com/guide/introduction/why-baml', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://docs.boundaryml.com/guide/introduction/why-baml\\n⏰ Timestamp: 2025-10-26T23:22:47.477330\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 558,302 byt...'}",
+    "{'url': 'https://neo4j.com/blog/developer/unstructured-structured-baml-neo4j/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://neo4j.com/blog/developer/unstructured-structured-baml-neo4j/\\n⏰ Timestamp: 2025-10-26T23:23:33.741934\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size...'}",
+    "{'url': 'https://medium.com/chat-gpt-now-writes-all-my-articles/embrace-your-inner-sheep-with-baml-for-llms-be7bc5227d56', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://medium.com/chat-gpt-now-writes-all-my-articles/embrace-your-inner-sheep-with-baml-for-llms-be7bc5227d56\\n⏰ Timestamp: 2025-10-26T23:23:46.756936\\n✅ Status: 200 OK\\n📊 Co...'}",
+    "{'url': 'https://gradientflow.com/seven-features-that-make-baml-ideal-for-ai-developers/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://gradientflow.com/seven-features-that-make-baml-ideal-for-ai-developers/\\n⏰ Timestamp: 2025-10-26T23:23:59.661764\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=u...'}",
+    "{'url': 'https://mikulskibartosz.name/baml-turns-prompt-engineering-into-real-engineering', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://mikulskibartosz.name/baml-turns-prompt-engineering-into-real-engineering\\n⏰ Timestamp: 2025-10-26T23:24:11.969542\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 1...'}",
+    "{'url': 'https://readmedium.com/unstructured-to-structured-graph-data-using-baml-to-neo4j-c210d54a26cb', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://readmedium.com/unstructured-to-structured-graph-data-using-baml-to-neo4j-c210d54a26cb\\n⏰ Timestamp: 2025-10-26T23:24:22.740271\\n✅ Status: 200 OK\\n📊 Content-Type: text/h...'}",
+    "{'url': 'https://aiagentsdirectory.com/agent/baml', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://aiagentsdirectory.com/agent/baml\\n⏰ Timestamp: 2025-10-26T23:24:54.936895\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 77,379 bytes\\n📋 Response He...'}",
+    "{'url': 'https://taranker.com/ai-agent-baml-app', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.8, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://taranker.com/ai-agent-baml-app\\n⏰ Timestamp: 2025-10-26T23:24:59.827333\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 1,299,187 bytes\\n📋 Response H...'}",
+    "{'url': 'https://dista.ai/events-webinars/location-intelligence-strategies-for-bfsi-jul17/', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://dista.ai/events-webinars/location-intelligence-strategies-for-bfsi-jul17/\\n⏰ Timestamp: 2025-10-26T23:25:11.428569\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset...'}",
+    "{'url': 'https://www.appsruntheworld.com/customers-database/purchases/view/engelsons-postorder-sweden-selects-bambuser-video-commerce-for-customer-engagement', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.appsruntheworld.com/customers-database/purchases/view/engelsons-postorder-sweden-selects-bambuser-video-commerce-for-customer-engagement\\n⏰ Timestamp: 2025-10-26T...'}",
+    "{'url': 'https://www.linkedin.com/posts/bambuser_bambuser-shopify-videocommerce-activity-7187090992204857344-kmJX', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.linkedin.com/posts/bambuser_bambuser-shopify-videocommerce-activity-7187090992204857344-kmJX\\n⏰ Timestamp: 2025-10-26T23:25:53.104237\\n✅ Status: 200 OK\\n📊 Content-T...'}",
+    "{'url': 'https://knowledge.bambuser.com/en_US/Get-started/welcome-to-bambuser', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://knowledge.bambuser.com/en_US/Get-started/welcome-to-bambuser\\n⏰ Timestamp: 2025-10-26T23:26:21.926781\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size...'}",
+    "{'url': 'https://live2.ai/blog/live-shopping-with-bambuser-a-comprehensive-guide', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://live2.ai/blog/live-shopping-with-bambuser-a-comprehensive-guide\\n⏰ Timestamp: 2025-10-26T23:26:38.899278\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 S...'}",
+    "{'url': 'https://bambuser.com/live', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.95, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://bambuser.com/live\\n⏰ Timestamp: 2025-10-26T23:26:59.054000\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 97,884 bytes\\n\\n📄 Content Analysis:\\n🌐 HTML Document Analys...'}",
+    "{'url': 'https://bambuser.com/customer-story/printemps', 'title': 'Unknown', 'relevance': 0.95, 'credibility': 0.9, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://bambuser.com/customer-story/printemps\\n⏰ Timestamp: 2025-10-26T23:27:05.206908\\n✅ Status: 200 OK\\n📊 Content-Type: text/html\\n📏 Size: 77,264 bytes\\n\\n📄 Content Analysis:\\n🌐 ...'}",
+    "{'url': 'https://www.giosg.com/blog/live-video-shopping-platforms', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://www.giosg.com/blog/live-video-shopping-platforms\\n⏰ Timestamp: 2025-10-26T23:27:09.013829\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 97,880 byt...'}",
+    "{'url': 'https://app.opencve.io/cve/?vendor=shopify', 'title': 'Unknown', 'relevance': 0.9, 'credibility': 0.85, 'excerpt': '🌐 URL Fetch Results\\n📍 URL: https://app.opencve.io/cve/?vendor=shopify\\n⏰ Timestamp: 2025-10-26T23:27:47.410386\\n✅ Status: 200 OK\\n📊 Content-Type: text/html; charset=utf-8\\n📏 Size: 21,577 bytes\\n📋 Response ...'}"
+  ],
+  "summary": "This report synthesizes verified information on BAML, clarifying that the acronym refers to two distinct entities: Bank of America Merrill Lynch (a financial institution) and BAML (a domain-specific language for AI and structured data). The technical BAML is used in AI development, WPF applications, and data processing workflows, while BAML as a bank is recognized for its technology skills in investment banking. No evidence supports a direct link between the financial institution and the technical framework.",
+  "research_metadata": {
+    "strategy": "adaptive_react",
+    "duration_seconds": 695.35,
+    "react_iterations": 5,
+    "research_tasks": 8,
+    "evidence_pieces": 30,
+    "urls_explored": 71,
+    "gaps_resolved": 0,
+    "gaps_remaining": 0,
+    "model_used": "lmstudio/qwen/qwen3-30b-a3b-2507"
+  }
+}
