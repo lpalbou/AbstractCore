@@ -1314,13 +1314,18 @@
       "video_support": true,
       "audio_support": false,
       "image_resolutions": [
-        "variable"
+        "64x64 to 4096x4096"
       ],
-      "max_image_resolution": "variable",
+      "max_image_resolution": "4096x4096",
       "image_patch_size": 16,
       "max_image_tokens": 24576,
       "pixel_grouping": "32x32",
-      "notes": "Qwen3-VL 4B dense model with 256K context, optimized for LMStudio",
+      "image_tokenization_method": "patch_based_adaptive",
+      "adaptive_resolution": true,
+      "min_resolution": 64,
+      "max_resolution": 4096,
+      "vision_encoder": "ViT-based",
+      "notes": "Qwen3-VL 4B dense model with 256K context, optimized for LMStudio. Parameters: 4.83B. FP8 checkpoints available.",
       "source": "Alibaba Qwen3-VL technical report 2025",
       "canonical_name": "qwen3-vl-4b",
       "aliases": [
@@ -1337,13 +1342,18 @@
       "video_support": true,
       "audio_support": false,
       "image_resolutions": [
-        "variable"
+        "64x64 to 4096x4096"
       ],
-      "max_image_resolution": "variable",
+      "max_image_resolution": "4096x4096",
       "image_patch_size": 16,
       "max_image_tokens": 24576,
       "pixel_grouping": "32x32",
-      "notes": "Qwen3-VL 8B dense model with 256K context, optimized for LMStudio",
+      "image_tokenization_method": "patch_based_adaptive",
+      "adaptive_resolution": true,
+      "min_resolution": 64,
+      "max_resolution": 4096,
+      "vision_encoder": "ViT-based",
+      "notes": "Qwen3-VL 8B dense model with 256K context, optimized for LMStudio. Parameters: 8.77B. FP8 checkpoints available.",
       "source": "Alibaba Qwen3-VL technical report 2025",
       "canonical_name": "qwen3-vl-8b",
       "aliases": [
@@ -1360,19 +1370,24 @@
       "video_support": true,
       "audio_support": false,
       "image_resolutions": [
-        "variable"
+        "64x64 to 4096x4096"
       ],
-      "max_image_resolution": "variable",
+      "max_image_resolution": "4096x4096",
       "image_patch_size": 16,
       "max_image_tokens": 24576,
       "pixel_grouping": "32x32",
-      "notes": "Qwen3-VL 30B MoE model (30.5B total/3.3B active), best performing vision model, 256K context",
+      "image_tokenization_method": "patch_based_adaptive",
+      "adaptive_resolution": true,
+      "min_resolution": 64,
+      "max_resolution": 4096,
+      "vision_encoder": "ViT-based",
+      "notes": "Qwen3-VL 30B MoE model (30.5B total/3.3B active), best performing vision model, 128K context",
       "source": "Alibaba Qwen3-VL technical report 2025",
       "canonical_name": "qwen3-vl-30b",
       "aliases": [
         "qwen/qwen3-vl-30b"
       ],
-      "max_tokens": 262144
+      "max_tokens": 131072
     },
     "qwen2.5-vl-7b": {
       "max_output_tokens": 8192,
@@ -1699,6 +1714,192 @@
         "Salesforce/blip-image-captioning-base"
       ],
       "max_tokens": 512
+    },
+    "glyph": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_resolution": "variable",
+      "base_model": "GLM-4.1V-9B-Base",
+      "total_parameters": "10B",
+      "tensor_type": "BF16",
+      "image_tokenization_method": "visual_text_compression",
+      "optimized_for_glyph": true,
+      "text_image_processing": true,
+      "notes": "Glyph framework for scaling context windows via visual-text compression. Built on GLM-4.1V-9B-Base. Renders long text into images for VLM processing.",
+      "source": "HuggingFace zai-org/Glyph model card",
+      "canonical_name": "glyph",
+      "aliases": [
+        "zai-org/Glyph"
+      ],
+      "max_tokens": 131072,
+      "license": "MIT",
+      "arxiv": "2510.17800",
+      "repository": "https://github.com/thu-coai/Glyph"
+    },
+    "glm-4.1v-9b-base": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_resolution": "variable",
+      "total_parameters": "9B",
+      "base_model": "GLM-4-9B-0414",
+      "image_tokenization_method": "glm_vision_encoder",
+      "notes": "GLM-4.1V 9B base model, backbone for Glyph visual-text compression framework",
+      "source": "HuggingFace zai-org/GLM-4.1V-9B-Base",
+      "canonical_name": "glm-4.1v-9b-base",
+      "aliases": [
+        "zai-org/GLM-4.1V-9B-Base"
+      ],
+      "max_tokens": 131072
+    },
+    "mistral-small-3.1-24b-instruct": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "up to 2048x2048"
+      ],
+      "max_image_resolution": "2048x2048",
+      "image_tokenization_method": "mistral_vision_encoder",
+      "notes": "Mistral Small 3.1 with 24B parameters, 128K context, multimodal understanding. Released March 2025.",
+      "source": "Mistral AI documentation and HuggingFace",
+      "canonical_name": "mistral-small-3.1-24b-instruct",
+      "aliases": [
+        "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+      ],
+      "max_tokens": 131072,
+      "total_parameters": "24B",
+      "release_date": "2025-03-17"
+    },
+    "mistral-small-3.2-24b-instruct": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "up to 2048x2048"
+      ],
+      "max_image_resolution": "2048x2048",
+      "image_tokenization_method": "mistral_vision_encoder",
+      "tensor_type": "BF16",
+      "gpu_memory_required": "55GB",
+      "notes": "Mistral Small 3.2 with 24B parameters, 128K context. Improved instruction following, reduced repetition, enhanced function calling. Released June 2025.",
+      "source": "HuggingFace mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+      "canonical_name": "mistral-small-3.2-24b-instruct",
+      "aliases": [
+        "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
+      ],
+      "max_tokens": 131072,
+      "total_parameters": "24B",
+      "release_date": "2025-06-01"
+    },
+    "llama-4-scout": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": false,
+      "image_resolutions": [
+        "up to 1120x1120"
+      ],
+      "max_image_resolution": "1120x1120",
+      "architecture": "mixture_of_experts",
+      "active_parameters": "17B",
+      "total_parameters": "109B",
+      "experts": 16,
+      "image_tokenization_method": "resolution_tier_based",
+      "notes": "LLaMA 4 Scout with MoE architecture, 17B active/109B total parameters, 10M context window. Multimodal with early fusion. Released April 2025.",
+      "source": "Meta LLaMA 4 documentation and NVIDIA docs",
+      "canonical_name": "llama-4-scout",
+      "aliases": [
+        "llama4-17b-scout-16e-instruct",
+        "llama-4-17b-scout-16e-instruct"
+      ],
+      "max_tokens": 10000000,
+      "release_date": "2025-04-05",
+      "image_patch_size": 14,
+      "max_image_tokens": 6400
+    },
+    "llama-4-maverick": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": false,
+      "image_resolutions": [
+        "up to 1120x1120"
+      ],
+      "max_image_resolution": "1120x1120",
+      "architecture": "mixture_of_experts",
+      "active_parameters": "17B",
+      "total_parameters": "400B",
+      "experts": 128,
+      "image_tokenization_method": "resolution_tier_based",
+      "notes": "LLaMA 4 Maverick with MoE architecture, 17B active/400B total parameters, 1M context window. Optimized for coding and reasoning. Released April 2025.",
+      "source": "Meta LLaMA 4 documentation and Oracle docs",
+      "canonical_name": "llama-4-maverick",
+      "aliases": [
+        "llama4-17b-maverick-128e-instruct"
+      ],
+      "max_tokens": 1000000,
+      "release_date": "2025-04-05",
+      "image_patch_size": 14,
+      "max_image_tokens": 6400
+    },
+    "llama-4-behemoth": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": false,
+      "image_resolutions": [
+        "up to 1120x1120"
+      ],
+      "max_image_resolution": "1120x1120",
+      "architecture": "mixture_of_experts",
+      "active_parameters": "288B",
+      "total_parameters": "2T",
+      "experts": 16,
+      "image_tokenization_method": "resolution_tier_based",
+      "notes": "LLaMA 4 Behemoth teacher model with 288B active/2T total parameters. Designed for distilling performance into smaller models. Announced April 2025.",
+      "source": "Meta LLaMA 4 announcement and PromptHub",
+      "canonical_name": "llama-4-behemoth",
+      "aliases": [
+        "llama4-288b-behemoth-16e"
+      ],
+      "max_tokens": 1000000,
+      "release_date": "2025-04-05",
+      "status": "announced",
+      "image_patch_size": 14,
+      "max_image_tokens": 6400
     }
   },
   "tool_support_levels": {
