@@ -14,6 +14,16 @@ from .base import BaseMediaHandler
 from .types import MediaContent, MediaType, ContentFormat, detect_media_type
 from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor
 
+# Import Glyph compression support
+try:
+    from ..compression.orchestrator import CompressionOrchestrator
+    from ..compression.config import GlyphConfig
+    GLYPH_AVAILABLE = True
+except ImportError:
+    CompressionOrchestrator = None
+    GlyphConfig = None
+    GLYPH_AVAILABLE = False
+
 
 class AutoMediaHandler(BaseMediaHandler):
     """
@@ -41,6 +51,11 @@ class AutoMediaHandler(BaseMediaHandler):
         self._text_processor = None
         self._pdf_processor = None
         self._office_processor = None
+        
+        # Initialize Glyph compression support
+        self._compression_orchestrator = None
+        self.glyph_config = kwargs.get('glyph_config')
+        self.enable_compression = kwargs.get('enable_glyph_compression', GLYPH_AVAILABLE)
 
         # Track which processors are available
         self._available_processors = self._check_processor_availability()
@@ -74,6 +89,9 @@ class AutoMediaHandler(BaseMediaHandler):
             availability['office'] = True
         except ImportError:
             availability['office'] = False
+        
+        # GlyphProcessor (requires reportlab and pdf2image)
+        availability['glyph'] = GLYPH_AVAILABLE and self.enable_compression
 
         return availability
 
@@ -100,6 +118,13 @@ class AutoMediaHandler(BaseMediaHandler):
         if self._office_processor is None:
             self._office_processor = OfficeProcessor(**self.processor_config)
         return self._office_processor
+    
+    def _get_compression_orchestrator(self) -> 'CompressionOrchestrator':
+        """Get or create CompressionOrchestrator instance."""
+        if self._compression_orchestrator is None and GLYPH_AVAILABLE:
+            config = self.glyph_config or GlyphConfig.from_abstractcore_config()
+            self._compression_orchestrator = CompressionOrchestrator(config)
+        return self._compression_orchestrator
 
     def _select_processor(self, file_path: Path, media_type: MediaType) -> Optional[BaseMediaHandler]:
         """
@@ -167,6 +192,18 @@ class AutoMediaHandler(BaseMediaHandler):
         Returns:
             MediaContent object with processed content
         """
+        # Check if Glyph compression should be applied
+        provider = kwargs.get('provider')
+        model = kwargs.get('model')
+        glyph_compression = kwargs.get('glyph_compression', 'auto')
+        
+        if self._should_apply_compression(file_path, media_type, provider, model, glyph_compression):
+            try:
+                return self._apply_compression(file_path, provider, model, **kwargs)
+            except Exception as e:
+                self.logger.warning(f"Glyph compression failed, falling back to standard processing: {e}")
+                # Continue with standard processing
+        
         # Select the appropriate processor
         processor = self._select_processor(file_path, media_type)
 
@@ -218,6 +255,57 @@ class AutoMediaHandler(BaseMediaHandler):
             fallback_processing=True,
             available_processors=list(self._available_processors.keys())
         )
+    
+    def _should_apply_compression(self, file_path: Path, media_type: MediaType, 
+                                provider: str, model: str, glyph_compression: str) -> bool:
+        """Check if Glyph compression should be applied."""
+        if not self._available_processors.get('glyph', False):
+            return False
+        
+        if glyph_compression == "never":
+            return False
+        elif glyph_compression == "always":
+            return True
+        
+        # Auto-decision logic
+        if not provider or not model:
+            return False
+        
+        # Only compress text-based content
+        if media_type not in [MediaType.TEXT, MediaType.DOCUMENT]:
+            return False
+        
+        try:
+            orchestrator = self._get_compression_orchestrator()
+            if orchestrator:
+                return orchestrator.should_compress(file_path, provider, model, glyph_compression)
+        except Exception as e:
+            self.logger.debug(f"Compression decision failed: {e}")
+        
+        return False
+    
+    def _apply_compression(self, file_path: Path, provider: str, model: str, **kwargs) -> MediaContent:
+        """Apply Glyph compression to the file."""
+        orchestrator = self._get_compression_orchestrator()
+        if not orchestrator:
+            raise Exception("Compression orchestrator not available")
+        
+        # Compress content
+        compressed_content = orchestrator.compress_content(file_path, provider, model)
+        
+        if compressed_content and len(compressed_content) > 0:
+            # Return first compressed image as primary content
+            # Additional images can be accessed through metadata
+            primary_content = compressed_content[0]
+            
+            # Add information about additional images
+            if len(compressed_content) > 1:
+                primary_content.metadata['additional_images'] = len(compressed_content) - 1
+                primary_content.metadata['total_compressed_images'] = len(compressed_content)
+            
+            return primary_content
+        else:
+            raise Exception("No compressed content generated")
 
     def supports_media_type(self, media_type: MediaType) -> bool:
         """

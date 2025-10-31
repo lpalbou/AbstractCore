@@ -47,6 +47,13 @@ _has_processing = True
 # Tools module (core functionality)
 from .tools import tool
 
+# Compression module (optional import)
+try:
+    from .compression import GlyphConfig, CompressionOrchestrator
+    _has_compression = True
+except ImportError:
+    _has_compression = False
+
 __all__ = [
     'create_llm',
     'BasicSession',
@@ -63,6 +70,9 @@ __all__ = [
 
 if _has_embeddings:
     __all__.append('EmbeddingManager')
+
+if _has_compression:
+    __all__.extend(['GlyphConfig', 'CompressionOrchestrator'])
 
 # Processing is core functionality
 __all__.extend(['BasicSummarizer', 'SummaryStyle', 'SummaryLength', 'BasicExtractor'])
