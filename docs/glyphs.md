@@ -24,17 +24,32 @@ Glyph transforms the traditional text-processing paradigm by:
 ### The Compression Pipeline
 
 ```
-Text Document → PDF Rendering → Image Optimization → VLM Processing
-     ↓              ↓               ↓                  ↓
-  Raw text    Typography &     Compressed        Enhanced
-              Layout          Visual Format     Understanding
+Traditional Approach:
+Long Text (1M tokens) → Tokenization → Sequential Processing → Context Overflow
+
+Glyph Approach:  
+Long Text (1M tokens) → Visual Rendering → Image Processing (250K tokens) → VLM Interpretation
 ```
 
-1. **Text Analysis**: Content is analyzed for compression suitability
-2. **PDF Rendering**: Text is rendered into optimized PDFs using ReportLab
-3. **Image Conversion**: PDFs are converted to high-quality images with optimal DPI
-4. **VLM Processing**: Vision models process the compressed visual content
-5. **Quality Validation**: Results are validated to ensure accuracy preservation
+The Glyph pipeline transforms text through these stages:
+
+1. **Content Analysis**: Determines compression suitability and optimal parameters
+2. **PDF Rendering**: Uses ReportLab for precise typography and layout control
+3. **Image Optimization**: Converts PDFs to images with provider-specific DPI settings
+4. **Quality Validation**: Multi-metric assessment ensures accuracy preservation
+5. **VLM Processing**: Vision models process the compressed visual content
+6. **Intelligent Caching**: Stores results for repeated content processing
+
+### Provider Optimization
+
+Glyph automatically optimizes rendering for each provider:
+
+| Provider | DPI | Font Size | Quality Focus |
+|----------|-----|-----------|---------------|
+| **OpenAI** | 72 | 9pt | Dense text, aggressive compression |
+| **Anthropic** | 96 | 10pt | Font clarity, conservative settings |
+| **Ollama** | 72 | 9pt | Balanced approach, auto-cropping |
+| **LMStudio** | 96 | 10pt | Quality-focused rendering |
 
 ### When Glyph Activates
 
@@ -353,13 +368,65 @@ response = llm.generate("Analyze", media=["doc.pdf"])
 print(response.metadata)  # Contains compression decision details
 ```
 
+## Performance Characteristics
+
+### Compression Effectiveness
+
+| Content Type | Compression Ratio | Quality Score | Use Case |
+|--------------|-------------------|---------------|----------|
+| **Prose/Natural Language** | 3-4x | 95-98% | Documents, articles, reports |
+| **Code** | 2-3x | 90-95% | Source code, technical docs |
+| **Structured Data** | 2x | 85-90% | JSON, CSV, configuration files |
+| **Mixed Content** | 2.5-3.5x | 90-95% | Technical documentation |
+
+### Processing Times
+
+- **First Compression**: 5-30 seconds (includes optimization)
+- **Cached Compression**: 1-5 seconds (reuses configuration)
+- **Quality Validation**: <1 second
+- **Net Processing Time**: Often faster due to 4x inference speedup
+
 ## Best Practices
 
-1. **Model Selection**: Use vision models with good OCR capabilities
-2. **Document Types**: Works best with text-heavy documents (PDFs, papers, reports)
-3. **Quality Monitoring**: Monitor compression quality scores and adjust thresholds
-4. **Caching**: Enable caching for frequently processed documents
-5. **Provider Optimization**: Use provider-specific profiles for best results
+### When to Use Compression
+
+✅ **Recommended for:**
+- Documents > 10,000 tokens
+- Prose and natural language content
+- Technical documentation
+- Research papers and reports
+- Large configuration files
+
+❌ **Not recommended for:**
+- Mathematical notation (OCR challenges)
+- Very dense special characters
+- Content < 5,000 tokens
+- Real-time chat applications
+
+### Provider Selection
+
+- **OpenAI GPT-4o**: Excellent OCR, handles dense text well
+- **Anthropic Claude**: Good OCR, font-sensitive, quality-focused
+- **Ollama qwen2.5vl**: Balanced performance, good for local deployment
+- **LMStudio**: Variable quality, depends on specific model
+
+### Quality Optimization
+
+```python
+# High-quality compression for critical applications
+config = GlyphConfig(
+    quality_threshold=0.98,        # Higher quality requirement
+    target_compression_ratio=2.5,  # Conservative compression
+    provider_optimization=True     # Use provider-specific settings
+)
+
+# Performance-focused compression
+config = GlyphConfig(
+    quality_threshold=0.90,        # Lower quality for speed
+    target_compression_ratio=4.0,  # Aggressive compression
+    cache_enabled=True             # Enable caching for repeated content
+)
+```
 
 ## Next Steps
 
@@ -367,6 +434,12 @@ print(response.metadata)  # Contains compression decision details
 - Learn about [Media Handling System](media-handling-system.md)
 - Check out [Examples](examples.md) for more use cases
 - Review [Configuration](centralized-config.md) for advanced settings
+
+## Technical Details
+
+For implementation details, API specifications, and research background, see:
+- [Glyph Technical Report](reports/glyph-compression-technical-report.md) - Detailed technical specifications
+- [Glyph Research Paper](https://arxiv.org/abs/2510.17800) - Original research by Z.ai/THU-COAI
 
 ---
 

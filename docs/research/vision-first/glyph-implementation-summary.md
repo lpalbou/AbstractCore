@@ -138,7 +138,7 @@ print(f"Token savings: {response.metadata.get('token_savings')}")
 ## 📚 Documentation and Examples
 
 ### Complete Documentation Suite
-- ✅ **User Guide**: Comprehensive usage documentation (`docs/glyph-compression.md`)
+- ✅ **User Guide**: Comprehensive usage documentation (`docs/glyphs.md`)
 - ✅ **API Reference**: Complete parameter and method documentation
 - ✅ **Integration Examples**: Real-world usage patterns and best practices
 - ✅ **Troubleshooting Guide**: Common issues and solutions
