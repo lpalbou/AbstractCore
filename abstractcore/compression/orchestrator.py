@@ -8,7 +8,7 @@ from pathlib import Path
 from ..utils.token_utils import TokenUtils
 from ..utils.structured_logging import get_logger
 from .config import GlyphConfig
-from .glyph_processor import GlyphProcessor
+# Import GlyphProcessor lazily to avoid circular imports
 from .exceptions import CompressionError
 
 
@@ -28,9 +28,11 @@ class CompressionOrchestrator:
         
         self.logger.debug("CompressionOrchestrator initialized")
     
-    def _get_glyph_processor(self) -> GlyphProcessor:
+    def _get_glyph_processor(self):
         """Get or create Glyph processor instance."""
         if self.glyph_processor is None:
+            # Lazy import to avoid circular dependency
+            from .glyph_processor import GlyphProcessor
             self.glyph_processor = GlyphProcessor(self.config)
         return self.glyph_processor
     
@@ -215,7 +217,7 @@ class CompressionOrchestrator:
             
             # Apply compression
             processor = self._get_glyph_processor()
-            compressed_content = processor.process_text(text_content, provider, model)
+            compressed_content = processor.process_text(text_content, provider, model, user_preference)
             
             self.logger.info(f"Content compressed successfully: {len(compressed_content)} images")
             return compressed_content

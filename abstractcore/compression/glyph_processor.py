@@ -88,6 +88,7 @@ class GlyphProcessor(BaseMediaHandler):
         
         # Check if provider supports vision
         try:
+            # Lazy import to avoid circular dependency
             from ..media.capabilities import get_model_capabilities
             capabilities = get_model_capabilities(provider, model)
             if not capabilities.get('vision_support', False):
@@ -98,7 +99,7 @@ class GlyphProcessor(BaseMediaHandler):
         
         return True
     
-    def process_text(self, content: str, provider: str = None, model: str = None) -> List[MediaContent]:
+    def process_text(self, content: str, provider: str = None, model: str = None, user_preference: str = "auto") -> List[MediaContent]:
         """
         Process text content into compressed visual format.
         
@@ -131,16 +132,18 @@ class GlyphProcessor(BaseMediaHandler):
                 unique_id=cache_key[:16]
             )
             
-            # Quality validation
+            # Quality validation (bypass if user explicitly wants compression)
             quality_score = self.quality_validator.assess(content, images, provider)
             min_threshold = self.quality_validator.get_provider_threshold(provider)
             
-            if quality_score < min_threshold:
+            if user_preference != "always" and quality_score < min_threshold:
                 raise CompressionQualityError(
                     f"Compression quality {quality_score:.3f} below threshold {min_threshold:.3f} for {provider}",
                     quality_score=quality_score,
                     threshold=min_threshold
                 )
+            elif user_preference == "always" and quality_score < min_threshold:
+                self.logger.warning(f"Compression quality {quality_score:.3f} below threshold {min_threshold:.3f} for {provider}, but proceeding due to 'always' preference")
             
             # Calculate compression statistics
             original_tokens = TokenUtils.estimate_tokens(content, model)
