@@ -87,8 +87,46 @@ class QualityValidator:
         original_tokens = TokenUtils.estimate_tokens(original_content)
         
         # Estimate compressed tokens (rough approximation)
-        # Each image is roughly equivalent to 1000-2000 tokens for VLMs
-        compressed_tokens = len(rendered_images) * 1500  # Conservative estimate
+        # Calculate accurate token count using proper VLM token calculation
+        from ..utils.vlm_token_calculator import VLMTokenCalculator
+        from pathlib import Path
+        
+        calculator = VLMTokenCalculator()
+        try:
+            # Get provider from context or use default
+            provider_name = getattr(self, '_provider', 'openai')
+            model_name = getattr(self, '_model', '')
+            
+            # Calculate tokens for all rendered images
+            if rendered_images and len(rendered_images) > 0:
+                # Assume rendered_images contains file paths or can be converted to paths
+                image_paths = []
+                for img in rendered_images:
+                    if hasattr(img, 'path') and img.path:
+                        image_paths.append(Path(img.path))
+                    elif isinstance(img, (str, Path)):
+                        image_paths.append(Path(img))
+                
+                if image_paths:
+                    token_analysis = calculator.calculate_tokens_for_images(
+                        image_paths=image_paths,
+                        provider=provider_name,
+                        model=model_name
+                    )
+                    compressed_tokens = token_analysis['total_tokens']
+                    self.logger.debug(f"Calculated {compressed_tokens} tokens for {len(image_paths)} images using {provider_name}")
+                else:
+                    # Fallback to provider-specific base estimation
+                    base_tokens = calculator.PROVIDER_CONFIGS.get(provider_name, {}).get('base_tokens', 512)
+                    compressed_tokens = len(rendered_images) * base_tokens
+                    self.logger.warning(f"Using fallback estimation: {compressed_tokens} tokens for {len(rendered_images)} images")
+            else:
+                compressed_tokens = 0
+                
+        except Exception as e:
+            # Fallback to conservative estimate if calculation fails
+            self.logger.warning(f"VLM token calculation failed, using fallback: {e}")
+            compressed_tokens = len(rendered_images) * 1500  # Conservative fallback
         
         if original_tokens == 0:
             return 0.0
