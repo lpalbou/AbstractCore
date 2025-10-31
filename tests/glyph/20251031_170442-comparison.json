@@ -1,0 +1,29 @@
+{
+  "performance_comparison": {
+    "no_glyph_time": 419.06,
+    "glyph_time": 366.49,
+    "time_difference": -52.56999999999999,
+    "speedup_factor": 1.14,
+    "memory_difference": -112.54999999999998
+  },
+  "response_comparison": [
+    {
+      "question_id": "novelty_and_ideas",
+      "no_glyph_length": 13195,
+      "glyph_length": 14033,
+      "length_difference": 838,
+      "no_glyph_time": 160.48,
+      "glyph_time": 209.2,
+      "time_difference": 48.72
+    },
+    {
+      "question_id": "figures_and_tables",
+      "no_glyph_length": 13504,
+      "glyph_length": 13405,
+      "length_difference": -99,
+      "no_glyph_time": 257.73,
+      "glyph_time": 157.27,
+      "time_difference": -100.46000000000001
+    }
+  ]
+}

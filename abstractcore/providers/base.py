@@ -67,6 +67,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Create provider key for circuit breaker tracking
         self.provider_key = f"{self.__class__.__name__}:{self.model}"
+        
+        # Setup Glyph compression configuration
+        self.glyph_config = kwargs.get('glyph_config', None)
 
         # Provider created successfully - no event emission needed
         # (The simplified event system focuses on generation and tool events only)
@@ -211,6 +214,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                retry_strategy=None,  # Custom retry strategy for structured output
                                tool_call_tags: Optional[str] = None,  # Tool call tag rewriting
                                execute_tools: Optional[bool] = None,  # Tool execution control
+                               glyph_compression: Optional[str] = None,  # Glyph compression preference
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate with integrated telemetry and error handling.
@@ -227,6 +231,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             retry_strategy: Optional retry strategy for structured output validation
             tool_call_tags: Optional tool call tag format for rewriting
             execute_tools: Whether to execute tools automatically (True) or let agent handle execution (False)
+            glyph_compression: Glyph compression preference ("auto", "always", "never")
         """
         # Handle structured output request
         if response_model is not None:
@@ -270,7 +275,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Process media content if provided
         processed_media = None
         if media:
-            processed_media = self._process_media_content(media)
+            compression_pref = glyph_compression or kwargs.get('glyph_compression', 'auto')
+            processed_media = self._process_media_content(media, compression_pref)
 
         # Convert tools to ToolDefinition objects first (outside retry loop)
         converted_tools = None
@@ -805,12 +811,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """Rough estimation of token count for given text"""
         return super().estimate_tokens(text)
 
-    def _process_media_content(self, media: List[Union[str, Dict[str, Any], 'MediaContent']]) -> List['MediaContent']:
+    def _process_media_content(self, media: List[Union[str, Dict[str, Any], 'MediaContent']], 
+                              glyph_compression: str = "auto") -> List['MediaContent']:
         """
         Process media content from various input formats into standardized MediaContent objects.
 
         Args:
             media: List of media inputs (file paths, MediaContent objects, or dicts)
+            glyph_compression: Glyph compression preference (auto, always, never)
 
         Returns:
             List of processed MediaContent objects
@@ -838,8 +846,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
             try:
                 if isinstance(media_item, str):
                     # File path - process with auto media handler
-                    handler = AutoMediaHandler()
-                    result = handler.process_file(media_item)
+                    handler = AutoMediaHandler(
+                        enable_glyph_compression=True,
+                        glyph_config=getattr(self, 'glyph_config', None)
+                    )
+                    result = handler.process_file(
+                        media_item,
+                        provider=self.provider,
+                        model=self.model,
+                        glyph_compression=glyph_compression
+                    )
                     if result.success:
                         processed_media.append(result.media_content)
                     else:
