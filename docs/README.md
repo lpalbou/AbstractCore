@@ -18,6 +18,7 @@ Complete navigation guide for AbstractCore documentation.
 
 - **[Getting Started](getting-started.md)** - Quick start, core concepts, common patterns
 - **[Prerequisites](prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- **[Glyph Visual-Text Compression](glyphs.md)** - Revolutionary compression for 3-4x token reduction and faster inference
 - **[Structured Output](structured-output.md)** - Pydantic models, schema validation, native vs prompted strategies
 - **[Session Management](session.md)** - Persistent conversations, serialization, and analytics
 - **[Embeddings](embeddings.md)** - Vector embeddings, semantic search, RAG applications
@@ -34,6 +35,9 @@ Complete navigation guide for AbstractCore documentation.
 
 ### Advanced Topics
 
+- **[Media Handling System](media-handling-system.md)** - Images, PDFs, documents with vision model optimization
+- **[Glyph Visual-Text Compression](glyphs.md)** - Advanced compression techniques for large documents
+- **[Vision Capabilities](vision-capabilities.md)** - Vision model integration and optimization
 - **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
 - **[AbstractCore CLI](acore-cli.md)** - Built-in CLI tool for testing and exploration
 
