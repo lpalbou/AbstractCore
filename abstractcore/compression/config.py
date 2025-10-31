@@ -19,8 +19,8 @@ class RenderingConfig:
     
     # Layout configuration
     dpi: int = 72  # 72 for higher compression, 96 for better quality
-    margin_x: int = 20
-    margin_y: int = 20
+    margin_x: int = 10  # Reduced from 20 (matches original Glyph)
+    margin_y: int = 10  # Reduced from 20 (matches original Glyph)
     page_width: int = 595  # A4 width in points
     page_height: int = 842  # A4 height in points
     
@@ -29,9 +29,9 @@ class RenderingConfig:
     auto_crop_last_page: bool = True
     newline_markup: str = '<font color="#FF0000"> \\n </font>'
     
-    # Multi-column layout
-    columns: int = 1
-    column_gap: int = 20
+    # Multi-column layout (key optimization from original Glyph)
+    columns: int = 2  # Default to 2-column "open book" layout
+    column_gap: int = 15  # Reduced from 20 for tighter packing
     
     def copy(self) -> 'RenderingConfig':
         """Create a copy of this configuration."""
