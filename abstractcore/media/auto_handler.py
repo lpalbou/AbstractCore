@@ -91,7 +91,18 @@ class AutoMediaHandler(BaseMediaHandler):
             availability['office'] = False
         
         # GlyphProcessor (requires reportlab and pdf2image)
-        availability['glyph'] = GLYPH_AVAILABLE and self.enable_compression
+        glyph_deps_available = True
+        if GLYPH_AVAILABLE and self.enable_compression:
+            # Check actual dependencies
+            try:
+                import reportlab
+                import pdf2image
+            except ImportError:
+                glyph_deps_available = False
+        else:
+            glyph_deps_available = False
+            
+        availability['glyph'] = glyph_deps_available
 
         return availability
 
@@ -199,7 +210,9 @@ class AutoMediaHandler(BaseMediaHandler):
         
         if self._should_apply_compression(file_path, media_type, provider, model, glyph_compression):
             try:
-                return self._apply_compression(file_path, provider, model, **kwargs)
+                # Remove provider and model from kwargs to avoid duplicate arguments
+                compression_kwargs = {k: v for k, v in kwargs.items() if k not in ['provider', 'model']}
+                return self._apply_compression(file_path, provider, model, **compression_kwargs)
             except Exception as e:
                 self.logger.warning(f"Glyph compression failed, falling back to standard processing: {e}")
                 # Continue with standard processing
@@ -259,7 +272,11 @@ class AutoMediaHandler(BaseMediaHandler):
     def _should_apply_compression(self, file_path: Path, media_type: MediaType, 
                                 provider: str, model: str, glyph_compression: str) -> bool:
         """Check if Glyph compression should be applied."""
+        # Check if Glyph is available
         if not self._available_processors.get('glyph', False):
+            if glyph_compression == "always":
+                # User explicitly requested compression but it's not available
+                self._log_compression_unavailable_warning()
             return False
         
         if glyph_compression == "never":
@@ -284,14 +301,58 @@ class AutoMediaHandler(BaseMediaHandler):
         
         return False
     
+    def _log_compression_unavailable_warning(self):
+        """Log detailed warning about why Glyph compression is unavailable."""
+        self.logger.warning("Glyph compression requested but not available")
+        
+        # Check specific reasons
+        if not GLYPH_AVAILABLE:
+            self.logger.warning("Glyph compression modules could not be imported")
+            
+        # Check dependencies
+        missing_deps = []
+        try:
+            import reportlab
+        except ImportError:
+            missing_deps.append("reportlab")
+            
+        try:
+            import pdf2image
+        except ImportError:
+            missing_deps.append("pdf2image")
+            
+        if missing_deps:
+            deps_str = ", ".join(missing_deps)
+            self.logger.warning(f"Missing Glyph dependencies: {deps_str}")
+            self.logger.warning(f"Install with: pip install {' '.join(missing_deps)}")
+        
+        if not self.enable_compression:
+            self.logger.warning("Glyph compression is disabled in AutoMediaHandler configuration")
+    
     def _apply_compression(self, file_path: Path, provider: str, model: str, **kwargs) -> MediaContent:
         """Apply Glyph compression to the file."""
         orchestrator = self._get_compression_orchestrator()
         if not orchestrator:
             raise Exception("Compression orchestrator not available")
         
-        # Compress content
-        compressed_content = orchestrator.compress_content(file_path, provider, model)
+        # First extract text content from the file
+        media_type = detect_media_type(file_path)
+        
+        # Get appropriate processor to extract text
+        if media_type == MediaType.DOCUMENT and file_path.suffix.lower() == '.pdf':
+            processor = self._get_pdf_processor()
+        elif media_type == MediaType.DOCUMENT:
+            processor = self._get_office_processor()
+        else:
+            processor = self._get_text_processor()
+        
+        # Extract text content
+        extracted_content = processor._process_internal(file_path, media_type, **kwargs)
+        text_content = extracted_content.content
+        
+        # Compress the extracted text content
+        glyph_compression = kwargs.get('glyph_compression', 'auto')
+        compressed_content = orchestrator.compress_content(text_content, provider, model, glyph_compression)
         
         if compressed_content and len(compressed_content) > 0:
             # Return first compressed image as primary content
@@ -302,6 +363,10 @@ class AutoMediaHandler(BaseMediaHandler):
             if len(compressed_content) > 1:
                 primary_content.metadata['additional_images'] = len(compressed_content) - 1
                 primary_content.metadata['total_compressed_images'] = len(compressed_content)
+            
+            # Add compression metadata
+            primary_content.metadata['compression_used'] = True
+            primary_content.metadata['original_file'] = str(file_path)
             
             return primary_content
         else:
