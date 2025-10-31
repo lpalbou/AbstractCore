@@ -12,15 +12,15 @@ from pathlib import Path
 class RenderingConfig:
     """Configuration for text rendering to images."""
     
-    # Font configuration
+    # Font configuration (EXTREME density optimization)
     font_path: str = "Verdana.ttf"
-    font_size: int = 9
-    line_height: int = 10
+    font_size: int = 7  # Minimum readable font size
+    line_height: int = 8  # Ultra-tight line spacing
     
-    # Layout configuration
+    # Layout configuration (EXTREME compression)
     dpi: int = 72  # 72 for higher compression, 96 for better quality
-    margin_x: int = 10  # Reduced from 20 (matches original Glyph)
-    margin_y: int = 10  # Reduced from 20 (matches original Glyph)
+    margin_x: int = 3   # Absolute minimal margins
+    margin_y: int = 3   # Absolute minimal margins
     page_width: int = 595  # A4 width in points
     page_height: int = 842  # A4 height in points
     
@@ -29,9 +29,9 @@ class RenderingConfig:
     auto_crop_last_page: bool = True
     newline_markup: str = '<font color="#FF0000"> \\n </font>'
     
-    # Multi-column layout (key optimization from original Glyph)
-    columns: int = 2  # Default to 2-column "open book" layout
-    column_gap: int = 15  # Reduced from 20 for tighter packing
+    # Multi-column layout (EXTREME packing)
+    columns: int = 4  # 4-column layout for maximum density
+    column_gap: int = 5  # Absolute minimal gap between columns
     
     def copy(self) -> 'RenderingConfig':
         """Create a copy of this configuration."""

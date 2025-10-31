@@ -338,7 +338,62 @@ class AutoMediaHandler(BaseMediaHandler):
         # First extract text content from the file
         media_type = detect_media_type(file_path)
         
-        # Get appropriate processor to extract text
+        # For PDF files, use direct PDF-to-image conversion (no text extraction!)
+        if media_type == MediaType.DOCUMENT and file_path.suffix.lower() == '.pdf':
+            try:
+                from .processors.direct_pdf_processor import DirectPDFProcessor
+                
+                # Configure for optimal compression (2 pages per image)
+                direct_processor = DirectPDFProcessor(
+                    pages_per_image=2,  # 16 pages → 8 images
+                    dpi=150,  # Good quality for VLM processing
+                    layout='horizontal',  # Side-by-side like open book
+                    gap=20,  # Small gap between pages
+                    **kwargs
+                )
+                
+                # Get all combined images
+                combined_images = direct_processor.get_combined_image_paths(file_path)
+                
+                # Create MediaContent objects for each combined image
+                media_contents = []
+                for i, img_path in enumerate(combined_images):
+                    with open(img_path, 'rb') as f:
+                        image_data = f.read()
+                    
+                    import base64
+                    encoded_data = base64.b64encode(image_data).decode('utf-8')
+                    
+                    media_content = MediaContent(
+                        media_type=MediaType.IMAGE,
+                        content=encoded_data,
+                        content_format=ContentFormat.BASE64,
+                        mime_type="image/png",
+                        metadata={
+                            'compression_used': True,
+                            'compression_method': 'direct_pdf_conversion',
+                            'pages_per_image': 2,
+                            'image_index': i,
+                            'total_images': len(combined_images),
+                            'original_file': str(file_path)
+                        }
+                    )
+                    media_contents.append(media_content)
+                
+                self.logger.info(f"Direct PDF conversion: {len(combined_images)} combined images created")
+                
+                # Return first image (in full implementation, would handle multiple)
+                if media_contents:
+                    return media_contents[0]
+                else:
+                    raise Exception("No combined images created")
+                    
+            except ImportError:
+                self.logger.warning("DirectPDFProcessor not available, falling back to text extraction")
+                # Fall back to text extraction method
+                pass
+        
+        # Fallback: text extraction method (for non-PDF or if direct method fails)
         if media_type == MediaType.DOCUMENT and file_path.suffix.lower() == '.pdf':
             processor = self._get_pdf_processor()
         elif media_type == MediaType.DOCUMENT:

@@ -147,7 +147,37 @@ class GlyphProcessor(BaseMediaHandler):
             
             # Calculate compression statistics
             original_tokens = TokenUtils.estimate_tokens(content, model)
-            compressed_tokens = len(images) * 1500  # Rough estimate for VLM processing
+            # Calculate accurate token count using proper VLM token calculation
+            from ..utils.vlm_token_calculator import VLMTokenCalculator
+            from pathlib import Path
+            
+            calculator = VLMTokenCalculator()
+            try:
+                # Extract image paths from MediaContent objects
+                image_paths = []
+                for img in images:
+                    if hasattr(img, 'metadata') and img.metadata.get('temp_file_path'):
+                        image_paths.append(Path(img.metadata['temp_file_path']))
+                    elif hasattr(img, 'file_path') and img.file_path:
+                        image_paths.append(Path(img.file_path))
+                
+                if image_paths:
+                    token_analysis = calculator.calculate_tokens_for_images(
+                        image_paths=image_paths,
+                        provider=provider or 'openai',
+                        model=model or ''
+                    )
+                    compressed_tokens = token_analysis['total_tokens']
+                    self.logger.info(f"Accurate token calculation: {compressed_tokens} tokens for {len(image_paths)} images")
+                else:
+                    # Fallback calculation
+                    base_tokens = calculator.PROVIDER_CONFIGS.get(provider or 'openai', {}).get('base_tokens', 512)
+                    compressed_tokens = len(images) * base_tokens
+                    self.logger.warning(f"Using fallback token estimation: {compressed_tokens} tokens")
+                    
+            except Exception as e:
+                self.logger.warning(f"VLM token calculation failed, using fallback: {e}")
+                compressed_tokens = len(images) * 1500  # Conservative fallback
             compression_ratio = original_tokens / compressed_tokens if compressed_tokens > 0 else 1.0
             
             compression_stats = CompressionStats(

@@ -45,6 +45,18 @@
       "image_resolutions": [
         "variable"
       ],
+      "image_tokenization_method": "tile_based",
+      "base_image_tokens": 85,
+      "tokens_per_tile": 170,
+      "tile_size": "512x512",
+      "max_image_dimension": 2048,
+      "short_side_resize_target": 768,
+      "detail_levels": [
+        "low",
+        "high",
+        "auto"
+      ],
+      "low_detail_tokens": 85,
       "notes": "Multimodal omni model, 2x faster, half price, 5x higher rate limits (updated Nov 2024)",
       "source": "OpenAI official docs 2025",
       "canonical_name": "gpt-4o",
@@ -154,6 +166,12 @@
       "image_resolutions": [
         "up to 1568x1568"
       ],
+      "image_tokenization_method": "pixel_area_based",
+      "token_formula": "(width * height) / 750",
+      "pixel_divisor": 750,
+      "max_image_dimension": 1568,
+      "token_cap": 1600,
+      "min_dimension_warning": 200,
       "audio_support": false,
       "notes": "disable_parallel_tool_use option available",
       "source": "Anthropic official docs",
@@ -893,6 +911,31 @@
       "max_image_resolution": "1120x1120",
       "image_patch_size": 14,
       "max_image_tokens": 6400,
+      "image_tokenization_method": "resolution_tier_based",
+      "supported_resolutions": [
+        [
+          560,
+          560
+        ],
+        [
+          1120,
+          560
+        ],
+        [
+          560,
+          1120
+        ],
+        [
+          1120,
+          1120
+        ]
+      ],
+      "base_tokens_per_resolution": {
+        "560x560": 1600,
+        "1120x560": 3200,
+        "560x1120": 3200,
+        "1120x1120": 6400
+      },
       "notes": "Llama 3.2 Vision 11B model with multimodal capabilities for visual recognition and reasoning",
       "source": "Meta AI Llama 3.2 release",
       "canonical_name": "llama3.2-vision:11b",
@@ -1345,6 +1388,11 @@
       "image_patch_size": 14,
       "max_image_tokens": 16384,
       "pixel_grouping": "28x28",
+      "image_tokenization_method": "patch_based_adaptive",
+      "adaptive_resolution": true,
+      "min_resolution": 56,
+      "max_resolution": 3584,
+      "vision_encoder": "ViT-based",
       "notes": "Qwen2.5-VL 7B parameter vision model, 28x28 pixel patches, max 3584x3584 resolution",
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-vl-7b",
@@ -1353,7 +1401,7 @@
         "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"
       ],
       "max_tokens": 128000
-    },    
+    },
     "gemma3-4b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
@@ -1369,6 +1417,12 @@
       "vision_encoder": "SigLIP-400M",
       "image_tokens_per_image": 256,
       "adaptive_windowing": true,
+      "image_tokenization_method": "fixed_resolution",
+      "fixed_resolution": [
+        896,
+        896
+      ],
+      "preprocessing": "automatic_resize_and_crop",
       "notes": "Gemma3 4B parameter model with vision support, 896x896 fixed resolution with adaptive windowing",
       "source": "Google Gemma3 documentation 2025",
       "canonical_name": "gemma3-4b",
@@ -1563,6 +1617,7 @@
       "max_image_resolution": "768x768",
       "vision_encoder": "SigLIP2-so400m-patch14-384",
       "image_patch_size": 14,
+      "image_tokenization_method": "patch_based",
       "notes": "IBM Granite 3.2-Vision 2B model with SigLIP2 encoder, optimized for visual document understanding",
       "source": "IBM Granite 3.2 technical report arXiv:2502.09927",
       "canonical_name": "granite3.2-vision:2b",
@@ -1603,6 +1658,47 @@
         "granite3.3-8b"
       ],
       "max_tokens": 32768
+    },
+    "embeddinggemma:300m": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Text embedding model, not for generation or vision",
+      "source": "Google Gemma documentation",
+      "canonical_name": "embeddinggemma:300m",
+      "aliases": [
+        "google/embeddinggemma-300m"
+      ],
+      "max_tokens": 0,
+      "model_type": "embedding"
+    },
+    "blip-image-captioning-base": {
+      "max_output_tokens": 512,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "224x224",
+        "384x384"
+      ],
+      "max_image_resolution": "384x384",
+      "vision_encoder": "ViT-B/16",
+      "image_patch_size": 16,
+      "image_tokenization_method": "patch_based",
+      "base_image_tokens": 577,
+      "notes": "Salesforce BLIP image captioning model, primarily for image-to-text tasks",
+      "source": "Salesforce BLIP documentation",
+      "canonical_name": "blip-image-captioning-base",
+      "aliases": [
+        "Salesforce/blip-image-captioning-base"
+      ],
+      "max_tokens": 512
     }
   },
   "tool_support_levels": {
@@ -1620,6 +1716,50 @@
     "thinking_budget": "Configurable reasoning length control",
     "video_support": "Video processing capabilities",
     "fim_support": "Fill-in-the-middle code completion"
+  },
+  "vlm_tokenization_research": {
+    "openai_gpt4v_formula": {
+      "step1": "Resize to fit 2048x2048 (preserve aspect ratio)",
+      "step2": "Resize shortest side to 768px",
+      "step3": "Calculate tiles: ceil(width/512) * ceil(height/512)",
+      "step4": "Total tokens = 85 + (tiles * 170)",
+      "low_detail": "Fixed 85 tokens regardless of size",
+      "research_source": "OpenAI official documentation + Image Tokenization research"
+    },
+    "anthropic_claude_formula": {
+      "formula": "min((width * height) / 750, 1600)",
+      "pixel_divisor": 750,
+      "token_cap": 1600,
+      "resize_trigger": "max(width, height) > 1568",
+      "warning_threshold": "min(width, height) < 200",
+      "research_source": "Anthropic Claude documentation + research analysis"
+    },
+    "google_gemini_formula": {
+      "small_image": "width <= 384 AND height <= 384 \u2192 258 tokens",
+      "large_image": "ceil(width/768) * ceil(height/768) * 258 tokens",
+      "small_threshold": 384,
+      "tile_size": 768,
+      "tokens_per_tile": 258,
+      "research_source": "Google Gemini documentation + research analysis"
+    },
+    "qwen_vl_adaptive_formula": {
+      "formula": "min(ceil(width/patch_size) * ceil(height/patch_size), max_tokens)",
+      "adaptive_resize": "Resize to fit within [min_res, max_res] range",
+      "patch_sizes": {
+        "qwen2.5": 14,
+        "qwen3": 16
+      },
+      "research_source": "Qwen-VL technical documentation + research"
+    },
+    "vision_transformer_baseline": {
+      "standard_patch_size": 16,
+      "formula": "tokens = (height * width) / (patch_size^2)",
+      "typical_range": [
+        196,
+        2048
+      ],
+      "research_source": "Vision Transformer foundational paper"
+    }
   },
   "default_capabilities": {
     "max_output_tokens": 4096,
