@@ -428,6 +428,130 @@ config = GlyphConfig(
 )
 ```
 
+## Complete Working Example
+
+For a comprehensive, runnable example that demonstrates all Glyph features, see:
+
+**[`examples/glyph_complete_example.py`](../examples/glyph_complete_example.py)**
+
+This complete example includes:
+
+```python
+#!/usr/bin/env python3
+"""
+Complete Glyph Visual-Text Compression Example
+Demonstrates all aspects of Glyph compression with AbstractCore
+"""
+
+from abstractcore import create_llm, GlyphConfig
+import time
+
+def basic_glyph_example():
+    """Basic usage with automatic compression detection"""
+    # Create LLM with vision model
+    llm = create_llm("ollama", model="llama3.2-vision:11b")
+    
+    # Process document - Glyph decides automatically
+    response = llm.generate(
+        "Analyze this research paper and summarize key findings.",
+        media=["research_paper.pdf"]  # Auto-compressed if beneficial
+    )
+    
+    # Check if compression was used
+    if response.metadata and response.metadata.get('compression_used'):
+        stats = response.metadata.get('compression_stats', {})
+        print(f"🎨 Glyph compression used!")
+        print(f"Compression ratio: {stats.get('compression_ratio')}")
+        print(f"Quality score: {stats.get('quality_score')}")
+    
+    return response
+
+def benchmark_comparison():
+    """Compare performance with and without compression"""
+    llm = create_llm("ollama", model="qwen2.5vl:7b")
+    
+    # Test without compression
+    start = time.time()
+    response_no_glyph = llm.generate(
+        "Analyze this document",
+        media=["large_document.pdf"],
+        glyph_compression="never"
+    )
+    time_no_glyph = time.time() - start
+    
+    # Test with compression
+    start = time.time()
+    response_glyph = llm.generate(
+        "Analyze this document", 
+        media=["large_document.pdf"],
+        glyph_compression="always"
+    )
+    time_glyph = time.time() - start
+    
+    print(f"Without Glyph: {time_no_glyph:.2f}s")
+    print(f"With Glyph: {time_glyph:.2f}s")
+    print(f"Speedup: {time_no_glyph/time_glyph:.2f}x")
+
+def custom_configuration():
+    """Advanced configuration for specific use cases"""
+    # High-quality configuration
+    config = GlyphConfig(
+        enabled=True,
+        quality_threshold=0.98,        # Very high quality
+        target_compression_ratio=2.5,  # Conservative compression
+        provider_profiles={
+            "ollama": {
+                "dpi": 150,            # High DPI for quality
+                "font_size": 9,        # Optimal font size
+                "quality_threshold": 0.98
+            }
+        }
+    )
+    
+    llm = create_llm("ollama", model="granite3.2-vision:latest", glyph_config=config)
+    
+    response = llm.generate(
+        "Provide detailed analysis with high accuracy requirements",
+        media=["critical_document.pdf"]
+    )
+    
+    return response
+
+# Run the complete example
+if __name__ == "__main__":
+    print("🎨 Glyph Compression Complete Example")
+    
+    # Basic usage
+    basic_response = basic_glyph_example()
+    
+    # Performance benchmark  
+    benchmark_comparison()
+    
+    # Custom configuration
+    custom_response = custom_configuration()
+    
+    print("✅ All examples completed successfully!")
+```
+
+### Running the Complete Example
+
+```bash
+# Make sure you have a vision model available
+ollama pull llama3.2-vision:11b
+
+# Run the complete example
+cd examples
+python glyph_complete_example.py
+```
+
+The complete example demonstrates:
+- **Basic automatic compression** with intelligent decision-making
+- **Performance benchmarking** comparing compressed vs uncompressed processing
+- **Custom configuration** for different quality/speed requirements
+- **Multi-provider testing** across different vision models
+- **Error handling and debugging** techniques
+- **Real-world usage patterns** with sample documents
+
 ## Next Steps
 
 - Explore the [Vision Capabilities](vision-capabilities.md) documentation
