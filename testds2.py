@@ -20,7 +20,8 @@ researcher = BasicDeepResearcherC(
 )
 
 # Define query and model info
-query = "Create a comprehensive guide about BAML and how it differs frm outlines"
+#query = "Create a comprehensive guide about BAML and how it differs frm outlines"
+query = "Create a comprehensive profile about Laurent-Philippe Albou"
 model_name = "qwen/qwen3-30b-a3b-2507"
 
 # Run research
