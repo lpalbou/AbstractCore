@@ -122,11 +122,16 @@ class ReportLabRenderer:
             # Setup text rendering parameters
             c.setFont(font_name, config.font_size)
             
-            # Calculate text area
+            # Calculate text area with multi-column support
             margin_x = config.margin_x
             margin_y = config.margin_y
-            text_width = page_width - 2 * margin_x
+            total_text_width = page_width - 2 * margin_x
             text_height = page_height - 2 * margin_y
+            
+            # Multi-column layout calculation (key optimization from original Glyph)
+            columns = max(1, config.columns)
+            column_gap = config.column_gap if columns > 1 else 0
+            column_width = (total_text_width - (columns - 1) * column_gap) / columns
             
             # Process text with newline markup if configured
             if config.newline_markup and config.newline_markup != "\\n":
@@ -135,14 +140,15 @@ class ReportLabRenderer:
             else:
                 processed_text = text
             
-            # Split text into lines that fit the page width
-            lines = self._wrap_text(processed_text, text_width, c, font_name, config.font_size)
+            # Split text into lines that fit the column width
+            lines = self._wrap_text(processed_text, column_width, c, font_name, config.font_size)
             
-            # Calculate lines per page
+            # Calculate lines per page and per column
             line_height = config.line_height
-            lines_per_page = int(text_height / line_height)
+            lines_per_column = int(text_height / line_height)
+            lines_per_page = lines_per_column * columns
             
-            # Render pages
+            # Render pages with multi-column support
             current_line = 0
             page_count = 0
             
@@ -153,18 +159,24 @@ class ReportLabRenderer:
                 
                 page_count += 1
                 
-                # Render lines for this page
-                y_position = page_height - margin_y - line_height
-                
-                for i in range(lines_per_page):
-                    if current_line + i >= len(lines):
+                # Render columns for this page
+                for col in range(columns):
+                    if current_line >= len(lines):
                         break
                     
-                    line = lines[current_line + i]
-                    c.drawString(margin_x, y_position, line)
-                    y_position -= line_height
-                
-                current_line += lines_per_page
+                    # Calculate column position
+                    col_x = margin_x + col * (column_width + column_gap)
+                    y_position = page_height - margin_y - line_height
+                    
+                    # Render lines for this column
+                    for i in range(lines_per_column):
+                        if current_line >= len(lines):
+                            break
+                        
+                        line = lines[current_line]
+                        c.drawString(col_x, y_position, line)
+                        y_position -= line_height
+                        current_line += 1
             
             # Save PDF
             c.save()
