@@ -30,6 +30,9 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
         """
         super().__init__("openai", model_capabilities, **kwargs)
 
+        # Store model name for Qwen-specific optimizations
+        self.model_name = kwargs.get('model_name', '')
+
         # OpenAI-specific configuration
         self.max_image_size = kwargs.get('max_image_size', 20 * 1024 * 1024)  # 20MB
         self.supported_image_detail = kwargs.get('supported_image_detail', ['auto', 'low', 'high'])
@@ -118,10 +121,57 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
         # Add detail level if supported by model
         if self.model_capabilities.get('vision_support'):
             detail_level = media_content.metadata.get('detail_level', 'auto')
+            
+            # Auto-adjust detail level for Qwen models to prevent context overflow
+            if self._is_qwen_model() and detail_level == 'auto':
+                detail_level = self._get_optimal_detail_for_qwen(media_content)
+            
             if detail_level in self.supported_image_detail:
                 image_obj["image_url"]["detail"] = detail_level
 
         return image_obj
+
+    def _is_qwen_model(self) -> bool:
+        """Check if the current model is a Qwen vision model."""
+        if not hasattr(self, 'model_name') or not self.model_name:
+            return False
+        
+        model_name_lower = self.model_name.lower()
+        return any(qwen_variant in model_name_lower for qwen_variant in [
+            'qwen3-vl', 'qwen2.5-vl', 'qwen-vl', 'qwen/qwen3-vl', 'qwen/qwen2.5-vl'
+        ])
+
+    def _get_optimal_detail_for_qwen(self, media_content: MediaContent) -> str:
+        """
+        Determine optimal detail level for Qwen models based on context constraints.
+        
+        According to SiliconFlow documentation:
+        - detail=low: 256 tokens per image (448x448 resize)
+        - detail=high: Variable tokens based on resolution (can be 24,576+ tokens)
+        
+        For Qwen3-VL-30B with 131,072 token context limit, we should use detail=low
+        when processing multiple images to avoid context overflow.
+        """
+        # Get model context limit
+        max_tokens = self.model_capabilities.get('max_tokens', 32768)
+        max_image_tokens = self.model_capabilities.get('max_image_tokens', 24576)
+        
+        # Estimate how many images we might be processing
+        # This is a heuristic - in practice we'd need the full batch context
+        estimated_images = getattr(self, '_estimated_image_count', 1)
+        
+        # Calculate potential token usage with high detail
+        high_detail_tokens = estimated_images * max_image_tokens
+        
+        # Use low detail if high detail would consume >60% of context
+        context_threshold = max_tokens * 0.6
+        
+        if high_detail_tokens > context_threshold:
+            self.logger.info(f"Using detail=low for Qwen model: {estimated_images} images would consume "
+                           f"{high_detail_tokens:,} tokens (>{context_threshold:,} threshold)")
+            return 'low'
+        else:
+            return 'high'
 
     def _format_text_for_openai(self, media_content: MediaContent) -> Dict[str, Any]:
         """
@@ -226,12 +276,15 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
             Estimated token count
         """
         if media_content.media_type == MediaType.IMAGE:
-            # OpenAI image token estimation
-            # Base cost varies by detail level and image size
+            # Image token estimation varies by model
             detail_level = media_content.metadata.get('detail_level', 'auto')
 
             if detail_level == 'low':
-                return 85  # Low detail images use 85 tokens
+                # Qwen models use 256 tokens for low detail, OpenAI uses 85
+                if self._is_qwen_model():
+                    return 256  # Qwen low detail token count
+                else:
+                    return 85   # OpenAI low detail token count
             else:
                 # High detail calculation based on image dimensions
                 width = media_content.metadata.get('final_size', [512, 512])[0]

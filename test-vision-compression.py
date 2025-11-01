@@ -49,6 +49,8 @@ def main():
                        help="Font name to use (default: OCRB). Falls back to system default if not available.")
     parser.add_argument("--font-path", type=str, default=None,
                        help="Path to specific font file (e.g., 'abstractcore/assets/OCRA.ttf')")
+    parser.add_argument("--detail", type=str, choices=['low', 'high', 'auto'], default='auto', 
+                       help="Image detail level for vision models. 'low'=256 tokens/image, 'high'=variable tokens, 'auto'=smart selection (default: auto)")
     parser.add_argument("--margin-x", type=int, default=15,
                        help="Horizontal margin in pixels (default: 10)")
     parser.add_argument("--margin-y", type=int, default=15,
@@ -302,15 +304,24 @@ def main():
     media_count = len(result.get('media', []))
     original_tokens = TokenUtils.estimate_tokens(text, "gpt-4o")
     
-    # Estimate visual tokens based on actual model capabilities
-    # Check if we have model-specific token limits
+    # Estimate visual tokens based on actual model capabilities and detail level
     try:
         from abstractcore.media.capabilities import get_model_capabilities
         model_caps = get_model_capabilities("lmstudio", args.model)
-        tokens_per_image = model_caps.get('max_image_tokens', 1500)  # Fallback to 1500
         max_context = model_caps.get('max_tokens', 32768)
         
-        logger.debug(f"Model {args.model}: {tokens_per_image} tokens/image, {max_context} max context")
+        # Adjust tokens per image based on detail level and model type
+        if args.detail == 'low':
+            # Use low detail token counts
+            if 'qwen' in args.model.lower():
+                tokens_per_image = 256  # Qwen low detail
+            else:
+                tokens_per_image = 85   # OpenAI low detail
+        else:
+            # Use high detail or auto (assume high for worst case)
+            tokens_per_image = model_caps.get('max_image_tokens', 1500)
+        
+        logger.debug(f"Model {args.model}: {tokens_per_image} tokens/image (detail={args.detail}), {max_context} max context")
     except:
         # Fallback for unknown models
         tokens_per_image = 1500
@@ -519,9 +530,21 @@ def main():
                         repetition_penalty=args.repetition_penalty,
                         frequency_penalty=args.frequency_penalty)
         
+        # Set detail level for all media items if specified
+        media_items = result['media']
+        if args.detail != 'auto':
+            logger.info(f"Setting detail level to '{args.detail}' for all {len(media_items)} images")
+            for media_item in media_items:
+                if hasattr(media_item, 'metadata'):
+                    media_item.metadata['detail_level'] = args.detail
+                else:
+                    media_item.metadata = {'detail_level': args.detail}
+        else:
+            logger.info(f"Using automatic detail level selection for {len(media_items)} images")
+        
         response = llm.generate(
             "Summarize this document:",
-            media=result['media'],  # Use the 'media' field from result
+            media=media_items,  # Use the modified media items
             temperature=args.temperature,
             repetition_penalty=args.repetition_penalty,  # Reduce repetitions
             frequency_penalty=args.frequency_penalty,   # Additional repetition control
