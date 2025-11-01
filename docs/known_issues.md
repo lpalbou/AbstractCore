@@ -61,6 +61,44 @@ Known active bug in Ollama as of 2024/2025. No official fix timeline provided.
 - [Ollama GitHub Issue #10767](https://github.com/ollama/ollama/issues/10767)
 - Community reports on repetition behavior across Qwen2.5-VL model sizes
 
+### LMStudio GLM-4.1V Vision Support Missing
+
+**Issue**: LMStudio does not properly support GLM-4.1V-9B-Thinking vision capabilities, despite the model being a multimodal vision model.
+
+**Affected Models**:
+- `glm-4.1v-9b-thinking`
+- Potentially other GLM-4.1V variants
+
+**Root Cause**:
+LMStudio appears to lack proper vision configuration for GLM-4.1V models. The error logs show:
+- "Ignoring image file part in user message due to missing image config"
+- "Model does not support images. Please use a model that does."
+
+**Evidence**:
+- GLM-4.1V-9B-Thinking is confirmed as a vision model supporting up to 4K resolution and arbitrary aspect ratios
+- [HuggingFace model page](https://huggingface.co/zai-org/GLM-4.1V-9B-Thinking) confirms multimodal capabilities
+- LMStudio correctly receives OpenAI-compatible vision API format but rejects images
+- Error occurs at LMStudio's internal message processing level, not at the API level
+
+**Current Status**:
+Active limitation in LMStudio. The GLM-4.1V model family may not be properly configured for vision tasks in LMStudio's model definitions.
+
+**Workaround**:
+- Use alternative vision models in LMStudio: `qwen/qwen3-vl-30b`, `qwen/qwen3-vl-4b`
+- Use GLM-4.1V models through other frameworks (HuggingFace, MLX, or cloud APIs)
+- Consider using Qwen3-VL models which have confirmed LMStudio vision support
+
+**Technical Details**:
+```
+Error: Model does not support images. Please use a model that does.
+Debug: [createJinjaMessagesInput] Ignoring image file part in user message due to missing image config
+```
+
+**References**:
+- [GLM-4.1V-9B-Thinking HuggingFace](https://huggingface.co/zai-org/GLM-4.1V-9B-Thinking)
+- [GLM-V GitHub Repository](https://github.com/zai-org/GLM-V)
+- AbstractCore model capabilities updated to reflect vision support
+
 ## Model Configuration Issues
 
 ### Granite Vision Model Confusion

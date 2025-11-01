@@ -49,8 +49,10 @@ def main():
                        help="Font name to use (default: OCRB). Falls back to system default if not available.")
     parser.add_argument("--font-path", type=str, default=None,
                        help="Path to specific font file (e.g., 'abstractcore/assets/OCRA.ttf')")
-    parser.add_argument("--detail", type=str, choices=['low', 'high', 'auto'], default='auto', 
-                       help="Image detail level for vision models. 'low'=256 tokens/image, 'high'=variable tokens, 'auto'=smart selection (default: auto)")
+    parser.add_argument("--detail", type=str, choices=['low', 'high', 'auto', 'custom'], default='auto', 
+                       help="Image detail level for vision models. 'low'=256 tokens/image, 'high'=variable tokens, 'auto'=smart selection, 'custom'=use --target-tokens (default: auto)")
+    parser.add_argument("--target-tokens", type=int, default=None,
+                       help="Target tokens per image when using --detail custom. Range: 4-16384 tokens (e.g., 64=256x256, 256=448x448, 1024=1024x1024)")
     parser.add_argument("--margin-x", type=int, default=15,
                        help="Horizontal margin in pixels (default: 10)")
     parser.add_argument("--margin-y", type=int, default=15,
@@ -300,9 +302,14 @@ def main():
         
         compression_time = time.time() - compression_start
     
-    # Calculate proper token-based compression ratio
+    # Calculate proper token-based compression ratio using ACTUAL tokens when available
     media_count = len(result.get('media', []))
     original_tokens = TokenUtils.estimate_tokens(text, "gpt-4o")
+    
+    # Store for later use - will be updated with actual tokens if available
+    actual_input_tokens = None
+    actual_output_tokens = None
+    visual_tokens = None
     
     # Estimate visual tokens based on actual model capabilities and detail level
     try:
@@ -317,6 +324,10 @@ def main():
                 tokens_per_image = 256  # Qwen low detail
             else:
                 tokens_per_image = 85   # OpenAI low detail
+        elif args.detail == 'custom' and args.target_tokens:
+            # Use custom token count
+            tokens_per_image = args.target_tokens
+            logger.info(f"Using custom token target: {tokens_per_image} tokens per image")
         else:
             # Use high detail or auto (assume high for worst case)
             tokens_per_image = model_caps.get('max_image_tokens', 1500)
@@ -327,6 +338,7 @@ def main():
         tokens_per_image = 1500
         max_context = 32768
         
+    # Initial estimate - will be updated with actual tokens after generation
     visual_tokens = media_count * tokens_per_image
     
     # Check if we're exceeding model limits
@@ -334,7 +346,7 @@ def main():
         logger.warning(f"Visual tokens ({visual_tokens:,}) may exceed model context limit ({max_context:,})")
         logger.warning(f"Consider reducing images or using a model with larger context window")
     
-    # Calculate actual token-based compression ratio
+    # Calculate initial token-based compression ratio (will be updated with actual tokens)
     compression_ratio = original_tokens / visual_tokens if visual_tokens > 0 else 0
     
     logger.info("Compression completed",
@@ -533,12 +545,21 @@ def main():
         # Set detail level for all media items if specified
         media_items = result['media']
         if args.detail != 'auto':
-            logger.info(f"Setting detail level to '{args.detail}' for all {len(media_items)} images")
-            for media_item in media_items:
-                if hasattr(media_item, 'metadata'):
-                    media_item.metadata['detail_level'] = args.detail
-                else:
-                    media_item.metadata = {'detail_level': args.detail}
+            if args.detail == 'custom' and args.target_tokens:
+                logger.info(f"Setting custom detail level to {args.target_tokens} tokens per image for all {len(media_items)} images")
+                for media_item in media_items:
+                    if hasattr(media_item, 'metadata'):
+                        media_item.metadata['detail_level'] = 'custom'
+                        media_item.metadata['target_tokens'] = args.target_tokens
+                    else:
+                        media_item.metadata = {'detail_level': 'custom', 'target_tokens': args.target_tokens}
+            else:
+                logger.info(f"Setting detail level to '{args.detail}' for all {len(media_items)} images")
+                for media_item in media_items:
+                    if hasattr(media_item, 'metadata'):
+                        media_item.metadata['detail_level'] = args.detail
+                    else:
+                        media_item.metadata = {'detail_level': args.detail}
         else:
             logger.info(f"Using automatic detail level selection for {len(media_items)} images")
         
@@ -555,6 +576,25 @@ def main():
     
     response_length = len(response.content) if hasattr(response, 'content') else len(str(response))
     response_tokens = TokenUtils.estimate_tokens(response.content if hasattr(response, 'content') else str(response), "gpt-4o")
+    
+    # Extract ACTUAL token usage from the LLM response and update calculations
+    if hasattr(response, 'usage') and response.usage:
+        usage = response.usage
+        actual_input_tokens = usage.get('input_tokens') or usage.get('prompt_tokens', 0)
+        actual_output_tokens = usage.get('output_tokens') or usage.get('completion_tokens', 0) 
+        actual_total_tokens = usage.get('total_tokens', 0)
+        
+        # Update response tokens with actual value
+        if actual_output_tokens:
+            response_tokens = actual_output_tokens
+        
+        # Calculate EXACT visual tokens if we have actual input tokens
+        if actual_input_tokens and actual_input_tokens > original_tokens:
+            visual_tokens = actual_input_tokens - original_tokens
+            compression_ratio = original_tokens / visual_tokens if visual_tokens > 0 else 0
+            logger.info(f"EXACT token usage from API: input={actual_input_tokens:,}, output={actual_output_tokens:,}, total={actual_total_tokens:,}")
+            logger.info(f"EXACT visual tokens calculated: {visual_tokens:,} (input tokens - text tokens)")
+            logger.info(f"UPDATED compression ratio: {compression_ratio:.1f}x (using exact tokens)")
     
     logger.info("Generation completed",
                 generation_time_ms=generation_time * 1000,
@@ -594,7 +634,10 @@ def main():
         print(f"Mode:        Vision compression")
         print(f"Original:    {original_size:,} characters")
         print(f"Text tokens: {original_tokens:,} (estimated)")
-        print(f"Visual tokens: {visual_tokens:,} (estimated)")
+        if actual_input_tokens and actual_input_tokens > original_tokens:
+            print(f"Visual tokens: {visual_tokens:,} (exact from API)")
+        else:
+            print(f"Visual tokens: {visual_tokens:,} (estimated)")
         print(f"Ratio:       {compression_ratio:.1f}x")
         print(f"Media items: {media_count}")
     

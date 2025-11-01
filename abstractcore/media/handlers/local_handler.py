@@ -412,12 +412,24 @@ class LocalMediaHandler(BaseProviderMediaHandler):
             if media_content.media_type == MediaType.IMAGE and self.can_handle_media(media_content):
                 if media_content.content_format == ContentFormat.BASE64:
                     data_url = f"data:{media_content.mime_type};base64,{media_content.content}"
-                    content.append({
+                    image_obj = {
                         "type": "image_url",
                         "image_url": {
                             "url": data_url
                         }
-                    })
+                    }
+                    
+                    # Add detail level if specified in metadata (for Qwen models)
+                    detail_level = media_content.metadata.get('detail_level', 'auto')
+                    self.logger.debug(f"MediaContent metadata: {media_content.metadata}")
+                    self.logger.debug(f"Found detail_level: {detail_level}")
+                    if detail_level in ['low', 'high', 'auto']:
+                        image_obj["image_url"]["detail"] = detail_level
+                        self.logger.info(f"Setting detail level to '{detail_level}' for LMStudio image")
+                    else:
+                        self.logger.warning(f"Invalid detail level '{detail_level}', skipping")
+                    
+                    content.append(image_obj)
                 else:
                     self.logger.warning(f"LMStudio requires base64 image format, got {media_content.content_format}")
 

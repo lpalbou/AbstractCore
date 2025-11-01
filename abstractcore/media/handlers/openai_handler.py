@@ -121,13 +121,19 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
         # Add detail level if supported by model
         if self.model_capabilities.get('vision_support'):
             detail_level = media_content.metadata.get('detail_level', 'auto')
+            self.logger.debug(f"OpenAI Handler - MediaContent metadata: {media_content.metadata}")
+            self.logger.debug(f"OpenAI Handler - Found detail_level: {detail_level}")
             
             # Auto-adjust detail level for Qwen models to prevent context overflow
             if self._is_qwen_model() and detail_level == 'auto':
                 detail_level = self._get_optimal_detail_for_qwen(media_content)
+                self.logger.debug(f"OpenAI Handler - Qwen auto-adjusted detail_level: {detail_level}")
             
             if detail_level in self.supported_image_detail:
                 image_obj["image_url"]["detail"] = detail_level
+                self.logger.info(f"OpenAI Handler - Setting detail level to '{detail_level}' for image")
+            else:
+                self.logger.warning(f"OpenAI Handler - Invalid detail level '{detail_level}', supported: {self.supported_image_detail}")
 
         return image_obj
 
