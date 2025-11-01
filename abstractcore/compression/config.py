@@ -14,15 +14,18 @@ class RenderingConfig:
     
     # Font configuration (EXTREME density optimization)
     font_path: str = "Verdana.ttf"
+    font_name: Optional[str] = None  # Font name (e.g., 'Helvetica', 'Arial')
     font_size: int = 7  # Minimum readable font size
     line_height: int = 8  # Ultra-tight line spacing
     
-    # Layout configuration (EXTREME compression)
+    # Layout configuration (VLM-optimized defaults)
     dpi: int = 72  # 72 for higher compression, 96 for better quality
+    target_width: Optional[int] = None  # Target image width in pixels (default: 1024 for VLMs)
+    target_height: Optional[int] = None  # Target image height in pixels (default: 768 for VLMs)
     margin_x: int = 3   # Absolute minimal margins
     margin_y: int = 3   # Absolute minimal margins
-    page_width: int = 595  # A4 width in points
-    page_height: int = 842  # A4 height in points
+    page_width: int = 595  # A4 width in points (used when target dimensions not set)
+    page_height: int = 842  # A4 height in points (used when target dimensions not set)
     
     # Optimization settings
     auto_crop_width: bool = True
@@ -40,9 +43,12 @@ class RenderingConfig:
         """Create a copy of this configuration."""
         return RenderingConfig(
             font_path=self.font_path,
+            font_name=self.font_name,
             font_size=self.font_size,
             line_height=self.line_height,
             dpi=self.dpi,
+            target_width=self.target_width,
+            target_height=self.target_height,
             margin_x=self.margin_x,
             margin_y=self.margin_y,
             page_width=self.page_width,
@@ -59,9 +65,12 @@ class RenderingConfig:
         """Convert to dictionary."""
         return {
             'font_path': self.font_path,
+            'font_name': self.font_name,
             'font_size': self.font_size,
             'line_height': self.line_height,
             'dpi': self.dpi,
+            'target_width': self.target_width,
+            'target_height': self.target_height,
             'margin_x': self.margin_x,
             'margin_y': self.margin_y,
             'page_width': self.page_width,

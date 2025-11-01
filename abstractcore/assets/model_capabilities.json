@@ -1644,6 +1644,58 @@
       ],
       "max_tokens": 32768
     },
+    "gemini-2.5-flash": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "224x224",
+        "448x448",
+        "1024x1024"
+      ],
+      "max_image_resolution": "1024x1024",
+      "image_tokenization_method": "gemini_vision_encoder",
+      "thinking_support": true,
+      "thinking_budget": true,
+      "notes": "Optimized for speed and efficiency, suitable for high-volume, latency-sensitive tasks. Supports configurable thinking budgets",
+      "source": "Google AI official docs 2025",
+      "canonical_name": "gemini-2.5-flash",
+      "aliases": [
+        "gemini-2.5-flash-001"
+      ],
+      "max_tokens": 1000000
+    },
+    "gemini-2.5-pro": {
+      "max_output_tokens": 65536,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "224x224",
+        "448x448",
+        "1024x1024"
+      ],
+      "max_image_resolution": "1024x1024",
+      "image_tokenization_method": "gemini_vision_encoder",
+      "thinking_support": true,
+      "thinking_budget": true,
+      "notes": "Most advanced Gemini model for complex reasoning, coding, and mathematical problem-solving. Features Deep Think mode for enhanced reasoning",
+      "source": "Google AI official docs 2025",
+      "canonical_name": "gemini-2.5-pro",
+      "aliases": [
+        "gemini-2.5-pro-001"
+      ],
+      "max_tokens": 1048576
+    },
     "granite3.3:2b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",

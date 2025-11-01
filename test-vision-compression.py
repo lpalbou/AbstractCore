@@ -37,10 +37,18 @@ def main():
     # Glyph rendering controls
     parser.add_argument("--columns", type=int, default=4,
                        help="Number of columns for text layout (default: 4)")
+    parser.add_argument("--width", type=int, default=None,
+                       help="Target image width in pixels (default: 1024 for VLM optimization)")
+    parser.add_argument("--height", type=int, default=None,
+                       help="Target image height in pixels (default: 768 for VLM optimization)")
     parser.add_argument("--dpi", type=int, default=72,
-                       help="Image resolution in DPI (default: 72, higher=better quality but larger files)")
+                       help="Image resolution in DPI (default: 72, used when width/height not specified)")
     parser.add_argument("--font-size", type=int, default=8,
                        help="Font size for text rendering (default: 8)")
+    parser.add_argument("--font", type=str, default=None,
+                       help="Font name to use (e.g., 'Helvetica', 'Arial'). Falls back to default if not available.")
+    parser.add_argument("--font-path", type=str, default=None,
+                       help="Path to specific font file (e.g., 'abstractcore/assets/OCRA.ttf')")
     parser.add_argument("--margin-x", type=int, default=10,
                        help="Horizontal margin in pixels (default: 10)")
     parser.add_argument("--margin-y", type=int, default=10,
@@ -106,7 +114,11 @@ def main():
     custom_rendering_config = RenderingConfig(
         columns=args.columns,
         dpi=args.dpi,
+        target_width=args.width,
+        target_height=args.height,
         font_size=args.font_size,
+        font_name=args.font,
+        font_path=args.font_path,
         line_height=args.font_size + 1,  # Slightly larger than font size
         # Use custom margins
         margin_x=args.margin_x,
@@ -115,6 +127,14 @@ def main():
         auto_crop_last_page=True,
         render_format=args.render_format
     )
+    
+    # Log font configuration
+    if args.font_path:
+        logger.info(f"Using custom font path: {args.font_path}")
+    elif args.font:
+        logger.info(f"Using custom font name: {args.font}")
+    else:
+        logger.info("Using default system font")
     
     # Create custom glyph configuration
     custom_glyph_config = GlyphConfig.default()

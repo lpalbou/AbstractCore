@@ -18,8 +18,7 @@ from ..utils.token_utils import TokenUtils
 from .config import GlyphConfig, RenderingConfig
 from .quality import QualityValidator, CompressionStats
 from .cache import CompressionCache
-from .renderer import ReportLabRenderer
-from .rich_text_renderer import RichTextRenderer
+# ReportLab renderers removed - now using PIL renderer exclusively
 from .pil_text_renderer import PILTextRenderer
 from .text_formatter import TextFormatter, FormattingConfig
 from .exceptions import CompressionError, CompressionQualityError
@@ -47,8 +46,6 @@ class GlyphProcessor(BaseMediaHandler):
         self.logger = get_logger(self.__class__.__name__)
         
         # Initialize components
-        self.renderer = None  # Lazy initialization
-        self.rich_text_renderer = None  # Lazy initialization
         self.pil_text_renderer = None  # Lazy initialization
         self.quality_validator = QualityValidator()
         self.cache = CompressionCache(
@@ -64,18 +61,6 @@ class GlyphProcessor(BaseMediaHandler):
         self.provider_profiles = self.config.provider_profiles
         
         self.logger.debug("GlyphProcessor initialized")
-    
-    def _get_renderer(self) -> 'ReportLabRenderer':
-        """Get or create renderer instance (lazy initialization)."""
-        if self.renderer is None:
-            self.renderer = ReportLabRenderer(self.config)
-        return self.renderer
-    
-    def _get_rich_text_renderer(self) -> 'RichTextRenderer':
-        """Get or create rich text renderer instance (lazy initialization)."""
-        if self.rich_text_renderer is None:
-            self.rich_text_renderer = RichTextRenderer(self.config)
-        return self.rich_text_renderer
     
     def _get_pil_text_renderer(self) -> 'PILTextRenderer':
         """Get or create PIL text renderer instance (lazy initialization)."""
@@ -158,11 +143,13 @@ class GlyphProcessor(BaseMediaHandler):
                 self.logger.debug(f"Using cached compression for key {cache_key[:16]}...")
                 return self._create_media_content_from_images(cached_result, processed_content, provider, render_config)
             
-            # Render text to images using appropriate renderer
+            # Always use PIL text renderer (ReportLab removed)
+            self.logger.debug("Using PIL text renderer")
+            pil_renderer = self._get_pil_text_renderer()
+            
             if render_config.render_format and text_segments:
-                # Use PIL text renderer for formatted content with proper font support
-                self.logger.debug("Using PIL text renderer for formatted content")
-                pil_renderer = self._get_pil_text_renderer()
+                # Use formatted text segments
+                self.logger.debug("Rendering with text formatting")
                 images = pil_renderer.segments_to_images(
                     segments=text_segments,
                     config=render_config,
@@ -170,11 +157,12 @@ class GlyphProcessor(BaseMediaHandler):
                     unique_id=cache_key[:16]
                 )
             else:
-                # Use standard renderer for plain text
-                self.logger.debug("Using standard renderer for plain text")
-                renderer = self._get_renderer()
-                images = renderer.text_to_images(
-                    text=processed_content,
+                # Convert plain text to segments for PIL renderer
+                self.logger.debug("Rendering plain text (no formatting)")
+                from .text_formatter import TextSegment
+                plain_segments = [TextSegment(text=processed_content)]
+                images = pil_renderer.segments_to_images(
+                    segments=plain_segments,
                     config=render_config,
                     output_dir=self.config.temp_dir,
                     unique_id=cache_key[:16]
