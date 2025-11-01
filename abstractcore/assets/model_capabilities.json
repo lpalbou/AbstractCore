@@ -1658,7 +1658,7 @@
         "448x448",
         "1024x1024"
       ],
-      "max_image_resolution": "1024x1024",
+      "max_image_resolution": "768x768",
       "image_tokenization_method": "gemini_vision_encoder",
       "thinking_support": true,
       "thinking_budget": true,
@@ -1684,7 +1684,7 @@
         "448x448",
         "1024x1024"
       ],
-      "max_image_resolution": "1024x1024",
+      "max_image_resolution":  "768x768",
       "image_tokenization_method": "gemini_vision_encoder",
       "thinking_support": true,
       "thinking_budget": true,

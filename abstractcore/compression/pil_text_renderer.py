@@ -59,6 +59,165 @@ class PILTextRenderer:
                 f"PIL/Pillow not available: {e}. Install with: pip install pillow"
             )
     
+    def _estimate_text_capacity(self, config: RenderingConfig, fonts: dict) -> int:
+        """
+        Estimate how many characters can fit in the target image dimensions.
+        
+        Args:
+            config: Rendering configuration
+            fonts: Loaded fonts dictionary
+            
+        Returns:
+            Estimated character capacity
+        """
+        img_width, img_height = self._get_effective_dimensions(config)
+        
+        # Calculate available space
+        available_width = img_width - 2 * config.margin_x
+        available_height = img_height - 2 * config.margin_y
+        
+        # Account for multi-column layout
+        columns = max(1, config.columns)
+        column_gap = config.column_gap if columns > 1 else 0
+        column_width = (available_width - (columns - 1) * column_gap) / columns
+        
+        # Estimate character dimensions using regular font
+        regular_font = fonts.get('regular')
+        if regular_font:
+            # Use average character width (test with common characters)
+            test_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 "
+            try:
+                # Create temporary image to measure text
+                from PIL import Image, ImageDraw
+                temp_img = Image.new('RGB', (1, 1))
+                temp_draw = ImageDraw.Draw(temp_img)
+                
+                try:
+                    bbox = temp_draw.textbbox((0, 0), test_chars, font=regular_font)
+                    total_width = bbox[2] - bbox[0]
+                except AttributeError:
+                    # Fallback for older PIL versions
+                    total_width = temp_draw.textsize(test_chars, font=regular_font)[0]
+                
+                avg_char_width = total_width / len(test_chars)
+            except:
+                # Fallback estimate
+                avg_char_width = config.font_size * 0.6
+        else:
+            # Fallback estimate
+            avg_char_width = config.font_size * 0.6
+        
+        # Estimate line capacity
+        line_height = int(config.line_height * 1.3)  # Match spacing calculation
+        chars_per_line = int(column_width / avg_char_width)
+        lines_per_column = int(available_height / line_height)
+        total_lines = lines_per_column * columns
+        
+        # More realistic capacity estimation
+        # The previous 30% efficiency was way too conservative
+        if min(img_width, img_height) < 600:
+            # For small images like 448x448, use more realistic estimate
+            efficiency_factor = 0.75  # Much higher to use available space
+        else:
+            efficiency_factor = 0.85
+        
+        estimated_capacity = int(chars_per_line * total_lines * efficiency_factor)
+        
+        self.logger.debug(f"Text capacity estimation: {estimated_capacity} chars "
+                         f"({chars_per_line} chars/line × {total_lines} lines × {efficiency_factor} efficiency)")
+        
+        return max(estimated_capacity, 500)  # Minimum 500 chars per page for small images
+
+    def _split_segments_into_pages(self, segments: List[TextSegment], capacity_per_page: int) -> List[List[TextSegment]]:
+        """
+        Split text segments into pages based on estimated capacity.
+        Handles large segments by splitting them if needed.
+        
+        Args:
+            segments: List of TextSegment objects
+            capacity_per_page: Estimated character capacity per page
+            
+        Returns:
+            List of pages, each containing a list of segments
+        """
+        pages = []
+        current_page = []
+        current_page_chars = 0
+        
+        for segment in segments:
+            segment_length = len(segment.text)
+            
+            # If this single segment is larger than page capacity, split it
+            if segment_length > capacity_per_page:
+                # Finish current page if it has content
+                if current_page:
+                    pages.append(current_page)
+                    current_page = []
+                    current_page_chars = 0
+                
+                # Split the large segment into chunks
+                text = segment.text
+                while text:
+                    # Take a chunk that fits the capacity
+                    chunk_size = min(capacity_per_page, len(text))
+                    
+                    # Try to break at word boundaries if possible
+                    if chunk_size < len(text):
+                        # Look for a space within the last 20% of the chunk
+                        search_start = max(0, int(chunk_size * 0.8))
+                        space_pos = text.rfind(' ', search_start, chunk_size)
+                        if space_pos > search_start:
+                            chunk_size = space_pos + 1  # Include the space
+                    
+                    chunk_text = text[:chunk_size]
+                    text = text[chunk_size:]
+                    
+                    # Create new segment with same formatting
+                    chunk_segment = TextSegment(
+                        text=chunk_text,
+                        is_bold=segment.is_bold,
+                        is_italic=segment.is_italic,
+                        is_header=segment.is_header,
+                        header_level=segment.header_level
+                    )
+                    
+                    # Add as a new page
+                    pages.append([chunk_segment])
+                
+            else:
+                # Normal segment handling
+                # Check if adding this segment would exceed capacity
+                if current_page_chars + segment_length > capacity_per_page and current_page:
+                    # Start new page
+                    pages.append(current_page)
+                    current_page = [segment]
+                    current_page_chars = segment_length
+                else:
+                    # Add to current page
+                    current_page.append(segment)
+                    current_page_chars += segment_length
+        
+        # Add the last page if it has content
+        if current_page:
+            pages.append(current_page)
+        
+        # Log pagination statistics
+        if pages:
+            page_sizes = [sum(len(s.text) for s in page) for page in pages]
+            avg_size = sum(page_sizes) / len(pages)
+            min_size = min(page_sizes)
+            max_size = max(page_sizes)
+            
+            self.logger.debug(f"Split {len(segments)} segments into {len(pages)} pages")
+            self.logger.debug(f"Page sizes - avg: {avg_size:.0f}, min: {min_size}, max: {max_size} chars")
+            
+            # Warn about very small pages (less than 20% of capacity)
+            small_pages = [i+1 for i, size in enumerate(page_sizes) if size < capacity_per_page * 0.2]
+            if small_pages:
+                self.logger.warning(f"Small pages detected (< 20% capacity): {small_pages[:5]}{'...' if len(small_pages) > 5 else ''}")
+        
+        return pages
+
     def segments_to_images(
         self,
         segments: List[TextSegment],
@@ -93,32 +252,58 @@ class PILTextRenderer:
             # Load fonts
             fonts = self._load_fonts(config)
             
-            # Calculate text layout (returns columns)
-            columns_data = self._layout_text(segments, fonts, config)
+            # Estimate text capacity and split into pages if needed
+            capacity_per_page = self._estimate_text_capacity(config, fonts)
+            total_chars = sum(len(segment.text) for segment in segments)
             
-            # Get target dimensions
-            img_width, img_height = self._get_effective_dimensions(config)
+            self.logger.debug(f"Text pagination: {total_chars} total chars, "
+                             f"{capacity_per_page} chars/page capacity")
             
-            # Create image with exact dimensions
-            # Use white background for better compression
-            image = Image.new('RGB', (img_width, img_height), 'white')
+            if total_chars > capacity_per_page:
+                # Split into multiple pages
+                pages = self._split_segments_into_pages(segments, capacity_per_page)
+                self.logger.info(f"Text split into {len(pages)} pages for rendering")
+            else:
+                # Single page
+                pages = [segments]
+                self.logger.debug("Text fits in single page")
             
-            # Set DPI information on the image
-            dpi_tuple = (config.dpi, config.dpi)
-            image.info['dpi'] = dpi_tuple
+            # Render each page
+            image_paths = []
             
-            draw = ImageDraw.Draw(image)
+            for page_idx, page_segments in enumerate(pages):
+                self.logger.debug(f"Rendering page {page_idx + 1}/{len(pages)} "
+                               f"({len(page_segments)} segments, "
+                               f"{sum(len(s.text) for s in page_segments)} chars)")
+                
+                # Calculate text layout for this page
+                columns_data = self._layout_text(page_segments, fonts, config)
+                
+                # Get target dimensions
+                img_width, img_height = self._get_effective_dimensions(config)
+                
+                # Create image with exact dimensions
+                # Use white background for better compression
+                image = Image.new('RGB', (img_width, img_height), 'white')
+                
+                # Set DPI information on the image
+                dpi_tuple = (config.dpi, config.dpi)
+                image.info['dpi'] = dpi_tuple
+                
+                draw = ImageDraw.Draw(image)
+                
+                # Render text for this page
+                self._render_text_to_image(draw, columns_data, fonts, config)
+                
+                # Save image with page number
+                image_path = output_dir / f"{unique_id}_page_{page_idx + 1}.png"
+                image.save(image_path, 'PNG', optimize=True, dpi=dpi_tuple)
+                image_paths.append(image_path)
+                
+                self.logger.debug(f"Generated page {page_idx + 1}: {image_path} ({img_width}x{img_height})")
             
-            # Render text
-            self._render_text_to_image(draw, columns_data, fonts, config)
-            
-            # Save image with DPI information
-            image_path = output_dir / f"{unique_id}_page_1.png"
-            image.save(image_path, 'PNG', optimize=True, dpi=dpi_tuple)
-            
-            self.logger.debug(f"Generated PIL image: {image_path} ({img_width}x{img_height})")
-            
-            return [image_path]
+            self.logger.info(f"Rendered {len(pages)} pages total")
+            return image_paths
             
         except Exception as e:
             self.logger.error(f"PIL text rendering failed: {e}")
@@ -463,9 +648,13 @@ class PILTextRenderer:
         try:
             bbox = temp_draw.textbbox((0, 0), text, font=font)
             base_width = bbox[2] - bbox[0]
-        except:
+        except AttributeError:
             # Fallback for older PIL versions
-            base_width = temp_draw.textsize(text, font=font)[0]
+            try:
+                base_width = temp_draw.textsize(text, font=font)[0]
+            except AttributeError:
+                # Ultimate fallback - estimate based on font size
+                base_width = len(text) * config.font_size * 0.6
         
         # Add extra width for OCRB bold overlay effect
         if (self.using_ocrb_fonts and segment and 
