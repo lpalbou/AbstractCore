@@ -105,29 +105,54 @@ class TextFormatter:
         Returns:
             List of TextSegment objects with formatting information
         """
+        import time
+        start_time = time.time()
+        
         if not text:
             return [TextSegment(text="")]
             
+        # Better header detection - check for any line starting with #
+        has_headers = any(line.strip().startswith('#') for line in text.split('\n')[:100])  # Check first 100 lines for performance
+        has_bold_markers = '**' in text
+        has_italic_markers = '*' in text and '**' not in text
+        
         self.logger.debug("Starting text formatting", 
                          original_length=len(text),
                          has_newlines='\n' in text,
-                         has_bold_markers='**' in text,
-                         has_italic_markers='*' in text and '**' not in text,
-                         has_headers=text.strip().startswith('#'))
+                         has_bold_markers=has_bold_markers,
+                         has_italic_markers=has_italic_markers,
+                         has_headers=has_headers)
+        
+        # Performance optimization: For large files with no formatting, skip complex processing
+        if len(text) > 50000 and not has_headers and not has_bold_markers and not has_italic_markers:
+            self.logger.debug("Large file with no formatting detected - using fast path")
+            # Just process newlines and return as single segment
+            processed_text = self._process_newlines(text)
+            return [TextSegment(text=processed_text)]
         
         # Reset header counters for each new text
         self._reset_counters()
         
         # Step 1: Parse into segments with formatting (before newline processing)
+        step1_start = time.time()
+        self.logger.debug("Step 1: Starting _parse_formatted_text")
         segments = self._parse_formatted_text(text)
+        step1_time = time.time() - step1_start
+        self.logger.debug(f"Step 1: _parse_formatted_text completed in {step1_time:.3f}s, segments={len(segments)}")
         
         # Step 2: Apply newline processing to the final segments
+        step2_start = time.time()
+        self.logger.debug("Step 2: Starting _apply_newline_processing_to_segments")
         segments = self._apply_newline_processing_to_segments(segments)
+        step2_time = time.time() - step2_start
+        self.logger.debug(f"Step 2: _apply_newline_processing_to_segments completed in {step2_time:.3f}s")
         
+        total_time = time.time() - start_time
         self.logger.debug("Text formatting completed",
                          original_length=len(text),
                          segments_count=len(segments),
-                         total_formatted_length=sum(len(s.text) for s in segments))
+                         total_formatted_length=sum(len(s.text) for s in segments),
+                         total_time_seconds=f"{total_time:.3f}")
         
         return segments
     
@@ -158,12 +183,22 @@ class TextFormatter:
         Returns:
             List of TextSegment objects
         """
+        import time
+        start_time = time.time()
+        
         segments = []
         
         # Split text by lines first to handle headers
         lines = text.split('\n')
+        total_lines = len(lines)
+        
+        self.logger.debug(f"_parse_formatted_text: Processing {total_lines} lines")
         
         for line_idx, line in enumerate(lines):
+            # Progress logging every 1000 lines for large files
+            if line_idx > 0 and line_idx % 1000 == 0:
+                elapsed = time.time() - start_time
+                self.logger.debug(f"_parse_formatted_text: Progress {line_idx}/{total_lines} lines ({line_idx/total_lines*100:.1f}%) in {elapsed:.2f}s")
             if line.strip():
                 # Process headers first
                 if self.config.header_formatting and line.strip().startswith('#'):
@@ -266,6 +301,10 @@ class TextFormatter:
         
         if not text:
             return segments
+        
+        # Performance optimization: Skip inline parsing if no formatting markers
+        if '**' not in text and '*' not in text:
+            return [TextSegment(text=text)]
             
         # Process text sequentially to handle formatting correctly
         i = 0
@@ -301,7 +340,7 @@ class TextFormatter:
                         i = end_pos + 1
                         continue
             
-            # Regular character - collect until next formatting marker
+            # Regular character - collect until next formatting marker or advance by 1
             start_pos = i
             while i < len(text) and text[i] != '*':
                 i += 1
@@ -310,6 +349,11 @@ class TextFormatter:
                 plain_text = text[start_pos:i]
                 if plain_text:  # Only add non-empty segments
                     segments.append(TextSegment(text=plain_text))
+            else:
+                # If we didn't advance, we hit a * that didn't match formatting
+                # Add the single character and advance to prevent infinite loop
+                segments.append(TextSegment(text=text[i]))
+                i += 1
         
         return segments
     
