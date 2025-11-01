@@ -245,6 +245,7 @@ if response.metadata and response.metadata.get('compression_used'):
 
 ## Key Features
 
+- **Offline-First Design**: Built primarily for open source LLMs with full offline capability. Download once, run forever without internet access
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
 - **Glyph Visual-Text Compression**: Revolutionary compression system that renders text as optimized images for 3-4x token compression and faster inference
 - **Centralized Configuration**: Global defaults and app-specific preferences at `~/.abstractcore/config/abstractcore.json`
@@ -689,6 +690,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 ## Why AbstractCore?
 
+- **Offline-First Philosophy**: Designed for open source LLMs with complete offline operation. No internet required after initial model download
 - **Unified Interface**: One API for all LLM providers
 - **Multimodal Support**: Upload images, PDFs, and documents across all providers
 - **Vision Models**: Seamless integration with GPT-4o, Claude Vision, qwen3-vl, and more

@@ -98,6 +98,16 @@ def main():
             console_json=False,
             file_json=True
         )
+    
+    # Silence PIL debug messages that clutter the output
+    # These are low-level PNG chunk parsing messages that aren't useful for users
+    pil_logger = logging.getLogger('PIL')
+    pil_logger.setLevel(logging.INFO)  # Only show INFO and above from PIL
+    
+    # Also silence specific PIL plugins that are particularly verbose
+    logging.getLogger('PIL.PngImagePlugin').setLevel(logging.INFO)
+    logging.getLogger('PIL.Image').setLevel(logging.INFO)
+    logging.getLogger('PIL.ImageFile').setLevel(logging.INFO)
 
     # Get structured logger
     logger = get_logger(__name__)
@@ -676,39 +686,7 @@ def main():
                 latest_log = max(log_files, key=lambda p: p.stat().st_mtime)
                 print(f"Detailed logs:       {latest_log}")
         
-        # Final comprehensive file summary
-        print(f"\n=== ALL GENERATED FILES SUMMARY ===")
-        all_found_files = []
-        
-        # Scan all possible locations
-        scan_locations = [
-            Path("glyph_output"),
-            Path("temp_glyph"), 
-            Path("output"),
-            Path.cwd(),
-            Path(tempfile.gettempdir()) / "abstractcore",
-            Path(custom_glyph_config.cache_directory)  # Add the actual cache directory
-        ]
-        
-        for location in scan_locations:
-            if location.exists():
-                # Look for recent files (last 10 minutes)
-                cutoff_time = time_module.time() - 600
-                if location.is_dir():
-                    for pattern in ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp", "*glyph*", "*compress*"]:
-                        for f in location.glob(pattern):
-                            if f.stat().st_mtime > cutoff_time:
-                                all_found_files.append((f, location))
-        
-        if all_found_files:
-            print("Recent files (last 10 minutes):")
-            for file_path, parent_dir in sorted(all_found_files, key=lambda x: x[0].stat().st_mtime, reverse=True):
-                rel_path = file_path.relative_to(parent_dir) if file_path.is_relative_to(parent_dir) else file_path
-                print(f"  📁 {parent_dir.name}/{rel_path} ({file_path.stat().st_size} bytes)")
-        else:
-            print("No recent generated files found in common locations")
-        print("=" * 40)
-    
+   
     print(f"\n=== RESPONSE ===")
     print(response.content if hasattr(response, 'content') else str(response))
     

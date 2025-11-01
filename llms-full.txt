@@ -1,6 +1,6 @@
 # AbstractCore - Complete Documentation
 
-This file contains the complete documentation for AbstractCore, a unified Python library providing a consistent interface to all major LLM providers.
+This file contains the complete documentation for AbstractCore, a unified Python library designed primarily for open source LLMs with complete offline capability. Provides a consistent interface to all major LLM providers.
 
 ## Table of Contents
 
@@ -22,10 +22,11 @@ This file contains the complete documentation for AbstractCore, a unified Python
 
 ## Project Overview
 
-AbstractCore is a comprehensive Python library providing a unified interface to all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with production-grade features including universal media handling, vision capabilities, tool calling, streaming, centralized configuration, and session management.
+AbstractCore is a comprehensive Python library designed primarily for open source LLMs with complete offline capability. Provides a unified interface to all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with production-grade features including universal media handling, vision capabilities, tool calling, streaming, centralized configuration, and session management.
 
 ### Key Features
 
+- **Offline-First Design**: Built primarily for open source LLMs with complete offline operation. Download once, run forever without internet access
 - **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with identical syntax
 - **Centralized Configuration**: Global defaults, app-specific preferences, API key management with `~/.abstractcore/config/abstractcore.json`
 - **Media Handling System**: Universal file attachment with `@filename` CLI syntax and `media=[]` API parameter - supports images, PDFs, Office docs, CSV/TSV

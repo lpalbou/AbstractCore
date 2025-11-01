@@ -8,6 +8,16 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
 
+# Import config manager to respect offline-first settings
+from ..config.manager import get_config_manager
+
+# Get config instance and set offline environment variables if needed
+_config = get_config_manager()
+if _config.is_offline_first():
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["HF_DATASETS_OFFLINE"] = "1"
+    os.environ["HF_HUB_OFFLINE"] = "1"
+
 try:
     from pydantic import BaseModel
     PYDANTIC_AVAILABLE = True
@@ -22,7 +32,7 @@ from ..events import EventType
 
 # Try to import transformers (standard HuggingFace support)
 try:
-    from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer, pipeline
+    from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer, AutoProcessor, AutoModelForImageTextToText, pipeline
     import torch
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
@@ -44,6 +54,22 @@ except ImportError:
 
 # We no longer download models - cache-only approach
 # huggingface_hub not required for basic operation
+
+
+def _get_local_model_path(model_name: str) -> Optional[str]:
+    """Get local cache path for a HuggingFace model if it exists."""
+    # Use centralized configuration for cache directory
+    config = _config
+    hf_cache_dir = Path(config.config.cache.huggingface_cache_dir).expanduser()
+    
+    model_cache_name = f"models--{model_name.replace('/', '--')}"
+    model_cache_path = hf_cache_dir / "hub" / model_cache_name / "snapshots"
+    
+    if model_cache_path.exists():
+        snapshot_dirs = [d for d in model_cache_path.iterdir() if d.is_dir()]
+        if snapshot_dirs:
+            return str(snapshot_dirs[0])  # Return first snapshot
+    return None
 
 
 class HuggingFaceProvider(BaseProvider):
@@ -100,6 +126,7 @@ class HuggingFaceProvider(BaseProvider):
 
         # Model instances
         self.tokenizer = None
+        self.processor = None  # For vision models
         self.model_instance = None
         self.pipeline = None
         self.llm = None  # For GGUF models
@@ -136,6 +163,9 @@ class HuggingFaceProvider(BaseProvider):
 
             if hasattr(self, 'tokenizer') and self.tokenizer is not None:
                 self.tokenizer = None
+                
+            if hasattr(self, 'processor') and self.processor is not None:
+                self.processor = None
 
             if hasattr(self, 'model') and hasattr(self, 'model') and self.model is not None:
                 # For transformers models, clear the model
@@ -177,6 +207,26 @@ class HuggingFaceProvider(BaseProvider):
             return True
 
         return False
+
+    def _is_vision_model(self, model: str) -> bool:
+        """Detect if the model is a vision model that requires special handling"""
+        model_lower = model.lower()
+        
+        # Known vision models that require AutoModelForImageTextToText
+        vision_models = [
+            'glyph',           # zai-org/Glyph
+            'glm-4.1v',        # GLM-4.1V variants
+            'glm4v',           # GLM4V architecture
+            'qwen-vl',         # Qwen-VL models
+            'qwen2-vl',        # Qwen2-VL models
+            'qwen2.5-vl',      # Qwen2.5-VL models
+            'llava',           # LLaVA models
+            'instructblip',    # InstructBLIP models
+            'blip2',           # BLIP2 models
+            'flamingo',        # Flamingo models
+        ]
+        
+        return any(vision_keyword in model_lower for vision_keyword in vision_models)
 
     def _setup_device_transformers(self):
         """Setup device for transformers models"""
@@ -225,19 +275,31 @@ class HuggingFaceProvider(BaseProvider):
     def _load_transformers_model(self):
         """Load standard HuggingFace transformers model"""
         try:
+            # Check if this is a vision model that requires special handling
+            if self._is_vision_model(self.model):
+                return self._load_vision_model()
+            
             # Load tokenizer with transformers-specific parameters
             tokenizer_kwargs = {k: v for k, v in self.transformers_kwargs.items() 
                               if k in ['trust_remote_code']}
+            # Respect offline-first configuration
+            if _config.should_force_local_files_only():
+                tokenizer_kwargs['local_files_only'] = True
             self.tokenizer = AutoTokenizer.from_pretrained(self.model, **tokenizer_kwargs)
             
             # Load model with all transformers-specific parameters
             # Try AutoModelForCausalLM first, fall back to AutoModel for custom models
+            model_kwargs = self.transformers_kwargs.copy()
+            # Respect offline-first configuration
+            if _config.should_force_local_files_only():
+                model_kwargs['local_files_only'] = True
+            
             try:
-                self.model_instance = AutoModelForCausalLM.from_pretrained(self.model, **self.transformers_kwargs)
+                self.model_instance = AutoModelForCausalLM.from_pretrained(self.model, **model_kwargs)
             except ValueError as e:
-                if "Unrecognized configuration class" in str(e):
+                if "Unrecognized configuration class" in str(e) or "glm4v" in str(e).lower():
                     # Fall back to AutoModel for custom models like DeepSeek-OCR
-                    self.model_instance = AutoModel.from_pretrained(self.model, **self.transformers_kwargs)
+                    self.model_instance = AutoModel.from_pretrained(self.model, **model_kwargs)
                 else:
                     raise
 
@@ -282,6 +344,96 @@ class HuggingFaceProvider(BaseProvider):
                 raise ModelNotFoundError(error_message)
             else:
                 raise RuntimeError(f"Failed to load HuggingFace model {self.model}: {str(e)}")
+
+    def _load_vision_model(self):
+        """Load vision model using AutoModelForImageTextToText and AutoProcessor"""
+        try:
+            # Suppress progress bars during model loading unless in debug mode
+            import os
+            from transformers.utils import logging as transformers_logging
+            
+            if not self.debug:
+                # Disable transformers progress bars
+                os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
+                transformers_logging.set_verbosity_error()
+                # Disable tqdm progress bars
+                os.environ['DISABLE_TQDM'] = '1'
+            
+            # Load processor for vision models (handles both text and images)
+            processor_kwargs = {k: v for k, v in self.transformers_kwargs.items() 
+                              if k in ['trust_remote_code']}
+            # Enable trust_remote_code for custom architectures like GLM4V
+            processor_kwargs['trust_remote_code'] = True
+            # Set use_fast=True to avoid the slow processor warning
+            processor_kwargs['use_fast'] = True
+            # Respect offline-first configuration
+            if _config.should_force_local_files_only():
+                processor_kwargs['local_files_only'] = True
+            
+            # Use local cache path if offline mode is enabled and model is cached
+            model_path = self.model
+            if _config.should_force_local_files_only():
+                local_path = _get_local_model_path(self.model)
+                if local_path:
+                    model_path = local_path
+                    processor_kwargs.pop('local_files_only', None)  # Remove since we're using local path
+                    self.logger.debug(f"Loading processor from local cache: {local_path}")
+            
+            self.processor = AutoProcessor.from_pretrained(model_path, **processor_kwargs)
+            
+            # Load vision model using AutoModelForImageTextToText with trust_remote_code
+            vision_kwargs = self.transformers_kwargs.copy()
+            vision_kwargs['trust_remote_code'] = True
+            # Respect offline-first configuration
+            if _config.should_force_local_files_only():
+                vision_kwargs['local_files_only'] = True
+            
+            # Use local cache path if offline mode is enabled and model is cached
+            model_path = self.model
+            if _config.should_force_local_files_only():
+                local_path = _get_local_model_path(self.model)
+                if local_path:
+                    model_path = local_path
+                    vision_kwargs.pop('local_files_only', None)  # Remove since we're using local path
+                    self.logger.debug(f"Loading model from local cache: {local_path}")
+            
+            self.model_instance = AutoModelForImageTextToText.from_pretrained(model_path, **vision_kwargs)
+            
+            # Restore logging levels if they were suppressed
+            if not self.debug:
+                # Restore transformers logging
+                transformers_logging.set_verbosity_warning()
+                # Remove tqdm suppression
+                if 'DISABLE_TQDM' in os.environ:
+                    del os.environ['DISABLE_TQDM']
+            
+            # Move to device (only if not using device_map)
+            if self.device in ["cuda", "mps"] and 'device_map' not in self.transformers_kwargs:
+                self.model_instance = self.model_instance.to(self.device)
+            
+            # For vision models, we don't use the standard pipeline
+            self.pipeline = None
+            
+            self.logger.info(f"Successfully loaded vision model {self.model} using AutoModelForImageTextToText")
+            
+        except Exception as e:
+            error_str = str(e).lower()
+            
+            # Check for transformers version issues
+            if 'glm4v' in error_str and 'does not recognize this architecture' in error_str:
+                import transformers
+                current_version = transformers.__version__
+                raise RuntimeError(
+                    f"GLM4V architecture requires transformers>=4.57.1, but you have {current_version}. "
+                    f"Please upgrade: pip install transformers>=4.57.1"
+                )
+            elif ('not found' in error_str or 'does not exist' in error_str or
+                'not a valid model identifier' in error_str):
+                available_models = self.list_available_models()
+                error_message = format_model_error("HuggingFace", self.model, available_models)
+                raise ModelNotFoundError(error_message)
+            else:
+                raise RuntimeError(f"Failed to load HuggingFace vision model {self.model}: {str(e)}")
 
     def _find_gguf_in_cache(self, model_name: str) -> Optional[str]:
         """Find GGUF model in HuggingFace cache (cache-only, no downloading)"""
@@ -551,8 +703,11 @@ class HuggingFaceProvider(BaseProvider):
         """Generate using transformers backend with optional Outlines native structured output"""
 
         if not self.pipeline:
+            # Handle vision models that use processor instead of pipeline
+            if self.processor and hasattr(self.model_instance, 'generate'):
+                return self._generate_vision_model(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
             # Handle custom models like DeepSeek-OCR that don't support standard pipelines
-            if hasattr(self.model_instance, 'infer'):
+            elif hasattr(self.model_instance, 'infer'):
                 return self._generate_custom_model(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
             else:
                 return GenerateResponse(
@@ -790,6 +945,127 @@ class HuggingFaceProvider(BaseProvider):
                 content=f"Error in custom model generation: {str(e)}",
                 model=self.model,
                 finish_reason="error"
+            )
+
+    def _generate_vision_model(self,
+                              prompt: str,
+                              messages: Optional[List[Dict[str, str]]] = None,
+                              system_prompt: Optional[str] = None,
+                              tools: Optional[List[Dict[str, Any]]] = None,
+                              media: Optional[List['MediaContent']] = None,
+                              stream: bool = False,
+                              response_model: Optional[Type[BaseModel]] = None,
+                              **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        """Generate using vision model (Glyph, GLM-4.1V, etc.)"""
+        
+        import time
+        start_time = time.time()
+        
+        try:
+            # Build messages for vision model
+            chat_messages = []
+            
+            if system_prompt:
+                chat_messages.append({"role": "system", "content": system_prompt})
+            
+            if messages:
+                chat_messages.extend(messages)
+            
+            # Build user message with media content
+            user_content = []
+            
+            # Add text content
+            if prompt:
+                user_content.append({"type": "text", "text": prompt})
+            
+            # Add media content (images)
+            if media:
+                for media_item in media:
+                    if hasattr(media_item, 'file_path') and media_item.file_path:
+                        # Use file path directly
+                        user_content.append({
+                            "type": "image",
+                            "url": str(media_item.file_path)
+                        })
+                    elif hasattr(media_item, 'content') and media_item.content:
+                        # Handle base64 content
+                        if media_item.content_format == 'BASE64':
+                            # Create data URL for base64 content
+                            mime_type = getattr(media_item, 'mime_type', 'image/png')
+                            data_url = f"data:{mime_type};base64,{media_item.content}"
+                            user_content.append({
+                                "type": "image",
+                                "url": data_url
+                            })
+            
+            # Add user message
+            chat_messages.append({
+                "role": "user",
+                "content": user_content
+            })
+            
+            # Process messages using the processor
+            inputs = self.processor.apply_chat_template(
+                chat_messages,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
+                return_tensors="pt"
+            ).to(self.model_instance.device)
+            
+            # Generation parameters
+            generation_kwargs = {
+                "max_new_tokens": kwargs.get("max_tokens", self.max_output_tokens or 512),
+                "temperature": kwargs.get("temperature", self.temperature),
+                "do_sample": True,
+                "pad_token_id": self.processor.tokenizer.eos_token_id,
+            }
+            
+            # Add seed if provided
+            seed_value = kwargs.get("seed", self.seed)
+            if seed_value is not None:
+                import torch
+                torch.manual_seed(seed_value)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed_value)
+            
+            # Generate response
+            generated_ids = self.model_instance.generate(**inputs, **generation_kwargs)
+            
+            # Decode response
+            output_text = self.processor.decode(
+                generated_ids[0][inputs["input_ids"].shape[1]:], 
+                skip_special_tokens=True
+            )
+            
+            # Calculate generation time
+            gen_time = (time.time() - start_time) * 1000
+            
+            # Calculate token usage
+            input_tokens = inputs["input_ids"].shape[1]
+            output_tokens = len(generated_ids[0]) - input_tokens
+            
+            return GenerateResponse(
+                content=output_text.strip(),
+                model=self.model,
+                finish_reason="stop",
+                usage={
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                    "prompt_tokens": input_tokens,
+                    "completion_tokens": output_tokens
+                },
+                gen_time=gen_time
+            )
+            
+        except Exception as e:
+            gen_time = (time.time() - start_time) * 1000 if 'start_time' in locals() else 0.0
+            return GenerateResponse(
+                content=f"Error in vision model generation: {str(e)}",
+                model=self.model,
+                finish_reason="error",
+                gen_time=gen_time
             )
 
     def _patch_deepseek_for_mps(self):

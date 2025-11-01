@@ -617,22 +617,14 @@ class PILTextRenderer:
     def _get_font_for_segment(self, segment: TextSegment, fonts: dict):
         """Get the appropriate font for a text segment."""
         if segment.is_bold and segment.is_italic:
-            font = fonts['bold_italic']
-            self.logger.debug(f"Using bold_italic font for: '{segment.text[:20]}...'")
-            return font
+            return fonts['bold_italic']
         elif segment.is_header or segment.is_bold:
             # Headers should ONLY be bold, never italic
-            font = fonts['bold']
-            self.logger.debug(f"Using bold font for: '{segment.text[:20]}...'")
-            return font
+            return fonts['bold']
         elif segment.is_italic:
-            font = fonts['italic']
-            self.logger.debug(f"Using italic font for: '{segment.text[:20]}...'")
-            return font
+            return fonts['italic']
         else:
-            font = fonts['regular']
-            self.logger.debug(f"Using regular font for: '{segment.text[:20]}...'")
-            return font
+            return fonts['regular']
     
     def _get_text_width(self, text: str, font, segment=None) -> int:
         """Get the width of text in pixels, accounting for stroke effects."""
@@ -751,8 +743,6 @@ class PILTextRenderer:
             (segment.is_bold or segment.is_header) and not segment.is_italic):
             
             # Use improved bold effect for OCRB text
-            self.logger.debug(f"Drawing OCRB bold text with enhanced effect: '{text[:20]}...'")
-            
             # Method: Enhanced multiple overlays for more visible bold effect
             try:
                 # Draw the base text
