@@ -14,7 +14,7 @@ class RenderingConfig:
     
     # Font configuration (EXTREME density optimization)
     font_path: str = "Verdana.ttf"
-    font_name: Optional[str] = None  # Font name (e.g., 'Helvetica', 'Arial')
+    font_name: Optional[str] = "OCRB"  # Default to OCRB for optimal readability
     font_size: int = 7  # Minimum readable font size
     line_height: int = 8  # Ultra-tight line spacing
     
