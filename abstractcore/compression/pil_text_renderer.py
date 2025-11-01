@@ -264,36 +264,38 @@ class PILTextRenderer:
                     current_line_width = space_width
                 continue
             
-            # Split segment text into words (for non-space segments)
-            words = segment.text.split()
+            # Split segment text into words but preserve spaces more carefully
+            # Use a simple approach: split on spaces but keep track of them
+            import re
             
-            for word_idx, word in enumerate(words):
-                # Calculate word width (without extra space for last word in segment)
-                is_last_word_in_segment = (word_idx == len(words) - 1)
-                word_text = word if is_last_word_in_segment else word + " "
-                word_width = self._get_text_width(word_text, font)
+            # Split while preserving spaces - use regex to capture spaces
+            parts = re.split(r'(\s+)', segment.text)
+            
+            for part in parts:
+                if not part:  # Skip empty parts
+                    continue
+                    
+                part_width = self._get_text_width(part, font)
                 
-                # Check if word fits on current line
-                fits_on_line = (current_line_width + word_width <= column_width)
-                
-                if fits_on_line or not current_line:  # Always add first word to empty line
+                # Check if part fits on current line
+                if current_line_width + part_width <= column_width or not current_line:
                     # Add to current line
                     current_line.append({
-                        'text': word_text,
+                        'text': part,
                         'font': font,
                         'segment': segment
                     })
-                    current_line_width += word_width
+                    current_line_width += part_width
                 else:
                     # Start new line
                     if current_line:
                         lines.append(current_line)
                     current_line = [{
-                        'text': word_text,
+                        'text': part,
                         'font': font,
                         'segment': segment
                     }]
-                    current_line_width = word_width
+                    current_line_width = part_width
         
         # Add final line
         if current_line:
