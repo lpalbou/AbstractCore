@@ -1819,6 +1819,37 @@
       ],
       "max_tokens": 131072
     },
+    "glm-4.1v-9b-thinking": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "image_resolutions": [
+        "up to 4096x4096"
+      ],
+      "max_image_resolution": "4096x4096",
+      "context_length": 65536,
+      "total_parameters": "10B",
+      "base_model": "GLM-4-9B-0414",
+      "image_tokenization_method": "glm_vision_encoder",
+      "thinking_support": true,
+      "reasoning_paradigm": "chain_of_thought",
+      "adaptive_resolution": true,
+      "aspect_ratio_support": "arbitrary",
+      "notes": "GLM-4.1V-9B-Thinking with Chain-of-Thought reasoning, 64K context, arbitrary aspect ratios up to 4K resolution. First reasoning-focused VLM in the series, matches 72B models on 18 benchmark tasks.",
+      "source": "HuggingFace zai-org/GLM-4.1V-9B-Thinking and GitHub zai-org/GLM-V",
+      "canonical_name": "glm-4.1v-9b-thinking",
+      "aliases": [
+        "zai-org/GLM-4.1V-9B-Thinking",
+        "glm-4.1v-thinking",
+        "glm4.1v-9b-thinking"
+      ],
+      "max_tokens": 65536,
+      "arxiv": "2507.01006"
+    },
     "mistral-small-3.1-24b-instruct": {
       "max_output_tokens": 8192,
       "tool_support": "native",
