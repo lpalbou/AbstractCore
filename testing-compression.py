@@ -73,12 +73,12 @@ def check_vlm_calculator_compatibility(provider: str, model: str) -> dict:
     
     return compatibility_info
 
-def get_actual_cache_directory() -> Path:
-    """Get the actual cache directory used by AbstractCore."""
+def get_glyph_cache_directory() -> Path:
+    """Get the Glyph cache directory from centralized config."""
     try:
-        # Use AbstractCore's own cache system to determine the directory
-        cache = CompressionCache()
-        return cache.cache_dir
+        from abstractcore.config import get_config_manager
+        config_manager = get_config_manager()
+        return Path(config_manager.config.cache.glyph_cache_dir).expanduser()
     except Exception:
         # Fallback to default location
         return Path.home() / ".abstractcore" / "glyph_cache"
@@ -176,11 +176,11 @@ def main():
 
     print(f"📄 Testing with PDF: {pdf_path}")
     
-    # Get actual cache directory from AbstractCore
-    actual_cache_dir = get_actual_cache_directory()
-    print(f"📁 AbstractCore cache directory: {actual_cache_dir}")
+    # Get Glyph cache directory from centralized config
+    glyph_cache_dir = get_glyph_cache_directory()
+    print(f"📁 Glyph cache directory: {glyph_cache_dir}")
     if args.debug:
-        logger.debug(f"Using cache directory: {actual_cache_dir}")
+        logger.debug(f"Using Glyph cache directory: {glyph_cache_dir}")
     
     try:
         # Test with available vision model
@@ -216,78 +216,87 @@ def main():
         print(f"   Response length: {len(response.content)} characters")
         print(f"   Response preview: {response.content[:200]}...")
 
-        # Get the ACTUAL image paths from AbstractCore's Glyph cache
-        print(f"\n🔍 Finding Generated Images in Glyph Cache:")
-        print("   📋 DirectPDFProcessor stores images in AbstractCore's Glyph cache...")
+        # Get Glyph information from the response metadata (if available)
+        print(f"\n🔍 Glyph Compression Analysis:")
         
-        # Search for images in the actual cache directory
-        import time as time_module
-        recent_threshold = time_module.time() - 600  # 10 minutes ago (more generous)
+        glyph_session_id = None
+        glyph_cache_dir = None
+        image_paths = []
         
-        all_found_images = []
+        # Check if response has media metadata with Glyph information
+        media_metadata_found = False
         
-        if args.debug:
-            logger.debug(f"Searching for Glyph images in cache: {actual_cache_dir}")
-        
-        if actual_cache_dir.exists():
-            try:
-                # Look for session subdirectories (pdf_*_*pages format)
-                for cache_entry in actual_cache_dir.iterdir():
-                    if (cache_entry.is_dir() and 
-                        cache_entry.name.startswith("pdf_") and
-                        cache_entry.stat().st_mtime > recent_threshold):
-                        
-                        # Look for image_*.png files in this session directory
-                        glyph_images = list(cache_entry.glob("image_*.png"))
-                        if glyph_images:
-                            all_found_images.extend(glyph_images)
-                            
-                            if args.debug:
-                                logger.debug(f"Found {len(glyph_images)} images in session {cache_entry.name}")
-                                for img in glyph_images:
-                                    logger.debug(f"   📄 {img}")
-                
-                # Also look for any image files directly in cache directory (fallback)
-                direct_images = list(actual_cache_dir.glob("image_*.png"))
-                if direct_images:
-                    recent_direct = [img for img in direct_images if img.stat().st_mtime > recent_threshold]
-                    all_found_images.extend(recent_direct)
+        # Check in response.metadata['media_metadata']
+        if hasattr(response, 'metadata') and response.metadata and 'media_metadata' in response.metadata:
+            media_metadata_list = response.metadata['media_metadata']
+            for media_meta in media_metadata_list:
+                if media_meta.get('processing_method') == 'direct_pdf_conversion':
+                    glyph_session_id = media_meta.get('glyph_session_id')
+                    glyph_cache_dir = media_meta.get('glyph_cache_dir')
+                    total_images = media_meta.get('total_images', 0)
                     
-                    if args.debug and recent_direct:
-                        logger.debug(f"Found {len(recent_direct)} direct images in cache root")
+                    if glyph_cache_dir and Path(glyph_cache_dir).exists():
+                        # Get actual image paths from the session directory
+                        session_dir = Path(glyph_cache_dir)
+                        image_paths = list(session_dir.glob("image_*.png"))
                         
-            except Exception as e:
-                if args.debug:
-                    logger.debug(f"Could not search cache directory {actual_cache_dir}: {e}")
+                        print(f"   ✅ Glyph compression detected!")
+                        print(f"   📂 Session: {glyph_session_id}")
+                        print(f"   📁 Cache directory: {glyph_cache_dir}")
+                        print(f"   🎯 Images generated: {len(image_paths)}")
+                        
+                        if args.debug:
+                            logger.debug(f"Glyph session directory: {session_dir}")
+                            for img in image_paths:
+                                logger.debug(f"   📄 {img.name}")
+                        
+                        media_metadata_found = True
+                        break
         
-        if all_found_images:
-            # Sort by modification time (newest first)
-            all_found_images.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            
-            print(f"   ✅ Found {len(all_found_images)} Glyph images in cache!")
-            print(f"   📁 Image locations:")
-            
-            # Group by directory
-            by_directory = {}
-            for img in all_found_images:
-                dir_path = img.parent
-                if dir_path not in by_directory:
-                    by_directory[dir_path] = []
-                by_directory[dir_path].append(img)
-            
-            for directory, images in by_directory.items():
-                print(f"       📂 {directory}: {len(images)} images")
-                if args.debug:
-                    for img in images:
-                        print(f"          📄 {img.name}")
-            
-            # Use these actual found images
-            image_paths = all_found_images
-            print(f"   🎯 EXACT COUNT: {len(image_paths)} images generated")
-        else:
-            print(f"   ❌ No Glyph images found in cache")
-            print(f"   💡 Check debug logs above for DirectPDFProcessor cache storage details")
-            image_paths = []
+        # Also check legacy location for backward compatibility
+        if not media_metadata_found and hasattr(response, 'media_metadata') and response.media_metadata:
+            for media_meta in response.media_metadata:
+                if media_meta.get('processing_method') == 'direct_pdf_conversion':
+                    glyph_session_id = media_meta.get('glyph_session_id')
+                    glyph_cache_dir = media_meta.get('glyph_cache_dir')
+                    total_images = media_meta.get('total_images', 0)
+                    
+                    if glyph_cache_dir and Path(glyph_cache_dir).exists():
+                        # Get actual image paths from the session directory
+                        session_dir = Path(glyph_cache_dir)
+                        image_paths = list(session_dir.glob("image_*.png"))
+                        
+                        print(f"   ✅ Glyph compression detected!")
+                        print(f"   📂 Session: {glyph_session_id}")
+                        print(f"   📁 Cache directory: {glyph_cache_dir}")
+                        print(f"   🎯 Images generated: {len(image_paths)}")
+                        
+                        if args.debug:
+                            logger.debug(f"Glyph session directory: {session_dir}")
+                            for img in image_paths:
+                                logger.debug(f"   📄 {img.name}")
+                        
+                        media_metadata_found = True
+                        break
+        
+        if not image_paths:
+            print(f"   ❌ No Glyph compression metadata found in response")
+            print(f"   💡 Glyph compression may not have been applied")
+            if args.debug:
+                logger.debug("Response metadata structure:")
+                if hasattr(response, 'metadata') and response.metadata:
+                    logger.debug(f"   Response.metadata keys: {list(response.metadata.keys())}")
+                    if 'media_metadata' in response.metadata:
+                        logger.debug(f"   Media metadata: {response.metadata['media_metadata']}")
+                    else:
+                        logger.debug("   No 'media_metadata' key in response.metadata")
+                else:
+                    logger.debug("   No response.metadata found")
+                
+                if hasattr(response, 'media_metadata'):
+                    logger.debug(f"   Legacy media_metadata: {response.media_metadata}")
+                else:
+                    logger.debug("   No media_metadata attribute found")
 
         # Enhanced compression analysis using VLM token calculator
         print(f"\n🔍 Enhanced Compression Analysis:")
@@ -474,53 +483,28 @@ def main():
                 input_tokens = response.usage.get('prompt_tokens', 0)
                 print(f"   ℹ️  API reported input tokens: {input_tokens} (user question only, excludes image processing)")
             
-                # Show where images are cached
-                print(f"\n📁 Rendered images are cached in: {actual_cache_dir}")
-                if actual_cache_dir.exists():
-                    print(f"   Cache directory exists - you can explore the rendered images there!")
-                    # List cache contents
-                    try:
-                        cache_entries = list(actual_cache_dir.iterdir())
-                        print(f"   Cache entries: {len(cache_entries)} items")
-                        for entry in cache_entries[:3]:  # Show first 3
-                            print(f"     - {entry.name}")
-                        if len(cache_entries) > 3:
-                            print(f"     ... and {len(cache_entries) - 3} more")
-                        if args.debug:
-                            logger.debug(f"Full cache contents: {[str(p) for p in cache_entries]}")
-                    except Exception as e:
-                        print(f"   Could not list cache contents: {e}")
-                        if args.debug:
-                            logger.error(f"Cache listing error: {e}", exc_info=True)
-                else:
-                    print(f"   Cache directory will be created on first compression")
+        # Show where images are cached
+        cache_base_dir = get_glyph_cache_directory()
+        print(f"\n📁 Glyph images are cached in: {cache_base_dir}")
+        if glyph_session_id:
+            session_dir = cache_base_dir / glyph_session_id
+            print(f"   Session directory: {session_dir}")
+            if session_dir.exists():
+                print(f"   ✅ Session cache exists - you can explore the rendered images there!")
+            else:
+                print(f"   ⚠️  Session directory not found")
         else:
-            print("   📝 Standard processing was used (NO compression)")
-            print("   🔍 Possible reasons:")
-            print("     - GLYPH_AVAILABLE flag is False")
-            print("     - Missing dependencies (reportlab, pdf2image)")
-            print("     - Content doesn't meet compression criteria")
-            print("     - Provider doesn't support vision models")
-            
-            # Check specific reasons
-            try:
-                from abstractcore.media.auto_handler import GLYPH_AVAILABLE
-                if not GLYPH_AVAILABLE:
-                    print("     ❌ GLYPH_AVAILABLE flag is False - this is the likely cause")
-            except:
-                pass
-        
-        # Show token usage if available
-        if hasattr(response, 'usage') and response.usage:
-            print(f"\n📈 Token usage:")
-            print(f"   Input tokens: {response.usage.get('prompt_tokens', 'N/A')}")
-            print(f"   Output tokens: {response.usage.get('completion_tokens', 'N/A')}")
-            print(f"   Total tokens: {response.usage.get('total_tokens', 'N/A')}")
-        
+            if cache_base_dir.exists():
+                print(f"   Cache directory exists - check for session subdirectories")
+            else:
+                print(f"   Cache directory will be created on first compression")
+
         print("\n✅ PDF Glyph test completed successfully!")
-        
+
     except Exception as e:
         print(f"❌ Test failed: {e}")
+        if args.debug:
+            logger.error(f"Test failed with unhandled exception: {e}", exc_info=True)
         print("\n💡 Troubleshooting:")
         print("   - Make sure Ollama is running: ollama serve")
         print("   - Install a vision model: ollama pull llama3.2-vision:11b")

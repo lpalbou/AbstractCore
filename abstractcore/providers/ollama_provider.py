@@ -114,6 +114,7 @@ class OllamaProvider(BaseProvider):
                           media: Optional[List['MediaContent']] = None,
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
+                          media_metadata: Optional[List[Dict[str, Any]]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with Ollama"""
 
@@ -224,9 +225,9 @@ class OllamaProvider(BaseProvider):
         if stream:
             return self._stream_generate(endpoint, payload, tools, kwargs.get('tool_call_tags'))
         else:
-            return self._single_generate(endpoint, payload, tools)
+            return self._single_generate(endpoint, payload, tools, media_metadata)
 
-    def _single_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> GenerateResponse:
+    def _single_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, media_metadata: Optional[List[Dict[str, Any]]] = None) -> GenerateResponse:
         """Generate single response"""
         try:
             # Track generation time
@@ -262,6 +263,12 @@ class OllamaProvider(BaseProvider):
                 },
                 gen_time=gen_time
             )
+            
+            # Attach media metadata if available
+            if media_metadata:
+                if not generate_response.metadata:
+                    generate_response.metadata = {}
+                generate_response.metadata['media_metadata'] = media_metadata
 
             # Execute tools if enabled and tools are present
             if self.execute_tools and tools and self.tool_handler.supports_prompted and content:

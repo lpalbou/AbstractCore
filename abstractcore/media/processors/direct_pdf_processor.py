@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any, List, Union, Tuple
 import tempfile
 import os
 import hashlib
+import math
 
 try:
     import pdf2image
@@ -75,13 +76,22 @@ class DirectPDFProcessor(BaseMediaHandler):
                 import base64
                 encoded_data = base64.b64encode(image_data).decode('utf-8')
                 
+                # Get session info for metadata
+                from ...config import get_config_manager
+                config_manager = get_config_manager()
+                glyph_cache_base = Path(config_manager.config.cache.glyph_cache_dir).expanduser()
+                pdf_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
+                session_id = f"pdf_{pdf_hash}_{len(image_paths)}pages"
+                
                 metadata = {
                     'processing_method': 'direct_pdf_conversion',
                     'pages_per_image': self.pages_per_image,
                     'total_images': len(image_paths),
                     'dpi': self.dpi,
                     'layout': self.layout,
-                    'image_paths': [str(p) for p in image_paths]
+                    'image_paths': [str(p) for p in image_paths],
+                    'glyph_session_id': session_id,
+                    'glyph_cache_dir': str(glyph_cache_base / session_id)
                 }
                 
                 return self._create_media_content(
@@ -110,14 +120,18 @@ class DirectPDFProcessor(BaseMediaHandler):
         
         self.logger.info(f"Converted PDF to {len(individual_images)} individual page images")
         
-        # Use AbstractCore's Glyph cache directory instead of temp directory
-        from ...compression.cache import CompressionCache
-        cache = CompressionCache()
+        # Use AbstractCore's centralized Glyph cache directory
+        from ...config import get_config_manager
+        config_manager = get_config_manager()
+        glyph_cache_base = Path(config_manager.config.cache.glyph_cache_dir).expanduser()
+        
+        # Calculate number of combined images that will be created
+        num_combined_images = math.ceil(len(individual_images) / self.pages_per_image)
         
         # Create a unique subdirectory for this PDF processing session
         pdf_hash = hashlib.md5(str(pdf_path).encode()).hexdigest()[:8]
-        session_id = f"pdf_{pdf_hash}_{len(individual_images)}pages"
-        glyph_dir = cache.cache_dir / session_id
+        session_id = f"pdf_{pdf_hash}_{num_combined_images}pages"
+        glyph_dir = glyph_cache_base / session_id
         glyph_dir.mkdir(parents=True, exist_ok=True)
         
         # CRITICAL DEBUG LOG: Show exactly where images are being generated

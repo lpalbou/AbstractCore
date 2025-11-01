@@ -175,7 +175,7 @@ class ReportLabRenderer:
                         
                         line = lines[current_line]
                         c.drawString(col_x, y_position, line)
-                        y_position -= line_height
+                    y_position -= line_height
                         current_line += 1
             
             # Save PDF
