@@ -172,10 +172,10 @@ class ReportLabRenderer:
                     for i in range(lines_per_column):
                         if current_line >= len(lines):
                             break
-                        
+
                         line = lines[current_line]
                         c.drawString(col_x, y_position, line)
-                    y_position -= line_height
+                        y_position -= line_height
                         current_line += 1
             
             # Save PDF

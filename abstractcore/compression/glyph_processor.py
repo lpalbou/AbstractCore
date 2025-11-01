@@ -18,7 +18,7 @@ from ..utils.token_utils import TokenUtils
 from .config import GlyphConfig, RenderingConfig
 from .quality import QualityValidator, CompressionStats
 from .cache import CompressionCache
-# from .renderer import ReportLabRenderer  # Not needed for DirectPDFProcessor
+from .renderer import ReportLabRenderer
 from .exceptions import CompressionError, CompressionQualityError
 
 
