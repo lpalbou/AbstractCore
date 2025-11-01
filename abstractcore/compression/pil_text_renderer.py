@@ -78,11 +78,11 @@ class PILTextRenderer:
             # Load fonts
             fonts = self._load_fonts(config)
             
-            # Calculate text layout
-            lines = self._layout_text(segments, fonts, config)
+            # Calculate text layout (returns columns)
+            columns_data = self._layout_text(segments, fonts, config)
             
             # Calculate image dimensions
-            img_width, img_height = self._calculate_image_size(lines, fonts, config)
+            img_width, img_height = self._calculate_image_size(columns_data, fonts, config)
             
             # Create image
             # Use white background for better compression
@@ -90,7 +90,7 @@ class PILTextRenderer:
             draw = ImageDraw.Draw(image)
             
             # Render text
-            self._render_text_to_image(draw, lines, fonts, config)
+            self._render_text_to_image(draw, columns_data, fonts, config)
             
             # Save image
             image_path = output_dir / f"{unique_id}_page_1.png"
@@ -112,11 +112,11 @@ class PILTextRenderer:
         font_size = config.font_size
         
         try:
-            # Try to load system fonts
-            # macOS system fonts
+            # Try to load system fonts with good readability
+            # Use the same fonts as ReportLab for consistency
             font_paths = {
                 'regular': [
-                    '/System/Library/Fonts/Helvetica.ttc',
+                    '/System/Library/Fonts/Helvetica.ttc',  # Same as ReportLab
                     '/System/Library/Fonts/Arial.ttf',
                     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Linux
                     'arial.ttf'  # Windows
@@ -204,12 +204,13 @@ class PILTextRenderer:
         self.logger.warning(f"Using default font for {style}")
         return ImageFont.load_default()
     
-    def _layout_text(self, segments: List[TextSegment], fonts: dict, config: RenderingConfig) -> List[List[dict]]:
+    def _layout_text(self, segments: List[TextSegment], fonts: dict, config: RenderingConfig) -> List[List[List[dict]]]:
         """
-        Layout text segments into lines with word wrapping.
+        Layout text segments into columns and lines with word wrapping.
         
         Returns:
-            List of lines, where each line is a list of text chunks with formatting info
+            List of columns, where each column is a list of lines,
+            and each line is a list of text chunks with formatting info
         """
         lines = []
         current_line = []
@@ -220,7 +221,7 @@ class PILTextRenderer:
         margin_x = config.margin_x
         available_width = page_width - 2 * margin_x
         
-        # Handle multi-column layout
+        # Handle multi-column layout properly
         columns = max(1, config.columns)
         column_gap = config.column_gap if columns > 1 else 0
         column_width = (available_width - (columns - 1) * column_gap) / columns
@@ -301,7 +302,22 @@ class PILTextRenderer:
         if current_line:
             lines.append(current_line)
         
-        return lines
+        # Now distribute lines among columns
+        if columns == 1:
+            return [lines]  # Single column
+        
+        # Multi-column: distribute lines evenly
+        column_data = [[] for _ in range(columns)]
+        lines_per_column = len(lines) // columns
+        extra_lines = len(lines) % columns
+        
+        line_idx = 0
+        for col in range(columns):
+            lines_in_this_column = lines_per_column + (1 if col < extra_lines else 0)
+            column_data[col] = lines[line_idx:line_idx + lines_in_this_column]
+            line_idx += lines_in_this_column
+        
+        return column_data
     
     def _get_font_for_segment(self, segment: TextSegment, fonts: dict):
         """Get the appropriate font for a text segment."""
@@ -356,45 +372,60 @@ class PILTextRenderer:
             # Fallback for older PIL versions
             return temp_draw.textsize("Ag", font=font)[1]
     
-    def _calculate_image_size(self, lines: List[List[dict]], fonts: dict, config: RenderingConfig) -> Tuple[int, int]:
-        """Calculate the required image size."""
-        if not lines:
+    def _calculate_image_size(self, columns_data: List[List[List[dict]]], fonts: dict, config: RenderingConfig) -> Tuple[int, int]:
+        """Calculate the required image size for multi-column layout."""
+        if not columns_data or not any(columns_data):
             return (config.page_width, 100)  # Minimum size
         
         # Calculate width (use page width)
         width = config.page_width
         
-        # Calculate height with better spacing
+        # Calculate height based on the tallest column
         line_height = config.line_height
         line_spacing = int(line_height * 1.3)  # 30% more space between lines
-        total_height = len(lines) * line_spacing + 2 * config.margin_y + 20
+        
+        max_lines_in_column = max(len(column) for column in columns_data)
+        total_height = max_lines_in_column * line_spacing + 2 * config.margin_y + 20
         
         # Add some padding
         height = max(total_height, 100)
         
-        self.logger.debug(f"Image size calculation: lines={len(lines)}, "
+        self.logger.debug(f"Image size calculation: columns={len(columns_data)}, "
+                         f"max_lines_in_column={max_lines_in_column}, "
                          f"line_height={line_height}, line_spacing={line_spacing}, height={height}")
         
         return (int(width), int(height))
     
-    def _render_text_to_image(self, draw, lines: List[List[dict]], fonts: dict, config: RenderingConfig):
-        """Render text lines to the image."""
-        y = config.margin_y
+    def _render_text_to_image(self, draw, columns_data: List[List[List[dict]]], fonts: dict, config: RenderingConfig):
+        """Render text columns to the image with proper multi-column support."""
         line_height = config.line_height
         line_spacing = int(line_height * 1.3)  # Match the spacing calculation
         
-        for line in lines:
-            x = config.margin_x
+        # Calculate column layout
+        columns = len(columns_data)
+        available_width = config.page_width - 2 * config.margin_x
+        column_gap = config.column_gap if columns > 1 else 0
+        column_width = (available_width - (columns - 1) * column_gap) / columns
+        
+        # Render each column
+        for col_idx, column_lines in enumerate(columns_data):
+            # Calculate column x position
+            column_x = config.margin_x + col_idx * (column_width + column_gap)
             
-            for chunk in line:
-                text = chunk['text']
-                font = chunk['font']
+            # Render this column
+            y = config.margin_y
+            for line in column_lines:
+                x = column_x
                 
-                # Draw text
-                draw.text((x, y), text, font=font, fill='black')
+                for chunk in line:
+                    text = chunk['text']
+                    font = chunk['font']
+                    
+                    # Draw text
+                    draw.text((x, y), text, font=font, fill='black')
+                    
+                    # Move x position
+                    x += self._get_text_width(text, font)
                 
-                # Move x position
-                x += self._get_text_width(text, font)
-            
-            # Move to next line with better spacing
-            y += line_spacing
+                # Move to next line
+                y += line_spacing

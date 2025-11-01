@@ -29,10 +29,10 @@ class TextSegment:
 class FormattingConfig:
     """Configuration for text formatting options."""
     
-    # Newline handling
-    consecutive_newlines_to_break: bool = True  # 2+ \n becomes single line break
-    single_newline_to_spaces: bool = True       # Single \n becomes 3 spaces
-    spaces_for_single_newline: int = 3          # Number of spaces for single \n
+    # Newline handling - UPDATED RULES
+    single_newline_to_space: bool = True        # Single \n becomes 1 space
+    double_newline_to_two_spaces: bool = True   # \n\n becomes 2 spaces
+    triple_newline_to_break: bool = True        # \n\n\n+ becomes single line break
     
     # Markdown formatting
     bold_formatting: bool = True                # **text** → BOLD TEXT
@@ -42,18 +42,19 @@ class FormattingConfig:
     header_formatting: bool = True              # Convert # ## ### to A) a) 1)
     header_bold_caps: bool = True              # Headers in BOLD AND ALL CAPS
     
-    # Header numbering styles
-    h1_style: str = "A"  # A) B) C) ...
-    h2_style: str = "a"  # a) b) c) ...
-    h3_style: str = "1"  # 1) 2) 3) ...
-    h4_style: str = "i"  # i) ii) iii) iv) ...
+    # Header numbering styles - HIERARCHICAL
+    h1_style: str = "A"  # A. B. C. ...
+    h2_style: str = "A.1"  # A.1. A.2. A.3. ...
+    h3_style: str = "A.1.a"  # A.1.a. A.1.b. A.1.c. ...
+    h4_style: str = "A.1.a.i"  # A.1.a.i. A.1.a.ii. A.1.a.iii. ...
+    h5_style: str = "A.1.a.i.1"  # A.1.a.i.1. A.1.a.i.2. ...
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for caching."""
         return {
-            'consecutive_newlines_to_break': self.consecutive_newlines_to_break,
-            'single_newline_to_spaces': self.single_newline_to_spaces,
-            'spaces_for_single_newline': self.spaces_for_single_newline,
+            'single_newline_to_space': self.single_newline_to_space,
+            'double_newline_to_two_spaces': self.double_newline_to_two_spaces,
+            'triple_newline_to_break': self.triple_newline_to_break,
             'bold_formatting': self.bold_formatting,
             'italic_formatting': self.italic_formatting,
             'header_formatting': self.header_formatting,
@@ -88,7 +89,8 @@ class TextFormatter:
             'h1': 0,
             'h2': 0, 
             'h3': 0,
-            'h4': 0
+            'h4': 0,
+            'h5': 0
         }
         
         self.logger.debug("TextFormatter initialized", config=self.config.to_dict())
@@ -144,7 +146,7 @@ class TextFormatter:
     
     def _reset_counters(self):
         """Reset header counters for new text."""
-        self._header_counters = {'h1': 0, 'h2': 0, 'h3': 0, 'h4': 0}
+        self._header_counters = {'h1': 0, 'h2': 0, 'h3': 0, 'h4': 0, 'h5': 0}
     
     def _parse_formatted_text(self, text: str) -> List[TextSegment]:
         """
@@ -194,17 +196,13 @@ class TextFormatter:
         Returns:
             List of TextSegment objects with newline processing applied
         """
-        if not (self.config.consecutive_newlines_to_break or self.config.single_newline_to_spaces):
-            return segments
-        
         processed_segments = []
         
         for segment in segments:
             if segment.text == "\n":
-                if self.config.single_newline_to_spaces:
-                    # Convert single newlines to spaces
-                    spaces = ' ' * self.config.spaces_for_single_newline
-                    processed_segments.append(TextSegment(text=spaces))
+                # Single newline becomes 1 space
+                if self.config.single_newline_to_space:
+                    processed_segments.append(TextSegment(text=" "))
                 else:
                     processed_segments.append(segment)
             else:
@@ -219,6 +217,35 @@ class TextFormatter:
                 ))
         
         return processed_segments
+    
+    def _process_newlines(self, text: str) -> str:
+        """
+        Process newlines within text content according to updated rules:
+        1) Single \n → 1 space
+        2) Double \n\n → 2 spaces
+        3) Triple+ \n\n\n → 1 linebreak
+        """
+        import re
+        
+        # Process in order: triple+, double, single
+        # Use placeholder to avoid conflicts
+        
+        # 1. Triple or more newlines → single line break (use placeholder first)
+        if self.config.triple_newline_to_break:
+            text = re.sub(r'\n{3,}', '___LINEBREAK___', text)
+        
+        # 2. Double newlines → 2 spaces
+        if self.config.double_newline_to_two_spaces:
+            text = re.sub(r'\n\n', '  ', text)
+        
+        # 3. Single newlines → 1 space
+        if self.config.single_newline_to_space:
+            text = re.sub(r'\n', ' ', text)
+        
+        # 4. Replace placeholder with actual line break
+        text = text.replace('___LINEBREAK___', '\n')
+        
+        return text
     
     def _parse_inline_formatting(self, text: str) -> List[TextSegment]:
         """
@@ -293,15 +320,28 @@ class TextFormatter:
         """
         stripped = line.strip()
         
-        if stripped.startswith('####'):
+        if stripped.startswith('#####'):
+            # H5 header
+            content = stripped[5:].strip()
+            if content:
+                self._header_counters['h5'] += 1
+                number = self._get_header_number('h5', self._header_counters['h5'])
+                # Process inline formatting in header content
+                clean_content = self._strip_markdown_formatting(content)
+                formatted_content = f"{number} {clean_content.upper() if self.config.header_bold_caps else clean_content}"
+                return TextSegment(text=formatted_content, is_bold=True, is_header=True, header_level=5)
+                
+        elif stripped.startswith('####'):
             # H4 header
             content = stripped[4:].strip()
             if content:
                 self._header_counters['h4'] += 1
+                # Reset h5 counter when we encounter h4
+                self._header_counters['h5'] = 0
                 number = self._get_header_number('h4', self._header_counters['h4'])
                 # Process inline formatting in header content
                 clean_content = self._strip_markdown_formatting(content)
-                formatted_content = f"{number}) {clean_content.upper() if self.config.header_bold_caps else clean_content}"
+                formatted_content = f"{number} {clean_content.upper() if self.config.header_bold_caps else clean_content}"
                 return TextSegment(text=formatted_content, is_bold=True, is_header=True, header_level=4)
                 
         elif stripped.startswith('###'):
@@ -309,12 +349,13 @@ class TextFormatter:
             content = stripped[3:].strip()
             if content:
                 self._header_counters['h3'] += 1
-                # Reset h4 counter when we encounter h3
+                # Reset h4 and h5 counters when we encounter h3
                 self._header_counters['h4'] = 0
+                self._header_counters['h5'] = 0
                 number = self._get_header_number('h3', self._header_counters['h3'])
                 # Process inline formatting in header content
                 clean_content = self._strip_markdown_formatting(content)
-                formatted_content = f"{number}) {clean_content.upper() if self.config.header_bold_caps else clean_content}"
+                formatted_content = f"{number} {clean_content.upper() if self.config.header_bold_caps else clean_content}"
                 return TextSegment(text=formatted_content, is_bold=True, is_header=True, header_level=3)
                 
         elif stripped.startswith('##'):
@@ -322,28 +363,29 @@ class TextFormatter:
             content = stripped[2:].strip()
             if content:
                 self._header_counters['h2'] += 1
-                # Reset h3 and h4 counters when we encounter h2
+                # Reset h3, h4, and h5 counters when we encounter h2
                 self._header_counters['h3'] = 0
                 self._header_counters['h4'] = 0
+                self._header_counters['h5'] = 0
                 number = self._get_header_number('h2', self._header_counters['h2'])
                 # Process inline formatting in header content
                 clean_content = self._strip_markdown_formatting(content)
-                formatted_content = f"{number}) {clean_content.upper() if self.config.header_bold_caps else clean_content}"
+                formatted_content = f"{number} {clean_content.upper() if self.config.header_bold_caps else clean_content}"
                 return TextSegment(text=formatted_content, is_bold=True, is_header=True, header_level=2)
                 
         elif stripped.startswith('#'):
-            # H1 header
+            # H1 header - NO NUMBERING according to new rules
             content = stripped[1:].strip()
             if content:
                 self._header_counters['h1'] += 1
-                # Reset h2, h3, and h4 counters when we encounter h1
+                # Reset h2, h3, h4, and h5 counters when we encounter h1
                 self._header_counters['h2'] = 0
                 self._header_counters['h3'] = 0
                 self._header_counters['h4'] = 0
-                number = self._get_header_number('h1', self._header_counters['h1'])
+                self._header_counters['h5'] = 0
                 # Process inline formatting in header content
                 clean_content = self._strip_markdown_formatting(content)
-                formatted_content = f"{number}) {clean_content.upper() if self.config.header_bold_caps else clean_content}"
+                formatted_content = f"{clean_content.upper() if self.config.header_bold_caps else clean_content}"
                 return TextSegment(text=formatted_content, is_bold=True, is_header=True, header_level=1)
         
         return None
@@ -356,29 +398,6 @@ class TextFormatter:
         text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'\1', text)
         return text
     
-    def _process_newlines(self, text: str) -> str:
-        """
-        Process newlines according to configuration.
-        
-        Rules:
-        - 2+ consecutive \n → single line break
-        - Single \n → configured number of spaces (default 3)
-        """
-        if not (self.config.consecutive_newlines_to_break or self.config.single_newline_to_spaces):
-            return text
-        
-        # First, handle consecutive newlines (2 or more)
-        if self.config.consecutive_newlines_to_break:
-            # Replace 2+ consecutive newlines with single newline
-            text = re.sub(r'\n{2,}', '\n', text)
-        
-        # Then handle single newlines
-        if self.config.single_newline_to_spaces:
-            # Replace remaining single newlines with spaces
-            spaces = ' ' * self.config.spaces_for_single_newline
-            text = text.replace('\n', spaces)
-        
-        return text
     
     def _process_bold(self, text: str) -> str:
         """
@@ -471,48 +490,84 @@ class TextFormatter:
         """
         Get the appropriate header number/letter based on level and count.
         
+        NEW HIERARCHICAL FORMAT:
+        H1: No numbering
+        H2: A. B. C. ...
+        H3: A.1. A.2. A.3. ...
+        H4: A.1.a. A.1.b. A.1.c. ...
+        H5: A.1.a.i. A.1.a.ii. A.1.a.iii. ...
+        
         Args:
-            level: Header level ('h1', 'h2', 'h3')
+            level: Header level ('h1', 'h2', 'h3', 'h4', 'h5')
             count: Current count for this level
             
         Returns:
-            Formatted number/letter (e.g., 'A', 'b', '3')
+            Formatted number/letter (e.g., 'A.', 'A.1.', 'A.1.a.')
         """
+        
         if level == 'h1':
-            if self.config.h1_style == "A":
-                # A, B, C, ... Z, AA, BB, ...
-                if count <= 26:
-                    return chr(ord('A') + count - 1)
-                else:
-                    # After Z, use AA, BB, CC, etc.
-                    letter = chr(ord('A') + ((count - 1) % 26))
-                    return letter * ((count - 1) // 26 + 1)
-            else:
-                return str(count)
+            # H1: No numbering
+            return ""
                 
         elif level == 'h2':
-            if self.config.h2_style == "a":
-                # a, b, c, ... z, aa, bb, ...
-                if count <= 26:
-                    return chr(ord('a') + count - 1)
-                else:
-                    letter = chr(ord('a') + ((count - 1) % 26))
-                    return letter * ((count - 1) // 26 + 1)
+            # H2: A. B. C. ...
+            if count <= 26:
+                letter = chr(ord('A') + count - 1)
             else:
-                return str(count)
+                # After Z, use AA, BB, CC, etc.
+                letter = chr(ord('A') + ((count - 1) % 26))
+                letter = letter * ((count - 1) // 26 + 1)
+            return f"{letter}."
                 
         elif level == 'h3':
-            if self.config.h3_style == "1":
-                return str(count)
+            # H3: A.1. A.2. A.3. ...
+            h2_count = self._header_counters['h2']
+            if h2_count <= 26:
+                h2_letter = chr(ord('A') + h2_count - 1)
             else:
-                return str(count)
+                h2_letter = chr(ord('A') + ((h2_count - 1) % 26))
+                h2_letter = h2_letter * ((h2_count - 1) // 26 + 1)
+            return f"{h2_letter}.{count}."
                 
         elif level == 'h4':
-            if self.config.h4_style == "i":
-                # Roman numerals: i, ii, iii, iv, v, vi, vii, viii, ix, x, ...
-                return self._int_to_roman_lower(count)
+            # H4: A.1.a. A.1.b. A.1.c. ...
+            h2_count = self._header_counters['h2']
+            h3_count = self._header_counters['h3']
+            
+            if h2_count <= 26:
+                h2_letter = chr(ord('A') + h2_count - 1)
             else:
-                return str(count)
+                h2_letter = chr(ord('A') + ((h2_count - 1) % 26))
+                h2_letter = h2_letter * ((h2_count - 1) // 26 + 1)
+                
+            if count <= 26:
+                h4_letter = chr(ord('a') + count - 1)
+            else:
+                h4_letter = chr(ord('a') + ((count - 1) % 26))
+                h4_letter = h4_letter * ((count - 1) // 26 + 1)
+                
+            return f"{h2_letter}.{h3_count}.{h4_letter}."
+        
+        elif level == 'h5':
+            # H5: A.1.a.i. A.1.a.ii. A.1.a.iii. ...
+            h2_count = self._header_counters['h2']
+            h3_count = self._header_counters['h3']
+            h4_count = self._header_counters['h4']
+            
+            if h2_count <= 26:
+                h2_letter = chr(ord('A') + h2_count - 1)
+            else:
+                h2_letter = chr(ord('A') + ((h2_count - 1) % 26))
+                h2_letter = h2_letter * ((h2_count - 1) // 26 + 1)
+                
+            if h4_count <= 26:
+                h4_letter = chr(ord('a') + h4_count - 1)
+            else:
+                h4_letter = chr(ord('a') + ((h4_count - 1) % 26))
+                h4_letter = h4_letter * ((h4_count - 1) // 26 + 1)
+                
+            h5_roman = self._int_to_roman_lower(count)
+            return f"{h2_letter}.{h3_count}.{h4_letter}.{h5_roman}."
         
         return str(count)
     
