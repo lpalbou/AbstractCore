@@ -35,12 +35,12 @@ def main():
                        help="Frequency penalty for repetition control (default: 0.3)")
     
     # Glyph rendering controls
-    parser.add_argument("--columns", type=int, default=4,
-                       help="Number of columns for text layout (default: 4)")
+    parser.add_argument("--columns", type=int, default=2,
+                       help="Number of columns for text layout (default: 2)")
     parser.add_argument("--width", type=int, default=None,
                        help="Target image width in pixels (default: 1024 for VLM optimization)")
     parser.add_argument("--height", type=int, default=None,
-                       help="Target image height in pixels (default: 768 for VLM optimization)")
+                       help="Target image height in pixels (default: 1024 for VLM optimization)")
     parser.add_argument("--dpi", type=int, default=72,
                        help="Image resolution in DPI (default: 72, used when width/height not specified)")
     parser.add_argument("--font-size", type=int, default=8,
@@ -49,10 +49,12 @@ def main():
                        help="Font name to use (e.g., 'Helvetica', 'Arial'). Falls back to default if not available.")
     parser.add_argument("--font-path", type=str, default=None,
                        help="Path to specific font file (e.g., 'abstractcore/assets/OCRA.ttf')")
-    parser.add_argument("--margin-x", type=int, default=10,
+    parser.add_argument("--margin-x", type=int, default=15,
                        help="Horizontal margin in pixels (default: 10)")
-    parser.add_argument("--margin-y", type=int, default=10,
+    parser.add_argument("--margin-y", type=int, default=15,
                        help="Vertical margin in pixels (default: 10)")
+    parser.add_argument("--column-gap", type=int, default=10,
+                       help="Gap between columns in pixels (default: 10)")
     
     # Text formatting options
     parser.add_argument("--render-format", action="store_true", default=True,
@@ -120,9 +122,10 @@ def main():
         font_name=args.font,
         font_path=args.font_path,
         line_height=args.font_size + 1,  # Slightly larger than font size
-        # Use custom margins
+        # Use custom margins and column gap
         margin_x=args.margin_x,
         margin_y=args.margin_y,
+        column_gap=args.column_gap,
         auto_crop_width=True,
         auto_crop_last_page=True,
         render_format=args.render_format
@@ -218,7 +221,20 @@ def main():
         # Show custom rendering configuration
         print(f"\n=== CUSTOM RENDERING CONFIG ===")
         print(f"Columns:     {args.columns}")
-        print(f"DPI:         {args.dpi} (higher = better quality, larger files)")
+        print(f"DPI:         {args.dpi} (metadata only)")
+        
+        # Calculate effective DPI based on target dimensions
+        target_width = args.width or 1024  # Default width
+        target_height = args.height or 1024  # Default height
+        
+        # Effective DPI is how much we're scaling from a "standard" size
+        # Standard assumption: 8.5" x 11" page at 72 DPI = 612 x 792 pixels
+        standard_width = 612
+        effective_dpi_x = (target_width / standard_width) * 72
+        effective_dpi_y = (target_height / 792) * 72  # 792 = 11" at 72 DPI
+        effective_dpi = (effective_dpi_x + effective_dpi_y) / 2
+        
+        print(f"Effective DPI: {effective_dpi:.1f} (calculated from {target_width}×{target_height} dimensions)")
         print(f"Font size:   {args.font_size}")
         print(f"Line height: {args.font_size + 1}")
         print(f"Margins:     {args.margin_x}×{args.margin_y} pixels (horizontal×vertical)")
@@ -282,9 +298,17 @@ def main():
         
         compression_time = time.time() - compression_start
     
-    # Log detailed compression results
-    compression_ratio = result.get('total_compression_ratio', 0)
+    # Calculate proper token-based compression ratio
     media_count = len(result.get('media', []))
+    original_tokens = TokenUtils.estimate_tokens(text, "gpt-4o")
+    
+    # Estimate visual tokens (approximate tokens per image for vision models)
+    # Based on research: typical image ~1000-2000 tokens for vision models
+    tokens_per_image = 1500  # Conservative estimate for 1024x1024 images
+    visual_tokens = media_count * tokens_per_image
+    
+    # Calculate actual token-based compression ratio
+    compression_ratio = original_tokens / visual_tokens if visual_tokens > 0 else 0
     
     logger.info("Compression completed",
                 compression_time_ms=compression_time * 1000,
@@ -528,12 +552,15 @@ def main():
         print(f"\n=== COMPRESSION SUMMARY ===")
         print(f"Mode:        Vision compression")
         print(f"Original:    {original_size:,} characters")
+        print(f"Text tokens: {original_tokens:,} (estimated)")
+        print(f"Visual tokens: {visual_tokens:,} (estimated)")
         print(f"Ratio:       {compression_ratio:.1f}x")
         print(f"Media items: {media_count}")
     
     if args.debug:
-        # Enhanced debug summary
-        original_tokens = TokenUtils.estimate_tokens(text, "gpt-4o")
+        # Enhanced debug summary (reuse token calculation from above)
+        if args.no_compression:
+            original_tokens = TokenUtils.estimate_tokens(text, "gpt-4o")
         
         if args.no_compression:
             print(f"\n=== DEBUG METRICS (DIRECT TEXT) ===")
