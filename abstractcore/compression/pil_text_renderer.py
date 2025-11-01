@@ -43,12 +43,12 @@ class PILTextRenderer:
         if config.target_width and config.target_height:
             return (config.target_width, config.target_height)
         else:
-            # VLM-optimized defaults: 1024x768 works well with most vision models
+            # VLM-optimized defaults: 1024x1024 works well with most vision models
             # - Fits within Claude 3.5 Sonnet (1568x1568 max)
-            # - Efficient for GPT-4o tokenization (~1700 tokens)
-            # - Good text aspect ratio (4:3)
+            # - Efficient for GPT-4o tokenization (~1800 tokens)
+            # - Square aspect ratio (1:1) for consistent layout
             # - Supported by all major VLM families
-            return (1024, 768)
+            return (1024, 1024)
     
     def _check_dependencies(self):
         """Check if required dependencies are available."""
@@ -110,7 +110,7 @@ class PILTextRenderer:
         # Estimate line capacity
         line_height = int(config.line_height * 1.3)  # Match spacing calculation
         chars_per_line = int(column_width / avg_char_width)
-        lines_per_column = int((available_height * 1.08 + line_height) / line_height)
+        lines_per_column = int((available_height * 1.1 + line_height) / line_height)
         total_lines = lines_per_column * columns
         
         # More realistic capacity estimation

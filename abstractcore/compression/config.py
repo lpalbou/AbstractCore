@@ -22,8 +22,8 @@ class RenderingConfig:
     dpi: int = 72  # 72 for higher compression, 96 for better quality
     target_width: Optional[int] = None  # Target image width in pixels (default: 1024 for VLMs)
     target_height: Optional[int] = None  # Target image height in pixels (default: 768 for VLMs)
-    margin_x: int = 3   # Absolute minimal margins
-    margin_y: int = 3   # Absolute minimal margins
+    margin_x: int = 10  # Generous margins for better readability
+    margin_y: int = 10  # Generous margins for better readability
     page_width: int = 595  # A4 width in points (used when target dimensions not set)
     page_height: int = 842  # A4 height in points (used when target dimensions not set)
     
@@ -32,9 +32,9 @@ class RenderingConfig:
     auto_crop_last_page: bool = True
     newline_markup: str = '<font color="#FF0000"> \\n </font>'
     
-    # Multi-column layout (EXTREME packing)
-    columns: int = 4  # 4-column layout for maximum density
-    column_gap: int = 5  # Absolute minimal gap between columns
+    # Multi-column layout (optimized for readability)
+    columns: int = 2  # 2-column layout for optimal balance
+    column_gap: int = 10  # Optimal gap between columns
     
     # Text formatting options
     render_format: bool = True  # Enable markdown-like formatting
