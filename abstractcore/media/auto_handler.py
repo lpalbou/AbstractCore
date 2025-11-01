@@ -331,11 +331,6 @@ class AutoMediaHandler(BaseMediaHandler):
     
     def _apply_compression(self, file_path: Path, provider: str, model: str, **kwargs) -> MediaContent:
         """Apply Glyph compression to the file."""
-        orchestrator = self._get_compression_orchestrator()
-        if not orchestrator:
-            raise Exception("Compression orchestrator not available")
-        
-        # First extract text content from the file
         media_type = detect_media_type(file_path)
         
         # For PDF files, use direct PDF-to-image conversion (no text extraction!)
@@ -354,6 +349,14 @@ class AutoMediaHandler(BaseMediaHandler):
                 
                 # Get all combined images
                 combined_images = direct_processor.get_combined_image_paths(file_path)
+                
+                # Get session info for metadata from DirectPDFProcessor
+                from ..config import get_config_manager
+                import hashlib
+                config_manager = get_config_manager()
+                glyph_cache_base = Path(config_manager.config.cache.glyph_cache_dir).expanduser()
+                pdf_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
+                session_id = f"pdf_{pdf_hash}_{len(combined_images)}pages"
                 
                 # Create MediaContent objects for each combined image
                 media_contents = []
@@ -375,7 +378,10 @@ class AutoMediaHandler(BaseMediaHandler):
                             'pages_per_image': 2,
                             'image_index': i,
                             'total_images': len(combined_images),
-                            'original_file': str(file_path)
+                            'original_file': str(file_path),
+                            'glyph_session_id': session_id,
+                            'glyph_cache_dir': str(glyph_cache_base / session_id),
+                            'processing_method': 'direct_pdf_conversion'  # For compatibility with test script
                         }
                     )
                     media_contents.append(media_content)
@@ -388,12 +394,16 @@ class AutoMediaHandler(BaseMediaHandler):
                 else:
                     raise Exception("No combined images created")
                     
-            except ImportError:
-                self.logger.warning("DirectPDFProcessor not available, falling back to text extraction")
+            except Exception as e:
+                self.logger.warning(f"DirectPDFProcessor failed: {e}, falling back to text extraction")
                 # Fall back to text extraction method
                 pass
         
         # Fallback: text extraction method (for non-PDF or if direct method fails)
+        orchestrator = self._get_compression_orchestrator()
+        if not orchestrator:
+            raise Exception("Compression orchestrator not available")
+        
         if media_type == MediaType.DOCUMENT and file_path.suffix.lower() == '.pdf':
             processor = self._get_pdf_processor()
         elif media_type == MediaType.DOCUMENT:

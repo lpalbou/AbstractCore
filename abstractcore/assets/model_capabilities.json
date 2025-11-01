@@ -1416,7 +1416,7 @@
         "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"
       ],
       "max_tokens": 128000
-    },
+    },    
     "gemma3-4b": {
       "max_output_tokens": 8192,
       "tool_support": "native",

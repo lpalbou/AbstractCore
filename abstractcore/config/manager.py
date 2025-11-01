@@ -70,6 +70,7 @@ class CacheConfig:
     default_cache_dir: str = "~/.cache/abstractcore"
     huggingface_cache_dir: str = "~/.cache/huggingface"
     local_models_cache_dir: str = "~/.abstractcore/models"
+    glyph_cache_dir: str = "~/.abstractcore/glyph_cache"
 
 
 @dataclass

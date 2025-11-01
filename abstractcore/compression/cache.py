@@ -43,7 +43,7 @@ class CompressionCache:
         except Exception as e:
             self.logger.error(f"Failed to create cache directory {self.cache_dir}: {e}")
             raise CompressionCacheError(f"Cannot create cache directory: {e}")
-        
+
         # Initialize metadata
         self.metadata_file = self.cache_dir / "cache_metadata.json"
         self.metadata = self._load_metadata()

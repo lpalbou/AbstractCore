@@ -274,9 +274,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Process media content if provided
         processed_media = None
+        media_metadata = None
         if media:
             compression_pref = glyph_compression or kwargs.get('glyph_compression', 'auto')
             processed_media = self._process_media_content(media, compression_pref)
+            
+            # Extract metadata from processed media for response
+            if processed_media:
+                media_metadata = []
+                for media_content in processed_media:
+                    if hasattr(media_content, 'metadata') and media_content.metadata:
+                        media_metadata.append(media_content.metadata)
 
         # Convert tools to ToolDefinition objects first (outside retry loop)
         converted_tools = None
@@ -333,6 +341,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     stream=stream,
                     execute_tools=should_execute_tools,
                     tool_call_tags=tool_call_tags,
+                    media_metadata=media_metadata,
                     **kwargs
                 )
 
@@ -386,6 +395,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     # Apply default qwen3 rewriting for non-streaming responses
                     response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
 
+                # Add visual token calculation if media metadata is available
+                if media_metadata and response:
+                    self.logger.debug(f"Enhancing response with visual tokens from {len(media_metadata)} media items")
+                    response = self._enhance_response_with_visual_tokens(response, media_metadata)
+
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response
 
@@ -417,6 +431,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                           stream: bool = False,
                           response_model: Optional[Type[BaseModel]] = None,
                           execute_tools: Optional[bool] = None,
+                          media_metadata: Optional[List[Dict[str, Any]]] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
         Internal generation method to be implemented by subclasses.
@@ -434,6 +449,102 @@ class BaseProvider(AbstractCoreInterface, ABC):
             **kwargs: Additional provider-specific parameters
         """
         raise NotImplementedError("Subclasses must implement _generate_internal")
+
+    def _enhance_response_with_visual_tokens(self, response: GenerateResponse, media_metadata: List[Dict[str, Any]]) -> GenerateResponse:
+        """
+        Enhance the response with visual token calculations for Glyph compression.
+        This method is called automatically by BaseProvider for all providers.
+        """
+        try:
+            # Calculate visual tokens using VLM token calculator
+            provider_name = self.provider or self.__class__.__name__.lower().replace('provider', '')
+            self.logger.debug(f"Calculating visual tokens for provider={provider_name}, model={self.model}")
+            
+            visual_tokens = self._calculate_visual_tokens(media_metadata, provider_name, self.model)
+            self.logger.debug(f"Calculated visual tokens: {visual_tokens}")
+            
+            if visual_tokens > 0:
+                # Ensure response has metadata
+                if not response.metadata:
+                    response.metadata = {}
+                
+                # Add visual token information to metadata
+                response.metadata['visual_tokens'] = visual_tokens
+                
+                # Ensure response has usage dict
+                if not response.usage:
+                    response.usage = {}
+                
+                # Add visual tokens to usage
+                response.usage['visual_tokens'] = visual_tokens
+                
+                # Update total tokens to include visual tokens
+                original_total = response.usage.get('total_tokens', 0)
+                response.usage['total_tokens'] = original_total + visual_tokens
+                
+                self.logger.info(f"Enhanced response with {visual_tokens} visual tokens (new total: {response.usage['total_tokens']})")
+            else:
+                self.logger.debug("No visual tokens calculated - skipping enhancement")
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to enhance response with visual tokens: {e}")
+        
+        return response
+
+    def _calculate_visual_tokens(self, media_metadata: List[Dict[str, Any]], provider: str, model: str) -> int:
+        """Calculate visual tokens from media metadata using VLM token calculator."""
+        try:
+            from ..utils.vlm_token_calculator import VLMTokenCalculator
+            from pathlib import Path
+            
+            calculator = VLMTokenCalculator()
+            total_visual_tokens = 0
+            
+            self.logger.debug(f"Processing {len(media_metadata)} media metadata items")
+            
+            for i, metadata in enumerate(media_metadata):
+                self.logger.debug(f"Metadata {i}: processing_method={metadata.get('processing_method')}")
+                
+                # Check if this is Glyph compression
+                if metadata.get('processing_method') == 'direct_pdf_conversion':
+                    glyph_cache_dir = metadata.get('glyph_cache_dir')
+                    total_images = metadata.get('total_images', 0)
+                    
+                    self.logger.debug(f"Glyph metadata found: cache_dir={glyph_cache_dir}, total_images={total_images}")
+                    
+                    if glyph_cache_dir and Path(glyph_cache_dir).exists():
+                        # Get actual image paths
+                        cache_dir = Path(glyph_cache_dir)
+                        image_paths = list(cache_dir.glob("image_*.png"))
+                        
+                        self.logger.debug(f"Found {len(image_paths)} images in cache directory")
+                        
+                        if image_paths:
+                            # Calculate tokens for all images
+                            token_analysis = calculator.calculate_tokens_for_images(
+                                image_paths=image_paths,
+                                provider=provider,
+                                model=model
+                            )
+                            total_visual_tokens += token_analysis['total_tokens']
+                            
+                            self.logger.debug(f"Calculated {token_analysis['total_tokens']} visual tokens for {len(image_paths)} Glyph images")
+                        else:
+                            # Fallback: estimate based on total_images
+                            base_tokens = calculator.PROVIDER_CONFIGS.get(provider, {}).get('base_tokens', 512)
+                            estimated_tokens = total_images * base_tokens
+                            total_visual_tokens += estimated_tokens
+                            
+                            self.logger.debug(f"Estimated {estimated_tokens} visual tokens for {total_images} Glyph images (fallback)")
+                    else:
+                        self.logger.debug(f"Cache directory not found or doesn't exist: {glyph_cache_dir}")
+            
+            self.logger.debug(f"Total visual tokens calculated: {total_visual_tokens}")
+            return total_visual_tokens
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate visual tokens: {e}")
+            return 0
 
     def _initialize_token_limits(self):
         """Initialize default token limits based on model capabilities"""
