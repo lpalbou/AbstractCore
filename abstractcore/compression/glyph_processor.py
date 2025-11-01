@@ -19,6 +19,9 @@ from .config import GlyphConfig, RenderingConfig
 from .quality import QualityValidator, CompressionStats
 from .cache import CompressionCache
 from .renderer import ReportLabRenderer
+from .rich_text_renderer import RichTextRenderer
+from .pil_text_renderer import PILTextRenderer
+from .text_formatter import TextFormatter, FormattingConfig
 from .exceptions import CompressionError, CompressionQualityError
 
 
@@ -45,12 +48,17 @@ class GlyphProcessor(BaseMediaHandler):
         
         # Initialize components
         self.renderer = None  # Lazy initialization
+        self.rich_text_renderer = None  # Lazy initialization
+        self.pil_text_renderer = None  # Lazy initialization
         self.quality_validator = QualityValidator()
         self.cache = CompressionCache(
             cache_dir=self.config.cache_directory,
             max_size_gb=self.config.cache_size_gb,
             ttl_days=self.config.cache_ttl_days
         )
+        
+        # Initialize text formatter
+        self.text_formatter = TextFormatter(FormattingConfig())
         
         # Load provider profiles
         self.provider_profiles = self.config.provider_profiles
@@ -62,6 +70,18 @@ class GlyphProcessor(BaseMediaHandler):
         if self.renderer is None:
             self.renderer = ReportLabRenderer(self.config)
         return self.renderer
+    
+    def _get_rich_text_renderer(self) -> 'RichTextRenderer':
+        """Get or create rich text renderer instance (lazy initialization)."""
+        if self.rich_text_renderer is None:
+            self.rich_text_renderer = RichTextRenderer(self.config)
+        return self.rich_text_renderer
+    
+    def _get_pil_text_renderer(self) -> 'PILTextRenderer':
+        """Get or create PIL text renderer instance (lazy initialization)."""
+        if self.pil_text_renderer is None:
+            self.pil_text_renderer = PILTextRenderer(self.config)
+        return self.pil_text_renderer
     
     def can_process(self, content: str, provider: str, model: str) -> bool:
         """
@@ -117,20 +137,48 @@ class GlyphProcessor(BaseMediaHandler):
             # Get provider-specific configuration
             render_config = self._get_provider_config(provider, model)
             
-            # Check cache first
-            cache_key = self._generate_cache_key(content, render_config)
+            # Apply text formatting if enabled
+            processed_content = content
+            text_segments = None
+            if render_config.render_format:
+                self.logger.debug("Applying text formatting")
+                text_segments = self.text_formatter.format_text(content)
+                # For now, convert back to string for compatibility with existing renderer
+                processed_content = self.text_formatter.format_text_to_string(content)
+                self.logger.debug("Text formatting applied", 
+                                original_length=len(content),
+                                formatted_length=len(processed_content),
+                                segments_count=len(text_segments))
+            else:
+                self.logger.debug("Text formatting disabled, using raw content")
+            
+            # Check cache first (use processed content for cache key)
+            cache_key = self._generate_cache_key(processed_content, render_config)
             if cached_result := self.cache.get(cache_key):
                 self.logger.debug(f"Using cached compression for key {cache_key[:16]}...")
-                return self._create_media_content_from_images(cached_result, content, provider, render_config)
+                return self._create_media_content_from_images(cached_result, processed_content, provider, render_config)
             
-            # Render text to images
-            renderer = self._get_renderer()
-            images = renderer.text_to_images(
-                text=content,
-                config=render_config,
-                output_dir=self.config.temp_dir,
-                unique_id=cache_key[:16]
-            )
+            # Render text to images using appropriate renderer
+            if render_config.render_format and text_segments:
+                # Use PIL text renderer for formatted content with proper font support
+                self.logger.debug("Using PIL text renderer for formatted content")
+                pil_renderer = self._get_pil_text_renderer()
+                images = pil_renderer.segments_to_images(
+                    segments=text_segments,
+                    config=render_config,
+                    output_dir=self.config.temp_dir,
+                    unique_id=cache_key[:16]
+                )
+            else:
+                # Use standard renderer for plain text
+                self.logger.debug("Using standard renderer for plain text")
+                renderer = self._get_renderer()
+                images = renderer.text_to_images(
+                    text=processed_content,
+                    config=render_config,
+                    output_dir=self.config.temp_dir,
+                    unique_id=cache_key[:16]
+                )
             
             # Quality validation (bypass if user explicitly wants compression)
             quality_score = self.quality_validator.assess(content, images, provider)
@@ -146,7 +194,7 @@ class GlyphProcessor(BaseMediaHandler):
                 self.logger.warning(f"Compression quality {quality_score:.3f} below threshold {min_threshold:.3f} for {provider}, but proceeding due to 'always' preference")
             
             # Calculate compression statistics
-            original_tokens = TokenUtils.estimate_tokens(content, model)
+            original_tokens = TokenUtils.estimate_tokens(processed_content, model)
             # Calculate accurate token count using proper VLM token calculation
             from ..utils.vlm_token_calculator import VLMTokenCalculator
             from pathlib import Path
@@ -195,7 +243,7 @@ class GlyphProcessor(BaseMediaHandler):
             
             # Create MediaContent objects
             media_contents = self._create_media_content_from_images(
-                images, content, provider, render_config, compression_stats
+                images, processed_content, provider, render_config, compression_stats
             )
             
             self.logger.info(

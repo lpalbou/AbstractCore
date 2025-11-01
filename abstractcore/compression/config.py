@@ -33,6 +33,9 @@ class RenderingConfig:
     columns: int = 4  # 4-column layout for maximum density
     column_gap: int = 5  # Absolute minimal gap between columns
     
+    # Text formatting options
+    render_format: bool = True  # Enable markdown-like formatting
+    
     def copy(self) -> 'RenderingConfig':
         """Create a copy of this configuration."""
         return RenderingConfig(
@@ -48,7 +51,8 @@ class RenderingConfig:
             auto_crop_last_page=self.auto_crop_last_page,
             newline_markup=self.newline_markup,
             columns=self.columns,
-            column_gap=self.column_gap
+            column_gap=self.column_gap,
+            render_format=self.render_format
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -66,7 +70,8 @@ class RenderingConfig:
             'auto_crop_last_page': self.auto_crop_last_page,
             'newline_markup': self.newline_markup,
             'columns': self.columns,
-            'column_gap': self.column_gap
+            'column_gap': self.column_gap,
+            'render_format': self.render_format
         }
 
 

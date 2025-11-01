@@ -46,6 +46,12 @@ def main():
     parser.add_argument("--margin-y", type=int, default=10,
                        help="Vertical margin in pixels (default: 10)")
     
+    # Text formatting options
+    parser.add_argument("--render-format", action="store_true", default=True,
+                       help="Enable markdown-like text formatting (default: True)")
+    parser.add_argument("--no-render-format", dest="render_format", action="store_false",
+                       help="Disable text formatting, render raw text as-is")
+    
     # Comparison mode
     parser.add_argument("--no-compression", action="store_true",
                        help="Skip compression and send raw text directly to LLM for comparison")
@@ -106,7 +112,8 @@ def main():
         margin_x=args.margin_x,
         margin_y=args.margin_y,
         auto_crop_width=True,
-        auto_crop_last_page=True
+        auto_crop_last_page=True,
+        render_format=args.render_format
     )
     
     # Create custom glyph configuration
@@ -135,7 +142,8 @@ def main():
                 custom_dpi=args.dpi,
                 custom_font_size=args.font_size,
                 custom_margin_x=args.margin_x,
-                custom_margin_y=args.margin_y)
+                custom_margin_y=args.margin_y,
+                render_format=args.render_format)
 
     # Load document
     filename = args.file
