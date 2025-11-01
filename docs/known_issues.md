@@ -99,6 +99,54 @@ Debug: [createJinjaMessagesInput] Ignoring image file part in user message due t
 - [GLM-V GitHub Repository](https://github.com/zai-org/GLM-V)
 - AbstractCore model capabilities updated to reflect vision support
 
+### HuggingFace GLM4V Architecture Support
+
+**Issue**: HuggingFace transformers library does not recognize the custom `glm4v` architecture used by Glyph and GLM-4.1V models, causing `KeyError: 'glm4v'` when trying to load with `AutoModelForCausalLM`.
+
+**Affected Models**:
+- `zai-org/Glyph`
+- `zai-org/GLM-4.1V-9B-Thinking`
+- `zai-org/GLM-4.1V-9B-Base`
+- Other GLM4V-based models
+
+**Root Cause**:
+The GLM4V architecture is a custom vision-language model architecture that requires:
+- `AutoModelForImageTextToText` instead of `AutoModelForCausalLM`
+- `AutoProcessor` instead of `AutoTokenizer`
+- Special multimodal message handling
+
+**Solution**:
+Enhanced HuggingFace provider with vision model detection and proper loading:
+- Added `_is_vision_model()` method to detect GLM4V and other vision models
+- Added `_load_vision_model()` method using correct AutoModel classes
+- Added `_generate_vision_model()` method for proper multimodal generation
+- Updated model capabilities with GLM4V architecture information
+- **IMPORTANT**: Requires `transformers>=4.57.1` for GLM4V architecture support
+
+**Installation Requirements**:
+```bash
+pip install transformers>=4.57.1
+```
+
+**Technical Implementation**:
+```python
+# Vision model detection
+def _is_vision_model(self, model: str) -> bool:
+    vision_models = ['glyph', 'glm-4.1v', 'glm4v', 'qwen-vl', ...]
+    return any(keyword in model.lower() for keyword in vision_models)
+
+# Proper loading for vision models
+processor = AutoProcessor.from_pretrained(model)
+model_instance = AutoModelForImageTextToText.from_pretrained(model)
+```
+
+**Status**: Resolved in AbstractCore HuggingFace provider
+
+**References**:
+- [Glyph HuggingFace Model](https://huggingface.co/zai-org/Glyph)
+- [Glyph GitHub Repository](https://github.com/thu-coai/Glyph)
+- HuggingFace transformers documentation on vision models
+
 ## Model Configuration Issues
 
 ### Granite Vision Model Confusion

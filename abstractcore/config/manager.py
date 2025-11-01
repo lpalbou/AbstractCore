@@ -93,6 +93,14 @@ class TimeoutConfig:
 
 
 @dataclass
+class OfflineConfig:
+    """Offline-first configuration settings."""
+    offline_first: bool = True  # AbstractCore is designed offline-first for open source LLMs
+    allow_network: bool = False  # Allow network access when offline_first is True (for API providers)
+    force_local_files_only: bool = True  # Force local_files_only for HuggingFace transformers
+
+
+@dataclass
 class AbstractCoreConfig:
     """Main configuration class."""
     vision: VisionConfig
@@ -103,6 +111,7 @@ class AbstractCoreConfig:
     cache: CacheConfig
     logging: LoggingConfig
     timeouts: TimeoutConfig
+    offline: OfflineConfig
 
     @classmethod
     def default(cls):
@@ -115,7 +124,8 @@ class AbstractCoreConfig:
             api_keys=ApiKeysConfig(),
             cache=CacheConfig(),
             logging=LoggingConfig(),
-            timeouts=TimeoutConfig()
+            timeouts=TimeoutConfig(),
+            offline=OfflineConfig()
         )
 
 
@@ -151,6 +161,7 @@ class ConfigurationManager:
         cache = CacheConfig(**data.get('cache', {}))
         logging = LoggingConfig(**data.get('logging', {}))
         timeouts = TimeoutConfig(**data.get('timeouts', {}))
+        offline = OfflineConfig(**data.get('offline', {}))
 
         return AbstractCoreConfig(
             vision=vision,
@@ -160,7 +171,8 @@ class ConfigurationManager:
             api_keys=api_keys,
             cache=cache,
             logging=logging,
-            timeouts=timeouts
+            timeouts=timeouts,
+            offline=offline
         )
 
     def _save_config(self):
@@ -176,7 +188,8 @@ class ConfigurationManager:
             'api_keys': asdict(self.config.api_keys),
             'cache': asdict(self.config.cache),
             'logging': asdict(self.config.logging),
-            'timeouts': asdict(self.config.timeouts)
+            'timeouts': asdict(self.config.timeouts),
+            'offline': asdict(self.config.offline)
         }
 
         with open(self.config_file, 'w') as f:
@@ -278,6 +291,11 @@ class ConfigurationManager:
                 "openai": "✅ Set" if self.config.api_keys.openai else "❌ Not set",
                 "anthropic": "✅ Set" if self.config.api_keys.anthropic else "❌ Not set",
                 "google": "✅ Set" if self.config.api_keys.google else "❌ Not set"
+            },
+            "offline": {
+                "offline_first": self.config.offline.offline_first,
+                "allow_network": self.config.offline.allow_network,
+                "status": "🔒 Offline-first" if self.config.offline.offline_first else "🌐 Network-enabled"
             }
         }
 
@@ -388,6 +406,36 @@ class ConfigurationManager:
     def get_tool_timeout(self) -> float:
         """Get tool execution timeout in seconds."""
         return self.config.timeouts.tool_timeout
+
+    def set_offline_first(self, enabled: bool) -> bool:
+        """Enable or disable offline-first mode."""
+        try:
+            self.config.offline.offline_first = enabled
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_allow_network(self, enabled: bool) -> bool:
+        """Allow network access when in offline-first mode."""
+        try:
+            self.config.offline.allow_network = enabled
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def is_offline_first(self) -> bool:
+        """Check if offline-first mode is enabled."""
+        return self.config.offline.offline_first
+
+    def is_network_allowed(self) -> bool:
+        """Check if network access is allowed."""
+        return self.config.offline.allow_network
+
+    def should_force_local_files_only(self) -> bool:
+        """Check if local_files_only should be forced for transformers."""
+        return self.config.offline.force_local_files_only
 
 
 # Global instance

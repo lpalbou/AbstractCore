@@ -1,6 +1,6 @@
 # AbstractCore - Unified LLM Provider Interface
 
-**Write once, run everywhere.** Production-ready Python library for all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with universal tool calling, streaming, session management, and built-in CLI apps.
+**Write once, run everywhere.** Production-ready Python library designed primarily for open source LLMs with complete offline capability. Supports all major providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with universal tool calling, streaming, session management, and built-in CLI apps.
 
 ## Quick Start
 
@@ -76,6 +76,7 @@ pip install abstractcore[all]
 
 ## Why AbstractCore?
 
+- **Offline-first design**: Built primarily for open source LLMs with complete offline operation. Download once, run forever without internet
 - **Write once, run everywhere**: Same code works with any LLM provider
 - **Production ready**: Built-in error handling, retries, and monitoring
 - **Universal tool calling**: @tool decorator works across ALL providers

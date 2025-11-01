@@ -2,6 +2,8 @@
 """
 AbstractCore - Unified interface to all LLM providers with essential infrastructure.
 
+CRITICAL: Offline-first design - enforces offline mode for open source LLMs by default.
+
 Key Features:
 • Multi-provider support (OpenAI, Anthropic, Ollama, HuggingFace, MLX, LMStudio)
 • Unified token parameter vocabulary across all providers

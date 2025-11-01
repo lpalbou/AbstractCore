@@ -22,12 +22,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Model Capabilities**: Added 50+ VLM models (Mistral Small 3.1/3.2, LLaMA 4, Qwen3-VL, Granite Vision)
 - **Detection System**: All model queries go through `detection.py` with structured logging
 - **Token Calculation**: Accurate image tokenization using model-specific parameters
+- **Offline-First Architecture**: AbstractCore now enforces offline-first operation by default
+  - Added centralized offline configuration in `config/manager.py` 
+  - HuggingFace provider loads models directly from local cache when offline
+  - Environment variables (`TRANSFORMERS_OFFLINE`, `HF_HUB_OFFLINE`) set automatically
+  - Uses centralized cache directory configuration
+  - Designed primarily for open source LLMs with full offline capability
+- **HuggingFace Provider**: Added vision model support for GLM4V architecture (Glyph, GLM-4.1V)
+  - Upgraded transformers requirement to >=4.57.1 for GLM4V architecture support
+  - Added `_is_vision_model()` detection for AutoModelForImageTextToText models
+  - Added `_load_vision_model()` and `_generate_vision_model()` methods
+  - Proper multimodal message handling with AutoProcessor
+  - Suppressed progress bars and processor warnings during model loading
+- **Vision Compression**: Enhanced test script with exact token counting from API responses
+  - Added `--detail` parameter for Qwen3-VL token optimization (`low`, `high`, `auto`, `custom`)
+  - Added `--target-tokens` parameter for precise token control per image
+  - Improved compression ratio calculation using actual vs estimated tokens
+  - Added model-specific context window validation and warnings
+- **Media Handler Architecture**: Clarified OpenAI vs Local handler usage patterns
+  - LMStudio uses OpenAIMediaHandler for vision models (API compatibility)
+  - Ollama uses LocalMediaHandler with custom image array format
+  - Added comprehensive architecture documentation and diagrams
 
 ### Fixed
 - **Cache Creation**: Automatic directory creation with proper error handling
 - **Dependency Validation**: Structured logging for missing libraries  
 - **Compression Pipeline**: Fixed parameter passing and quality threshold bypass
-- Requires vision-capable models (llama3.2-vision, qwen2.5vl, gpt-4o, claude-3-5-sonnet)
+- **GLM4V Architecture**: Fixed `KeyError: 'glm4v'` when loading Glyph and GLM-4.1V models
+- **Text Formatting Performance**: Fixed infinite loop in inline formatting parser for large files
+- **Text Pagination**: Implemented proper multi-image splitting for long texts
+- **Literal Newline Handling**: Fixed `\\n` sequences not being converted to actual newlines
+- **Token Estimation**: Added model-specific visual token calculations and context overflow protection
+- **Media Path Logging**: Fixed media output paths not showing in INFO logs
+- **Qwen3-VL Context Management**: Auto-adjusts detail level to prevent memory allocation errors
+- **LMStudio GLM-4.1V Compatibility**: Documented LMStudio's internal vision config limitations
+- **HuggingFace GLM4V Support**: Added proper error handling for transformers version requirements
+- Requires vision-capable models (llama3.2-vision, qwen2.5vl, gpt-4o, claude-3-5-sonnet, zai-org/Glyph)
 - System dependency on poppler-utils may require manual installation on some systems
 - Quality assessment heuristics may be overly conservative for some document types
 

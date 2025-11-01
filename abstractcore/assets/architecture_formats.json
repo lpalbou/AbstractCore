@@ -308,6 +308,18 @@
       "tool_prefix": "<|tool_call|>",
       "patterns": ["glm-4.5", "glm-4.6", "glm-4.5-air"]
     },
+    "glm4v": {
+      "description": "Zhipu AI's GLM-4V multimodal architecture (June 2024)",
+      "message_format": "glm_special_tokens",
+      "system_prefix": "<|system|>\n",
+      "system_suffix": "\n",
+      "user_prefix": "<|user|>\n",
+      "user_suffix": "\n",
+      "assistant_prefix": "<|assistant|>\n",
+      "assistant_suffix": "\n",
+      "tool_format": "json",
+      "patterns": ["glm-4v", "glm4v", "glyph", "zai-org/glyph", "glm-4.1v"]
+    },
     "glm4": {
       "description": "Zhipu AI's GLM-4 architecture (June 2024)",
       "message_format": "im_start_end",
@@ -407,7 +419,8 @@
     "basic": "Simple role: content format",
     "human_assistant": "Human/Assistant format",
     "openai_chat": "OpenAI chat completion format",
-    "llama3_header": "LLaMA 3+ format with <|start_header_id|> and <|eot_id|>"
+    "llama3_header": "LLaMA 3+ format with <|start_header_id|> and <|eot_id|>",
+    "glm_special_tokens": "GLM format with <|system|>, <|user|>, <|assistant|> tokens"
   },
   "tool_formats": {
     "pythonic": "Python function call syntax: [func(arg=val)]",
