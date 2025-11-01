@@ -45,8 +45,8 @@ def main():
                        help="Image resolution in DPI (default: 72, used when width/height not specified)")
     parser.add_argument("--font-size", type=int, default=8,
                        help="Font size for text rendering (default: 8)")
-    parser.add_argument("--font", type=str, default=None,
-                       help="Font name to use (e.g., 'Helvetica', 'Arial'). Falls back to default if not available.")
+    parser.add_argument("--font", type=str, default="OCRB",
+                       help="Font name to use (default: OCRB). Falls back to system default if not available.")
     parser.add_argument("--font-path", type=str, default=None,
                        help="Path to specific font file (e.g., 'abstractcore/assets/OCRA.ttf')")
     parser.add_argument("--margin-x", type=int, default=15,
@@ -302,10 +302,26 @@ def main():
     media_count = len(result.get('media', []))
     original_tokens = TokenUtils.estimate_tokens(text, "gpt-4o")
     
-    # Estimate visual tokens (approximate tokens per image for vision models)
-    # Based on research: typical image ~1000-2000 tokens for vision models
-    tokens_per_image = 1500  # Conservative estimate for 1024x1024 images
+    # Estimate visual tokens based on actual model capabilities
+    # Check if we have model-specific token limits
+    try:
+        from abstractcore.media.capabilities import get_model_capabilities
+        model_caps = get_model_capabilities("lmstudio", args.model)
+        tokens_per_image = model_caps.get('max_image_tokens', 1500)  # Fallback to 1500
+        max_context = model_caps.get('max_tokens', 32768)
+        
+        logger.debug(f"Model {args.model}: {tokens_per_image} tokens/image, {max_context} max context")
+    except:
+        # Fallback for unknown models
+        tokens_per_image = 1500
+        max_context = 32768
+        
     visual_tokens = media_count * tokens_per_image
+    
+    # Check if we're exceeding model limits
+    if visual_tokens > max_context * 0.8:  # Use 80% of context for safety
+        logger.warning(f"Visual tokens ({visual_tokens:,}) may exceed model context limit ({max_context:,})")
+        logger.warning(f"Consider reducing images or using a model with larger context window")
     
     # Calculate actual token-based compression ratio
     compression_ratio = original_tokens / visual_tokens if visual_tokens > 0 else 0
@@ -475,8 +491,26 @@ def main():
         
     else:
         # Compressed mode - send images to LLM
+        media_items = result.get('media', [])
+        
+        # Always log what media is being sent to LLM (INFO level so it's always visible)
+        logger.info("=== MEDIA BEING SENT TO LLM ===")
+        for i, media_item in enumerate(media_items):
+            item_info = f"Media {i}: {type(media_item).__name__}"
+            if hasattr(media_item, 'file_path'):
+                item_info += f" from {media_item.file_path}"
+            if hasattr(media_item, 'content_type'):
+                item_info += f" ({media_item.content_type})"
+            logger.info(f"  {item_info}")
+            
+            # Show first few characters of data if available (only in debug mode)
+            if args.debug and hasattr(media_item, 'data') and media_item.data:
+                data_preview = str(media_item.data)[:100] + "..." if len(str(media_item.data)) > 100 else str(media_item.data)
+                logger.info(f"    Data preview: {data_preview}")
+        logger.info("=" * 30)
+        
+        # Debug-only detailed generation input info
         if args.debug:
-            media_items = result.get('media', [])
             logger.debug("Generation input details",
                         media_count=len(media_items),
                         media_sizes=[len(str(m)) for m in media_items],
@@ -484,22 +518,6 @@ def main():
                         temperature=args.temperature,
                         repetition_penalty=args.repetition_penalty,
                         frequency_penalty=args.frequency_penalty)
-            
-            # Log what media is being sent to LLM
-            print(f"\n=== MEDIA BEING SENT TO LLM ===")
-            for i, media_item in enumerate(media_items):
-                item_info = f"Media {i}: {type(media_item).__name__}"
-                if hasattr(media_item, 'file_path'):
-                    item_info += f" from {media_item.file_path}"
-                if hasattr(media_item, 'content_type'):
-                    item_info += f" ({media_item.content_type})"
-                print(f"  {item_info}")
-                
-                # Show first few characters of data if available
-                if hasattr(media_item, 'data') and media_item.data:
-                    data_preview = str(media_item.data)[:100] + "..." if len(str(media_item.data)) > 100 else str(media_item.data)
-                    print(f"    Data preview: {data_preview}")
-            print("=" * 30)
         
         response = llm.generate(
             "Summarize this document:",
