@@ -33,7 +33,22 @@ class PILTextRenderer:
         # Check dependencies
         self._check_dependencies()
         
+        # Track if we're using OCRB fonts for special bold handling
+        self.using_ocrb_fonts = False
+        
         self.logger.debug("PILTextRenderer initialized")
+    
+    def _get_effective_dimensions(self, config: RenderingConfig) -> tuple[int, int]:
+        """Get effective image dimensions (target dimensions or VLM-optimized defaults)."""
+        if config.target_width and config.target_height:
+            return (config.target_width, config.target_height)
+        else:
+            # VLM-optimized defaults: 1024x768 works well with most vision models
+            # - Fits within Claude 3.5 Sonnet (1568x1568 max)
+            # - Efficient for GPT-4o tokenization (~1700 tokens)
+            # - Good text aspect ratio (4:3)
+            # - Supported by all major VLM families
+            return (1024, 768)
     
     def _check_dependencies(self):
         """Check if required dependencies are available."""
@@ -81,20 +96,25 @@ class PILTextRenderer:
             # Calculate text layout (returns columns)
             columns_data = self._layout_text(segments, fonts, config)
             
-            # Calculate image dimensions
-            img_width, img_height = self._calculate_image_size(columns_data, fonts, config)
+            # Get target dimensions
+            img_width, img_height = self._get_effective_dimensions(config)
             
-            # Create image
+            # Create image with exact dimensions
             # Use white background for better compression
             image = Image.new('RGB', (img_width, img_height), 'white')
+            
+            # Set DPI information on the image
+            dpi_tuple = (config.dpi, config.dpi)
+            image.info['dpi'] = dpi_tuple
+            
             draw = ImageDraw.Draw(image)
             
             # Render text
             self._render_text_to_image(draw, columns_data, fonts, config)
             
-            # Save image
+            # Save image with DPI information
             image_path = output_dir / f"{unique_id}_page_1.png"
-            image.save(image_path, 'PNG', optimize=True)
+            image.save(image_path, 'PNG', optimize=True, dpi=dpi_tuple)
             
             self.logger.debug(f"Generated PIL image: {image_path} ({img_width}x{img_height})")
             
@@ -105,18 +125,58 @@ class PILTextRenderer:
             raise RenderingError(f"Failed to render text with PIL: {e}") from e
     
     def _load_fonts(self, config: RenderingConfig) -> dict:
-        """Load fonts for different styles."""
+        """Load fonts for different styles with custom font support."""
         from PIL import ImageFont
+        import os
         
         fonts = {}
         font_size = config.font_size
         
+        self.logger.debug(f"Loading fonts with size: {font_size}")
+        
         try:
-            # Try to load system fonts with good readability
-            # Use the same fonts as ReportLab for consistency
+            # Check if custom font path is specified
+            if config.font_path and os.path.exists(config.font_path):
+                self.logger.info(f"Using custom font path: {config.font_path}")
+                try:
+                    # Try to load the custom font for all styles
+                    base_font = ImageFont.truetype(config.font_path, font_size)
+                    fonts['regular'] = base_font
+                    fonts['bold'] = base_font  # Use same font for all styles
+                    fonts['italic'] = base_font
+                    fonts['bold_italic'] = base_font
+                    
+                    self.logger.info(f"Successfully loaded custom font: {config.font_path}")
+                    return fonts
+                except Exception as e:
+                    self.logger.warning(f"Failed to load custom font {config.font_path}: {e}. Falling back to system fonts.")
+            
+            # Check if custom font name is specified
+            if config.font_name:
+                self.logger.info(f"Trying to load font by name: {config.font_name}")
+                
+                # Special handling for OCRB font family
+                if config.font_name.upper() == "OCRB":
+                    return self._load_ocrb_font_family(font_size)
+                
+                try:
+                    # Try to load by name (works on some systems)
+                    base_font = ImageFont.truetype(config.font_name, font_size)
+                    fonts['regular'] = base_font
+                    fonts['bold'] = base_font
+                    fonts['italic'] = base_font
+                    fonts['bold_italic'] = base_font
+                    
+                    self.logger.info(f"Successfully loaded font by name: {config.font_name}")
+                    return fonts
+                except Exception as e:
+                    self.logger.warning(f"Failed to load font by name {config.font_name}: {e}. Falling back to system fonts.")
+            
+            # Fall back to system fonts with good readability
+            self.logger.info("Using default system fonts")
             font_paths = {
                 'regular': [
-                    '/System/Library/Fonts/Helvetica.ttc',  # Same as ReportLab
+                    '/System/Library/Fonts/Helvetica.ttc',  # macOS
                     '/System/Library/Fonts/Arial.ttf',
                     '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Linux
                     'arial.ttf'  # Windows
@@ -168,6 +228,56 @@ class PILTextRenderer:
         
         return fonts
     
+    def _load_ocrb_font_family(self, font_size: int) -> dict:
+        """Load OCRB font family with proper regular and italic variants."""
+        from PIL import ImageFont
+        import os
+        
+        fonts = {}
+        
+        # Define paths to OCRB font files relative to the package
+        try:
+            # Get the path to the assets directory
+            assets_dir = Path(__file__).parent.parent / "assets"
+            ocrb_regular_path = assets_dir / "OCRB.ttf"
+            ocrb_italic_path = assets_dir / "OCRBL.ttf"
+            
+            self.logger.info(f"Loading OCRB font family from assets directory")
+            
+            # Load regular font
+            if ocrb_regular_path.exists():
+                fonts['regular'] = ImageFont.truetype(str(ocrb_regular_path), font_size)
+                fonts['bold'] = ImageFont.truetype(str(ocrb_regular_path), font_size)  # Use regular for bold
+                self.logger.info(f"Loaded OCRB regular font: {ocrb_regular_path}")
+            else:
+                self.logger.warning(f"OCRB regular font not found at: {ocrb_regular_path}")
+                fonts['regular'] = ImageFont.load_default()
+                fonts['bold'] = ImageFont.load_default()
+            
+            # Load italic font (OCRBL)
+            if ocrb_italic_path.exists():
+                fonts['italic'] = ImageFont.truetype(str(ocrb_italic_path), font_size)
+                fonts['bold_italic'] = ImageFont.truetype(str(ocrb_italic_path), font_size)  # Use italic for bold-italic
+                self.logger.info(f"Loaded OCRB italic font: {ocrb_italic_path}")
+            else:
+                self.logger.warning(f"OCRB italic font not found at: {ocrb_italic_path}")
+                fonts['italic'] = fonts['regular']  # Fall back to regular
+                fonts['bold_italic'] = fonts['regular']
+            
+            self.logger.info("Successfully loaded OCRB font family with proper italic support")
+            self.using_ocrb_fonts = True  # Set flag for special bold handling
+            return fonts
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load OCRB font family: {e}")
+            # Fall back to default fonts
+            return {
+                'regular': ImageFont.load_default(),
+                'bold': ImageFont.load_default(),
+                'italic': ImageFont.load_default(),
+                'bold_italic': ImageFont.load_default()
+            }
+    
     def _load_font_from_paths(self, paths: List[str], size: int, style: str = 'regular'):
         """Try to load font from a list of possible paths."""
         from PIL import ImageFont
@@ -216,17 +326,17 @@ class PILTextRenderer:
         current_line = []
         current_line_width = 0
         
-        # Calculate available width
-        page_width = config.page_width
+        # Calculate available width using effective dimensions
+        img_width, img_height = self._get_effective_dimensions(config)
         margin_x = config.margin_x
-        available_width = page_width - 2 * margin_x
+        available_width = img_width - 2 * margin_x
         
         # Handle multi-column layout properly
         columns = max(1, config.columns)
         column_gap = config.column_gap if columns > 1 else 0
         column_width = (available_width - (columns - 1) * column_gap) / columns
         
-        self.logger.debug(f"Layout: page_width={page_width}, available_width={available_width}, "
+        self.logger.debug(f"Layout: img_width={img_width}, available_width={available_width}, "
                          f"columns={columns}, column_width={column_width}")
         
         for segment in segments:
@@ -244,7 +354,7 @@ class PILTextRenderer:
             # Handle space-only segments (like "   " from single newlines)
             if segment.text.strip() == "":
                 # This is a space-only segment - preserve it
-                space_width = self._get_text_width(segment.text, font)
+                space_width = self._get_text_width(segment.text, font, segment)
                 if current_line_width + space_width <= column_width:
                     # Add spaces to current line
                     current_line.append({
@@ -276,7 +386,7 @@ class PILTextRenderer:
                 if not part:  # Skip empty parts
                     continue
                     
-                part_width = self._get_text_width(part, font)
+                part_width = self._get_text_width(part, font, segment)
                 
                 # Check if part fits on current line
                 if current_line_width + part_width <= column_width or not current_line:
@@ -339,8 +449,8 @@ class PILTextRenderer:
             self.logger.debug(f"Using regular font for: '{segment.text[:20]}...'")
             return font
     
-    def _get_text_width(self, text: str, font) -> int:
-        """Get the width of text in pixels."""
+    def _get_text_width(self, text: str, font, segment=None) -> int:
+        """Get the width of text in pixels, accounting for stroke effects."""
         from PIL import Image, ImageDraw
         
         if not text:
@@ -352,10 +462,18 @@ class PILTextRenderer:
         
         try:
             bbox = temp_draw.textbbox((0, 0), text, font=font)
-            return bbox[2] - bbox[0]
+            base_width = bbox[2] - bbox[0]
         except:
             # Fallback for older PIL versions
-            return temp_draw.textsize(text, font=font)[0]
+            base_width = temp_draw.textsize(text, font=font)[0]
+        
+        # Add extra width for OCRB bold overlay effect
+        if (self.using_ocrb_fonts and segment and 
+            (segment.is_bold or segment.is_header) and not segment.is_italic):
+            # Add width for enhanced horizontal overlays (0.6 pixel max offset)
+            return int(base_width + 0.6)
+        
+        return base_width
     
     def _get_text_height(self, font) -> int:
         """Get the height of text in pixels."""
@@ -373,26 +491,29 @@ class PILTextRenderer:
             return temp_draw.textsize("Ag", font=font)[1]
     
     def _calculate_image_size(self, columns_data: List[List[List[dict]]], fonts: dict, config: RenderingConfig) -> Tuple[int, int]:
-        """Calculate the required image size for multi-column layout."""
+        """Calculate the required image size for multi-column layout with DPI scaling."""
         if not columns_data or not any(columns_data):
-            return (config.page_width, 100)  # Minimum size
+            return (config.page_width, self._scale_dimension(100, config))  # Minimum size
         
-        # Calculate width (use page width)
+        # Calculate width (use page width - no scaling needed as it's already in points)
         width = config.page_width
         
-        # Calculate height based on the tallest column
-        line_height = config.line_height
-        line_spacing = int(line_height * 1.3)  # 30% more space between lines
+        # Calculate height based on the tallest column with DPI scaling
+        scaled_line_height = self._scale_dimension(config.line_height, config)
+        scaled_line_spacing = int(scaled_line_height * 1.3)  # 30% more space between lines
+        scaled_margin_y = self._scale_dimension(config.margin_y, config)
+        scaled_padding = self._scale_dimension(20, config)
         
         max_lines_in_column = max(len(column) for column in columns_data)
-        total_height = max_lines_in_column * line_spacing + 2 * config.margin_y + 20
+        total_height = max_lines_in_column * scaled_line_spacing + 2 * scaled_margin_y + scaled_padding
         
         # Add some padding
-        height = max(total_height, 100)
+        min_height = self._scale_dimension(100, config)
+        height = max(total_height, min_height)
         
         self.logger.debug(f"Image size calculation: columns={len(columns_data)}, "
                          f"max_lines_in_column={max_lines_in_column}, "
-                         f"line_height={line_height}, line_spacing={line_spacing}, height={height}")
+                         f"scaled_line_height={scaled_line_height}, scaled_line_spacing={scaled_line_spacing}, height={height}")
         
         return (int(width), int(height))
     
@@ -401,9 +522,10 @@ class PILTextRenderer:
         line_height = config.line_height
         line_spacing = int(line_height * 1.3)  # Match the spacing calculation
         
-        # Calculate column layout
+        # Calculate column layout using effective dimensions
         columns = len(columns_data)
-        available_width = config.page_width - 2 * config.margin_x
+        img_width, img_height = self._get_effective_dimensions(config)
+        available_width = img_width - 2 * config.margin_x
         column_gap = config.column_gap if columns > 1 else 0
         column_width = (available_width - (columns - 1) * column_gap) / columns
         
@@ -420,12 +542,49 @@ class PILTextRenderer:
                 for chunk in line:
                     text = chunk['text']
                     font = chunk['font']
+                    segment = chunk.get('segment')
                     
-                    # Draw text
-                    draw.text((x, y), text, font=font, fill='black')
+                    # Draw text with special handling for OCRB bold
+                    self._draw_text_with_effects(draw, (x, y), text, font, segment)
                     
                     # Move x position
-                    x += self._get_text_width(text, font)
+                    x += self._get_text_width(text, font, segment)
                 
                 # Move to next line
                 y += line_spacing
+    
+    def _draw_text_with_effects(self, draw, position, text, font, segment):
+        """Draw text with special effects for OCRB bold text."""
+        x, y = position
+        
+        # Check if this should be bold and we're using OCRB fonts
+        if (self.using_ocrb_fonts and segment and 
+            (segment.is_bold or segment.is_header) and not segment.is_italic):
+            
+            # Use improved bold effect for OCRB text
+            self.logger.debug(f"Drawing OCRB bold text with enhanced effect: '{text[:20]}...'")
+            
+            # Method: Enhanced multiple overlays for more visible bold effect
+            try:
+                # Draw the base text
+                draw.text((x, y), text, font=font, fill='black')
+                
+                # Add horizontal overlays for width (increased for 10% more visibility)
+                draw.text((x + 0.2, y), text, font=font, fill='black')
+                draw.text((x + 0.4, y), text, font=font, fill='black')
+                draw.text((x + 0.6, y), text, font=font, fill='black')  # Additional overlay
+                
+                # Add vertical overlays for height (enhanced for better visibility)
+                draw.text((x, y - 0.1), text, font=font, fill='black')
+                draw.text((x, y + 0.1), text, font=font, fill='black')  # Bottom overlay
+                
+                # Add diagonal overlays for smoother appearance
+                draw.text((x + 0.1, y - 0.05), text, font=font, fill='black')
+                
+            except Exception as e:
+                # Fallback: just draw regular text if anything fails
+                self.logger.debug(f"OCRB bold effect failed, using regular text: {e}")
+                draw.text((x, y), text, font=font, fill='black')
+        else:
+            # Regular text drawing
+            draw.text((x, y), text, font=font, fill='black')

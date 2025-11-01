@@ -134,7 +134,6 @@ media = [
 ]
 
 compression = [
-    "reportlab>=4.0.0,<5.0.0",
     "pdf2image>=1.16.0,<2.0.0",
 ]
 

@@ -5,15 +5,18 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.5.3] - 2025-10-31
+## [2.5.3] - 2025-11-01
 
 ### Added
 - **Glyph Visual-Text Compression**: Renders long text as optimized images for VLM processing
-  - Direct PDF-to-image conversion preserving formulas, tables, and images
-  - Research-based VLM token calculator with provider-specific formulas (OpenAI, Anthropic, Google, Qwen)
-  - Centralized vision model detection with generic fallback for unknown models
+  - PIL-based text rendering with custom font support and proper DPI scaling
+  - Markdown-like formatting with hierarchical headers, bold/italic text, and smart newline handling
+  - Multi-column layout support with configurable spacing and margins
+  - Special OCRB font family support with separate regular/italic variants and stroke-based bold effect
+  - Font customization via `--font` (by name) and `--font-path` (by file) parameters
+  - Research-based VLM token calculator with provider-specific formulas
   - Thread-safe caching system in `~/.abstractcore/glyph_cache/`
-  - Optional dependencies: `pip install abstractcore[compression]`
+  - Optional dependencies: `pip install abstractcore[compression]` (removed ReportLab dependency)
 
 ### Enhanced  
 - **Model Capabilities**: Added 50+ VLM models (Mistral Small 3.1/3.2, LLaMA 4, Qwen3-VL, Granite Vision)
