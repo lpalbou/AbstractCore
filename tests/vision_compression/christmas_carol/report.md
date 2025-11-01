@@ -1,5 +1,10 @@
 Here is a full markdown report detailing our collaboration to optimize text-based images for a Vision LLM.
 
+Note : command use
+```bash
+rm -fr /Users/albou/.abstractcore/glyph_cache/ && python test-vision-compression.py --file tests/media_examples/christmas_carol_ebook_chapter_1.txt --render-format --columns 2 --font-size 9 --width 1024 --height 1024 --font OCRB --debug
+```
+
 ---
 
 # Report: Optimizing Image-Based Text for Vision LLM Analysis
