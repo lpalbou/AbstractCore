@@ -110,7 +110,7 @@ class PILTextRenderer:
         # Estimate line capacity
         line_height = int(config.line_height * 1.3)  # Match spacing calculation
         chars_per_line = int(column_width / avg_char_width)
-        lines_per_column = int(available_height / line_height)
+        lines_per_column = int((available_height * 1.08 + line_height) / line_height)
         total_lines = lines_per_column * columns
         
         # More realistic capacity estimation
