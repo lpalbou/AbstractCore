@@ -36,8 +36,13 @@ class CompressionCache:
         self.max_size_bytes = int(max_size_gb * 1024 * 1024 * 1024)
         self.ttl_seconds = ttl_days * 24 * 3600
         
-        # Create cache directory
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # Create cache directory (thread-safe for parallel executions)
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.debug(f"Cache directory created/verified: {self.cache_dir}")
+        except Exception as e:
+            self.logger.error(f"Failed to create cache directory {self.cache_dir}: {e}")
+            raise CompressionCacheError(f"Cannot create cache directory: {e}")
         
         # Initialize metadata
         self.metadata_file = self.cache_dir / "cache_metadata.json"

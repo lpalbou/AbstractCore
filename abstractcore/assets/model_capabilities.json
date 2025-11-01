@@ -1962,6 +1962,29 @@
       "research_source": "Vision Transformer foundational paper"
     }
   },
+  "generic_vision_model": {
+    "max_output_tokens": 4096,
+    "tool_support": "prompted",
+    "structured_output": "prompted",
+    "parallel_tools": false,
+    "vision_support": true,
+    "audio_support": false,
+    "video_support": false,
+    "image_resolutions": [
+      "up to 1024x1024"
+    ],
+    "max_image_resolution": "1024x1024",
+    "image_patch_size": 16,
+    "max_image_tokens": 2048,
+    "image_tokenization_method": "patch_based",
+    "adaptive_resolution": false,
+    "vision_encoder": "generic_vit",
+    "notes": "Generic vision model fallback with conservative parameters that should work with most VLMs",
+    "source": "AbstractCore generic fallback",
+    "canonical_name": "generic_vision_model",
+    "aliases": [],
+    "max_tokens": 32768
+  },
   "default_capabilities": {
     "max_output_tokens": 4096,
     "tool_support": "none",

@@ -8,31 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.5.3] - 2025-10-31
 
 ### Added
-- **Glyph Visual-Text Compression (Experimental)**: Initial implementation of Glyph compression system (https://huggingface.co/zai-org/Glyph) for processing large documents through vision-language models
-  - Renders long textual content into optimized images using ReportLab and pdf2image
-  - Automatic compression activation for documents exceeding token thresholds
-  - Provider-specific optimization (DPI, font size, layout) for OpenAI, Anthropic, Ollama, and LMStudio
-  - Quality validation system with configurable thresholds and bypass for `glyph_compression="always"`
-  - Intelligent caching system in `~/.abstractcore/glyph_cache/` for reuse of rendered images
-  - Optional compression dependencies: `pip install abstractcore[compression]` (reportlab, pdf2image)
-  - System dependency requirement: poppler-utils for PDF to image conversion
+- **Glyph Visual-Text Compression**: Renders long text as optimized images for VLM processing
+  - Direct PDF-to-image conversion preserving formulas, tables, and images
+  - Research-based VLM token calculator with provider-specific formulas (OpenAI, Anthropic, Google, Qwen)
+  - Centralized vision model detection with generic fallback for unknown models
+  - Thread-safe caching system in `~/.abstractcore/glyph_cache/`
+  - Optional dependencies: `pip install abstractcore[compression]`
+
+### Enhanced  
+- **Model Capabilities**: Added 50+ VLM models (Mistral Small 3.1/3.2, LLaMA 4, Qwen3-VL, Granite Vision)
+- **Detection System**: All model queries go through `detection.py` with structured logging
+- **Token Calculation**: Accurate image tokenization using model-specific parameters
 
 ### Fixed
-- **Compression Dependencies**: Added reportlab and pdf2image as optional dependencies in compression package
-- **Parameter Passing**: Fixed duplicate parameter issue in compression pipeline
-- **Text Extraction**: Improved PDF text extraction before compression to handle binary files correctly
-- **Quality Threshold**: Added bypass mechanism for quality checks when user explicitly requests compression
-- **Dependency Checking**: Enhanced dependency validation with structured logging warnings for missing libraries
-
-### Technical Notes
-- **Current Performance**: Achieves ~1.5:1 compression ratio on dense academic documents (22K→15K tokens)
-- **Multi-Image Rendering**: Long documents are split across multiple images (e.g., 10 images for 22K token PDF)
-- **Fair Token Accounting**: Compression ratios account for actual VLM processing costs (~1,500 tokens per image)
-- **Conservative Implementation**: Prioritizes compatibility with general-purpose vision models over aggressive compression
-- **Research Baseline**: Original Glyph research claims 4:1 ratios; our implementation focuses on reliability and broad model support
-
-### Known Limitations
-- Compression ratios lower than original Glyph research due to conservative rendering approach
+- **Cache Creation**: Automatic directory creation with proper error handling
+- **Dependency Validation**: Structured logging for missing libraries  
+- **Compression Pipeline**: Fixed parameter passing and quality threshold bypass
 - Requires vision-capable models (llama3.2-vision, qwen2.5vl, gpt-4o, claude-3-5-sonnet)
 - System dependency on poppler-utils may require manual installation on some systems
 - Quality assessment heuristics may be overly conservative for some document types

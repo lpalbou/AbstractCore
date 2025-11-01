@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Union, Tuple
 import tempfile
 import os
+import hashlib
 
 try:
     import pdf2image
@@ -109,9 +110,22 @@ class DirectPDFProcessor(BaseMediaHandler):
         
         self.logger.info(f"Converted PDF to {len(individual_images)} individual page images")
         
+        # Use AbstractCore's Glyph cache directory instead of temp directory
+        from ...compression.cache import CompressionCache
+        cache = CompressionCache()
+        
+        # Create a unique subdirectory for this PDF processing session
+        pdf_hash = hashlib.md5(str(pdf_path).encode()).hexdigest()[:8]
+        session_id = f"pdf_{pdf_hash}_{len(individual_images)}pages"
+        glyph_dir = cache.cache_dir / session_id
+        glyph_dir.mkdir(parents=True, exist_ok=True)
+        
+        # CRITICAL DEBUG LOG: Show exactly where images are being generated
+        self.logger.debug(f"🎯 GENERATING GLYPH IMAGES IN CACHE DIRECTORY: {glyph_dir}")
+        self.logger.info(f"DirectPDFProcessor: Creating {self.pages_per_image} pages per image in {glyph_dir}")
+        
         # Combine pages into multi-page images
         combined_images = []
-        temp_dir = Path(tempfile.mkdtemp())
         
         try:
             for i in range(0, len(individual_images), self.pages_per_image):
@@ -121,20 +135,26 @@ class DirectPDFProcessor(BaseMediaHandler):
                 # Create combined image
                 combined_image = self._combine_pages(pages_batch, i // self.pages_per_image)
                 
-                # Save combined image
-                output_path = temp_dir / f"combined_page_{i // self.pages_per_image + 1:03d}.png"
+                # Save combined image in Glyph cache
+                output_path = glyph_dir / f"image_{i // self.pages_per_image + 1:03d}.png"
                 combined_image.save(output_path, 'PNG', optimize=True)
                 combined_images.append(output_path)
                 
-                self.logger.debug(f"Created combined image {len(combined_images)} with {len(pages_batch)} pages")
+                # CRITICAL DEBUG LOG: Show each image as it's created
+                self.logger.debug(f"📄 CREATED GLYPH IMAGE: {output_path} (pages {i+1}-{min(i+self.pages_per_image, len(individual_images))})")
         
         except Exception as e:
-            # Clean up temp directory on error
+            # Clean up cache directory on error
             import shutil
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            shutil.rmtree(glyph_dir, ignore_errors=True)
             raise e
         
+        # CRITICAL DEBUG LOG: Final summary with exact paths
         self.logger.info(f"Created {len(combined_images)} combined images from {len(individual_images)} pages")
+        self.logger.debug(f"🎯 ALL GLYPH IMAGES STORED IN CACHE: {glyph_dir}")
+        for i, img_path in enumerate(combined_images, 1):
+            self.logger.debug(f"   📄 Image {i}: {img_path}")
+        
         return combined_images
     
     def _combine_pages(self, pages: List['Image.Image'], batch_index: int) -> 'Image.Image':
