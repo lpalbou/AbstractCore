@@ -163,10 +163,10 @@ class GlyphProcessor(BaseMediaHandler):
                 plain_segments = [TextSegment(text=processed_content)]
                 images = pil_renderer.segments_to_images(
                     segments=plain_segments,
-                    config=render_config,
-                    output_dir=self.config.temp_dir,
-                    unique_id=cache_key[:16]
-                )
+                config=render_config,
+                output_dir=self.config.temp_dir,
+                unique_id=cache_key[:16]
+            )
             
             # Quality validation (bypass if user explicitly wants compression)
             quality_score = self.quality_validator.assess(content, images, provider)

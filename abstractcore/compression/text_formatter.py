@@ -224,8 +224,13 @@ class TextFormatter:
         1) Single \n → 1 space
         2) Double \n\n → 2 spaces
         3) Triple+ \n\n\n → 1 linebreak
+        
+        Also handles literal \n sequences (backslash-n) in addition to actual newlines.
         """
         import re
+        
+        # First, convert literal \n sequences to actual newlines
+        text = text.replace('\\n', '\n')
         
         # Process in order: triple+, double, single
         # Use placeholder to avoid conflicts
