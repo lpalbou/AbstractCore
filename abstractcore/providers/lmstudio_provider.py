@@ -202,6 +202,15 @@ class LMStudioProvider(BaseProvider):
             "max_tokens": max_output_tokens,  # LMStudio uses max_tokens for output tokens
             "top_p": kwargs.get("top_p", 0.9),
         }
+        
+        # Add additional generation parameters if provided (OpenAI-compatible)
+        if "frequency_penalty" in kwargs:
+            payload["frequency_penalty"] = kwargs["frequency_penalty"]
+        if "presence_penalty" in kwargs:
+            payload["presence_penalty"] = kwargs["presence_penalty"]
+        if "repetition_penalty" in kwargs:
+            # Some models support repetition_penalty directly
+            payload["repetition_penalty"] = kwargs["repetition_penalty"]
 
         # Add seed if provided (LMStudio supports seed via OpenAI-compatible API)
         seed_value = kwargs.get("seed", self.seed)

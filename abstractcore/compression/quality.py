@@ -37,9 +37,11 @@ class CompressionStats:
 
 class QualityValidator:
     """Validates compression quality using multiple metrics."""
-    
+
     def __init__(self):
         """Initialize quality validator."""
+        from ..utils.structured_logging import get_logger
+        self.logger = get_logger(self.__class__.__name__)
         self.validation_methods = [
             self._validate_compression_ratio,
             self._validate_content_preservation,

@@ -22,7 +22,7 @@ from ..events import EventType
 
 # Try to import transformers (standard HuggingFace support)
 try:
-    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+    from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer, pipeline
     import torch
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
@@ -88,6 +88,15 @@ class HuggingFaceProvider(BaseProvider):
         self.n_gpu_layers = n_gpu_layers
         self.model_type = None  # Will be "transformers" or "gguf"
         self.device = device
+        
+        # Store transformers-specific parameters
+        self.transformers_kwargs = {
+            k: v for k, v in kwargs.items() 
+            if k in ['trust_remote_code', 'torch_dtype', 'device_map', 'load_in_8bit', 'load_in_4bit', 'attn_implementation']
+        }
+        
+        # Store device preference for custom models
+        self.preferred_device = kwargs.get('device_map', 'auto')
 
         # Model instances
         self.tokenizer = None
@@ -216,24 +225,53 @@ class HuggingFaceProvider(BaseProvider):
     def _load_transformers_model(self):
         """Load standard HuggingFace transformers model"""
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model)
-            self.model_instance = AutoModelForCausalLM.from_pretrained(self.model)
+            # Load tokenizer with transformers-specific parameters
+            tokenizer_kwargs = {k: v for k, v in self.transformers_kwargs.items() 
+                              if k in ['trust_remote_code']}
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model, **tokenizer_kwargs)
+            
+            # Load model with all transformers-specific parameters
+            # Try AutoModelForCausalLM first, fall back to AutoModel for custom models
+            try:
+                self.model_instance = AutoModelForCausalLM.from_pretrained(self.model, **self.transformers_kwargs)
+            except ValueError as e:
+                if "Unrecognized configuration class" in str(e):
+                    # Fall back to AutoModel for custom models like DeepSeek-OCR
+                    self.model_instance = AutoModel.from_pretrained(self.model, **self.transformers_kwargs)
+                else:
+                    raise
 
-            # Move to device
-            if self.device in ["cuda", "mps"]:
+            # Move to device (only if not using device_map)
+            if self.device in ["cuda", "mps"] and 'device_map' not in self.transformers_kwargs:
                 self.model_instance = self.model_instance.to(self.device)
 
-            # Create pipeline
+            # Create pipeline - handle custom models that don't support text-generation
             device_arg = 0 if self.device == "cuda" else -1
             if self.device == "mps":
                 device_arg = -1
 
-            self.pipeline = pipeline(
-                "text-generation",
-                model=self.model_instance,
-                tokenizer=self.tokenizer,
-                device=device_arg
-            )
+            try:
+                # Don't pass device argument if using device_map (accelerate)
+                if 'device_map' in self.transformers_kwargs:
+                    self.pipeline = pipeline(
+                        "text-generation",
+                        model=self.model_instance,
+                        tokenizer=self.tokenizer
+                    )
+                else:
+                    self.pipeline = pipeline(
+                        "text-generation",
+                        model=self.model_instance,
+                        tokenizer=self.tokenizer,
+                        device=device_arg
+                    )
+            except ValueError as e:
+                if "not supported for text-generation" in str(e) or "accelerate" in str(e):
+                    # For custom models like DeepSeek-OCR, skip pipeline creation
+                    # We'll handle generation directly through the model
+                    self.pipeline = None
+                else:
+                    raise
 
         except Exception as e:
             error_str = str(e).lower()
@@ -513,11 +551,15 @@ class HuggingFaceProvider(BaseProvider):
         """Generate using transformers backend with optional Outlines native structured output"""
 
         if not self.pipeline:
-            return GenerateResponse(
-                content="Error: Transformers model not loaded",
-                model=self.model,
-                finish_reason="error"
-            )
+            # Handle custom models like DeepSeek-OCR that don't support standard pipelines
+            if hasattr(self.model_instance, 'infer'):
+                return self._generate_custom_model(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
+            else:
+                return GenerateResponse(
+                    content="Error: Transformers model not loaded or doesn't support generation",
+                    model=self.model,
+                    finish_reason="error"
+                )
 
         # Native structured output via Outlines (if configured and available)
         should_use_outlines = (
@@ -637,6 +679,164 @@ class HuggingFaceProvider(BaseProvider):
                 model=self.model,
                 finish_reason="error"
             )
+
+    def _generate_custom_model(self,
+                              prompt: str,
+                              messages: Optional[List[Dict[str, str]]] = None,
+                              system_prompt: Optional[str] = None,
+                              tools: Optional[List[Dict[str, Any]]] = None,
+                              media: Optional[List['MediaContent']] = None,
+                              stream: bool = False,
+                              response_model: Optional[Type[BaseModel]] = None,
+                              **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        """Generate using custom model methods (e.g., DeepSeek-OCR's infer method)"""
+        
+        import time
+        import tempfile
+        import os
+        start_time = time.time()
+        
+        try:
+            # Handle media content for vision models like DeepSeek-OCR
+            if media and len(media) > 0:
+                # Use the first image for OCR
+                media_item = media[0]
+                
+                # DeepSeek-OCR expects image file path
+                if hasattr(media_item, 'file_path') and media_item.file_path:
+                    image_file = str(media_item.file_path)
+                else:
+                    # If no file path, save media content to temp file
+                    from PIL import Image
+                    
+                    if hasattr(media_item, 'content') and media_item.content:
+                        # Handle base64 content
+                        if media_item.content_format == 'BASE64':
+                            import base64
+                            image_data = base64.b64decode(media_item.content)
+                            temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                            temp_file.write(image_data)
+                            temp_file.close()
+                            image_file = temp_file.name
+                        else:
+                            return GenerateResponse(
+                                content="Error: Unsupported media format for DeepSeek-OCR",
+                                model=self.model,
+                                finish_reason="error"
+                            )
+                    else:
+                        return GenerateResponse(
+                            content="Error: No valid image content found",
+                            model=self.model,
+                            finish_reason="error"
+                        )
+                
+                # Use DeepSeek-OCR's infer method
+                try:
+                    # Create temporary output directory for DeepSeek-OCR
+                    temp_output_dir = tempfile.mkdtemp()
+                    
+                    # Patch DeepSeek-OCR for MPS/CPU compatibility if needed
+                    if self.device == "mps" or (self.device is None and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
+                        self._patch_deepseek_for_mps()
+                    
+                    result = self.model_instance.infer(
+                        self.tokenizer,
+                        prompt=prompt,
+                        image_file=image_file,
+                        output_path=temp_output_dir,  # DeepSeek-OCR requires output path
+                        base_size=1024,
+                        image_size=640,
+                        crop_mode=True,
+                        save_results=False,
+                        test_compress=False
+                    )
+                    
+                    # Clean up temp output directory
+                    import shutil
+                    shutil.rmtree(temp_output_dir, ignore_errors=True)
+                    
+                    # Clean up temp file if created
+                    if 'temp_file' in locals() and os.path.exists(image_file):
+                        os.unlink(image_file)
+                    
+                    # Calculate generation time
+                    gen_time = (time.time() - start_time) * 1000
+                    
+                    return GenerateResponse(
+                        content=result if isinstance(result, str) else str(result),
+                        model=self.model,
+                        finish_reason="stop",
+                        input_tokens=len(prompt.split()),  # Rough estimate
+                        output_tokens=len(str(result).split()) if result else 0,
+                        gen_time=gen_time
+                    )
+                    
+                except Exception as e:
+                    return GenerateResponse(
+                        content=f"Error during DeepSeek-OCR inference: {str(e)}",
+                        model=self.model,
+                        finish_reason="error"
+                    )
+            else:
+                return GenerateResponse(
+                    content="Error: DeepSeek-OCR requires image input",
+                    model=self.model,
+                    finish_reason="error"
+                )
+                
+        except Exception as e:
+            return GenerateResponse(
+                content=f"Error in custom model generation: {str(e)}",
+                model=self.model,
+                finish_reason="error"
+            )
+
+    def _patch_deepseek_for_mps(self):
+        """Patch DeepSeek-OCR model to work with MPS instead of CUDA"""
+        import types
+        
+        def patched_infer(self, tokenizer, prompt='', image_file='', output_path='', base_size=1024, image_size=640, crop_mode=True, test_compress=False, save_results=False, eval_mode=False):
+            """Patched infer method that uses MPS instead of CUDA"""
+            import torch
+            
+            # Determine the best available device
+            if torch.backends.mps.is_available():
+                device = torch.device('mps')
+            elif torch.cuda.is_available():
+                device = torch.device('cuda')
+            else:
+                device = torch.device('cpu')
+            
+            # Call the original infer method but patch tensor.cuda() calls
+            original_cuda = torch.Tensor.cuda
+            
+            def patched_cuda(tensor, device=None, non_blocking=False, **kwargs):
+                """Redirect .cuda() calls to the appropriate device"""
+                if device == 'mps' or (device is None and torch.backends.mps.is_available()):
+                    return tensor.to('mps', non_blocking=non_blocking)
+                elif torch.cuda.is_available():
+                    return original_cuda(tensor, device, non_blocking, **kwargs)
+                else:
+                    return tensor.to('cpu', non_blocking=non_blocking)
+            
+            # Temporarily patch the cuda method
+            torch.Tensor.cuda = patched_cuda
+            
+            try:
+                # Move model to the appropriate device first
+                self.to(device)
+                
+                # Call original infer with device patching
+                return self._original_infer(tokenizer, prompt, image_file, output_path, base_size, image_size, crop_mode, test_compress, save_results, eval_mode)
+            finally:
+                # Restore original cuda method
+                torch.Tensor.cuda = original_cuda
+        
+        # Only patch if not already patched
+        if not hasattr(self.model_instance, '_original_infer'):
+            self.model_instance._original_infer = self.model_instance.infer
+            self.model_instance.infer = types.MethodType(patched_infer, self.model_instance)
 
     def _generate_gguf(self,
                        prompt: str,
