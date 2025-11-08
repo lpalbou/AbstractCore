@@ -13,6 +13,25 @@
       "aliases": [],
       "max_tokens": 128000
     },
+    "gpt-4-turbo": {
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "GPT-4 Turbo with vision capabilities",
+      "source": "OpenAI official docs 2025",
+      "canonical_name": "gpt-4-turbo",
+      "aliases": [
+        "gpt-4-turbo-preview"
+      ],
+      "max_tokens": 128000
+    },
     "gpt-4-turbo-with-vision": {
       "max_output_tokens": 4096,
       "tool_support": "native",

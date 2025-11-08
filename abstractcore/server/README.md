@@ -122,7 +122,9 @@ curl http://localhost:8000/health
 **Purpose**: List all available models across all providers.
 
 **Query Parameters**:
-- `type` (optional): Filter by model type (`text-generation` or `text-embedding`)
+- `input_type` (optional): Filter by input capability (`text`, `image`, `audio`, `video`)
+- `output_type` (optional): Filter by output capability (`text`, `embeddings`)
+- `provider` (optional): Filter by specific provider
 
 **Response**:
 ```json
@@ -150,11 +152,20 @@ curl http://localhost:8000/health
 # List all models
 curl http://localhost:8000/v1/models
 
-# List only text generation models
-curl http://localhost:8000/v1/models?type=text-generation
+# List models that can analyze images (vision models)
+curl http://localhost:8000/v1/models?input_type=image
 
-# List only embedding models
-curl http://localhost:8000/v1/models?type=text-embedding
+# List embedding models
+curl http://localhost:8000/v1/models?output_type=embeddings
+
+# List text-only models that generate text
+curl http://localhost:8000/v1/models?input_type=text&output_type=text
+
+# List Ollama vision models
+curl http://localhost:8000/v1/models?provider=ollama&input_type=image
+
+# Combine multiple filters
+curl http://localhost:8000/v1/models?provider=openai&input_type=image&output_type=text
 ```
 
 **Python Client**:
@@ -165,9 +176,12 @@ import requests
 response = requests.get("http://localhost:8000/v1/models")
 models = response.json()["data"]
 
-# Filter by type
-response = requests.get("http://localhost:8000/v1/models?type=text-generation")
-text_models = response.json()["data"]
+# Filter by capabilities
+response = requests.get("http://localhost:8000/v1/models?input_type=image")
+vision_models = response.json()["data"]
+
+response = requests.get("http://localhost:8000/v1/models?output_type=embeddings")
+embedding_models = response.json()["data"]
 ```
 
 ---

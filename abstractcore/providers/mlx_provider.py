@@ -494,8 +494,19 @@ class MLXProvider(BaseProvider):
 
     @classmethod
     def list_available_models(cls, **kwargs) -> List[str]:
-        """List available MLX models from HuggingFace cache."""
+        """
+        List available MLX models from HuggingFace cache.
+
+        Args:
+            **kwargs: Optional parameters including:
+                - input_capabilities: List of ModelInputCapability enums to filter by input capability
+                - output_capabilities: List of ModelOutputCapability enums to filter by output capability
+
+        Returns:
+            List of model names, optionally filtered by capabilities
+        """
         from pathlib import Path
+        from .model_capabilities import filter_models_by_capabilities
 
         try:
             hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
@@ -513,7 +524,21 @@ class MLXProvider(BaseProvider):
                     if "mlx" in model_name.lower():
                         models.append(model_name)
 
-            return sorted(models)
+            models = sorted(models)
+
+            # Apply new capability filtering if provided
+            input_capabilities = kwargs.get('input_capabilities')
+            output_capabilities = kwargs.get('output_capabilities')
+            
+            if input_capabilities or output_capabilities:
+                models = filter_models_by_capabilities(
+                    models, 
+                    input_capabilities=input_capabilities,
+                    output_capabilities=output_capabilities
+                )
+
+
+            return models
 
         except Exception:
             return []

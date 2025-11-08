@@ -453,8 +453,21 @@ class OllamaProvider(BaseProvider):
             self.client = httpx.Client(timeout=self._timeout)
 
     def list_available_models(self, **kwargs) -> List[str]:
-        """List available models from Ollama server."""
+        """
+        List available models from Ollama server.
+
+        Args:
+            **kwargs: Optional parameters including:
+                - base_url: Ollama server URL
+                - input_capabilities: List of ModelInputCapability enums to filter by input capability
+                - output_capabilities: List of ModelOutputCapability enums to filter by output capability
+
+        Returns:
+            List of model names, optionally filtered by capabilities
+        """
         try:
+            from .model_capabilities import filter_models_by_capabilities
+
             # Use provided base_url or fall back to instance base_url
             base_url = kwargs.get('base_url', self.base_url)
 
@@ -462,7 +475,21 @@ class OllamaProvider(BaseProvider):
             if response.status_code == 200:
                 data = response.json()
                 models = [model["name"] for model in data.get("models", [])]
-                return sorted(models)
+                models = sorted(models)
+
+                # Apply new capability filtering if provided
+                input_capabilities = kwargs.get('input_capabilities')
+                output_capabilities = kwargs.get('output_capabilities')
+                
+                if input_capabilities or output_capabilities:
+                    models = filter_models_by_capabilities(
+                        models, 
+                        input_capabilities=input_capabilities,
+                        output_capabilities=output_capabilities
+                    )
+
+
+                return models
             else:
                 self.logger.warning(f"Ollama API returned status {response.status_code}")
                 return []

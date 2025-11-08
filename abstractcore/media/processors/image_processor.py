@@ -5,6 +5,8 @@ This module provides comprehensive image processing capabilities using PIL,
 optimized for vision model inputs across different providers.
 """
 
+from __future__ import annotations  # PEP 563 - deferred type hint evaluation for optional dependencies
+
 import base64
 import io
 import mimetypes

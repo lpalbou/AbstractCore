@@ -27,7 +27,8 @@ class TestBasicSummarizer:
     def readme_content(self):
         """Load the actual README.md content for testing"""
         import os
-        readme_path = os.path.join(os.path.dirname(__file__), '..', 'README.md')
+        # Go up two levels: tests/apps -> tests -> project root
+        readme_path = os.path.join(os.path.dirname(__file__), '..', '..', 'README.md')
         with open(readme_path, 'r', encoding='utf-8') as f:
             content = f.read()
         return content
@@ -228,7 +229,8 @@ class TestBasicSummarizer:
         """Test that chunking works for very long documents"""
         # Create a long text by repeating README content
         import os
-        readme_path = os.path.join(os.path.dirname(__file__), '..', 'README.md')
+        # Go up two levels: tests/apps -> tests -> project root
+        readme_path = os.path.join(os.path.dirname(__file__), '..', '..', 'README.md')
         with open(readme_path, 'r', encoding='utf-8') as f:
             base_content = f.read()
 

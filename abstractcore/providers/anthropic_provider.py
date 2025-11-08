@@ -455,9 +455,21 @@ class AnthropicProvider(BaseProvider):
         # Create new client with updated timeout
         self.client = anthropic.Anthropic(api_key=self.api_key, timeout=self._timeout)
     def list_available_models(self, **kwargs) -> List[str]:
-        """List available models from Anthropic API."""
+        """
+        List available models from Anthropic API.
+
+        Args:
+            **kwargs: Optional parameters including:
+                - api_key: Anthropic API key
+                - input_capabilities: List of ModelInputCapability enums to filter by input capability
+                - output_capabilities: List of ModelOutputCapability enums to filter by output capability
+
+        Returns:
+            List of model names, optionally filtered by capabilities
+        """
         try:
             import httpx
+            from .model_capabilities import filter_models_by_capabilities
 
             # Use provided API key or instance API key
             api_key = kwargs.get('api_key', self.api_key)
@@ -481,7 +493,21 @@ class AnthropicProvider(BaseProvider):
                 data = response.json()
                 models = [model["id"] for model in data.get("data", [])]
                 self.logger.debug(f"Retrieved {len(models)} models from Anthropic API")
-                return sorted(models, reverse=True)  # Latest models first
+                models = sorted(models, reverse=True)  # Latest models first
+
+                # Apply new capability filtering if provided
+                input_capabilities = kwargs.get('input_capabilities')
+                output_capabilities = kwargs.get('output_capabilities')
+                
+                if input_capabilities or output_capabilities:
+                    models = filter_models_by_capabilities(
+                        models, 
+                        input_capabilities=input_capabilities,
+                        output_capabilities=output_capabilities
+                    )
+
+
+                return models
             else:
                 self.logger.warning(f"Anthropic API returned status {response.status_code}")
                 return []

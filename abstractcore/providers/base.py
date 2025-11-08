@@ -1008,14 +1008,47 @@ class BaseProvider(AbstractCoreInterface, ABC):
         The server will use this method to aggregate models across all providers.
 
         Args:
-            **kwargs: Provider-specific parameters (e.g., api_key, base_url)
+            **kwargs: Provider-specific parameters including:
+                - api_key: API key for authentication (if required)
+                - base_url: Base URL for API endpoint (if applicable)
+                - input_capabilities: Optional list of ModelInputCapability enums to filter by input capability
+                    (e.g., [ModelInputCapability.IMAGE] for vision models)
+                - output_capabilities: Optional list of ModelOutputCapability enums to filter by output capability
+                    (e.g., [ModelOutputCapability.EMBEDDINGS] for embedding models)
 
         Returns:
-            List of model names available for this provider
+            List of model names available for this provider, optionally filtered by capabilities
+
+        Examples:
+            >>> from abstractcore.providers import OpenAIProvider
+            >>> from abstractcore.providers.model_capabilities import ModelInputCapability, ModelOutputCapability
+            >>>
+            >>> # Get all models
+            >>> all_models = OpenAIProvider.list_available_models(api_key="...")
+            >>>
+            >>> # Get models that can analyze images
+            >>> vision_models = OpenAIProvider.list_available_models(
+            ...     api_key="...",
+            ...     input_capabilities=[ModelInputCapability.IMAGE]
+            ... )
+            >>>
+            >>> # Get embedding models
+            >>> embedding_models = OpenAIProvider.list_available_models(
+            ...     api_key="...",
+            ...     output_capabilities=[ModelOutputCapability.EMBEDDINGS]
+            ... )
+            >>>
+            >>> # Get vision models that generate text (most common case)
+            >>> vision_text_models = OpenAIProvider.list_available_models(
+            ...     api_key="...",
+            ...     input_capabilities=[ModelInputCapability.TEXT, ModelInputCapability.IMAGE],
+            ...     output_capabilities=[ModelOutputCapability.TEXT]
+            ... )
 
         Note:
             This is an abstract method that MUST be implemented by all provider subclasses.
             Each provider should implement its own discovery logic (API calls, local scanning, etc.).
+            Providers should apply the capability filters if provided in kwargs.
         """
         pass
 
