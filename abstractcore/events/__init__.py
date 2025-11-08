@@ -216,7 +216,7 @@ def emit_global(event_type: EventType, data: Dict[str, Any], source: Optional[st
 def create_generation_event(model_name: str, provider_name: str,
                           tokens_input: int = None, tokens_output: int = None,
                           duration_ms: float = None, cost_usd: float = None,
-                          **data) -> Dict[str, Any]:
+                          **data) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """Create standardized generation event data"""
     event_data = {
         "model_name": model_name,

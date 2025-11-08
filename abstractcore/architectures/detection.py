@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 _architecture_formats: Optional[Dict[str, Any]] = None
 _model_capabilities: Optional[Dict[str, Any]] = None
 
+# Cache for resolved model names and architectures to reduce redundant logging
+_resolved_aliases_cache: Dict[str, str] = {}
+_detected_architectures_cache: Dict[str, str] = {}
+
 
 def _load_json_assets():
     """Load architecture formats and model capabilities from JSON files."""
@@ -58,9 +62,14 @@ def detect_architecture(model_name: str) -> str:
     Returns:
         Architecture name (e.g., 'qwen', 'llama', 'openai')
     """
+    # Check cache first to avoid redundant logging
+    if model_name in _detected_architectures_cache:
+        return _detected_architectures_cache[model_name]
+    
     _load_json_assets()
 
     if not _architecture_formats or "architectures" not in _architecture_formats:
+        _detected_architectures_cache[model_name] = "generic"
         return "generic"
 
     model_lower = model_name.lower()
@@ -71,10 +80,12 @@ def detect_architecture(model_name: str) -> str:
         for pattern in patterns:
             if pattern.lower() in model_lower:
                 logger.debug(f"Detected architecture '{arch_name}' for model '{model_name}' (pattern: '{pattern}')")
+                _detected_architectures_cache[model_name] = arch_name
                 return arch_name
 
     # Fallback to generic
     logger.debug(f"No specific architecture detected for '{model_name}', using generic")
+    _detected_architectures_cache[model_name] = "generic"
     return "generic"
 
 
@@ -109,8 +120,13 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     Returns:
         Canonical model name
     """
+    # Check cache first to avoid redundant logging
+    if model_name in _resolved_aliases_cache:
+        return _resolved_aliases_cache[model_name]
+    
     # First check if it's already a canonical name
     if model_name in models:
+        _resolved_aliases_cache[model_name] = model_name
         return model_name
 
     # Convert "--" to "/" for HuggingFace cache format compatibility
@@ -120,6 +136,7 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
 
     # Check if normalized name is a canonical name
     if normalized_model_name in models:
+        _resolved_aliases_cache[model_name] = normalized_model_name
         return normalized_model_name
 
     # Check if it's an alias of any model (try both original and normalized)
@@ -127,9 +144,11 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
         aliases = model_info.get("aliases", [])
         if model_name in aliases or normalized_model_name in aliases:
             logger.debug(f"Resolved alias '{model_name}' to canonical name '{canonical_name}'")
+            _resolved_aliases_cache[model_name] = canonical_name
             return canonical_name
 
     # Return normalized name if no alias found
+    _resolved_aliases_cache[model_name] = normalized_model_name
     return normalized_model_name
 
 
