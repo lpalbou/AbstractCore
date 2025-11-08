@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, List
 from .base import BaseMediaHandler
 from .types import MediaContent, MediaType, ContentFormat, detect_media_type
 from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor
+from ..exceptions import UnsupportedFeatureError
 
 # Import Glyph compression support
 try:
@@ -23,6 +24,14 @@ except ImportError:
     CompressionOrchestrator = None
     GlyphConfig = None
     GLYPH_AVAILABLE = False
+
+# Import vision detection
+try:
+    from ..architectures.detection import supports_vision
+    VISION_DETECTION_AVAILABLE = True
+except ImportError:
+    supports_vision = None
+    VISION_DETECTION_AVAILABLE = False
 
 
 class AutoMediaHandler(BaseMediaHandler):
@@ -269,38 +278,85 @@ class AutoMediaHandler(BaseMediaHandler):
             available_processors=list(self._available_processors.keys())
         )
     
-    def _should_apply_compression(self, file_path: Path, media_type: MediaType, 
+    def _should_apply_compression(self, file_path: Path, media_type: MediaType,
                                 provider: str, model: str, glyph_compression: str) -> bool:
-        """Check if Glyph compression should be applied."""
+        """
+        Check if Glyph compression should be applied.
+
+        ⚠️ EXPERIMENTAL FEATURE: Glyph compression requires vision-capable models.
+
+        Raises:
+            UnsupportedFeatureError: When glyph_compression="always" but model lacks vision support
+        """
         # Check if Glyph is available
         if not self._available_processors.get('glyph', False):
             if glyph_compression == "always":
                 # User explicitly requested compression but it's not available
                 self._log_compression_unavailable_warning()
             return False
-        
+
         if glyph_compression == "never":
             return False
-        elif glyph_compression == "always":
+
+        # Check vision support for compression
+        model_supports_vision = self._check_vision_support(model)
+
+        if glyph_compression == "always":
+            # Explicit compression request - enforce vision requirement
+            if not model_supports_vision:
+                raise UnsupportedFeatureError(
+                    f"Glyph compression requires a vision-capable model. "
+                    f"Model '{model}' does not support vision. "
+                    f"Vision-capable models include: gpt-4o, gpt-4o-mini, claude-3-5-sonnet, "
+                    f"llama3.2-vision, qwen2-vl, gemini-1.5-pro, gemini-1.5-flash, etc."
+                )
             return True
-        
+
         # Auto-decision logic
         if not provider or not model:
             return False
-        
+
         # Only compress text-based content
         if media_type not in [MediaType.TEXT, MediaType.DOCUMENT]:
             return False
-        
+
+        # Auto mode: check vision support and warn if not supported
+        if not model_supports_vision:
+            self.logger.warning(
+                f"Glyph compression skipped: model '{model}' does not support vision. "
+                f"Use a vision-capable model to enable compression."
+            )
+            return False
+
         try:
             orchestrator = self._get_compression_orchestrator()
             if orchestrator:
                 return orchestrator.should_compress(file_path, provider, model, glyph_compression)
         except Exception as e:
             self.logger.debug(f"Compression decision failed: {e}")
-        
+
         return False
-    
+
+    def _check_vision_support(self, model: str) -> bool:
+        """
+        Check if the model supports vision capabilities.
+
+        Args:
+            model: Model name to check
+
+        Returns:
+            True if model supports vision, False otherwise
+        """
+        if not model or not VISION_DETECTION_AVAILABLE:
+            # Conservative approach: assume no vision if detection unavailable
+            return False
+
+        try:
+            return supports_vision(model)
+        except Exception as e:
+            self.logger.debug(f"Failed to check vision support for model '{model}': {e}")
+            return False
+
     def _log_compression_unavailable_warning(self):
         """Log detailed warning about why Glyph compression is unavailable."""
         self.logger.warning("Glyph compression requested but not available")

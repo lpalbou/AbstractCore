@@ -205,15 +205,17 @@ response = llm.generate(
 
 [Learn more about Media Handling](docs/media-handling-system.md)
 
-### Glyph Visual-Text Compression
+### Glyph Visual-Text Compression (🧪 EXPERIMENTAL)
+
+> ⚠️ **Vision Model Requirement**: This feature ONLY works with vision-capable models (e.g., gpt-4o, claude-3-5-sonnet, llama3.2-vision)
 
 Achieve **3-4x token compression** and **faster inference** with Glyph's revolutionary visual-text compression:
 
 ```python
 from abstractcore import create_llm
 
-# Glyph compression works automatically with vision models
-llm = create_llm("ollama", model="llama3.2-vision:11b")
+# IMPORTANT: Requires a vision-capable model
+llm = create_llm("ollama", model="llama3.2-vision:11b")  # ✓ Vision model
 
 # Large documents are automatically compressed for efficiency
 response = llm.generate(
@@ -221,12 +223,16 @@ response = llm.generate(
     media=["large_research_paper.pdf"]  # Automatically compressed if beneficial
 )
 
-# Force compression for testing
+# Force compression (raises error if model lacks vision)
 response = llm.generate(
     "Summarize this document",
     media=["document.pdf"],
-    glyph_compression="always"  # Explicit compression control
+    glyph_compression="always"  # "auto" | "always" | "never"
 )
+
+# Non-vision models will raise UnsupportedFeatureError
+# llm_no_vision = create_llm("openai", model="gpt-4")  # ✗ No vision
+# response = llm_no_vision.generate("...", glyph_compression="always")  # Error!
 
 # Check compression stats
 if response.metadata and response.metadata.get('compression_used'):

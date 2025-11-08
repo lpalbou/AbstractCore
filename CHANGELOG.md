@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.5.3] - 2025-11-01
 
 ### Added
-- **Glyph Visual-Text Compression**: Renders long text as optimized images for VLM processing
+- **[EXPERIMENTAL] Glyph Visual-Text Compression**: Renders long text as optimized images for VLM processing
+  - ⚠️ **Vision Model Requirement**: ONLY works with vision-capable models (gpt-4o, claude-3-5-sonnet, llama3.2-vision, etc.)
+  - ⚠️ **Error Handling**: `glyph_compression="always"` raises `UnsupportedFeatureError` if model lacks vision support
+  - ⚠️ **Auto Mode**: `glyph_compression="auto"` (default) logs warning and falls back to text processing for non-vision models
   - PIL-based text rendering with custom font support and proper DPI scaling
   - Markdown-like formatting with hierarchical headers, bold/italic text, and smart newline handling
   - Multi-column layout support with configurable spacing and margins
@@ -17,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Research-based VLM token calculator with provider-specific formulas
   - Thread-safe caching system in `~/.abstractcore/glyph_cache/`
   - Optional dependencies: `pip install abstractcore[compression]` (removed ReportLab dependency)
+  - Vision capability validation in `AutoMediaHandler._should_apply_compression()`
 
 ### Enhanced  
 - **Model Capabilities**: Added 50+ VLM models (Mistral Small 3.1/3.2, LLaMA 4, Qwen3-VL, Granite Vision)

@@ -555,6 +555,7 @@ class BasicSession:
 **Metadata Support**: Attach `name`, `location`, custom fields to messages
 **Tool Registration**: Pass `tools=[func1, func2]` for automatic tool calling
 **Streaming**: `session.generate(prompt, stream=True)` returns iterator
+**Glyph Compression** (⚠️ EXPERIMENTAL): `session.generate(prompt, media=["file.txt"], glyph_compression="auto")` - vision models only
 **History**: Auto-tracks all interactions with timestamps
 
 #### Auto-Compaction (SOTA 2025)
@@ -572,6 +573,45 @@ Automatic summarization when tokens exceed threshold. Preserves system + recent 
 **Analytics**: `generate_summary()`, `generate_assessment()`, `extract_facts()`, `analyze_intents()`
 **Timeouts**: Configure `timeout` (HTTP), `tool_timeout` (tools), `recovery_timeout` (circuit breaker)
 **Token Estimation**: `get_token_estimate()`, `should_compact(limit)`
+
+#### Glyph Compression (⚠️ EXPERIMENTAL)
+
+Visual-text compression for large documents using vision models. Converts text to optimized images for 3-4x token savings.
+
+**Parameter Passing**: The `glyph_compression` parameter passes through `**kwargs` to the provider:
+
+```python
+session = BasicSession(provider=llm)
+
+# Auto mode (default): compress if beneficial
+response = session.generate(
+    "Summarize this",
+    media=["long_document.txt"]
+    # glyph_compression="auto" is default
+)
+
+# Force compression (requires vision model)
+response = session.generate(
+    "Summarize this",
+    media=["long_document.txt"],
+    glyph_compression="always"  # Raises UnsupportedFeatureError if model lacks vision
+)
+
+# Disable compression
+response = session.generate(
+    "Summarize this",
+    media=["long_document.txt"],
+    glyph_compression="never"
+)
+```
+
+**Vision Model Requirement**: ONLY works with vision-capable models (gpt-4o, claude-3-5-sonnet, llama3.2-vision, etc.)
+
+**Error Handling**:
+- `glyph_compression="always"` + non-vision model → `UnsupportedFeatureError`
+- `glyph_compression="auto"` + non-vision model → Warning logged, falls back to text
+
+See [Compression Module](../compression/README.md) for detailed documentation.
 
 ---
 
