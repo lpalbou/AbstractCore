@@ -1,5 +1,11 @@
 # Glyph Compression Module
 
+> ⚠️ **EXPERIMENTAL FEATURE**
+> Glyph compression is currently in experimental status. The API and behavior may change in future releases.
+>
+> **Vision Model Requirement**: This feature **ONLY works with vision-capable models** (e.g., gpt-4o, claude-3-5-sonnet, llama3.2-vision, gemini-1.5-pro).
+> Attempting to use compression with non-vision models will raise `UnsupportedFeatureError`.
+
 ## Purpose
 
 The `abstractcore.compression` module implements **glyph-based visual-text compression** for Vision-Language Models (VLMs), achieving **3-4x token savings** by transforming long textual sequences into optimized images. This approach enables efficient processing of large documents that would otherwise exceed token limits or incur excessive costs.
@@ -48,6 +54,92 @@ Based on the [Glyph research paper](https://arxiv.org/abs/2403.09248), this impl
 - **How do I troubleshoot low quality?** → See [Quality Issues](#quality-issues)
 - **How do I cache results?** → See [Compression Cache](#6-compression-cache-cachepy)
 - **How do I track performance?** → See [With Analytics](#with-analytics)
+
+## Vision Model Requirement
+
+**CRITICAL**: Glyph compression **ONLY works with vision-capable models** because it converts text into optimized images that must be processed visually.
+
+### Supported Models
+
+Vision-capable models that support glyph compression include:
+
+**OpenAI**:
+- `gpt-4o`, `gpt-4o-mini`
+- `gpt-4-turbo`, `gpt-4-turbo-2024-04-09`
+- `gpt-4-vision-preview`
+
+**Anthropic**:
+- `claude-3-5-sonnet-20241022`
+- `claude-3-opus-20240229`
+- `claude-3-sonnet-20240229`
+- `claude-3-haiku-20240307`
+
+**Ollama** (vision models):
+- `llama3.2-vision:11b`, `llama3.2-vision:90b`
+- `llava:7b`, `llava:13b`, `llava:34b`
+- `bakllava:7b`
+- `moondream:1.8b`
+
+**LMStudio** (vision models):
+- Any vision-capable model compatible with LMStudio
+
+**Google**:
+- `gemini-1.5-pro`, `gemini-1.5-flash`
+- `gemini-1.0-pro-vision`
+
+### Error Behavior
+
+The `glyph_compression` parameter controls compression behavior:
+
+| Parameter Value | Vision Model | Non-Vision Model |
+|----------------|--------------|------------------|
+| `"never"` | No compression | No compression |
+| `"auto"` (default) | Compresses if beneficial | Skips with warning |
+| `"always"` | Always compresses | **Raises `UnsupportedFeatureError`** |
+
+**Example Error**:
+```python
+from abstractcore import create_llm
+
+# Non-vision model
+llm = create_llm("openai", model="gpt-4")  # No vision support
+
+# This will raise UnsupportedFeatureError
+response = llm.generate(
+    prompt="Summarize this",
+    media=["long_document.txt"],
+    glyph_compression="always"  # Error!
+)
+# UnsupportedFeatureError: Glyph compression requires a vision-capable model.
+# Model 'gpt-4' does not support vision.
+
+# Solution: Use a vision-capable model
+llm = create_llm("openai", model="gpt-4o")  # Vision support ✓
+response = llm.generate(
+    prompt="Summarize this",
+    media=["long_document.txt"],
+    glyph_compression="always"  # Works!
+)
+```
+
+### Auto Mode Behavior
+
+When `glyph_compression="auto"` (default), the system automatically detects vision support:
+
+- **Vision model**: Evaluates if compression is beneficial based on document size
+- **Non-vision model**: Logs warning and skips compression gracefully
+
+```python
+# Auto mode with non-vision model (graceful fallback)
+llm = create_llm("openai", model="gpt-4")
+response = llm.generate(
+    prompt="Summarize",
+    media=["document.txt"]
+    # glyph_compression="auto" (default)
+)
+# Warning logged: "Glyph compression skipped: model 'gpt-4' does not support vision"
+# Falls back to standard text processing
+```
 
 ## Architecture Position
 

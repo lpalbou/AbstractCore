@@ -98,11 +98,39 @@ validated_person = provider.generate(prompt="Extract: John, 30", response_model=
 tools = [{"name": "search", "description": "Search the web", "parameters": {...}}]
 response = provider.generate(prompt="Search for cats", tools=tools, execute_tools=True)
 
+# Glyph compression (EXPERIMENTAL - vision models only)
+# Compresses text into optimized images for 3-4x token savings
+response = provider.generate(
+    prompt="Summarize this document",
+    media=["long_document.txt"],
+    glyph_compression="auto"  # "auto" | "always" | "never"
+)
+
 # Health check
 health = provider.health(timeout=5.0)  # {"status": True, "model_count": 10, ...}
 
 # Memory cleanup
 provider.unload()  # Free model memory
+```
+
+#### glyph_compression Parameter (⚠️ EXPERIMENTAL)
+
+Controls visual-text compression for large documents (vision models only):
+
+| Value | Behavior | Use Case |
+|-------|----------|----------|
+| `"auto"` (default) | Automatically compress if beneficial | Recommended for most cases |
+| `"always"` | Force compression (raises error if model lacks vision) | When you know compression is needed |
+| `"never"` | Disable compression | When you want raw text processing |
+
+**Vision Model Requirement**: This feature **ONLY works with vision-capable models** (e.g., gpt-4o, claude-3-5-sonnet, llama3.2-vision).
+
+**Error Handling**:
+- `glyph_compression="always"` with non-vision model → `UnsupportedFeatureError`
+- `glyph_compression="auto"` with non-vision model → Warning logged, falls back to text processing
+
+See [Compression Module](../compression/README.md) for detailed documentation.
+
 ```
 
 ### registry.py - Provider Registry & Discovery

@@ -1,5 +1,11 @@
 # Vision Compression User Guide
 
+> ⚠️ **EXPERIMENTAL FEATURE**
+> Vision compression and glyph compression are currently in experimental status. The API and behavior may change in future releases.
+>
+> **Vision Model Requirement**: These features **ONLY work with vision-capable models** (e.g., gpt-4o, claude-3-5-sonnet, llama3.2-vision, gemini-1.5-pro).
+> Attempting to use compression with non-vision models will raise `UnsupportedFeatureError`.
+
 ## Overview
 
 AbstractCore's Vision Compression system transforms long text documents into optimized visual representations, achieving 3-15x compression while maintaining high quality. This guide covers practical usage, configuration, and best practices.
@@ -398,7 +404,49 @@ config.pages_per_image = 3  # More pages per image
 config.auto_crop = False  # Skip auto-cropping
 ```
 
-#### 4. Provider Doesn't Support Vision
+#### 4. UnsupportedFeatureError with glyph_compression
+
+**Problem:** `UnsupportedFeatureError: Glyph compression requires a vision-capable model`
+
+**Cause:** Attempting to use `glyph_compression="always"` with a non-vision model
+
+**Solution:**
+```python
+from abstractcore import create_llm
+
+# WRONG: Non-vision model with forced compression
+llm = create_llm("openai", model="gpt-4")  # No vision support
+response = llm.generate(
+    "Summarize",
+    media=["doc.txt"],
+    glyph_compression="always"  # Raises UnsupportedFeatureError!
+)
+
+# RIGHT: Use a vision-capable model
+llm = create_llm("openai", model="gpt-4o")  # Has vision support ✓
+response = llm.generate(
+    "Summarize",
+    media=["doc.txt"],
+    glyph_compression="always"  # Works!
+)
+
+# ALTERNATIVE: Use auto mode (graceful fallback)
+llm = create_llm("openai", model="gpt-4")
+response = llm.generate(
+    "Summarize",
+    media=["doc.txt"]
+    # glyph_compression="auto" is default
+    # Logs warning and falls back to text processing
+)
+```
+
+**Vision-Capable Models:**
+- OpenAI: `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-4-vision-preview`
+- Anthropic: `claude-3-5-sonnet`, `claude-3-opus`, `claude-3-sonnet`, `claude-3-haiku`
+- Ollama: `llama3.2-vision`, `llava`, `bakllava`, `moondream`
+- Google: `gemini-1.5-pro`, `gemini-1.5-flash`
+
+#### 5. Provider Doesn't Support Vision
 
 **Problem:** Provider rejects compressed images
 
