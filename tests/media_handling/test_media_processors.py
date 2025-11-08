@@ -63,8 +63,8 @@ class TestImageProcessor:
 
     def test_image_optimization(self):
         """Test image optimization features."""
-        processor = ImageProcessor(optimize_for_vision=True, max_dimension=50)
-        result = processor.process_file(self.test_jpg)
+        processor = ImageProcessor(max_resolution=(50, 50))
+        result = processor.process_file(self.test_jpg, max_resolution=(50, 50))
 
         assert result.success
         # Image should be resized
@@ -73,7 +73,11 @@ class TestImageProcessor:
         assert metadata["final_size"][1] <= 50
 
     def test_unsupported_format(self):
-        """Test handling of unsupported image format."""
+        """Test handling of unsupported image format.
+
+        Note: Text files are now detected as TEXT type, so ImageProcessor
+        rejects them with a media type mismatch error.
+        """
         # Create a fake file with unsupported extension
         fake_file = Path(self.temp_dir) / "test.xyz"
         fake_file.write_text("not an image")
@@ -82,7 +86,9 @@ class TestImageProcessor:
         result = processor.process_file(fake_file)
 
         assert not result.success
-        assert "Unsupported image format" in result.error_message
+        assert ("Unsupported image format" in result.error_message or
+                "not supported" in result.error_message.lower() or
+                "only handles images" in result.error_message.lower())
 
 
 class TestTextProcessor:
@@ -182,7 +188,9 @@ class TestPDFProcessor:
         result = processor.process_file(fake_file)
 
         assert not result.success
-        assert "Invalid PDF" in result.error_message or "not a PDF" in result.error_message
+        assert ("Invalid PDF" in result.error_message or
+                "not a PDF" in result.error_message or
+                "only handles document types" in result.error_message)
 
 
 @pytest.mark.skipif(

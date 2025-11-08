@@ -19,8 +19,8 @@ from abstractcore.exceptions import ModelNotFoundError
 
 
 # Test model - using a known GGUF model in HF cache
-TEST_GGUF_MODEL = "unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"
-TEST_GGUF_ALT_FORMAT = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF"
+TEST_GGUF_MODEL = "unsloth--Qwen3-4B-Instruct-2507-GGUF"
+TEST_GGUF_ALT_FORMAT = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
 
 
 class TestGGUFBasicFunctionality:

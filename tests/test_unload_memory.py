@@ -17,10 +17,10 @@ class TestModelUnloading:
     def test_huggingface_unload(self):
         """Test HuggingFace GGUF model unloading"""
         # Skip if model not available
-        if not Path.home().joinpath(".cache/huggingface/hub/models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF").exists():
+        if not Path.home().joinpath(".cache/huggingface/hub/models--unsloth/Qwen3-4B-Instruct-2507-GGUF").exists():
             pytest.skip("Test GGUF model not found in cache")
 
-        llm = create_llm("huggingface", model="unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF")
+        llm = create_llm("huggingface", model="unsloth/Qwen3-4B-Instruct-2507-GGUF")
 
         # Verify model is loaded
         assert llm.llm is not None
@@ -114,11 +114,11 @@ class TestModelUnloading:
     def test_sequential_model_loading(self):
         """Test loading multiple models sequentially with unload between them"""
         # Skip if models not available
-        if not Path.home().joinpath(".cache/huggingface/hub/models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF").exists():
+        if not Path.home().joinpath(".cache/huggingface/hub/models--unsloth/Qwen3-4B-Instruct-2507-GGUF").exists():
             pytest.skip("Test GGUF model not found in cache")
 
         # Load first model
-        llm1 = create_llm("huggingface", model="unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF")
+        llm1 = create_llm("huggingface", model="unsloth/Qwen3-4B-Instruct-2507-GGUF")
         response1 = llm1.generate("Hi", max_tokens=5)
         assert response1.content is not None
 

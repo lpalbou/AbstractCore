@@ -50,12 +50,25 @@ class TextProcessor(BaseMediaHandler):
 
         # Set capabilities for text processing
         from ..types import MediaCapabilities
+        # TextProcessor can handle any text file through its plain text fallback
+        # We list common formats but the processor is not limited to these
         self.capabilities = MediaCapabilities(
             vision_support=False,
             audio_support=False,
             video_support=False,
             document_support=True,
-            supported_document_formats=['txt', 'md', 'csv', 'tsv', 'json', 'xml', 'html', 'htm'],
+            supported_document_formats=[
+                # Core text formats
+                'txt', 'md', 'markdown', 'csv', 'tsv',
+                'json', 'jsonl', 'xml', 'html', 'htm',
+                'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf',
+                # Programming languages (common examples)
+                'py', 'js', 'java', 'c', 'cpp', 'go', 'rs', 'rb', 'php',
+                'r', 'R', 'rmd', 'Rmd', 'sql', 'sh',
+                # Notebooks and documentation
+                'ipynb', 'qmd', 'rst', 'tex', 'bib',
+                # Any other text-based format through fallback processing
+            ],
             max_file_size=self.max_file_size
         )
 
@@ -541,7 +554,8 @@ class TextProcessor(BaseMediaHandler):
         """
         return {
             'processor_type': 'TextProcessor',
-            'supported_formats': ['txt', 'md', 'csv', 'tsv', 'json', 'xml', 'html', 'htm'],
+            'supported_formats': self.capabilities.supported_document_formats,
+            'supports_any_text_file': True,  # Through plain text fallback
             'capabilities': {
                 'default_encoding': self.default_encoding,
                 'csv_delimiter': self.csv_delimiter,
@@ -549,7 +563,8 @@ class TextProcessor(BaseMediaHandler):
                 'preserve_structure': self.preserve_structure,
                 'pandas_integration': PANDAS_AVAILABLE,
                 'structured_formatting': True,
-                'metadata_extraction': True
+                'metadata_extraction': True,
+                'plain_text_fallback': True  # Can handle any text file
             },
             'dependencies': {
                 'pandas': PANDAS_AVAILABLE

@@ -73,8 +73,10 @@ class TestOpenAIMediaHandler:
             result = processor.process_file(self.test_png)
             assert result.success
 
-            # Create multimodal message
-            handler = OpenAIMediaHandler()
+            # Create multimodal message with proper capabilities
+            from abstractcore.architectures import get_model_capabilities
+            caps = get_model_capabilities("gpt-4o")
+            handler = OpenAIMediaHandler(model_capabilities=caps, model_name="gpt-4o")
             message = handler.create_multimodal_message(
                 "Describe this image",
                 [result.media_content]
@@ -180,8 +182,10 @@ class TestAnthropicMediaHandler:
             result = processor.process_file(self.test_png)
             assert result.success
 
-            # Create multimodal message
-            handler = AnthropicMediaHandler()
+            # Create multimodal message with proper capabilities
+            from abstractcore.architectures import get_model_capabilities
+            caps = get_model_capabilities("claude-3-5-sonnet-20241022")
+            handler = AnthropicMediaHandler(model_capabilities=caps, model_name="claude-3-5-sonnet-20241022")
             message = handler.create_multimodal_message(
                 "What do you see in this image?",
                 [result.media_content]

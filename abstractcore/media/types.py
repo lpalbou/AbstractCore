@@ -207,15 +207,51 @@ FILE_TYPE_MAPPINGS = {
     'gif': MediaType.IMAGE, 'bmp': MediaType.IMAGE, 'tif': MediaType.IMAGE,
     'tiff': MediaType.IMAGE, 'webp': MediaType.IMAGE, 'ico': MediaType.IMAGE,
 
-    # Documents
+    # Documents (binary formats that need special processing)
     'pdf': MediaType.DOCUMENT, 'doc': MediaType.DOCUMENT, 'docx': MediaType.DOCUMENT,
     'xls': MediaType.DOCUMENT, 'xlsx': MediaType.DOCUMENT, 'ppt': MediaType.DOCUMENT,
     'pptx': MediaType.DOCUMENT, 'odt': MediaType.DOCUMENT, 'rtf': MediaType.DOCUMENT,
 
-    # Text formats
-    'txt': MediaType.TEXT, 'md': MediaType.TEXT, 'csv': MediaType.TEXT,
-    'tsv': MediaType.TEXT, 'json': MediaType.TEXT, 'xml': MediaType.TEXT,
-    'html': MediaType.TEXT, 'htm': MediaType.TEXT,
+    # Text formats - Common markup and data formats
+    'txt': MediaType.TEXT, 'md': MediaType.TEXT, 'markdown': MediaType.TEXT,
+    'csv': MediaType.TEXT, 'tsv': MediaType.TEXT,
+    'json': MediaType.TEXT, 'jsonl': MediaType.TEXT, 'ndjson': MediaType.TEXT,
+    'xml': MediaType.TEXT, 'html': MediaType.TEXT, 'htm': MediaType.TEXT,
+    'yaml': MediaType.TEXT, 'yml': MediaType.TEXT, 'toml': MediaType.TEXT,
+    'ini': MediaType.TEXT, 'cfg': MediaType.TEXT, 'conf': MediaType.TEXT,
+
+    # Text formats - Programming and scripting languages
+    'py': MediaType.TEXT, 'pyw': MediaType.TEXT, 'pyx': MediaType.TEXT,
+    'js': MediaType.TEXT, 'jsx': MediaType.TEXT, 'ts': MediaType.TEXT, 'tsx': MediaType.TEXT,
+    'java': MediaType.TEXT, 'kt': MediaType.TEXT, 'scala': MediaType.TEXT,
+    'c': MediaType.TEXT, 'cpp': MediaType.TEXT, 'cc': MediaType.TEXT, 'cxx': MediaType.TEXT,
+    'h': MediaType.TEXT, 'hpp': MediaType.TEXT, 'hxx': MediaType.TEXT,
+    'cs': MediaType.TEXT, 'go': MediaType.TEXT, 'rs': MediaType.TEXT, 'swift': MediaType.TEXT,
+    'rb': MediaType.TEXT, 'php': MediaType.TEXT, 'pl': MediaType.TEXT, 'pm': MediaType.TEXT,
+    'sh': MediaType.TEXT, 'bash': MediaType.TEXT, 'zsh': MediaType.TEXT, 'fish': MediaType.TEXT,
+    'r': MediaType.TEXT, 'R': MediaType.TEXT, 'rmd': MediaType.TEXT, 'Rmd': MediaType.TEXT,
+    'jl': MediaType.TEXT, 'matlab': MediaType.TEXT, 'm': MediaType.TEXT,
+    'sql': MediaType.TEXT, 'lua': MediaType.TEXT, 'vim': MediaType.TEXT,
+    'dart': MediaType.TEXT, 'ex': MediaType.TEXT, 'exs': MediaType.TEXT,
+    'erl': MediaType.TEXT, 'hrl': MediaType.TEXT, 'clj': MediaType.TEXT, 'cljs': MediaType.TEXT,
+
+    # Text formats - Notebooks and documentation
+    'ipynb': MediaType.TEXT, 'qmd': MediaType.TEXT, 'rst': MediaType.TEXT,
+    'tex': MediaType.TEXT, 'latex': MediaType.TEXT, 'bib': MediaType.TEXT,
+    'org': MediaType.TEXT, 'adoc': MediaType.TEXT, 'asciidoc': MediaType.TEXT,
+
+    # Text formats - Web and styles
+    'css': MediaType.TEXT, 'scss': MediaType.TEXT, 'sass': MediaType.TEXT, 'less': MediaType.TEXT,
+    'vue': MediaType.TEXT, 'svelte': MediaType.TEXT,
+
+    # Text formats - Build and config files
+    'gradle': MediaType.TEXT, 'cmake': MediaType.TEXT, 'make': MediaType.TEXT,
+    'dockerfile': MediaType.TEXT, 'containerfile': MediaType.TEXT,
+    'gitignore': MediaType.TEXT, 'gitattributes': MediaType.TEXT,
+    'env': MediaType.TEXT, 'properties': MediaType.TEXT,
+
+    # Text formats - Log and output files
+    'log': MediaType.TEXT, 'out': MediaType.TEXT, 'err': MediaType.TEXT,
 
     # Audio
     'mp3': MediaType.AUDIO, 'wav': MediaType.AUDIO, 'm4a': MediaType.AUDIO,
@@ -227,9 +263,66 @@ FILE_TYPE_MAPPINGS = {
 }
 
 
+def is_text_file(file_path: Union[str, Path]) -> bool:
+    """
+    Detect if a file is text-based by attempting to read it.
+
+    This is a heuristic check that samples the beginning of the file
+    to determine if it contains text content.
+
+    Args:
+        file_path: Path to the file
+
+    Returns:
+        True if file appears to be text-based, False otherwise
+    """
+    path = Path(file_path)
+
+    if not path.exists():
+        return False
+
+    # Check file size - avoid reading very large files
+    try:
+        file_size = path.stat().st_size
+        if file_size == 0:
+            return True  # Empty files are text
+
+        # Sample first 8KB to detect if it's text
+        sample_size = min(8192, file_size)
+
+        with open(path, 'rb') as f:
+            sample = f.read(sample_size)
+
+        # Check for null bytes (strong indicator of binary)
+        if b'\x00' in sample:
+            return False
+
+        # Try to decode as UTF-8
+        try:
+            sample.decode('utf-8')
+            return True
+        except UnicodeDecodeError:
+            pass
+
+        # Try other common encodings
+        for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
+            try:
+                sample.decode(encoding)
+                return True
+            except (UnicodeDecodeError, LookupError):
+                continue
+
+        # If we can't decode it, it's probably binary
+        return False
+
+    except Exception:
+        # On any error, assume it's not text
+        return False
+
+
 def detect_media_type(file_path: Union[str, Path]) -> MediaType:
     """
-    Detect the media type of a file based on its extension.
+    Detect the media type of a file based on its extension and content.
 
     Args:
         file_path: Path to the file
@@ -240,7 +333,71 @@ def detect_media_type(file_path: Union[str, Path]) -> MediaType:
     path = Path(file_path)
     extension = path.suffix.lower().lstrip('.')
 
-    return FILE_TYPE_MAPPINGS.get(extension, MediaType.DOCUMENT)
+    # First check the known extension mappings
+    if extension in FILE_TYPE_MAPPINGS:
+        return FILE_TYPE_MAPPINGS[extension]
+
+    # For unknown extensions, try to detect if it's a text file
+    # This handles cases like .R, .Rmd, .ipynb, and any other text-based files
+    if is_text_file(path):
+        return MediaType.TEXT
+
+    # Fall back to DOCUMENT for binary files with unknown extensions
+    return MediaType.DOCUMENT
+
+
+def get_all_supported_extensions() -> Dict[str, List[str]]:
+    """
+    Get all supported file extensions organized by media type.
+
+    This function provides programmatic access to all file extensions
+    that AbstractCore can process.
+
+    Returns:
+        Dictionary mapping media type names to lists of supported extensions.
+
+    Example:
+        >>> from abstractcore.media.types import get_all_supported_extensions
+        >>> formats = get_all_supported_extensions()
+        >>> print(f"Text formats: {len(formats['text'])} extensions")
+        Text formats: 70+ extensions
+        >>> print(formats['text'][:5])
+        ['txt', 'md', 'markdown', 'csv', 'tsv']
+    """
+    result = {}
+    for ext, media_type in FILE_TYPE_MAPPINGS.items():
+        type_name = media_type.value
+        if type_name not in result:
+            result[type_name] = []
+        result[type_name].append(ext)
+
+    # Sort extensions within each type for consistency
+    for type_name in result:
+        result[type_name].sort()
+
+    return result
+
+
+def get_supported_extensions_by_type(media_type: MediaType) -> List[str]:
+    """
+    Get all supported file extensions for a specific media type.
+
+    Args:
+        media_type: The MediaType to query
+
+    Returns:
+        List of file extensions (without dots) supported for this type
+
+    Example:
+        >>> from abstractcore.media.types import get_supported_extensions_by_type, MediaType
+        >>> text_exts = get_supported_extensions_by_type(MediaType.TEXT)
+        >>> 'r' in text_exts  # R scripts
+        True
+        >>> 'ipynb' in text_exts  # Jupyter notebooks
+        True
+    """
+    extensions = [ext for ext, mt in FILE_TYPE_MAPPINGS.items() if mt == media_type]
+    return sorted(extensions)
 
 
 def create_media_content(

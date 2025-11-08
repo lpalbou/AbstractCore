@@ -112,6 +112,7 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     Resolve a model name to its canonical name by checking aliases.
 
     Automatically converts "--" to "/" for HuggingFace cache format compatibility.
+    Normalizes Claude version numbers (e.g., "claude-3-5-sonnet" -> "claude-3.5-sonnet").
 
     Args:
         model_name: Model name that might be an alias
@@ -123,14 +124,26 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     # Check cache first to avoid redundant logging
     if model_name in _resolved_aliases_cache:
         return _resolved_aliases_cache[model_name]
-    
+
     # First check if it's already a canonical name
     if model_name in models:
         _resolved_aliases_cache[model_name] = model_name
         return model_name
 
+    # Normalize model name
+    normalized_model_name = model_name
+
     # Convert "--" to "/" for HuggingFace cache format compatibility
-    normalized_model_name = model_name.replace("--", "/")
+    normalized_model_name = normalized_model_name.replace("--", "/")
+
+    # Normalize Claude version numbers: convert "-X-Y-" to "-X.Y-" or "-X-Y" to "-X.Y"
+    # Examples:
+    #   "claude-3-5-sonnet" -> "claude-3.5-sonnet"
+    #   "claude-4-1-opus" -> "claude-4.1-opus"
+    #   "claude-3-5-sonnet-20241022" -> "claude-3.5-sonnet-20241022"
+    import re
+    normalized_model_name = re.sub(r'(claude-\d+)-(\d+)(?=-|$)', r'\1.\2', normalized_model_name)
+
     if normalized_model_name != model_name:
         logger.debug(f"Normalized model name '{model_name}' to '{normalized_model_name}'")
 
@@ -184,9 +197,10 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
         return capabilities
 
     # Step 3: Try partial matches for common model naming patterns
-    model_lower = model_name.lower()
+    # Use canonical_name (which has been normalized) for better matching
+    canonical_lower = canonical_name.lower()
     for model_key, capabilities in models.items():
-        if model_key.lower() in model_lower or model_lower in model_key.lower():
+        if model_key.lower() in canonical_lower or canonical_lower in model_key.lower():
             result = capabilities.copy()
             # Remove alias-specific fields
             result.pop("canonical_name", None)

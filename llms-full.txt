@@ -396,17 +396,46 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and 
 
 ### Supported File Types
 
+**90+ File Extensions Supported** - The media system supports comprehensive file type coverage:
+
 **Images (Vision Models):**
-- **Formats**: PNG, JPEG, GIF, WEBP, BMP, TIFF
+- **Formats**: PNG, JPEG, GIF, WEBP, BMP, TIFF, ICO (9 formats)
 - **Features**: Automatic optimization, resizing, format conversion, EXIF handling
 
 **Documents:**
-- **Text Files**: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis
-- **PDF**: Full text extraction with PyMuPDF4LLM, preserves formatting and structure
-- **Office**: DOCX, XLSX, PPTX with complete content extraction using Unstructured library
-  - **Word**: Full document analysis with structure preservation
-  - **Excel**: Sheet-by-sheet extraction with data analysis
-  - **PowerPoint**: Slide content extraction with comprehensive analysis
+- **Binary Documents**: PDF, DOCX, XLSX, PPTX, ODT, RTF (9 formats)
+  - **PDF**: Full text extraction with PyMuPDF4LLM, preserves formatting and structure
+  - **Office**: DOCX, XLSX, PPTX with complete content extraction using Unstructured library
+    - **Word**: Full document analysis with structure preservation
+    - **Excel**: Sheet-by-sheet extraction with data analysis
+    - **PowerPoint**: Slide content extraction with comprehensive analysis
+
+**Text Files (90+ extensions):**
+- **Core Data Formats**: TXT, MD, Markdown, CSV, TSV, JSON, JSONL, XML, YAML, TOML, INI, CFG, CONF
+- **Programming Languages**: Python (.py), JavaScript (.js), Java, C/C++ (.c, .cpp), Go, Rust (.rs), Ruby (.rb), PHP, R (.r, .R), SQL, Julia (.jl), Lua, Dart, Swift, Kotlin, Scala, and more
+- **Notebooks**: Jupyter (.ipynb), R Markdown (.rmd, .Rmd), Quarto (.qmd)
+- **Web & Markup**: HTML, CSS, SCSS, SASS, LESS, Vue, Svelte, JSX, TSX, RST, TeX, AsciiDoc
+- **Build & Scripts**: Shell (.sh, .bash, .zsh), Dockerfile, CMake, Gradle, Makefile
+- **Logs & Output**: .log, .out, .err
+- **Unknown Text Files**: Automatically detected via content analysis (no extension required)
+
+**Programmatic Access:**
+```python
+from abstractcore.media.types import get_all_supported_extensions, get_supported_extensions_by_type, MediaType
+
+# Get all formats
+all_formats = get_all_supported_extensions()
+print(f"Text: {len(all_formats['text'])} extensions")  # 90+
+print(f"Images: {len(all_formats['image'])} extensions")  # 9
+print(f"Documents: {len(all_formats['document'])} extensions")  # 9
+
+# Check specific extension
+text_exts = get_supported_extensions_by_type(MediaType.TEXT)
+print('r' in text_exts)  # True - R scripts supported
+print('ipynb' in text_exts)  # True - Jupyter notebooks supported
+```
+
+**Content Detection Fallback**: Files with unknown extensions are analyzed for text content. If the file contains valid text (UTF-8, Latin-1, etc.), it's automatically processed as a text file. This means you can attach ANY text-based file, even with custom or missing extensions.
 
 ### How It Works Behind the Scenes
 

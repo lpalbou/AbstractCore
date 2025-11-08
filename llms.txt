@@ -175,11 +175,22 @@ response = llm.generate(
 # CLI integration with @filename syntax
 # python -m abstractcore.utils.cli --prompt "Analyze @report.pdf and @chart.png"
 
-# Supports: Images (PNG, JPEG, GIF, WEBP), PDFs, Office docs (DOCX, XLSX, PPTX), CSV/TSV
+# Supports 90+ file extensions:
+# - Images: PNG, JPEG, GIF, WEBP, BMP, TIFF
+# - Documents: PDF, DOCX, XLSX, PPTX, ODT, RTF
+# - Text: TXT, MD, CSV, TSV, JSON, YAML, TOML, XML, HTML
+# - Programming: .py, .js, .java, .c, .cpp, .go, .rs, .rb, .php, .r, .R, .sql, .jl, etc.
+# - Notebooks: .ipynb, .rmd, .Rmd, .qmd
+# - And any text-based file (auto-detected via content analysis)
 response = llm.generate(
     "Compare the data",
     media=["chart.png", "data.csv", "presentation.pptx"]
 )
+
+# Query supported formats programmatically
+from abstractcore.media.types import get_all_supported_extensions
+formats = get_all_supported_extensions()
+print(f"Text formats: {len(formats['text'])} extensions")  # 90+
 ```
 
 ### Vision Capabilities

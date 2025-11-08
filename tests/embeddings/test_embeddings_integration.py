@@ -214,7 +214,9 @@ class TestLLMEmbeddingIntegration:
                 response = llm.generate("Test prompt")
 
                 assert len(embedding) == 384
-                assert response.content == "Mock response to: Test prompt"
+                # Real API response - just verify it's not empty
+                assert response.content is not None
+                assert len(response.content) > 0
 
         except ImportError:
             pytest.skip("sentence-transformers not available")

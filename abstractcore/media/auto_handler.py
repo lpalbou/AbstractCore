@@ -533,9 +533,9 @@ class AutoMediaHandler(BaseMediaHandler):
             return format_ext.lower() in image_formats
 
         elif media_type == MediaType.TEXT:
-            # Text formats (always available)
-            text_formats = {'txt', 'md', 'csv', 'tsv', 'json', 'yaml', 'yml'}
-            return format_ext.lower() in text_formats
+            # TextProcessor can handle ANY text file through its plain text fallback
+            # This is always available and supports all text-based files
+            return True
 
         elif media_type == MediaType.DOCUMENT:
             # PDF support
@@ -546,9 +546,9 @@ class AutoMediaHandler(BaseMediaHandler):
             if format_ext.lower() in {'docx', 'xlsx', 'pptx'}:
                 return self._available_processors.get('office', False) or True  # Fallback to text
 
-            # Text document support (always available)
-            text_formats = {'txt', 'md', 'csv', 'tsv', 'json', 'yaml', 'yml'}
-            return format_ext.lower() in text_formats
+            # Any other document type can be handled by text processor as fallback
+            # This allows processing of unknown document formats
+            return True
 
         return False
 
@@ -556,27 +556,47 @@ class AutoMediaHandler(BaseMediaHandler):
         """
         Get supported formats organized by media type.
 
+        Returns comprehensive list of all supported file extensions.
+        Note: TEXT type supports ANY text-based file through content detection
+        and fallback processing, not just the listed extensions.
+
         Returns:
             Dictionary mapping media type to list of supported extensions
+
+        Example:
+            >>> handler = AutoMediaHandler()
+            >>> formats = handler.get_supported_formats()
+            >>> len(formats['text'])  # 70+ text extensions
+            70+
+            >>> 'r' in formats['text']  # R scripts supported
+            True
         """
-        formats = {}
+        from .types import get_all_supported_extensions
 
-        # Image formats
+        # Get comprehensive list from FILE_TYPE_MAPPINGS
+        all_formats = get_all_supported_extensions()
+
+        # Filter based on available processors
+        result = {}
+
+        # Image formats (requires PIL)
         if self._available_processors.get('image', False):
-            formats['image'] = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp']
+            result['image'] = all_formats.get('image', [])
 
-        # Document formats
-        doc_formats = ['txt', 'md', 'csv', 'tsv', 'json', 'yaml', 'yml']
+        # Text formats (always available - TextProcessor has built-in fallback)
+        # Note: This includes 70+ extensions + unknown text files via content detection
+        result['text'] = all_formats.get('text', [])
 
-        if self._available_processors.get('pdf', False):
-            doc_formats.append('pdf')
+        # Document formats (includes PDFs, Office docs, and text fallbacks)
+        result['document'] = all_formats.get('document', [])
 
-        if self._available_processors.get('office', False):
-            doc_formats.extend(['docx', 'xlsx', 'pptx'])
+        # Audio/Video (not yet implemented but listed for completeness)
+        if 'audio' in all_formats:
+            result['audio'] = all_formats['audio']
+        if 'video' in all_formats:
+            result['video'] = all_formats['video']
 
-        formats['document'] = doc_formats
-
-        return formats
+        return result
 
     def get_processor_info(self) -> Dict[str, Any]:
         """
