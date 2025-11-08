@@ -261,52 +261,42 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Model Type Detection
 # ============================================================================
 
-class ModelType(str, Enum):
-    """Model type enumeration for filtering"""
-    TEXT_GENERATION = "text-generation"
-    TEXT_EMBEDDING = "text-embedding"
+# Import the core capability enums directly
+from ..providers.model_capabilities import ModelInputCapability, ModelOutputCapability
 
-def is_embedding_model(model_name: str) -> bool:
-    """
-    Detect if a model is an embedding model based on naming heuristics.
-    
-    Args:
-        model_name: The model name to check
-        
-    Returns:
-        True if the model appears to be an embedding model
-    """
-    model_lower = model_name.lower()
-    
-    # Heuristics for embedding models
-    embedding_patterns = [
-        "embed",           # Most embedding models contain "embed"
-        "all-minilm",      # Sentence-transformers MiniLM models
-        "all-mpnet",       # Sentence-transformers MPNet models
-        "nomic-embed",     # Nomic embedding models
-        "bert-",           # BERT models (e.g., bert-base-uncased)
-        "-bert",           # BERT-based embedding models (e.g., nomic-bert-2048)
-        "bge-",            # BAAI BGE embedding models
-        "gte-",            # GTE embedding models
-        "e5-",             # E5 embedding models
-        "instructor-",     # Instructor embedding models
-        "granite-embedding", # IBM Granite embedding models
-    ]
-    
-    return any(pattern in model_lower for pattern in embedding_patterns)
 
 # ============================================================================
 # Provider Model Discovery (Using Centralized Registry)
 # ============================================================================
 
-def get_models_from_provider(provider_name: str) -> List[str]:
-    """Get available models from a specific provider using the centralized provider registry."""
+def get_models_from_provider(
+    provider_name: str, 
+    input_capabilities=None, 
+    output_capabilities=None
+) -> List[str]:
+    """
+    Get available models from a specific provider using the centralized provider registry.
+
+    Args:
+        provider_name: Name of the provider
+        input_capabilities: Optional list of ModelInputCapability enums
+        output_capabilities: Optional list of ModelOutputCapability enums
+
+    Returns:
+        List of model names from the provider, optionally filtered
+    """
     try:
         from ..providers.registry import get_available_models_for_provider
-        return get_available_models_for_provider(provider_name)
+        return get_available_models_for_provider(
+            provider_name, 
+            input_capabilities=input_capabilities,
+            output_capabilities=output_capabilities
+        )
     except Exception as e:
         logger.debug(f"Failed to get models from provider {provider_name}: {e}")
         return []
+
+
 
 # ============================================================================
 # OpenAI Responses API Models (100% Compatible)
@@ -994,43 +984,47 @@ async def list_models(
         description="Filter by provider (e.g., 'ollama', 'openai', 'anthropic', 'lmstudio')",
         example=""
     ),
-    type: Optional[ModelType] = Query(
+    input_type: Optional[ModelInputCapability] = Query(
         None,
-        description="Filter by model type: 'text-generation' for chat/completion models, 'text-embedding' for embedding models",
-        example="text-generation"
-    )
+        description="Filter by input capability: 'text', 'image', 'audio', 'video'"
+    ),
+    output_type: Optional[ModelOutputCapability] = Query(
+        None,
+        description="Filter by output capability: 'text', 'embeddings'"
+    ),
 ):
     """
     List available models from AbstractCore providers.
-    
-    Returns a list of all available models, optionally filtered by provider and/or model type.
-    
-    **Filters:**
-    - `provider`: Limit results to a specific provider
-    - `type`: Limit results to a specific model type (text-generation or text-embedding)
-    
+
+    Returns a list of all available models, optionally filtered by provider and/or capabilities.
+
+    **Filtering System:**
+    - `input_type`: Filter by what INPUT the model can process (text, image, audio, video)
+    - `output_type`: Filter by what OUTPUT the model generates (text, embeddings)
+
     **Examples:**
     - `/v1/models` - All models from all providers
-    - `/v1/models?type=text-embedding` - Only embedding models
-    - `/v1/models?type=text-generation` - Only text generation models
-    - `/v1/models?provider=ollama` - Only Ollama models
-    - `/v1/models?provider=ollama&type=text-embedding` - Ollama embedding models only
+    - `/v1/models?output_type=embeddings` - Only embedding models
+    - `/v1/models?input_type=text&output_type=text` - Text-only models that generate text
+    - `/v1/models?input_type=image` - Models that can analyze images
+    - `/v1/models?provider=ollama&input_type=image` - Ollama vision models only
     """
     try:
         models_data = []
 
-        if provider:
-            # Get models from specific provider
-            models = get_models_from_provider(provider.lower())
-            for model in models:
-                # Apply type filter if specified
-                if type:
-                    is_embedding = is_embedding_model(model)
-                    if type == ModelType.TEXT_EMBEDDING and not is_embedding:
-                        continue  # Skip non-embedding models
-                    if type == ModelType.TEXT_GENERATION and is_embedding:
-                        continue  # Skip embedding models
+        # Use the capability enums directly
+        input_capabilities = [input_type] if input_type else None
+        output_capabilities = [output_type] if output_type else None
+        
 
+        if provider:
+            # Get models from specific provider with optional filtering
+            models = get_models_from_provider(
+                provider.lower(), 
+                input_capabilities=input_capabilities,
+                output_capabilities=output_capabilities
+            )
+            for model in models:
                 model_id = f"{provider.lower()}/{model}"
                 models_data.append({
                     "id": model_id,
@@ -1040,23 +1034,25 @@ async def list_models(
                     "permission": [{"allow_create_engine": False, "allow_sampling": True}]
                 })
 
-            filter_msg = f" (type={type.value})" if type else ""
+            filter_parts = []
+            if input_type:
+                filter_parts.append(f"input_type={input_type.value}")
+            if output_type:
+                filter_parts.append(f"output_type={output_type.value}")
+            
+            filter_msg = f" ({', '.join(filter_parts)})" if filter_parts else ""
             logger.info(f"Listed {len(models_data)} models for provider {provider}{filter_msg}")
         else:
             # Get models from all providers using centralized registry
             from ..providers.registry import list_available_providers
             providers = list_available_providers()
             for prov in providers:
-                models = get_models_from_provider(prov)
+                models = get_models_from_provider(
+                    prov, 
+                    input_capabilities=input_capabilities,
+                    output_capabilities=output_capabilities
+                )
                 for model in models:
-                    # Apply type filter if specified
-                    if type:
-                        is_embedding = is_embedding_model(model)
-                        if type == ModelType.TEXT_EMBEDDING and not is_embedding:
-                            continue  # Skip non-embedding models
-                        if type == ModelType.TEXT_GENERATION and is_embedding:
-                            continue  # Skip embedding models
-
                     model_id = f"{prov}/{model}"
                     models_data.append({
                         "id": model_id,
@@ -1066,7 +1062,13 @@ async def list_models(
                         "permission": [{"allow_create_engine": False, "allow_sampling": True}]
                     })
 
-            filter_msg = f" (type={type.value})" if type else ""
+            filter_parts = []
+            if input_type:
+                filter_parts.append(f"input_type={input_type.value}")
+            if output_type:
+                filter_parts.append(f"output_type={output_type.value}")
+            
+            filter_msg = f" ({', '.join(filter_parts)})" if filter_parts else ""
             logger.info(f"Listed {len(models_data)} models from all providers{filter_msg}")
 
         return {

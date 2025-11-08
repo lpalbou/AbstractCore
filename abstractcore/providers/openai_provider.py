@@ -511,9 +511,21 @@ class OpenAIProvider(BaseProvider):
 
     @classmethod
     def list_available_models(cls, **kwargs) -> List[str]:
-        """List available models from OpenAI API."""
+        """
+        List available models from OpenAI API.
+
+        Args:
+            **kwargs: Optional parameters including:
+                - api_key: OpenAI API key
+                - input_capabilities: List of ModelInputCapability enums to filter by input capability
+                - output_capabilities: List of ModelOutputCapability enums to filter by output capability
+
+        Returns:
+            List of model names, optionally filtered by capabilities
+        """
         try:
             import openai
+            from .model_capabilities import filter_models_by_capabilities
 
             # Get API key from kwargs or environment
             api_key = kwargs.get('api_key') or os.getenv("OPENAI_API_KEY")
@@ -542,7 +554,21 @@ class OpenAIProvider(BaseProvider):
                     ]):
                         chat_models.append(model_id)
 
-            return sorted(chat_models, reverse=True)  # Latest models first
+            chat_models = sorted(chat_models, reverse=True)  # Latest models first
+
+            # Apply new capability filtering if provided
+            input_capabilities = kwargs.get('input_capabilities')
+            output_capabilities = kwargs.get('output_capabilities')
+            
+            if input_capabilities or output_capabilities:
+                chat_models = filter_models_by_capabilities(
+                    chat_models, 
+                    input_capabilities=input_capabilities,
+                    output_capabilities=output_capabilities
+                )
+
+
+            return chat_models
 
         except Exception:
             return []

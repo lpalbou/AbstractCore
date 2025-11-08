@@ -202,10 +202,14 @@ class ProviderRegistry:
 
         Args:
             provider_name: Name of the provider
-            **kwargs: Provider-specific parameters (e.g., api_key, base_url)
+            **kwargs: Provider-specific parameters including:
+                - api_key: API key for authentication (if required)
+                - base_url: Base URL for API endpoint (if applicable)
+                - input_capabilities: List of ModelInputCapability enums to filter by input capability
+                - output_capabilities: List of ModelOutputCapability enums to filter by output capability
 
         Returns:
-            List of available model names
+            List of available model names, optionally filtered by capabilities
         """
         try:
             provider_class = self.get_provider_class(provider_name)
@@ -386,5 +390,18 @@ def create_provider(provider_name: str, model: Optional[str] = None, **kwargs):
 
 
 def get_available_models_for_provider(provider_name: str, **kwargs) -> List[str]:
-    """Get available models for a specific provider."""
+    """
+    Get available models for a specific provider.
+    
+    Args:
+        provider_name: Name of the provider
+        **kwargs: Provider-specific parameters including:
+            - api_key: API key for authentication (if required)
+            - base_url: Base URL for API endpoint (if applicable)
+            - input_capabilities: List of ModelInputCapability enums to filter by input capability
+            - output_capabilities: List of ModelOutputCapability enums to filter by output capability
+
+    Returns:
+        List of available model names, optionally filtered by capabilities
+    """
     return get_provider_registry().get_available_models(provider_name, **kwargs)

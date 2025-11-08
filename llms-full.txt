@@ -1314,6 +1314,123 @@ claude_code_llm = create_llm(
 
 ---
 
+## Model Capability Filtering
+
+AbstractCore provides a clean, type-safe system for filtering models based on their input and output capabilities. This allows you to programmatically discover models that can handle specific types of data.
+
+### Key Concepts
+
+**Input Capabilities**: What types of data can the model accept and analyze?
+- `TEXT`: All models support text input
+- `IMAGE`: Models that can analyze images (vision models)
+- `AUDIO`: Models that can process audio input
+- `VIDEO`: Models that can analyze video content
+
+**Output Capabilities**: What types of data can the model generate?
+- `TEXT`: Models that generate text responses (most common)
+- `EMBEDDINGS`: Models that generate vector embeddings
+
+### Python API
+
+```python
+from abstractcore.providers import OllamaProvider, ModelInputCapability, ModelOutputCapability
+
+# Vision models
+vision_models = OllamaProvider.list_available_models(
+    input_capabilities=[ModelInputCapability.IMAGE]
+)
+
+# Embedding models
+embedding_models = OllamaProvider.list_available_models(
+    output_capabilities=[ModelOutputCapability.EMBEDDINGS]
+)
+
+# Text-only models
+text_models = OllamaProvider.list_available_models(
+    input_capabilities=[ModelInputCapability.TEXT],
+    output_capabilities=[ModelOutputCapability.TEXT]
+)
+```
+
+### HTTP API Filtering
+
+The server provides RESTful endpoints for model discovery with capability filtering:
+
+```bash
+# Vision models
+curl http://localhost:8000/v1/models?input_type=image
+
+# Embedding models
+curl http://localhost:8000/v1/models?output_type=embeddings
+
+# Provider-specific filtering
+curl http://localhost:8000/v1/models?provider=ollama&input_type=image
+
+# Combined filters
+curl http://localhost:8000/v1/models?provider=openai&input_type=image
+```
+
+### Programmatic Model Discovery
+
+```python
+from abstractcore.providers.model_capabilities import (
+    get_model_input_capabilities,
+    get_model_output_capabilities,
+    get_capability_summary
+)
+
+# Get detailed capabilities for a specific model
+input_caps = get_model_input_capabilities("gpt-4o")
+print(f"Input capabilities: {[cap.value for cap in input_caps]}")
+# Output: ['text', 'image', 'audio']
+
+output_caps = get_model_output_capabilities("gpt-4o")
+print(f"Output capabilities: {[cap.value for cap in output_caps]}")
+# Output: ['text']
+
+# Get comprehensive summary
+summary = get_capability_summary("gpt-4-vision-preview")
+print(summary)
+# Output: {
+#     'model_name': 'gpt-4-vision-preview',
+#     'input_capabilities': ['text', 'image'],
+#     'output_capabilities': ['text'],
+#     'is_multimodal': True,
+#     'is_embedding_model': False
+# }
+```
+
+### Cross-Provider Compatibility
+
+The capability filtering system works identically across all providers:
+
+```python
+from abstractcore.providers import (
+    OpenAIProvider, AnthropicProvider, OllamaProvider,
+    ModelInputCapability, ModelOutputCapability
+)
+
+# Same API across all providers
+providers = [OpenAIProvider, AnthropicProvider, OllamaProvider]
+
+for provider in providers:
+    vision_models = provider.list_available_models(
+        input_capabilities=[ModelInputCapability.IMAGE]
+    )
+    print(f"{provider.__name__}: {len(vision_models)} vision models")
+```
+
+### Benefits
+
+- **Type-Safe**: Enum-based filtering prevents typos and provides IDE autocomplete
+- **Consistent**: Same API across all providers (OpenAI, Anthropic, Ollama, etc.)
+- **Flexible**: Support for multiple input capabilities (e.g., text + image)
+- **Future-Proof**: Easy to extend with new capabilities (video, audio generation)
+- **Backward Compatible**: Legacy parameters still supported
+- **Server Integrated**: HTTP API filtering for web applications
+
+---
+
 ## Core Features
 
 ### Session Management

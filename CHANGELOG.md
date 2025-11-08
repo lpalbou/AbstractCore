@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Vision capability validation in `AutoMediaHandler._should_apply_compression()`
 
 ### Enhanced
+- **Model Capability Filtering**: Clean, type-safe system for filtering models by input/output capabilities
+  - **Input Capabilities**: Filter by what models can analyze (TEXT, IMAGE, AUDIO, VIDEO)
+  - **Output Capabilities**: Filter by what models generate (TEXT, EMBEDDINGS)
+  - **Python API**: `list_available_models(input_capabilities=[...], output_capabilities=[...])`
+  - **HTTP API**: `/v1/models?input_type=image&output_type=text`
+  - **All Providers**: Works consistently across OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
+
 - **Text File Support**: Media module now supports 90+ text-based file extensions with intelligent content detection
   - **Expanded Mappings**: Added support for programming languages (.py, .js, .r, .R, .rs, .go, .jl, etc.), notebooks (.ipynb, .rmd), config files (.yaml, .toml, .ini), web files (.css, .vue, .svelte), build scripts (.sh, .dockerfile), and more
   - **Smart Detection**: Unknown extensions are analyzed via content sampling (UTF-8, Latin-1, etc.) to automatically detect text files

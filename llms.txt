@@ -587,6 +587,33 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 
 ---
 
+### Model Capability Filtering
+```python
+from abstractcore.providers import OllamaProvider, ModelInputCapability, ModelOutputCapability
+
+# Vision models
+vision_models = OllamaProvider.list_available_models(
+    input_capabilities=[ModelInputCapability.IMAGE]
+)
+
+# Embedding models
+embedding_models = OllamaProvider.list_available_models(
+    output_capabilities=[ModelOutputCapability.EMBEDDINGS]
+)
+```
+
+**HTTP API:**
+```bash
+# Vision models
+curl http://localhost:8000/v1/models?input_type=image
+
+# Embedding models
+curl http://localhost:8000/v1/models?output_type=embeddings
+
+# Combined filtering
+curl http://localhost:8000/v1/models?provider=ollama&input_type=image
+```
+
 ## Quick Links
 
 - **GitHub**: https://github.com/lpalbou/AbstractCore

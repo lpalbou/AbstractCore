@@ -99,7 +99,9 @@ lmstudio = [
 
 huggingface = [
     "transformers>=4.57.1,<5.0.0",  # Required for GLM4V architecture support (Glyph, GLM-4.1V)
-    "torch>=1.12.0,<3.0.0",
+    "torch>=2.6.0,<3.0.0",  # Required for EmbeddingGemma model support
+    "torchvision>=0.17.0",  # Compatible with torch>=2.6.0
+    "torchaudio>=2.1.0",  # Compatible with torch>=2.6.0
     "llama-cpp-python>=0.2.0,<1.0.0",
     "outlines>=0.1.0",  # Optional native structured output support
 ]
@@ -111,7 +113,7 @@ mlx = [
 ]
 
 embeddings = [
-    "sentence-transformers>=2.7.0,<4.0.0",
+    "sentence-transformers>=5.1.0,<6.0.0",  # Required for EmbeddingGemma model support
     "numpy>=1.20.0,<2.0.0",
 ]
 

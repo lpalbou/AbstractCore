@@ -22,6 +22,16 @@ from .registry import (
     get_available_models_for_provider
 )
 
+# Model capability filtering (new system)
+from .model_capabilities import (
+    ModelInputCapability,
+    ModelOutputCapability,
+    get_model_input_capabilities,
+    get_model_output_capabilities,
+    filter_models_by_capabilities,
+    get_capability_summary
+)
+
 __all__ = [
     # Provider classes
     'BaseProvider',
@@ -43,4 +53,12 @@ __all__ = [
     'get_all_providers_status',
     'create_provider',
     'get_available_models_for_provider',
+
+    # Model capability filtering (new system)
+    'ModelInputCapability',
+    'ModelOutputCapability',
+    'get_model_input_capabilities',
+    'get_model_output_capabilities',
+    'filter_models_by_capabilities',
+    'get_capability_summary',
 ]
