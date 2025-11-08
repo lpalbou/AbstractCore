@@ -1084,17 +1084,30 @@ async def list_models(
         }
 
 @app.get("/providers")
-async def list_providers():
+async def list_providers(
+    include_models: bool = Query(
+        False,
+        description="Include model lists for each provider. Set to true for full information (slower)."
+    )
+):
     """
     List all available AbstractCore providers and their capabilities.
 
     Returns comprehensive information about all registered LLM providers, including:
     - Provider name, display name, and type
-    - Number of available models and sample models
+    - Number of available models and sample models (if include_models=True)
     - Current availability status and detailed error information
     - Provider description and supported features
     - Authentication requirements and installation instructions
     - Local vs. cloud provider designation
+
+    **Query Parameters:**
+    - `include_models` (bool, default=False): Include model lists for each provider.
+      Set to `true` for full information (slower).
+
+    **Performance:**
+    - `include_models=false`: Metadata only (very fast, ~15ms) - **DEFAULT**
+    - `include_models=true`: Full information including model lists (slower, ~800ms)
 
     **Supported Providers:**
     - **OpenAI**: Commercial API with GPT-4, GPT-3.5, and embedding models
@@ -1105,16 +1118,11 @@ async def list_providers():
     - **HuggingFace**: Access to HuggingFace models (transformers and embeddings)
 
     **Use Cases:**
-    - Discover available providers before making requests
-    - Check provider availability and model counts
+    - Fast provider discovery: `GET /providers` (default, very fast)
+    - Full provider information: `GET /providers?include_models=true`
     - Build dynamic provider selection UIs
     - Monitor provider status and troubleshoot issues
     - Get installation instructions for missing dependencies
-
-    **Enhanced Information:**
-    This endpoint now uses the centralized provider registry to provide
-    comprehensive information including supported features, authentication
-    requirements, and detailed status information.
 
     **Returns:** A list of provider objects with comprehensive metadata.
     """
@@ -1122,7 +1130,7 @@ async def list_providers():
         from ..providers.registry import get_all_providers_with_models, get_all_providers_status
 
         # Get providers with models (available providers)
-        available_providers = get_all_providers_with_models()
+        available_providers = get_all_providers_with_models(include_models=include_models)
 
         # Optionally include all providers (even those with issues) for debugging
         # Uncomment the next line if you want to see providers with errors too:

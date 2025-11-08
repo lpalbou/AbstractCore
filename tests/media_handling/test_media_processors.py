@@ -218,17 +218,66 @@ class TestOfficeProcessor:
         except ImportError as e:
             pytest.skip(f"OfficeProcessor not available: {e}")
 
-    def test_docx_processing_mock(self):
-        """Test DOCX processing with mocked dependencies."""
-        fake_docx = Path(self.temp_dir) / "test.docx"
-        fake_docx.write_bytes(b"PK\x03\x04fake docx")  # Fake ZIP signature
+    def test_docx_processing_real(self):
+        """Test DOCX processing with real document."""
+        docx_path = Path(__file__).parent.parent / "media_examples" / "false-report.docx"
+        
+        if not docx_path.exists():
+            pytest.skip(f"Test document not found: {docx_path}")
 
         try:
             from abstractcore.media.processors import OfficeProcessor
             processor = OfficeProcessor()
-            result = processor.process_file(fake_docx)
-            # Test that it either works or gives proper error
-            assert result.success or "unstructured not installed" in result.error_message
+            result = processor.process_file(docx_path)
+            
+            # Should successfully process the real DOCX file
+            assert result.success, f"Failed to process DOCX: {result.error_message}"
+            assert result.media_content is not None
+            assert result.media_content.content is not None
+            assert len(result.media_content.content.strip()) > 0
+            assert result.media_content.metadata is not None
+        except ImportError:
+            pytest.skip("OfficeProcessor not available")
+
+    def test_xlsx_processing_real(self):
+        """Test XLSX processing with real document."""
+        xlsx_path = Path(__file__).parent.parent / "media_examples" / "data.xlsx"
+        
+        if not xlsx_path.exists():
+            pytest.skip(f"Test document not found: {xlsx_path}")
+
+        try:
+            from abstractcore.media.processors import OfficeProcessor
+            processor = OfficeProcessor()
+            result = processor.process_file(xlsx_path)
+            
+            # Should successfully process the real XLSX file
+            assert result.success, f"Failed to process XLSX: {result.error_message}"
+            assert result.media_content is not None
+            assert result.media_content.content is not None
+            assert len(result.media_content.content.strip()) > 0
+            assert result.media_content.metadata is not None
+        except ImportError:
+            pytest.skip("OfficeProcessor not available")
+
+    def test_pptx_processing_real(self):
+        """Test PPTX processing with real document."""
+        pptx_path = Path(__file__).parent.parent / "media_examples" / "presentation.pptx"
+        
+        if not pptx_path.exists():
+            pytest.skip(f"Test document not found: {pptx_path}")
+
+        try:
+            from abstractcore.media.processors import OfficeProcessor
+            processor = OfficeProcessor()
+            result = processor.process_file(pptx_path)
+            
+            # Should successfully process the real PPTX file
+            assert result.success, f"Failed to process PPTX: {result.error_message}"
+            assert result.media_content is not None
+            assert result.media_content.content is not None
+            assert len(result.media_content.content.strip()) > 0
+            assert result.media_content.metadata is not None
         except ImportError:
             pytest.skip("OfficeProcessor not available")
 

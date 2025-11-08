@@ -289,13 +289,64 @@ class ProviderRegistry:
             for provider_name in self.list_provider_names()
         ]
 
-    def get_providers_with_models(self) -> List[Dict[str, Any]]:
-        """Get only providers that have available models."""
-        all_providers = self.get_all_providers_status()
-        return [
-            provider for provider in all_providers
-            if provider.get("status") == "available" and provider.get("model_count", 0) > 0
-        ]
+    def get_providers_with_models(self, include_models: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get only providers that have available models.
+        
+        Args:
+            include_models: If True, include actual model lists (slower).
+                           If False, return metadata only (much faster). Default: True.
+        """
+        if include_models:
+            # Original behavior - get full status including model lists
+            all_providers = self.get_all_providers_status()
+            return [
+                provider for provider in all_providers
+                if provider.get("status") == "available" and provider.get("model_count", 0) > 0
+            ]
+        else:
+            # Fast path - get all provider metadata without model enumeration
+            # Note: We return all providers since we can't quickly determine which have models
+            return self.get_providers_metadata_only()
+
+    def get_providers_metadata_only(self) -> List[Dict[str, Any]]:
+        """
+        Get provider metadata without enumerating models (fast path).
+        
+        This method returns provider information without making API calls
+        or scanning for models, making it extremely fast for UI discovery.
+        """
+        providers_metadata = []
+        
+        for provider_name in self.list_provider_names():
+            provider_info = self.get_provider_info(provider_name)
+            if not provider_info:
+                continue
+                
+            # Basic availability check without model enumeration
+            try:
+                provider_class = self.get_provider_class(provider_name)
+                status = "available"  # Assume available if class can be imported
+            except Exception:
+                status = "error"
+            
+            metadata = {
+                "name": provider_info.name,
+                "display_name": provider_info.display_name,
+                "type": provider_info.provider_type,
+                "model_count": "unknown",  # Don't enumerate models
+                "status": status,
+                "description": provider_info.description,
+                "local_provider": provider_info.local_provider,
+                "authentication_required": provider_info.authentication_required,
+                "supported_features": provider_info.supported_features,
+                "installation_extras": provider_info.installation_extras,
+                "models": []  # Empty list for fast response
+            }
+            
+            providers_metadata.append(metadata)
+        
+        return providers_metadata
 
     def create_provider_instance(self, provider_name: str, model: Optional[str] = None, **kwargs):
         """
@@ -352,7 +403,7 @@ def is_provider_available(provider_name: str) -> bool:
     return get_provider_registry().is_provider_available(provider_name)
 
 
-def get_all_providers_with_models() -> List[Dict[str, Any]]:
+def get_all_providers_with_models(include_models: bool = True) -> List[Dict[str, Any]]:
     """
     Get comprehensive information about all providers with available models.
 
@@ -360,14 +411,18 @@ def get_all_providers_with_models() -> List[Dict[str, Any]]:
     for provider discovery and information. It replaces the manual provider
     lists in factory.py and server/app.py.
 
+    Args:
+        include_models: If True, include actual model lists (slower). 
+                       If False, return metadata only (much faster). Default: True.
+
     Returns:
         List of provider dictionaries with comprehensive metadata including:
         - name, display_name, type, description
         - model_count, status, supported_features
         - local_provider, authentication_required
-        - installation_extras, sample models
+        - installation_extras, sample models (if include_models=True)
     """
-    return get_provider_registry().get_providers_with_models()
+    return get_provider_registry().get_providers_with_models(include_models=include_models)
 
 
 def get_all_providers_status() -> List[Dict[str, Any]]:

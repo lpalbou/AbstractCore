@@ -49,7 +49,12 @@ class TestLayer1Foundation:
                 model_data = models[model_name]
                 assert 'max_tokens' in model_data, f"{model_name} missing 'max_tokens' field"
                 assert isinstance(model_data['max_tokens'], int), f"{model_name} 'max_tokens' is not an integer"
-                assert model_data['max_tokens'] > 0, f"{model_name} 'max_tokens' must be positive"
+                # Embedding models can have max_tokens = 0 since they don't generate text
+                model_type = model_data.get("model_type", "generative")
+                if model_type == "embedding":
+                    assert model_data['max_tokens'] >= 0, f"Embedding model {model_name} 'max_tokens' must be non-negative"
+                else:
+                    assert model_data['max_tokens'] > 0, f"Generative model {model_name} 'max_tokens' must be positive"
 
     def test_no_context_length_in_json(self):
         """Test that 'context_length' field has been removed from JSON"""

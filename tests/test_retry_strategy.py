@@ -420,14 +420,20 @@ class TestRetryManager:
         # No retry_success event in minimal approach - success is implicit
 
 
-class TestRetryProvider(BaseProvider):
-    """Test provider for retry integration testing."""
+class MockProvider(BaseProvider):
+    """Simple mock provider for retry testing."""
 
     def __init__(self, model: str = "test-model", **kwargs):
         super().__init__(model, **kwargs)
+        self._should_fail = False
+        self._fail_count = 0
 
     def _generate_internal(self, prompt: str, **kwargs):
         """Mock generation method."""
+        if self._should_fail and self._fail_count > 0:
+            self._fail_count -= 1
+            raise RateLimitError("Rate limit exceeded")
+        
         return GenerateResponse(
             content="Generated response",
             model=self.model,
@@ -438,6 +444,10 @@ class TestRetryProvider(BaseProvider):
         """Mock generate method (required by interface)."""
         return self.generate_with_telemetry(prompt, **kwargs)
 
+    def list_available_models(self):
+        """Required abstract method implementation."""
+        return [self.model]
+
     def get_capabilities(self):
         """Mock capabilities method (required by interface)."""
         return {
@@ -445,6 +455,11 @@ class TestRetryProvider(BaseProvider):
             "supports_tools": True,
             "supports_structured_output": True
         }
+    
+    def set_failure_mode(self, should_fail: bool, fail_count: int = 1):
+        """Configure the provider to fail for testing."""
+        self._should_fail = should_fail
+        self._fail_count = fail_count
 
 
 class TestBaseProviderIntegration:
@@ -452,11 +467,11 @@ class TestBaseProviderIntegration:
 
     def test_provider_initialization_with_retry(self):
         """Test provider initializes with retry manager."""
-        provider = TestRetryProvider("test-model")
+        provider = MockProvider("test-model")
 
         assert hasattr(provider, 'retry_manager')
         assert isinstance(provider.retry_manager, RetryManager)
-        assert provider.provider_key == "TestRetryProvider:test-model"
+        assert provider.provider_key == "MockProvider:test-model"
 
     def test_structured_output_retry_strategy_parameter(self):
         """Test passing retry_strategy parameter to generate method."""
@@ -467,7 +482,7 @@ class TestBaseProviderIntegration:
             name: str
             value: int
 
-        provider = TestRetryProvider("test-model")
+        provider = MockProvider("test-model")
         custom_retry = FeedbackRetry(max_attempts=5)
 
         # Test that we can pass retry_strategy parameter without error
@@ -500,7 +515,7 @@ class TestBaseProviderIntegration:
             name: str
             value: int
 
-        provider = TestRetryProvider("test-model")
+        provider = MockProvider("test-model")
 
         def mock_generate(*args, **kwargs):
             return GenerateResponse(
@@ -531,7 +546,7 @@ class TestBaseProviderIntegration:
     @patch('abstractcore.providers.base.time.sleep')
     def test_provider_retry_on_failure(self, mock_sleep):
         """Test provider retries on API failures."""
-        provider = TestRetryProvider("test-model")
+        provider = MockProvider("test-model")
 
         # Mock _generate_internal to fail then succeed
         original_generate = provider._generate_internal
@@ -555,7 +570,7 @@ class TestBaseProviderIntegration:
 
     def test_provider_no_retry_on_auth_error(self):
         """Test provider doesn't retry on authentication errors."""
-        provider = TestRetryProvider("test-model")
+        provider = MockProvider("test-model")
 
         # Mock _generate_internal to always fail with auth error
         provider._generate_internal = Mock(side_effect=AuthenticationError("Invalid API key"))
@@ -569,7 +584,7 @@ class TestBaseProviderIntegration:
     @patch('abstractcore.events.emit_global')
     def test_provider_retry_events(self, mock_emit):
         """Test provider emits retry events."""
-        provider = TestRetryProvider("test-model")
+        provider = MockProvider("test-model")
 
         # Mock _generate_internal to fail once then succeed
         call_count = 0

@@ -1872,7 +1872,6 @@
         "up to 4096x4096"
       ],
       "max_image_resolution": "4096x4096",
-      "context_length": 65536,
       "total_parameters": "10B",
       "base_model": "GLM-4-9B-0414",
       "image_tokenization_method": "glm_vision_encoder",
