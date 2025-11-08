@@ -1,0 +1,867 @@
+{
+  "test_matrix": {
+    "ollama/qwen2.5vl:7b": {
+      "provider": "ollama",
+      "model": "qwen2.5vl:7b",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 29.271759033203125,
+          "response_content": "The image shows a close-up of a bowl filled with a creamy salad containing chunks of potatoes, carrots, peas, and what appears to be tuna, all mixed in a light yellow dressing. The bowl is dark-colored, and the setting appears to be a kitchen counter with a dark tabletop.",
+          "response_length": 272,
+          "word_count": 49
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 24.288635969161987,
+          "response_content": "The image features a cat with striking yellow eyes peeking out from inside a transparent plastic dome, which is placed on top of a white, spherical object. The background includes a green surface with a red and white diamond pattern, and the setting appears to be indoors.",
+          "response_length": 272,
+          "word_count": 47
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 24.804797887802124,
+          "response_content": "The image shows a humpback whale breaching the surface of the ocean, with its body partially above the water and its tail visible. The whale's dark grey skin contrasts with the lighter blue of the water, and it appears to be in motion, creating splashes around its body. The background features a hazy, distant shoreline under a pale sky.",
+          "response_length": 338,
+          "word_count": 59
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 24.310389041900635,
+          "response_content": "The image shows a scenic mountain landscape with a dirt path leading into the distance. The foreground features a wooden fence on the left, with lush green vegetation alongside the path. In the background, there are rolling hills and distant mountain ranges under a bright blue sky with scattered white clouds. The sun is positioned low in the sky, casting long shadows and creating a warm, golden light over the scene.",
+          "response_length": 419,
+          "word_count": 71
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 24.28170084953308,
+          "response_content": "The image depicts a serene park pathway lined with ornate street lamps and bordered by low hedges and bare trees, under a sky painted with hues of pink and orange during sunset. The warm tones of the sky contrast with the cool blue of the buildings in the background.",
+          "response_length": 267,
+          "word_count": 49
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 25.39145655632019
+      }
+    },
+    "ollama/llama3.2-vision:11b": {
+      "provider": "ollama",
+      "model": "llama3.2-vision:11b",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 44.273425817489624,
+          "response_content": "The image depicts a black ceramic bowl filled with a salad, featuring diced carrots, green peas, and potatoes, all mixed with a creamy sauce. The salad is set on a black table, accompanied by a white ceramic bowl in the top-left corner and a glass bowl in the top-right corner.",
+          "response_length": 277,
+          "word_count": 50
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 44.184327840805054,
+          "response_content": "This image features a cat's head protruding from a clear plastic dome on top of a white egg-shaped object, with three circular openings at the bottom. The cat's head is visible through the dome, which is attached to the top of the object, and the openings at the bottom appear to be designed for the cat to breathe or see out of.",
+          "response_length": 329,
+          "word_count": 62
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 44.92388677597046,
+          "response_content": "This image shows a large whale breaching the water with its tail outstretched. It is black with white barnacles on its back and tail. The background is a misty gray water and sky, with a distant shore line in the far background.",
+          "response_length": 228,
+          "word_count": 42
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 51.671759843826294,
+          "response_content": "The image shows a dirt road leading to a wooden fence with a mountainous backdrop. The road is surrounded by green grass and shrubs, and the fence appears to be made of wooden posts and rails. The mountains in the background are hazy and appear to be distant, suggesting a large scale or a long distance from the camera. The sky is blue and cloudy, with the sun shining through the clouds, casting a warm and peaceful atmosphere. The overall setting appears to be a rural or natural area, possibly in a mountainous region.",
+          "response_length": 522,
+          "word_count": 94
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 47.45604991912842,
+          "response_content": "The image depicts a serene and peaceful urban park setting, characterized by a well-maintained path with greenery and trees on either side. The path is flanked by benches and streetlights, and the background features a cityscape with high-rise buildings. The overall atmosphere is calm and tranquil, with a subtle hint of urbanization.",
+          "response_length": 335,
+          "word_count": 52
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 46.50189003944397
+      }
+    },
+    "ollama/gemma3:4b": {
+      "provider": "ollama",
+      "model": "gemma3:4b",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": false,
+          "error": "\u274c Model 'gemma3:4b' not found for Ollama provider.\n\n\u2705 Available models (28):\n  \u2022 all-minilm:33m\n  \u2022 all-minilm:l6-v2\n  \u2022 cogito:3b\n  \u2022 embeddinggemma:300m\n  \u2022 gemma3:1b\n  \u2022 gemma3:1b-it-qat\n  \u2022 gemma3:270m\n  \u2022 gemma3:270m-it-qat\n  \u2022 gemma3:4b-it-qat\n  \u2022 glm-4.6:cloud\n  \u2022 gpt-oss:120b-cloud\n  \u2022 gpt-oss:20b\n  \u2022 gpt-oss:20b-cloud\n  \u2022 granite-embedding:278m\n  \u2022 granite-embedding:30m\n  \u2022 granite3.2-vision:latest\n  \u2022 granite3.3:2b\n  \u2022 kimi-k2:1t-cloud\n  \u2022 llama3.2-vision:11b\n  \u2022 minimax-m2:cloud\n  \u2022 nomic-embed-text:latest\n  \u2022 nomic-embed-text:v1.5\n  \u2022 qwen2.5vl:7b\n  \u2022 qwen3-coder:30b\n  \u2022 qwen3-coder:480b-cloud\n  \u2022 qwen3-embedding:0.6b\n  \u2022 qwen3-vl:235b-instruct-cloud\n  \u2022 qwen3:4b-instruct-2507-q4_K_M"
+        },
+        "mystery2_sc.jpg": {
+          "success": false,
+          "error": "\u274c Model 'gemma3:4b' not found for Ollama provider.\n\n\u2705 Available models (28):\n  \u2022 all-minilm:33m\n  \u2022 all-minilm:l6-v2\n  \u2022 cogito:3b\n  \u2022 embeddinggemma:300m\n  \u2022 gemma3:1b\n  \u2022 gemma3:1b-it-qat\n  \u2022 gemma3:270m\n  \u2022 gemma3:270m-it-qat\n  \u2022 gemma3:4b-it-qat\n  \u2022 glm-4.6:cloud\n  \u2022 gpt-oss:120b-cloud\n  \u2022 gpt-oss:20b\n  \u2022 gpt-oss:20b-cloud\n  \u2022 granite-embedding:278m\n  \u2022 granite-embedding:30m\n  \u2022 granite3.2-vision:latest\n  \u2022 granite3.3:2b\n  \u2022 kimi-k2:1t-cloud\n  \u2022 llama3.2-vision:11b\n  \u2022 minimax-m2:cloud\n  \u2022 nomic-embed-text:latest\n  \u2022 nomic-embed-text:v1.5\n  \u2022 qwen2.5vl:7b\n  \u2022 qwen3-coder:30b\n  \u2022 qwen3-coder:480b-cloud\n  \u2022 qwen3-embedding:0.6b\n  \u2022 qwen3-vl:235b-instruct-cloud\n  \u2022 qwen3:4b-instruct-2507-q4_K_M"
+        },
+        "mystery4_wh.jpg": {
+          "success": false,
+          "error": "\u274c Model 'gemma3:4b' not found for Ollama provider.\n\n\u2705 Available models (28):\n  \u2022 all-minilm:33m\n  \u2022 all-minilm:l6-v2\n  \u2022 cogito:3b\n  \u2022 embeddinggemma:300m\n  \u2022 gemma3:1b\n  \u2022 gemma3:1b-it-qat\n  \u2022 gemma3:270m\n  \u2022 gemma3:270m-it-qat\n  \u2022 gemma3:4b-it-qat\n  \u2022 glm-4.6:cloud\n  \u2022 gpt-oss:120b-cloud\n  \u2022 gpt-oss:20b\n  \u2022 gpt-oss:20b-cloud\n  \u2022 granite-embedding:278m\n  \u2022 granite-embedding:30m\n  \u2022 granite3.2-vision:latest\n  \u2022 granite3.3:2b\n  \u2022 kimi-k2:1t-cloud\n  \u2022 llama3.2-vision:11b\n  \u2022 minimax-m2:cloud\n  \u2022 nomic-embed-text:latest\n  \u2022 nomic-embed-text:v1.5\n  \u2022 qwen2.5vl:7b\n  \u2022 qwen3-coder:30b\n  \u2022 qwen3-coder:480b-cloud\n  \u2022 qwen3-embedding:0.6b\n  \u2022 qwen3-vl:235b-instruct-cloud\n  \u2022 qwen3:4b-instruct-2507-q4_K_M"
+        },
+        "mystery1_mp.jpg": {
+          "success": false,
+          "error": "\u274c Model 'gemma3:4b' not found for Ollama provider.\n\n\u2705 Available models (28):\n  \u2022 all-minilm:33m\n  \u2022 all-minilm:l6-v2\n  \u2022 cogito:3b\n  \u2022 embeddinggemma:300m\n  \u2022 gemma3:1b\n  \u2022 gemma3:1b-it-qat\n  \u2022 gemma3:270m\n  \u2022 gemma3:270m-it-qat\n  \u2022 gemma3:4b-it-qat\n  \u2022 glm-4.6:cloud\n  \u2022 gpt-oss:120b-cloud\n  \u2022 gpt-oss:20b\n  \u2022 gpt-oss:20b-cloud\n  \u2022 granite-embedding:278m\n  \u2022 granite-embedding:30m\n  \u2022 granite3.2-vision:latest\n  \u2022 granite3.3:2b\n  \u2022 kimi-k2:1t-cloud\n  \u2022 llama3.2-vision:11b\n  \u2022 minimax-m2:cloud\n  \u2022 nomic-embed-text:latest\n  \u2022 nomic-embed-text:v1.5\n  \u2022 qwen2.5vl:7b\n  \u2022 qwen3-coder:30b\n  \u2022 qwen3-coder:480b-cloud\n  \u2022 qwen3-embedding:0.6b\n  \u2022 qwen3-vl:235b-instruct-cloud\n  \u2022 qwen3:4b-instruct-2507-q4_K_M"
+        },
+        "mystery3_us.jpg": {
+          "success": false,
+          "error": "\u274c Model 'gemma3:4b' not found for Ollama provider.\n\n\u2705 Available models (28):\n  \u2022 all-minilm:33m\n  \u2022 all-minilm:l6-v2\n  \u2022 cogito:3b\n  \u2022 embeddinggemma:300m\n  \u2022 gemma3:1b\n  \u2022 gemma3:1b-it-qat\n  \u2022 gemma3:270m\n  \u2022 gemma3:270m-it-qat\n  \u2022 gemma3:4b-it-qat\n  \u2022 glm-4.6:cloud\n  \u2022 gpt-oss:120b-cloud\n  \u2022 gpt-oss:20b\n  \u2022 gpt-oss:20b-cloud\n  \u2022 granite-embedding:278m\n  \u2022 granite-embedding:30m\n  \u2022 granite3.2-vision:latest\n  \u2022 granite3.3:2b\n  \u2022 kimi-k2:1t-cloud\n  \u2022 llama3.2-vision:11b\n  \u2022 minimax-m2:cloud\n  \u2022 nomic-embed-text:latest\n  \u2022 nomic-embed-text:v1.5\n  \u2022 qwen2.5vl:7b\n  \u2022 qwen3-coder:30b\n  \u2022 qwen3-coder:480b-cloud\n  \u2022 qwen3-embedding:0.6b\n  \u2022 qwen3-vl:235b-instruct-cloud\n  \u2022 qwen3:4b-instruct-2507-q4_K_M"
+        }
+      },
+      "model_stats": {
+        "successful_images": 0,
+        "total_images": 5,
+        "avg_response_time": 0.0
+      }
+    },
+    "lmstudio/qwen/qwen2.5-vl-7b": {
+      "provider": "lmstudio",
+      "model": "qwen/qwen2.5-vl-7b",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 7.747369050979614,
+          "response_content": "The image shows a bowl filled with potato salad, featuring visible chunks of potato, carrot, and peas, all mixed in a creamy dressing. The bowl is placed on a dark, speckled surface, and parts of other bowls are visible in the background.",
+          "response_length": 238,
+          "word_count": 42
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 5.3270978927612305,
+          "response_content": "The image features a cat peeking out from inside a transparent plastic dome attached to what appears to be a white, dome-shaped object with three circular holes on its front. The background is teal fabric adorned with red geometric patterns. The overall scene gives off a playful and whimsical vibe, as the cat seems curious or cautious about its surroundings within this dome-like structure.",
+          "response_length": 392,
+          "word_count": 64
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 4.769191026687622,
+          "response_content": "The image captures a humpback whale breaching out of the water, with its tail visible above the surface. The whale's dark gray skin is dotted with barnacles, and it creates splashes around its body as it rises from the ocean. The background shows a calm sea under an overcast sky.",
+          "response_length": 280,
+          "word_count": 50
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 5.401643991470337,
+          "response_content": "The image depicts a serene rural scene with a dirt path winding through lush greenery under a bright blue sky dotted with wispy clouds. A wooden fence runs along the left side of the path, leading towards distant mountains that rise against the horizon. The sun shines brightly in the upper left corner, casting long shadows on the ground and creating a tranquil atmosphere.",
+          "response_length": 374,
+          "word_count": 64
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 5.585697889328003,
+          "response_content": "The image depicts a serene urban park pathway during sunset or sunrise, with soft pink and orange hues in the sky. The path is lined with greenery on both sides, including bushes and trees, and illuminated by vintage-style street lamps casting a warm glow. In the distance, traditional European-style buildings frame the scene, adding to the picturesque atmosphere.",
+          "response_length": 365,
+          "word_count": 58
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 5.766199970245362
+      }
+    },
+    "lmstudio/qwen/qwen3-vl-4b": {
+      "provider": "lmstudio",
+      "model": "qwen/qwen3-vl-4b",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 6.7598278522491455,
+          "response_content": "The image shows a freshly prepared chicken salad in a dark gray bowl, featuring chunks of chicken, carrots, green peppers, and potatoes mixed in a creamy dressing, set on a dark, textured countertop. In the background, a white bowl and a clear glass bowl with remnants of a sauce or dressing are visible, suggesting a kitchen or dining setting.",
+          "response_length": 344,
+          "word_count": 59
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 4.201886892318726,
+          "response_content": "In this whimsical image, a tabby cat peers curiously out of a transparent dome atop a white, spaceship-shaped pet carrier, set against a teal wall with red zigzag patterns. The scene is playful and surreal, with the cat\u2019s wide eyes and the carrier\u2019s three circular \u201ceyes\u201d evoking a sense of cosmic adventure.",
+          "response_length": 308,
+          "word_count": 52
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 3.704522132873535,
+          "response_content": "In this image, a massive humpback whale breaches the ocean surface, its dark, textured body and wide pectoral fin dramatically arcing above the water, splashing with droplets under a hazy, pale sky. The scene captures the whale\u2019s powerful movement against a calm sea, with muted blues and grays dominating the palette, emphasizing the grandeur of the marine giant.",
+          "response_length": 364,
+          "word_count": 58
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 4.094826936721802,
+          "response_content": "This image captures a sun-drenched mountain trail winding through a grassy hillside, bordered by a wooden fence on the left, with the bright sun creating a prominent lens flare and long shadows. The scene is set against a vast, clear blue sky with wispy clouds and distant, layered mountain ranges under a warm, golden light.",
+          "response_length": 325,
+          "word_count": 55
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 3.9816062450408936,
+          "response_content": "The image captures a serene, winding park pathway in Paris at dusk, with a glowing vintage green lamppost in the foreground illuminating the scene against a dramatic sky streaked with fiery orange and pink clouds. Bare tree branches frame the view, leading the eye down the path toward the warm glow of the setting sun behind classic European architecture, creating a tranquil and evocative urban landscape.",
+          "response_length": 407,
+          "word_count": 66
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 4.54853401184082
+      }
+    },
+    "lmstudio/google/gemma-3n-e4b": {
+      "provider": "lmstudio",
+      "model": "google/gemma-3n-e4b",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 7.192728042602539,
+          "response_content": "In the image, I see a black bowl filled with potato salad. The salad appears to contain chunks of potatoes, carrots, celery, and possibly other ingredients mixed with a creamy dressing. The bowl is sitting on a dark surface, likely a table or countertop.",
+          "response_length": 254,
+          "word_count": 44
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 1.6959140300750732,
+          "response_content": "In this image, a cute tabby cat is peeking out from inside a white, dome-shaped pet carrier with porthole windows. The cat is looking directly at the camera with wide, curious eyes and a pink nose, creating an adorable and playful scene. The background appears to be a textured teal fabric, possibly a couch or chair, which contrasts nicely with the white carrier.",
+          "response_length": 364,
+          "word_count": 63
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 2.74672794342041,
+          "response_content": "The image captures a majestic humpback whale breaching out of the ocean, its massive dark body emerging with flukes and pectoral fins extended. The whale is surrounded by splashing water, creating a dynamic and powerful scene against the backdrop of a slightly overcast sea. \n\n**Main objects:** Humpback whale, ocean waves\n**Colors:** Dark gray/black, blue-gray water, white foam\n**Setting:** Open ocean, possibly coastal area due to the hazy background.",
+          "response_length": 454,
+          "word_count": 68
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 2.7988197803497314,
+          "response_content": "The image captures a scenic mountain landscape on a bright, sunny day. The main focus is a dirt path winding along a grassy ridge, bordered by a wooden fence on the left and expansive mountain ranges in the distance. The sky is a mix of clear blue and scattered white clouds, with the sun positioned on the left side, casting long shadows across the path. \n\n**Key elements:** Mountain range, dirt path, wooden fence, sunny sky with clouds.",
+          "response_length": 439,
+          "word_count": 77
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 2.5735549926757812,
+          "response_content": "The image shows a serene, tree-lined pathway in what appears to be a park or garden at dusk. A warm sunset with pink and orange hues fills the sky, casting a soft glow on the scene. The main objects are a green lamppost illuminating the path, stone benches along the sides, and bare trees lining both sides of the walkway. People can be seen strolling in the distance, adding a sense of peacefulness to the overall view.",
+          "response_length": 420,
+          "word_count": 77
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 3.401548957824707
+      }
+    },
+    "openai/gpt-4o": {
+      "provider": "openai",
+      "model": "gpt-4o",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 4.650444984436035,
+          "response_content": "The image shows a bowl of mixed salad containing diced vegetables such as potatoes, carrots, and peas, coated in a creamy dressing. The setting is on a dark surface, and the colors are predominantly orange, yellow, and green with a creamy texture.",
+          "response_length": 247,
+          "word_count": 42
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 3.4598422050476074,
+          "response_content": "The image shows a cat inside a white carrier with a transparent dome, resembling a space capsule. The background features a patterned blue fabric and part of a red curtain.",
+          "response_length": 172,
+          "word_count": 30
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 6.250203847885132,
+          "response_content": "The image shows a humpback whale breaching out of the water in an ocean setting. The whale is dark gray with barnacles on its body, and the scene is mostly composed of muted blues and grays, indicating a cloudy day.",
+          "response_length": 215,
+          "word_count": 40
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 4.298306941986084,
+          "response_content": "The image shows a dirt path leading through a grassy landscape with a wooden fence on the left. The sky is bright and clear with a few clouds, and the sun is shining brightly, casting long shadows on the path.",
+          "response_length": 209,
+          "word_count": 40
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 5.2925779819488525,
+          "response_content": "The image shows a pathway lined with street lamps and trees on both sides, with buildings visible in the distance. The sky is filled with vibrant shades of pink, orange, and purple, suggesting a sunset or sunrise setting.",
+          "response_length": 221,
+          "word_count": 38
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 4.790275192260742
+      }
+    },
+    "openai/gpt-4-turbo": {
+      "provider": "openai",
+      "model": "gpt-4-turbo",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 5.998080015182495,
+          "response_content": "The image shows a bowl of salad containing a mix of diced vegetables and chunks of meat, possibly chicken, dressed in a creamy sauce, possibly mayonnaise-based. The bowl is situated on a dark-colored table, and there is another dish partially visible in the background. The main colors in the salad are shades of orange, green, and white.",
+          "response_length": 338,
+          "word_count": 57
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 5.122034311294556,
+          "response_content": "This image features a cat looking through the transparent dome of a white, space capsule-style pet carrier. The carrier has additional circular holes near the base, presumably for ventilation. The background is a patterned teal seat or wall, contrasting with the bright white of the carrier.",
+          "response_length": 291,
+          "word_count": 46
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 7.593308925628662,
+          "response_content": "This image captures a humpback whale breaching the surface of the ocean. The whale's massive body is mid-leap, with water droplets and barnacles visible on its dark skin. The background shows a blurred coastline under a grey sky, contributing to the dramatic and dynamic scene.",
+          "response_length": 277,
+          "word_count": 45
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 5.849518060684204,
+          "response_content": "This image captures a mountainous landscape under a clear blue sky, featuring a dirt road leading towards distant peaks. A wooden fence runs alongside the road, and the sun is visible in the sky, casting long shadows on the ground. The scene is bathed in warm sunlight, highlighting the natural terrain and serene atmosphere.",
+          "response_length": 325,
+          "word_count": 54
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 7.108073949813843,
+          "response_content": "This image captures a tranquil city park at dusk, featuring a pathway lined with street lamps that are lit, enhancing the ambiance. The sky, adorned with a vibrant mix of pink and orange hues from the setting sun, contrasts beautifully with the silhouetted bare trees. The setting suggests a peaceful evening walk through a well-maintained urban garden.",
+          "response_length": 353,
+          "word_count": 57
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 6.334203052520752
+      }
+    },
+    "anthropic/claude-3-5-sonnet-20241022": {
+      "provider": "anthropic",
+      "model": "claude-3-5-sonnet-20241022",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": false,
+          "error": "\u274c Model 'claude-3-5-sonnet-20241022' not found for Anthropic provider.\n\n\u2705 Available models (9):\n  \u2022 claude-sonnet-4-5-20250929\n  \u2022 claude-sonnet-4-20250514\n  \u2022 claude-opus-4-20250514\n  \u2022 claude-opus-4-1-20250805\n  \u2022 claude-haiku-4-5-20251001\n  \u2022 claude-3-opus-20240229\n  \u2022 claude-3-haiku-20240307\n  \u2022 claude-3-7-sonnet-20250219\n  \u2022 claude-3-5-haiku-20241022"
+        },
+        "mystery2_sc.jpg": {
+          "success": false,
+          "error": "\u274c Model 'claude-3-5-sonnet-20241022' not found for Anthropic provider.\n\n\u2705 Available models (9):\n  \u2022 claude-sonnet-4-5-20250929\n  \u2022 claude-sonnet-4-20250514\n  \u2022 claude-opus-4-20250514\n  \u2022 claude-opus-4-1-20250805\n  \u2022 claude-haiku-4-5-20251001\n  \u2022 claude-3-opus-20240229\n  \u2022 claude-3-haiku-20240307\n  \u2022 claude-3-7-sonnet-20250219\n  \u2022 claude-3-5-haiku-20241022"
+        },
+        "mystery4_wh.jpg": {
+          "success": false,
+          "error": "\u274c Model 'claude-3-5-sonnet-20241022' not found for Anthropic provider.\n\n\u2705 Available models (9):\n  \u2022 claude-sonnet-4-5-20250929\n  \u2022 claude-sonnet-4-20250514\n  \u2022 claude-opus-4-20250514\n  \u2022 claude-opus-4-1-20250805\n  \u2022 claude-haiku-4-5-20251001\n  \u2022 claude-3-opus-20240229\n  \u2022 claude-3-haiku-20240307\n  \u2022 claude-3-7-sonnet-20250219\n  \u2022 claude-3-5-haiku-20241022"
+        },
+        "mystery1_mp.jpg": {
+          "success": false,
+          "error": "\u274c Model 'claude-3-5-sonnet-20241022' not found for Anthropic provider.\n\n\u2705 Available models (9):\n  \u2022 claude-sonnet-4-5-20250929\n  \u2022 claude-sonnet-4-20250514\n  \u2022 claude-opus-4-20250514\n  \u2022 claude-opus-4-1-20250805\n  \u2022 claude-haiku-4-5-20251001\n  \u2022 claude-3-opus-20240229\n  \u2022 claude-3-haiku-20240307\n  \u2022 claude-3-7-sonnet-20250219\n  \u2022 claude-3-5-haiku-20241022"
+        },
+        "mystery3_us.jpg": {
+          "success": false,
+          "error": "\u274c Model 'claude-3-5-sonnet-20241022' not found for Anthropic provider.\n\n\u2705 Available models (9):\n  \u2022 claude-sonnet-4-5-20250929\n  \u2022 claude-sonnet-4-20250514\n  \u2022 claude-opus-4-20250514\n  \u2022 claude-opus-4-1-20250805\n  \u2022 claude-haiku-4-5-20251001\n  \u2022 claude-3-opus-20240229\n  \u2022 claude-3-haiku-20240307\n  \u2022 claude-3-7-sonnet-20250219\n  \u2022 claude-3-5-haiku-20241022"
+        }
+      },
+      "model_stats": {
+        "successful_images": 0,
+        "total_images": 5,
+        "avg_response_time": 0.0
+      }
+    },
+    "anthropic/claude-3-haiku-20240307": {
+      "provider": "anthropic",
+      "model": "claude-3-haiku-20240307",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 1.3733618259429932,
+          "response_content": "The image shows a bowl containing a creamy, chunky mixture of cooked ingredients, including pieces of potatoes, carrots, and what appears to be shredded chicken or turkey. The dish has a warm, comforting appearance and is served on a dark, textured surface.",
+          "response_length": 257,
+          "word_count": 42
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 1.2191050052642822,
+          "response_content": "The image shows a cat's face peering through a transparent dome or container, with a patterned background and three metal rings or grommets visible in the foreground.",
+          "response_length": 166,
+          "word_count": 27
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 1.3173811435699463,
+          "response_content": "The image shows a large humpback whale breaching the surface of the ocean. The whale's dark, wrinkled body is covered in water droplets and appears to be leaping out of the gray, cloudy water.",
+          "response_length": 192,
+          "word_count": 34
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 1.086540699005127,
+          "response_content": "The image shows a scenic mountain landscape with a dirt path leading through a grassy field, surrounded by a wooden fence. The sky is bright and clear, with some fluffy white clouds. The mountains in the distance are hazy, creating a serene and peaceful atmosphere.",
+          "response_length": 265,
+          "word_count": 45
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 1.5253241062164307,
+          "response_content": "The image shows a scenic urban park setting at sunset. The main objects include a paved walking path, street lamps, and bare trees against a dramatic sky filled with vibrant orange and pink clouds.",
+          "response_length": 197,
+          "word_count": 34
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 1.304342555999756
+      }
+    },
+    "huggingface/unsloth/Qwen2.5-VL-7B-Instruct-GGUF": {
+      "provider": "huggingface",
+      "model": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+      "image_results": {
+        "mystery5_so.jpg": {
+          "success": true,
+          "response_time": 2.9860079288482666,
+          "response_content": "The image appears to be an abstract composition with a dominant blue color scheme. It features a series of overlapping geometric shapes, including circles and rectangles, which create a sense of depth and movement. The setting is ambiguous, as it is purely abstract and does not depict a specific environment or location. The overall effect is one of modern art, with a focus on form and color over representational elements.",
+          "response_length": 425,
+          "word_count": 70
+        },
+        "mystery2_sc.jpg": {
+          "success": true,
+          "response_time": 1.8899140357971191,
+          "response_content": "The image appears to be an abstract artwork with various shades of blue and gray, creating a sense of depth and movement. There are no distinct objects or recognizable items; instead, the composition consists of overlapping shapes and patterns that evoke a feeling of fluidity and organic flow. The setting is not discernible, as the focus is entirely on the abstract forms and their interplay of colors.",
+          "response_length": 404,
+          "word_count": 67
+        },
+        "mystery4_wh.jpg": {
+          "success": true,
+          "response_time": 1.9168939590454102,
+          "response_content": "The image appears to be an abstract composition with a predominantly white background and a central focus on a series of overlapping shapes. The shapes include a mix of curves and straight lines, with varying shades of blue and gray creating a sense of depth and movement. The overall setting suggests a modern, minimalist aesthetic, emphasizing form and color contrast rather than a recognizable scene or object.",
+          "response_length": 413,
+          "word_count": 67
+        },
+        "mystery1_mp.jpg": {
+          "success": true,
+          "response_time": 1.5022428035736084,
+          "response_content": "The image appears to be an abstract artwork with a variety of shapes and colors. It features a mix of geometric forms in shades of blue, green, and white, set against a light background. The composition seems to blend organic and geometric elements, creating a dynamic and visually intriguing piece.",
+          "response_length": 299,
+          "word_count": 50
+        },
+        "mystery3_us.jpg": {
+          "success": true,
+          "response_time": 1.8095512390136719,
+          "response_content": "The image appears to be an abstract painting with a mix of geometric shapes and organic forms. The colors are primarily muted and earthy, including shades of beige, brown, and gray, with some subtle touches of green and blue. The overall setting is somewhat ambiguous due to the abstract nature of the art, but it gives off a calm and contemplative atmosphere.",
+          "response_length": 360,
+          "word_count": 62
+        }
+      },
+      "model_stats": {
+        "successful_images": 5,
+        "total_images": 5,
+        "avg_response_time": 2.020921993255615
+      }
+    }
+  },
+  "summary": {
+    "total_combinations": 11,
+    "successful_combinations": 9,
+    "total_images": 5,
+    "total_providers": 5
+  },
+  "warnings_captured": [
+    {
+      "category": "ResourceWarning",
+      "message": "unclosed <socket.socket fd=18, family=2, type=1, proto=6, laddr=('127.0.0.1', 62863), raddr=('127.0.0.1', 11434)>",
+      "filename": "/Users/albou/.pyenv/versions/3.12.11/lib/python3.12/site-packages/h11/_readers.py",
+      "lineno": 43
+    },
+    {
+      "category": "ResourceWarning",
+      "message": "unclosed <socket.socket fd=19, family=2, type=1, proto=6, laddr=('127.0.0.1', 62922), raddr=('127.0.0.1', 11434)>",
+      "filename": "/Users/albou/.pyenv/versions/3.12.11/lib/python3.12/site-packages/h11/_readers.py",
+      "lineno": 43
+    },
+    {
+      "category": "ResourceWarning",
+      "message": "unclosed <socket.socket fd=19, family=2, type=1, proto=6, laddr=('127.0.0.1', 63027), raddr=('127.0.0.1', 1234)>",
+      "filename": "/Users/albou/.pyenv/versions/3.12.11/lib/python3.12/site-packages/h11/_headers.py",
+      "lineno": 247
+    },
+    {
+      "category": "ResourceWarning",
+      "message": "unclosed <socket.socket fd=22, family=2, type=1, proto=6, laddr=('127.0.0.1', 63056), raddr=('127.0.0.1', 1234)>",
+      "filename": "/Users/albou/.pyenv/versions/3.12.11/lib/python3.12/site-packages/openai/_compat.py",
+      "lineno": 110
+    },
+    {
+      "category": "DeprecationWarning",
+      "message": "The model 'claude-3-5-sonnet-20241022' is deprecated and will reach end-of-life on October 22, 2025.\nPlease migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resources/model-deprecations for more information.",
+      "filename": "/Users/albou/projects/abstractcore/abstractcore/providers/anthropic_provider.py",
+      "lineno": 192
+    },
+    {
+      "category": "DeprecationWarning",
+      "message": "The model 'claude-3-5-sonnet-20241022' is deprecated and will reach end-of-life on October 22, 2025.\nPlease migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resources/model-deprecations for more information.",
+      "filename": "/Users/albou/projects/abstractcore/abstractcore/providers/anthropic_provider.py",
+      "lineno": 192
+    },
+    {
+      "category": "DeprecationWarning",
+      "message": "The model 'claude-3-5-sonnet-20241022' is deprecated and will reach end-of-life on October 22, 2025.\nPlease migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resources/model-deprecations for more information.",
+      "filename": "/Users/albou/projects/abstractcore/abstractcore/providers/anthropic_provider.py",
+      "lineno": 192
+    },
+    {
+      "category": "DeprecationWarning",
+      "message": "The model 'claude-3-5-sonnet-20241022' is deprecated and will reach end-of-life on October 22, 2025.\nPlease migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resources/model-deprecations for more information.",
+      "filename": "/Users/albou/projects/abstractcore/abstractcore/providers/anthropic_provider.py",
+      "lineno": 192
+    },
+    {
+      "category": "DeprecationWarning",
+      "message": "The model 'claude-3-5-sonnet-20241022' is deprecated and will reach end-of-life on October 22, 2025.\nPlease migrate to a newer model. Visit https://docs.anthropic.com/en/docs/resources/model-deprecations for more information.",
+      "filename": "/Users/albou/projects/abstractcore/abstractcore/providers/anthropic_provider.py",
+      "lineno": 192
+    }
+  ],
+  "test_metadata": {
+    "prompt_used": "What do you see in this image? Describe the main objects, colors, and setting in 1-2 sentences.",
+    "test_images": [
+      "mystery5_so.jpg",
+      "mystery2_sc.jpg",
+      "mystery4_wh.jpg",
+      "mystery1_mp.jpg",
+      "mystery3_us.jpg"
+    ]
+  },
+  "performance_analysis": {
+    "individual_models": [
+      {
+        "provider": "ollama",
+        "model": "qwen2.5vl:7b",
+        "model_key": "ollama/qwen2.5vl:7b",
+        "avg_speed": 25.39145655632019,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "ollama",
+        "model": "llama3.2-vision:11b",
+        "model_key": "ollama/llama3.2-vision:11b",
+        "avg_speed": 46.50189003944397,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "qwen/qwen2.5-vl-7b",
+        "model_key": "lmstudio/qwen/qwen2.5-vl-7b",
+        "avg_speed": 5.766199970245362,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "qwen/qwen3-vl-4b",
+        "model_key": "lmstudio/qwen/qwen3-vl-4b",
+        "avg_speed": 4.54853401184082,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "google/gemma-3n-e4b",
+        "model_key": "lmstudio/google/gemma-3n-e4b",
+        "avg_speed": 3.401548957824707,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "model_key": "openai/gpt-4o",
+        "avg_speed": 4.790275192260742,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-4-turbo",
+        "model_key": "openai/gpt-4-turbo",
+        "avg_speed": 6.334203052520752,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "anthropic",
+        "model": "claude-3-haiku-20240307",
+        "model_key": "anthropic/claude-3-haiku-20240307",
+        "avg_speed": 1.304342555999756,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "huggingface",
+        "model": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+        "model_key": "huggingface/unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+        "avg_speed": 2.020921993255615,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      }
+    ],
+    "speed_ranking": [
+      {
+        "provider": "anthropic",
+        "model": "claude-3-haiku-20240307",
+        "model_key": "anthropic/claude-3-haiku-20240307",
+        "avg_speed": 1.304342555999756,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "huggingface",
+        "model": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+        "model_key": "huggingface/unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+        "avg_speed": 2.020921993255615,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "google/gemma-3n-e4b",
+        "model_key": "lmstudio/google/gemma-3n-e4b",
+        "avg_speed": 3.401548957824707,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "qwen/qwen3-vl-4b",
+        "model_key": "lmstudio/qwen/qwen3-vl-4b",
+        "avg_speed": 4.54853401184082,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "model_key": "openai/gpt-4o",
+        "avg_speed": 4.790275192260742,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "qwen/qwen2.5-vl-7b",
+        "model_key": "lmstudio/qwen/qwen2.5-vl-7b",
+        "avg_speed": 5.766199970245362,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-4-turbo",
+        "model_key": "openai/gpt-4-turbo",
+        "avg_speed": 6.334203052520752,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "ollama",
+        "model": "qwen2.5vl:7b",
+        "model_key": "ollama/qwen2.5vl:7b",
+        "avg_speed": 25.39145655632019,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "ollama",
+        "model": "llama3.2-vision:11b",
+        "model_key": "ollama/llama3.2-vision:11b",
+        "avg_speed": 46.50189003944397,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      }
+    ],
+    "reliability_ranking": [
+      {
+        "provider": "ollama",
+        "model": "qwen2.5vl:7b",
+        "model_key": "ollama/qwen2.5vl:7b",
+        "avg_speed": 25.39145655632019,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "ollama",
+        "model": "llama3.2-vision:11b",
+        "model_key": "ollama/llama3.2-vision:11b",
+        "avg_speed": 46.50189003944397,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "qwen/qwen2.5-vl-7b",
+        "model_key": "lmstudio/qwen/qwen2.5-vl-7b",
+        "avg_speed": 5.766199970245362,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "qwen/qwen3-vl-4b",
+        "model_key": "lmstudio/qwen/qwen3-vl-4b",
+        "avg_speed": 4.54853401184082,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "lmstudio",
+        "model": "google/gemma-3n-e4b",
+        "model_key": "lmstudio/google/gemma-3n-e4b",
+        "avg_speed": 3.401548957824707,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "model_key": "openai/gpt-4o",
+        "avg_speed": 4.790275192260742,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-4-turbo",
+        "model_key": "openai/gpt-4-turbo",
+        "avg_speed": 6.334203052520752,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "anthropic",
+        "model": "claude-3-haiku-20240307",
+        "model_key": "anthropic/claude-3-haiku-20240307",
+        "avg_speed": 1.304342555999756,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      },
+      {
+        "provider": "huggingface",
+        "model": "unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+        "model_key": "huggingface/unsloth/Qwen2.5-VL-7B-Instruct-GGUF",
+        "avg_speed": 2.020921993255615,
+        "success_rate": 1.0,
+        "successful_images": 5,
+        "total_images": 5
+      }
+    ],
+    "provider_averages": {
+      "ollama": {
+        "avg_speed": 35.94667329788208,
+        "avg_success_rate": 1.0,
+        "model_count": 2,
+        "models": [
+          "qwen2.5vl:7b",
+          "llama3.2-vision:11b"
+        ]
+      },
+      "lmstudio": {
+        "avg_speed": 4.572094313303629,
+        "avg_success_rate": 1.0,
+        "model_count": 3,
+        "models": [
+          "qwen/qwen2.5-vl-7b",
+          "qwen/qwen3-vl-4b",
+          "google/gemma-3n-e4b"
+        ]
+      },
+      "openai": {
+        "avg_speed": 5.562239122390746,
+        "avg_success_rate": 1.0,
+        "model_count": 2,
+        "models": [
+          "gpt-4o",
+          "gpt-4-turbo"
+        ]
+      },
+      "anthropic": {
+        "avg_speed": 1.304342555999756,
+        "avg_success_rate": 1.0,
+        "model_count": 1,
+        "models": [
+          "claude-3-haiku-20240307"
+        ]
+      },
+      "huggingface": {
+        "avg_speed": 2.020921993255615,
+        "avg_success_rate": 1.0,
+        "model_count": 1,
+        "models": [
+          "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"
+        ]
+      }
+    },
+    "fastest_model": {
+      "provider": "anthropic",
+      "model": "claude-3-haiku-20240307",
+      "model_key": "anthropic/claude-3-haiku-20240307",
+      "avg_speed": 1.304342555999756,
+      "success_rate": 1.0,
+      "successful_images": 5,
+      "total_images": 5
+    },
+    "most_reliable_model": {
+      "provider": "ollama",
+      "model": "qwen2.5vl:7b",
+      "model_key": "ollama/qwen2.5vl:7b",
+      "avg_speed": 25.39145655632019,
+      "success_rate": 1.0,
+      "successful_images": 5,
+      "total_images": 5
+    }
+  }
+}

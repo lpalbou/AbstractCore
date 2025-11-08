@@ -37,10 +37,16 @@ class TestModelCapabilitiesJSON:
             assert "max_tokens" in model_data, f"Model {model_name} missing max_tokens field"
             assert "context_length" not in model_data, f"Model {model_name} still has context_length field"
 
-            # Verify max_tokens is a positive integer
+            # Verify max_tokens is a non-negative integer
             max_tokens = model_data["max_tokens"]
             assert isinstance(max_tokens, int), f"Model {model_name} max_tokens is not an int: {type(max_tokens)}"
-            assert max_tokens > 0, f"Model {model_name} max_tokens must be positive: {max_tokens}"
+            
+            # Embedding models can have max_tokens = 0 since they don't generate text
+            model_type = model_data.get("model_type", "generative")
+            if model_type == "embedding":
+                assert max_tokens >= 0, f"Embedding model {model_name} max_tokens must be non-negative: {max_tokens}"
+            else:
+                assert max_tokens > 0, f"Generative model {model_name} max_tokens must be positive: {max_tokens}"
 
     def test_default_capabilities_use_max_tokens(self):
         """Verify default_capabilities in JSON uses max_tokens."""
