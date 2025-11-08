@@ -27,11 +27,11 @@ class TestProviderTokenTranslation:
 
     def test_huggingface_gguf_token_translation(self):
         """Test HuggingFace GGUF provider translates tokens correctly - REAL IMPLEMENTATION"""
-        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
         llm = create_llm("huggingface",
-                        model="unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                        model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
                         max_tokens=4096,
                         max_output_tokens=200,
                         debug=False)
@@ -63,12 +63,12 @@ class TestProviderTokenTranslation:
     def test_huggingface_transformers_token_translation(self):
         """Test HuggingFace GGUF provider translates tokens correctly"""
         # Skip if model not available
-        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("GGUF model not found in cache")
 
         try:
             llm = create_llm("huggingface",
-                            model="unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                            model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
                             max_tokens=2048,
                             max_output_tokens=100,
                             debug=False)
@@ -126,11 +126,11 @@ class TestTokenLimitValidation:
 
     def test_huggingface_gguf_token_validation(self):
         """Test GGUF model enforces token limits - REAL IMPLEMENTATION"""
-        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
         llm = create_llm("huggingface",
-                        model="unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                        model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
                         max_tokens=1024,  # Small total context
                         max_output_tokens=200,
                         debug=False)
@@ -158,9 +158,9 @@ class TestTokenLimitValidation:
         """Test effective token limit calculations across different scenarios"""
 
         # Test with all parameters set
-        if os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+        if os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             llm1 = create_llm("huggingface",
-                             model="unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                             model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
                              max_tokens=2048,
                              max_input_tokens=1500,
                              max_output_tokens=500,
@@ -174,9 +174,9 @@ class TestTokenLimitValidation:
             del llm1
 
         # Test with calculated input tokens
-        if os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+        if os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             llm2 = create_llm("huggingface",
-                             model="unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                             model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
                              max_tokens=3000,
                              max_output_tokens=800,
                              debug=False)
@@ -194,11 +194,11 @@ class TestActualTokenUsage:
 
     def test_gguf_generation_respects_limits(self):
         """Test GGUF generation actually respects token limits - REAL IMPLEMENTATION"""
-        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
         llm = create_llm("huggingface",
-                        model="unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                        model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
                         max_tokens=2048,
                         max_output_tokens=50,  # Very tight limit
                         debug=False)
@@ -226,11 +226,11 @@ class TestActualTokenUsage:
 
     def test_streaming_respects_limits(self):
         """Test streaming generation respects token limits - REAL IMPLEMENTATION"""
-        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
         llm = create_llm("huggingface",
-                        model="unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                        model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
                         max_tokens=2048,
                         max_output_tokens=40,
                         debug=False)
@@ -261,11 +261,11 @@ class TestActualTokenUsage:
 
     def test_parameter_override_in_generation(self):
         """Test that generation-time parameter overrides work correctly"""
-        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"):
+        if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
         llm = create_llm("huggingface",
-                        model="unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF",
+                        model="unsloth/Qwen3-4B-Instruct-2507-GGUF",
                         max_tokens=2048,
                         max_output_tokens=200,  # Default
                         debug=False)

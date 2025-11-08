@@ -22,7 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Optional dependencies: `pip install abstractcore[compression]` (removed ReportLab dependency)
   - Vision capability validation in `AutoMediaHandler._should_apply_compression()`
 
-### Enhanced  
+### Enhanced
+- **Text File Support**: Media module now supports 90+ text-based file extensions with intelligent content detection
+  - **Expanded Mappings**: Added support for programming languages (.py, .js, .r, .R, .rs, .go, .jl, etc.), notebooks (.ipynb, .rmd), config files (.yaml, .toml, .ini), web files (.css, .vue, .svelte), build scripts (.sh, .dockerfile), and more
+  - **Smart Detection**: Unknown extensions are analyzed via content sampling (UTF-8, Latin-1, etc.) to automatically detect text files
+  - **Programmatic Access**: New `get_all_supported_extensions()` and `get_supported_extensions_by_type()` functions for querying supported formats
+  - **CLI Enhancement**: `@filepath` syntax now works with ANY text-based file (R scripts, Jupyter notebooks, SQL files, etc.)
+  - **Fallback Processing**: TextProcessor handles all text files via plain text fallback, ensuring universal support
 - **Model Capabilities**: Added 50+ VLM models (Mistral Small 3.1/3.2, LLaMA 4, Qwen3-VL, Granite Vision)
 - **Detection System**: All model queries go through `detection.py` with structured logging
 - **Token Calculation**: Accurate image tokenization using model-specific parameters

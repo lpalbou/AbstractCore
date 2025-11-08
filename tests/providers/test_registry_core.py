@@ -77,7 +77,7 @@ class TestProviderRegistry:
         registry = ProviderRegistry()
 
         # Check that standard providers are registered
-        expected_providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface", "mock"]
+        expected_providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface"]
         registered_providers = registry.list_provider_names()
 
         for provider in expected_providers:
@@ -103,7 +103,7 @@ class TestProviderRegistry:
         registry = ProviderRegistry()
 
         assert registry.is_provider_available("openai") is True
-        assert registry.is_provider_available("mock") is True
+        assert registry.is_provider_available("anthropic") is True
         assert registry.is_provider_available("nonexistent") is False
 
         # Test case insensitivity
@@ -207,7 +207,7 @@ class TestGlobalRegistryFunctions:
 
         assert isinstance(providers, list)
         assert "openai" in providers
-        assert "mock" in providers
+        assert "anthropic" in providers
 
     def test_get_provider_info_global(self):
         """Test global get_provider_info function."""

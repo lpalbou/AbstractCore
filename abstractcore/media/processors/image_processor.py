@@ -99,7 +99,11 @@ class ImageProcessor(BaseMediaHandler):
 
         try:
             # Override defaults with kwargs
-            target_format = kwargs.get('target_format', 'jpeg')
+            # Preserve original format unless explicitly specified
+            original_format = file_path.suffix.lower().lstrip('.')
+            if original_format == 'jpg':
+                original_format = 'jpeg'
+            target_format = kwargs.get('target_format', original_format if original_format in ['png', 'jpeg', 'webp', 'gif'] else 'jpeg')
             model_name = kwargs.get('model_name', None)
 
             # Use model-specific maximum resolution if available

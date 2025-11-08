@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from abstractcore import create_llm
 
 
-TEST_GGUF_MODEL = "unsloth--Qwen3-Coder-30B-A3B-Instruct-GGUF"
+TEST_GGUF_MODEL = "unsloth--Qwen3-4B-Instruct-2507-GGUF"
 
 
 class TestGGUFIntegration:

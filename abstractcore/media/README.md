@@ -23,10 +23,53 @@ The media module provides unified, provider-agnostic multimodal processing capab
 
 | Format | Extensions | Size Limit | Provider Support |
 |--------|-----------|------------|------------------|
-| Images | png, jpg, gif, webp, bmp, tiff | 10MB | OpenAI, Anthropic, Ollama (vision models) |
-| Documents | pdf, docx, xlsx, pptx | 10MB | All (text extraction) |
-| Data | csv, tsv, json, xml | 10MB | All (text rendering) |
-| Text | txt, md, html | 10MB | All (direct) |
+| Images | png, jpg, gif, webp, bmp, tiff, ico | 10MB | OpenAI, Anthropic, Ollama (vision models) |
+| Documents | pdf, docx, xlsx, pptx, odt, rtf | 10MB | All (text extraction) |
+| Text | **90+ extensions** (see below) | 10MB | All (with content detection fallback) |
+| Data | csv, tsv, json, jsonl, xml, yaml, toml | 10MB | All (text rendering) |
+| Audio | mp3, wav, m4a, ogg, flac, aac | 10MB | Not yet implemented |
+| Video | mp4, avi, mov, mkv, webm, wmv | 10MB | Not yet implemented |
+
+**Text File Support (90+ Extensions)**:
+- **Programming Languages**: py, js, java, c, cpp, go, rs, rb, php, r, R, sql, jl, lua, dart, swift, kt, scala, etc.
+- **Notebooks**: ipynb, rmd, Rmd, qmd
+- **Configuration**: yaml, yml, toml, ini, cfg, conf, env, properties
+- **Markup**: md, markdown, rst, tex, html, adoc, org
+- **Build/Scripts**: sh, bash, zsh, dockerfile, cmake, gradle, makefile
+- **Web**: css, scss, sass, less, vue, svelte, jsx, tsx
+- **Logs**: log, out, err
+- **Unknown text extensions**: Automatically detected via content analysis
+
+### Programmatic Access to Supported Formats
+
+Query supported file extensions programmatically:
+
+```python
+from abstractcore.media.types import (
+    get_all_supported_extensions,
+    get_supported_extensions_by_type,
+    MediaType
+)
+
+# Get all formats organized by type
+all_formats = get_all_supported_extensions()
+print(f"Text extensions: {len(all_formats['text'])}")  # 90+
+print(f"Image extensions: {len(all_formats['image'])}")  # 9
+print(f"Document extensions: {len(all_formats['document'])}")  # 9
+
+# Get formats for specific type
+text_extensions = get_supported_extensions_by_type(MediaType.TEXT)
+print('r' in text_extensions)  # True - R scripts supported
+print('ipynb' in text_extensions)  # True - Jupyter notebooks supported
+
+# Get formats from handler
+from abstractcore.media.auto_handler import AutoMediaHandler
+handler = AutoMediaHandler()
+formats = handler.get_supported_formats()
+# Returns: {'text': [...90+ extensions], 'image': [...], 'document': [...]}
+```
+
+**Example Script**: See [examples/list_supported_formats.py](../../examples/list_supported_formats.py) for complete demonstration.
 
 ### Provider-Specific Features
 
