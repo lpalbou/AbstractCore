@@ -33,8 +33,9 @@ class PILTextRenderer:
         # Check dependencies
         self._check_dependencies()
         
-        # Track if we're using OCRB fonts for special bold handling
+        # Track if we're using OCRB or OCRA fonts for special bold handling
         self.using_ocrb_fonts = False
+        self.using_ocra_fonts = False
         
         self.logger.debug("PILTextRenderer initialized")
     
@@ -344,6 +345,10 @@ class PILTextRenderer:
                 if config.font_name.upper() == "OCRB":
                     return self._load_ocrb_font_family(font_size)
                 
+                # Special handling for OCRA font family
+                if config.font_name.upper() == "OCRA":
+                    return self._load_ocra_font_family(font_size)
+                
                 try:
                     # Try to load by name (works on some systems)
                     base_font = ImageFont.truetype(config.font_name, font_size)
@@ -455,6 +460,49 @@ class PILTextRenderer:
             
         except Exception as e:
             self.logger.error(f"Failed to load OCRB font family: {e}")
+            # Fall back to default fonts
+            return {
+                'regular': ImageFont.load_default(),
+                'bold': ImageFont.load_default(),
+                'italic': ImageFont.load_default(),
+                'bold_italic': ImageFont.load_default()
+            }
+    
+    def _load_ocra_font_family(self, font_size: int) -> dict:
+        """Load OCRA font family with special handling (no italic variant available)."""
+        from PIL import ImageFont
+        import os
+        
+        fonts = {}
+        
+        # Define path to OCRA font file relative to the package
+        try:
+            # Get the path to the assets directory
+            assets_dir = Path(__file__).parent.parent / "assets"
+            ocra_regular_path = assets_dir / "OCRA.ttf"
+            
+            self.logger.info(f"Loading OCRA font family from assets directory")
+            
+            # Load regular font (OCRA only has one variant)
+            if ocra_regular_path.exists():
+                fonts['regular'] = ImageFont.truetype(str(ocra_regular_path), font_size)
+                fonts['bold'] = ImageFont.truetype(str(ocra_regular_path), font_size)  # Use regular for bold
+                fonts['italic'] = ImageFont.truetype(str(ocra_regular_path), font_size)  # Use regular for italic
+                fonts['bold_italic'] = ImageFont.truetype(str(ocra_regular_path), font_size)  # Use regular for bold-italic
+                self.logger.info(f"Loaded OCRA regular font: {ocra_regular_path}")
+            else:
+                self.logger.warning(f"OCRA regular font not found at: {ocra_regular_path}")
+                fonts['regular'] = ImageFont.load_default()
+                fonts['bold'] = ImageFont.load_default()
+                fonts['italic'] = ImageFont.load_default()
+                fonts['bold_italic'] = ImageFont.load_default()
+            
+            self.logger.info("Successfully loaded OCRA font family (using regular font for all styles)")
+            self.using_ocra_fonts = True  # Set flag for special bold handling
+            return fonts
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load OCRA font family: {e}")
             # Fall back to default fonts
             return {
                 'regular': ImageFont.load_default(),
@@ -648,8 +696,8 @@ class PILTextRenderer:
                 # Ultimate fallback - estimate based on font size
                 base_width = len(text) * config.font_size * 0.6
         
-        # Add extra width for OCRB bold overlay effect
-        if (self.using_ocrb_fonts and segment and 
+        # Add extra width for OCRB and OCRA bold overlay effect
+        if ((self.using_ocrb_fonts or self.using_ocra_fonts) and segment and 
             (segment.is_bold or segment.is_header) and not segment.is_italic):
             # Add width for enhanced horizontal overlays (0.6 pixel max offset)
             return int(base_width + 0.6)
@@ -735,14 +783,14 @@ class PILTextRenderer:
                 y += line_spacing
     
     def _draw_text_with_effects(self, draw, position, text, font, segment):
-        """Draw text with special effects for OCRB bold text."""
+        """Draw text with special effects for OCRB and OCRA bold text."""
         x, y = position
         
-        # Check if this should be bold and we're using OCRB fonts
-        if (self.using_ocrb_fonts and segment and 
+        # Check if this should be bold and we're using OCRB or OCRA fonts
+        if ((self.using_ocrb_fonts or self.using_ocra_fonts) and segment and 
             (segment.is_bold or segment.is_header) and not segment.is_italic):
             
-            # Use improved bold effect for OCRB text
+            # Use improved bold effect for OCRB and OCRA text
             # Method: Enhanced multiple overlays for more visible bold effect
             try:
                 # Draw the base text
@@ -762,7 +810,8 @@ class PILTextRenderer:
                 
             except Exception as e:
                 # Fallback: just draw regular text if anything fails
-                self.logger.debug(f"OCRB bold effect failed, using regular text: {e}")
+                font_type = "OCRB" if self.using_ocrb_fonts else "OCRA"
+                self.logger.debug(f"{font_type} bold effect failed, using regular text: {e}")
                 draw.text((x, y), text, font=font, fill='black')
         else:
             # Regular text drawing

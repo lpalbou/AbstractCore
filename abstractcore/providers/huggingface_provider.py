@@ -18,6 +18,15 @@ if _config.is_offline_first():
     os.environ["HF_DATASETS_OFFLINE"] = "1"
     os.environ["HF_HUB_OFFLINE"] = "1"
 
+# Enable MPS fallback for Apple Silicon to handle unsupported operations
+# This prevents "MPS: Unsupported Border padding mode" errors in vision models
+try:
+    import torch
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+except ImportError:
+    pass  # torch not available, skip MPS setup
+
 try:
     from pydantic import BaseModel
     PYDANTIC_AVAILABLE = True
@@ -961,6 +970,17 @@ class HuggingFaceProvider(BaseProvider):
         import time
         start_time = time.time()
         
+        # Import torch safely
+        try:
+            import torch
+        except ImportError:
+            return GenerateResponse(
+                content="Error: PyTorch not available for vision model generation",
+                model=self.model,
+                finish_reason="error",
+                gen_time=0.0
+            )
+        
         try:
             # Build messages for vision model
             chat_messages = []
@@ -1024,13 +1044,28 @@ class HuggingFaceProvider(BaseProvider):
             # Add seed if provided
             seed_value = kwargs.get("seed", self.seed)
             if seed_value is not None:
-                import torch
                 torch.manual_seed(seed_value)
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(seed_value)
             
             # Generate response
-            generated_ids = self.model_instance.generate(**inputs, **generation_kwargs)
+            # For Apple Silicon, move inputs to CPU if MPS causes issues
+            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                try:
+                    generated_ids = self.model_instance.generate(**inputs, **generation_kwargs)
+                except RuntimeError as e:
+                    if "MPS: Unsupported Border padding mode" in str(e):
+                        self.logger.warning("MPS Border padding mode error detected, falling back to CPU")
+                        # Move model and inputs to CPU
+                        cpu_model = self.model_instance.to('cpu')
+                        cpu_inputs = {k: v.to('cpu') if hasattr(v, 'to') else v for k, v in inputs.items()}
+                        generated_ids = cpu_model.generate(**cpu_inputs, **generation_kwargs)
+                        # Move model back to original device
+                        self.model_instance.to(self.model_instance.device)
+                    else:
+                        raise e
+            else:
+                generated_ids = self.model_instance.generate(**inputs, **generation_kwargs)
             
             # Decode response
             output_text = self.processor.decode(
@@ -1425,10 +1460,13 @@ class HuggingFaceProvider(BaseProvider):
         try:
             # Set seed for deterministic generation if provided
             if seed is not None:
-                import torch
-                torch.manual_seed(seed)
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed_all(seed)
+                try:
+                    import torch
+                    torch.manual_seed(seed)
+                    if torch.cuda.is_available():
+                        torch.cuda.manual_seed_all(seed)
+                except ImportError:
+                    pass  # Skip seeding if torch not available
 
             # Track generation time
             start_time = time.time()
