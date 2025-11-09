@@ -5,7 +5,7 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.6.0] - 2025-11-08
+## [2.5.3] - 2025-11-01
 
 ### Added
 - Added programmatic interaction tracing to capture complete LLM interaction history, enabling debugging, compliance, and performance analysis.
@@ -28,9 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **License**: Apache-2.0 with no commercial restrictions
   - **Note**: Added single entry in `model_capabilities.json` with comprehensive aliases for automatic detection across all distribution formats
 
-## [2.5.3] - 2025-11-01
-
-### Added
 - **[EXPERIMENTAL] Glyph Visual-Text Compression**: Renders long text as optimized images for VLM processing
   - ⚠️ **Vision Model Requirement**: ONLY works with vision-capable models (gpt-4o, claude-3-5-sonnet, llama3.2-vision, etc.)
   - ⚠️ **Error Handling**: `glyph_compression="always"` raises `UnsupportedFeatureError` if model lacks vision support
