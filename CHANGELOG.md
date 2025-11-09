@@ -8,19 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.6.0] - 2025-11-08
 
 ### Added
-- **Interaction Tracing for LLM Observability**: Programmatic access to complete LLM interaction history
-  - **Provider-Level Tracing**: Capture all interactions with `enable_tracing=True` and `max_traces` parameters
-  - **Session-Level Tracing**: Automatic trace collection in `BasicSession` with session metadata
-  - **Trace Structure**: Complete interaction context including prompts, parameters, responses, usage metrics, and timing
-  - **Trace Retrieval API**: `get_traces()`, `get_traces(trace_id=...)`, `get_traces(last_n=...)`
-  - **Export Utilities**: Export to JSONL, JSON, or Markdown formats via `export_traces()`
-  - **Trace Summarization**: Get statistics across multiple traces with `summarize_traces()`
-  - **Custom Metadata**: Tag traces with workflow context via `trace_metadata` parameter
-  - **Memory Efficient**: Ring buffer storage with configurable size (default: 100 traces)
-  - **Zero Overhead**: Tracing disabled by default, minimal impact when enabled (~1-2%)
-  - **Use Cases**: Debugging multi-step workflows, audit trails, performance analysis, trust/transparency
-  - **Documentation**: Comprehensive guide at `docs/interaction-tracing.md`
-  - **Tests**: Full test coverage in `tests/tracing/test_interaction_tracing.py`
+- Added programmatic interaction tracing to capture complete LLM interaction history, enabling debugging, compliance, and performance analysis.
+- Introduced provider-level and session-level tracing with customizable metadata and automatic trace collection.
+- Implemented trace retrieval and export utilities for JSONL, JSON, and Markdown formats.
+- Enhanced documentation and examples for interaction tracing usage and benefits.
+- Comprehensive test coverage added for tracing functionality, ensuring reliability and correctness.
 
 - **MiniMax M2 Model Support**: Added comprehensive detection for MiniMax M2 Mixture-of-Experts model
   - **Model Specs**: 230B total parameters with 10B active (MoE architecture)
