@@ -13,6 +13,7 @@ from .token_utils import (
     ContentType
 )
 from .message_preprocessor import MessagePreprocessor, parse_files, has_files
+from .trace_export import export_traces, summarize_traces
 
 __all__ = [
     'configure_logging',
@@ -27,5 +28,7 @@ __all__ = [
     'ContentType',
     'MessagePreprocessor',
     'parse_files',
-    'has_files'
+    'has_files',
+    'export_traces',
+    'summarize_traces'
 ]

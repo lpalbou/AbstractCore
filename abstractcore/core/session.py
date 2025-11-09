@@ -34,9 +34,10 @@ class BasicSession:
                  auto_compact: bool = False,
                  auto_compact_threshold: int = 6000,
                  temperature: Optional[float] = None,
-                 seed: Optional[int] = None):
+                 seed: Optional[int] = None,
+                 enable_tracing: bool = False):
         """Initialize basic session
-        
+
         Args:
             provider: LLM provider instance
             system_prompt: System prompt for the session
@@ -48,6 +49,7 @@ class BasicSession:
             auto_compact_threshold: Token threshold for auto-compaction
             temperature: Default temperature for generation (0.0-1.0)
             seed: Default seed for deterministic generation
+            enable_tracing: Enable interaction tracing for observability
         """
 
         self.provider = provider
@@ -59,11 +61,15 @@ class BasicSession:
         self.auto_compact = auto_compact
         self.auto_compact_threshold = auto_compact_threshold
         self._original_session = None  # Track if this is a compacted session
-        
+
         # Store session-level generation parameters
         self.temperature = temperature
         self.seed = seed
-        
+
+        # Setup interaction tracing
+        self.enable_tracing = enable_tracing
+        self.interaction_traces: List[Dict[str, Any]] = []  # Session-specific traces
+
         # Optional analytics fields
         self.summary = None
         self.assessment = None
@@ -214,6 +220,16 @@ class BasicSession:
         if 'seed' not in kwargs and self.seed is not None:
             kwargs['seed'] = self.seed
 
+        # Add trace metadata if tracing is enabled
+        if self.enable_tracing:
+            if 'trace_metadata' not in kwargs:
+                kwargs['trace_metadata'] = {}
+            kwargs['trace_metadata'].update({
+                'session_id': self.id,
+                'step_type': kwargs.get('step_type', 'chat'),
+                'attempt_number': kwargs.get('attempt_number', 1)
+            })
+
         # Call provider
         response = self.provider.generate(
             prompt=prompt,
@@ -231,6 +247,14 @@ class BasicSession:
             # Non-streaming response
             if hasattr(response, 'content') and response.content:
                 self.add_message('assistant', response.content)
+
+            # Capture trace if enabled and available
+            if self.enable_tracing and hasattr(self.provider, 'get_traces'):
+                if hasattr(response, 'metadata') and response.metadata and 'trace_id' in response.metadata:
+                    trace = self.provider.get_traces(response.metadata['trace_id'])
+                    if trace:
+                        self.interaction_traces.append(trace)
+
             return response
 
     def _handle_streaming_response(self, response_iterator: Iterator[GenerateResponse]) -> Iterator[GenerateResponse]:
@@ -937,5 +961,36 @@ class BasicSession:
             focus_participant=focus_participant,
             depth=depth_enum
         )
-        
+
         return results
+
+    def get_interaction_history(self) -> List[Dict[str, Any]]:
+        """
+        Get all interaction traces for this session.
+
+        Returns a list of all LLM interaction traces captured during the session.
+        Each trace contains complete information about the prompt, parameters,
+        and response for observability and debugging.
+
+        Returns:
+            List of trace dictionaries containing:
+                - trace_id: Unique identifier for the interaction
+                - timestamp: ISO format timestamp
+                - provider: Provider name
+                - model: Model name
+                - prompt: User prompt
+                - system_prompt: System prompt (if any)
+                - messages: Conversation history
+                - parameters: Generation parameters (temperature, tokens, etc.)
+                - response: Full response with content, usage, timing
+                - metadata: Custom metadata (session_id, step_type, etc.)
+
+        Example:
+            >>> session = BasicSession(provider=llm, enable_tracing=True)
+            >>> response = session.generate("What is Python?")
+            >>> traces = session.get_interaction_history()
+            >>> print(f"Captured {len(traces)} interactions")
+            >>> print(f"First trace: {traces[0]['trace_id']}")
+            >>> print(f"Tokens used: {traces[0]['response']['usage']}")
+        """
+        return self.interaction_traces.copy()

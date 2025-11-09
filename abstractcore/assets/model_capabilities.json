@@ -2030,6 +2030,35 @@
       "status": "announced",
       "image_patch_size": 14,
       "max_image_tokens": 6400
+    },
+    "minimax-m2": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "mixture_of_experts",
+      "active_parameters": "10B",
+      "total_parameters": "230B",
+      "thinking_paradigm": "interleaved_thinking",
+      "thinking_format": "<think>...</think>",
+      "notes": "MiniMax M2 MoE model optimized for coding and agentic workflows. Industry-leading 204K token context window. Uses interleaved thinking with <think> tags for reasoning. 10B active parameters from 230B total. Achieves strong performance on SWE-Bench and Terminal-Bench tasks. Supports complete tool calling for agent workflows.",
+      "source": "MiniMax official docs (minimax-m2.org, HuggingFace, GitHub)",
+      "canonical_name": "minimax-m2",
+      "aliases": [
+        "MiniMaxAI/MiniMax-M2",
+        "mlx-community/minimax-m2",
+        "mlx-community/MiniMax-M2",
+        "unsloth/MiniMax-M2-GGUF",
+        "minimax-m2-230b",
+        "minimax-m2-10b-active"
+      ],
+      "max_tokens": 208896,
+      "release_date": "2025-01",
+      "license": "Apache-2.0"
     }
   },
   "tool_support_levels": {

@@ -11,6 +11,7 @@ This guide shows real-world use cases for AbstractCore with complete, copy-paste
 - [Structured Output Examples](#structured-output-examples)
 - [Streaming Examples](#streaming-examples)
 - [Session Management](#session-management)
+- [Interaction Tracing (Observability)](#interaction-tracing-observability)
 - [Production Patterns](#production-patterns)
 - [Integration Examples](#integration-examples)
 
@@ -1089,6 +1090,197 @@ print(f"Conversation history: {len(assistant.messages)} messages")
 assistant.clear_history()
 print(f"After clearing: {len(assistant.messages)} messages")  # Just system prompt remains
 ```
+
+## Interaction Tracing (Observability)
+
+### Basic Tracing
+
+Enable tracing to capture complete LLM interaction history for debugging and transparency:
+
+```python
+from abstractcore import create_llm
+
+# Enable tracing on provider
+llm = create_llm(
+    'openai',
+    model='gpt-4o-mini',
+    enable_tracing=True,
+    max_traces=100  # Keep last 100 interactions (ring buffer)
+)
+
+# Generate with custom metadata
+response = llm.generate(
+    "Explain quantum computing",
+    temperature=0.7,
+    trace_metadata={
+        'user_id': 'user_123',
+        'session_type': 'educational',
+        'topic': 'quantum_physics'
+    }
+)
+
+# Access trace by ID
+trace_id = response.metadata['trace_id']
+trace = llm.get_traces(trace_id=trace_id)
+
+print(f"Trace ID: {trace['trace_id']}")
+print(f"Timestamp: {trace['timestamp']}")
+print(f"Prompt: {trace['prompt']}")
+print(f"Response: {trace['response']['content'][:100]}...")
+print(f"Tokens: {trace['response']['usage']['total_tokens']}")
+print(f"Time: {trace['response']['generation_time_ms']:.2f}ms")
+print(f"Custom metadata: {trace['metadata']}")
+```
+
+### Session-Level Tracing
+
+Automatically track all interactions in a session with correlation:
+
+```python
+from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+session = BasicSession(provider=llm, enable_tracing=True)
+
+# All interactions automatically traced
+session.generate("What is Python?")
+session.generate("Give me an example")
+session.generate("Explain list comprehensions")
+
+# Get all session traces
+traces = session.get_interaction_history()
+
+print(f"\nSession ID: {session.id}")
+print(f"Total interactions: {len(traces)}")
+
+for i, trace in enumerate(traces, 1):
+    print(f"\nInteraction {i}:")
+    print(f"  Prompt: {trace['prompt']}")
+    print(f"  Tokens: {trace['response']['usage']['total_tokens']}")
+    print(f"  Time: {trace['response']['generation_time_ms']:.0f}ms")
+    print(f"  Session ID: {trace['metadata']['session_id']}")
+```
+
+### Multi-Step Workflow with Retries
+
+Track code generation workflows with retry attempts:
+
+```python
+from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+session = BasicSession(provider=llm, enable_tracing=True)
+
+# Step 1: Generate code
+response = session.generate(
+    "Write a Python function to calculate fibonacci numbers",
+    system_prompt="You are a Python code generator. Only output code.",
+    step_type='code_generation',
+    attempt_number=1,
+    temperature=0
+)
+
+code = response.content
+success = False
+
+# Step 2-4: Execute with retry logic
+for attempt in range(1, 4):
+    try:
+        exec(code)  # Simulate execution
+        success = True
+        break
+    except Exception as e:
+        # Retry with error context
+        response = session.generate(
+            f"Previous code failed: {e}. Fix it.",
+            step_type='code_generation',
+            attempt_number=attempt + 1,
+            temperature=0
+        )
+        code = response.content
+
+# Get workflow summary
+traces = session.get_interaction_history()
+
+print(f"\nWorkflow Summary:")
+print(f"Total attempts: {len(traces)}")
+print(f"Final status: {'Success' if success else 'Failed'}")
+
+for trace in traces:
+    step = trace['metadata']['step_type']
+    attempt = trace['metadata']['attempt_number']
+    tokens = trace['response']['usage']['total_tokens']
+    print(f"  {step} (Attempt {attempt}): {tokens} tokens")
+```
+
+### Export Traces
+
+Export traces to different formats for analysis:
+
+```python
+from abstractcore import create_llm
+from abstractcore.utils import export_traces, summarize_traces
+
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+
+# Generate some interactions
+for i in range(5):
+    llm.generate(f"Question {i+1}", temperature=0)
+
+traces = llm.get_traces()
+
+# Export to JSONL (one JSON per line)
+export_traces(traces, format='jsonl', file_path='traces.jsonl')
+
+# Export to pretty JSON
+export_traces(traces, format='json', file_path='traces.json')
+
+# Export to Markdown report
+export_traces(traces, format='markdown', file_path='trace_report.md')
+
+# Get summary statistics
+summary = summarize_traces(traces)
+print(f"\nSummary:")
+print(f"  Total interactions: {summary['total_interactions']}")
+print(f"  Total tokens: {summary['total_tokens']}")
+print(f"  Average tokens: {summary['avg_tokens_per_interaction']:.0f}")
+print(f"  Total time: {summary['total_time_ms']:.2f}ms")
+print(f"  Average time: {summary['avg_time_ms']:.2f}ms")
+print(f"  Providers: {summary['providers']}")
+print(f"  Models: {summary['models']}")
+```
+
+### Retrieve Specific Traces
+
+Different ways to retrieve traces:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+
+# Generate some interactions
+for i in range(10):
+    llm.generate(f"Test {i}", temperature=0)
+
+# Get all traces
+all_traces = llm.get_traces()
+print(f"Total traces: {len(all_traces)}")
+
+# Get last 5 traces
+recent = llm.get_traces(last_n=5)
+print(f"Last 5 prompts: {[t['prompt'] for t in recent]}")
+
+# Get specific trace by ID
+response = llm.generate("Specific query", temperature=0)
+trace_id = response.metadata['trace_id']
+trace = llm.get_traces(trace_id=trace_id)
+print(f"Specific trace: {trace['prompt']}")
+```
+
+[Learn more about Interaction Tracing](interaction-tracing.md)
 
 ## Production Patterns
 

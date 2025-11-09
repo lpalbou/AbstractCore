@@ -15,6 +15,7 @@ pip install abstractcore[all]
 ## Core Features
 
 - **[API Reference](docs/api-reference.md)**: Complete Python API with examples
+- **[Interaction Tracing](docs/interaction-tracing.md)**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing for debugging and compliance
 - **[Centralized Configuration](docs/centralized-config.md)**: Global defaults, app preferences, API key management
 - **[Media Handling System](docs/media-handling-system.md)**: Universal file attachment (images, PDFs, Office docs, CSV) across all providers
 - **[Vision Capabilities](docs/vision-capabilities.md)**: Image analysis across 6 providers with automatic optimization

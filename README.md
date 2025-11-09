@@ -156,6 +156,55 @@ loaded_session = BasicSession.load('conversation.json', provider=llm)
 
 [Learn more about Session](docs/session.md)
 
+### Interaction Tracing (Observability)
+
+Enable complete observability of LLM interactions for debugging, compliance, and transparency:
+
+```python
+from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+from abstractcore.utils import export_traces
+
+# Enable tracing on provider
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True, max_traces=100)
+
+# Or on session for automatic correlation
+session = BasicSession(provider=llm, enable_tracing=True)
+
+# Generate with custom metadata
+response = session.generate(
+    "Write Python code",
+    step_type='code_generation',
+    attempt_number=1
+)
+
+# Access complete trace
+trace_id = response.metadata['trace_id']
+trace = llm.get_traces(trace_id=trace_id)
+
+# Full interaction context
+print(f"Prompt: {trace['prompt']}")
+print(f"Response: {trace['response']['content']}")
+print(f"Tokens: {trace['response']['usage']['total_tokens']}")
+print(f"Time: {trace['response']['generation_time_ms']}ms")
+print(f"Custom metadata: {trace['metadata']}")
+
+# Get all session traces
+traces = session.get_interaction_history()
+
+# Export to JSONL, JSON, or Markdown
+export_traces(traces, format='markdown', file_path='workflow_trace.md')
+```
+
+**What's captured:**
+- All prompts, system prompts, and conversation history
+- Complete responses with token usage and timing
+- Generation parameters (temperature, tokens, seed, etc.)
+- Custom metadata for workflow tracking
+- Tool calls and results
+
+[Learn more about Interaction Tracing](docs/interaction-tracing.md)
+
 ### Media Handling
 
 AbstractCore provides unified media handling across all providers with automatic resolution optimization. Upload images, PDFs, and documents using the same simple API regardless of your provider.
@@ -253,6 +302,7 @@ if response.metadata and response.metadata.get('compression_used'):
 
 - **Offline-First Design**: Built primarily for open source LLMs with full offline capability. Download once, run forever without internet access
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
+- **Interaction Tracing**: Complete LLM observability with programmatic access to prompts, responses, tokens, and timing for debugging and compliance
 - **Glyph Visual-Text Compression**: Revolutionary compression system that renders text as optimized images for 3-4x token compression and faster inference
 - **Centralized Configuration**: Global defaults and app-specific preferences at `~/.abstractcore/config/abstractcore.json`
 - **Intelligent Media Handling**: Upload images, PDFs, and documents with automatic maximum resolution optimization

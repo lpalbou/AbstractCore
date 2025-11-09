@@ -497,13 +497,14 @@ print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Toke
 Now that you have the basics:
 
 1. **[Explore Examples](examples.md)** - Real-world use cases and patterns
-2. **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
-3. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
-4. **[Provider Setup](prerequisites.md)** - Detailed provider configuration
-5. **[Use AbstractCore CLI](acore-cli.md)** - Built-in testing CLI with advanced features
-6. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and cannot do
-7. **[Read the API Reference](api-reference.md)** - Complete API documentation
-8. **[Check Advanced Features](../README.md#core-features)** - Embeddings, events, retry logic
+2. **[Interaction Tracing](interaction-tracing.md)** - Complete LLM observability for debugging and compliance
+3. **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
+4. **[Set Up Server & Agentic CLIs](server.md)** - Universal API server, Codex/Gemini CLI integration
+5. **[Provider Setup](prerequisites.md)** - Detailed provider configuration
+6. **[Use AbstractCore CLI](acore-cli.md)** - Built-in testing CLI with advanced features
+7. **[Understand Capabilities](capabilities.md)** - What AbstractCore can and cannot do
+8. **[Read the API Reference](api-reference.md)** - Complete API documentation
+9. **[Check Advanced Features](../README.md#core-features)** - Embeddings, events, retry logic
 
 ## Getting Help
 
