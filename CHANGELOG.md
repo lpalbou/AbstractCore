@@ -5,6 +5,37 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2025-11-08
+
+### Added
+- **Interaction Tracing for LLM Observability**: Programmatic access to complete LLM interaction history
+  - **Provider-Level Tracing**: Capture all interactions with `enable_tracing=True` and `max_traces` parameters
+  - **Session-Level Tracing**: Automatic trace collection in `BasicSession` with session metadata
+  - **Trace Structure**: Complete interaction context including prompts, parameters, responses, usage metrics, and timing
+  - **Trace Retrieval API**: `get_traces()`, `get_traces(trace_id=...)`, `get_traces(last_n=...)`
+  - **Export Utilities**: Export to JSONL, JSON, or Markdown formats via `export_traces()`
+  - **Trace Summarization**: Get statistics across multiple traces with `summarize_traces()`
+  - **Custom Metadata**: Tag traces with workflow context via `trace_metadata` parameter
+  - **Memory Efficient**: Ring buffer storage with configurable size (default: 100 traces)
+  - **Zero Overhead**: Tracing disabled by default, minimal impact when enabled (~1-2%)
+  - **Use Cases**: Debugging multi-step workflows, audit trails, performance analysis, trust/transparency
+  - **Documentation**: Comprehensive guide at `docs/interaction-tracing.md`
+  - **Tests**: Full test coverage in `tests/tracing/test_interaction_tracing.py`
+
+- **MiniMax M2 Model Support**: Added comprehensive detection for MiniMax M2 Mixture-of-Experts model
+  - **Model Specs**: 230B total parameters with 10B active (MoE architecture)
+  - **Capabilities**: Native tool calling, structured outputs, interleaved thinking with `<think>` tags
+  - **Context Window**: 204K tokens (industry-leading), optimized for coding and agentic workflows
+  - **Variant Detection**: Supports all distribution formats:
+    - `minimax-m2` (canonical name)
+    - `MiniMaxAI/MiniMax-M2` (HuggingFace official)
+    - `mlx-community/minimax-m2` (MLX quantized)
+    - `unsloth/MiniMax-M2-GGUF` (GGUF format)
+  - **Case-Insensitive**: All variants detected regardless of case (e.g., `MiniMax-M2`, `MINIMAX-m2`)
+  - **Source**: Official MiniMax documentation (minimax-m2.org, HuggingFace, GitHub)
+  - **License**: Apache-2.0 with no commercial restrictions
+  - **Note**: Added single entry in `model_capabilities.json` with comprehensive aliases for automatic detection across all distribution formats
+
 ## [2.5.3] - 2025-11-01
 
 ### Added

@@ -28,6 +28,7 @@ AbstractCore is a comprehensive Python library designed primarily for open sourc
 
 - **Offline-First Design**: Built primarily for open source LLMs with complete offline operation. Download once, run forever without internet access
 - **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with identical syntax
+- **Interaction Tracing**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing for debugging and compliance ([docs/interaction-tracing.md](docs/interaction-tracing.md))
 - **Centralized Configuration**: Global defaults, app-specific preferences, API key management with `~/.abstractcore/config/abstractcore.json`
 - **Media Handling System**: Universal file attachment with `@filename` CLI syntax and `media=[]` API parameter - supports images, PDFs, Office docs, CSV/TSV
 - **Vision Capabilities**: Image analysis across all providers with automatic resolution optimization and vision fallback for text-only models

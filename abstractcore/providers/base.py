@@ -3,6 +3,8 @@ Base provider with integrated telemetry, events, and exception handling.
 """
 
 import time
+import uuid
+from collections import deque
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
 from abc import ABC, abstractmethod
 
@@ -70,6 +72,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         
         # Setup Glyph compression configuration
         self.glyph_config = kwargs.get('glyph_config', None)
+
+        # Setup interaction tracing
+        self.enable_tracing = kwargs.get('enable_tracing', False)
+        self._traces = deque(maxlen=kwargs.get('max_traces', 100))  # Ring buffer for memory efficiency
 
         # Provider created successfully - no event emission needed
         # (The simplified event system focuses on generation and tool events only)
@@ -176,6 +182,97 @@ class BaseProvider(AbstractCoreInterface, ABC):
             result_info = f" (result length: {len(str(result))})" if result else ""
             self.logger.info(f"Tool call completed: {tool_name}{result_info}")
 
+    def _capture_trace(self, prompt: str, messages: Optional[List[Dict[str, str]]],
+                       system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]],
+                       response: GenerateResponse, kwargs: Dict[str, Any]) -> str:
+        """
+        Capture interaction trace for observability.
+
+        Args:
+            prompt: Input prompt
+            messages: Conversation history
+            system_prompt: System prompt
+            tools: Available tools
+            response: Generated response
+            kwargs: Additional generation parameters
+
+        Returns:
+            Trace ID (UUID string)
+        """
+        trace_id = str(uuid.uuid4())
+
+        # Extract generation parameters
+        temperature = kwargs.get('temperature', self.temperature)
+        max_tokens = kwargs.get('max_tokens', self.max_tokens)
+        max_output_tokens = kwargs.get('max_output_tokens', self.max_output_tokens)
+        seed = kwargs.get('seed', self.seed)
+        top_p = kwargs.get('top_p', getattr(self, 'top_p', None))
+        top_k = kwargs.get('top_k', getattr(self, 'top_k', None))
+
+        # Build parameters dict
+        parameters = {
+            'temperature': temperature,
+            'max_tokens': max_tokens,
+            'max_output_tokens': max_output_tokens,
+        }
+        if seed is not None:
+            parameters['seed'] = seed
+        if top_p is not None:
+            parameters['top_p'] = top_p
+        if top_k is not None:
+            parameters['top_k'] = top_k
+
+        # Create trace record
+        trace = {
+            'trace_id': trace_id,
+            'timestamp': datetime.now().isoformat(),
+            'provider': self.__class__.__name__,
+            'model': self.model,
+            'system_prompt': system_prompt,
+            'prompt': prompt,
+            'messages': messages,
+            'tools': tools,
+            'parameters': parameters,
+            'response': {
+                'content': response.content,
+                'raw_response': None,  # Omit raw_response to save memory and avoid logging sensitive data
+                'tool_calls': response.tool_calls,
+                'finish_reason': response.finish_reason,
+                'usage': response.usage,
+                'generation_time_ms': response.gen_time,
+            },
+            'metadata': kwargs.get('trace_metadata', {})
+        }
+
+        # Store trace in ring buffer
+        self._traces.append(trace)
+
+        return trace_id
+
+    def get_traces(self, trace_id: Optional[str] = None, last_n: Optional[int] = None) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+        """
+        Retrieve interaction traces.
+
+        Args:
+            trace_id: Optional specific trace ID to retrieve
+            last_n: Optional number of most recent traces to retrieve
+
+        Returns:
+            Single trace dict if trace_id provided, list of traces otherwise
+        """
+        if trace_id:
+            # Find specific trace by ID
+            for trace in self._traces:
+                if trace['trace_id'] == trace_id:
+                    return trace
+            return None
+
+        if last_n:
+            # Return last N traces
+            return list(self._traces)[-last_n:] if len(self._traces) >= last_n else list(self._traces)
+
+        # Return all traces
+        return list(self._traces)
 
     def _handle_api_error(self, error: Exception) -> Exception:
         """
@@ -399,6 +496,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if media_metadata and response:
                     self.logger.debug(f"Enhancing response with visual tokens from {len(media_metadata)} media items")
                     response = self._enhance_response_with_visual_tokens(response, media_metadata)
+
+                # Capture interaction trace if enabled
+                if self.enable_tracing and response:
+                    trace_id = self._capture_trace(
+                        prompt=prompt,
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        tools=converted_tools,
+                        response=response,
+                        kwargs=kwargs
+                    )
+                    # Attach trace_id to response metadata
+                    if not response.metadata:
+                        response.metadata = {}
+                    response.metadata['trace_id'] = trace_id
 
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response

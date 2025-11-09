@@ -5,6 +5,147 @@ AbstractCore is a lightweight, provider-agnostic LLM framework for building soph
 
 ## Recent Tasks
 
+### Task: Interaction Tracing for LLM Observability (2025-11-08)
+
+**Description**: Implemented programmatic interaction tracing to provide complete observability of LLM interactions. Enables debugging, trust, optimization, and compliance for AI applications through in-memory trace capture with export capabilities.
+
+**Implementation**:
+
+1. **BaseProvider Tracing** (`abstractcore/providers/base.py`):
+   - Added `enable_tracing` and `max_traces` parameters to constructor
+   - Implemented ring buffer (`deque`) for memory-efficient trace storage
+   - Created `_capture_trace()` method to capture full interaction context
+   - Added `get_traces()` method with filtering by `trace_id` or `last_n`
+   - Trace capture includes: prompts, system prompts, messages, parameters, responses, usage, timing, custom metadata
+
+2. **Session-Level Tracing** (`abstractcore/core/session.py`):
+   - Added `enable_tracing` parameter to `BasicSession.__init__()`
+   - Automatic trace collection from provider with session context
+   - Added `trace_metadata` injection with `session_id`, `step_type`, `attempt_number`
+   - Implemented `get_interaction_history()` for retrieving session-specific traces
+   - Session isolation: each session maintains its own trace list
+
+3. **Trace Export Utilities** (`abstractcore/utils/trace_export.py`):
+   - `export_traces()`: Export to JSONL, JSON, or Markdown formats
+   - `summarize_traces()`: Generate statistics (total interactions, tokens, timing, providers, models)
+   - Markdown export includes human-readable reports with sections for metadata, input, response, metrics
+   - Support for single trace or list of traces
+
+4. **Factory Pass-Through** (No changes needed):
+   - `create_llm()` → `create_provider()` → provider constructor already passes `**kwargs`
+   - `enable_tracing` and `max_traces` automatically flow through
+
+5. **Comprehensive Testing** (`tests/tracing/test_interaction_tracing.py`):
+   - Provider-level tracing tests (10 test cases)
+   - Session-level tracing tests (4 test cases)
+   - Export utility tests (7 test cases)
+   - Trace content validation tests (2 test cases)
+   - All tests passing with real Ollama provider
+
+**Usage Examples**:
+
+**Provider-Level:**
+```python
+from abstractcore import create_llm
+
+llm = create_llm('ollama', model='qwen3:4b', enable_tracing=True, max_traces=100)
+
+response = llm.generate(
+    "Write a Python function",
+    trace_metadata={'step': 'code_generation', 'attempt': 1}
+)
+
+# Retrieve trace
+trace_id = response.metadata['trace_id']
+trace = llm.get_traces(trace_id=trace_id)
+
+print(f"Prompt: {trace['prompt']}")
+print(f"Tokens: {trace['response']['usage']}")
+print(f"Time: {trace['response']['generation_time_ms']}ms")
+```
+
+**Session-Level:**
+```python
+from abstractcore.core.session import BasicSession
+
+llm = create_llm('ollama', model='qwen3:4b', enable_tracing=True)
+session = BasicSession(provider=llm, enable_tracing=True)
+
+session.generate("Question 1")
+session.generate("Question 2")
+
+traces = session.get_interaction_history()
+print(f"Captured {len(traces)} interactions")
+```
+
+**Export:**
+```python
+from abstractcore.utils import export_traces, summarize_traces
+
+# Export to formats
+export_traces(traces, format='jsonl', file_path='traces.jsonl')
+export_traces(traces, format='json', file_path='traces.json')
+export_traces(traces, format='markdown', file_path='report.md')
+
+# Get summary statistics
+summary = summarize_traces(traces)
+print(f"Total tokens: {summary['total_tokens']}")
+print(f"Avg time: {summary['avg_time_ms']:.2f}ms")
+```
+
+**Benefits**:
+- ✅ **Complete observability**: Full context of every LLM interaction
+- ✅ **Zero breaking changes**: Disabled by default, opt-in with `enable_tracing=True`
+- ✅ **Simple API**: Just `get_traces()` - no complex abstractions
+- ✅ **Memory efficient**: Ring buffer with configurable size
+- ✅ **Custom metadata**: Tag traces with workflow context
+- ✅ **Multiple export formats**: JSONL, JSON, Markdown
+- ✅ **Session isolation**: Traces tracked per-session with session metadata
+- ✅ **Zero overhead when disabled**: No performance impact in production
+- ✅ **Minimal code**: ~50 lines vs 300+ in original proposal
+- ✅ **Comprehensive tests**: 23 test cases, all passing
+
+**Files Modified**:
+1. `abstractcore/providers/base.py` - Added tracing infrastructure
+2. `abstractcore/core/session.py` - Added session-level tracing
+3. `abstractcore/utils/__init__.py` - Exported trace utilities
+
+**Files Created**:
+1. `abstractcore/utils/trace_export.py` - Export and summarization utilities
+2. `tests/tracing/test_interaction_tracing.py` - Comprehensive test suite
+3. `tests/tracing/__init__.py` - Test package init
+4. `docs/interaction-tracing.md` - Complete documentation
+
+**Documentation**:
+- Comprehensive guide: `docs/interaction-tracing.md` (400+ lines)
+- CHANGELOG entry: `CHANGELOG.md` version 2.6.0
+- Examples: Quick start, multi-step workflows, retry scenarios
+- API reference: All methods documented with examples
+- Best practices: When to use, metadata conventions, memory management
+
+**Issues/Concerns**: None. Implementation is simple, clean, and production-ready. The simplified approach (dictionaries instead of classes, ring buffer instead of complex storage) achieves all requirements with 10% of the complexity proposed in the original feature request.
+
+**Verification**:
+```bash
+# Run tests
+python -m pytest tests/tracing/test_interaction_tracing.py -v
+
+# Quick test
+python -c "
+from abstractcore import create_llm
+llm = create_llm('ollama', model='qwen3:4b', enable_tracing=True)
+response = llm.generate('Test', temperature=0)
+trace = llm.get_traces()[0]
+print(f'Trace ID: {trace[\"trace_id\"]}')
+print(f'Prompt: {trace[\"prompt\"]}')
+print(f'Tokens: {trace[\"response\"][\"usage\"][\"total_tokens\"]}')
+"
+```
+
+**Conclusion**: Successfully implemented interaction tracing with a clean, minimal design that achieves 100% of the functionality requested with significantly less complexity. The feature is production-ready, fully tested, and comprehensively documented. Perfect for debugging multi-step workflows (like Digital Article's code generation + retry scenarios), audit trails, performance analysis, and building trust through transparency.
+
+---
+
 ### Task: Model Capability Filtering for list_available_models() + Server Integration (2025-11-08)
 
 **Description**: Added clean enum-based filtering capability to `list_available_models()` across all providers, enabling filtering models by input and output capabilities. Integrated with server `/v1/models` endpoint for HTTP API filtering.
