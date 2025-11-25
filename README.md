@@ -302,7 +302,7 @@ if response.metadata and response.metadata.get('compression_used'):
 
 - **Offline-First Design**: Built primarily for open source LLMs with full offline capability. Download once, run forever without internet access
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
-- **Interaction Tracing**: Complete LLM observability with programmatic access to prompts, responses, tokens, and timing for debugging and compliance
+- **Interaction Tracing** ⭐ NEW in v2.5.3: Complete LLM observability with programmatic access to prompts, responses, tokens, timing, and trace correlation for debugging, trust, and compliance
 - **Glyph Visual-Text Compression**: Revolutionary compression system that renders text as optimized images for 3-4x token compression and faster inference
 - **Centralized Configuration**: Global defaults and app-specific preferences at `~/.abstractcore/config/abstractcore.json`
 - **Intelligent Media Handling**: Upload images, PDFs, and documents with automatic maximum resolution optimization
@@ -416,7 +416,7 @@ python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-l
 
 ## Built-in Applications (Ready-to-Use CLI Tools)
 
-AbstractCore includes **four specialized command-line applications** for common LLM tasks. These are production-ready tools that can be used directly from the terminal without any Python programming.
+AbstractCore includes **five specialized command-line applications** for common LLM tasks. These are production-ready tools that can be used directly from the terminal without any Python programming.
 
 ### Available Applications
 
@@ -426,6 +426,7 @@ AbstractCore includes **four specialized command-line applications** for common 
 | **Extractor** | Entity and relationship extraction | `extractor` |
 | **Judge** | Text evaluation and scoring | `judge` |
 | **Intent Analyzer** | Psychological intent analysis & deception detection | `intent` |
+| **DeepSearch** | Autonomous multi-stage research with web search | `deepsearch` |
 
 ### Quick Usage Examples
 
@@ -449,6 +450,11 @@ judge proposal.md --custom-criteria has_examples,covers_risks --output assessmen
 intent conversation.txt --focus-participant user --depth comprehensive
 intent email.txt --format plain --context document --verbose
 intent chat_log.json --conversation-mode --provider lmstudio --model qwen/qwen3-30b-a3b-2507
+
+# Autonomous research with web search and reflexive refinement
+deepsearch "What are the latest advances in quantum computing?" --depth comprehensive
+deepsearch "AI impact on healthcare" --focus "diagnosis,treatment,ethics" --reflexive
+deepsearch "sustainable energy 2025" --max-sources 25 --provider openai --model gpt-4o-mini
 ```
 
 ### Installation & Setup
@@ -461,9 +467,10 @@ pip install abstractcore[all]
 
 # Apps are immediately available
 summarizer --help
-extractor --help  
+extractor --help
 judge --help
 intent --help
+deepsearch --help
 ```
 
 ### Alternative Usage Methods
@@ -474,12 +481,14 @@ summarizer document.txt
 extractor report.pdf
 judge essay.md
 intent conversation.txt
+deepsearch "your research query"
 
 # Method 2: Via Python module
 python -m abstractcore.apps summarizer document.txt
 python -m abstractcore.apps extractor report.pdf
 python -m abstractcore.apps judge essay.md
 python -m abstractcore.apps intent conversation.txt
+python -m abstractcore.apps deepsearch "your research query"
 ```
 
 ### Key Parameters
@@ -527,6 +536,7 @@ Each application has documentation with examples and usage information:
 - **[Extractor Guide](docs/apps/basic-extractor.md)** - Entity and relationship extraction
 - **[Intent Analyzer Guide](docs/apps/basic-intent.md)** - Psychological intent analysis and deception detection
 - **[Judge Guide](docs/apps/basic-judge.md)** - Text evaluation and scoring systems
+- **[DeepSearch Guide](docs/apps/basic-deepsearch.md)** - Autonomous multi-stage research with web search
 
 **When to use the apps:**
 - Processing documents without writing code
@@ -811,6 +821,7 @@ All tests passing as of October 12th, 2025.
 ## Quick Links
 
 - **[📚 Documentation Index](docs/)** - Complete documentation navigation guide
+- **[🔍 Interaction Tracing](docs/interaction-tracing.md)** - LLM observability and debugging ⭐ NEW
 - **[Getting Started](docs/getting-started.md)** - 5-minute quick start
 - **[⚙️ Prerequisites](docs/prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, etc.)
 - **[📖 Python API](docs/api-reference.md)** - Complete Python API reference

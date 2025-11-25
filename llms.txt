@@ -35,6 +35,8 @@ Ready-to-use terminal tools - no Python code required:
 - **[Summarizer](docs/apps/basic-summarizer.md)**: `summarizer document.pdf --style executive`
 - **[Extractor](docs/apps/basic-extractor.md)**: `extractor report.txt --format json-ld --focus technology`
 - **[Judge](docs/apps/basic-judge.md)**: `judge essay.txt --criteria clarity,accuracy --context "academic writing"`
+- **[Intent Analyzer](docs/apps/basic-intent.md)**: `intent conversation.txt --focus-participant user --depth comprehensive`
+- **[DeepSearch](docs/apps/basic-deepsearch.md)**: `deepsearch "research query" --depth comprehensive --reflexive`
 
 ## Optional Components
 
