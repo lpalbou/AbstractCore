@@ -238,17 +238,18 @@ docs/
 
 ## Document Status
 
-| Document | Type | Status | Last Updated |
-|----------|------|--------|--------------|
-| README.md | Overview | Updated | Oct 12, 2025 |
-| getting-started.md | Core Library | Current | Oct 12, 2025 |
-| prerequisites.md | Core Library | Current | Oct 12, 2025 |
-| api-reference.md | Python API | Current | Oct 12, 2025 |
-| embeddings.md | Core Library | Current | Oct 12, 2025 |
-| server.md | Server + REST API | Consolidated | Oct 12, 2025 |
-| troubleshooting.md | Core + Server | Consolidated | Oct 12, 2025 |
+| Document | Type | Status | Since Version |
+|----------|------|--------|---------------|
+| README.md | Overview | Current | 2.5.3 |
+| getting-started.md | Core Library | Current | 2.5.0 |
+| prerequisites.md | Core Library | Current | 2.5.0 |
+| api-reference.md | Python API | Current | 2.5.0 |
+| embeddings.md | Core Library | Current | 2.4.0 |
+| interaction-tracing.md | Core Library | Current | 2.5.3 |
+| server.md | Server + REST API | Current | 2.5.0 |
+| troubleshooting.md | Core + Server | Current | 2.5.0 |
 
-**All documents cross-referenced and up-to-date as of October 12, 2025.**
+**All core documentation reviewed and current as of version 2.5.3 (November 10, 2025).**
 
 **Key Files:**
 - **`api-reference.md`** - For Python programmers using AbstractCore library

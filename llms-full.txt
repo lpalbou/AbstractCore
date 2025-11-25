@@ -1867,7 +1867,7 @@ del llm
 
 ## Built-in CLI Applications
 
-Three production-ready terminal tools - no Python code required:
+Five production-ready terminal tools - no Python code required:
 
 ### Common Use Cases
 
@@ -1889,6 +1889,12 @@ extractor articles/ --mode fast --format json --entity-types person,organization
 
 # Code review and quality assessment
 judge src/main.py --context "code review" --focus "error handling,documentation" --format plain
+
+# Psychological intent analysis with deception detection
+intent conversation.txt --focus-participant user --depth comprehensive --verbose
+
+# Autonomous research with web search and reflexive refinement
+deepsearch "What are the latest advances in quantum computing?" --depth comprehensive --reflexive
 ```
 
 ### Alternative Methods
@@ -1898,17 +1904,21 @@ judge src/main.py --context "code review" --focus "error handling,documentation"
 summarizer document.txt --style executive
 extractor report.pdf --format triples
 judge essay.md --criteria soundness
+intent conversation.txt --depth comprehensive
+deepsearch "your research query" --depth comprehensive
 
 # Method 2: Via Python module
 python -m abstractcore.apps.summarizer document.txt --style executive
 python -m abstractcore.apps.extractor report.pdf --format triples
 python -m abstractcore.apps.judge essay.md --criteria soundness
+python -m abstractcore.apps.intent conversation.txt --depth comprehensive
+python -m abstractcore.apps.deepsearch "your research query" --depth comprehensive
 ```
 
 ### Python API
 
 ```python
-from abstractcore.processing import BasicSummarizer, BasicExtractor, BasicJudge
+from abstractcore.processing import BasicSummarizer, BasicExtractor, BasicJudge, BasicIntentAnalyzer, BasicDeepSearch
 
 # Use programmatically
 summarizer = BasicSummarizer()
@@ -1919,6 +1929,12 @@ kg = extractor.extract(text, output_format="jsonld")
 
 judge = BasicJudge()
 assessment = judge.evaluate(text, context="code review", focus="error handling")
+
+intent_analyzer = BasicIntentAnalyzer()
+intent = intent_analyzer.analyze(text, focus_participant="user", depth="comprehensive")
+
+deep_search = BasicDeepSearch()
+research = deep_search.research("your research query", depth="comprehensive")
 ```
 
 ---
