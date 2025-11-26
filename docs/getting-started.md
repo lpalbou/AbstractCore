@@ -208,6 +208,44 @@ print("AI:", response2.content)
 # Output: Your name is Alex and you're learning Python.
 ```
 
+### 6. Async/Await (Concurrent Requests)
+
+Execute multiple requests in parallel for faster batch operations:
+
+```python
+import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+
+    # Run 3 requests concurrently
+    tasks = [
+        llm.agenerate("Explain Python in one sentence"),
+        llm.agenerate("Explain JavaScript in one sentence"),
+        llm.agenerate("Explain Rust in one sentence")
+    ]
+    responses = await asyncio.gather(*tasks)
+
+    for i, response in enumerate(responses, 1):
+        print(f"{i}. {response.content}")
+
+asyncio.run(main())
+```
+
+**Async streaming:**
+```python
+async def stream_example():
+    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+
+    async for chunk in llm.agenerate("Tell me a story", stream=True):
+        print(chunk.content, end='', flush=True)
+
+asyncio.run(stream_example())
+```
+
+Works with all providers and session management. Use `await session.agenerate(...)` for async conversations.
+
 ## Provider Quick Setup
 
 ### OpenAI

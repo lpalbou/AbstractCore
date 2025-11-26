@@ -6,6 +6,12 @@ Complete reference for the AbstractCore API. All examples work across any provid
 
 - [Core Functions](#core-functions)
 - [Classes](#classes)
+  - [AbstractCoreInterface](#abstractcoreinterface)
+    - [generate()](#generate)
+    - [agenerate()](#agenerate)
+  - [BasicSession](#basicsession)
+    - [generate()](#generate-1)
+    - [agenerate()](#agenerate-1)
 - [Event System](#event-system)
 - [Retry Configuration](#retry-configuration)
 - [Embeddings](#embeddings)
@@ -179,6 +185,91 @@ for chunk in llm.generate(
 - 💨 Zero buffering overhead
 - Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - 🔒 Robust error handling for malformed responses
+
+#### agenerate()
+
+Async version of `generate()` for concurrent request execution.
+
+```python
+async def agenerate(
+    self,
+    prompt: str,
+    messages: Optional[List[Dict]] = None,
+    system_prompt: Optional[str] = None,
+    tools: Optional[List[Dict]] = None,
+    response_model: Optional[BaseModel] = None,
+    stream: bool = False,
+    **kwargs
+) -> Union[GenerateResponse, AsyncIterator[GenerateResponse]]
+```
+
+**Parameters:** Same as `generate()`
+
+**Returns:**
+- If `stream=False`: GenerateResponse
+- If `stream=True`: AsyncIterator[GenerateResponse]
+
+**Examples:**
+
+**Basic Async:**
+```python
+import asyncio
+
+async def main():
+    response = await llm.agenerate("What is quantum computing?")
+    print(response.content)
+
+asyncio.run(main())
+```
+
+**Concurrent Requests:**
+```python
+async def batch_process():
+    tasks = [
+        llm.agenerate("Summarize Python"),
+        llm.agenerate("Summarize JavaScript"),
+        llm.agenerate("Summarize Rust")
+    ]
+    responses = await asyncio.gather(*tasks)
+
+    for response in responses:
+        print(response.content)
+
+asyncio.run(batch_process())
+```
+
+**Async Streaming:**
+```python
+async def stream_response():
+    async for chunk in llm.agenerate("Tell me a story", stream=True):
+        print(chunk.content, end='', flush=True)
+
+asyncio.run(stream_response())
+```
+
+**Multi-Provider Comparison:**
+```python
+async def compare_providers():
+    openai = create_llm("openai", model="gpt-4o-mini")
+    claude = create_llm("anthropic", model="claude-3-5-haiku-latest")
+
+    responses = await asyncio.gather(
+        openai.agenerate("What is 2+2?"),
+        claude.agenerate("What is 2+2?")
+    )
+
+    print(f"OpenAI: {responses[0].content}")
+    print(f"Claude: {responses[1].content}")
+
+asyncio.run(compare_providers())
+```
+
+**Features:**
+- Works with all 6 providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- 3-10x faster batch operations via concurrent execution
+- Full streaming support with AsyncIterator
+- Compatible with FastAPI and async web frameworks
+- Zero breaking changes to sync API
 
 #### get_capabilities()
 
@@ -357,6 +448,34 @@ class BasicSession:
 def generate(self, prompt: str, **kwargs) -> GenerateResponse
 ```
 Generate response and add to conversation history.
+
+#### agenerate()
+```python
+async def agenerate(
+    self,
+    prompt: str,
+    name: Optional[str] = None,
+    location: Optional[str] = None,
+    **kwargs
+) -> Union[GenerateResponse, AsyncIterator[GenerateResponse]]
+```
+Async version of `generate()`. Maintains conversation history with async execution.
+
+**Example:**
+```python
+import asyncio
+
+async def chat():
+    session = BasicSession(provider=llm)
+
+    # Async conversation
+    response1 = await session.agenerate("My name is Alice")
+    response2 = await session.agenerate("What's my name?")
+
+    print(response2.content)  # References Alice
+
+asyncio.run(chat())
+```
 
 #### add_message()
 ```python
