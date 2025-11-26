@@ -18,6 +18,7 @@ Complete navigation guide for AbstractCore documentation.
 
 - **[Getting Started](getting-started.md)** - Quick start, core concepts, common patterns
 - **[Prerequisites](prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- **[Async/Await Support](api-reference.md#agenerate)** - Concurrent requests for 3-10x faster batch operations
 - **[Glyph Visual-Text Compression](glyphs.md)** - Revolutionary compression for 3-4x token reduction and faster inference
 - **[Structured Output](structured-output.md)** - Pydantic models, schema validation, native vs prompted strategies
 - **[Session Management](session.md)** - Persistent conversations, serialization, and analytics

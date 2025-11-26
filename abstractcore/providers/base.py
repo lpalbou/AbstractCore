@@ -4,8 +4,9 @@ Base provider with integrated telemetry, events, and exception handling.
 
 import time
 import uuid
+import asyncio
 from collections import deque
-from typing import List, Dict, Any, Optional, Union, Iterator, Type
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
 from abc import ABC, abstractmethod
 
 try:
@@ -1440,9 +1441,9 @@ Please provide a structured response."""
                 **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate response from the LLM.
-        
+
         This method implements the AbstractCoreInterface and delegates to generate_with_telemetry.
-        
+
         Args:
             prompt: The input prompt
             messages: Optional conversation history
@@ -1450,7 +1451,7 @@ Please provide a structured response."""
             tools: Optional list of available tools
             stream: Whether to stream the response
             **kwargs: Additional provider-specific parameters (including response_model)
-            
+
         Returns:
             GenerateResponse, iterator of GenerateResponse for streaming, or BaseModel for structured output
         """
@@ -1462,3 +1463,67 @@ Please provide a structured response."""
             stream=stream,
             **kwargs
         )
+
+    async def agenerate(self,
+                       prompt: str = "",
+                       messages: Optional[List[Dict]] = None,
+                       system_prompt: Optional[str] = None,
+                       tools: Optional[List] = None,
+                       media: Optional[List] = None,
+                       stream: bool = False,
+                       **kwargs) -> Union[GenerateResponse, AsyncIterator[GenerateResponse], BaseModel]:
+        """
+        Async generation - works with all providers.
+
+        Uses asyncio.to_thread() to run sync generate() without blocking event loop.
+        Providers can override for native async if needed for optimization.
+
+        Args:
+            prompt: Text prompt
+            messages: Conversation history
+            system_prompt: System instructions
+            tools: Available tools
+            media: Media attachments
+            stream: Enable streaming
+            **kwargs: Additional generation parameters (including response_model)
+
+        Returns:
+            GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
+        """
+        if stream:
+            # Return async iterator for streaming
+            return self._async_stream_generate(
+                prompt, messages, system_prompt, tools, media, **kwargs
+            )
+        else:
+            # Run sync generate in thread pool
+            return await asyncio.to_thread(
+                self.generate,
+                prompt, messages, system_prompt, tools, stream, **kwargs
+            )
+
+    async def _async_stream_generate(self,
+                                     prompt: str,
+                                     messages: Optional[List[Dict]],
+                                     system_prompt: Optional[str],
+                                     tools: Optional[List],
+                                     media: Optional[List],
+                                     **kwargs) -> AsyncIterator[GenerateResponse]:
+        """
+        Async streaming generator.
+
+        Wraps sync streaming in async iterator, yielding control to event loop.
+        """
+        # Get sync generator in thread pool
+        def get_sync_stream():
+            return self.generate(
+                prompt, messages, system_prompt, tools,
+                stream=True, **kwargs
+            )
+
+        sync_gen = await asyncio.to_thread(get_sync_stream)
+
+        # Yield chunks asynchronously
+        for chunk in sync_gen:
+            yield chunk
+            await asyncio.sleep(0)  # Yield control to event loop

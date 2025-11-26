@@ -1116,6 +1116,94 @@ The next phase is implementing these improvements and validating the predicted p
 
 ---
 
+### Task: MCP Integration Architecture Planning (2025-11-25)
+
+**Description**: Researched state-of-the-art MCP (Model Context Protocol) implementations and designed a clean, simple integration approach for AbstractCore. Replaced over-engineered proposal with pragmatic "tool source" pattern.
+
+**Research Conducted**:
+1. **Explored AbstractCore architecture**: Tool system, provider abstraction, event system, session management
+2. **Read existing MCP proposal**: 960-line document suggesting full MCPProvider class
+3. **Researched SOTA MCP patterns**: Official Anthropic Python SDK, OpenAI Agents SDK integration
+4. **Analyzed async requirements**: AbstractCore is synchronous, MCP SDK is async-native
+
+**Key Findings**:
+
+**Critical Insight**: MCP should be a **tool source**, not a full provider. The existing proposal was over-engineered because:
+1. **MCP servers provide tools, not LLM capabilities** - they don't generate text
+2. **Forcing MCP into Provider abstraction** requires awkward "underlying_llm" concept
+3. **AbstractCore already has excellent tool injection** - just need MCP as tool source
+
+**Architecture Decision**:
+- MCP as tool source that works with ANY existing provider
+- Uses official `mcp` Python package (Anthropic's SDK) - don't reinvent JSON-RPC
+- Async context manager pattern (`async with MCPServer.stdio(...)`)
+- Tools auto-converted to AbstractCore `ToolDefinition`
+- Stdio + HTTP transports
+
+**Dependency**: MCP requires async support (002-async-await-support.md) first because the official MCP SDK is async-native. Implementing sync wrappers would be awkward and error-prone.
+
+**Implementation**:
+
+Created simplified MCP integration backlog document:
+
+1. **Deleted over-engineered proposal**:
+   - `docs/backlog/mcp-integration.md` (960 lines, over-complex)
+
+2. **Created simplified plan**:
+   - `docs/backlog/008-mcp-integration.md` (~300 lines, clean)
+   - Priority: P2 - Medium
+   - Effort: 12-20 hours (vs 2-3 weeks in original)
+   - Target: v2.7.0 (after async support in v2.6.0)
+
+3. **Updated async backlog**:
+   - Added "Dependent Features" section to `002-async-await-support.md`
+   - Listed MCP as dependent on async support
+
+**Simplified Design**:
+
+```python
+# Usage pattern
+from abstractcore import create_llm
+from abstractcore.mcp import MCPServer
+
+async with MCPServer.stdio(command=["npx", "mcp-server-filesystem"]) as fs:
+    mcp_tools = fs.tools  # Auto-converted to ToolDefinition
+
+    # Works with ANY provider
+    llm = create_llm("openai", model="gpt-4o")
+    response = await llm.generate("List files", tools=mcp_tools)
+```
+
+**What This Approach Avoids**:
+1. ❌ No MCPProvider class - MCP doesn't fit Provider abstraction
+2. ❌ No "mcp://server" model syntax - confusing and unnecessary
+3. ❌ No JSON-RPC implementation - use official SDK
+4. ❌ No "underlying_llm" concept - use MCP tools with any provider
+
+**Benefits**:
+- ✅ ~4x simpler than original proposal (12-20h vs 2-3 weeks)
+- ✅ Works with all 6 existing providers
+- ✅ Zero breaking changes
+- ✅ < 500 lines of new code
+- ✅ Uses official Anthropic MCP SDK
+
+**Files Created**:
+- `docs/backlog/008-mcp-integration.md` - Simplified MCP plan
+
+**Files Modified**:
+- `docs/backlog/002-async-await-support.md` - Added MCP as dependent feature
+
+**Files Deleted**:
+- `docs/backlog/mcp-integration.md` - Over-engineered original proposal
+
+**Issues/Concerns**: None. The simplified approach is architecturally sound, leverages AbstractCore's existing strengths, and follows SOTA patterns from Anthropic's official SDK and OpenAI's implementation.
+
+**Verification**: Review `docs/backlog/008-mcp-integration.md` for the complete simplified plan.
+
+**Conclusion**: Successfully designed clean MCP integration that's 4x simpler than original proposal while maintaining full functionality. The "tool source" pattern aligns perfectly with AbstractCore's architecture and requires minimal code (~300 lines). Implementation should wait for async support (002-async-await-support.md) to be completed first.
+
+---
+
 ### Task: Comprehensive Expert Code Review & Architecture Analysis (2025-11-25)
 
 **Description**: Conducted comprehensive senior architect-level review of AbstractCore codebase, documentation, and architecture. Evaluated code quality, identified gaps, and created actionable improvement roadmap with SOTA backlog documents.

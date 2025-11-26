@@ -3,11 +3,12 @@ BasicSession for conversation tracking.
 Target: <500 lines maximum.
 """
 
-from typing import List, Optional, Dict, Any, Union, Iterator, Callable
+from typing import List, Optional, Dict, Any, Union, Iterator, AsyncIterator, Callable
 from datetime import datetime
 from pathlib import Path
 import json
 import uuid
+import asyncio
 from collections.abc import Generator
 
 from .interface import AbstractCoreInterface
@@ -270,6 +271,130 @@ class BasicSession:
                 collected_content += chunk.content
 
         # After streaming is complete, add the full response to history
+        if collected_content:
+            self.add_message('assistant', collected_content)
+
+    async def agenerate(self,
+                       prompt: str,
+                       name: Optional[str] = None,
+                       location: Optional[str] = None,
+                       **kwargs) -> Union[GenerateResponse, AsyncIterator[GenerateResponse]]:
+        """
+        Async generation with conversation history.
+
+        Args:
+            prompt: User message
+            name: Optional speaker name
+            location: Optional location context
+            **kwargs: Generation parameters (stream, temperature, etc.)
+
+        Returns:
+            GenerateResponse or AsyncIterator for streaming
+
+        Example:
+            # Async chat interaction
+            response = await session.agenerate('What is Python?')
+
+            # Async streaming
+            async for chunk in await session.agenerate('Tell me a story', stream=True):
+                print(chunk.content, end='')
+        """
+        if not self.provider:
+            raise ValueError("No provider configured")
+
+        # Check for auto-compaction before generating
+        if self.auto_compact and self.should_compact(self.auto_compact_threshold):
+            print(f"🗜️  Auto-compacting session (tokens: {self.get_token_estimate()} > {self.auto_compact_threshold})")
+            compacted = self.compact(reason="auto_threshold")
+            # Replace current session with compacted version
+            self._replace_with_compacted(compacted)
+
+        # Pre-processing (fast, sync is fine)
+        self.add_message('user', prompt, name=name, location=location)
+
+        # Format messages for provider (exclude the current user message since provider will add it)
+        messages = self._format_messages_for_provider_excluding_current()
+
+        # Use session tools if not provided in kwargs
+        if 'tools' not in kwargs and self.tools:
+            kwargs['tools'] = self.tools
+
+        # Pass session tool_call_tags if available and not overridden in kwargs
+        if hasattr(self, 'tool_call_tags') and self.tool_call_tags is not None and 'tool_call_tags' not in kwargs:
+            kwargs['tool_call_tags'] = self.tool_call_tags
+
+        # Extract media parameter explicitly
+        media = kwargs.pop('media', None)
+
+        # Add session-level parameters if not overridden in kwargs
+        if 'temperature' not in kwargs and self.temperature is not None:
+            kwargs['temperature'] = self.temperature
+        if 'seed' not in kwargs and self.seed is not None:
+            kwargs['seed'] = self.seed
+
+        # Add trace metadata if tracing is enabled
+        if self.enable_tracing:
+            if 'trace_metadata' not in kwargs:
+                kwargs['trace_metadata'] = {}
+            kwargs['trace_metadata'].update({
+                'session_id': self.id,
+                'step_type': kwargs.get('step_type', 'chat'),
+                'attempt_number': kwargs.get('attempt_number', 1)
+            })
+
+        # Check if streaming
+        stream = kwargs.get('stream', False)
+
+        if stream:
+            # Return async streaming wrapper that adds assistant message after
+            return self._async_session_stream(prompt, messages, media, **kwargs)
+        else:
+            # Async generation
+            response = await self.provider.agenerate(
+                prompt=prompt,
+                messages=messages,
+                system_prompt=self.system_prompt,
+                media=media,
+                **kwargs
+            )
+
+            # Post-processing (fast, sync is fine)
+            if hasattr(response, 'content') and response.content:
+                self.add_message('assistant', response.content)
+
+            # Capture trace if enabled and available
+            if self.enable_tracing and hasattr(self.provider, 'get_traces'):
+                if hasattr(response, 'metadata') and response.metadata and 'trace_id' in response.metadata:
+                    trace = self.provider.get_traces(response.metadata['trace_id'])
+                    if trace:
+                        self.interaction_traces.append(trace)
+
+            return response
+
+    async def _async_session_stream(self,
+                                    prompt: str,
+                                    messages: List[Dict[str, str]],
+                                    media: Optional[List],
+                                    **kwargs) -> AsyncIterator[GenerateResponse]:
+        """Async streaming with session history management."""
+        collected_content = ""
+
+        async for chunk in self.provider.agenerate(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=self.system_prompt,
+            media=media,
+            stream=True,
+            **kwargs
+        ):
+            # Yield the chunk for the caller
+            yield chunk
+
+            # Collect content for history
+            if hasattr(chunk, 'content') and chunk.content:
+                collected_content += chunk.content
+
+        # After streaming completes, add assistant message
         if collected_content:
             self.add_message('assistant', collected_content)
 

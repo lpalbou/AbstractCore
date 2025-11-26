@@ -28,6 +28,7 @@ AbstractCore is a comprehensive Python library designed primarily for open sourc
 
 - **Offline-First Design**: Built primarily for open source LLMs with complete offline operation. Download once, run forever without internet access
 - **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with identical syntax
+- **Async/Await Support** ⭐ NEW in v2.6.0: Native async support for concurrent requests with `asyncio.gather()` - works with all 6 providers for 3-10x faster batch operations ([docs/api-reference.md#agenerate](docs/api-reference.md#agenerate))
 - **Interaction Tracing**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing for debugging and compliance ([docs/interaction-tracing.md](docs/interaction-tracing.md))
 - **Centralized Configuration**: Global defaults, app-specific preferences, API key management with `~/.abstractcore/config/abstractcore.json`
 - **Media Handling System**: Universal file attachment with `@filename` CLI syntax and `media=[]` API parameter - supports images, PDFs, Office docs, CSV/TSV
@@ -1528,6 +1529,104 @@ session.compact(
     compression_ratio=0.7      # Target 70% size reduction
 )
 ```
+
+### Async/Await for Concurrent Requests
+
+Execute multiple LLM requests concurrently for 3-10x faster batch operations:
+
+```python
+import asyncio
+from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+
+# Basic concurrent execution
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+
+    # Execute 3 requests concurrently
+    tasks = [
+        llm.agenerate("Summarize Python in one sentence"),
+        llm.agenerate("Summarize JavaScript in one sentence"),
+        llm.agenerate("Summarize Rust in one sentence")
+    ]
+    responses = await asyncio.gather(*tasks)
+
+    for i, response in enumerate(responses, 1):
+        print(f"{i}. {response.content}")
+
+asyncio.run(main())
+```
+
+#### Async Streaming
+
+Real-time token generation with async iterators:
+
+```python
+async def stream_example():
+    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+
+    async for chunk in llm.agenerate("Tell me a story", stream=True):
+        print(chunk.content, end='', flush=True)
+
+asyncio.run(stream_example())
+```
+
+#### Session Async
+
+Async conversations with full history management:
+
+```python
+async def session_example():
+    llm = create_llm("ollama", model="qwen3:4b")
+    session = BasicSession(provider=llm)
+
+    # Multi-turn async conversation
+    response1 = await session.agenerate("My name is Alice")
+    response2 = await session.agenerate("What's my name?")
+
+    print(response2.content)  # References Alice from history
+
+asyncio.run(session_example())
+```
+
+#### Multi-Provider Concurrent Comparison
+
+Query multiple providers simultaneously:
+
+```python
+async def compare_providers():
+    openai = create_llm("openai", model="gpt-4o-mini")
+    claude = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    ollama = create_llm("ollama", model="qwen3:4b")
+
+    # Get responses from 3 providers concurrently
+    responses = await asyncio.gather(
+        openai.agenerate("What is 2+2?"),
+        claude.agenerate("What is 2+2?"),
+        ollama.agenerate("What is 2+2?")
+    )
+
+    print(f"OpenAI: {responses[0].content}")
+    print(f"Claude: {responses[1].content}")
+    print(f"Ollama: {responses[2].content}")
+
+asyncio.run(compare_providers())
+```
+
+**Key Features:**
+- Works with all 6 providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- Full streaming support with AsyncIterator
+- Session async maintains conversation history
+- Zero breaking changes to sync API
+- Compatible with FastAPI and async web frameworks
+- 3-10x speedup for batch operations
+
+**Use Cases:**
+- Batch document processing
+- Multi-provider consensus/comparison
+- Non-blocking web applications
+- Parallel data extraction tasks
+- High-throughput API endpoints
 
 ### Token Management
 

@@ -15,6 +15,7 @@ pip install abstractcore[all]
 ## Core Features
 
 - **[API Reference](docs/api-reference.md)**: Complete Python API with examples
+- **[Async/Await Support](docs/api-reference.md#agenerate)** ⭐ NEW in v2.6.0: Concurrent requests for 3-10x faster batch operations
 - **[Interaction Tracing](docs/interaction-tracing.md)**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing for debugging and compliance
 - **[Centralized Configuration](docs/centralized-config.md)**: Global defaults, app preferences, API key management
 - **[Media Handling System](docs/media-handling-system.md)**: Universal file attachment (images, PDFs, Office docs, CSV) across all providers
@@ -291,6 +292,42 @@ facts = session.extract_facts(entity_types=["person", "organization", "date"])
 
 # Save with analytics
 session.save("conversation.json", summary=True, assessment=True, facts=True)
+```
+
+### Async/Await for Concurrent Requests
+```python
+import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+
+    # Execute 3 requests concurrently for 3-10x speedup
+    tasks = [
+        llm.agenerate("Summarize Python"),
+        llm.agenerate("Summarize JavaScript"),
+        llm.agenerate("Summarize Rust")
+    ]
+    responses = await asyncio.gather(*tasks)
+
+    for response in responses:
+        print(response.content)
+
+asyncio.run(main())
+
+# Async streaming
+async def stream_example():
+    async for chunk in llm.agenerate("Tell a story", stream=True):
+        print(chunk.content, end='', flush=True)
+
+# Session async
+async def session_example():
+    session = BasicSession(provider=llm)
+    response = await session.agenerate("What is Python?")
+    print(response.content)
+
+# Works with all 6 providers
+# Use cases: batch operations, multi-provider comparisons, FastAPI integration
 ```
 
 ### Generation Parameters (Unified Interface)
@@ -575,6 +612,7 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 
 ### Key Capabilities for AI
 - **130+ models** across 6 providers via centralized registry
+- **Async/await support** for concurrent requests with 3-10x faster batch operations
 - **Universal media handling** with `media=[]` API and `@filename` CLI syntax
 - **Vision capabilities** across all providers with automatic optimization and fallback
 - **Centralized configuration** with global defaults and app-specific preferences

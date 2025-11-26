@@ -774,7 +774,15 @@ After implementation:
 
 ---
 
-**Document Version**: 1.0
+## Dependent Features
+
+The following features depend on async support being implemented:
+- **MCP Integration** (`008-mcp-integration.md`): MCP SDK is async-native, requires async/await
+
+---
+
+**Document Version**: 1.1
 **Created**: 2025-11-25
+**Updated**: 2025-11-25 (added MCP dependency)
 **Author**: Expert Code Review
 **Status**: Ready for Review & Decision

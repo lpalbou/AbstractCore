@@ -205,6 +205,42 @@ export_traces(traces, format='markdown', file_path='workflow_trace.md')
 
 [Learn more about Interaction Tracing](docs/interaction-tracing.md)
 
+### Async/Await Support
+
+Execute concurrent LLM requests for batch operations, multi-provider comparisons, or non-blocking web applications:
+
+```python
+import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+
+    # Execute 3 requests concurrently
+    tasks = [
+        llm.agenerate(f"Summarize {topic}")
+        for topic in ["Python", "JavaScript", "Rust"]
+    ]
+    responses = await asyncio.gather(*tasks)
+
+    for response in responses:
+        print(response.content)
+
+asyncio.run(main())
+```
+
+**Use Cases:**
+- Batch operations with 3-10x speedup via parallel execution
+- Multi-provider comparisons (query OpenAI and Anthropic simultaneously)
+- FastAPI/async web frameworks integration
+- Session async for conversation management
+
+**Works with:**
+- All 6 providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- Streaming via `async for chunk in llm.agenerate(..., stream=True)`
+- Sessions via `await session.agenerate(...)`
+- Zero breaking changes to sync API
+
 ### Media Handling
 
 AbstractCore provides unified media handling across all providers with automatic resolution optimization. Upload images, PDFs, and documents using the same simple API regardless of your provider.
@@ -302,7 +338,8 @@ if response.metadata and response.metadata.get('compression_used'):
 
 - **Offline-First Design**: Built primarily for open source LLMs with full offline capability. Download once, run forever without internet access
 - **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
-- **Interaction Tracing** ⭐ NEW in v2.5.3: Complete LLM observability with programmatic access to prompts, responses, tokens, timing, and trace correlation for debugging, trust, and compliance
+- **Async/Await Support** ⭐ NEW in v2.6.0: Native async support for concurrent requests with `asyncio.gather()` - works with all 6 providers
+- **Interaction Tracing**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing, and trace correlation for debugging, trust, and compliance
 - **Glyph Visual-Text Compression**: Revolutionary compression system that renders text as optimized images for 3-4x token compression and faster inference
 - **Centralized Configuration**: Global defaults and app-specific preferences at `~/.abstractcore/config/abstractcore.json`
 - **Intelligent Media Handling**: Upload images, PDFs, and documents with automatic maximum resolution optimization
