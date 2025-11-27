@@ -14,7 +14,11 @@ A unified Python library for interaction with multiple Large Language Model (LLM
 ### Installation
 
 ```bash
+# macOS/Apple Silicon (includes MLX)
 pip install abstractcore[all]
+
+# Linux/Windows (excludes MLX)
+pip install abstractcore[all-non-mlx]
 ```
 
 ### Basic Usage
@@ -819,6 +823,9 @@ pip install abstractcore[media]
 pip install abstractcore[openai]
 pip install abstractcore[anthropic]
 pip install abstractcore[ollama]
+pip install abstractcore[lmstudio]
+pip install abstractcore[huggingface]
+pip install abstractcore[mlx]  # macOS/Apple Silicon only
 
 # With server support
 pip install abstractcore[server]
@@ -828,6 +835,16 @@ pip install abstractcore[embeddings]
 
 # Everything (recommended)
 pip install abstractcore[all]
+
+# Cross-platform (all except MLX - for Linux/Windows)
+pip install abstractcore[all-non-mlx]
+
+# Provider groups
+pip install abstractcore[all-providers]          # All providers (includes MLX)
+pip install abstractcore[all-providers-non-mlx]  # All providers except MLX
+pip install abstractcore[local-providers]        # Ollama, LMStudio, MLX
+pip install abstractcore[local-providers-non-mlx]  # Ollama, LMStudio only
+pip install abstractcore[api-providers]          # OpenAI, Anthropic
 ```
 
 **Media processing extras:**

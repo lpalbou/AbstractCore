@@ -148,6 +148,10 @@ local-providers = [
     "abstractcore[ollama,lmstudio,mlx]",
 ]
 
+local-providers-non-mlx = [
+    "abstractcore[ollama,lmstudio]",
+]
+
 heavy-providers = [
     "abstractcore[huggingface]",
 ]
@@ -157,8 +161,16 @@ all-providers = [
     "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
 ]
 
+all-providers-non-mlx = [
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,embeddings]",
+]
+
 all = [
     "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,processing,media,compression,tools,server,dev,test,docs]",
+]
+
+all-non-mlx = [
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,embeddings,processing,media,compression,tools,server,dev,test,docs]",
 ]
 
 lightweight = [
