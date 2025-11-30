@@ -20,15 +20,17 @@ from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
 import uuid
+import asyncio
 
 
 class EventType(Enum):
     """Minimal event system - clean, simple, efficient"""
 
-    # Core events (4) - matches LangChain pattern
+    # Core events (5) - matches LangChain pattern + async progress
     GENERATION_STARTED = "generation_started"      # Unified for streaming and non-streaming
     GENERATION_COMPLETED = "generation_completed"  # Includes all metrics
     TOOL_STARTED = "tool_started"                  # Before tool execution
+    TOOL_PROGRESS = "tool_progress"                # Real-time progress during tool execution
     TOOL_COMPLETED = "tool_completed"              # After tool execution
 
     # Error handling (1)
@@ -60,6 +62,7 @@ class EventEmitter:
 
     def __init__(self):
         self._listeners: Dict[EventType, List[Callable]] = {}
+        self._async_listeners: Dict[EventType, List[Callable]] = {}
 
     def on(self, event_type: EventType, handler: Callable):
         """
@@ -141,6 +144,67 @@ class EventEmitter:
             }
         )
 
+    def on_async(self, event_type: EventType, handler: Callable):
+        """
+        Register an async event handler.
+
+        Args:
+            event_type: Type of event to listen for
+            handler: Async function to call when event occurs
+        """
+        if event_type not in self._async_listeners:
+            self._async_listeners[event_type] = []
+        self._async_listeners[event_type].append(handler)
+
+    async def emit_async(self, event_type: EventType, data: Dict[str, Any], source: Optional[str] = None, **kwargs) -> Event:
+        """
+        Emit an event asynchronously to all registered handlers.
+
+        Runs async handlers concurrently with asyncio.gather().
+        Also triggers sync handlers for backward compatibility.
+
+        Args:
+            event_type: Type of event
+            data: Event data
+            source: Source of the event
+            **kwargs: Additional event attributes (model_name, tokens, etc.)
+
+        Returns:
+            The event object
+        """
+        # Filter kwargs to only include valid Event fields
+        try:
+            valid_fields = set(Event.__dataclass_fields__.keys())
+        except AttributeError:
+            # Fallback for older Python versions
+            valid_fields = {'trace_id', 'span_id', 'request_id', 'duration_ms', 'model_name',
+                          'provider_name', 'tokens_input', 'tokens_output', 'cost_usd', 'metadata'}
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_fields}
+
+        event = Event(
+            type=event_type,
+            timestamp=datetime.now(),
+            data=data,
+            source=source or self.__class__.__name__,
+            **filtered_kwargs
+        )
+
+        # Run async handlers concurrently
+        if event_type in self._async_listeners:
+            tasks = [handler(event) for handler in self._async_listeners[event_type]]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Also run sync handlers (backward compatible)
+        if event_type in self._listeners:
+            for handler in self._listeners[event_type]:
+                try:
+                    handler(event)
+                except Exception as e:
+                    # Log error but don't stop event propagation
+                    print(f"Error in event handler: {e}")
+
+        return event
+
 
 class GlobalEventBus:
     """
@@ -149,6 +213,7 @@ class GlobalEventBus:
     """
     _instance = None
     _listeners: Dict[EventType, List[Callable]] = {}
+    _async_listeners: Dict[EventType, List[Callable]] = {}
 
     def __new__(cls):
         if cls._instance is None:
@@ -199,6 +264,52 @@ class GlobalEventBus:
     def clear(cls):
         """Clear all global event handlers"""
         cls._listeners.clear()
+        cls._async_listeners.clear()
+
+    @classmethod
+    def on_async(cls, event_type: EventType, handler: Callable):
+        """Register a global async event handler"""
+        if event_type not in cls._async_listeners:
+            cls._async_listeners[event_type] = []
+        cls._async_listeners[event_type].append(handler)
+
+    @classmethod
+    async def emit_async(cls, event_type: EventType, data: Dict[str, Any], source: Optional[str] = None, **kwargs):
+        """
+        Emit a global event asynchronously.
+
+        Runs async handlers concurrently with asyncio.gather().
+        Also triggers sync handlers for backward compatibility.
+        """
+        # Filter kwargs to only include valid Event fields
+        try:
+            valid_fields = set(Event.__dataclass_fields__.keys())
+        except AttributeError:
+            # Fallback for older Python versions
+            valid_fields = {'trace_id', 'span_id', 'request_id', 'duration_ms', 'model_name',
+                          'provider_name', 'tokens_input', 'tokens_output', 'cost_usd', 'metadata'}
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_fields}
+
+        event = Event(
+            type=event_type,
+            timestamp=datetime.now(),
+            data=data,
+            source=source or "GlobalEventBus",
+            **filtered_kwargs
+        )
+
+        # Run async handlers concurrently
+        if event_type in cls._async_listeners:
+            tasks = [handler(event) for handler in cls._async_listeners[event_type]]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Also run sync handlers (backward compatible)
+        if event_type in cls._listeners:
+            for handler in cls._listeners[event_type]:
+                try:
+                    handler(event)
+                except Exception as e:
+                    print(f"Error in global event handler: {e}")
 
 
 # Convenience functions

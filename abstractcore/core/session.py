@@ -379,14 +379,20 @@ class BasicSession:
         """Async streaming with session history management."""
         collected_content = ""
 
-        async for chunk in self.provider.agenerate(
+        # Remove 'stream' from kwargs since we're explicitly setting it
+        kwargs_copy = {k: v for k, v in kwargs.items() if k != 'stream'}
+
+        # CRITICAL: Await first to get async generator, then iterate
+        stream_gen = await self.provider.agenerate(
             prompt=prompt,
             messages=messages,
             system_prompt=self.system_prompt,
             media=media,
             stream=True,
-            **kwargs
-        ):
+            **kwargs_copy
+        )
+
+        async for chunk in stream_gen:
             # Yield the chunk for the caller
             yield chunk
 
