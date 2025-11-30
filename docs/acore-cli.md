@@ -9,6 +9,39 @@ The AbstractCore internal CLI provides chat history management and system contro
 **Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)?**
 → **See [Server Documentation](server.md)** for complete setup guides.
 
+## Async CLI Demo (Educational Reference)
+
+⚠️ **For developers learning async patterns in AbstractCore**
+
+AbstractCore includes an educational async CLI demo that illustrates 8 core async/await patterns:
+
+```bash
+# Run the async demo (educational only)
+python examples/async_cli_demo.py --provider ollama --model qwen3:4b
+python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b --stream
+```
+
+**What it demonstrates:**
+1. Event-driven progress (GlobalEventBus)
+2. Async event handlers (on_async)
+3. Non-blocking animations (create_task)
+4. Async sleep for cooperative multitasking
+5. Parallel execution (asyncio.gather)
+6. Sync tools in async context (asyncio.to_thread)
+7. Async streaming (await + async for)
+8. Non-blocking input (asyncio.to_thread)
+
+**Key features:**
+- ✅ Real-time spinners during tool execution
+- ✅ Parallel tool execution with asyncio.gather()
+- ✅ Proper async streaming pattern (await first, then async for)
+- ✅ Event-driven progress feedback
+- ✅ Extensively commented code explaining each pattern
+
+**This is for LEARNING ONLY.** For production use, stick with the standard CLI below.
+
+[View the demo code →](../examples/async_cli_demo.py)
+
 ## Quick Start
 
 ```bash
