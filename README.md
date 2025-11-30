@@ -245,6 +245,21 @@ asyncio.run(main())
 - Sessions via `await session.agenerate(...)`
 - Zero breaking changes to sync API
 
+**Learn async patterns:**
+
+AbstractCore includes an educational [async CLI demo](examples/async_cli_demo.py) that demonstrates 8 core async/await patterns:
+- Event-driven progress with GlobalEventBus
+- Parallel tool execution with asyncio.gather()
+- Proper async streaming pattern (await first, then async for)
+- Non-blocking animations and user input
+
+```bash
+# Try the educational async demo
+python examples/async_cli_demo.py --provider ollama --model qwen3:4b --stream
+```
+
+[Learn more in CLI docs](docs/acore-cli.md#async-cli-demo-educational-reference)
+
 ### Media Handling
 
 AbstractCore provides unified media handling across all providers with automatic resolution optimization. Upload images, PDFs, and documents using the same simple API regardless of your provider.

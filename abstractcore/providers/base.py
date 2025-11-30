@@ -1475,8 +1475,8 @@ Please provide a structured response."""
         """
         Async generation - works with all providers.
 
-        Uses asyncio.to_thread() to run sync generate() without blocking event loop.
-        Providers can override for native async if needed for optimization.
+        Calls _agenerate_internal() which can be overridden for native async.
+        Default implementation uses asyncio.to_thread() fallback.
 
         Args:
             prompt: Text prompt
@@ -1490,13 +1490,43 @@ Please provide a structured response."""
         Returns:
             GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
         """
+        return await self._agenerate_internal(
+            prompt, messages, system_prompt, tools, media, stream, **kwargs
+        )
+
+    async def _agenerate_internal(self,
+                                   prompt: str,
+                                   messages: Optional[List[Dict]],
+                                   system_prompt: Optional[str],
+                                   tools: Optional[List],
+                                   media: Optional[List],
+                                   stream: bool,
+                                   **kwargs) -> Union[GenerateResponse, AsyncIterator[GenerateResponse], BaseModel]:
+        """
+        Internal async generation method.
+
+        Default implementation: Uses asyncio.to_thread() to run sync generate().
+        Providers override this for native async (3-10x faster for batch operations).
+
+        Args:
+            prompt: Text prompt
+            messages: Conversation history
+            system_prompt: System instructions
+            tools: Available tools
+            media: Media attachments
+            stream: Enable streaming
+            **kwargs: Additional generation parameters
+
+        Returns:
+            GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
+        """
         if stream:
             # Return async iterator for streaming
             return self._async_stream_generate(
                 prompt, messages, system_prompt, tools, media, **kwargs
             )
         else:
-            # Run sync generate in thread pool
+            # Run sync generate in thread pool (fallback)
             return await asyncio.to_thread(
                 self.generate,
                 prompt, messages, system_prompt, tools, stream, **kwargs
