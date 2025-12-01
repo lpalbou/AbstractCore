@@ -8,13 +8,13 @@ and production LLM system requirements.
 
 import time
 import random
-import logging
 from typing import Type, Optional, Set, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RetryableErrorType(Enum):

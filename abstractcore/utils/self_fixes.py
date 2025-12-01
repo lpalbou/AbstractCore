@@ -8,9 +8,9 @@ before giving up on parsing.
 import json
 import re
 from typing import Optional
-import logging
+from .structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def fix_json(text: str) -> Optional[str]:

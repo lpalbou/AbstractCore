@@ -5,15 +5,15 @@ This module provides a centralized registry for managing available tools
 and executing them safely.
 """
 
-import logging
 import time
 from typing import Dict, List, Any, Callable, Optional, Union
 from functools import wraps
 
 from .core import ToolDefinition, ToolCall, ToolResult
 from ..events import EventType, emit_global, create_tool_event
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ToolRegistry:

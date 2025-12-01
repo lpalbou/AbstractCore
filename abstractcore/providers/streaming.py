@@ -7,15 +7,15 @@ while maintaining real-time streaming performance, with proper tag rewriting sup
 
 import json
 import re
-import logging
 import uuid
 from typing import List, Dict, Any, Optional, Iterator, Tuple
 from enum import Enum
 
 from ..core.types import GenerateResponse
 from ..tools.core import ToolCall
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ToolDetectionState(Enum):

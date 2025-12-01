@@ -12,7 +12,6 @@ import subprocess
 import requests
 from pathlib import Path
 from typing import Optional, Dict, Any, Union
-import logging
 import platform
 import re
 import time
@@ -43,8 +42,9 @@ except ImportError:
 
 # Import our enhanced tool decorator
 from abstractcore.tools.core import tool
+from abstractcore.utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # File Operations
 @tool(

@@ -6,14 +6,14 @@ across all models, whether they have native tool APIs or require prompting.
 """
 
 import json
-import logging
 from typing import List, Dict, Any, Optional, Union, Callable
 
 from ..architectures import detect_architecture, get_model_capabilities, get_architecture_format
 from .core import ToolDefinition, ToolCall, ToolCallResponse, ToolResult
 from .parser import detect_tool_calls, parse_tool_calls, format_tool_prompt
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UniversalToolHandler:

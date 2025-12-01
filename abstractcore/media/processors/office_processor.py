@@ -6,13 +6,13 @@ This module provides comprehensive processing capabilities for Microsoft Office 
 document processing in 2025.
 """
 
-import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union, Tuple
 import json
 
 from ..base import BaseMediaHandler, MediaProcessingError
 from ..types import MediaContent, MediaType, ContentFormat, MediaProcessingResult
+from ...utils.structured_logging import get_logger
 
 
 class OfficeProcessor(BaseMediaHandler):
@@ -36,7 +36,7 @@ class OfficeProcessor(BaseMediaHandler):
             **kwargs: Additional configuration options
         """
         super().__init__(**kwargs)
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
         # Configuration options
         self.extract_tables = kwargs.get('extract_tables', True)

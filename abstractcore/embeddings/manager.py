@@ -7,7 +7,6 @@ Production-ready embedding generation with SOTA models and efficient serving.
 
 import hashlib
 import pickle
-import logging
 import atexit
 import sys
 import builtins
@@ -33,8 +32,9 @@ except ImportError:
     emit_global = None
 
 from .models import EmbeddingBackend, get_model_config, list_available_models, get_default_model
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @contextmanager

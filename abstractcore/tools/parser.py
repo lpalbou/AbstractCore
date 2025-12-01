@@ -7,14 +7,14 @@ responses based on their architecture.
 
 import re
 import json
-import logging
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
 from .core import ToolCall, ToolDefinition
 from ..architectures import detect_architecture, get_architecture_format
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ToolFormat(Enum):

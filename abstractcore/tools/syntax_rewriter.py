@@ -8,15 +8,15 @@ Supports multiple target formats including OpenAI, Codex, and custom agent forma
 import re
 import json
 import uuid
-import logging
 from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
 
 from .core import ToolCall
 from .parser import parse_tool_calls
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SyntaxFormat(Enum):
