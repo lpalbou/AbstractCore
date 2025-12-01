@@ -16,7 +16,7 @@ except ImportError:
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..media import MediaHandler
-from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error
+from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -218,7 +218,7 @@ class AnthropicProvider(BaseProvider):
             error_str = str(e).lower()
 
             if 'api_key' in error_str or 'authentication' in error_str:
-                raise AuthenticationError(f"Anthropic authentication failed: {str(e)}")
+                raise AuthenticationError(format_auth_error("anthropic", str(e)))
             elif ('not_found_error' in error_str and 'model:' in error_str) or '404' in error_str:
                 # Model not found - show available models
                 available_models = self.list_available_models(api_key=self.api_key)
@@ -368,7 +368,7 @@ class AnthropicProvider(BaseProvider):
             error_str = str(e).lower()
 
             if 'api_key' in error_str or 'authentication' in error_str:
-                raise AuthenticationError(f"Anthropic authentication failed: {str(e)}")
+                raise AuthenticationError(format_auth_error("anthropic", str(e)))
             elif ('not_found_error' in error_str and 'model:' in error_str) or '404' in error_str:
                 available_models = self.list_available_models(api_key=self.api_key)
                 error_message = format_model_error("Anthropic", self.model, available_models)
