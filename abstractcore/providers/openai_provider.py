@@ -16,7 +16,7 @@ except ImportError:
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..media import MediaHandler
-from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error
+from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -655,7 +655,7 @@ class OpenAIProvider(BaseProvider):
             # For other errors (like API failures), handle gracefully
             error_str = str(e).lower()
             if 'api_key' in error_str or 'authentication' in error_str:
-                raise AuthenticationError(f"OpenAI authentication failed: {str(e)}")
+                raise AuthenticationError(format_auth_error("openai", str(e)))
             # For other API errors during preflight, continue (model might work)
             # This allows for cases where models.list() fails but generation works
 

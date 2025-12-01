@@ -15,7 +15,7 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
+from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error, format_provider_error
 from ..tools import UniversalToolHandler, ToolDefinition, execute_tools
 from ..events import EventType
 

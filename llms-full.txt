@@ -28,7 +28,8 @@ AbstractCore is a comprehensive Python library designed primarily for open sourc
 
 - **Offline-First Design**: Built primarily for open source LLMs with complete offline operation. Download once, run forever without internet access
 - **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with identical syntax
-- **Async/Await Support** ⭐ NEW in v2.6.0: Native async support for concurrent requests with `asyncio.gather()` - works with all 6 providers for 3-10x faster batch operations ([docs/api-reference.md#agenerate](docs/api-reference.md#agenerate))
+- **Async/Await Support** (v2.6.0): Native async support for concurrent requests with `asyncio.gather()` - works with all 6 providers for 3-10x faster batch operations ([docs/api-reference.md#agenerate](docs/api-reference.md#agenerate))
+- **Enhanced Error Messages** (v2.6.0): Authentication and connection errors include fix commands and setup URLs
 - **Interaction Tracing**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing for debugging and compliance ([docs/interaction-tracing.md](docs/interaction-tracing.md))
 - **Centralized Configuration**: Global defaults, app-specific preferences, API key management with `~/.abstractcore/config/abstractcore.json`
 - **Media Handling System**: Universal file attachment with `@filename` CLI syntax and `media=[]` API parameter - supports images, PDFs, Office docs, CSV/TSV
@@ -1627,6 +1628,45 @@ asyncio.run(compare_providers())
 - Non-blocking web applications
 - Parallel data extraction tasks
 - High-throughput API endpoints
+
+### Enhanced Error Messages (v2.6.0)
+
+Authentication and connection errors include fix commands and setup URLs:
+
+```python
+from abstractcore import create_llm
+
+# Example: Invalid OpenAI API key
+try:
+    llm = create_llm("openai", model="gpt-4o-mini", api_key="invalid-key")
+    llm.generate("test")
+except Exception as e:
+    print(e)
+    # Output:
+    # OPENAI authentication failed: Invalid API key
+    # Fix: abstractcore --set-api-key openai YOUR_KEY
+    # Get key: https://platform.openai.com/api-keys
+```
+
+**What You Get:**
+- Problem: Clear error description
+- Fix: Command to set API key
+- URL: Direct link to get API key
+
+**Supported Providers:**
+- OpenAI: Links to https://platform.openai.com/api-keys
+- Anthropic: Links to https://console.anthropic.com/settings/keys
+- Ollama: Installation and start instructions
+- LMStudio: Setup instructions
+
+**Apply the Fix:**
+```bash
+# Set API key using CLI
+abstractcore --set-api-key openai sk-your-actual-key-here
+
+# Or use environment variable
+export OPENAI_API_KEY=sk-your-actual-key-here
+```
 
 ### Token Management
 
