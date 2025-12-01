@@ -9,6 +9,9 @@ import re
 import json
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
+from ..utils.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -161,9 +164,6 @@ class ToolCallTagRewriter:
         Returns:
             Text with rewritten tool call tags
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         logger.debug(f"rewrite_text called with text: {text[:100] if text else None}")
         logger.debug(f"Target output tags: start='{self._output_start_tag}', end='{self._output_end_tag}'")
 

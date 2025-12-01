@@ -9,9 +9,9 @@ import json
 import os
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-import logging
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Cache for loaded JSON data
 _architecture_formats: Optional[Dict[str, Any]] = None

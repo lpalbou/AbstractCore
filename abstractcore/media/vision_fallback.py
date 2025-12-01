@@ -5,11 +5,11 @@ Implements two-stage pipeline: vision model → description → text-only model
 Uses unified AbstractCore configuration system.
 """
 
-import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+from ..utils.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VisionNotConfiguredError(Exception):

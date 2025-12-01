@@ -8,7 +8,6 @@ and capabilities for vision models.
 from typing import Tuple, Optional, Union, Dict, Any
 from enum import Enum
 from pathlib import Path
-import logging
 
 try:
     from PIL import Image, ImageOps
@@ -17,6 +16,7 @@ except ImportError:
     PIL_AVAILABLE = False
 
 from ..base import MediaProcessingError
+from ...utils.structured_logging import get_logger
 
 
 class ScalingMode(Enum):
@@ -36,7 +36,7 @@ class ModelOptimizedScaler:
     """
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
         if not PIL_AVAILABLE:
             raise MediaProcessingError("PIL (Pillow) is required for image scaling")

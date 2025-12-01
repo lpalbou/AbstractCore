@@ -13,7 +13,7 @@ class TestAsyncProviders:
     async def test_ollama_async(self, skip_if_provider_unavailable):
         """Test Ollama async generation."""
         skip_if_provider_unavailable("ollama")
-        llm = create_llm("ollama", model="qwen3:4b")
+        llm = create_llm("ollama", model="gemma3:1b")
         response = await llm.agenerate("Say hello")
         assert response is not None
         assert response.content is not None
@@ -23,7 +23,7 @@ class TestAsyncProviders:
     async def test_lmstudio_async(self, skip_if_provider_unavailable):
         """Test LMStudio async generation."""
         skip_if_provider_unavailable("lmstudio")
-        llm = create_llm("lmstudio", model="qwen2.5-coder-1.5b-instruct")
+        llm = create_llm("lmstudio", model="qwen/qwen3-vl-30b")
         response = await llm.agenerate("Say hello")
         assert response is not None
         assert response.content is not None
@@ -71,7 +71,7 @@ class TestAsyncConcurrent:
     async def test_concurrent_same_provider(self, skip_if_provider_unavailable):
         """Test concurrent requests to same provider."""
         skip_if_provider_unavailable("ollama")
-        llm = create_llm("ollama", model="qwen3:4b")
+        llm = create_llm("ollama", model="gemma3:1b")
 
         # Execute 3 requests concurrently
         tasks = [
@@ -88,7 +88,7 @@ class TestAsyncConcurrent:
         skip_if_provider_unavailable("ollama")
         skip_if_provider_unavailable("openai")
 
-        ollama = create_llm("ollama", model="qwen3:4b")
+        ollama = create_llm("ollama", model="gemma3:1b")
         openai = create_llm("openai", model="gpt-4o-mini")
 
         # Execute concurrently across providers
@@ -108,10 +108,10 @@ class TestAsyncStreaming:
     async def test_async_streaming_ollama(self, skip_if_provider_unavailable):
         """Test async streaming with Ollama."""
         skip_if_provider_unavailable("ollama")
-        llm = create_llm("ollama", model="qwen3:4b")
+        llm = create_llm("ollama", model="gemma3:1b")
 
         chunks = []
-        async for chunk in llm.agenerate("Count to 5", stream=True):
+        async for chunk in await llm.agenerate("Count to 5", stream=True):
             chunks.append(chunk)
             assert chunk.content is not None
 
@@ -124,7 +124,7 @@ class TestAsyncStreaming:
         llm = create_llm("openai", model="gpt-4o-mini")
 
         chunks = []
-        async for chunk in llm.agenerate("Say hello", stream=True):
+        async for chunk in await llm.agenerate("Say hello", stream=True):
             chunks.append(chunk)
 
         assert len(chunks) > 0
