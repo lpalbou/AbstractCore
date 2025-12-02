@@ -5,6 +5,151 @@ AbstractCore is a lightweight, provider-agnostic LLM framework for building soph
 
 ## Recent Tasks
 
+### Task: Model Download API with Progress Reporting (2025-12-01)
+
+**Description**: Implemented provider-agnostic async model download API with progress reporting for Ollama, HuggingFace, and MLX providers. Enables downloading models programmatically through a unified interface with streaming progress updates.
+
+**Implementation**:
+
+1. **Download Module** (`abstractcore/download.py`):
+   - Created async `download_model()` function with provider routing
+   - Implemented `DownloadProgress` dataclass (status, message, percent, bytes)
+   - Implemented `DownloadStatus` enum (STARTING, DOWNLOADING, VERIFYING, COMPLETE, ERROR)
+   - Provider-specific implementations for Ollama and HuggingFace/MLX
+   - ~240 lines of clean, well-documented code
+
+2. **Ollama Download** (`_download_ollama()`):
+   - Uses `/api/pull` endpoint with streaming NDJSON
+   - Parses Ollama response format for progress (total, completed)
+   - Full progress reporting with percent and byte counts
+   - Error handling for connection failures and HTTP errors
+   - Custom base_url support
+
+3. **HuggingFace/MLX Download** (`_download_huggingface()`):
+   - Uses `huggingface_hub.snapshot_download` via `asyncio.to_thread`
+   - Handles gated models with token parameter
+   - Error handling for RepositoryNotFoundError and GatedRepoError
+   - Same implementation for both HuggingFace and MLX providers
+   - Optional import (graceful degradation if huggingface_hub not installed)
+
+4. **Package Exports** (`abstractcore/__init__.py`):
+   - Exported `download_model`, `DownloadProgress`, `DownloadStatus`
+   - Available via `from abstractcore import download_model`
+
+5. **Test Suite** (`tests/download/test_model_download.py`):
+   - 11 comprehensive tests covering all functionality
+   - Tests Ollama download with real Ollama server
+   - Tests HuggingFace download with real Hub
+   - Tests error handling for unsupported providers
+   - Tests DownloadProgress dataclass
+   - All tests use real implementations (no mocking)
+   - ✅ 11/11 PASSED (100% success rate)
+
+6. **Documentation**:
+   - Moved `docs/backlog/010-model-download-api.md` to `completed/`
+   - Added comprehensive implementation report
+   - Updated `llms.txt` with feature line
+   - Updated `llms-full.txt` with actionable examples and provider matrix
+
+**Usage Examples**:
+
+```python
+from abstractcore import download_model
+
+# Ollama model with progress
+async for progress in download_model("ollama", "llama3:8b"):
+    print(f"{progress.status.value}: {progress.message}")
+    if progress.percent:
+        print(f"  Progress: {progress.percent:.1f}%")
+
+# HuggingFace model
+async for progress in download_model("huggingface", "meta-llama/Llama-2-7b"):
+    print(progress.message)
+
+# Gated model with token
+async for progress in download_model(
+    "huggingface",
+    "meta-llama/Llama-2-7b",
+    token="hf_..."
+):
+    print(progress.message)
+
+# MLX model (same as HuggingFace)
+async for progress in download_model("mlx", "mlx-community/Qwen3-4B-4bit"):
+    print(progress.message)
+```
+
+**Provider Support**:
+
+| Provider | Support | Method |
+|----------|---------|--------|
+| Ollama | ✅ | `/api/pull` with streaming NDJSON |
+| HuggingFace | ✅ | `huggingface_hub.snapshot_download` |
+| MLX | ✅ | Same as HuggingFace |
+| LMStudio | ❌ | No download API (CLI/GUI only) |
+| OpenAI/Anthropic | ❌ | Cloud-only |
+
+**Use Cases**:
+- Docker deployments: Download models through web UI without CLI access
+- Automated setup: Pre-download models in deployment scripts
+- User-friendly UIs: Stream progress to frontend via SSE
+- Batch downloads: Prepare multiple models in advance
+
+**Results**:
+- ✅ **Provider-Agnostic**: Single API for all supported providers
+- ✅ **Progress Reporting**: Real-time status updates for UIs
+- ✅ **Async-Native**: Natural async generator pattern
+- ✅ **Error Handling**: Clear error messages for all failure modes
+- ✅ **Zero Breaking Changes**: New functionality only
+- ✅ **Production Ready**: 11/11 tests passing with real implementations
+
+**Files Created**:
+1. `abstractcore/download.py` - Main download module (240 lines)
+2. `tests/download/__init__.py` - Test package init
+3. `tests/download/test_model_download.py` - Test suite (161 lines, 11 tests)
+
+**Files Modified**:
+1. `abstractcore/__init__.py` - Added exports for download API
+2. `llms.txt` - Added Model Downloads feature line
+3. `llms-full.txt` - Added comprehensive documentation section
+4. `CLAUDE.md` - Task log entry
+
+**Issues/Concerns**: None. Implementation is simple, clean, and production-ready. All 11 tests pass with real implementations (no mocking). The async-only design matches the streaming nature of progress reporting.
+
+**Verification**:
+```bash
+# Run test suite
+python -m pytest tests/download/ -v --tb=short
+
+# Test Ollama download
+python -c "
+import asyncio
+from abstractcore import download_model
+
+async def test():
+    async for p in download_model('ollama', 'gemma3:1b'):
+        print(f'{p.status.value}: {p.message}')
+
+asyncio.run(test())
+"
+
+# Test HuggingFace download
+python -c "
+import asyncio
+from abstractcore import download_model
+
+async def test():
+    async for p in download_model('huggingface', 'hf-internal-testing/tiny-random-gpt2'):
+        print(p.message)
+
+asyncio.run(test())
+"
+```
+
+**Conclusion**: Successfully implemented async model download API with progress reporting. Feature fulfills all requirements from Digital Article project's feature request. Implementation is simple (~240 lines), well-tested (11/11 passing), and production-ready.
+
+---
+
 ### Task: Custom Base URL Support for OpenAI and Anthropic (2025-12-01)
 
 **Description**: Implemented custom `base_url` support for OpenAI and Anthropic providers, enabling OpenAI-compatible proxies and enterprise gateway configurations. Follows the same pattern as existing Ollama and LMStudio providers.
