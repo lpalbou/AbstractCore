@@ -5,6 +5,67 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2025-12-01
+
+### Added
+- **Programmatic Provider Configuration**: Runtime configuration API for provider settings without environment variables (2025-12-01)
+  - **Simple API**: `configure_provider()`, `get_provider_config()`, `clear_provider_config()` functions
+  - **Runtime Configuration**: Set provider base URLs and other settings programmatically
+  - **Automatic Application**: All future `create_llm()` calls automatically use configured settings
+  - **Provider Discovery**: `get_all_providers_with_models()` automatically uses runtime configuration
+  - **Use Cases**:
+    - Web UI settings pages: Configure providers through user interfaces
+    - Docker startup scripts: Read from custom env vars and configure programmatically
+    - Integration testing: Set mock server URLs without environment variables
+    - Multi-tenant deployments: Configure different base URLs per tenant
+  - **Priority System**: Constructor parameter > Runtime configuration > Environment variable > Default value
+  - **Implementation**: ~65 lines across 3 files (config/manager.py, config/__init__.py, providers/registry.py)
+  - **Testing**: 9/9 tests passing with real implementations (no mocking)
+  - **Zero Breaking Changes**: Optional runtime configuration, all existing code works unchanged
+  - **Feature Request**: Extension of Digital Article team's base URL configuration request
+
+### Documentation
+- **README.md**: Added Programmatic Configuration section with use cases and priority system
+- **llms.txt**: Added feature line for v2.6.2
+- **llms-full.txt**: Added comprehensive section with Web UI, Docker, testing, and multi-tenant examples
+- **FEATURE_REQUEST_RESPONSE_ENV_VARS.md**: Updated with programmatic API examples
+
+### Technical Details
+- **Architecture**: Runtime-only (in-memory), not persisted to config JSON file
+- **Injection Point**: `ProviderRegistry.create_provider_instance()` merges runtime config into kwargs
+- **Pattern**: `merged_kwargs = {**runtime_config, **kwargs}` ensures user kwargs take precedence
+- **Backward Compatibility**: All 6 providers work automatically via registry injection
+- **Test Coverage**: Unit tests for config methods, provider creation, precedence, and registry integration
+
+## [2.6.1] - 2025-12-01
+
+### Added
+- **Environment Variable Support for Provider Base URLs**: Ollama and LMStudio providers now respect environment variables for custom base URLs (2025-12-01)
+  - **Ollama Provider**: Supports `OLLAMA_BASE_URL` and `OLLAMA_HOST` environment variables
+  - **LMStudio Provider**: Supports `LMSTUDIO_BASE_URL` environment variable
+  - **Provider Discovery**: `get_all_providers_with_models()` automatically respects environment variables when checking provider availability
+  - **Use Cases**:
+    - Remote Ollama servers (e.g., GPU server on `http://192.168.1.100:11434`)
+    - Docker/Kubernetes deployments with custom networking
+    - Non-standard ports for multi-instance deployments (e.g., `:11435`, `:1235`)
+    - Accurate provider availability detection in distributed environments
+  - **Priority System**: Programmatic `base_url` parameter > Environment variable > Default value
+  - **Implementation**: ~30 lines across 2 providers, follows existing OpenAI/Anthropic pattern
+  - **Testing**: 12/12 tests passing with real implementations (no mocking)
+  - **Zero Breaking Changes**: Optional environment variables, defaults unchanged, fully backward compatible
+  - **Feature Request**: Submitted by Digital Article team for computational notebook deployment
+
+### Documentation
+- **README.md**: Added Environment Variables section with examples for all providers
+- **llms.txt**: Added feature line for v2.6.1
+- **llms-full.txt**: Added comprehensive Environment Variables section with use cases and code examples
+
+### Technical Details
+- **Architecture**: Consistent with OpenAI/Anthropic providers (implemented in v2.6.0)
+- **Pattern**: `base_url or os.getenv("PROVIDER_BASE_URL") or default_value`
+- **Providers Updated**: `ollama_provider.py`, `lmstudio_provider.py`
+- **Test Coverage**: Unit tests for env var reading, precedence, defaults, and integration with provider registry
+
 ## [2.6.0] - 2025-12-01
 
 ### Added

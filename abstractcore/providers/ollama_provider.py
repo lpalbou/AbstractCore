@@ -3,6 +3,7 @@ Ollama provider implementation.
 """
 
 import json
+import os
 import httpx
 import time
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
@@ -23,11 +24,17 @@ from ..events import EventType
 class OllamaProvider(BaseProvider):
     """Ollama provider for local models with full integration"""
 
-    def __init__(self, model: str = "qwen3:4b-instruct-2507-q4_K_M", base_url: str = "http://localhost:11434", **kwargs):
+    def __init__(self, model: str = "qwen3:4b-instruct-2507-q4_K_M", base_url: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
         self.provider = "ollama"
 
-        self.base_url = base_url.rstrip('/')
+        # Base URL priority: parameter > OLLAMA_BASE_URL > OLLAMA_HOST > default
+        self.base_url = (
+            base_url or
+            os.getenv("OLLAMA_BASE_URL") or
+            os.getenv("OLLAMA_HOST") or
+            "http://localhost:11434"
+        ).rstrip('/')
         self.client = httpx.Client(timeout=self._timeout)
         self._async_client = None  # Lazy-loaded async client
 

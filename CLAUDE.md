@@ -2314,3 +2314,213 @@ cat ASYNC_BEFORE_AFTER_REPORT.md
 **Conclusion**: Native async implementation for AbstractCore is **100% COMPLETE**. Discovered OpenAI and Anthropic already had complete implementations. Implemented Ollama and LMStudio to match. All 4 network providers validated working with true async concurrency and 6-7.5x performance improvement. Implementation follows SOTA patterns, has zero breaking changes, and is production-ready. Only documentation updates remain.
 
 ---
+
+
+### Task: Environment Variable Support for Provider Discovery (2025-12-01)
+
+**Description**: Implemented environment variable support for Ollama and LMStudio providers to enable remote servers, Docker deployments, and non-standard ports. This fixes provider discovery to respect custom base URLs set via environment variables.
+
+**Problem**: `get_all_providers_with_models()` was ignoring environment variables like `OLLAMA_BASE_URL` and `LMSTUDIO_BASE_URL`, causing provider availability to be incorrectly reported when using remote servers or non-standard ports.
+
+**Implementation**:
+
+1. **Ollama Provider** (`abstractcore/providers/ollama_provider.py`):
+   - Added `import os`
+   - Changed constructor signature: `base_url: Optional[str] = None`
+   - Implemented env var priority: `base_url or os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or default`
+   - Supports both `OLLAMA_BASE_URL` and `OLLAMA_HOST` (official Ollama env var)
+   - ~10 lines of code changes
+
+2. **LMStudio Provider** (`abstractcore/providers/lmstudio_provider.py`):
+   - Added `import os`
+   - Changed constructor signature: `base_url: Optional[str] = None`
+   - Implemented env var priority: `base_url or os.getenv("LMSTUDIO_BASE_URL") or default`
+   - ~8 lines of code changes
+
+3. **Test Suite** (`tests/providers/test_base_url_env_vars.py`):
+   - Created comprehensive test suite with 12 tests
+   - Tests env var reading, precedence, defaults, trailing slash handling
+   - Tests integration with provider registry
+   - 12/12 tests passing with real implementations (no mocking)
+
+**Provider Discovery Fix**:
+- Registry calls `provider.list_available_models()` which uses `self.base_url`
+- Once providers read from env vars, registry automatically respects them
+- No registry code changes needed - elegant solution!
+
+**Results**:
+- ✅ **Zero Breaking Changes**: Optional env vars, defaults unchanged
+- ✅ **Follows Existing Pattern**: Consistent with OpenAI/Anthropic (v2.6.0)
+- ✅ **12/12 Tests Passing**: Comprehensive test coverage
+- ✅ **Production Ready**: Clean, simple, efficient implementation
+- ✅ **Documentation Complete**: README, llms.txt, llms-full.txt all updated
+
+**Use Cases Enabled**:
+- Remote Ollama on GPU server (`OLLAMA_BASE_URL=http://192.168.1.100:11434`)
+- Docker/Kubernetes deployments with custom networking
+- Non-standard ports for multi-instance deployments (`:11435`, `:1235`)
+- Accurate provider availability detection in distributed environments
+
+**Files Modified**:
+1. `abstractcore/providers/ollama_provider.py` - Added env var support (~10 lines)
+2. `abstractcore/providers/lmstudio_provider.py` - Added env var support (~8 lines)
+3. `README.md` - Added Environment Variables section
+4. `llms.txt` - Added v2.6.1 feature line
+5. `llms-full.txt` - Added comprehensive section with use cases
+6. `CHANGELOG.md` - Created v2.6.1 entry
+
+**Files Created**:
+1. `tests/providers/test_base_url_env_vars.py` - Comprehensive test suite (12 tests)
+
+**Testing Strategy**:
+- Unit tests for env var reading and precedence
+- Integration tests with provider registry
+- All tests use real implementations (no mocking per user requirement)
+- Tests handle cases where servers are running or not running
+
+**Priority System**:
+1. **Programmatic parameter** (highest): `create_llm("ollama", base_url="http://custom:11434")`
+2. **Environment variable**: `OLLAMA_BASE_URL` or `OLLAMA_HOST`
+3. **Default value** (lowest): `http://localhost:11434`
+
+**Implementation Time**: ~2.5 hours (estimated 2-3 hours)
+- Provider updates: 30 minutes
+- Test suite: 45 minutes (including fixes)
+- Documentation: 1 hour
+- CHANGELOG and task log: 15 minutes
+
+**Issues/Concerns**: None. Implementation is clean, follows SOTA patterns, and has comprehensive test coverage. Feature request from Digital Article team was successfully fulfilled.
+
+**Verification**:
+```bash
+# Run test suite
+python -m pytest tests/providers/test_base_url_env_vars.py -v
+
+# Test Ollama with remote server
+export OLLAMA_BASE_URL="http://192.168.1.100:11434"
+python -c "
+from abstractcore import create_llm
+from abstractcore.providers import get_all_providers_with_models
+
+# Provider discovery uses env var
+providers = get_all_providers_with_models(include_models=False)
+ollama = next((p for p in providers if p['name'] == 'ollama'), None)
+print(f'Ollama status: {ollama[\"status\"]}')
+
+# LLM creation uses env var
+llm = create_llm('ollama', model='llama3:8b')
+print(f'Using URL: {llm.base_url}')
+"
+```
+
+**Conclusion**: Successfully implemented environment variable support for Ollama and LMStudio providers following SOTA patterns. Provider discovery now accurately reflects availability when using remote servers or custom ports. Feature is production-ready, comprehensively tested, and fully documented. Released as v2.6.1.
+
+---
+
+
+
+### Task: Programmatic Provider Configuration (v2.6.2) (2025-12-01)
+
+**Description**: Extended v2.6.1 environment variable support to enable runtime programmatic configuration of provider settings without relying on environment variables. Implements clean API for web UIs, Docker deployments, testing, and multi-tenant applications.
+
+**Problem**: Users needed to programmatically configure provider base URLs at runtime without:
+- Relying on environment variables  
+- Creating new provider instances
+- Passing `base_url` to every `create_llm()` call
+
+**Use Case**: Digital Article settings UI where users configure provider URLs through web interface, and backend needs to update AbstractCore configuration dynamically.
+
+**Implementation**:
+
+1. **ConfigurationManager Enhancement** (`abstractcore/config/manager.py`):
+   - Added `_provider_config: Dict[str, Dict[str, Any]] = {}` runtime configuration dict
+   - Implemented `configure_provider()` - Set runtime provider settings
+   - Implemented `get_provider_config()` - Query current provider configuration
+   - Implemented `clear_provider_config()` - Clear single or all provider configs
+   - ~45 lines of code
+
+2. **Config Module API** (`abstractcore/config/__init__.py`):
+   - Exported convenience functions: `configure_provider()`, `get_provider_config()`, `clear_provider_config()`
+   - Simple top-level API for easy discovery and use
+   - ~15 lines of code
+
+3. **Registry Injection** (`abstractcore/providers/registry.py`):
+   - Modified `create_provider_instance()` to inject runtime configuration
+   - Pattern: `merged_kwargs = {**runtime_config, **kwargs}` ensures user params take precedence
+   - Single injection point works for all 6 providers automatically
+   - ~10 lines of code
+
+4. **Comprehensive Testing** (`tests/config/test_provider_config.py`):
+   - Created 9 comprehensive tests covering all functionality
+   - Tests configuration methods, provider creation, precedence, and registry integration
+   - 9/9 tests passing with real implementations (no mocking)
+   - ~100 lines of code
+
+**Results**:
+- ✅ **Clean API**: Simple `configure_provider('ollama', base_url='...')` function
+- ✅ **Zero Breaking Changes**: Optional runtime configuration, all existing code unchanged
+- ✅ **9/9 Tests Passing**: Comprehensive test coverage with real implementations
+- ✅ **Production Ready**: Clean, simple, efficient implementation
+- ✅ **Well Documented**: README, llms.txt, llms-full.txt all updated with examples
+
+**Priority System**:
+1. Constructor parameter (highest): `create_llm("ollama", base_url="...")`
+2. Runtime configuration: `configure_provider('ollama', base_url="...")`
+3. Environment variable: `OLLAMA_BASE_URL`
+4. Default value (lowest): `http://localhost:11434`
+
+**Use Cases Enabled**:
+- **Web UI Settings**: Configure providers through settings pages
+- **Docker Startup**: Read from custom env vars and configure programmatically
+- **Testing**: Set mock server URLs without environment variables
+- **Multi-tenant**: Configure different base URLs per tenant
+
+**Files Modified**:
+1. `abstractcore/config/manager.py` - Added provider config methods (~45 lines)
+2. `abstractcore/config/__init__.py` - Exported convenience functions (~15 lines)
+3. `abstractcore/providers/registry.py` - Injected runtime config (~10 lines)
+4. `README.md` - Added Programmatic Configuration section
+5. `llms.txt` - Added v2.6.2 feature line
+6. `llms-full.txt` - Added comprehensive section with use cases
+7. `CHANGELOG.md` - Created v2.6.2 entry
+8. `FEATURE_REQUEST_RESPONSE_ENV_VARS.md` - Updated with programmatic API examples
+
+**Files Created**:
+1. `tests/config/test_provider_config.py` - Comprehensive test suite (9 tests)
+
+**Implementation Time**: ~3 hours (as estimated in plan)
+- Step 1: Config methods (~45 min)
+- Step 2: Export functions (~15 min)
+- Step 3: Registry injection (~30 min)
+- Step 4: Test suite (~45 min)
+- Step 5: Documentation (~45 min)
+
+**Issues/Concerns**: None. Implementation is clean, follows SOTA patterns, and has comprehensive test coverage. Feature successfully extends v2.6.1 environment variable support with programmatic runtime configuration.
+
+**Verification**:
+```bash
+# Run test suite
+python -m pytest tests/config/test_provider_config.py -v
+
+# Test programmatic configuration
+python -c "
+from abstractcore.config import configure_provider, get_provider_config
+from abstractcore import create_llm
+
+# Configure Ollama programmatically
+configure_provider('ollama', base_url='http://custom:11434')
+
+# Verify configuration
+config = get_provider_config('ollama')
+print(f'Config: {config}')
+
+# Create LLM - automatically uses configured URL
+llm = create_llm('ollama', model='gemma3:1b')
+print(f'LLM base_url: {llm.base_url}')
+"
+```
+
+**Conclusion**: Successfully implemented programmatic provider configuration API following SOTA patterns. The runtime configuration feature completes the Digital Article team's feature request by enabling web UIs, Docker deployments, testing scenarios, and multi-tenant applications to configure provider settings programmatically without environment variables. Feature is production-ready, comprehensively tested, and fully documented. Released as v2.6.2.
+
+---
+

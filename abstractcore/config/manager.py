@@ -136,6 +136,7 @@ class ConfigurationManager:
         self.config_dir = Path.home() / ".abstractcore" / "config"
         self.config_file = self.config_dir / "abstractcore.json"
         self.config = self._load_config()
+        self._provider_config: Dict[str, Dict[str, Any]] = {}  # Runtime config (not persisted)
 
     def _load_config(self) -> AbstractCoreConfig:
         """Load configuration from file or create default."""
@@ -436,6 +437,52 @@ class ConfigurationManager:
     def should_force_local_files_only(self) -> bool:
         """Check if local_files_only should be forced for transformers."""
         return self.config.offline.force_local_files_only
+
+    def configure_provider(self, provider: str, **kwargs) -> None:
+        """
+        Configure runtime settings for a provider.
+
+        Args:
+            provider: Provider name ('ollama', 'lmstudio', 'openai', 'anthropic')
+            **kwargs: Configuration options (base_url, timeout, etc.)
+
+        Example:
+            configure_provider('ollama', base_url='http://192.168.1.100:11434')
+        """
+        provider = provider.lower()
+        if provider not in self._provider_config:
+            self._provider_config[provider] = {}
+
+        for key, value in kwargs.items():
+            if value is None:
+                # Remove config (revert to env var / default)
+                self._provider_config[provider].pop(key, None)
+            else:
+                self._provider_config[provider][key] = value
+
+    def get_provider_config(self, provider: str) -> Dict[str, Any]:
+        """
+        Get runtime configuration for a provider.
+
+        Args:
+            provider: Provider name
+
+        Returns:
+            Dict with configured settings, or empty dict if no config
+        """
+        return self._provider_config.get(provider.lower(), {}).copy()
+
+    def clear_provider_config(self, provider: Optional[str] = None) -> None:
+        """
+        Clear runtime provider configuration.
+
+        Args:
+            provider: Provider name, or None to clear all
+        """
+        if provider is None:
+            self._provider_config.clear()
+        else:
+            self._provider_config.pop(provider.lower(), None)
 
 
 # Global instance
