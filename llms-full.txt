@@ -1668,6 +1668,62 @@ abstractcore --set-api-key openai sk-your-actual-key-here
 export OPENAI_API_KEY=sk-your-actual-key-here
 ```
 
+### Custom Base URLs (v2.6.0)
+
+Configure custom API endpoints for OpenAI and Anthropic providers to enable proxies and enterprise gateways:
+
+```python
+from abstractcore import create_llm
+
+# OpenAI-compatible proxy (e.g., Portkey)
+llm = create_llm(
+    "openai",
+    model="gpt-4o-mini",
+    base_url="https://api.portkey.ai/v1",
+    api_key="your-portkey-key"
+)
+
+# Local OpenAI-compatible server
+llm = create_llm(
+    "openai",
+    model="local-model",
+    base_url="http://localhost:8080/v1",
+    api_key="not-needed"  # Some local servers don't validate
+)
+
+# OpenAI-compatible proxy for Anthropic
+llm = create_llm(
+    "anthropic",
+    model="claude-sonnet-4-5-20250929",
+    base_url="https://custom-proxy.example.com/v1",
+    api_key="your-proxy-key"
+)
+```
+
+**Environment Variables:**
+```bash
+# Set custom base URLs
+export OPENAI_BASE_URL="https://api.portkey.ai/v1"
+export ANTHROPIC_BASE_URL="https://api.portkey.ai/v1"
+
+# Now create_llm uses custom URLs automatically
+python your_script.py
+```
+
+**Use Cases:**
+- OpenAI-compatible proxies (Portkey, etc.) for observability, caching, and cost management
+- Local OpenAI-compatible servers (e.g., text-generation-webui with OpenAI API)
+- Enterprise gateways for security and compliance
+- Custom endpoints for testing and development
+
+**Note**: Azure OpenAI is NOT supported via base_url (it requires different SDK class). Use OpenAI-compatible proxies only.
+
+**Supported Providers:**
+- OpenAI: `base_url` parameter + `OPENAI_BASE_URL` environment variable
+- Anthropic: `base_url` parameter + `ANTHROPIC_BASE_URL` environment variable
+- Ollama: Already supported via `base_url="http://localhost:11434"`
+- LMStudio: Already supported via `base_url="http://localhost:1234/v1"`
+
 ### Token Management
 
 AbstractCore provides **consistent token terminology** and **transparent token counting** across all providers:

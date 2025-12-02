@@ -30,7 +30,8 @@ except ImportError:
 class OpenAIProvider(BaseProvider):
     """OpenAI API provider with full integration"""
 
-    def __init__(self, model: str = "gpt-3.5-turbo", api_key: Optional[str] = None, **kwargs):
+    def __init__(self, model: str = "gpt-3.5-turbo", api_key: Optional[str] = None,
+                 base_url: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
         self.provider = "openai"
 
@@ -42,8 +43,14 @@ class OpenAIProvider(BaseProvider):
         if not self.api_key:
             raise ValueError("OpenAI API key required. Set OPENAI_API_KEY environment variable.")
 
-        # Initialize client with timeout
-        self.client = openai.OpenAI(api_key=self.api_key, timeout=self._timeout)
+        # Get base URL from param or environment
+        self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
+
+        # Initialize client with timeout and optional base_url
+        client_kwargs = {"api_key": self.api_key, "timeout": self._timeout}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+        self.client = openai.OpenAI(**client_kwargs)
         self._async_client = None  # Lazy-loaded async client
 
         # Initialize tool handler
@@ -65,10 +72,10 @@ class OpenAIProvider(BaseProvider):
     def async_client(self):
         """Lazy-load AsyncOpenAI client for native async operations."""
         if self._async_client is None:
-            self._async_client = openai.AsyncOpenAI(
-                api_key=self.api_key,
-                timeout=self._timeout
-            )
+            client_kwargs = {"api_key": self.api_key, "timeout": self._timeout}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self._async_client = openai.AsyncOpenAI(**client_kwargs)
         return self._async_client
 
     def _generate_internal(self,

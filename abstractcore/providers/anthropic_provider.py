@@ -30,7 +30,8 @@ except ImportError:
 class AnthropicProvider(BaseProvider):
     """Anthropic Claude API provider with full integration"""
 
-    def __init__(self, model: str = "claude-3-haiku-20240307", api_key: Optional[str] = None, **kwargs):
+    def __init__(self, model: str = "claude-3-haiku-20240307", api_key: Optional[str] = None,
+                 base_url: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
         self.provider = "anthropic"
 
@@ -42,8 +43,14 @@ class AnthropicProvider(BaseProvider):
         if not self.api_key:
             raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY environment variable.")
 
-        # Initialize client with timeout
-        self.client = anthropic.Anthropic(api_key=self.api_key, timeout=self._timeout)
+        # Get base URL from param or environment
+        self.base_url = base_url or os.getenv("ANTHROPIC_BASE_URL")
+
+        # Initialize client with timeout and optional base_url
+        client_kwargs = {"api_key": self.api_key, "timeout": self._timeout}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+        self.client = anthropic.Anthropic(**client_kwargs)
         self._async_client = None  # Lazy-loaded async client
 
         # Initialize tool handler
@@ -61,10 +68,10 @@ class AnthropicProvider(BaseProvider):
     def async_client(self):
         """Lazy-load AsyncAnthropic client for native async operations."""
         if self._async_client is None:
-            self._async_client = anthropic.AsyncAnthropic(
-                api_key=self.api_key,
-                timeout=self._timeout
-            )
+            client_kwargs = {"api_key": self.api_key, "timeout": self._timeout}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self._async_client = anthropic.AsyncAnthropic(**client_kwargs)
         return self._async_client
 
     def _generate_internal(self,
