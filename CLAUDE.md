@@ -5,6 +5,110 @@ AbstractCore is a lightweight, provider-agnostic LLM framework for building soph
 
 ## Recent Tasks
 
+### Task: Custom Base URL Support for OpenAI and Anthropic (2025-12-01)
+
+**Description**: Implemented custom `base_url` support for OpenAI and Anthropic providers, enabling OpenAI-compatible proxies and enterprise gateway configurations. Follows the same pattern as existing Ollama and LMStudio providers.
+
+**Implementation**:
+
+1. **OpenAI Provider** (`abstractcore/providers/openai_provider.py`):
+   - Added `base_url` parameter to `__init__` method
+   - Added support for `OPENAI_BASE_URL` environment variable
+   - Updated sync client initialization to use base_url if provided
+   - Updated async_client property to use base_url if provided
+   - Lines modified: 33-34 (parameter), 46-53 (client init), 71-79 (async_client)
+
+2. **Anthropic Provider** (`abstractcore/providers/anthropic_provider.py`):
+   - Added `base_url` parameter to `__init__` method
+   - Added support for `ANTHROPIC_BASE_URL` environment variable
+   - Updated sync client initialization to use base_url if provided
+   - Updated async_client property to use base_url if provided
+   - Lines modified: 33-34 (parameter), 46-54 (client init), 67-75 (async_client)
+
+3. **Test Suite** (`tests/providers/test_base_url.py`):
+   - Created comprehensive test file with 10 test cases
+   - Tests programmatic configuration
+   - Tests environment variable configuration
+   - Tests parameter precedence over environment
+   - Tests backward compatibility
+   - All tests use real implementations (no mocking)
+   - ✅ 8 PASSED, 2 SKIPPED (expected - OpenAI model validation)
+
+4. **Documentation**:
+   - Moved `docs/backlog/009-base-url-openai-anthropic.md` to `completed/`
+   - Added comprehensive implementation report with examples
+   - Updated `llms.txt` with feature line
+   - Updated `llms-full.txt` with actionable section including code examples and use cases
+
+**Configuration Methods**:
+
+1. **Programmatic** (recommended):
+```python
+llm = create_llm("openai", model="gpt-4o-mini", base_url="https://api.portkey.ai/v1")
+```
+
+2. **Environment Variables**:
+```bash
+export OPENAI_BASE_URL="https://api.portkey.ai/v1"
+export ANTHROPIC_BASE_URL="https://api.portkey.ai/v1"
+```
+
+**Use Cases**:
+- OpenAI-compatible proxies (Portkey, etc.) for observability, caching, cost management
+- Local OpenAI-compatible servers
+- Enterprise gateways for security and compliance
+- Custom endpoints for testing and development
+
+**Note**: Azure OpenAI NOT supported via base_url (requires AzureOpenAI SDK class)
+
+**Results**:
+- ✅ **Zero Breaking Changes**: base_url is optional, defaults to None
+- ✅ **Environment Variable Support**: OPENAI_BASE_URL and ANTHROPIC_BASE_URL
+- ✅ **Parameter Precedence**: Programmatic parameter overrides environment variable
+- ✅ **Backward Compatible**: All existing code works unchanged
+- ✅ **Consistent Pattern**: Follows Ollama/LMStudio implementation
+- ✅ **Async Support**: Works with both sync and async clients
+
+**Files Created**:
+1. `tests/providers/test_base_url.py` - Comprehensive test suite (161 lines, 10 tests)
+
+**Files Modified**:
+1. `abstractcore/providers/openai_provider.py` - Added base_url support (~15 lines)
+2. `abstractcore/providers/anthropic_provider.py` - Added base_url support (~15 lines)
+3. `docs/backlog/completed/009-base-url-openai-anthropic.md` - Added implementation report
+4. `llms.txt` - Added feature line
+5. `llms-full.txt` - Added actionable section with examples
+6. `CLAUDE.md` - Task log entry
+
+**Issues/Concerns**: None. Implementation is simple, clean, and follows established patterns. All tests pass without mocking.
+
+**Verification**:
+```bash
+# Run test suite
+python -m pytest tests/providers/test_base_url.py -v
+
+# Test programmatic configuration
+python -c "
+from abstractcore import create_llm
+llm = create_llm('openai', model='gpt-4o-mini', api_key='test', base_url='https://custom.com')
+assert llm.base_url == 'https://custom.com'
+print('Base URL configuration working!')
+"
+
+# Test environment variable
+export OPENAI_BASE_URL="https://env.example.com/v1"
+python -c "
+from abstractcore import create_llm
+llm = create_llm('openai', model='gpt-4o-mini', api_key='test')
+assert llm.base_url == 'https://env.example.com/v1'
+print('Environment variable working!')
+"
+```
+
+**Conclusion**: Successfully implemented custom base_url support for OpenAI and Anthropic providers with comprehensive testing and documentation. Feature enables enterprise deployments with OpenAI-compatible proxies and custom gateways while maintaining zero breaking changes. Note: Azure OpenAI is NOT supported (requires AzureOpenAI SDK class).
+
+---
+
 ### Task: Enhanced Error Messages with Actionable Guidance (2025-12-01)
 
 **Description**: Implemented enhanced error messages for AbstractCore following SOTA best practices with a simplified approach. Added actionable guidance to authentication and provider errors using 3-5 line SOTA format.

@@ -17,6 +17,7 @@ pip install abstractcore[all]
 - **[API Reference](docs/api-reference.md)**: Complete Python API with examples
 - **[Async/Await Support](docs/api-reference.md#agenerate)** (v2.6.0): Concurrent requests for 3-10x faster batch operations
 - **Enhanced Error Messages** (v2.6.0): Authentication and connection errors include fix commands and setup URLs
+- **Custom Base URLs** (v2.6.0): Configure OpenAI-compatible proxies and enterprise gateways for OpenAI and Anthropic providers
 - **[Interaction Tracing](docs/interaction-tracing.md)**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing for debugging and compliance
 - **[Centralized Configuration](docs/centralized-config.md)**: Global defaults, app preferences, API key management
 - **[Media Handling System](docs/media-handling-system.md)**: Universal file attachment (images, PDFs, Office docs, CSV) across all providers
