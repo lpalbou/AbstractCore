@@ -49,6 +49,9 @@ _has_processing = True
 # Tools module (core functionality)
 from .tools import tool
 
+# Download module (core functionality)
+from .download import download_model, DownloadProgress, DownloadStatus
+
 # Compression module (optional import)
 try:
     from .compression import GlyphConfig, CompressionOrchestrator
@@ -67,7 +70,10 @@ __all__ = [
     'ModelNotFoundError',
     'ProviderAPIError',
     'AuthenticationError',
-    'tool'
+    'tool',
+    'download_model',
+    'DownloadProgress',
+    'DownloadStatus',
 ]
 
 if _has_embeddings:

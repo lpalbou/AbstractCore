@@ -5,10 +5,39 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.6.0] - 2025-11-30
+## [2.6.0] - 2025-12-01
 
 ### Added
-- **Production-Ready Native Async Support**: Complete async/await implementation with validated 6-7.5x performance improvement
+- **Model Download API**: Provider-agnostic async model download with progress reporting (2025-12-01)
+  - **Top-Level Function**: `from abstractcore import download_model` - simple, discoverable API
+  - **Async Progress Reporting**: Real-time status updates via async generator pattern
+  - **Provider Support**:
+    - ✅ **Ollama**: Full progress with percent and bytes via `/api/pull` streaming NDJSON
+    - ✅ **HuggingFace**: Start/complete messages via `huggingface_hub.snapshot_download`
+    - ✅ **MLX**: Same as HuggingFace (uses HF Hub internally)
+  - **Progress Information**: `DownloadProgress` dataclass with status, message, percent, downloaded_bytes, total_bytes
+  - **Error Handling**: Clear error messages for connection failures, missing models, and gated repositories
+  - **Use Cases**: Docker deployments, automated setup, web UIs with SSE streaming, batch downloads
+  - **Implementation**: ~240 lines in `abstractcore/download.py`, 11/11 tests passing with real implementations
+  - **Zero Breaking Changes**: New functionality only, fully backward compatible
+  - **Completed Backlog**: [docs/backlog/completed/010-model-download-api.md](docs/backlog/completed/010-model-download-api.md)
+
+- **Custom Base URL Support**: Configure custom API endpoints for OpenAI and Anthropic providers (2025-12-01)
+  - **OpenAI Provider**: `base_url` parameter + `OPENAI_BASE_URL` environment variable
+  - **Anthropic Provider**: `base_url` parameter + `ANTHROPIC_BASE_URL` environment variable
+  - **Use Cases**:
+    - OpenAI-compatible proxies (Portkey, etc.) for observability, caching, cost management
+    - Local OpenAI-compatible servers
+    - Enterprise gateways for security and compliance
+    - Custom endpoints for testing and development
+  - **Configuration Methods**: Programmatic parameter (recommended) or environment variables
+  - **Implementation**: ~30 lines across 2 providers, follows Ollama/LMStudio pattern
+  - **Testing**: 8/10 tests passing, 2 appropriately skipped (OpenAI model validation with test keys)
+  - **Zero Breaking Changes**: Optional parameter with None default, fully backward compatible
+  - **Note**: Azure OpenAI NOT supported (requires AzureOpenAI SDK class)
+  - **Completed Backlog**: [docs/backlog/completed/009-base-url-openai-anthropic.md](docs/backlog/completed/009-base-url-openai-anthropic.md)
+
+- **Production-Ready Native Async Support**: Complete async/await implementation with validated 6-7.5x performance improvement (2025-11-30)
   - **Native Async Providers**: Ollama, LMStudio, OpenAI, Anthropic now use native async clients (httpx.AsyncClient, AsyncOpenAI, AsyncAnthropic)
   - **Performance Validated**:
     - Ollama: 7.5x faster for concurrent requests

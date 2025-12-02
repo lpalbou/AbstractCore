@@ -1718,6 +1718,69 @@ python your_script.py
 
 **Note**: Azure OpenAI is NOT supported via base_url (it requires different SDK class). Use OpenAI-compatible proxies only.
 
+---
+
+### Model Downloads (v2.6.0)
+
+Download models programmatically with async progress reporting for Ollama, HuggingFace, and MLX providers:
+
+```python
+from abstractcore import download_model
+
+# Download Ollama model with progress
+async for progress in download_model("ollama", "llama3:8b"):
+    print(f"{progress.status.value}: {progress.message}")
+    if progress.percent:
+        print(f"  Progress: {progress.percent:.1f}%")
+
+# Download HuggingFace model
+async for progress in download_model("huggingface", "meta-llama/Llama-2-7b"):
+    print(progress.message)
+
+# Download HuggingFace gated model with token
+async for progress in download_model(
+    "huggingface",
+    "meta-llama/Llama-2-7b",
+    token="hf_..."
+):
+    print(progress.message)
+
+# Download MLX model (same as HuggingFace)
+async for progress in download_model("mlx", "mlx-community/Qwen3-4B-4bit"):
+    print(progress.message)
+
+# Custom Ollama server
+async for progress in download_model(
+    "ollama",
+    "gemma3:1b",
+    base_url="http://custom-server:11434"
+):
+    print(progress.message)
+```
+
+**DownloadProgress Fields:**
+- `status`: DownloadStatus enum (STARTING, DOWNLOADING, VERIFYING, COMPLETE, ERROR)
+- `message`: Human-readable status message
+- `percent`: Optional progress percentage (0-100)
+- `downloaded_bytes`: Optional bytes downloaded
+- `total_bytes`: Optional total size
+
+**Provider Support:**
+| Provider | Support | Method |
+|----------|---------|--------|
+| Ollama | ✅ | `/api/pull` with streaming NDJSON |
+| HuggingFace | ✅ | `huggingface_hub.snapshot_download` |
+| MLX | ✅ | Same as HuggingFace (uses HF Hub) |
+| LMStudio | ❌ | No download API (CLI/GUI only) |
+| OpenAI/Anthropic | ❌ | Cloud-only |
+
+**Use Cases:**
+- Docker deployments: Download models through web UI
+- Automated setup: Pre-download models in scripts
+- User-friendly UIs: Stream progress to frontend via SSE
+- Batch downloads: Prepare multiple models in advance
+
+
 **Supported Providers:**
 - OpenAI: `base_url` parameter + `OPENAI_BASE_URL` environment variable
 - Anthropic: `base_url` parameter + `ANTHROPIC_BASE_URL` environment variable
