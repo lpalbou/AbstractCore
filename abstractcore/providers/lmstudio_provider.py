@@ -2,6 +2,7 @@
 LM Studio provider implementation (OpenAI-compatible API).
 """
 
+import os
 import httpx
 import json
 import time
@@ -23,14 +24,19 @@ from ..events import EventType
 class LMStudioProvider(BaseProvider):
     """LM Studio provider using OpenAI-compatible API"""
 
-    def __init__(self, model: str = "local-model", base_url: str = "http://localhost:1234/v1", **kwargs):
+    def __init__(self, model: str = "local-model", base_url: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
         self.provider = "lmstudio"
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
 
-        self.base_url = base_url.rstrip('/')
+        # Base URL priority: parameter > LMSTUDIO_BASE_URL > default
+        self.base_url = (
+            base_url or
+            os.getenv("LMSTUDIO_BASE_URL") or
+            "http://localhost:1234/v1"
+        ).rstrip('/')
 
         # Get timeout value - None means unlimited timeout
         timeout_value = getattr(self, '_timeout', None)

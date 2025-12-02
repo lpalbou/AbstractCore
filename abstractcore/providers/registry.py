@@ -354,6 +354,8 @@ class ProviderRegistry:
 
         This is used by the factory to create provider instances.
         """
+        from ..config import get_provider_config
+
         provider_info = self.get_provider_info(provider_name)
         if not provider_info:
             available_providers = ", ".join(self.list_provider_names())
@@ -362,8 +364,14 @@ class ProviderRegistry:
         provider_class = self.get_provider_class(provider_name)
         model = model or provider_info.default_model
 
+        # Get runtime config for this provider
+        runtime_config = get_provider_config(provider_name)
+
+        # Merge: runtime_config < kwargs (user kwargs take precedence)
+        merged_kwargs = {**runtime_config, **kwargs}
+
         try:
-            return provider_class(model=model, **kwargs)
+            return provider_class(model=model, **merged_kwargs)
         except ImportError as e:
             # Re-raise import errors with helpful message
             if provider_info.installation_extras:

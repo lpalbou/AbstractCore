@@ -316,6 +316,187 @@ abstractcore --set-app-default judge anthropic claude-haiku-4-5 # Detailed analy
 
 For complete configuration reference, see: [Centralized Configuration Guide](docs/centralized-config.md)
 
+### Environment Variables for Provider Base URLs (v2.6.1)
+
+AbstractCore supports environment variables for configuring provider base URLs, enabling remote servers, Docker deployments, and non-standard ports. Provider discovery (`get_all_providers_with_models()`) automatically respects these environment variables.
+
+**Supported Environment Variables:**
+
+```bash
+# Ollama (supports two variants)
+export OLLAMA_BASE_URL="http://192.168.1.100:11434"  # Explicit base URL
+export OLLAMA_HOST="http://192.168.1.100:11434"       # Alternative (official Ollama env var)
+
+# LMStudio
+export LMSTUDIO_BASE_URL="http://localhost:1235/v1"   # Non-standard port
+
+# OpenAI (for proxies and gateways)
+export OPENAI_BASE_URL="https://api.portkey.ai/v1"
+
+# Anthropic (for proxies and gateways)
+export ANTHROPIC_BASE_URL="https://api.portkey.ai/v1"
+```
+
+**Priority System:**
+1. **Programmatic parameter** (highest): `create_llm("ollama", base_url="http://custom:11434")`
+2. **Environment variable**: `OLLAMA_BASE_URL` or `OLLAMA_HOST`
+3. **Default value** (lowest): `http://localhost:11434`
+
+**Use Cases:**
+
+```python
+# Remote Ollama server
+import os
+from abstractcore import create_llm
+from abstractcore.providers import get_all_providers_with_models
+
+os.environ['OLLAMA_BASE_URL'] = 'http://192.168.1.100:11434'
+
+# Provider discovery automatically checks the remote URL
+providers = get_all_providers_with_models(include_models=False)
+ollama = next((p for p in providers if p['name'] == 'ollama'), None)
+# ollama['status'] reflects actual connectivity to remote server
+
+# Create LLM with automatic env var usage
+llm = create_llm('ollama', model='llama3:8b')  # Uses remote URL from env var
+response = llm.generate("Hello from remote server!")
+```
+
+```python
+# Docker deployment with LMStudio
+os.environ['LMSTUDIO_BASE_URL'] = 'http://lmstudio-container:1234/v1'
+
+# Both provider discovery and LLM creation use the custom URL
+providers = get_all_providers_with_models(include_models=False)
+llm = create_llm('lmstudio', model='qwen3-4b')
+```
+
+```python
+# OpenAI-compatible proxy (Portkey, etc.)
+os.environ['OPENAI_BASE_URL'] = 'https://api.portkey.ai/v1'
+
+llm = create_llm('openai', model='gpt-4o-mini')
+# All requests route through Portkey for observability and caching
+```
+
+**Benefits:**
+- Remote server support without code changes
+- Docker-friendly networking configuration
+- Non-standard port support for multi-instance deployments
+- Accurate provider availability detection in `get_all_providers_with_models()`
+- OpenAI-compatible proxy and gateway support
+
+---
+
+### Programmatic Provider Configuration (v2.6.2)
+
+Configure provider settings at runtime without relying on environment variables. Perfect for web UIs, Docker startup scripts, testing, and multi-tenant deployments.
+
+**Simple API:**
+
+```python
+from abstractcore.config import configure_provider, get_provider_config, clear_provider_config
+from abstractcore import create_llm
+
+# Set base URL programmatically
+configure_provider('ollama', base_url='http://192.168.1.100:11434')
+
+# All future create_llm() calls automatically use the configured URL
+llm = create_llm('ollama', model='llama3:8b')  # Uses http://192.168.1.100:11434
+
+# Query current configuration
+config = get_provider_config('ollama')
+print(config)  # {'base_url': 'http://192.168.1.100:11434'}
+
+# Clear configuration (revert to env var / default)
+configure_provider('ollama', base_url=None)
+
+# Or clear all providers
+clear_provider_config()
+```
+
+**Priority System:**
+1. **Constructor parameter** (highest): `create_llm("ollama", base_url="...")`
+2. **Runtime configuration**: `configure_provider('ollama', base_url="...")`
+3. **Environment variable**: `OLLAMA_BASE_URL`
+4. **Default value** (lowest): `http://localhost:11434`
+
+**Use Cases:**
+
+**Web UI Settings Page:**
+
+```python
+from fastapi import FastAPI
+from abstractcore.config import configure_provider
+from abstractcore.providers import get_all_providers_with_models
+
+@app.post("/api/settings/update-provider")
+async def update_provider(provider: str, base_url: str):
+    # Configure at runtime (no env vars needed!)
+    configure_provider(provider, base_url=base_url)
+
+    # Provider discovery automatically uses new config
+    providers = get_all_providers_with_models(include_models=False)
+    result = next((p for p in providers if p['name'] == provider), None)
+
+    return {
+        "provider": provider,
+        "base_url": base_url,
+        "status": result['status']
+    }
+```
+
+**Docker Startup Script:**
+
+```python
+import os
+from abstractcore.config import configure_provider
+
+def configure_from_env():
+    """Configure providers from Docker environment on startup."""
+    if url := os.getenv('OLLAMA_URL'):
+        configure_provider('ollama', base_url=url)
+    if url := os.getenv('LMSTUDIO_URL'):
+        configure_provider('lmstudio', base_url=url)
+
+# Call on application startup
+configure_from_env()
+```
+
+**Integration Testing:**
+
+```python
+from abstractcore.config import configure_provider, clear_provider_config
+
+def test_with_mock_server():
+    try:
+        configure_provider('ollama', base_url='http://mock-server:11434')
+        # Test code here
+    finally:
+        clear_provider_config('ollama')
+```
+
+**Multi-tenant Deployment:**
+
+```python
+from abstractcore.config import configure_provider
+
+def configure_for_tenant(tenant_id: str):
+    """Configure provider URLs based on tenant."""
+    tenant_config = load_tenant_config(tenant_id)
+    configure_provider('ollama', base_url=tenant_config['ollama_url'])
+    configure_provider('lmstudio', base_url=tenant_config['lmstudio_url'])
+```
+
+**Benefits:**
+- **No environment variables required**: Configure providers programmatically
+- **Runtime updates**: Change URLs without restarting application
+- **Clean API**: Simple `configure_provider()` function
+- **Case-insensitive**: Provider names like 'Ollama' or 'ollama' both work
+- **Provider discovery**: `get_all_providers_with_models()` uses runtime config
+- **Testing-friendly**: Easy to set and clear config in tests
+- **Multi-value support**: Configure multiple settings (base_url, timeout, etc.)
+
 ---
 
 ## Media Handling System

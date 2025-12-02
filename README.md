@@ -683,6 +683,66 @@ summarizer document.pdf --provider anthropic --model claude-3-5-sonnet
 
 **Complete guide**: [Centralized Configuration](docs/centralized-config.md)
 
+### Environment Variables
+
+AbstractCore supports environment variables for provider base URLs, enabling remote servers, Docker deployments, and non-standard ports:
+
+```bash
+# Ollama on remote server
+export OLLAMA_BASE_URL="http://192.168.1.100:11434"
+# Alternative: OLLAMA_HOST is also supported
+export OLLAMA_HOST="http://192.168.1.100:11434"
+
+# LMStudio on non-standard port
+export LMSTUDIO_BASE_URL="http://localhost:1235/v1"
+
+# OpenAI-compatible proxy
+export OPENAI_BASE_URL="https://api.portkey.ai/v1"
+
+# Anthropic proxy
+export ANTHROPIC_BASE_URL="https://api.portkey.ai/v1"
+```
+
+**Priority**: Programmatic `base_url` parameter > Runtime configuration > Environment variable > Default value
+
+**Provider discovery**: `get_all_providers_with_models()` automatically respects these environment variables when checking provider availability.
+
+### Programmatic Configuration
+
+Configure provider settings at runtime without environment variables:
+
+```python
+from abstractcore.config import configure_provider, get_provider_config, clear_provider_config
+from abstractcore import create_llm
+
+# Set provider base URL programmatically
+configure_provider('ollama', base_url='http://192.168.1.100:11434')
+
+# All future create_llm() calls automatically use the configured URL
+llm = create_llm('ollama', model='llama3:8b')  # Uses http://192.168.1.100:11434
+
+# Query current configuration
+config = get_provider_config('ollama')
+print(config)  # {'base_url': 'http://192.168.1.100:11434'}
+
+# Clear configuration (revert to env var / default)
+configure_provider('ollama', base_url=None)
+# Or clear all providers
+clear_provider_config()
+```
+
+**Use Cases**:
+- **Web UI Settings**: Configure providers through settings pages
+- **Docker Startup**: Read from custom env vars and configure programmatically
+- **Testing**: Set mock server URLs for integration tests
+- **Multi-tenant**: Configure different base URLs per tenant
+
+**Priority System**:
+1. Constructor parameter (highest): `create_llm("ollama", base_url="...")`
+2. Runtime configuration: `configure_provider('ollama', base_url="...")`
+3. Environment variable: `OLLAMA_BASE_URL`
+4. Default value (lowest): `http://localhost:11434`
+
 ## Documentation
 
 **📚 Complete Documentation:** [docs/](docs/) - Full documentation index and navigation guide
