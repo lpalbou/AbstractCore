@@ -136,6 +136,21 @@ class ProviderRegistry:
             import_path="..providers.huggingface_provider"
         ))
 
+        # vLLM Provider
+        self.register_provider(ProviderInfo(
+            name="vllm",
+            display_name="vLLM",
+            provider_class=None,
+            description="High-throughput GPU inference with guided decoding, Multi-LoRA, and beam search",
+            default_model="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+            supported_features=["chat", "completion", "embeddings", "prompted_tools", "streaming",
+                               "structured_output", "guided_decoding", "multi_lora", "beam_search"],
+            authentication_required=False,  # Optional API key
+            local_provider=True,
+            installation_extras="vllm",
+            import_path="..providers.vllm_provider"
+        ))
+
 
     def register_provider(self, provider_info: ProviderInfo):
         """Register a provider in the registry."""
@@ -187,6 +202,9 @@ class ProviderRegistry:
             elif provider_info.name == "huggingface":
                 from ..providers.huggingface_provider import HuggingFaceProvider
                 return HuggingFaceProvider
+            elif provider_info.name == "vllm":
+                from ..providers.vllm_provider import VLLMProvider
+                return VLLMProvider
             else:
                 raise ImportError(f"No import logic for provider: {provider_info.name}")
         except ImportError as e:
