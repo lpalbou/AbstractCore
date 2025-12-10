@@ -9,11 +9,11 @@ Features:
 - Clear, simple and actionable feedback
 """
 
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Type
 import json
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 
 from ..core.interface import AbstractCoreInterface
 from ..core.factory import create_llm
@@ -44,7 +44,7 @@ class Assessment(BaseModel):
     judge_summary: str = Field(..., description="Judge's experiential note summarizing the assessment task and key findings")
     source_reference: str = Field(..., description="Reference to what was assessed (file, content type, context)")
 
-    # Individual criterion scores
+    # Individual criterion scores (predefined criteria)
     clarity_score: Optional[int] = Field(None, description="Clarity score (1-5)")
     simplicity_score: Optional[int] = Field(None, description="Simplicity score (1-5)")
     actionability_score: Optional[int] = Field(None, description="Actionability score (1-5)")
@@ -161,6 +161,30 @@ class BasicJudge:
 
         self.retry_strategy = FeedbackRetry(max_attempts=3)
 
+    def _create_dynamic_assessment_model(self, custom_criteria: Optional[Dict[str, str]]) -> Type[BaseModel]:
+        """Create a dynamic Assessment model with custom score fields"""
+        if not custom_criteria:
+            return Assessment
+
+        # Build fields dict for dynamic model creation
+        fields_dict = {}
+
+        # Add custom score fields dynamically as REQUIRED (not Optional)
+        # This forces the LLM to provide scores for all custom criteria
+        for criterion_name in custom_criteria.keys():
+            field_name = f"{criterion_name}_score"
+            # Make it required (int, not Optional[int]) with Field(...)
+            fields_dict[field_name] = (int, Field(..., description=f"{criterion_name} score (1-5)", ge=1, le=5))
+
+        # Create dynamic model that inherits from Assessment using create_model
+        DynamicAssessment = create_model(
+            'DynamicAssessment',
+            __base__=Assessment,
+            **fields_dict
+        )
+
+        return DynamicAssessment
+
     def evaluate(
         self,
         content: str,
@@ -168,7 +192,8 @@ class BasicJudge:
         criteria: Optional[JudgmentCriteria] = None,
         focus: Optional[str] = None,
         reference: Optional[str] = None,
-        include_criteria: bool = False
+        include_criteria: bool = False,
+        custom_criteria: Optional[Dict[str, str]] = None
     ) -> dict:
         """
         Evaluate content against specified criteria
@@ -180,6 +205,7 @@ class BasicJudge:
             focus: Specific areas to focus evaluation on (e.g., "technical accuracy, performance")
             reference: Optional reference/expected output for comparison
             include_criteria: Include detailed explanation of evaluation criteria in assessment
+            custom_criteria: Custom domain-specific criteria with descriptions (e.g., {"logical_coherence": "Are results logically consistent?"})
 
         Returns:
             dict: Structured assessment result
@@ -196,13 +222,16 @@ class BasicJudge:
         logger.info("Starting evaluation", context=context)
 
         # Build the evaluation prompt
-        prompt = self._build_evaluation_prompt(content, context, criteria, focus, reference, include_criteria)
+        prompt = self._build_evaluation_prompt(content, context, criteria, focus, reference, include_criteria, custom_criteria)
+
+        # Create dynamic assessment model with custom score fields
+        AssessmentModel = self._create_dynamic_assessment_model(custom_criteria)
 
         # Generate structured assessment
         try:
             result = self.llm.generate(
                 prompt,
-                response_model=Assessment,
+                response_model=AssessmentModel,
                 retry_strategy=self.retry_strategy
             )
             
@@ -215,6 +244,19 @@ class BasicJudge:
 
             # Convert to dict and add metadata
             assessment_dict = result.dict() if hasattr(result, 'dict') else result
+
+            # Extract custom scores from individual fields and add to custom_scores dict
+            if custom_criteria:
+                custom_scores = {}
+                for criterion_name in custom_criteria.keys():
+                    field_name = f"{criterion_name}_score"
+                    if field_name in assessment_dict:
+                        score_value = assessment_dict.pop(field_name)  # Remove individual field
+                        if score_value is not None:
+                            custom_scores[criterion_name] = score_value
+                assessment_dict['custom_scores'] = custom_scores
+            else:
+                assessment_dict['custom_scores'] = {}
 
             # Log results
             overall_score = assessment_dict.get('overall_score', 0)
@@ -247,7 +289,8 @@ class BasicJudge:
         reference: Optional[str] = None,
         include_criteria: bool = False,
         max_file_size: int = 1000000,  # 1MB default limit per file
-        exclude_global: bool = False  # Include global assessment by default
+        exclude_global: bool = False,  # Include global assessment by default
+        custom_criteria: Optional[Dict[str, str]] = None
     ) -> Union[dict, List[dict]]:
         """
         Evaluate content from one or multiple files sequentially to avoid context overflow
@@ -261,6 +304,7 @@ class BasicJudge:
             include_criteria: Include detailed explanation of evaluation criteria in assessment
             max_file_size: Maximum file size in bytes (default 1MB to avoid context overflow)
             exclude_global: If True, skip global assessment for multiple files (default False)
+            custom_criteria: Custom domain-specific criteria with descriptions (e.g., {"logical_coherence": "Are results logically consistent?"})
 
         Returns:
             dict: Single assessment if one file provided
@@ -360,7 +404,8 @@ class BasicJudge:
                 criteria=criteria,
                 focus=focus,
                 reference=reference,
-                include_criteria=include_criteria
+                include_criteria=include_criteria,
+                custom_criteria=custom_criteria
             )
 
             # Update source reference to include file name
@@ -382,7 +427,7 @@ class BasicJudge:
             # Generate global assessment and return structured result
             logger.info("Generating global assessment from individual file evaluations", file_count=len(assessments))
             global_assessment = self._generate_global_assessment(
-                assessments, context, criteria, focus, include_criteria
+                assessments, context, criteria, focus, include_criteria, custom_criteria
             )
 
             return {
@@ -396,7 +441,8 @@ class BasicJudge:
         context: str,
         criteria: Optional[JudgmentCriteria],
         focus: Optional[str],
-        include_criteria: bool
+        include_criteria: bool,
+        custom_criteria: Optional[Dict[str, str]] = None
     ) -> dict:
         """
         Generate a global assessment from multiple individual file assessments
@@ -475,7 +521,8 @@ Provide a comprehensive global assessment of overall quality and recommendations
                 context=f"global assessment summary for {total_files} files ({context})",
                 criteria=criteria,
                 focus=focus,
-                include_criteria=include_criteria
+                include_criteria=include_criteria,
+                custom_criteria=custom_criteria
             )
 
             # Update the source reference to indicate this is a global assessment
@@ -506,6 +553,19 @@ Provide a comprehensive global assessment of overall quality and recommendations
                 "evaluation_criteria_details": None
             }
 
+    def _build_custom_scores_format(self, custom_criteria: Optional[Dict[str, str]]) -> str:
+        """Build custom score fields for the prompt (individual fields, not dict)"""
+        if not custom_criteria:
+            return ""
+
+        # Build individual score fields for each custom criterion
+        score_fields = []
+        for criterion_name in custom_criteria.keys():
+            field_name = f"{criterion_name}_score"
+            score_fields.append(f'    "{field_name}": <1-5 integer>,')
+
+        return "\n" + "\n".join(score_fields)
+
     def _build_evaluation_prompt(
         self,
         content: str,
@@ -513,7 +573,8 @@ Provide a comprehensive global assessment of overall quality and recommendations
         criteria: JudgmentCriteria,
         focus: Optional[str],
         reference: Optional[str],
-        include_criteria: bool = False
+        include_criteria: bool = False,
+        custom_criteria: Optional[Dict[str, str]] = None
     ) -> str:
         """Build the evaluation prompt with chain-of-thought reasoning"""
 
@@ -564,6 +625,12 @@ Provide a comprehensive global assessment of overall quality and recommendations
             for focus_item in focus_items:
                 active_criteria.append(focus_item)
                 criteria_descriptions.append(f"- **{focus_item.title()}**: PRIMARY FOCUS AREA - This is a key evaluation target")
+
+        # Add custom criteria with their specific descriptions
+        if custom_criteria:
+            for name, description in custom_criteria.items():
+                active_criteria.append(name)
+                criteria_descriptions.append(f"- **{name.replace('_', ' ').title()}**: {description}")
 
         criteria_text = "\n".join(criteria_descriptions)
 
@@ -618,6 +685,8 @@ EVALUATION PROCESS:
 2. **STEP 2**: Identify specific strengths and weaknesses
 3. **STEP 3**: Provide actionable recommendations for improvement
 4. **STEP 4**: Assign scores based on the rubric (be fair but appropriately critical)
+   - For standard criteria: populate the corresponding _score fields (e.g., clarity_score, soundness_score)
+   - For custom criteria: populate the custom_scores object with scores for EACH custom criterion listed in EVALUATION CRITERIA
 5. **STEP 5**: Calculate overall score - PRIMARY FOCUS AREAS should heavily influence the final score
 
 CRITICAL ASSESSMENT PRINCIPLES:
@@ -627,6 +696,11 @@ CRITICAL ASSESSMENT PRINCIPLES:
 - Balance recognition of strengths with honest identification of weaknesses
 - Ensure recommendations are specific and implementable
 - PRIMARY FOCUS AREAS are the most important evaluation targets - weaknesses in these areas should significantly impact the overall score
+
+IMPORTANT - SCORING REQUIREMENTS:
+- You MUST provide individual scores (1-5) for EVERY criterion in the custom_scores object if custom criteria are present
+- Do NOT leave custom_scores as an empty object {{}} - populate it with scores for each custom criterion
+- Each custom criterion listed in EVALUATION CRITERIA must have a corresponding score in custom_scores
 
 RESPONSE FORMAT:
 Provide your assessment as a structured JSON response with the following format:
@@ -643,7 +717,7 @@ Provide your assessment as a structured JSON response with the following format:
     "effectiveness_score": <1-5 integer or null if not evaluated>,
     "relevance_score": <1-5 integer or null if not evaluated>,
     "completeness_score": <1-5 integer or null if not evaluated>,
-    "coherence_score": <1-5 integer or null if not evaluated>,
+    "coherence_score": <1-5 integer or null if not evaluated>,{self._build_custom_scores_format(custom_criteria)}
     "strengths": ["list of specific strengths identified"],
     "weaknesses": ["list of specific areas for improvement"],
     "actionable_feedback": ["list of specific actionable recommendations"],
