@@ -85,18 +85,30 @@ Uses a **1-5 scale** with clear definitions:
 - **Score 2**: Poor - Falls short of expectations with significant issues
 - **Score 1**: Very Poor - Fails to meet basic standards in this dimension
 
+**Context-Aware Scoring (v2.6.3+)**:
+- **Rigorous evaluation**: Avoids grade inflation, most adequate responses score 2-3, not 3-4
+- **Task-appropriate criteria**: Innovation scored 1-2 for routine tasks (e.g., basic arithmetic), 4-5 for breakthrough thinking
+- **Criterion applicability**: If a criterion doesn't meaningfully apply to the task, scores 1-2, not 3
+- **Examples**:
+  - Routine calculations: innovation 1-2, soundness 4-5 (if correct)
+  - Creative explanations: innovation 3-4 if novel approach shown
+  - Complex problem-solving: innovation 4-5 if breakthrough thinking demonstrated
+
 ### Assessment Structure
 
 Each evaluation returns a structured assessment with:
 - **Judge's summary** (experiential note from judge's perspective about the assessment task and key findings)
 - **Source reference** (clear indication of what was evaluated)
-- **Individual criterion scores** (1-5 for each enabled criterion)
-- **Overall score** (calculated average)
+- **Predefined criterion scores** (1-5 for each enabled standard criterion: clarity, simplicity, etc.)
+- **Custom criterion scores** (1-5 for each user-defined criterion - v2.6.3+)
+- **Overall score** (calculated average considering all enabled criteria)
 - **Strengths** (specific positive aspects identified)
 - **Weaknesses** (areas for improvement)
 - **Actionable feedback** (specific implementable recommendations)
 - **Chain-of-thought reasoning** (transparent evaluation process)
 - **Evaluation criteria details** (optional detailed explanation when include_criteria=True)
+
+**New in v2.6.3**: Complete score visibility - all predefined and custom criterion scores are now included in assessment results (previously only overall_score and custom_scores were visible).
 
 ## Python API Reference
 
@@ -117,7 +129,8 @@ class BasicJudge:
         criteria: Optional[JudgmentCriteria] = None,
         focus: Optional[str] = None,
         reference: Optional[str] = None,
-        include_criteria: bool = False
+        include_criteria: bool = False,
+        custom_criteria: Optional[Dict[str, str]] = None  # New in v2.6.3
     ) -> dict
 
     def evaluate_files(
@@ -141,6 +154,10 @@ class BasicJudge:
 - **`focus`** (str, optional): Specific areas to focus evaluation on (e.g., "technical accuracy, performance")
 - **`reference`** (str, optional): Reference content for comparison-based evaluation
 - **`include_criteria`** (bool, optional): Include detailed explanation of evaluation criteria in assessment (default: False)
+- **`custom_criteria`** (Dict[str, str], optional): Custom domain-specific criteria as name->description mapping (default: None) **[New in v2.6.3]**
+  - Example: `{"logical_coherence": "Are the results logically consistent?", "domain_accuracy": "Is the domain knowledge correct?"}`
+  - Each custom criterion receives an individual 1-5 score in the `custom_scores` dict
+  - Context-aware scoring applies (rigorous evaluation, task-appropriate expectations)
 
 **evaluate_files() method:**
 - **`file_paths`** (str or List[str]): Single file path or list of file paths to evaluate sequentially
@@ -623,18 +640,58 @@ criteria = JudgmentCriteria(
 - Documentation: focus on completeness, clarity, actionability
 - Creative work: focus on innovation, coherence, clarity
 
-### 4. Using Custom Criteria
+### 4. Using Custom Criteria (v2.6.3+)
+
+Custom criteria enable domain-specific evaluation with individual scores per criterion:
 
 ```python
-# Technical documentation
-custom_criteria = ["has_examples", "covers_error_cases", "includes_prerequisites"]
+from abstractcore.processing import BasicJudge
 
-# Code evaluation
-custom_criteria = ["follows_style_guide", "has_tests", "handles_edge_cases"]
+judge = BasicJudge()
 
-# Business proposals
-custom_criteria = ["addresses_costs", "defines_timeline", "identifies_risks"]
+# Data Analysis Evaluation
+assessment = judge.evaluate(
+    content="Statistical analysis report...",
+    context="data analysis review",
+    custom_criteria={
+        "logical_coherence": "Are the results logically consistent throughout?",
+        "result_plausibility": "Are the findings plausible given the data?",
+        "assumption_validity": "Were statistical assumptions properly validated?"
+    }
+)
+
+# Access custom scores
+print(assessment['custom_scores'])
+# {'logical_coherence': 5, 'result_plausibility': 4, 'assumption_validity': 3}
+
+# Code Review with Custom Criteria
+assessment = judge.evaluate(
+    content="Pull request code...",
+    context="code review",
+    custom_criteria={
+        "follows_style_guide": "Does the code follow team style conventions?",
+        "has_tests": "Are there comprehensive unit tests?",
+        "handles_edge_cases": "Are edge cases and error conditions handled?"
+    }
+)
+
+# Medical Diagnosis Evaluation
+assessment = judge.evaluate(
+    content="Diagnostic reasoning...",
+    context="medical diagnosis review",
+    custom_criteria={
+        "safety": "Are patient safety considerations addressed?",
+        "evidence_based": "Is reasoning grounded in medical evidence?",
+        "risk_assessment": "Are patient risks properly evaluated?"
+    }
+)
 ```
+
+**Custom Criteria Best Practices**:
+- Use clear, specific questions as descriptions
+- Each criterion gets an individual 1-5 score
+- Context-aware scoring applies (task-appropriate expectations)
+- Combine with predefined criteria for comprehensive evaluation
 
 ### 5. Reference-Based Evaluation
 

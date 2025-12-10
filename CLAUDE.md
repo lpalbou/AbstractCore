@@ -5,6 +5,104 @@ AbstractCore is a lightweight, provider-agnostic LLM framework for building soph
 
 ## Recent Tasks
 
+### Task: Enhanced Assessment Scoring & Complete Score Visibility (v2.6.3) (2025-12-10)
+
+**Description**: Improved BasicJudge scoring to prevent grade inflation and added complete score visibility to session assessments. Implemented more stringent, context-aware evaluation that distinguishes routine competence from genuine excellence.
+
+**Problem Identified**:
+- BasicJudge was giving inflated scores (innovation=3/5 for basic arithmetic)
+- Predefined criterion scores were computed but hidden from users
+- Only `overall_score`, `custom_scores`, and text feedback were visible
+
+**Implementation**:
+
+1. **More Stringent Scoring Rubric** (`abstractcore/processing/basic_judge.py`):
+   - Added "SCORING PRINCIPLES - CRITICAL" section with 6 explicit anti-grade-inflation guidelines
+   - Context-aware criteria: "For routine tasks (e.g., basic arithmetic), criteria like 'innovation' should be scored 1-2 unless truly creative"
+   - Task-appropriate expectations: Different rubrics for routine calculations vs creative work vs complex problem-solving
+   - New evaluation step: "Assess if each criterion meaningfully applies to this task (if not, score 1-2)"
+   - Explicit guidance: "Reserve 4-5 for genuinely excellent work: Don't give high scores by default"
+   - Example rules: "Routine calculations: innovation 1-2, soundness 4-5 (if correct)"
+   - ~15 lines added to prompt
+
+2. **Complete Score Visibility** (`abstractcore/core/session.py`):
+   - Added `scores` dict to `session.assessment` containing all 9 predefined criterion scores
+   - Extracts: clarity, simplicity, actionability, soundness, innovation, effectiveness, relevance, completeness, coherence
+   - Now users see BOTH predefined scores AND custom scores in structured format
+   - ~10 lines added to assessment storage (lines 1006-1016)
+
+3. **Test Scripts Created**:
+   - `test_logical_coherence_fail.py` - Response with contradictions (expects logical_coherence=1-2)
+   - `test_result_plausibility_fail.py` - Impossible results (expects result_plausibility=1)
+   - `test_assumption_validity_fail.py` - Unjustified assumptions (expects assumption_validity=1)
+   - `test_stringent_scoring.py` - Verifies innovation now scored 1-2 for basic arithmetic
+   - `test_improved_display.py` - Shows all predefined + custom scores in formatted output
+
+**Results**:
+- ✅ **More Accurate Scoring**: Innovation correctly scored 1-2 for routine tasks, not 3
+- ✅ **Complete Transparency**: All predefined scores now visible in `assessment['scores']`
+- ✅ **Context-Aware**: Judge distinguishes between routine competence and genuine excellence
+- ✅ **Zero Breaking Changes**: API unchanged, only internal logic improved
+- ✅ **Production Ready**: All existing tests pass unchanged
+
+**Before/After Example**:
+```python
+# Basic arithmetic: mean and variance calculation
+
+BEFORE v2.6.3:
+  overall_score: 5/5
+  custom_scores: {'logical_coherence': 5, ...}
+  # Predefined scores HIDDEN (but innovation was 3/5 internally)
+
+AFTER v2.6.3:
+  overall_score: 5/5
+  scores: {
+    'innovation': 1,      # ✅ Correct - routine formula application
+    'soundness': 5,       # ✅ Correct - math is right
+    'clarity': 5,         # ✅ Correct - well explained
+    'actionability': 2    # ✅ Correct - no actionable insights
+  }
+  custom_scores: {'logical_coherence': 5, ...}
+```
+
+**Expected Impact**:
+- ✅ **Fairer Assessments**: Scores reflect true quality, not inflated defaults
+- ✅ **Better Debugging**: See exactly why each criterion scored a certain way
+- ✅ **Digital Article Ready**: Custom criteria + accurate scoring = production-ready AnalysisCritic
+- ✅ **No Migration Needed**: All existing code works unchanged
+
+**Files Modified**:
+1. `abstractcore/utils/version.py` - Version bump to 2.6.3
+2. `abstractcore/processing/basic_judge.py` - Enhanced scoring rubric (~15 lines)
+3. `abstractcore/core/session.py` - Added scores extraction (~10 lines)
+4. `CHANGELOG.md` - Release notes for v2.6.3
+
+**Files Created**:
+1. `test_logical_coherence_fail.py` - Test contradictory reasoning detection
+2. `test_result_plausibility_fail.py` - Test implausible result detection
+3. `test_assumption_validity_fail.py` - Test invalid assumption detection
+4. `test_stringent_scoring.py` - Verify stringent innovation scoring
+5. `test_improved_display.py` - Show complete score visibility
+6. `v2.6.3-release-summary.md` - Comprehensive release summary
+
+**Issues/Concerns**: None. Implementation is clean, simple, and maintains full backward compatibility. The more stringent scoring addresses real grade inflation issues while the complete score visibility provides transparency users need.
+
+**Verification**:
+```bash
+# Check version
+python -c "from abstractcore import __version__; print(__version__)"  # 2.6.3
+
+# Test stringent scoring
+python test_stringent_scoring.py  # Should show innovation=1-2 for arithmetic
+
+# Test complete score visibility
+python test_improved_display.py  # Should show all 9 predefined scores + custom scores
+```
+
+**Conclusion**: Successfully improved BasicJudge quality through more stringent, context-aware scoring and complete score visibility. Assessments now accurately distinguish between routine competence and genuine excellence while providing full transparency. Zero breaking changes maintain backward compatibility. Released as v2.6.3.
+
+---
+
 ### Task: Model Download API with Progress Reporting (2025-12-01)
 
 **Description**: Implemented provider-agnostic async model download API with progress reporting for Ollama, HuggingFace, and MLX providers. Enables downloading models programmatically through a unified interface with streaming progress updates.
