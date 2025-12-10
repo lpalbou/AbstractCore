@@ -354,22 +354,82 @@ pip install abstractcore[vllm]
 
 #### 2. Start vLLM Server
 
+**IMPORTANT**: Check your GPU setup first to avoid Out Of Memory (OOM) errors:
+
 ```bash
-# Basic setup (single GPU)
-vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct --port 8000
+# Check available GPUs
+nvidia-smi
 
-# With LoRA support (for dynamic adapter loading)
+# Shows: GPU name, VRAM capacity, and current usage
+# Example: 4x NVIDIA L4 (23GB each) = 92GB total
+```
+
+**Choose the right startup command based on your hardware:**
+
+```bash
+# Single GPU (24GB+) - Works for 7B-14B models
+vllm serve Qwen/Qwen2.5-Coder-7B-Instruct --port 8000
+
+# Single GPU (24GB+) - For 30B models, reduce memory
+vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
+    --port 8000 \
+    --gpu-memory-utilization 0.85 \
+    --max-model-len 4096
+
+# Multiple GPUs (RECOMMENDED for 30B models) - Use tensor parallelism
+# Example: 4x NVIDIA L4 (23GB each)
 vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
     --host 0.0.0.0 --port 8000 \
-    --enable-lora --max-loras 4
-
-# Production setup (4 GPUs with tensor parallelism)
-vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
-    --host 0.0.0.0 --port 8000 \
-    --enable-lora --max-loras 4 \
     --tensor-parallel-size 4 \
     --gpu-memory-utilization 0.9 \
-    --max-model-len 8192
+    --max-model-len 8192 \
+    --max-num-seqs 128
+
+# Multiple GPUs + LoRA support (Production setup)
+vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
+    --host 0.0.0.0 --port 8000 \
+    --tensor-parallel-size 4 \
+    --enable-lora --max-loras 4 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 8192 \
+    --max-num-seqs 128
+```
+
+**Key Parameters:**
+- `--tensor-parallel-size N` - Split model across N GPUs (REQUIRED for 30B+ models on <40GB GPUs)
+- `--gpu-memory-utilization 0.9` - Use 90% of GPU memory (leave 10% for CUDA overhead)
+- `--max-model-len` - Maximum context length (reduce if OOM)
+- `--max-num-seqs` - Maximum concurrent sequences (128 recommended for 30B models, default 256 may cause OOM)
+- `--enable-lora` - Enable dynamic LoRA adapter loading
+- `--max-loras` - Maximum number of LoRA adapters to keep in memory
+
+**Troubleshooting OOM Errors:**
+
+If you see `CUDA out of memory` errors:
+
+1. **Reduce concurrent sequences**: `--max-num-seqs 128` (or 64, 32 for tighter memory)
+2. **Enable tensor parallelism**: `--tensor-parallel-size 2` (or 4, 8 depending on GPU count)
+3. **Reduce memory usage**: `--gpu-memory-utilization 0.85 --max-model-len 4096`
+4. **Use smaller model**: `Qwen/Qwen2.5-Coder-7B-Instruct` instead of 30B
+5. **Use quantized model**: `Qwen/Qwen2.5-Coder-30B-Instruct-AWQ` (4-bit quantization)
+
+**Test server is running:**
+
+```bash
+# Check server health
+curl http://localhost:8000/health
+
+# List available models
+curl http://localhost:8000/v1/models
+
+# Test generation
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+    "messages": [{"role": "user", "content": "Say hello"}],
+    "max_tokens": 50
+  }'
 ```
 
 #### 3. Test Setup

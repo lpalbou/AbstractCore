@@ -5,6 +5,49 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.4] - 2025-12-10
+
+### Added
+- **vLLM Provider**: Dedicated provider for high-throughput GPU inference on NVIDIA CUDA hardware
+  - **Native vLLM Features**: Exposes guided decoding, Multi-LoRA, and beam search capabilities
+  - **Guided Decoding**: `guided_regex`, `guided_json`, `guided_grammar` parameters for 100% syntax-safe code generation
+  - **Multi-LoRA Support**: `load_adapter()`, `unload_adapter()`, `list_adapters()` for dynamic adapter management
+  - **Beam Search**: `best_of`, `use_beam_search` parameters for higher accuracy on complex tasks
+  - **Full Async Support**: Native async implementation with lazy-loaded httpx.AsyncClient
+  - **OpenAI-Compatible**: Uses `/v1/chat/completions` endpoint while exposing vLLM extensions via `extra_body`
+  - **Shared Cache**: Automatically shares HuggingFace cache with HF/MLX providers via `HF_HOME`
+  - **Environment Variables**: `VLLM_BASE_URL` (default: `http://localhost:8000/v1`), `VLLM_API_KEY` (optional)
+  - **Default Model**: `Qwen/Qwen3-Coder-30B-A3B-Instruct` (or use Qwen2.5-Coder-7B-Instruct for testing)
+  - **Registry Integration**: Listed in `get_all_providers_status()` alongside other 6 providers
+  - **Implementation**: 823 lines of provider code, 371 lines of tests, comprehensive GPU testing guide
+  - **Use Cases**: Production GPU deployments, multi-GPU tensor parallelism, specialized AI agents with LoRA adapters
+
+### Documentation
+- **Hardware Requirements**: Updated README.md and docs/prerequisites.md with hardware compatibility warnings
+  - Added "Hardware" column to provider table (MLX: Apple Silicon only, vLLM: NVIDIA CUDA only)
+  - Clear installation guidance per hardware platform
+- **Multi-GPU Setup**: Complete guide for tensor parallelism on 4x NVIDIA L4 GPUs
+  - Startup commands for single GPU, multi-GPU, production with LoRA
+  - Key parameters documentation (`--tensor-parallel-size`, `--gpu-memory-utilization`, `--max-num-seqs`)
+  - OOM troubleshooting based on real deployment experience
+- **Testing Infrastructure**: GPU test scripts for quick verification and comprehensive integration testing
+  - `test-repl-gpu.py`: Interactive REPL for direct vLLM provider testing
+  - `test-gpu.py`: Full stack test with AbstractCore server + curl examples
+  - FastDoc UI available at `http://localhost:8080/docs` when server running
+
+### Deployment Experience
+- Validated on **4x NVIDIA L4 GPUs** (23GB VRAM each, Scaleway Paris)
+- Successfully resolved multi-GPU tensor parallelism requirements
+- Fixed sampler warm-up OOM by reducing `--max-num-seqs` from 256 to 128
+- Documented Triton kernel compilation issues with MoE models (recommend 7B models for reliability)
+
+### Technical Details
+- **Files Created**: `abstractcore/providers/vllm_provider.py`, `tests/providers/test_vllm_provider.py`
+- **Files Modified**: `abstractcore/providers/registry.py`, `abstractcore/providers/__init__.py`, `README.md`, `docs/prerequisites.md`
+- **Architecture**: Inherits from BaseProvider (not OpenAIProvider) for clean httpx implementation
+- **Pattern**: vLLM-specific params passed via `extra_body` to maintain OpenAI compatibility
+- **Branch**: `vllm-provider` (pending merge to main)
+
 ## [2.6.3] - 2025-12-10
 
 ### Changed
