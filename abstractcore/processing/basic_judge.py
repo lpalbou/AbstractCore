@@ -680,14 +680,26 @@ SCORING RUBRIC (1-5 scale):
 - **Score 2**: Poor - Falls short of expectations with significant issues
 - **Score 1**: Very Poor - Fails to meet basic standards in this dimension
 
+SCORING PRINCIPLES - CRITICAL:
+- **Be rigorous and avoid grade inflation**: Most adequate responses should be scored 2-3, not 3-4
+- **Context matters**: For routine tasks (e.g., basic arithmetic), criteria like "innovation" should be scored 1-2 unless truly creative
+- **If a criterion doesn't meaningfully apply to the task**, score it 1-2, not 3 (e.g., innovation for standard formula application = 1)
+- **Reserve 4-5 for genuinely excellent work**: Don't give high scores by default
+- **Apply task-appropriate expectations**:
+  * Routine calculations: innovation 1-2, soundness 4-5 (if correct)
+  * Creative explanations: innovation 3-4 if novel approach shown
+  * Complex problem-solving: innovation 4-5 if breakthrough thinking demonstrated
+- **Be appropriately critical**: Question whether the response truly meets each criterion
+
 EVALUATION PROCESS:
 1. **STEP 1**: Carefully analyze the content for each active criterion
-2. **STEP 2**: Identify specific strengths and weaknesses
-3. **STEP 3**: Provide actionable recommendations for improvement
-4. **STEP 4**: Assign scores based on the rubric (be fair but appropriately critical)
+2. **STEP 2**: Assess if each criterion meaningfully applies to this task (if not, score 1-2)
+3. **STEP 3**: Identify specific strengths and weaknesses
+4. **STEP 4**: Provide actionable recommendations for improvement
+5. **STEP 5**: Assign scores based on the rubric (be rigorous and appropriately critical)
    - For standard criteria: populate the corresponding _score fields (e.g., clarity_score, soundness_score)
    - For custom criteria: populate the custom_scores object with scores for EACH custom criterion listed in EVALUATION CRITERIA
-5. **STEP 5**: Calculate overall score - PRIMARY FOCUS AREAS should heavily influence the final score
+6. **STEP 6**: Calculate overall score - PRIMARY FOCUS AREAS should heavily influence the final score
 
 CRITICAL ASSESSMENT PRINCIPLES:
 - Be objective and evidence-based in your evaluation
