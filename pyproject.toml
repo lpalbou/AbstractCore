@@ -112,6 +112,10 @@ mlx = [
     "outlines>=0.1.0",  # Optional native structured output support
 ]
 
+vllm = [
+    "vllm>=0.6.0,<1.0.0",  # GPU-only (CUDA/ROCm) - not compatible with Apple Silicon
+]
+
 embeddings = [
     "sentence-transformers>=5.1.0,<6.0.0",  # Required for EmbeddingGemma model support
     "numpy>=1.20.0,<2.0.0",
@@ -148,8 +152,16 @@ local-providers = [
     "abstractcore[ollama,lmstudio,mlx]",
 ]
 
-local-providers-non-mlx = [
-    "abstractcore[ollama,lmstudio]",
+local-providers-apple = [
+    "abstractcore[ollama,lmstudio,mlx]",
+]
+
+local-providers-gpu = [
+    "abstractcore[ollama,lmstudio,vllm]",
+]
+
+gpu-providers = [
+    "abstractcore[huggingface,vllm]",
 ]
 
 heavy-providers = [
@@ -158,19 +170,27 @@ heavy-providers = [
 
 # Comprehensive installations
 all-providers = [
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,vllm,embeddings]",
+]
+
+all-providers-apple = [
     "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
 ]
 
-all-providers-non-mlx = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,embeddings]",
+all-providers-gpu = [
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,vllm,embeddings]",
 ]
 
 all = [
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,vllm,embeddings,processing,media,compression,tools,server,dev,test,docs]",
+]
+
+all-apple = [
     "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,processing,media,compression,tools,server,dev,test,docs]",
 ]
 
-all-non-mlx = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,embeddings,processing,media,compression,tools,server,dev,test,docs]",
+all-gpu = [
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,vllm,embeddings,processing,media,compression,tools,server,dev,test,docs]",
 ]
 
 lightweight = [
@@ -305,6 +325,7 @@ module = [
     "mlx_lm.*",
     "llama_cpp.*",
     "outlines.*",
+    "vllm.*",
 ]
 ignore_missing_imports = true
 
