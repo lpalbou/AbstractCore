@@ -8,7 +8,9 @@ This guide walks you through setting up AbstractCore with different LLM provider
 
 **Want free local models?** → [Ollama Setup](#ollama-setup) (free, runs on your machine)
 
-**Have Apple Silicon Mac?** → [MLX Setup](#mlx-setup) (optimized for M1/M2/M3 chips)
+**Have Apple Silicon Mac?** → [MLX Setup](#mlx-setup) (optimized for M1/M2/M3/M4 chips)
+
+**Have NVIDIA GPU?** → [vLLM Setup](#vllm-setup-nvidia-cuda-only) (production GPU inference, tensor parallelism)
 
 **Want a GUI for local models?** → [LMStudio Setup](#lmstudio-setup) (easiest local setup)
 
@@ -23,12 +25,24 @@ pip install abstractcore[openai,anthropic]
 # Option 2: Local models only (no API keys needed)
 pip install abstractcore[ollama,mlx]
 
-# Option 3: Everything (recommended for development)
+# Option 3: NVIDIA GPU inference (CUDA required)
+pip install abstractcore[vllm]
+
+# Option 4: Everything (recommended for Apple Silicon)
 pip install abstractcore[all]
 
-# Option 4: Minimal core only
+# Option 5: Everything except hardware-specific (Linux/Windows/Intel Mac)
+pip install abstractcore[all-non-mlx]
+
+# Option 6: Minimal core only
 pip install abstractcore
 ```
+
+**Hardware Notes:**
+- `[mlx]` - Only works on Apple Silicon (M1/M2/M3/M4)
+- `[vllm]` - Only works with NVIDIA CUDA GPUs
+- `[all]` - Best for Apple Silicon (includes MLX, excludes vLLM)
+- `[all-non-mlx]` - Best for Linux/Windows/Intel Mac (excludes MLX and vLLM)
 
 ## Cloud Provider Setup
 
@@ -307,6 +321,140 @@ print(response.content)
 - `microsoft/DialoGPT-medium` - Good for conversation
 - `facebook/blenderbot-400M-distill` - Conversational AI
 - `microsoft/CodeBERT-base` - Code understanding
+
+### vLLM Setup (NVIDIA CUDA Only)
+
+**Best for**: Production GPU deployments, high-throughput inference, tensor parallelism
+
+**Requirements**:
+- **NVIDIA GPU with CUDA support** (A100, H100, RTX 4090, etc.)
+- Linux operating system
+- CUDA 12.1+ installed
+- 16GB+ VRAM recommended
+- **NOT compatible with**: Apple Silicon, AMD GPUs, CPU-only systems
+
+#### ⚠️ Hardware Compatibility Warning
+
+**vLLM ONLY works with NVIDIA CUDA GPUs.** It will NOT work on:
+- ❌ Apple Silicon (M1/M2/M3/M4) - Use MLX provider instead
+- ❌ AMD GPUs - Use HuggingFace or Ollama instead
+- ❌ Intel integrated graphics
+- ❌ CPU-only systems
+
+#### 1. Install vLLM
+
+```bash
+# Install AbstractCore with vLLM support
+pip install abstractcore[vllm]
+
+# This installs vLLM which requires NVIDIA CUDA
+# If you get CUDA errors, ensure CUDA 12.1+ is installed:
+# https://developer.nvidia.com/cuda-downloads
+```
+
+#### 2. Start vLLM Server
+
+```bash
+# Basic setup (single GPU)
+vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct --port 8000
+
+# With LoRA support (for dynamic adapter loading)
+vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
+    --host 0.0.0.0 --port 8000 \
+    --enable-lora --max-loras 4
+
+# Production setup (4 GPUs with tensor parallelism)
+vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
+    --host 0.0.0.0 --port 8000 \
+    --enable-lora --max-loras 4 \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 8192
+```
+
+#### 3. Test Setup
+
+```python
+from abstractcore import create_llm
+
+# Basic generation
+llm = create_llm("vllm", model="Qwen/Qwen3-Coder-30B-A3B-Instruct")
+response = llm.generate("Write a Python function to sort a list")
+print(response.content)
+
+# With guided JSON (vLLM-specific feature)
+response = llm.generate(
+    "List 3 programming languages",
+    guided_json={
+        "type": "object",
+        "properties": {
+            "languages": {"type": "array", "items": {"type": "string"}}
+        }
+    }
+)
+print(response.content)
+```
+
+#### 4. vLLM-Specific Features
+
+**Guided Decoding** (100% syntax-safe code generation):
+```python
+# Regex-constrained generation
+response = llm.generate(
+    "Write a Python function",
+    guided_regex=r"def \w+\([^)]*\):\n(?:\s{4}.*\n)+"
+)
+
+# JSON schema enforcement
+response = llm.generate(
+    "Extract person info",
+    guided_json={"type": "object", "properties": {...}}
+)
+```
+
+**Multi-LoRA** (1 base model → many specialized agents):
+```python
+# Load specialized adapters
+llm.load_adapter("sql-expert", "/models/adapters/sql-lora")
+llm.load_adapter("react-dev", "/models/adapters/react-lora")
+
+# Route to specialized adapter
+response = llm.generate("Write SQL query", model="sql-expert")
+```
+
+**Beam Search** (higher accuracy for complex tasks):
+```python
+response = llm.generate(
+    "Solve this complex algorithm problem...",
+    use_beam_search=True,
+    best_of=5  # Generate 5 candidates, return best
+)
+```
+
+#### Environment Variables
+
+```bash
+# vLLM server URL (default: http://localhost:8000/v1)
+export VLLM_BASE_URL="http://192.168.1.100:8000/v1"
+
+# Optional API key (if server started with --api-key)
+export VLLM_API_KEY="your-api-key"
+
+# HuggingFace cache (shared with HF/MLX providers)
+export HF_HOME="~/.cache/huggingface"
+```
+
+**Available Models**:
+- `Qwen/Qwen3-Coder-30B-A3B-Instruct` (default) - Excellent for code
+- `meta-llama/Llama-3.1-8B-Instruct` - Good general purpose
+- `mistralai/Mistral-7B-Instruct-v0.3` - Fast and efficient
+- Any HuggingFace model compatible with vLLM
+
+**Performance Expectations**:
+- Single GPU: 40-80 tokens/sec for 30B models
+- 4 GPUs (tensor parallel): 100-200 tokens/sec for 30B models
+- PagedAttention: <4% memory waste, 24x throughput vs HF Transformers
+- Continuous batching: No waiting for batch completion
 
 ## Troubleshooting
 

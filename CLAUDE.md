@@ -5,6 +5,70 @@ AbstractCore is a lightweight, provider-agnostic LLM framework for building soph
 
 ## Recent Tasks
 
+### Task: Documentation Update - Hardware-Specific Installation (2025-12-10)
+
+**Description**: Updated AbstractCore documentation to clearly reflect hardware-specific installation requirements, with explicit warnings for Apple Silicon (MLX) and NVIDIA CUDA (vLLM) providers.
+
+**Problem**: User pointed out that documentation did not clearly indicate which providers require specific hardware (Apple Silicon for MLX, NVIDIA CUDA for vLLM).
+
+**Implementation**:
+
+1. **README.md Updates**:
+   - Added "Hardware" column to Supported Providers table showing compatibility:
+     * "Any" for OpenAI, Anthropic, Ollama, LMStudio, HuggingFace
+     * "**Apple Silicon only**" for MLX
+     * "**NVIDIA CUDA only**" for vLLM
+   - Updated Installation Options section:
+     * Added `pip install abstractcore[vllm]` with "NVIDIA CUDA only (Linux)" note
+     * Added `pip install abstractcore[gpu-providers]` for vLLM
+     * Added Hardware-Specific Notes section explaining requirements and limitations
+
+2. **docs/prerequisites.md Updates**:
+   - Updated Quick Decision Guide with "**Have NVIDIA GPU?** → vLLM Setup" entry
+   - Updated Core Installation section with hardware-specific install options
+   - Added comprehensive vLLM Setup section (~130 lines):
+     * ⚠️ Hardware Compatibility Warning section with explicit incompatibility list
+     * Installation instructions with CUDA requirements
+     * Three vLLM server startup examples (basic, LoRA, 4 GPUs)
+     * Test setup with basic generation and guided JSON
+     * vLLM-specific features documentation
+     * Environment variables and performance expectations
+
+**Key Messages Emphasized**:
+- ✅ MLX requires Apple Silicon (M1/M2/M3/M4) - will NOT work on Intel Macs, Linux, Windows
+- ✅ vLLM requires NVIDIA CUDA GPUs - will NOT work on Apple Silicon, AMD GPUs, Intel graphics
+- ✅ Alternative providers suggested for incompatible hardware
+
+**Installation Variants Clarified**:
+- `abstractcore[all]` - Best for Apple Silicon (includes MLX, excludes vLLM)
+- `abstractcore[all-non-mlx]` - Best for Linux/Windows/Intel Mac (excludes MLX and vLLM)
+- `abstractcore[vllm]` - NVIDIA CUDA GPUs only
+- `abstractcore[mlx]` - Apple Silicon only
+
+**Files Modified**:
+1. `README.md` - Updated Supported Providers table and Installation Options section
+2. `docs/prerequisites.md` - Added vLLM setup section with hardware warnings
+
+**Results**:
+- ✅ **Clear Hardware Requirements**: All providers now have explicit hardware compatibility documented
+- ✅ **Warnings at Installation**: Users see hardware requirements before attempting installation
+- ✅ **Alternative Providers**: Documentation suggests alternatives for incompatible hardware
+- ✅ **Comprehensive vLLM Guide**: Complete setup guide with CUDA requirements, features, and performance expectations
+
+**Issues/Concerns**: None. Documentation now clearly communicates hardware requirements and prevents user confusion about why certain providers don't work on their hardware.
+
+**Verification**:
+```bash
+# Check documentation updates
+git diff README.md
+git diff docs/prerequisites.md
+cat DOCUMENTATION_UPDATE_HARDWARE.md  # Summary document
+```
+
+**Conclusion**: Successfully updated all documentation to clearly indicate hardware-specific requirements for MLX (Apple Silicon) and vLLM (NVIDIA CUDA). Users now have clear guidance on which providers work with their hardware, preventing confusion and wasted installation attempts.
+
+---
+
 ### Task: vLLM Provider Implementation (2025-12-10)
 
 **Description**: Implemented dedicated vLLM provider for AbstractCore to enable high-throughput GPU inference with advanced features (Guided Decoding, Multi-LoRA, Beam Search) on production servers.

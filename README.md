@@ -386,14 +386,15 @@ if response.metadata and response.metadata.get('compression_used'):
 
 ## Supported Providers
 
-| Provider | Status | SEED Support | Setup |
-|----------|--------|-------------|-------|
-| **OpenAI** | Full | Native | [Get API key](docs/prerequisites.md#openai-setup) |
-| **Anthropic** | Full | Warning* | [Get API key](docs/prerequisites.md#anthropic-setup) |
-| **Ollama** | Full | Native | [Install guide](docs/prerequisites.md#ollama-setup) |
-| **LMStudio** | Full | Native | [Install guide](docs/prerequisites.md#lmstudio-setup) |
-| **MLX** | Full | Native | [Setup guide](docs/prerequisites.md#mlx-setup) |
-| **HuggingFace** | Full | Native | [Setup guide](docs/prerequisites.md#huggingface-setup) |
+| Provider | Status | SEED Support | Hardware | Setup |
+|----------|--------|-------------|----------|-------|
+| **OpenAI** | Full | Native | Any | [Get API key](docs/prerequisites.md#openai-setup) |
+| **Anthropic** | Full | Warning* | Any | [Get API key](docs/prerequisites.md#anthropic-setup) |
+| **Ollama** | Full | Native | Any | [Install guide](docs/prerequisites.md#ollama-setup) |
+| **LMStudio** | Full | Native | Any | [Install guide](docs/prerequisites.md#lmstudio-setup) |
+| **MLX** | Full | Native | **Apple Silicon only** | [Setup guide](docs/prerequisites.md#mlx-setup) |
+| **HuggingFace** | Full | Native | Any | [Setup guide](docs/prerequisites.md#huggingface-setup) |
+| **vLLM** | Full | Native | **NVIDIA CUDA only** | [Setup guide](docs/prerequisites.md#vllm-setup) |
 
 *Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
 
@@ -912,7 +913,8 @@ pip install abstractcore[anthropic]
 pip install abstractcore[ollama]
 pip install abstractcore[lmstudio]
 pip install abstractcore[huggingface]
-pip install abstractcore[mlx]  # macOS/Apple Silicon only
+pip install abstractcore[mlx]   # macOS/Apple Silicon only
+pip install abstractcore[vllm]  # NVIDIA CUDA only (Linux)
 
 # With server support
 pip install abstractcore[server]
@@ -920,19 +922,25 @@ pip install abstractcore[server]
 # With embeddings
 pip install abstractcore[embeddings]
 
-# Everything (recommended)
+# Everything (recommended for Apple Silicon)
 pip install abstractcore[all]
 
-# Cross-platform (all except MLX - for Linux/Windows)
+# Cross-platform (all except MLX/vLLM - for Linux/Windows/Intel Mac)
 pip install abstractcore[all-non-mlx]
 
 # Provider groups
-pip install abstractcore[all-providers]          # All providers (includes MLX)
-pip install abstractcore[all-providers-non-mlx]  # All providers except MLX
+pip install abstractcore[all-providers]          # All providers (includes MLX, excludes vLLM)
+pip install abstractcore[all-providers-non-mlx]  # All providers except MLX (excludes vLLM)
 pip install abstractcore[local-providers]        # Ollama, LMStudio, MLX
 pip install abstractcore[local-providers-non-mlx]  # Ollama, LMStudio only
 pip install abstractcore[api-providers]          # OpenAI, Anthropic
+pip install abstractcore[gpu-providers]          # vLLM (NVIDIA CUDA only)
 ```
+
+**Hardware-Specific Notes:**
+- **MLX**: Requires Apple Silicon (M1/M2/M3/M4). Will not work on Intel Macs or other platforms.
+- **vLLM**: Requires NVIDIA GPUs with CUDA support. Will not work on Apple Silicon, AMD GPUs, or Intel integrated graphics.
+- **All other providers** (OpenAI, Anthropic, Ollama, LMStudio, HuggingFace): Work on any hardware.
 
 **Media processing extras:**
 ```bash
