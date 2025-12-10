@@ -939,13 +939,18 @@ class BasicSession:
         summary_tokens = self._estimate_tokens_for_summary(summary_text)
         return original_tokens / summary_tokens if summary_tokens > 0 else 1.0
 
-    def generate_assessment(self, criteria: Optional[Dict[str, bool]] = None) -> Dict[str, Any]:
+    def generate_assessment(
+        self,
+        criteria: Optional[Dict[str, bool]] = None,
+        custom_criteria: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
         """
         Generate a quality assessment of the entire conversation and store it in session.assessment.
-        
+
         Args:
-            criteria: Optional criteria for assessment
-            
+            criteria: Optional predefined criteria toggles (e.g., {"clarity": True, "coherence": False})
+            custom_criteria: Optional custom domain-specific criteria with descriptions (e.g., {"logical_coherence": "Are results logically consistent?"})
+
         Returns:
             Dict containing the generated assessment
         """
@@ -989,13 +994,16 @@ class BasicSession:
         assessment_result = judge.evaluate(
             content=conversation_text,
             context="conversation quality assessment",
-            criteria=judge_criteria
+            criteria=judge_criteria,
+            custom_criteria=custom_criteria
         )
         
         # Store assessment in session
         self.assessment = {
             "created_at": start_time.isoformat(),
             "criteria": criteria,
+            "custom_criteria": custom_criteria,
+            "custom_scores": assessment_result.get('custom_scores', {}),
             "overall_score": assessment_result.get('overall_score', 0),
             "judge_summary": assessment_result.get('judge_summary', ''),
             "strengths": assessment_result.get('strengths', []),
