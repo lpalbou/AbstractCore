@@ -178,7 +178,7 @@ def format_assessment_plain(assessment: dict) -> str:
     lines.append(f"Overall Score: {assessment.get('overall_score', 0)}/5")
     lines.append("")
 
-    # Individual scores
+    # Predefined criterion scores
     score_fields = [
         ('clarity_score', 'Clarity'),
         ('simplicity_score', 'Simplicity'),
@@ -191,13 +191,28 @@ def format_assessment_plain(assessment: dict) -> str:
         ('coherence_score', 'Coherence')
     ]
 
-    lines.append("Individual Scores:")
-    lines.append("-" * 20)
-    for field, label in score_fields:
-        score = assessment.get(field)
-        if score is not None:
-            lines.append(f"{label:15}: {score}/5")
-    lines.append("")
+    # Check if any predefined scores exist
+    has_predefined_scores = any(assessment.get(field) is not None for field, _ in score_fields)
+
+    if has_predefined_scores:
+        lines.append("📋 Predefined Criterion Scores:")
+        lines.append("-" * 32)
+        for field, label in score_fields:
+            score = assessment.get(field)
+            if score is not None:
+                lines.append(f"{label:15}: {score}/5")
+        lines.append("")
+
+    # Custom criterion scores
+    custom_scores = assessment.get('custom_scores', {})
+    if custom_scores:
+        lines.append("🎯 Custom Criterion Scores:")
+        lines.append("-" * 28)
+        for criterion, score in custom_scores.items():
+            # Format criterion name nicely
+            criterion_display = criterion.replace('_', ' ').title()
+            lines.append(f"{criterion_display:30}: {score}/5")
+        lines.append("")
 
     # Strengths
     strengths = assessment.get('strengths', [])

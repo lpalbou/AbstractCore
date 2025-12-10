@@ -5,6 +5,31 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.3] - 2025-12-10
+
+### Changed
+- **More Stringent Assessment Scoring**: BasicJudge now applies rigorous, context-aware scoring to prevent grade inflation (2025-12-10)
+  - **Anti-Grade-Inflation**: Explicit guidance to avoid defaulting to high scores (3-4) for adequate work
+  - **Context-Aware Criteria**: Scores criteria based on task type (e.g., innovation=1-2 for routine calculations, not 3)
+  - **Task-Appropriate Expectations**: Different rubrics for routine tasks vs creative work vs complex problem-solving
+  - **New Evaluation Step**: "Assess if each criterion meaningfully applies to this task (if not, score 1-2)"
+  - **Impact**: More accurate and fair assessments that distinguish between routine competence and genuine excellence
+  - **Example**: Basic arithmetic now correctly scores innovation=1-2 (routine formula), not 3 (adequate innovation)
+  - **Zero Breaking Changes**: Assessment API unchanged, only internal scoring logic improved
+
+### Added
+- **Complete Score Visibility**: `session.generate_assessment()` now returns all predefined criterion scores in structured format
+  - **New Field**: `scores` dict containing clarity, simplicity, actionability, soundness, innovation, effectiveness, relevance, completeness, coherence
+  - **Before**: Only overall_score, custom_scores, and text feedback visible
+  - **After**: Full transparency with individual scores for both predefined and custom criteria
+  - **Impact**: Users can now see exactly how each criterion was scored, not just overall and custom scores
+  - **Backward Compatible**: New `scores` field added to assessment result without breaking existing code
+
+### Technical Details
+- **Files Modified**: `abstractcore/processing/basic_judge.py` (scoring principles), `abstractcore/core/session.py` (score extraction)
+- **Prompt Enhancement**: Added "SCORING PRINCIPLES - CRITICAL" section with 6 explicit guidelines
+- **Implementation**: ~15 lines added to scoring rubric, ~10 lines to session assessment storage
+
 ## [2.6.2] - 2025-12-01
 
 ### Added

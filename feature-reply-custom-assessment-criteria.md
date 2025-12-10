@@ -1,9 +1,9 @@
 # Feature Reply: Custom Assessment Criteria
 
-**Date**: 2025-12-09
+**Date**: 2025-12-10
 **Feature Request**: Custom Assessment Criteria for `generate_assessment()`
-**Status**: ✅ **IMPLEMENTED**
-**Version**: AbstractCore v2.x.x (unreleased)
+**Status**: ✅ **FULLY COMPLETE**
+**Version**: AbstractCore v2.6.3 (Released 2025-12-10)
 
 ---
 
@@ -381,8 +381,96 @@ python -m pytest tests/assessment/test_custom_criteria.py -v
 | **Backward Compat** | ✅ Verified | Zero breaking changes |
 | **Performance** | ✅ Verified | No overhead when not used |
 | **Type Safety** | ✅ Complete | Full type hints with Dict[str, str] |
+| **Score Visibility** | ✅ Complete (v2.6.3) | All predefined + custom scores visible |
+| **Stringent Scoring** | ✅ Complete (v2.6.3) | Context-aware, prevents grade inflation |
 
 **Status**: ✅ **PRODUCTION READY**
+
+---
+
+## v2.6.3 Quality Improvements (2025-12-10)
+
+### 1. **More Stringent, Context-Aware Scoring**
+
+**Problem**: Judge was giving inflated scores (e.g., innovation=3/5 for basic arithmetic)
+
+**Solution**: Enhanced scoring rubric with explicit anti-grade-inflation guidelines
+
+**Impact on Your Use Case**:
+```python
+# Basic mean/variance calculation (routine task)
+assessment = session.generate_assessment(
+    custom_criteria={
+        "logical_coherence": "Are results logically consistent?",
+        "result_plausibility": "Are findings plausible given data?"
+    }
+)
+
+# BEFORE v2.6.3:
+# innovation: 3/5 (misleading - basic arithmetic isn't innovative)
+
+# AFTER v2.6.3:
+# innovation: 1/5 (correct - routine formula application)
+# soundness: 5/5 (correct - math is right)
+# logical_coherence: 5/5 (custom criterion - accurately scored)
+```
+
+**Key Improvements**:
+- ✅ Rigorous evaluation: Avoids defaulting to high scores
+- ✅ Task-appropriate criteria: Innovation scored 1-2 for routine tasks
+- ✅ Criterion applicability: If criterion doesn't apply, scores 1-2, not 3
+- ✅ Context-aware: Different rubrics for routine vs creative vs complex tasks
+
+### 2. **Complete Score Visibility**
+
+**Problem**: Only `overall_score` and `custom_scores` were visible; predefined scores hidden
+
+**Solution**: Added `scores` dict containing all 9 predefined criterion scores
+
+**Impact on Your Use Case**:
+```python
+assessment = session.generate_assessment(
+    criteria={"clarity": True, "soundness": True},
+    custom_criteria={"logical_coherence": "..."}
+)
+
+# NOW AVAILABLE:
+print(assessment['scores'])
+# {
+#   'clarity': 5,
+#   'soundness': 5,
+#   'innovation': 1,  # Low (correctly) for routine task
+#   'actionability': 2,
+#   ...
+# }
+
+print(assessment['custom_scores'])
+# {'logical_coherence': 5, 'result_plausibility': 4}
+```
+
+**Benefits**:
+- ✅ Full transparency: See exactly how each criterion scored
+- ✅ Better debugging: Understand why overall score is what it is
+- ✅ Fairer assessment: Identify which specific aspects need improvement
+
+### 3. **Enhanced CLI Display**
+
+**New Output Format**:
+```bash
+judge content.txt --format plain
+
+# Output shows:
+📋 Predefined Criterion Scores:
+  Clarity        : 5/5
+  Soundness      : 5/5
+  Innovation     : 1/5  # Correctly low for routine task
+  ...
+
+🎯 Custom Criterion Scores:
+  Logical Coherence         : 5/5
+  Result Plausibility       : 4/5
+  Assumption Validity       : 3/5
+```
 
 ---
 
