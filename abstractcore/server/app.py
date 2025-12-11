@@ -506,7 +506,17 @@ class ChatCompletionRequest(BaseModel):
                     "Use 'auto' for automatic format detection based on model and user-agent.",
         example="auto"
     )
-    
+
+    # Provider-specific parameters (AbstractCore-specific feature)
+    base_url: Optional[str] = Field(
+        default=None,
+        description="Base URL for the provider API endpoint (AbstractCore-specific feature). "
+                    "Useful for openai-compatible provider to connect to custom endpoints. "
+                    "Example: 'http://localhost:1234/v1' for LMStudio, 'http://localhost:8080/v1' for llama.cpp. "
+                    "If not specified, uses provider's default or environment variable.",
+        example="http://localhost:1234/v1"
+    )
+
     class Config:
         schema_extra = {
             "examples": {
@@ -2007,7 +2017,17 @@ async def process_chat_completion(
             )
 
         # Create LLM instance
-        llm = create_llm(provider, model=model)
+        # Prepare provider-specific kwargs
+        provider_kwargs = {}
+        if request.base_url:
+            provider_kwargs["base_url"] = request.base_url
+            logger.info(
+                "🔗 Custom Base URL",
+                request_id=request_id,
+                base_url=request.base_url
+            )
+
+        llm = create_llm(provider, model=model, **provider_kwargs)
 
         # Convert messages
         messages = convert_to_abstractcore_messages(processed_messages)

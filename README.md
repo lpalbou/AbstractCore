@@ -368,8 +368,9 @@ if response.metadata and response.metadata.get('compression_used'):
 ## Key Features
 
 - **Offline-First Design**: Built primarily for open source LLMs with full offline capability. Download once, run forever without internet access
-- **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace
-- **Async/Await Support** ⭐ NEW in v2.6.0: Native async support for concurrent requests with `asyncio.gather()` - works with all 6 providers
+- **Provider Agnostic**: Seamlessly switch between OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace, vLLM, and any OpenAI-compatible endpoint
+- **Async/Await Support** ⭐ NEW in v2.6.0: Native async support for concurrent requests with `asyncio.gather()` - works with all providers
+- **Dynamic Endpoint Configuration** ⭐ NEW in v2.6.5: Pass `base_url` in POST requests to connect to custom OpenAI-compatible endpoints without environment variables
 - **Interaction Tracing**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing, and trace correlation for debugging, trust, and compliance
 - **Glyph Visual-Text Compression**: Revolutionary compression system that renders text as optimized images for 3-4x token compression and faster inference
 - **Centralized Configuration**: Global defaults and app-specific preferences at `~/.abstractcore/config/abstractcore.json`
@@ -395,6 +396,7 @@ if response.metadata and response.metadata.get('compression_used'):
 | **MLX** | Full | Native | **Apple Silicon only** | [Setup guide](docs/prerequisites.md#mlx-setup) |
 | **HuggingFace** | Full | Native | Any | [Setup guide](docs/prerequisites.md#huggingface-setup) |
 | **vLLM** | Full | Native | **NVIDIA CUDA only** | [Setup guide](docs/prerequisites.md#vllm-setup) |
+| **OpenAI-Compatible** ⭐ NEW | Full | Native | Any | Works with llama.cpp, text-generation-webui, LocalAI, etc. |
 
 *Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
 

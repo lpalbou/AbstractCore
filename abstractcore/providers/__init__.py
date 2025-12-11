@@ -8,6 +8,7 @@ from .lmstudio_provider import LMStudioProvider
 from .huggingface_provider import HuggingFaceProvider
 from .mlx_provider import MLXProvider
 from .vllm_provider import VLLMProvider
+from .openai_compatible_provider import OpenAICompatibleProvider
 
 # Provider registry for centralized provider discovery and management
 from .registry import (
@@ -43,6 +44,7 @@ __all__ = [
     'HuggingFaceProvider',
     'MLXProvider',
     'VLLMProvider',
+    'OpenAICompatibleProvider',
 
     # Provider registry
     'ProviderRegistry',
