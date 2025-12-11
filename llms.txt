@@ -1,6 +1,6 @@
 # AbstractCore - Unified LLM Provider Interface
 
-**Write once, run everywhere.** Production-ready Python library designed primarily for open source LLMs with complete offline capability. Supports all major providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with universal tool calling, streaming, session management, and built-in CLI apps.
+**Write once, run everywhere.** Production-ready Python library designed primarily for open source LLMs with complete offline capability. Supports 8 providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace, vLLM, openai-compatible) with universal tool calling, streaming, session management, and built-in CLI apps.
 
 ## Quick Start
 
@@ -20,11 +20,14 @@ pip install abstractcore[all]
 - **Custom Base URLs** (v2.6.0): Configure OpenAI-compatible proxies and enterprise gateways for OpenAI and Anthropic providers
 - **Environment Variable Support** (v2.6.1): `OLLAMA_BASE_URL`, `OLLAMA_HOST`, and `LMSTUDIO_BASE_URL` for remote servers, Docker deployments, and provider discovery
 - **Programmatic Provider Configuration** (v2.6.2): Runtime `configure_provider()` API for web UIs, Docker startup, testing, and multi-tenant deployments without environment variables
+- **vLLM Provider** (v2.6.4): High-throughput GPU inference with guided decoding, Multi-LoRA, beam search (NVIDIA CUDA only)
+- **OpenAI-Compatible Provider** (v2.6.4): Generic provider for any OpenAI-compatible endpoint (llama.cpp, LocalAI, etc.)
+- **Dynamic Base URL** (v2.6.5): POST `base_url` parameter for runtime endpoint routing without env vars
 - **Model Downloads** (v2.6.0): Async download API with progress reporting for Ollama, HuggingFace, and MLX models
 - **[Interaction Tracing](docs/interaction-tracing.md)**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing for debugging and compliance
 - **[Centralized Configuration](docs/centralized-config.md)**: Global defaults, app preferences, API key management
 - **[Media Handling System](docs/media-handling-system.md)**: Universal file attachment (images, PDFs, Office docs, CSV) across all providers
-- **[Vision Capabilities](docs/vision-capabilities.md)**: Image analysis across 6 providers with automatic optimization
+- **[Vision Capabilities](docs/vision-capabilities.md)**: Image analysis across all providers with automatic optimization
 - **[Universal Tool Calling](docs/tool-calling.md)**: @tool decorator works across ALL providers
 - **[Provider Discovery](docs/getting-started.md)**: Centralized registry to programmatically list ALL providers and models
 - **[Session Management](docs/session.md)**: Persistent conversations with analytics and auto-compaction
@@ -69,6 +72,8 @@ pip install abstractcore[ollama]
 pip install abstractcore[lmstudio]
 pip install abstractcore[mlx]
 pip install abstractcore[huggingface]
+pip install abstractcore[vllm]              # NVIDIA CUDA GPUs only
+pip install abstractcore[openai-compatible] # Any OpenAI-compatible endpoint
 
 # With media handling (images, PDFs, Office docs)
 pip install abstractcore[media]
@@ -331,7 +336,7 @@ async def session_example():
     response = await session.agenerate("What is Python?")
     print(response.content)
 
-# Works with all 6 providers
+# Works with all 8 providers
 # Use cases: batch operations, multi-provider comparisons, FastAPI integration
 ```
 
@@ -477,6 +482,89 @@ judge = BasicJudge()
 assessment = judge.evaluate(text, context="code review", focus="error handling")
 ```
 
+### vLLM Provider (NVIDIA CUDA GPUs)
+```python
+from abstractcore import create_llm
+
+# vLLM server must be running: vllm serve Qwen/Qwen2.5-Coder-7B-Instruct --host 0.0.0.0 --port 8000
+llm = create_llm("vllm", model="Qwen/Qwen2.5-Coder-7B-Instruct")
+response = llm.generate("Write a Python function to sort a list")
+
+# Guided decoding - guaranteed regex-conformant output
+response = llm.generate(
+    "Generate a US phone number",
+    guided_regex=r"\d{3}-\d{3}-\d{4}"
+)
+print(response.content)  # "555-123-4567" (always valid format)
+
+# Guided JSON - schema-constrained generation
+from pydantic import BaseModel
+class Person(BaseModel):
+    name: str
+    age: int
+
+response = llm.generate(
+    "Extract: John is 30 years old",
+    guided_json=Person.model_json_schema()
+)
+
+# Multi-LoRA - adapter management (requires vLLM --enable-lora flag)
+llm.load_adapter("sql-expert", "/path/to/sql-lora")
+adapters = llm.list_adapters()  # ["sql-expert"]
+llm.unload_adapter("sql-expert")
+# Note: To generate with adapter, create new provider: create_llm("vllm", model="sql-expert")
+
+# Environment variables:
+# VLLM_BASE_URL=http://gpu-server:8000/v1
+# VLLM_API_KEY=your-key (optional)
+```
+
+### OpenAI-Compatible Provider (Any Endpoint)
+```python
+from abstractcore import create_llm
+
+# llama.cpp server
+llm = create_llm("openai-compatible",
+                 base_url="http://localhost:8080/v1",
+                 model="llama-3.1-8b")
+response = llm.generate("Hello!")
+
+# text-generation-webui with OpenAI extension
+llm = create_llm("openai-compatible",
+                 base_url="http://localhost:5000/v1",
+                 model="mistral-7b")
+
+# LocalAI
+llm = create_llm("openai-compatible",
+                 base_url="http://localhost:8080/v1",
+                 model="gpt4all-j")
+
+# Custom proxy with API key
+llm = create_llm("openai-compatible",
+                 base_url="https://my-proxy.example.com/v1",
+                 api_key="my-key",
+                 model="custom-model")
+
+# Environment variables:
+# OPENAI_COMPATIBLE_BASE_URL=http://localhost:8080/v1
+# OPENAI_COMPATIBLE_API_KEY=your-key (optional)
+```
+
+### Dynamic Base URL (Server Endpoint)
+```bash
+# Route to different endpoints per-request via POST parameter
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai-compatible/qwen3-80b",
+    "base_url": "http://gpu-server:1234/v1",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+
+# Priority: POST base_url > env var > provider default
+# Use cases: multi-tenant routing, A/B testing, dynamic load balancing
+```
+
 ### HTTP Server (OpenAI-Compatible)
 ```bash
 # Start server
@@ -604,19 +692,19 @@ from abstractcore.resilience import RetryManager, CircuitBreaker
 ```
 
 ### Supported Providers
-| Provider | Features | SEED Support | Default Model |
-|----------|----------|-------------|---------------|
-| **OpenAI** | Native tools, streaming, native structured output, vision (GPT-4o), media processing | Supported: Native | gpt-4o-mini |
-| **Anthropic** | Native tools, streaming, native structured output, vision (Claude 3.5), media processing | ⚠️ Warning* | claude-3-5-haiku-latest |
-| **Ollama** | Prompted tools, streaming, native structured output, local models, vision (qwen2.5vl:7b), media processing | Supported: Native | llama3.2:3b |
-| **LMStudio** | Prompted tools, streaming, native structured output, local models, vision (qwen2.5-vl), media processing | Supported: Native | llama-3.2-8b-instruct |
-| **MLX** | Prompted tools, streaming, Apple Silicon, vision models, media processing | Supported: Native | mlx-community/Qwen2.5-Coder-7B-Instruct-4bit |
-| **HuggingFace** | Prompted tools, streaming, open models, vision models, media processing | Supported: Native | unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit |
-
-*Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
+| Provider | Features | Hardware | Default Model |
+|----------|----------|----------|---------------|
+| **OpenAI** | Native tools, streaming, structured output, vision | Any | gpt-4o-mini |
+| **Anthropic** | Native tools, streaming, structured output, vision | Any | claude-3-5-haiku-latest |
+| **Ollama** | Prompted tools, streaming, structured output, local | Any | llama3.2:3b |
+| **LMStudio** | Prompted tools, streaming, structured output, local | Any | llama-3.2-8b-instruct |
+| **MLX** | Prompted tools, streaming, Apple Silicon optimized | Apple Silicon | mlx-community/Qwen2.5-Coder-7B-Instruct-4bit |
+| **HuggingFace** | Prompted tools, streaming, transformers/GGUF | Any | unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit |
+| **vLLM** | Guided decoding, Multi-LoRA, beam search, high-throughput | NVIDIA CUDA | Qwen/Qwen3-Coder-30B-A3B-Instruct |
+| **openai-compatible** | Any OpenAI-compatible endpoint (llama.cpp, LocalAI) | Any | server-dependent |
 
 ### Key Capabilities for AI
-- **130+ models** across 6 providers via centralized registry
+- **130+ models** across 8 providers via centralized registry
 - **Async/await support** for concurrent requests with 3-10x faster batch operations
 - **Universal media handling** with `media=[]` API and `@filename` CLI syntax
 - **Vision capabilities** across all providers with automatic optimization and fallback

@@ -22,13 +22,16 @@ This file contains the complete documentation for AbstractCore, a unified Python
 
 ## Project Overview
 
-AbstractCore is a comprehensive Python library designed primarily for open source LLMs with complete offline capability. Provides a unified interface to all major LLM providers (OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace) with production-grade features including universal media handling, vision capabilities, tool calling, streaming, centralized configuration, and session management.
+AbstractCore is a comprehensive Python library designed primarily for open source LLMs with complete offline capability. Provides a unified interface to 8 LLM providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace, vLLM, openai-compatible) with production-grade features including universal media handling, vision capabilities, tool calling, streaming, centralized configuration, and session management.
 
 ### Key Features
 
 - **Offline-First Design**: Built primarily for open source LLMs with complete offline operation. Download once, run forever without internet access
-- **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace with identical syntax
-- **Async/Await Support** (v2.6.0): Native async support for concurrent requests with `asyncio.gather()` - works with all 6 providers for 3-10x faster batch operations ([docs/api-reference.md#agenerate](docs/api-reference.md#agenerate))
+- **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace, vLLM, openai-compatible with identical syntax
+- **Async/Await Support** (v2.6.0): Native async support for concurrent requests with `asyncio.gather()` - works with all 8 providers for 3-10x faster batch operations ([docs/api-reference.md#agenerate](docs/api-reference.md#agenerate))
+- **vLLM Provider** (v2.6.4): High-throughput GPU inference with guided decoding, Multi-LoRA, beam search for NVIDIA CUDA GPUs
+- **OpenAI-Compatible Provider** (v2.6.4): Generic provider for any OpenAI-compatible endpoint (llama.cpp, LocalAI, text-generation-webui)
+- **Dynamic Base URL** (v2.6.5): POST `base_url` parameter for runtime endpoint routing without environment variables
 - **Enhanced Error Messages** (v2.6.0): Authentication and connection errors include fix commands and setup URLs
 - **Interaction Tracing**: Complete LLM observability with programmatic access to prompts, responses, tokens, timing for debugging and compliance ([docs/interaction-tracing.md](docs/interaction-tracing.md))
 - **Centralized Configuration**: Global defaults, app-specific preferences, API key management with `~/.abstractcore/config/abstractcore.json`
@@ -48,16 +51,16 @@ AbstractCore is a comprehensive Python library designed primarily for open sourc
 
 ### Supported Providers
 
-| Provider | Features | SEED Support |
-|----------|----------|-------------|
-| **OpenAI** | Native tool calls, streaming, native structured output, vision (GPT-4o), media processing | Supported: Native |
-| **Anthropic** | Native tool calls, streaming, native structured output, vision (Claude 4.5), media processing | ⚠️ Warning* |
-| **Ollama** | Prompted tool calls, streaming, native structured output, local models, vision (qwen2.5vl:7b), media processing | Supported: Native |
-| **LMStudio** | Prompted tool calls, streaming, native structured output, local models, vision (qwen2.5-vl), media processing | Supported: Native |
-| **MLX** | Prompted tool calls, streaming, Apple Silicon, vision models, media processing | Supported: Native |
-| **HuggingFace** | Prompted tool calls, streaming, open models, vision models, media processing | Supported: Native |
-
-*Anthropic doesn't support seed parameters but issues a warning when provided. Use `temperature=0.0` for more consistent outputs.
+| Provider | Features | Hardware |
+|----------|----------|----------|
+| **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o) | Any |
+| **Anthropic** | Native tools, streaming, structured output, vision (Claude 4.5) | Any |
+| **Ollama** | Prompted tools, streaming, structured output, local models | Any |
+| **LMStudio** | Prompted tools, streaming, structured output, local models | Any |
+| **MLX** | Prompted tools, streaming, Apple Silicon optimized | Apple Silicon only |
+| **HuggingFace** | Prompted tools, streaming, transformers/GGUF models | Any |
+| **vLLM** | Guided decoding, Multi-LoRA, beam search, high-throughput | NVIDIA CUDA only |
+| **openai-compatible** | Any OpenAI-compatible endpoint (llama.cpp, LocalAI) | Any |
 
 ---
 
@@ -89,6 +92,12 @@ pip install abstractcore[mlx]
 
 # HuggingFace
 pip install abstractcore[huggingface]
+
+# vLLM (NVIDIA CUDA GPUs only)
+pip install abstractcore[vllm]
+
+# OpenAI-compatible (any endpoint)
+pip install abstractcore[openai-compatible]
 
 # Media handling (images, basic documents)
 pip install abstractcore[media]
@@ -1967,6 +1976,168 @@ async for progress in download_model(
 - Anthropic: `base_url` parameter + `ANTHROPIC_BASE_URL` environment variable
 - Ollama: Already supported via `base_url="http://localhost:11434"`
 - LMStudio: Already supported via `base_url="http://localhost:1234/v1"`
+
+---
+
+### vLLM Provider (v2.6.4)
+
+High-throughput GPU inference with advanced features for NVIDIA CUDA GPUs.
+
+**Requirements:**
+- NVIDIA GPU with CUDA support (NOT compatible with Apple Silicon, AMD, Intel)
+- vLLM server running: `vllm serve Qwen/Qwen2.5-Coder-7B-Instruct --host 0.0.0.0 --port 8000`
+
+**Basic Usage:**
+```python
+from abstractcore import create_llm
+
+llm = create_llm("vllm", model="Qwen/Qwen2.5-Coder-7B-Instruct")
+response = llm.generate("Write a Python function to sort a list")
+print(response.content)
+```
+
+**Guided Decoding (100% format-compliant output):**
+```python
+# Regex-constrained generation
+response = llm.generate(
+    "Generate a valid US phone number",
+    guided_regex=r"\d{3}-\d{3}-\d{4}"
+)
+print(response.content)  # Always matches format, e.g. "555-123-4567"
+
+# JSON schema-constrained generation
+from pydantic import BaseModel
+
+class Person(BaseModel):
+    name: str
+    age: int
+    email: str
+
+response = llm.generate(
+    "Extract: John Doe is 30 years old, john@example.com",
+    guided_json=Person.model_json_schema()
+)
+
+# Grammar-constrained generation (EBNF)
+response = llm.generate(
+    "Generate SQL query",
+    guided_grammar="..."  # EBNF grammar string
+)
+```
+
+**Multi-LoRA (Adapter Management):**
+
+Requires vLLM started with `--enable-lora --max-loras 4` flag.
+
+```python
+# Load specialized LoRA adapter into vLLM server
+llm.load_adapter("sql-expert", "/path/to/sql-lora-adapter")
+
+# List loaded adapters
+adapters = llm.list_adapters()
+print(adapters)  # ["sql-expert", ...]
+
+# Unload when done
+llm.unload_adapter("sql-expert")
+
+# To generate with a loaded adapter, create a new provider instance:
+sql_llm = create_llm("vllm", model="sql-expert")
+response = sql_llm.generate("Write SQL for user table")
+```
+
+**Beam Search (Higher Accuracy):**
+```python
+response = llm.generate(
+    "Solve this complex problem step by step...",
+    use_beam_search=True,
+    best_of=5
+)
+```
+
+**Environment Variables:**
+```bash
+VLLM_BASE_URL=http://gpu-server:8000/v1  # Default: http://localhost:8000/v1
+VLLM_API_KEY=your-key                     # Optional, for authenticated servers
+```
+
+**Multi-GPU Setup:**
+```bash
+# 4x GPU with tensor parallelism
+vllm serve Qwen/Qwen2.5-Coder-7B-Instruct \
+    --host 0.0.0.0 --port 8000 \
+    --tensor-parallel-size 4 \
+    --gpu-memory-utilization 0.9 \
+    --max-model-len 8192 \
+    --max-num-seqs 128
+```
+
+---
+
+### OpenAI-Compatible Provider (v2.6.4)
+
+Generic provider for any OpenAI-compatible API endpoint.
+
+**Supported Servers:**
+- llama.cpp (`./server`)
+- text-generation-webui (OpenAI extension)
+- LocalAI
+- FastChat
+- Aphrodite
+- SGLang
+- Custom proxies
+
+**Basic Usage:**
+```python
+from abstractcore import create_llm
+
+# llama.cpp server
+llm = create_llm("openai-compatible",
+                 base_url="http://localhost:8080/v1",
+                 model="llama-3.1-8b")
+response = llm.generate("Hello!")
+
+# text-generation-webui
+llm = create_llm("openai-compatible",
+                 base_url="http://localhost:5000/v1",
+                 model="mistral-7b")
+
+# LocalAI
+llm = create_llm("openai-compatible",
+                 base_url="http://localhost:8080/v1",
+                 model="gpt4all-j")
+
+# With API key (optional for most local servers)
+llm = create_llm("openai-compatible",
+                 base_url="https://proxy.example.com/v1",
+                 api_key="my-key",
+                 model="custom-model")
+```
+
+**Environment Variables:**
+```bash
+OPENAI_COMPATIBLE_BASE_URL=http://localhost:8080/v1  # Required
+OPENAI_COMPATIBLE_API_KEY=your-key                    # Optional
+```
+
+**Via AbstractCore Server (Dynamic Routing):**
+```bash
+# Route to any endpoint per-request using base_url parameter
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai-compatible/my-model",
+    "base_url": "http://gpu-server:8080/v1",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+**Priority Chain:**
+1. POST `base_url` parameter (highest) - for dynamic routing
+2. Environment variable (`OPENAI_COMPATIBLE_BASE_URL`)
+3. Constructor `base_url` parameter
+4. Default: `http://localhost:8080/v1`
+
+---
 
 ### Token Management
 
