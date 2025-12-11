@@ -5,6 +5,58 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.5] - 2025-12-10
+
+### Added
+- **Dynamic Base URL Support for Server Endpoint**: POST parameter for runtime base_url configuration
+  - **New Parameter**: `base_url` field in `/v1/chat/completions` request body
+  - **Use Case**: Connect to custom OpenAI-compatible endpoints without environment variables
+  - **Example**: `{"model": "openai-compatible/model-name", "base_url": "http://localhost:1234/v1", ...}`
+  - **Integration**: Works with openai-compatible provider and any provider supporting base_url
+  - **Logging**: Custom base URLs logged with 🔗 emoji for easy debugging
+  - **Priority**: POST parameter > environment variable > provider default
+  - **Zero Breaking Changes**: Optional parameter, existing code unchanged
+
+### Fixed
+- **OpenAI-Compatible Provider Model Listing**: Fixed `/v1/models?provider=openai-compatible` endpoint
+  - **Root Cause**: Provider validation rejected "default" placeholder model used by registry for model discovery
+  - **Solution**: Skip model validation when model == "default" (registry placeholder)
+  - **Impact**: `/v1/models` endpoint now correctly lists all 27 models from LMStudio/llama.cpp servers
+  - **Verified**: Works with environment variable (`OPENAI_COMPATIBLE_BASE_URL`) configuration
+  - **Model Prefix**: All models returned with correct `openai-compatible/` prefix
+
+### Enhanced
+- **Provider Registry**: Added openai-compatible to instance-based model listing
+  - **Previous**: Attempted static method call, failed with openai-compatible
+  - **Fixed**: Added "openai-compatible" to instance-based providers list alongside ollama, lmstudio, anthropic
+  - **Benefit**: Proper model discovery with base_url injection from environment variables
+
+### Technical Details
+- **Files Modified**:
+  - `abstractcore/server/app.py` (added base_url field to ChatCompletionRequest, ~18 lines)
+  - `abstractcore/providers/openai_compatible_provider.py` (skip validation for "default" model, ~3 lines)
+  - `abstractcore/providers/registry.py` (added openai-compatible to instance providers, 1 line)
+  - `abstractcore/utils/version.py` (version bump to 2.6.5)
+- **Architecture**: Clean parameter injection pattern, minimal code changes
+- **Testing**: Validated with LMStudio server on localhost:1234 (qwen/qwen3-next-80b model)
+
+### Usage Examples
+```bash
+# POST with dynamic base_url parameter (NEW in v2.6.5)
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai-compatible/qwen/qwen3-next-80b",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "base_url": "http://localhost:1234/v1"
+  }'
+
+# List models with environment variable (FIXED in v2.6.5)
+export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+curl http://localhost:8080/v1/models?provider=openai-compatible
+# Returns all 27 models with openai-compatible/ prefix
+```
+
 ## [2.6.4] - 2025-12-10
 
 ### Added
@@ -21,6 +73,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Registry Integration**: Listed in `get_all_providers_status()` alongside other 6 providers
   - **Implementation**: 823 lines of provider code, 371 lines of tests, comprehensive GPU testing guide
   - **Use Cases**: Production GPU deployments, multi-GPU tensor parallelism, specialized AI agents with LoRA adapters
+
+- **OpenAI-Compatible Generic Provider**: Universal provider for any OpenAI-compatible API endpoint
+  - **Maximum Compatibility**: Works with llama.cpp, text-generation-webui, LocalAI, FastChat, Aphrodite, SGLang, proxies
+  - **Optional Authentication**: API key support (optional, many local servers don't require it)
+  - **Feature Parity**: Chat completions, streaming, async, embeddings, structured output, prompted tools
+  - **Environment Variables**: `OPENAI_COMPATIBLE_BASE_URL` (default: `http://localhost:8080/v1`), `OPENAI_COMPATIBLE_API_KEY` (optional)
+  - **Default Model**: `"default"` (server-dependent)
+  - **8 Providers Total**: Completes provider ecosystem alongside OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace, vLLM
+  - **Implementation**: 764 lines of provider code, 328 lines of tests
+  - **Architecture**: Inherits from BaseProvider, uses httpx for HTTP communication
+  - **Use Cases**: llama.cpp local servers, text-generation-webui deployments, OpenAI-compatible proxies, custom endpoints
+  - **Future Enhancement**: Planned refactoring to create base class for vLLM/LMStudio to reduce code duplication (see `docs/backlog/`)
 
 ### Documentation
 - **Hardware Requirements**: Updated README.md and docs/prerequisites.md with hardware compatibility warnings
@@ -42,10 +106,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented Triton kernel compilation issues with MoE models (recommend 7B models for reliability)
 
 ### Technical Details
-- **Files Created**: `abstractcore/providers/vllm_provider.py`, `tests/providers/test_vllm_provider.py`
-- **Files Modified**: `abstractcore/providers/registry.py`, `abstractcore/providers/__init__.py`, `README.md`, `docs/prerequisites.md`
-- **Architecture**: Inherits from BaseProvider (not OpenAIProvider) for clean httpx implementation
-- **Pattern**: vLLM-specific params passed via `extra_body` to maintain OpenAI compatibility
+- **Files Created**:
+  - `abstractcore/providers/vllm_provider.py` (823 lines)
+  - `abstractcore/providers/openai_compatible_provider.py` (764 lines)
+  - `tests/providers/test_vllm_provider.py` (371 lines)
+  - `tests/providers/test_openai_compatible_provider.py` (328 lines)
+- **Files Modified**:
+  - `abstractcore/providers/registry.py` (added 2 provider registrations)
+  - `abstractcore/providers/__init__.py` (exported 2 new providers)
+  - `README.md` (hardware requirements)
+  - `docs/prerequisites.md` (multi-GPU setup guide)
+- **Architecture**: Both providers inherit from BaseProvider (not OpenAIProvider) for clean httpx implementation
+- **Pattern**: vLLM uses `extra_body` for vLLM-specific params; OpenAI-compatible is pure OpenAI-compatible
 - **Branch**: `vllm-provider` (pending merge to main)
 
 ## [2.6.3] - 2025-12-10

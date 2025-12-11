@@ -151,6 +151,21 @@ class ProviderRegistry:
             import_path="..providers.vllm_provider"
         ))
 
+        # OpenAI-Compatible Generic Provider
+        self.register_provider(ProviderInfo(
+            name="openai-compatible",
+            display_name="OpenAI-Compatible",
+            provider_class=None,
+            description="Generic provider for any OpenAI-compatible API endpoint (llama.cpp, text-generation-webui, LocalAI, etc.)",
+            default_model="default",
+            supported_features=["chat", "completion", "embeddings", "prompted_tools", "streaming",
+                               "structured_output"],
+            authentication_required=False,  # Optional API key
+            local_provider=True,
+            installation_extras=None,  # No extra dependencies
+            import_path="..providers.openai_compatible_provider"
+        ))
+
 
     def register_provider(self, provider_info: ProviderInfo):
         """Register a provider in the registry."""
@@ -205,6 +220,9 @@ class ProviderRegistry:
             elif provider_info.name == "vllm":
                 from ..providers.vllm_provider import VLLMProvider
                 return VLLMProvider
+            elif provider_info.name == "openai-compatible":
+                from ..providers.openai_compatible_provider import OpenAICompatibleProvider
+                return OpenAICompatibleProvider
             else:
                 raise ImportError(f"No import logic for provider: {provider_info.name}")
         except ImportError as e:
@@ -233,7 +251,7 @@ class ProviderRegistry:
             provider_class = self.get_provider_class(provider_name)
 
             # Handle providers that need instance for model listing
-            if provider_name in ["anthropic", "ollama", "lmstudio"]:
+            if provider_name in ["anthropic", "ollama", "lmstudio", "openai-compatible"]:
                 provider_info = self.get_provider_info(provider_name)
                 # Create minimal instance for API access
                 instance = provider_class(model=provider_info.default_model, **kwargs)
