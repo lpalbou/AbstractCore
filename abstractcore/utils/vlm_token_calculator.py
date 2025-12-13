@@ -22,8 +22,9 @@ References:
 import math
 from typing import Tuple, Dict, Any, Optional, List
 from pathlib import Path
-from PIL import Image
 import logging
+
+from PIL import Image
 
 from ..utils.structured_logging import get_logger
 from ..architectures.detection import get_model_capabilities, detect_architecture
