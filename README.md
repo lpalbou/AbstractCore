@@ -924,6 +924,9 @@ pip install abstractcore[server]
 # With embeddings
 pip install abstractcore[embeddings]
 
+# With compression (Glyph visual-text compression)
+pip install abstractcore[compression]
+
 # Everything (recommended for Apple Silicon)
 pip install abstractcore[all]
 

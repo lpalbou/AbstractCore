@@ -9,11 +9,7 @@ from typing import Tuple, Optional, Union, Dict, Any
 from enum import Enum
 from pathlib import Path
 
-try:
-    from PIL import Image, ImageOps
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
+from PIL import Image, ImageOps
 
 from ..base import MediaProcessingError
 from ...utils.structured_logging import get_logger
@@ -37,9 +33,6 @@ class ModelOptimizedScaler:
 
     def __init__(self):
         self.logger = get_logger(__name__)
-
-        if not PIL_AVAILABLE:
-            raise MediaProcessingError("PIL (Pillow) is required for image scaling")
 
     def get_optimal_resolution(self, model_name: str, original_size: Tuple[int, int],
                              model_capabilities: Optional[Dict[str, Any]] = None) -> Tuple[int, int]:

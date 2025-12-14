@@ -50,6 +50,7 @@ dependencies = [
     "httpx>=0.24.0,<1.0.0",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",  # Required for common_tools web functionality
+    "Pillow>=10.0.0,<12.0.0",  # Required for media handling in providers
 ]
 
 [project.urls]
@@ -140,6 +141,7 @@ media = [
 ]
 
 compression = [
+    "abstractcore[media]",  # Compression requires media handling (PIL for image processing)
     "pdf2image>=1.16.0,<2.0.0",
 ]
 
@@ -181,6 +183,14 @@ all-providers-gpu = [
     "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,vllm,embeddings]",
 ]
 
+all-providers-non-mlx = [
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,embeddings]",
+]
+
+local-providers-non-mlx = [
+    "abstractcore[ollama,lmstudio]",
+]
+
 all = [
     "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,vllm,embeddings,processing,media,compression,tools,server,dev,test,docs]",
 ]
@@ -191,6 +201,10 @@ all-apple = [
 
 all-gpu = [
     "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,vllm,embeddings,processing,media,compression,tools,server,dev,test,docs]",
+]
+
+all-non-mlx = [
+    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,embeddings,processing,media,compression,tools,server,dev,test,docs]",
 ]
 
 lightweight = [

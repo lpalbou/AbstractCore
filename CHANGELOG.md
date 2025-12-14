@@ -5,6 +5,27 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.7] - 2025-12-13
+
+### Fixed
+- Made PIL/Pillow a required core dependency
+  - Providers need media handling, so PIL cannot be optional
+  - Fixes import errors when using abstractcore without explicit media installation
+  - Modified files: `pyproject.toml`, `abstractcore/media/utils/image_scaler.py`, `abstractcore/utils/vlm_token_calculator.py`
+
+## [2.6.6] - 2025-12-13
+
+### Fixed
+- Fixed `NameError: name 'Image' is not defined` when importing tools module without PIL/Pillow installed
+  - `image_scaler.py` used PIL types in annotations but imported conditionally, causing NameError instead of ImportError
+  - Changed to direct imports with clear error messages
+  - Core functionality (`tools`, `create_llm`) now works without PIL installed
+  - Modified files: `abstractcore/media/utils/image_scaler.py`, `abstractcore/utils/vlm_token_calculator.py`
+
+- Fixed `compression` installation group to depend on `media` (includes Pillow)
+
+- Added missing installation groups: `all-non-mlx`, `all-providers-non-mlx`, `local-providers-non-mlx`
+
 ## [2.6.5] - 2025-12-10
 
 ### Added
