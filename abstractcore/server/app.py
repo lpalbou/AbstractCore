@@ -1956,6 +1956,39 @@ async def provider_chat_completions(
     _, model = parse_model_string(request.model)
     return await process_chat_completion(provider, model, request, http_request)
 
+
+def _extract_trace_metadata(http_request: Request) -> Dict[str, Any]:
+    """Extract trace metadata from request headers (schema-safe)."""
+    meta: Dict[str, Any] = {}
+
+    raw = (
+        http_request.headers.get("x-abstractcore-trace-metadata")
+        or http_request.headers.get("x-abstract-trace-metadata")
+    )
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                meta.update(parsed)
+        except Exception:
+            # Ignore invalid metadata payloads; tracing is best-effort.
+            pass
+
+    header_map = {
+        "actor_id": "x-abstractcore-actor-id",
+        "session_id": "x-abstractcore-session-id",
+        "run_id": "x-abstractcore-run-id",
+        "parent_run_id": "x-abstractcore-parent-run-id",
+    }
+    for key, header in header_map.items():
+        val = http_request.headers.get(header)
+        if val is not None and key not in meta:
+            meta[key] = val
+
+    # Never log or return these directly; they are for internal correlation only.
+    return meta
+
+
 async def process_chat_completion(
     provider: str,
     model: str,
@@ -2019,6 +2052,11 @@ async def process_chat_completion(
         # Create LLM instance
         # Prepare provider-specific kwargs
         provider_kwargs = {}
+        trace_metadata = _extract_trace_metadata(http_request)
+        if trace_metadata:
+            # Enable trace capture (trace_id) without retaining full trace buffers by default.
+            provider_kwargs["enable_tracing"] = True
+            provider_kwargs.setdefault("max_traces", 0)
         if request.base_url:
             provider_kwargs["base_url"] = request.base_url
             logger.info(
@@ -2047,6 +2085,8 @@ async def process_chat_completion(
             "tool_choice": request.tool_choice if request.tools else None,
             "execute_tools": False,  # Server mode - don't execute tools
         }
+        if trace_metadata:
+            gen_kwargs["trace_metadata"] = trace_metadata
 
         # Add optional parameters
         if request.stop:
@@ -2081,9 +2121,18 @@ async def process_chat_completion(
                 )
             else:
                 response = llm.generate(**gen_kwargs)
-                return convert_to_openai_response(
+                openai_response = convert_to_openai_response(
                     response, provider, model, syntax_rewriter, request_id
                 )
+                trace_id = None
+                if hasattr(response, "metadata") and isinstance(getattr(response, "metadata"), dict):
+                    trace_id = response.metadata.get("trace_id")
+                if trace_id:
+                    return JSONResponse(
+                        content=openai_response,
+                        headers={"X-AbstractCore-Trace-Id": str(trace_id)},
+                    )
+                return openai_response
         finally:
             # Cleanup temporary files (base64 and downloaded images) with delay to avoid race conditions
             import threading
