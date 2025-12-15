@@ -375,13 +375,9 @@ def clear_registry():
     """Clear all tools (useful for testing)"""
 ```
 
-**Decorator for Auto-Registration**:
-```python
-@register
-def my_tool(param: str) -> str:
-    """Tool automatically registered in global registry"""
-    return result
-```
+Note: Global tool registration is **deprecated**. Prefer passing tools explicitly to `generate(...)`
+and executing tool calls in your host/runtime via a `ToolExecutor`. If you still need legacy
+global registration (e.g. for older code paths), use `register_tool(...)`.
 
 **Event Emission**:
 The registry emits events for monitoring:
@@ -391,11 +387,12 @@ The registry emits events for monitoring:
 
 **Example**:
 ```python
-# Register a function as a tool
-@register
+# Register a function as a tool (legacy global registry; deprecated)
 def calculate_sum(a: int, b: int) -> int:
     """Add two numbers"""
     return a + b
+
+register_tool(calculate_sum)
 
 # Execute tool call
 tool_call = ToolCall(
@@ -786,17 +783,7 @@ tool_def = ToolDefinition.from_function(multiply)
 
 ### Registering Tools
 
-**Automatic Registration**:
-```python
-from abstractcore.tools import register
-
-@register
-def my_tool(param: str) -> str:
-    """Automatically registered in global registry"""
-    return result
-```
-
-**Manual Registration**:
+**Manual Registration (legacy global registry; deprecated)**:
 ```python
 from abstractcore.tools import register_tool, get_registry
 
@@ -961,9 +948,9 @@ Agents leverage tools for autonomous operation:
 
 ```python
 from abstractcore.agents import ReActAgent
-from abstractcore.tools import register
+from abstractcore.tools import tool
 
-@register
+@tool
 def calculator(expression: str) -> float:
     """Evaluate mathematical expressions"""
     return eval(expression)
@@ -1230,27 +1217,31 @@ def process(data: str) -> str:
 
 ### 5. Tool Naming Conflicts
 
-**Problem**: Multiple tools with same name
+**Problem**: Multiple tools with the same name
 ```python
-@register
-def search(query: str) -> str:
+from abstractcore.tools import tool
+
+@tool(name="search")
+def search_web(query: str) -> str:
     """Web search"""
     return web_results
 
-@register
-def search(query: str) -> str:  # Overwrites previous!
+@tool(name="search")
+def search_database(query: str) -> str:  # Conflicts with search_web
     """Database search"""
     return db_results
 ```
 
 **Solution**: Use unique names
 ```python
-@register
+from abstractcore.tools import tool
+
+@tool(name="search_web")
 def search_web(query: str) -> str:
     """Search the web"""
     return web_results
 
-@register
+@tool(name="search_database")
 def search_database(query: str) -> str:
     """Search database"""
     return db_results
