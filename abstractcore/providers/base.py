@@ -210,6 +210,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """
         trace_id = str(uuid.uuid4())
 
+        # If trace retention is disabled, still return a trace_id for correlation
+        # without constructing/storing a full trace payload.
+        maxlen = getattr(getattr(self, "_traces", None), "maxlen", None)
+        if maxlen == 0:
+            return trace_id
+
         # Extract generation parameters
         temperature = kwargs.get('temperature', self.temperature)
         max_tokens = kwargs.get('max_tokens', self.max_tokens)
