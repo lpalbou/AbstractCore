@@ -252,8 +252,40 @@ def _parse_special_token(response: str) -> List[ToolCall]:
             try:
                 tool_data = json.loads(json_str)
             except json.JSONDecodeError:
-                # Fallback: fix common LLM JSON issues (unescaped newlines)
-                fixed_json = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                # Fallback: Escape newlines/tabs only inside JSON string values
+                # This prevents escaping structural newlines which would break parsing
+                # Algorithm: Track when inside/outside strings, only escape within strings
+                in_string = False
+                escaped = False
+                fixed = []
+
+                for char in json_str:
+                    if escaped:
+                        # Previous char was backslash, this is part of escape sequence
+                        fixed.append(char)
+                        escaped = False
+                    elif char == '\\':
+                        # Start of escape sequence
+                        fixed.append(char)
+                        escaped = True
+                    elif char == '"':
+                        # Toggle string context
+                        in_string = not in_string
+                        fixed.append(char)
+                    elif in_string and char == '\n':
+                        # Newline inside string - escape it
+                        fixed.append('\\n')
+                    elif in_string and char == '\r':
+                        # CR inside string - escape it
+                        fixed.append('\\r')
+                    elif in_string and char == '\t':
+                        # Tab inside string - escape it
+                        fixed.append('\\t')
+                    else:
+                        # Normal character or structural whitespace
+                        fixed.append(char)
+
+                fixed_json = ''.join(fixed)
                 tool_data = json.loads(fixed_json)
 
             if isinstance(tool_data, dict):
