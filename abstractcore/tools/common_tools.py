@@ -1742,9 +1742,9 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
 
 
 @tool(
-    description="Edit files using pattern matching and replacement - simple, powerful, and intuitive",
-    tags=["file", "edit", "modify", "pattern", "replace", "regex"],
-    when_to_use="When you need to edit files by finding patterns (text, functions, code blocks) and replacing them",
+    description="Replace text patterns in files using simple pattern matching or regex - good for simple substitutions",
+    tags=["file", "replace", "pattern", "substitute", "regex"],
+    when_to_use="When you need to do simple text replacements in files (for complex edits, use edit_file with unified diff)",
     examples=[
         {
             "description": "Replace simple text",
@@ -1783,7 +1783,7 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
         }
     ]
 )
-def edit_file(
+def replace_in_file(
     file_path: str,
     pattern: str,
     replacement: str,
@@ -1795,9 +1795,10 @@ def edit_file(
     encoding: str = "utf-8"
 ) -> str:
     """
-    Edit files using pattern matching and replacement.
+    Replace text patterns in files using pattern matching.
 
     Finds patterns (text or regex) in files and replaces them with new content.
+    For complex multi-line edits, consider using edit_file with unified diff instead.
 
     Args:
         file_path: Path to the file to edit
@@ -1814,10 +1815,10 @@ def edit_file(
         Success message with replacement details or error message
 
     Examples:
-        edit_file("config.py", "debug = False", "debug = True")
-        edit_file("script.py", r"def old_func\\([^)]*\\):", "def new_func():", use_regex=True)
-        edit_file("document.txt", "TODO", "DONE", max_replacements=1)
-        edit_file("test.py", "class OldClass", "class NewClass", preview_only=True)
+        replace_in_file("config.py", "debug = False", "debug = True")
+        replace_in_file("script.py", r"def old_func\\([^)]*\\):", "def new_func():", use_regex=True)
+        replace_in_file("document.txt", "TODO", "DONE", max_replacements=1)
+        replace_in_file("test.py", "class OldClass", "class NewClass", preview_only=True)
     """
     try:
         # Validate file exists and expand home directory shortcuts like ~
@@ -1987,6 +1988,275 @@ def edit_file(
     except Exception as e:
         return f"❌ Error editing file: {str(e)}"
 
+
+# Unified diff parsing utilities for edit_file
+_HUNK_HEADER_RE = re.compile(r"^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@")
+
+
+def _normalize_diff_path(raw: str) -> str:
+    """Normalize a path from a unified diff header."""
+    raw = raw.strip()
+    # Remove timestamps and extra markers (common in diff headers)
+    raw = raw.split("\t", 1)[0].strip()
+    raw = raw.split(" ", 1)[0].strip()
+    if raw.startswith("a/") or raw.startswith("b/"):
+        raw = raw[2:]
+    return raw
+
+
+def _path_parts(path_str: str) -> tuple:
+    """Split a path string into parts."""
+    normalized = path_str.replace("\\", "/")
+    parts = [p for p in normalized.split("/") if p and p != "."]
+    return tuple(parts)
+
+
+def _is_suffix_path(candidate: str, target: Path) -> bool:
+    """Check if candidate path is a suffix of target path."""
+    candidate_parts = _path_parts(candidate)
+    if not candidate_parts:
+        return False
+    target_parts = tuple(target.as_posix().split("/"))
+    return len(candidate_parts) <= len(target_parts) and target_parts[-len(candidate_parts):] == candidate_parts
+
+
+def _parse_unified_diff(patch: str):
+    """
+    Parse a unified diff for a single file.
+
+    Returns:
+        (header_path, hunks, error) where hunks is a list of (old_start, old_len, new_start, new_len, lines)
+    """
+    lines = patch.splitlines()
+    header_path = None
+    hunk_list = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        if line.startswith("--- "):
+            old_path = _normalize_diff_path(line[4:])
+            i += 1
+            if i >= len(lines) or not lines[i].startswith("+++ "):
+                return None, [], "Invalid unified diff: missing '+++ ' header after '--- '"
+            new_path = _normalize_diff_path(lines[i][4:])
+            # Accept /dev/null only for create/delete diffs (not supported here)
+            if old_path != "/dev/null" and new_path != "/dev/null":
+                if header_path is None:
+                    header_path = new_path
+                elif header_path != new_path:
+                    return None, [], "Unified diff appears to reference multiple files"
+            i += 1
+            continue
+
+        if line.startswith("@@"):
+            m = _HUNK_HEADER_RE.match(line)
+            if not m:
+                return header_path, [], f"Invalid hunk header: {line}"
+
+            old_start = int(m.group(1))
+            old_len = int(m.group(2) or 1)
+            new_start = int(m.group(3))
+            new_len = int(m.group(4) or 1)
+
+            i += 1
+            hunk_lines = []
+            while i < len(lines):
+                nxt = lines[i]
+                if nxt.startswith("@@") or nxt.startswith("--- ") or nxt.startswith("diff --git "):
+                    break
+                hunk_lines.append(nxt)
+                i += 1
+
+            hunk_list.append((old_start, old_len, new_start, new_len, hunk_lines))
+            continue
+
+        i += 1
+
+    if not hunk_list:
+        return header_path, [], "No hunks found in diff (missing '@@ ... @@' sections)"
+
+    return header_path, hunk_list, None
+
+
+def _apply_unified_diff(original_text: str, hunks):
+    """
+    Apply unified diff hunks to text.
+
+    Returns:
+        (new_text, error)
+    """
+    import difflib as _difflib
+
+    ends_with_newline = original_text.endswith("\n")
+    original_lines = original_text.splitlines()
+
+    out = []
+    cursor = 0  # index into original_lines
+
+    for old_start, _old_len, _new_start, _new_len, hunk_lines in hunks:
+        hunk_start = max(old_start - 1, 0)
+        if hunk_start > len(original_lines):
+            return None, f"Hunk starts beyond end of file (start={old_start}, lines={len(original_lines)})"
+
+        # Copy unchanged prefix
+        out.extend(original_lines[cursor:hunk_start])
+        cursor = hunk_start
+
+        for hl in hunk_lines:
+            if hl == r"\ No newline at end of file":
+                continue
+            if not hl:
+                # Empty lines are represented as a prefix char with empty remainder (" ", "-", "+")
+                return None, "Invalid diff line: empty line without prefix"
+
+            prefix = hl[0]
+            text = hl[1:]
+
+            if prefix == " ":
+                if cursor >= len(original_lines) or original_lines[cursor] != text:
+                    got = original_lines[cursor] if cursor < len(original_lines) else "<EOF>"
+                    return None, f"Context mismatch applying patch. Expected {text!r}, got {got!r}"
+                out.append(text)
+                cursor += 1
+            elif prefix == "-":
+                if cursor >= len(original_lines) or original_lines[cursor] != text:
+                    got = original_lines[cursor] if cursor < len(original_lines) else "<EOF>"
+                    return None, f"Remove mismatch applying patch. Expected {text!r}, got {got!r}"
+                cursor += 1
+            elif prefix == "+":
+                out.append(text)
+            else:
+                return None, f"Invalid diff line prefix {prefix!r} (expected one of ' ', '+', '-')"
+
+    # Copy any remaining tail
+    out.extend(original_lines[cursor:])
+
+    new_text = "\n".join(out)
+    if ends_with_newline and not new_text.endswith("\n"):
+        new_text += "\n"
+    return new_text, None
+
+
+@tool(
+    description="Edit files by applying unified diff patches - SOTA approach with 3X higher accuracy than pattern replacement",
+    tags=["file", "edit", "modify", "diff", "patch", "unified"],
+    when_to_use="When you need to make precise edits to files. Generate a unified diff and apply it.",
+    examples=[
+        {
+            "description": "Apply a simple one-line change",
+            "arguments": {
+                "file_path": "config.py",
+                "patch": """--- a/config.py
++++ b/config.py
+@@ -1,3 +1,3 @@
+ # Configuration
+-DEBUG = False
++DEBUG = True
+ VERSION = "1.0"
+"""
+            }
+        },
+        {
+            "description": "Add a new function",
+            "arguments": {
+                "file_path": "utils.py",
+                "patch": """--- a/utils.py
++++ b/utils.py
+@@ -5,6 +5,10 @@
+ def existing_func():
+     pass
+
++def new_func():
++    \"\"\"New function.\"\"\"
++    return 42
++
+ class MyClass:
+     pass
+"""
+            }
+        }
+    ]
+)
+def edit_file(file_path: str, patch: str) -> str:
+    """
+    Edit a file by applying a unified diff patch.
+
+    This is the recommended approach for file editing (3X more accurate than pattern
+    replacement according to Aider research). The unified diff format encourages
+    LLM rigor and produces more reliable edits.
+
+    Args:
+        file_path: Path to the file to edit
+        patch: Unified diff patch to apply (standard format with --- and +++ headers)
+
+    Returns:
+        Success message with diff preview or error message
+
+    Example patch format:
+        --- a/file.py
+        +++ b/file.py
+        @@ -1,3 +1,3 @@
+         context line
+        -old line
+        +new line
+         context line
+    """
+    import difflib as _difflib
+
+    try:
+        p = Path(file_path).expanduser().resolve()
+        if not p.exists():
+            return f"❌ File not found: {file_path}"
+        if not p.is_file():
+            return f"❌ Path is not a file: {file_path}"
+
+        header_path, hunks, err = _parse_unified_diff(patch)
+        if err:
+            return f"❌ {err}"
+        if header_path and not _is_suffix_path(header_path, p):
+            return (
+                "❌ Patch file header does not match the provided path.\n"
+                f"Patch header: {header_path}\n"
+                f"Target path:  {p}\n"
+                "Generate a unified diff targeting the exact file you want to update."
+            )
+
+        original = p.read_text(encoding="utf-8", errors="replace")
+        updated, apply_err = _apply_unified_diff(original, hunks)
+        if apply_err:
+            return f"❌ Patch did not apply cleanly: {apply_err}"
+
+        if updated is None:
+            return "❌ Failed to apply patch"
+        if updated == original:
+            return "No changes applied (patch resulted in identical content)."
+
+        p.write_text(updated, encoding="utf-8")
+
+        # Generate a preview of what changed
+        old_lines = original.splitlines()
+        new_lines = updated.splitlines()
+        diff_lines = list(
+            _difflib.unified_diff(
+                old_lines,
+                new_lines,
+                fromfile=str(p),
+                tofile=str(p),
+                lineterm="",
+                n=3,
+            )
+        )
+        preview = "\n".join(diff_lines[:120])
+        if len(diff_lines) > 120:
+            preview += f"\n... (diff truncated, {len(diff_lines)} lines total)"
+
+        return f"✅ Updated {str(p)}\n{preview}"
+    except PermissionError:
+        return f"❌ Permission denied: {file_path}"
+    except Exception as e:
+        return f"❌ Error: {e}"
 
 
 @tool(
@@ -2266,6 +2536,7 @@ __all__ = [
     'search_files',
     'read_file',
     'write_file',
+    'replace_in_file',
     'edit_file',
     'web_search',
     'fetch_url',
