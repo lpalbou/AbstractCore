@@ -151,7 +151,9 @@ def format_tool_prompt(tools: List[ToolDefinition], model_name: Optional[str] = 
 def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
     """Get tool format for a model."""
     if not model_name:
-        return ToolFormat.RAW_JSON
+        # When no model specified, use NATIVE which triggers _parse_any_format
+        # This ensures all formats are tried including <|tool_call|> special tokens
+        return ToolFormat.NATIVE
 
     architecture = detect_architecture(model_name)
     arch_format = get_architecture_format(architecture)
