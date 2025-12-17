@@ -148,6 +148,58 @@ def format_tool_prompt(tools: List[ToolDefinition], model_name: Optional[str] = 
 
 # Internal helpers
 
+def _sanitize_tool_call_tags(response: str) -> str:
+    """
+    Sanitize malformed tool call tags before parsing.
+
+    Handles common LLM output malformations:
+    - Doubled opening tags: <|tool_call|><|tool_call|> → <|tool_call|>
+    - Doubled closing tags: </|tool_call|></|tool_call|> → </|tool_call|>
+    - Malformed closing with }: </|tool_call|} → </|tool_call|>
+
+    Args:
+        response: Raw model response text
+
+    Returns:
+        Sanitized response with normalized tool call syntax
+    """
+    if not response:
+        return response
+
+    original = response
+
+    # Fix doubled/multiple opening tags (collapse to single)
+    # Handles: <|tool_call|><|tool_call|> or <|tool_call|>\n<|tool_call|>
+    response = re.sub(
+        r'(<\|tool_call\|>\s*)+',
+        r'<|tool_call|>',
+        response,
+        flags=re.IGNORECASE
+    )
+
+    # Fix malformed closing tags with } instead of |>
+    # Handles: </|tool_call|} → </|tool_call|>
+    response = re.sub(
+        r'</\|tool_call\|\}',
+        r'</|tool_call|>',
+        response,
+        flags=re.IGNORECASE
+    )
+
+    # Fix doubled/multiple closing tags (collapse to single)
+    response = re.sub(
+        r'(</\|tool_call\|>\s*)+',
+        r'</|tool_call|>',
+        response,
+        flags=re.IGNORECASE
+    )
+
+    if response != original:
+        logger.debug(f"Sanitized malformed tool call tags")
+
+    return response
+
+
 def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
     """Get tool format for a model."""
     if not model_name:
@@ -177,7 +229,10 @@ def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
 def _parse_special_token(response: str) -> List[ToolCall]:
     """Parse Qwen-style <|tool_call|> format with robust fallback."""
     tool_calls = []
-    
+
+    # SANITIZE FIRST: Fix malformed tags (doubled tags, broken closing tags)
+    response = _sanitize_tool_call_tags(response)
+
     # Pre-process: Remove markdown code fences that might wrap tool calls
     # This handles cases like ```json\n<|tool_call|>...\n```
     cleaned_response = re.sub(r'```(?:json|python|tool_code|tool_call)?\s*\n', '', response, flags=re.IGNORECASE)
@@ -458,6 +513,9 @@ def _parse_raw_json(response: str) -> List[ToolCall]:
 
 def _parse_any_format(response: str) -> List[ToolCall]:
     """Try all parsing formats with comprehensive fallbacks."""
+    # SANITIZE FIRST: Fix malformed tags before trying any parser
+    response = _sanitize_tool_call_tags(response)
+
     tool_calls = []
 
     # Try each parser and accumulate results
