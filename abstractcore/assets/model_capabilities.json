@@ -638,17 +638,26 @@
       "max_tokens": 262144
     },
     "qwen3-coder-30b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 65536,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
       "vision_support": false,
       "audio_support": false,
-      "notes": "Code-focused model with native tool support via chatml-function-calling format",
-      "source": "Alibaba official docs",
+      "architecture": "mixture_of_experts",
+      "total_parameters": "30.5B",
+      "active_parameters": "3.3B",
+      "experts": 128,
+      "experts_activated": 8,
+      "notes": "Code-focused MoE model (30.5B total/3.3B active, 128 experts/8 activated). Native tool support via chatml-function-calling format. Supports up to 1M tokens with YaRN extension.",
+      "source": "Qwen HuggingFace model card 2025",
       "canonical_name": "qwen3-coder-30b",
-      "aliases": [],
-      "max_tokens": 32768
+      "aliases": [
+        "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        "qwen3-coder-30b-a3b",
+        "qwen3-coder-30b-a3b-instruct"
+      ],
+      "max_tokens": 262144
     },
     "qwen2-vl": {
       "max_output_tokens": 8192,
