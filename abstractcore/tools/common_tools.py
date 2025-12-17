@@ -1815,10 +1815,10 @@ def edit_file(
         Success message with replacement details or error message
 
     Examples:
-        replace_in_file("config.py", "debug = False", "debug = True")
-        replace_in_file("script.py", r"def old_func\\([^)]*\\):", "def new_func():", use_regex=True)
-        replace_in_file("document.txt", "TODO", "DONE", max_replacements=1)
-        replace_in_file("test.py", "class OldClass", "class NewClass", preview_only=True)
+        edit_file("config.py", "debug = False", "debug = True")
+        edit_file("script.py", r"def old_func\\([^)]*\\):", "def new_func():", use_regex=True)
+        edit_file("document.txt", "TODO", "DONE", max_replacements=1)
+        edit_file("test.py", "class OldClass", "class NewClass", preview_only=True)
     """
     try:
         # Validate file exists and expand home directory shortcuts like ~
