@@ -35,6 +35,42 @@ class SummaryLength(Enum):
     COMPREHENSIVE = "comprehensive"  # Full analysis with context
 
 
+class CompressionMode(Enum):
+    """Compression aggressiveness for chat history summarization.
+
+    Controls how aggressively the summarizer compresses conversation history:
+    - LIGHT: Keep most information, only remove redundancy
+    - STANDARD: Balanced compression, main points and context
+    - HEAVY: Aggressive compression, only critical information
+    """
+    LIGHT = "light"
+    STANDARD = "standard"
+    HEAVY = "heavy"
+
+
+# Compression mode-specific instructions for summarization prompts
+COMPRESSION_INSTRUCTIONS = {
+    CompressionMode.LIGHT: (
+        "Preserve most details from this conversation while removing only redundancy. "
+        "Keep: all key decisions and outcomes, important context and background, "
+        "specific details/names/numbers/technical terms, all tool calls and results, "
+        "error messages and resolutions. Remove only: repetitive greetings, duplicate information."
+    ),
+    CompressionMode.STANDARD: (
+        "Summarize with balanced compression, keeping main points and essential context. "
+        "Keep: key decisions and rationale, important outcomes, critical context for ongoing work, "
+        "unresolved items and pending tasks. Remove: intermediate reasoning steps, "
+        "exploratory tangents, detailed tool outputs (keep only key findings)."
+    ),
+    CompressionMode.HEAVY: (
+        "Extract only the most critical information. Keep ONLY: final decisions made, "
+        "critical outcomes (success/failure), essential context to continue work, "
+        "blocking issues and hard dependencies. Remove: all exploratory discussion, "
+        "all intermediate steps, all detailed outputs, all background explanations."
+    ),
+}
+
+
 class LLMSummaryOutput(BaseModel):
     """LLM-generated summary output (without word counts)"""
     summary: str = Field(description="The main summary text")
@@ -493,7 +529,8 @@ Create a unified summary that represents the entire document effectively."""
         self,
         messages: List[dict],
         preserve_recent: int = 6,
-        focus: Optional[str] = None
+        focus: Optional[str] = None,
+        compression_mode: CompressionMode = CompressionMode.STANDARD
     ) -> SummaryOutput:
         """
         Specialized method for chat history summarization following SOTA 2025 practices
@@ -502,6 +539,7 @@ Create a unified summary that represents the entire document effectively."""
             messages: List of message dicts with 'role' and 'content' keys
             preserve_recent: Number of recent messages to keep intact (default 6)
             focus: Optional focus for summarization (e.g., "key decisions", "technical solutions")
+            compression_mode: How aggressively to compress (LIGHT, STANDARD, HEAVY)
 
         Returns:
             SummaryOutput: Structured summary optimized for chat history context
@@ -511,36 +549,67 @@ Create a unified summary that represents the entire document effectively."""
         - Focuses on decisions, solutions, and ongoing topics
         - Maintains user intent and assistant responses
         - Optimized for chat continuation rather than standalone summary
+
+        Compression Modes:
+        - LIGHT: Keep most information, only remove redundancy
+        - STANDARD: Balanced compression, main points and context
+        - HEAVY: Aggressive compression, only critical information
         """
+        # Build focus with compression instructions
+        compression_instruction = COMPRESSION_INSTRUCTIONS.get(
+            compression_mode,
+            COMPRESSION_INSTRUCTIONS[CompressionMode.STANDARD]
+        )
+
+        # Combine user focus with compression instruction
+        if focus:
+            effective_focus = f"{compression_instruction} Focus especially on: {focus}"
+        else:
+            effective_focus = compression_instruction
+
+        # Map compression mode to summary length for appropriate output size
+        length_map = {
+            CompressionMode.LIGHT: SummaryLength.DETAILED,
+            CompressionMode.STANDARD: SummaryLength.STANDARD,
+            CompressionMode.HEAVY: SummaryLength.BRIEF,
+        }
+        target_length = length_map.get(compression_mode, SummaryLength.STANDARD)
+
+        logger.debug("Chat history summarization with compression mode",
+                    message_count=len(messages),
+                    preserve_recent=preserve_recent,
+                    compression_mode=compression_mode.value,
+                    target_length=target_length.value)
+
         if len(messages) <= preserve_recent:
             # If short enough, just summarize normally
-            logger.debug("Chat history is short, using standard summarization", 
-                        message_count=len(messages), 
+            logger.debug("Chat history is short, using standard summarization",
+                        message_count=len(messages),
                         preserve_recent=preserve_recent)
             chat_text = self._format_chat_messages_to_text(messages)
             return self.summarize(
                 chat_text,
-                focus=focus or "conversational context and key information",
+                focus=effective_focus,
                 style=SummaryStyle.CONVERSATIONAL,
-                length=SummaryLength.STANDARD
+                length=target_length
             )
 
         # Split into older messages (to summarize) and recent messages (to preserve)
         older_messages = messages[:-preserve_recent]
         recent_messages = messages[-preserve_recent:]
-        
-        logger.debug("Splitting chat history for summarization", 
+
+        logger.debug("Splitting chat history for summarization",
                     total_messages=len(messages),
                     older_messages=len(older_messages),
                     recent_messages=len(recent_messages))
 
-        # Summarize older messages with conversational focus
+        # Summarize older messages with conversational focus and compression mode
         older_text = self._format_chat_messages_to_text(older_messages)
         older_summary = self.summarize(
             older_text,
-            focus=focus or "key decisions, solutions, and ongoing context",
+            focus=effective_focus,
             style=SummaryStyle.CONVERSATIONAL,
-            length=SummaryLength.DETAILED
+            length=target_length
         )
 
         # The summary should ONLY contain the older messages summary
