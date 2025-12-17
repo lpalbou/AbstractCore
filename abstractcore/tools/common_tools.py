@@ -1780,9 +1780,127 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
                 "replacement": "class NewClass",
                 "preview_only": True
             }
+        },
+        {
+            "description": "Match pattern ignoring whitespace differences (enabled by default)",
+            "arguments": {
+                "file_path": "script.py",
+                "pattern": "if condition:\n    do_something()",
+                "replacement": "if condition:\n    do_something_else()",
+                "flexible_whitespace": True
+            }
         }
     ]
 )
+
+
+def _flexible_whitespace_match(
+    pattern: str,
+    replacement: str,
+    content: str,
+    max_replacements: int
+) -> Optional[tuple]:
+    """
+    Match pattern with flexible leading whitespace handling.
+
+    Converts a multi-line pattern into a regex that:
+    1. Normalizes line endings (\r\n -> \n)
+    2. Matches any amount of leading whitespace on each line
+    3. Preserves the non-whitespace content exactly
+
+    Returns (updated_content, count) if matches found, None otherwise.
+    """
+    # Normalize line endings in both pattern and content
+    pattern_normalized = pattern.replace('\r\n', '\n')
+    content_normalized = content.replace('\r\n', '\n')
+
+    # Split pattern into lines
+    pattern_lines = pattern_normalized.split('\n')
+
+    # Build regex parts for each line
+    regex_parts = []
+    for i, line in enumerate(pattern_lines):
+        # Get leading whitespace and content
+        stripped = line.lstrip()
+        if stripped:
+            # Escape special regex characters in the content
+            escaped_content = re.escape(stripped)
+            # Match any leading whitespace (spaces or tabs)
+            regex_parts.append(r'[ \t]*' + escaped_content)
+        else:
+            # Empty line or whitespace-only - match any whitespace
+            regex_parts.append(r'[ \t]*')
+
+    # Join with flexible newline matching (handles \n or \r\n)
+    flexible_pattern = r'\r?\n'.join(regex_parts)
+
+    try:
+        regex = re.compile(flexible_pattern, re.MULTILINE)
+    except re.error:
+        return None
+
+    matches = list(regex.finditer(content_normalized))
+    if not matches:
+        return None
+
+    # Apply replacements
+    # For the replacement, we need to adjust indentation to match
+    # the actual indentation found in the match
+
+    def replacement_fn(match):
+        """Adjust replacement to use the indentation from the matched text."""
+        matched_text = match.group(0)
+        matched_lines = matched_text.split('\n')
+
+        # Normalize the replacement's line endings
+        repl_normalized = replacement.replace('\r\n', '\n')
+        repl_lines = repl_normalized.split('\n')
+
+        if not repl_lines:
+            return replacement
+
+        # For each line in the replacement, use the corresponding matched line's
+        # actual indentation. This preserves the file's indentation style exactly.
+        adjusted_lines = []
+        for j, repl_line in enumerate(repl_lines):
+            repl_stripped = repl_line.lstrip()
+
+            if j < len(matched_lines):
+                # We have a corresponding matched line - use its actual indentation
+                matched_line = matched_lines[j]
+                actual_indent_str = matched_line[:len(matched_line) - len(matched_line.lstrip())]
+                adjusted_lines.append(actual_indent_str + repl_stripped)
+            else:
+                # Extra lines in replacement - no matched counterpart
+                # Use the indentation from the last matched line as reference
+                if matched_lines:
+                    last_matched = matched_lines[-1]
+                    base_indent_str = last_matched[:len(last_matched) - len(last_matched.lstrip())]
+                    # Add relative indentation from replacement
+                    repl_indent_len = len(repl_line) - len(repl_stripped)
+                    pattern_last_indent = len(pattern_lines[-1]) - len(pattern_lines[-1].lstrip()) if pattern_lines else 0
+                    extra_spaces = max(0, repl_indent_len - pattern_last_indent)
+                    adjusted_lines.append(base_indent_str + ' ' * extra_spaces + repl_stripped)
+                else:
+                    adjusted_lines.append(repl_line)
+
+        return '\n'.join(adjusted_lines)
+
+    # Apply the replacement
+    if max_replacements == -1:
+        updated = regex.sub(replacement_fn, content_normalized)
+        count = len(matches)
+    else:
+        updated = regex.sub(replacement_fn, content_normalized, count=max_replacements)
+        count = min(len(matches), max_replacements)
+
+    # Restore original line endings if needed
+    if '\r\n' in content and '\r\n' not in updated:
+        updated = updated.replace('\n', '\r\n')
+
+    return (updated, count)
+
+
 def edit_file(
     file_path: str,
     pattern: str,
@@ -1792,7 +1910,8 @@ def edit_file(
     start_line: Optional[int] = None,
     end_line: Optional[int] = None,
     preview_only: bool = False,
-    encoding: str = "utf-8"
+    encoding: str = "utf-8",
+    flexible_whitespace: bool = True
 ) -> str:
     """
     Replace text patterns in files using pattern matching.
@@ -1810,6 +1929,10 @@ def edit_file(
         end_line: Ending line number to limit search scope (1-indexed, optional)
         preview_only: Show what would be changed without applying (default: False)
         encoding: File encoding (default: "utf-8")
+        flexible_whitespace: Enable whitespace-flexible matching (default: True).
+            When enabled, matches patterns even if indentation differs between
+            the pattern and file content. Handles tabs vs spaces, different
+            indentation levels, and line ending differences (\n vs \r\n).
 
     Returns:
         Success message with replacement details or error message
@@ -1890,16 +2013,31 @@ def edit_file(
         else:
             # Simple text replacement on search content
             count = search_content.count(pattern)
-            if count == 0:
+
+            # If exact match fails and flexible_whitespace is enabled, try flexible matching
+            if count == 0 and flexible_whitespace and '\n' in pattern:
+                # Convert pattern to regex with flexible leading whitespace per line
+                # Strategy: Replace each newline + whitespace with a regex that matches
+                # any amount of leading whitespace
+                flexible_result = _flexible_whitespace_match(
+                    pattern, replacement, search_content, max_replacements
+                )
+                if flexible_result is not None:
+                    updated_search_content, replacements_made = flexible_result
+                else:
+                    range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
+                    return f"No occurrences of '{pattern}' found in '{file_path}'{range_info}"
+            elif count == 0:
                 range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
                 return f"No occurrences of '{pattern}' found in '{file_path}'{range_info}"
-
-            if max_replacements == -1:
-                updated_search_content = search_content.replace(pattern, replacement)
-                replacements_made = count
             else:
-                updated_search_content = search_content.replace(pattern, replacement, max_replacements)
-                replacements_made = min(count, max_replacements)
+                # Exact match found
+                if max_replacements == -1:
+                    updated_search_content = search_content.replace(pattern, replacement)
+                    replacements_made = count
+                else:
+                    updated_search_content = search_content.replace(pattern, replacement, max_replacements)
+                    replacements_made = min(count, max_replacements)
 
         # Reconstruct the full file content if line ranges were used
         if start_line is not None or end_line is not None:
