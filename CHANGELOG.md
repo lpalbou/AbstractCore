@@ -5,6 +5,51 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.8] - 2025-12-17
+
+### Added
+- **CompressionMode Enum for Chat History Summarization**: New compression level control for `summarize_chat_history()`
+  - `CompressionMode.LIGHT`: Keep most information, only remove redundancy
+  - `CompressionMode.STANDARD`: Balanced compression, main points and context (default)
+  - `CompressionMode.HEAVY`: Aggressive compression, only critical information
+
+- **New Parameter in `summarize_chat_history()`**: Added `compression_mode` parameter
+  - Controls summarization aggressiveness via prompt instructions
+  - Maps to appropriate `SummaryLength` for output sizing (LIGHT→DETAILED, STANDARD→STANDARD, HEAVY→BRIEF)
+  - Works with existing `preserve_recent` and `focus` parameters
+
+### Technical Details
+- **Files Modified**:
+  - `abstractcore/processing/basic_summarizer.py` (added CompressionMode enum, COMPRESSION_INSTRUCTIONS dict, modified summarize_chat_history())
+  - `abstractcore/processing/__init__.py` (exported CompressionMode)
+  - `abstractcore/utils/version.py` (version bump to 2.6.8)
+
+### Usage Example
+```python
+from abstractcore.processing import BasicSummarizer, CompressionMode
+
+summarizer = BasicSummarizer(llm)
+
+# Light compression - preserve most details
+result = summarizer.summarize_chat_history(
+    messages=conversation,
+    preserve_recent=6,
+    compression_mode=CompressionMode.LIGHT
+)
+
+# Heavy compression - only critical info
+result = summarizer.summarize_chat_history(
+    messages=conversation,
+    compression_mode=CompressionMode.HEAVY,
+    focus="key decisions"
+)
+```
+
+### Notes
+- Backward compatible: `compression_mode` defaults to `STANDARD`, matching previous behavior
+- Existing apps (summarizer CLI, BasicSession.compact()) continue to work unchanged
+- This feature enables the `/compact` command in AbstractCode
+
 ## [2.6.7] - 2025-12-13
 
 ### Fixed
