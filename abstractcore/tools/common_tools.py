@@ -1794,6 +1794,26 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
 )
 
 
+def _normalize_escape_sequences(text: str) -> str:
+    """Convert literal escape sequences to actual control characters.
+
+    Handles cases where LLMs send '\\n' (literal) instead of actual newlines.
+    This is a common issue when LLM output is over-escaped in JSON.
+
+    Args:
+        text: Input string potentially containing literal escape sequences
+
+    Returns:
+        String with \\n, \\t, \\r converted to actual control characters
+    """
+    # Only convert if there are literal escape sequences
+    if '\\n' in text or '\\t' in text or '\\r' in text:
+        text = text.replace('\\n', '\n')
+        text = text.replace('\\t', '\t')
+        text = text.replace('\\r', '\r')
+    return text
+
+
 def _flexible_whitespace_match(
     pattern: str,
     replacement: str,
@@ -1962,6 +1982,10 @@ def edit_file(
             return f"❌ Error reading file: {str(e)}"
 
         original_content = content
+
+        # Normalize escape sequences - handles LLMs sending \\n instead of actual newlines
+        pattern = _normalize_escape_sequences(pattern)
+        replacement = _normalize_escape_sequences(replacement)
 
         # Handle line range targeting if specified
         search_content = content
