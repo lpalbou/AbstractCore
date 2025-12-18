@@ -147,8 +147,8 @@ summarizer = BasicSummarizer(llm, max_tokens=-1)
 # Hard limit: 16K tokens (e.g., 8GB GPU constraint)
 summarizer = BasicSummarizer(llm, max_tokens=16000)
 
-# Hard limit: 32K tokens (e.g., 16GB GPU)
-summarizer = BasicSummarizer(llm, max_tokens=32000)
+# Hard limit: 24K tokens (e.g., 16GB GPU)
+summarizer = BasicSummarizer(llm, max_tokens=24000)
 ```
 
 ### Token Budget Modes
@@ -430,15 +430,15 @@ Token limits depend on your deployment environment's GPU/RAM:
 - **CPU-only**: Use `max_tokens=8000-16000`
 
 ```python
-# Example: 8GB GPU deployment
+# Example: AUTO mode (default, uses model's full capability)
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+summarizer = BasicSummarizer(llm)  # max_tokens=-1 by default
+
+# Example: 8GB GPU deployment (hard limit)
 llm = create_llm("ollama", model="qwen3:4b-instruct")
 summarizer = BasicSummarizer(llm, max_tokens=16000)
 
-# Example: 24GB GPU or plenty of resources
-llm = create_llm("ollama", model="qwen3:4b-instruct")
-summarizer = BasicSummarizer(llm, max_tokens=-1)  # AUTO
-
-# Example: CPU-only or constrained
+# Example: CPU-only or constrained (hard limit)
 llm = create_llm("ollama", model="qwen3:4b-instruct")
 summarizer = BasicSummarizer(llm, max_tokens=8000)
 ```
