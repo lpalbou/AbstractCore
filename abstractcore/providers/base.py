@@ -1490,9 +1490,27 @@ Please provide a structured response."""
         Returns:
             GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
         """
-        return await self._agenerate_internal(
+        response = await self._agenerate_internal(
             prompt, messages, system_prompt, tools, media, stream, **kwargs
         )
+
+        # Capture interaction trace if enabled (match sync generate_with_telemetry behavior)
+        # Only for non-streaming responses that are GenerateResponse objects
+        if not stream and self.enable_tracing and response and isinstance(response, GenerateResponse):
+            trace_id = self._capture_trace(
+                prompt=prompt,
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                response=response,
+                kwargs=kwargs
+            )
+            # Attach trace_id to response metadata
+            if not response.metadata:
+                response.metadata = {}
+            response.metadata['trace_id'] = trace_id
+
+        return response
 
     async def _agenerate_internal(self,
                                    prompt: str,
