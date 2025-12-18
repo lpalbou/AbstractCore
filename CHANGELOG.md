@@ -15,18 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Architecture Support**: Added 8 new architectures (glm4v_moe, mistral3, ministral3, granitemoehybrid, gpt_oss, qwen3_vl, qwen3_vl_moe, minimax_m2, harmony)
 - **Compression Modes**: Added `CompressionMode` enum for chat history summarization (LIGHT/STANDARD/HEAVY)
 - **Trace Metadata**: Added HTTP header extraction for distributed tracing support
-- **Memory Management**: Added `adaptive_chunking` parameter to `BasicSummarizer` for GPU memory control
-  - Respects deployment constraints (max_tokens) even when model supports larger contexts
-  - Non-adaptive mode for memory-constrained environments
-  - CLI flag `--no-adaptive-chunking` for strict memory enforcement
+- **Token Budget Control**: `BasicSummarizer` now supports AUTO mode for token management
+  - `max_tokens=-1` (AUTO): Uses model's full context window capability
+  - `max_tokens=N`: Hard limit for deployment constraints (GPU/RAM)
+  - Same logic applies to `max_output_tokens`
+  - CLI supports `--max-tokens auto` or specific values
 
 ### Enhanced
 - **Tool Call Parsing**: Improved robustness with sanitization for malformed LLM output
   - Handles doubled tags, broken closing tags, and unescaped control characters
   - String-aware JSON escaping preserves structural whitespace
-- **Summarization**: Adaptive chunking balances model capability with deployment constraints
-  - Uses model's context window up to max_tokens limit (respects GPU memory)
-  - Reduces API calls on large-context models (up to 12x improvement) while preventing OOM
+- **Summarization**: Smart token budget management prevents OOM while optimizing performance
+  - AUTO mode uses model's full capability
+  - Hard limits respect deployment constraints (GPU memory)
+  - Reduces API calls on large-context models (up to 12x improvement)
   - Fallback parsing when structured output fails
 - **File Editing**: Added flexible whitespace matching and unified diff support to `edit_file`
   - Matches patterns ignoring indentation differences
@@ -38,9 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Technical Details
 - All changes maintain backward compatibility
-- New features use optional parameters with sensible defaults
+- Default changed to `max_tokens=-1` (AUTO) for optimal performance
+- Token limits prevent OOM in memory-constrained environments
 - Added deprecation warnings for `execute_tools` parameter
-- Adaptive chunking enabled by default, respects max_tokens as upper bound
 
 ## [2.6.7] - 2025-12-13
 

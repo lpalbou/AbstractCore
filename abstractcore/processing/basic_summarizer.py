@@ -119,9 +119,8 @@ class BasicSummarizer:
         self, 
         llm: Optional[AbstractCoreInterface] = None, 
         max_chunk_size: int = 8000,
-        max_tokens: int = 32000,
-        max_output_tokens: int = 8000,
-        adaptive_chunking: bool = True,
+        max_tokens: int = -1,
+        max_output_tokens: int = -1,
         timeout: Optional[float] = None,
         retry_strategy: Optional[FeedbackRetry] = None,
     ):
@@ -131,15 +130,13 @@ class BasicSummarizer:
         Args:
             llm: AbstractCore instance (any provider). If None, attempts to create ollama gemma3:1b-it-qat
             max_chunk_size: Maximum characters per chunk for long documents (default 8000)
-            max_tokens: Maximum total tokens for LLM context (default 32000).
-                       This parameter serves as the deployment constraint - even if a model can handle
-                       more tokens, the environment might not have enough GPU memory. Set this to match
-                       your deployment environment's capabilities.
-            max_output_tokens: Maximum tokens for LLM output generation (default 8000)
-            adaptive_chunking: If True (default), uses model's context window capacity up to max_tokens.
-                              If False, strictly uses max_tokens for chunking decisions regardless of
-                              model capability. Set to False in memory-constrained environments or when
-                              you need predictable memory usage.
+            max_tokens: Maximum total tokens for LLM context (default -1 = AUTO).
+                       - Use -1 (AUTO): Automatically uses model's context window capability
+                       - Use specific value: Hard limit for deployment constraint (GPU/RAM limits)
+                       Example: max_tokens=16000 limits to 16K even if model supports 128K
+            max_output_tokens: Maximum tokens for LLM output generation (default -1 = AUTO).
+                              - Use -1 (AUTO): Automatically uses model's output capability
+                              - Use specific value: Hard limit for output tokens
             timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
             retry_strategy: Custom retry strategy for structured output. If None, uses default (3 attempts)
         """
@@ -174,11 +171,10 @@ class BasicSummarizer:
         else:
             self.llm = llm
         self.max_chunk_size = max_chunk_size
-        # Store token budgets so chunking can adapt to model context windows.
+        # Store token budgets. -1 means AUTO (use model's capability).
         # In AbstractCore, `max_tokens` is the total (input + output) context budget.
         self.max_tokens = max_tokens
         self.max_output_tokens = max_output_tokens
-        self.adaptive_chunking = adaptive_chunking
 
         # Default retry strategy with 3 attempts (callers may override for latency-sensitive UX).
         self.retry_strategy = retry_strategy or FeedbackRetry(max_attempts=3)
@@ -372,9 +368,9 @@ class BasicSummarizer:
         """
         Determine if text should be chunked based on token count.
         
-        Respects both model capabilities and deployment constraints:
-        - In adaptive mode: Uses model's context window up to max_tokens limit
-        - In non-adaptive mode: Strictly uses max_tokens regardless of model capability
+        Token budget logic:
+        - max_tokens = -1 (AUTO): Uses model's full context window capability
+        - max_tokens = N: Hard limit (deployment constraint for GPU/RAM)
         
         This ensures we don't exceed GPU memory constraints even when the model
         theoretically supports larger contexts.
@@ -396,33 +392,37 @@ class BasicSummarizer:
         except Exception:
             return len(text) > self.max_chunk_size
         
-        # Determine the effective input token budget based on chunking strategy
-        if self.adaptive_chunking:
-            # Adaptive mode: Use model's capability but respect max_tokens as upper bound
-            # This allows large-context models to use their full capacity within deployment limits
-            provider_max_input = getattr(self.llm, "max_input_tokens", None) if self.llm else None
-            if provider_max_input is None:
-                provider_total = getattr(self.llm, "max_tokens", None) if self.llm else None
-                provider_output = getattr(self.llm, "max_output_tokens", None) if self.llm else None
-                if provider_total is not None and provider_output is not None:
-                    try:
-                        provider_max_input = int(provider_total) - int(provider_output)
-                    except Exception:
-                        provider_max_input = None
-            
-            # Use deployment constraint (self.max_tokens) as upper bound
-            deployment_max_input = self.max_tokens - self.max_output_tokens
+        # Determine the effective token budget
+        # Get provider's capabilities
+        provider_max_input = getattr(self.llm, "max_input_tokens", None) if self.llm else None
+        if provider_max_input is None:
+            provider_total = getattr(self.llm, "max_tokens", None) if self.llm else None
+            provider_output = getattr(self.llm, "max_output_tokens", None) if self.llm else None
+            if provider_total is not None and provider_output is not None:
+                try:
+                    provider_max_input = int(provider_total) - int(provider_output)
+                except Exception:
+                    provider_max_input = None
+        
+        # Determine effective max_input_tokens based on configuration
+        if self.max_tokens == -1:
+            # AUTO mode: Use model's capability
+            if provider_max_input is not None:
+                max_input_tokens = provider_max_input
+            else:
+                # Fallback to safe default if model info unavailable
+                max_input_tokens = 24000  # Conservative default
+        else:
+            # User-specified limit (deployment constraint)
+            user_max_output = self.max_output_tokens if self.max_output_tokens != -1 else 8000
+            user_max_input = self.max_tokens - user_max_output
             
             if provider_max_input is not None:
-                # Respect both model capability AND deployment constraint
-                max_input_tokens = min(provider_max_input, deployment_max_input)
+                # Respect BOTH user limit AND model capability (take minimum)
+                max_input_tokens = min(provider_max_input, user_max_input)
             else:
-                # No provider info, use deployment constraint
-                max_input_tokens = deployment_max_input
-        else:
-            # Non-adaptive mode: Strictly use deployment constraint
-            # Ignores model capability to ensure predictable memory usage
-            max_input_tokens = self.max_tokens - self.max_output_tokens
+                # No model info, use user limit
+                max_input_tokens = user_max_input
 
         # Reserve prompt/formatting overhead (structured output schemas + instructions).
         # Keep the historical safety floor (8000) for small-context models.
@@ -435,7 +435,8 @@ class BasicSummarizer:
             "Chunking decision",
             estimated_tokens=estimated_tokens,
             token_limit=token_limit,
-            adaptive_chunking=self.adaptive_chunking,
+            max_tokens_config=self.max_tokens,
+            is_auto_mode=(self.max_tokens == -1),
             will_chunk=(estimated_tokens > token_limit)
         )
 

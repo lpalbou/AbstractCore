@@ -13,28 +13,31 @@ Options:
     --chunk-size <size>          Chunk size in characters (default: 8000, max: 32000)
     --provider <provider>        LLM provider (requires --model)
     --model <model>              LLM model (requires --provider)
-    --max-tokens <tokens>        Maximum total tokens for LLM context (default: 32000, deployment constraint)
-    --max-output-tokens <tokens> Maximum tokens for LLM output generation (default: 8000)
-    --no-adaptive-chunking       Disable adaptive chunking (use in memory-constrained environments)
+    --max-tokens <tokens|auto>   Maximum total tokens for LLM context (default: auto)
+                                 - 'auto' or -1: Uses model's full context window
+                                 - Specific number: Hard limit for deployment constraint (GPU/RAM)
+    --max-output-tokens <tokens|auto> Maximum tokens for LLM output (default: auto)
     --verbose                    Show detailed progress information
     --help                       Show this help message
 
 Memory Management:
-    --max-tokens sets your deployment constraint (GPU/RAM limit), not model capability.
-    By default, adaptive chunking uses model capacity up to this limit for best performance.
-    Use --no-adaptive-chunking in memory-constrained environments to strictly enforce the limit.
+    --max-tokens controls token budget:
+    - Use 'auto' (default): Automatically uses model's full capability
+    - Use specific value: Hard limit for memory-constrained environments (e.g., --max-tokens 16000)
+    
+    Example: 8GB GPU → --max-tokens 16000, 16GB GPU → --max-tokens 32000
 
 Examples:
-    # Basic usage (adaptive chunking)
+    # Auto mode (uses model's full capability)
     python -m abstractcore.apps.summarizer document.pdf
     
-    # Memory-constrained environment (8GB GPU)
-    python -m abstractcore.apps.summarizer report.txt --max-tokens 16000 --no-adaptive-chunking
+    # Memory-constrained (8GB GPU)
+    python -m abstractcore.apps.summarizer report.txt --max-tokens 16000
     
     # Large document with specific style
-    python -m abstractcore.apps.summarizer data.md --max-tokens 32000 --style executive --length brief
+    python -m abstractcore.apps.summarizer data.md --style executive --length brief
     
-    # Custom model and chunking
+    # Custom model with hard limit
     python -m abstractcore.apps.summarizer large.txt --provider openai --model gpt-4o-mini --max-tokens 24000
 """
 
@@ -252,22 +255,14 @@ Default model setup:
 
     parser.add_argument(
         '--max-tokens',
-        type=int,
-        default=32000,
-        help='Maximum total tokens for LLM context - this is your deployment constraint based on available GPU/RAM (default: 32000)'
+        default='auto',
+        help='Maximum total tokens for LLM context (default: auto). Use "auto" or -1 for model\'s full capability, or specific number for hard limit (e.g., 16000 for 8GB GPU)'
     )
 
     parser.add_argument(
         '--max-output-tokens',
-        type=int,
-        default=8000,
-        help='Maximum tokens for LLM output generation (default: 8000)'
-    )
-
-    parser.add_argument(
-        '--no-adaptive-chunking',
-        action='store_true',
-        help='Disable adaptive chunking. Use this in memory-constrained environments to strictly enforce --max-tokens limit regardless of model capability'
+        default='auto',
+        help='Maximum tokens for LLM output generation (default: auto). Use "auto" or -1 for model\'s capability, or specific number'
     )
 
     parser.add_argument(
@@ -348,34 +343,60 @@ Default model setup:
             provider, model = get_app_defaults('summarizer')
             config_source = "configured defaults"
 
-        # Adjust max_tokens based on chunk size
-        max_tokens = max(args.max_tokens, args.chunk_size)
+        # Parse max_tokens (support 'auto', -1, or specific number)
+        if args.max_tokens in ('auto', 'Auto', 'AUTO'):
+            max_tokens = -1
+        else:
+            try:
+                max_tokens = int(args.max_tokens)
+            except ValueError:
+                print(f"Error: --max-tokens must be 'auto' or a number, got: {args.max_tokens}")
+                sys.exit(1)
+        
+        # Parse max_output_tokens (support 'auto', -1, or specific number)
+        if args.max_output_tokens in ('auto', 'Auto', 'AUTO'):
+            max_output_tokens = -1
+        else:
+            try:
+                max_output_tokens = int(args.max_output_tokens)
+            except ValueError:
+                print(f"Error: --max-output-tokens must be 'auto' or a number, got: {args.max_output_tokens}")
+                sys.exit(1)
 
         if args.verbose:
-            print(f"Initializing summarizer ({provider}, {model}, {max_tokens} token context, {args.max_output_tokens} output tokens) - using {config_source}...")
+            max_tokens_display = "AUTO" if max_tokens == -1 else str(max_tokens)
+            max_output_display = "AUTO" if max_output_tokens == -1 else str(max_output_tokens)
+            print(f"Initializing summarizer ({provider}, {model}, {max_tokens_display} token context, {max_output_display} output tokens) - using {config_source}...")
 
         if args.debug:
+            max_tokens_display = "AUTO" if max_tokens == -1 else str(max_tokens)
+            max_output_display = "AUTO" if max_output_tokens == -1 else str(max_output_tokens)
             print(f"🐛 Debug - Configuration details:")
             print(f"   Provider: {provider}")
             print(f"   Model: {model}")
             print(f"   Config source: {config_source}")
-            print(f"   Max tokens: {max_tokens}")
-            print(f"   Max output tokens: {args.max_output_tokens}")
+            print(f"   Max tokens: {max_tokens_display}")
+            print(f"   Max output tokens: {max_output_display}")
             print(f"   Chunk size: {args.chunk_size}")
-            print(f"   Adaptive chunking: {not args.no_adaptive_chunking}")
             print(f"   Timeout: {args.timeout}")
             print(f"   Style: {args.style}")
             print(f"   Length: {args.length}")
             print(f"   Focus: {args.focus}")
 
         try:
-            llm = create_llm(provider, model=model, max_tokens=max_tokens, max_output_tokens=args.max_output_tokens, timeout=args.timeout)
+            # When using auto mode (-1), don't pass to create_llm (let provider use defaults)
+            llm_kwargs = {'timeout': args.timeout}
+            if max_tokens != -1:
+                llm_kwargs['max_tokens'] = max_tokens
+            if max_output_tokens != -1:
+                llm_kwargs['max_output_tokens'] = max_output_tokens
+            
+            llm = create_llm(provider, model=model, **llm_kwargs)
             summarizer = BasicSummarizer(
                 llm,
                 max_chunk_size=args.chunk_size,
                 max_tokens=max_tokens,
-                max_output_tokens=args.max_output_tokens,
-                adaptive_chunking=not args.no_adaptive_chunking,
+                max_output_tokens=max_output_tokens,
                 timeout=args.timeout
             )
         except Exception as e:
