@@ -5,6 +5,25 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [2.6.9] - 2025-12-17
+
+### Fixed
+- **Tool Call Parsing (Unescaped Newlines)**: Robust parsing for Qwen-style `<|tool_call|>` blocks when JSON string values contain literal newlines/tabs
+  - Escapes control characters **only inside JSON strings** (preserves structural whitespace)
+  - Prevents failures for multi-line `write_file` / `execute_python` arguments
+
+### Enhanced
+- **Summarizer Chunking Uses Model Budgets**: Long-document chunking now adapts to provider token budgets instead of a conservative fixed threshold, reducing unnecessary multi-call summarizations on large-context models.
+- **`edit_file` Supports Unified Diff Mode**: Enables precise multi-line edits via single-file unified diffs; keeps find/replace mode for small edits.
+
+### Technical Details
+- **Files Modified**:
+  - `abstractcore/tools/parser.py` (string-aware fallback for tool call JSON with unescaped control characters)
+  - `abstractcore/tools/common_tools.py` (`edit_file` unified diff mode + whitespace-flexible matching)
+
+
+
 ## [2.6.8] - 2025-12-17
 
 ### Added
