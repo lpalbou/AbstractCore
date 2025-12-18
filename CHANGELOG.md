@@ -5,6 +5,13 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.9] - 2025-12-18
+
+### Fixed
+- **Async Trace Capture**: Improved reliability of trace capture in `agenerate()` for async LLM calls
+  - Ensures `response.metadata['trace_id']` is consistently set after async generation
+  - Works across all providers (Ollama, OpenAI-Compatible, Anthropic, vLLM, etc.)
+
 ## [2.6.8] - 2025-12-17
 
 ### Fixed
