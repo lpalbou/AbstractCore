@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.8.0] - 2025-01-XX
+
+### Added
+- **Model Capabilities Database**: Added 15+ new models to `model_capabilities.json`
+  - GLM-4.6V (106B) and GLM-4.6V-Flash (9B) with native multimodal function calling
+  - Devstral-Small-2-24B and Devstral-2-123B agentic coding models (FP8)
+  - Qwen3-235B-A22B-Instruct-2507 (BF16 and FP8 variants) with 262K context
+  - Qwen3-VL series: 2B, 4B, 8B dense and 30B, 235B MoE vision models
+  - Granite-4.0-H-Tiny (7B/1B active) hybrid MoE with Mamba2 layers
+  - GPT-OSS-20B and GPT-OSS-120B with harmony response format
+  - MiniMax-M2 (230B/10B active) with interleaved thinking
+
+- **Architecture Formats**: Added 8 new architectures to `architecture_formats.json`
+  - `glm4v_moe`: GLM-4.6V multimodal MoE with native tool support
+  - `mistral3` and `ministral3`: Devstral series architectures
+  - `granitemoehybrid`: Granite 4.0 hybrid MoE with Mamba2
+  - `gpt_oss`: OpenAI GPT-OSS with harmony format and reasoning levels
+  - `qwen3_vl` and `qwen3_vl_moe`: Qwen3-VL dense and MoE architectures
+  - `minimax_m2`: MiniMax M2 with `<think>...</think>` format
+  - `harmony`: New message format for GPT-OSS models
+
+### Enhanced
+- **Vision Model Capabilities**: Comprehensive metadata for all vision models
+  - Visual agent capabilities (GUI operation, tool invocation)
+  - Visual coding support (Draw.io, HTML/CSS/JS generation)
+  - Advanced spatial perception (2D/3D grounding)
+  - Enhanced OCR (32 languages for Qwen3-VL, GLM-4.6V)
+  - Long video understanding with second-level indexing
+  - Architecture updates: Interleaved-MRoPE, DeepStack, Text-Timestamp-Alignment
+
+- **MoE Model Specifications**: Detailed expert configurations
+  - Total/active parameter counts
+  - Expert counts and activation patterns
+  - Quantization methods (FP8, MXFP4)
+  - GPU memory requirements
+
+### Technical Details
+- All new models include proper aliases, canonical names, and source attribution
+- Architecture detection automatically handles new patterns
+- Vision capabilities support Glyph compression calculations
+- Tool support levels properly configured (native/prompted/none)
+- Context limits and output token budgets specified for all models
+
 ## [2.6.9] - 2025-12-17
 
 ### Fixed
