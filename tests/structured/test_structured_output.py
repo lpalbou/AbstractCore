@@ -85,6 +85,19 @@ class TestFeedbackRetry:
         error = ValueError("Some other error")
         assert retry.should_retry(1, error) is False
 
+    def test_should_retry_json_decode_error(self):
+        """Test that JSONDecodeError triggers retry."""
+        retry = FeedbackRetry(max_attempts=3)
+
+        error = json.JSONDecodeError("Expecting value", doc="", pos=0)
+        assert retry.should_retry(1, error) is True
+        assert retry.should_retry(2, error) is True
+        assert retry.should_retry(3, error) is False
+
+        retry_prompt = retry.prepare_retry_prompt("Return valid JSON", error, 1)
+        assert "not valid JSON" in retry_prompt
+        assert "Return ONLY the JSON object" in retry_prompt
+
     def test_prepare_retry_prompt(self):
         """Test retry prompt generation with error feedback."""
         retry = FeedbackRetry()

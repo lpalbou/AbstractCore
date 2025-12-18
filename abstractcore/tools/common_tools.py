@@ -1921,23 +1921,158 @@ def _flexible_whitespace_match(
     return (updated, count)
 
 
+_HUNK_HEADER_RE = re.compile(r"^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@")
+
+
+def _normalize_diff_path(raw: str) -> str:
+    raw = raw.strip()
+    raw = raw.split("\t", 1)[0].strip()
+    raw = raw.split(" ", 1)[0].strip()
+    if raw.startswith("a/") or raw.startswith("b/"):
+        raw = raw[2:]
+    return raw
+
+
+def _path_parts(path_str: str) -> tuple[str, ...]:
+    normalized = path_str.replace("\\", "/")
+    parts = [p for p in normalized.split("/") if p and p != "."]
+    return tuple(parts)
+
+
+def _is_suffix_path(candidate: str, target: Path) -> bool:
+    candidate_parts = _path_parts(candidate)
+    if not candidate_parts:
+        return False
+    target_parts = tuple(target.as_posix().split("/"))
+    return len(candidate_parts) <= len(target_parts) and target_parts[-len(candidate_parts) :] == candidate_parts
+
+
+def _parse_unified_diff(patch: str) -> tuple[Optional[str], list[tuple[int, int, int, int, list[str]]], Optional[str]]:
+    """Parse a unified diff for a single file."""
+    lines = patch.splitlines()
+    header_path: Optional[str] = None
+    hunks: list[tuple[int, int, int, int, list[str]]] = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        if line.startswith("--- "):
+            old_path = _normalize_diff_path(line[4:])
+            i += 1
+            if i >= len(lines) or not lines[i].startswith("+++ "):
+                return None, [], "Invalid unified diff: missing '+++ ' header after '--- '"
+            new_path = _normalize_diff_path(lines[i][4:])
+            if old_path != "/dev/null" and new_path != "/dev/null":
+                if header_path is None:
+                    header_path = new_path
+                elif header_path != new_path:
+                    return None, [], "Unified diff appears to reference multiple files"
+            i += 1
+            continue
+
+        if line.startswith("@@"):
+            m = _HUNK_HEADER_RE.match(line)
+            if not m:
+                return header_path, [], f"Invalid hunk header: {line}"
+
+            old_start = int(m.group(1))
+            old_len = int(m.group(2) or 1)
+            new_start = int(m.group(3))
+            new_len = int(m.group(4) or 1)
+
+            i += 1
+            hunk_lines: list[str] = []
+            while i < len(lines):
+                nxt = lines[i]
+                if nxt.startswith("@@") or nxt.startswith("--- ") or nxt.startswith("diff --git "):
+                    break
+                hunk_lines.append(nxt)
+                i += 1
+
+            hunks.append((old_start, old_len, new_start, new_len, hunk_lines))
+            continue
+
+        i += 1
+
+    if not hunks:
+        return header_path, [], "No hunks found in diff (missing '@@ ... @@' sections)"
+
+    return header_path, hunks, None
+
+
+def _apply_unified_diff(original_text: str, hunks: list[tuple[int, int, int, int, list[str]]]) -> tuple[Optional[str], Optional[str]]:
+    """Apply unified diff hunks to text."""
+    ends_with_newline = original_text.endswith("\n")
+    original_lines = original_text.splitlines()
+
+    out: list[str] = []
+    cursor = 0
+
+    for old_start, _old_len, _new_start, _new_len, hunk_lines in hunks:
+        hunk_start = max(old_start - 1, 0)
+        if hunk_start > len(original_lines):
+            return None, f"Hunk starts beyond end of file (start={old_start}, lines={len(original_lines)})"
+
+        out.extend(original_lines[cursor:hunk_start])
+        cursor = hunk_start
+
+        for hl in hunk_lines:
+            if hl == r"\ No newline at end of file":
+                continue
+            if not hl:
+                return None, "Invalid diff line: empty line without prefix"
+
+            prefix = hl[0]
+            text = hl[1:]
+
+            if prefix == " ":
+                if cursor >= len(original_lines) or original_lines[cursor] != text:
+                    got = original_lines[cursor] if cursor < len(original_lines) else "<EOF>"
+                    return None, f"Context mismatch applying patch. Expected {text!r}, got {got!r}"
+                out.append(text)
+                cursor += 1
+            elif prefix == "-":
+                if cursor >= len(original_lines) or original_lines[cursor] != text:
+                    got = original_lines[cursor] if cursor < len(original_lines) else "<EOF>"
+                    return None, f"Remove mismatch applying patch. Expected {text!r}, got {got!r}"
+                cursor += 1
+            elif prefix == "+":
+                out.append(text)
+            else:
+                return None, f"Invalid diff line prefix {prefix!r} (expected one of ' ', '+', '-')"
+
+    out.extend(original_lines[cursor:])
+
+    new_text = "\n".join(out)
+    if ends_with_newline and not new_text.endswith("\n"):
+        new_text += "\n"
+    return new_text, None
+
+
 def edit_file(
     file_path: str,
     pattern: str,
-    replacement: str,
+    replacement: Optional[str] = None,
     use_regex: bool = False,
     max_replacements: int = -1,
     start_line: Optional[int] = None,
     end_line: Optional[int] = None,
     preview_only: bool = False,
     encoding: str = "utf-8",
-    flexible_whitespace: bool = True
+    flexible_whitespace: bool = True,
 ) -> str:
     """
-    Replace text patterns in files using pattern matching.
+    Edit a UTF-8 text file.
+
+    Two supported modes:
+    1) **Find/replace mode** (recommended for small edits):
+       - Provide `pattern` and `replacement` (optionally regex).
+    2) **Unified diff mode** (recommended for precise multi-line edits):
+       - Call `edit_file(file_path, patch)` with `replacement=None` and `pattern` set to a single-file unified diff.
 
     Finds patterns (text or regex) in files and replaces them with new content.
-    For complex multi-line edits, consider using edit_file with unified diff instead.
+    For complex multi-line edits, prefer unified diff mode to avoid accidental partial matches.
 
     Args:
         file_path: Path to the file to edit
@@ -1962,6 +2097,13 @@ def edit_file(
         edit_file("script.py", r"def old_func\\([^)]*\\):", "def new_func():", use_regex=True)
         edit_file("document.txt", "TODO", "DONE", max_replacements=1)
         edit_file("test.py", "class OldClass", "class NewClass", preview_only=True)
+        edit_file("app.py", \"\"\"--- a/app.py
++++ b/app.py
+@@ -1,2 +1,2 @@
+ print('hello')
+-print('world')
++print('there')
+\"\"\")
     """
     try:
         # Validate file exists and expand home directory shortcuts like ~
@@ -1980,6 +2122,53 @@ def edit_file(
             return f"❌ Cannot decode file with encoding '{encoding}'. File may be binary."
         except Exception as e:
             return f"❌ Error reading file: {str(e)}"
+
+        # Unified diff mode: treat `pattern` as a patch when `replacement` is omitted.
+        if replacement is None:
+            header_path, hunks, err = _parse_unified_diff(pattern)
+            if err:
+                return f"❌ Error: {err}"
+            if header_path and not _is_suffix_path(header_path, path.resolve()):
+                return (
+                    "❌ Error: Patch file header does not match the provided path.\n"
+                    f"Patch header: {header_path}\n"
+                    f"Target path:  {path.resolve()}\n"
+                    "Generate a unified diff targeting the exact file you want to edit."
+                )
+
+            updated, apply_err = _apply_unified_diff(content, hunks)
+            if apply_err:
+                return f"❌ Error: Patch did not apply cleanly: {apply_err}"
+
+            assert updated is not None
+            if updated == content:
+                return "No changes applied (patch resulted in identical content)."
+
+            import difflib
+
+            old_lines = content.splitlines()
+            new_lines = updated.splitlines()
+            diff_lines = list(
+                difflib.unified_diff(
+                    old_lines,
+                    new_lines,
+                    fromfile=str(path),
+                    tofile=str(path),
+                    lineterm="",
+                    n=3,
+                )
+            )
+            preview = "\n".join(diff_lines[:120])
+            if len(diff_lines) > 120:
+                preview += f"\n... (diff truncated, {len(diff_lines)} lines total)"
+
+            if preview_only:
+                return f"Preview for {str(path)}\n{preview}"
+
+            with open(path, "w", encoding=encoding) as f:
+                f.write(updated)
+
+            return f"Updated {str(path)}\n{preview}"
 
         original_content = content
 
