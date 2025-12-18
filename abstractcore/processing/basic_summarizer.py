@@ -6,8 +6,10 @@ text processing capabilities with minimal complexity.
 """
 
 from enum import Enum
-from typing import List, Optional
-from pydantic import BaseModel, Field
+import json
+import re
+from typing import List, Optional, Tuple
+from pydantic import BaseModel, Field, ValidationError
 
 from ..core.interface import AbstractCoreInterface
 from ..core.factory import create_llm
@@ -33,6 +35,42 @@ class SummaryLength(Enum):
     STANDARD = "standard"         # 1-2 paragraphs, main ideas
     DETAILED = "detailed"         # Multiple paragraphs, comprehensive
     COMPREHENSIVE = "comprehensive"  # Full analysis with context
+
+
+class CompressionMode(Enum):
+    """Compression aggressiveness for chat history summarization.
+
+    Controls how aggressively the summarizer compresses conversation history:
+    - LIGHT: Keep most information, only remove redundancy
+    - STANDARD: Balanced compression, main points and context
+    - HEAVY: Aggressive compression, only critical information
+    """
+    LIGHT = "light"
+    STANDARD = "standard"
+    HEAVY = "heavy"
+
+
+# Compression mode-specific instructions for summarization prompts
+COMPRESSION_INSTRUCTIONS = {
+    CompressionMode.LIGHT: (
+        "Preserve most details from this conversation while removing only redundancy. "
+        "Keep: all key decisions and outcomes, important context and background, "
+        "specific details/names/numbers/technical terms, all tool calls and results, "
+        "error messages and resolutions. Remove only: repetitive greetings, duplicate information."
+    ),
+    CompressionMode.STANDARD: (
+        "Summarize with balanced compression, keeping main points and essential context. "
+        "Keep: key decisions and rationale, important outcomes, critical context for ongoing work, "
+        "unresolved items and pending tasks. Remove: intermediate reasoning steps, "
+        "exploratory tangents, detailed tool outputs (keep only key findings)."
+    ),
+    CompressionMode.HEAVY: (
+        "Extract only the most critical information. Keep ONLY: final decisions made, "
+        "critical outcomes (success/failure), essential context to continue work, "
+        "blocking issues and hard dependencies. Remove: all exploratory discussion, "
+        "all intermediate steps, all detailed outputs, all background explanations."
+    ),
+}
 
 
 class LLMSummaryOutput(BaseModel):
@@ -83,7 +121,8 @@ class BasicSummarizer:
         max_chunk_size: int = 8000,
         max_tokens: int = 32000,
         max_output_tokens: int = 8000,
-        timeout: Optional[float] = None
+        timeout: Optional[float] = None,
+        retry_strategy: Optional[FeedbackRetry] = None,
     ):
         """
         Initialize the summarizer
@@ -126,9 +165,13 @@ class BasicSummarizer:
         else:
             self.llm = llm
         self.max_chunk_size = max_chunk_size
+        # Store token budgets so chunking can adapt to model context windows.
+        # In AbstractCore, `max_tokens` is the total (input + output) context budget.
+        self.max_tokens = max_tokens
+        self.max_output_tokens = max_output_tokens
 
-        # Default retry strategy with 3 attempts
-        self.retry_strategy = FeedbackRetry(max_attempts=3)
+        # Default retry strategy with 3 attempts (callers may override for latency-sensitive UX).
+        self.retry_strategy = retry_strategy or FeedbackRetry(max_attempts=3)
 
     def summarize(
         self,
@@ -192,36 +235,29 @@ class BasicSummarizer:
         # Build the prompt based on parameters
         prompt = self._build_prompt(text, focus, style, length)
 
-        # Use AbstractCore's structured output with retry strategy (no word counts in LLM response)
-        response = self.llm.generate(prompt, response_model=LLMSummaryOutput, retry_strategy=self.retry_strategy)
-
-        # Extract the structured output
-        llm_result = None
-        if isinstance(response, LLMSummaryOutput):
-            # When structured output succeeds, response is the LLMSummaryOutput object directly
-            llm_result = response
-        elif hasattr(response, 'structured_output') and response.structured_output:
-            # Fallback: check for structured_output attribute
-            llm_result = response.structured_output
-        else:
-            # Debug information for troubleshooting
-            error_msg = f"Failed to generate structured summary output. Response type: {type(response)}"
-            if hasattr(response, 'content'):
-                error_msg += f", Content: {response.content[:200]}..."
-            if hasattr(response, 'structured_output'):
-                error_msg += f", Structured output: {response.structured_output}"
-            raise ValueError(error_msg)
+        llm_result: Optional[LLMSummaryOutput] = None
+        try:
+            # Use AbstractCore's structured output with retry strategy (no word counts in LLM response)
+            response = self.llm.generate(prompt, response_model=LLMSummaryOutput, retry_strategy=self.retry_strategy)
+            llm_result = self._extract_summary_structured_output(response, context="summary")
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.warning(
+                "Structured summary output failed; falling back to marker format",
+                error_type=type(e).__name__,
+                error=str(e),
+            )
+            llm_result = self._summarize_fallback(text=text, focus=focus, style=style, length=length)
 
         # Compute word counts ourselves (reliable, client-side calculation)
         actual_original_words = len(text.split())
-        actual_summary_words = len(llm_result.summary.split())
+        actual_summary_words = len((llm_result.summary if llm_result else "").split())
 
         # Create complete result with computed word counts
         return SummaryOutput(
-            summary=llm_result.summary,
-            key_points=llm_result.key_points,
-            confidence=llm_result.confidence,
-            focus_alignment=llm_result.focus_alignment,
+            summary=(llm_result.summary if llm_result else ""),
+            key_points=(llm_result.key_points if llm_result else []),
+            confidence=(llm_result.confidence if llm_result else 0.5),
+            focus_alignment=(llm_result.focus_alignment if llm_result else 0.5),
             word_count_original=actual_original_words,
             word_count_summary=actual_summary_words
         )
@@ -261,22 +297,31 @@ class BasicSummarizer:
                 summary: str
                 key_points: List[str] = Field(max_length=5)
 
-            response = self.llm.generate(chunk_prompt, response_model=ChunkSummary, retry_strategy=self.retry_strategy)
-            if isinstance(response, ChunkSummary):
-                # When structured output succeeds, response is the ChunkSummary object directly
-                chunk_summaries.append(response)
-            elif hasattr(response, 'structured_output') and response.structured_output:
-                # Fallback: check for structured_output attribute
-                chunk_summaries.append(response.structured_output)
-            else:
-                # If chunk processing fails, create a fallback summary
-                logger.warning("Chunk processing failed, creating fallback", 
-                             chunk_number=i+1, 
-                             total_chunks=len(chunks))
-                chunk_summaries.append(ChunkSummary(
-                    summary=f"Section {i+1} content summary unavailable",
-                    key_points=["Content processing failed"]
-                ))
+            try:
+                response = self.llm.generate(chunk_prompt, response_model=ChunkSummary, retry_strategy=self.retry_strategy)
+                if isinstance(response, ChunkSummary):
+                    # When structured output succeeds, response is the ChunkSummary object directly
+                    chunk_summaries.append(response)
+                elif hasattr(response, 'structured_output') and response.structured_output:
+                    # Fallback: check for structured_output attribute
+                    chunk_summaries.append(response.structured_output)
+                else:
+                    raise ValueError(f"Unexpected chunk response type: {type(response)}")
+            except (json.JSONDecodeError, ValidationError, ValueError) as e:
+                # If chunk processing fails, create a minimal placeholder (do not fail the whole summary).
+                logger.warning(
+                    "Chunk processing failed, creating fallback",
+                    chunk_number=i + 1,
+                    total_chunks=len(chunks),
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
+                chunk_summaries.append(
+                    ChunkSummary(
+                        summary=f"Section {i+1} content summary unavailable",
+                        key_points=["Content processing failed"],
+                    )
+                )
 
         # Step 2: Combine chunk summaries (Reduce phase)
         combined_text = "\n\n".join([
@@ -287,35 +332,28 @@ class BasicSummarizer:
         # Generate final summary from combined summaries
         final_prompt = self._build_final_combination_prompt(combined_text, focus, style, length, len(text))
 
-        response = self.llm.generate(final_prompt, response_model=LLMSummaryOutput, retry_strategy=self.retry_strategy)
-
-        # Extract the structured output
-        llm_result = None
-        if isinstance(response, LLMSummaryOutput):
-            # When structured output succeeds, response is the LLMSummaryOutput object directly
-            llm_result = response
-        elif hasattr(response, 'structured_output') and response.structured_output:
-            # Fallback: check for structured_output attribute
-            llm_result = response.structured_output
-        else:
-            # Debug information for troubleshooting
-            error_msg = f"Failed to generate final structured summary output. Response type: {type(response)}"
-            if hasattr(response, 'content'):
-                error_msg += f", Content: {response.content[:200]}..."
-            if hasattr(response, 'structured_output'):
-                error_msg += f", Structured output: {response.structured_output}"
-            raise ValueError(error_msg)
+        llm_result: Optional[LLMSummaryOutput] = None
+        try:
+            response = self.llm.generate(final_prompt, response_model=LLMSummaryOutput, retry_strategy=self.retry_strategy)
+            llm_result = self._extract_summary_structured_output(response, context="final_summary")
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.warning(
+                "Structured final summary output failed; falling back to marker format",
+                error_type=type(e).__name__,
+                error=str(e),
+            )
+            llm_result = self._summarize_fallback(text=combined_text, focus=focus, style=style, length=length)
 
         # Compute word counts ourselves (reliable, client-side calculation)
         actual_original_words = len(text.split())
-        actual_summary_words = len(llm_result.summary.split())
+        actual_summary_words = len((llm_result.summary if llm_result else "").split())
 
         # Create complete result with computed word counts
         return SummaryOutput(
-            summary=llm_result.summary,
-            key_points=llm_result.key_points,
-            confidence=llm_result.confidence,
-            focus_alignment=llm_result.focus_alignment,
+            summary=(llm_result.summary if llm_result else ""),
+            key_points=(llm_result.key_points if llm_result else []),
+            confidence=(llm_result.confidence if llm_result else 0.5),
+            focus_alignment=(llm_result.focus_alignment if llm_result else 0.5),
             word_count_original=actual_original_words,
             word_count_summary=actual_summary_words
         )
@@ -334,18 +372,188 @@ class BasicSummarizer:
         if self.llm and hasattr(self.llm, 'model'):
             model_name = self.llm.model
             
-        # Estimate tokens using centralized utility
-        estimated_tokens = TokenUtils.estimate_tokens(text, model_name)
+        # Estimate tokens using centralized utility. If estimation fails for any reason,
+        # fall back to character chunking (conservative).
+        try:
+            estimated_tokens = TokenUtils.estimate_tokens(text, model_name)
+        except Exception:
+            return len(text) > self.max_chunk_size
         
-        # Use a conservative token limit (leaving room for prompt overhead)
-        # Most models have 32k+ context nowadays, so 8k tokens for input text is safe
-        token_limit = 8000
-        
-        if estimated_tokens > token_limit:
-            return True
-            
-        # Fallback to character-based check for very long texts
-        return len(text) > self.max_chunk_size
+        # Determine an input token budget. Prefer the provider's computed max_input_tokens
+        # (derived from max_tokens - max_output_tokens). Fall back to our constructor values.
+        max_input_tokens = getattr(self.llm, "max_input_tokens", None) if self.llm else None
+        if max_input_tokens is None:
+            total_budget = getattr(self.llm, "max_tokens", None) if self.llm else None
+            if total_budget is None:
+                total_budget = self.max_tokens
+            output_budget = getattr(self.llm, "max_output_tokens", None) if self.llm else None
+            if output_budget is None:
+                output_budget = self.max_output_tokens
+            try:
+                max_input_tokens = int(total_budget) - int(output_budget)
+            except Exception:
+                max_input_tokens = 8000
+
+        # Reserve prompt/formatting overhead (structured output schemas + instructions).
+        # Keep the historical safety floor (8000) for small-context models.
+        try:
+            token_limit = max(8000, int(max_input_tokens) - 1200)
+        except Exception:
+            token_limit = 8000
+
+        return estimated_tokens > token_limit
+
+    def _extract_summary_structured_output(self, response: object, *, context: str) -> LLMSummaryOutput:
+        """Extract structured summary output from AbstractCore responses."""
+        if isinstance(response, LLMSummaryOutput):
+            return response
+        if hasattr(response, "structured_output") and getattr(response, "structured_output"):
+            return response.structured_output
+
+        error_msg = f"Failed to generate structured {context} output. Response type: {type(response)}"
+        if hasattr(response, "content") and getattr(response, "content"):
+            try:
+                error_msg += f", Content: {str(response.content)[:200]}..."
+            except Exception:
+                pass
+        if hasattr(response, "structured_output"):
+            try:
+                error_msg += f", Structured output: {getattr(response, 'structured_output')}"
+            except Exception:
+                pass
+        raise ValueError(error_msg)
+
+    def _summarize_fallback(
+        self,
+        *,
+        text: str,
+        focus: Optional[str],
+        style: SummaryStyle,
+        length: SummaryLength,
+    ) -> LLMSummaryOutput:
+        """Best-effort summary when structured output cannot be produced reliably."""
+        prompt = self._build_fallback_prompt(text=text, focus=focus, style=style, length=length)
+        response = self.llm.generate(prompt)
+        content = getattr(response, "content", None)
+        if content is None:
+            content = str(response)
+        summary, key_points, confidence, focus_alignment = self._parse_fallback_response(str(content))
+        return LLMSummaryOutput(
+            summary=summary,
+            key_points=key_points[:8],
+            confidence=confidence,
+            focus_alignment=focus_alignment,
+        )
+
+    def _build_fallback_prompt(
+        self,
+        *,
+        text: str,
+        focus: Optional[str],
+        style: SummaryStyle,
+        length: SummaryLength,
+    ) -> str:
+        """Build a non-JSON prompt that is easy to parse deterministically."""
+        style_instructions = {
+            SummaryStyle.STRUCTURED: "Present the summary in a clear, organized format with distinct sections or bullet points.",
+            SummaryStyle.NARRATIVE: "Write the summary as a flowing narrative that tells the story of the content.",
+            SummaryStyle.OBJECTIVE: "Maintain a neutral, factual tone without opinions or interpretations.",
+            SummaryStyle.ANALYTICAL: "Provide critical analysis with insights, implications, and deeper understanding.",
+            SummaryStyle.EXECUTIVE: "Focus on actionable insights, business implications, and key decisions.",
+            SummaryStyle.CONVERSATIONAL: "Preserve conversational context, key decisions, ongoing topics, and user intent. Focus on information needed for conversation continuity.",
+        }
+
+        length_instructions = {
+            SummaryLength.BRIEF: "Keep the summary very concise - 2-3 sentences covering only the most essential points.",
+            SummaryLength.STANDARD: "Provide a balanced summary of 1-2 paragraphs covering the main ideas.",
+            SummaryLength.DETAILED: "Create a comprehensive summary with multiple paragraphs covering all important aspects.",
+            SummaryLength.COMPREHENSIVE: "Provide an extensive analysis covering all significant points, context, and implications.",
+        }
+
+        focus_instruction = ""
+        if focus:
+            focus_instruction = f"\nPay special attention to: {focus}\n"
+
+        return f"""Analyze the following text and produce a summary.
+
+{style_instructions[style]}
+{length_instructions[length]}{focus_instruction}
+
+Text to summarize:
+{text}
+
+Return your answer in this EXACT plain-text format (no JSON, no code blocks):
+
+SUMMARY:
+<the main summary text>
+
+KEY POINTS:
+- <point 1>
+- <point 2>
+- <point 3>
+
+CONFIDENCE: <0-1>
+FOCUS_ALIGNMENT: <0-1>
+"""
+
+    @staticmethod
+    def _parse_fallback_response(content: str) -> Tuple[str, List[str], float, float]:
+        """Parse marker-format fallback summaries into structured fields."""
+        text = (content or "").strip()
+        if not text:
+            return "", [], 0.5, 0.5
+
+        def _parse_score(label_re: str, default: float) -> float:
+            m = re.search(rf"(?im)^{label_re}\s*:\s*(.+?)\s*$", text)
+            if not m:
+                return default
+            raw = m.group(1).strip()
+            try:
+                if raw.endswith("%"):
+                    val = float(raw[:-1].strip()) / 100.0
+                else:
+                    val = float(raw)
+            except Exception:
+                return default
+            return max(0.0, min(1.0, val))
+
+        summary = ""
+        m_summary = re.search(r"(?is)summary\s*:\s*(.*?)\n\s*key\s*points\s*:", text)
+        if m_summary:
+            summary = m_summary.group(1).strip()
+        else:
+            # Best-effort: take the first paragraph.
+            summary = text.split("\n\n", 1)[0].strip()
+
+        key_points: List[str] = []
+        m_kp = re.search(
+            r"(?is)key\s*points\s*:\s*(.*?)(?:\n\s*confidence\s*:|\n\s*focus[_ ]alignment\s*:|\Z)",
+            text,
+        )
+        if m_kp:
+            block = m_kp.group(1)
+            for line in block.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith(("-", "•", "*")):
+                    line = line.lstrip("-•*").strip()
+                if line:
+                    key_points.append(line)
+        if not key_points:
+            # Fallback: try to extract bullet-like lines anywhere.
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith(("-", "•", "*")):
+                    cleaned = line.lstrip("-•*").strip()
+                    if cleaned:
+                        key_points.append(cleaned)
+        key_points = key_points[:8]
+
+        confidence = _parse_score("confidence", 0.6)
+        focus_alignment = _parse_score(r"focus[_ ]alignment", 0.6)
+
+        return summary, key_points, confidence, focus_alignment
 
     def _split_text_into_chunks(self, text: str, overlap: int = 200) -> List[str]:
         """Split text into overlapping chunks"""
@@ -493,7 +701,8 @@ Create a unified summary that represents the entire document effectively."""
         self,
         messages: List[dict],
         preserve_recent: int = 6,
-        focus: Optional[str] = None
+        focus: Optional[str] = None,
+        compression_mode: CompressionMode = CompressionMode.STANDARD
     ) -> SummaryOutput:
         """
         Specialized method for chat history summarization following SOTA 2025 practices
@@ -502,6 +711,7 @@ Create a unified summary that represents the entire document effectively."""
             messages: List of message dicts with 'role' and 'content' keys
             preserve_recent: Number of recent messages to keep intact (default 6)
             focus: Optional focus for summarization (e.g., "key decisions", "technical solutions")
+            compression_mode: How aggressively to compress (LIGHT, STANDARD, HEAVY)
 
         Returns:
             SummaryOutput: Structured summary optimized for chat history context
@@ -511,36 +721,67 @@ Create a unified summary that represents the entire document effectively."""
         - Focuses on decisions, solutions, and ongoing topics
         - Maintains user intent and assistant responses
         - Optimized for chat continuation rather than standalone summary
+
+        Compression Modes:
+        - LIGHT: Keep most information, only remove redundancy
+        - STANDARD: Balanced compression, main points and context
+        - HEAVY: Aggressive compression, only critical information
         """
+        # Build focus with compression instructions
+        compression_instruction = COMPRESSION_INSTRUCTIONS.get(
+            compression_mode,
+            COMPRESSION_INSTRUCTIONS[CompressionMode.STANDARD]
+        )
+
+        # Combine user focus with compression instruction
+        if focus:
+            effective_focus = f"{compression_instruction} Focus especially on: {focus}"
+        else:
+            effective_focus = compression_instruction
+
+        # Map compression mode to summary length for appropriate output size
+        length_map = {
+            CompressionMode.LIGHT: SummaryLength.DETAILED,
+            CompressionMode.STANDARD: SummaryLength.STANDARD,
+            CompressionMode.HEAVY: SummaryLength.BRIEF,
+        }
+        target_length = length_map.get(compression_mode, SummaryLength.STANDARD)
+
+        logger.debug("Chat history summarization with compression mode",
+                    message_count=len(messages),
+                    preserve_recent=preserve_recent,
+                    compression_mode=compression_mode.value,
+                    target_length=target_length.value)
+
         if len(messages) <= preserve_recent:
             # If short enough, just summarize normally
-            logger.debug("Chat history is short, using standard summarization", 
-                        message_count=len(messages), 
+            logger.debug("Chat history is short, using standard summarization",
+                        message_count=len(messages),
                         preserve_recent=preserve_recent)
             chat_text = self._format_chat_messages_to_text(messages)
             return self.summarize(
                 chat_text,
-                focus=focus or "conversational context and key information",
+                focus=effective_focus,
                 style=SummaryStyle.CONVERSATIONAL,
-                length=SummaryLength.STANDARD
+                length=target_length
             )
 
         # Split into older messages (to summarize) and recent messages (to preserve)
         older_messages = messages[:-preserve_recent]
         recent_messages = messages[-preserve_recent:]
-        
-        logger.debug("Splitting chat history for summarization", 
+
+        logger.debug("Splitting chat history for summarization",
                     total_messages=len(messages),
                     older_messages=len(older_messages),
                     recent_messages=len(recent_messages))
 
-        # Summarize older messages with conversational focus
+        # Summarize older messages with conversational focus and compression mode
         older_text = self._format_chat_messages_to_text(older_messages)
         older_summary = self.summarize(
             older_text,
-            focus=focus or "key decisions, solutions, and ongoing context",
+            focus=effective_focus,
             style=SummaryStyle.CONVERSATIONAL,
-            length=SummaryLength.DETAILED
+            length=target_length
         )
 
         # The summary should ONLY contain the older messages summary

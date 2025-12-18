@@ -5,6 +5,7 @@ Base provider with integrated telemetry, events, and exception handling.
 import time
 import uuid
 import asyncio
+import warnings
 from collections import deque
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
 from abc import ABC, abstractmethod
@@ -60,6 +61,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # execute_tools: True = AbstractCore executes tools (legacy mode)
         #                False = Pass-through mode (default - for API server / agentic CLI)
         self.execute_tools = kwargs.get('execute_tools', False)
+        if self.execute_tools:
+            warnings.warn(
+                "execute_tools=True is deprecated. Prefer passing tools explicitly to generate() "
+                "and executing tool calls in the host/runtime via a ToolExecutor.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # Setup retry manager with optional configuration
         retry_config = kwargs.get('retry_config', None)
@@ -201,6 +209,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
             Trace ID (UUID string)
         """
         trace_id = str(uuid.uuid4())
+
+        # If trace retention is disabled, still return a trace_id for correlation
+        # without constructing/storing a full trace payload.
+        maxlen = getattr(getattr(self, "_traces", None), "maxlen", None)
+        if maxlen == 0:
+            return trace_id
 
         # Extract generation parameters
         temperature = kwargs.get('temperature', self.temperature)
@@ -408,6 +422,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
         
         # Handle tool execution control
         should_execute_tools = execute_tools if execute_tools is not None else self.execute_tools
+        if should_execute_tools and converted_tools:
+            warnings.warn(
+                "execute_tools=True is deprecated. Prefer passing tools explicitly to generate() "
+                "and executing tool calls in the host/runtime via a ToolExecutor.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if not should_execute_tools and converted_tools:
             # If tools are provided but execution is disabled,
             # we still pass them to the provider for generation but won't execute them

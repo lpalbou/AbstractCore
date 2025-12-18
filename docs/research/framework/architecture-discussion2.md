@@ -1331,7 +1331,7 @@ that you must justify
           /Users/albou/projects/abstractcore/abstractcore/tools/README.md-973-
             tools=[calculator, web_search, read_file],
           /Users/albou/projects/abstractcore/abstractcore/tools/README.md-974-
-            max_iterations=10
+            max_iterations=20
           --
           /Users/albou/projects/abstractcore/abstractcore/embeddings/README.md-4
           94-    "Python programming tutorial",
@@ -1671,7 +1671,7 @@ that you must justify
        agent = ReActAgent(
            llm=llm,
            tools=[calculator, web_search, read_file],
-           max_iterations=10
+           max_iterations=20
        )
 
        result = agent.run("Calculate the GDP growth rate from the data in 
@@ -2820,7 +2820,7 @@ that you must justify
              self,
              llm: AbstractCoreInterface,
              tools: List[Callable] = None,
-             max_iterations: int = 10,
+             max_iterations: int = 20,
              approve_action: Optional[Callable[[str, Dict], bool]] = None,
              on_state_change: Optional[Callable[[AgentState], None]] = None,
          ):
@@ -3104,7 +3104,7 @@ that you must justify
      agent = ReActAgent(
          llm=llm,
          tools=[web_search, fetch_url],
-         max_iterations=10,
+         max_iterations=20,
          approve_action=lambda action, args: input(f"Allow {action}? [y/n]:
      ").lower() == "y"
      )

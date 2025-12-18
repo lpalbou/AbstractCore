@@ -4,42 +4,63 @@ Universal tool support for AbstractCore.
 This package provides a unified tool system that works across all models
 and providers, whether they have native tool APIs or require prompting.
 
-Key components:
+Tool Execution Modes
+--------------------
+
+AbstractCore supports two tool execution modes:
+
+**Passthrough Mode (Default)** - execute_tools=False
+    The LLM returns raw tool call tags that downstream runtimes
+    (AbstractRuntime, Codex, Claude Code) parse and execute.
+    Use case: Agent loops, custom orchestration, multi-step workflows.
+
+**Direct Execution Mode** - execute_tools=True
+    AbstractCore parses and executes tools internally using the
+    global registry. Requires register_tool() for each tool.
+    Use case: Simple scripts, single-turn tool use.
+
+Key Components
+--------------
 - Core types (ToolDefinition, ToolCall, ToolResult)
 - Universal handler for all models
 - Architecture-based parsing and formatting
 - Tool registry for managing available tools
 
-Example usage:
+Example: Passthrough Mode (Default)
+-----------------------------------
 ```python
-from abstractcore.tools import ToolDefinition, UniversalToolHandler, register_tool
+from abstractcore import create_llm
+from abstractcore.tools import tool
 
-# Define a tool
-def list_files(directory: str = ".", pattern: str = "*") -> str:
-    '''List files in a directory.'''
-    import os, fnmatch
-    files = [f for f in os.listdir(directory) if fnmatch.fnmatch(f, pattern)]
-    return "\n".join(files)
+@tool(name="get_weather", description="Get weather for a city")
+def get_weather(city: str) -> str:
+    return f"Weather in {city}: Sunny"
 
-# Register the tool
-tool_def = ToolDefinition.from_function(list_files)
-
-# Create handler for a model
-handler = UniversalToolHandler("qwen3-coder:30b")
-
-# Get tool prompt for prompted models
-if handler.supports_prompted:
-    tool_prompt = handler.format_tools_prompt([tool_def])
-    print("Add this to your system prompt:")
-    print(tool_prompt)
-
-# Parse response for tool calls
-response = "I'll list the files. <|tool_call|>{'name': 'list_files', 'arguments': {'directory': '.'}}"
-tool_calls = handler.parse_response(response, mode="prompted")
-
-if tool_calls.has_tool_calls():
-    print("Tool calls found:", tool_calls.tool_calls)
+llm = create_llm("ollama", model="qwen3:4b")
+response = llm.generate("Weather in Paris?", tools=[get_weather])
+# response.content has tool call tags - parse with your runtime
 ```
+
+Example: Direct Execution Mode
+------------------------------
+```python
+from abstractcore import create_llm
+from abstractcore.tools import tool, register_tool
+
+@tool(name="get_weather", description="Get weather for a city")
+def get_weather(city: str) -> str:
+    return f"Weather in {city}: Sunny"
+
+register_tool(get_weather)  # Required for direct execution
+
+llm = create_llm("ollama", model="qwen3:4b", execute_tools=True)
+response = llm.generate("Weather in Paris?", tools=[get_weather])
+# response.content has executed tool results
+```
+
+Note: The @tool decorator creates metadata but does NOT auto-register.
+Tools are passed explicitly to generate(). Use register_tool() only
+when using direct execution mode.
 """
 
 # Core types
