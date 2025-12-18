@@ -121,6 +121,7 @@ class BasicSummarizer:
         max_chunk_size: int = 8000,
         max_tokens: int = 32000,
         max_output_tokens: int = 8000,
+        adaptive_chunking: bool = True,
         timeout: Optional[float] = None,
         retry_strategy: Optional[FeedbackRetry] = None,
     ):
@@ -130,9 +131,17 @@ class BasicSummarizer:
         Args:
             llm: AbstractCore instance (any provider). If None, attempts to create ollama gemma3:1b-it-qat
             max_chunk_size: Maximum characters per chunk for long documents (default 8000)
-            max_tokens: Maximum total tokens for LLM context (default 32000)
+            max_tokens: Maximum total tokens for LLM context (default 32000).
+                       This parameter serves as the deployment constraint - even if a model can handle
+                       more tokens, the environment might not have enough GPU memory. Set this to match
+                       your deployment environment's capabilities.
             max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+            adaptive_chunking: If True (default), uses model's context window capacity up to max_tokens.
+                              If False, strictly uses max_tokens for chunking decisions regardless of
+                              model capability. Set to False in memory-constrained environments or when
+                              you need predictable memory usage.
             timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
+            retry_strategy: Custom retry strategy for structured output. If None, uses default (3 attempts)
         """
         if llm is None:
             try:
@@ -169,6 +178,7 @@ class BasicSummarizer:
         # In AbstractCore, `max_tokens` is the total (input + output) context budget.
         self.max_tokens = max_tokens
         self.max_output_tokens = max_output_tokens
+        self.adaptive_chunking = adaptive_chunking
 
         # Default retry strategy with 3 attempts (callers may override for latency-sensitive UX).
         self.retry_strategy = retry_strategy or FeedbackRetry(max_attempts=3)
@@ -362,6 +372,13 @@ class BasicSummarizer:
         """
         Determine if text should be chunked based on token count.
         
+        Respects both model capabilities and deployment constraints:
+        - In adaptive mode: Uses model's context window up to max_tokens limit
+        - In non-adaptive mode: Strictly uses max_tokens regardless of model capability
+        
+        This ensures we don't exceed GPU memory constraints even when the model
+        theoretically supports larger contexts.
+        
         Uses centralized TokenUtils for accurate token estimation.
         Falls back to character count if model information unavailable.
         """
@@ -379,20 +396,33 @@ class BasicSummarizer:
         except Exception:
             return len(text) > self.max_chunk_size
         
-        # Determine an input token budget. Prefer the provider's computed max_input_tokens
-        # (derived from max_tokens - max_output_tokens). Fall back to our constructor values.
-        max_input_tokens = getattr(self.llm, "max_input_tokens", None) if self.llm else None
-        if max_input_tokens is None:
-            total_budget = getattr(self.llm, "max_tokens", None) if self.llm else None
-            if total_budget is None:
-                total_budget = self.max_tokens
-            output_budget = getattr(self.llm, "max_output_tokens", None) if self.llm else None
-            if output_budget is None:
-                output_budget = self.max_output_tokens
-            try:
-                max_input_tokens = int(total_budget) - int(output_budget)
-            except Exception:
-                max_input_tokens = 8000
+        # Determine the effective input token budget based on chunking strategy
+        if self.adaptive_chunking:
+            # Adaptive mode: Use model's capability but respect max_tokens as upper bound
+            # This allows large-context models to use their full capacity within deployment limits
+            provider_max_input = getattr(self.llm, "max_input_tokens", None) if self.llm else None
+            if provider_max_input is None:
+                provider_total = getattr(self.llm, "max_tokens", None) if self.llm else None
+                provider_output = getattr(self.llm, "max_output_tokens", None) if self.llm else None
+                if provider_total is not None and provider_output is not None:
+                    try:
+                        provider_max_input = int(provider_total) - int(provider_output)
+                    except Exception:
+                        provider_max_input = None
+            
+            # Use deployment constraint (self.max_tokens) as upper bound
+            deployment_max_input = self.max_tokens - self.max_output_tokens
+            
+            if provider_max_input is not None:
+                # Respect both model capability AND deployment constraint
+                max_input_tokens = min(provider_max_input, deployment_max_input)
+            else:
+                # No provider info, use deployment constraint
+                max_input_tokens = deployment_max_input
+        else:
+            # Non-adaptive mode: Strictly use deployment constraint
+            # Ignores model capability to ensure predictable memory usage
+            max_input_tokens = self.max_tokens - self.max_output_tokens
 
         # Reserve prompt/formatting overhead (structured output schemas + instructions).
         # Keep the historical safety floor (8000) for small-context models.
@@ -400,6 +430,14 @@ class BasicSummarizer:
             token_limit = max(8000, int(max_input_tokens) - 1200)
         except Exception:
             token_limit = 8000
+
+        logger.debug(
+            "Chunking decision",
+            estimated_tokens=estimated_tokens,
+            token_limit=token_limit,
+            adaptive_chunking=self.adaptive_chunking,
+            will_chunk=(estimated_tokens > token_limit)
+        )
 
         return estimated_tokens > token_limit
 
