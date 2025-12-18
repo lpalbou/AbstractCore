@@ -143,7 +143,13 @@ class BasicSummarizer:
         if llm is None:
             try:
                 # Default to gemma3:1b-it-qat with configurable token limits
-                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=timeout)
+                # Only pass token limits if not using AUTO mode (-1)
+                llm_kwargs = {'timeout': timeout} if timeout is not None else {}
+                if max_tokens != -1:
+                    llm_kwargs['max_tokens'] = max_tokens
+                if max_output_tokens != -1:
+                    llm_kwargs['max_output_tokens'] = max_output_tokens
+                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", **llm_kwargs)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}\n\n"
