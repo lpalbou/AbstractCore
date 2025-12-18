@@ -5,6 +5,17 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.8] - 2025-12-17
+
+### Fixed
+- **Async Generation Tracing**: Fixed missing trace capture in `agenerate()` method
+  - Root cause: `agenerate()` called `_agenerate_internal()` directly without trace capture
+  - Sync `generate()` properly captured traces via `generate_with_telemetry()`, but async did not
+  - Fix: Added trace capture logic to `agenerate()` matching sync behavior
+  - Now sets `response.metadata['trace_id']` for all providers using async generation
+  - Affects all providers: vLLM, Ollama, Anthropic, OpenAI, LMStudio, OpenAI-Compatible
+  - Modified files: `abstractcore/providers/base.py`
+
 ## [2.6.7] - 2025-12-13
 
 ### Fixed
