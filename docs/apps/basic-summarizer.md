@@ -129,6 +129,70 @@ ollama pull gemma3:1b-it-qat
 summarizer document.txt
 ```
 
+## Memory and Token Management
+
+### Understanding max_tokens vs Model Capability
+
+**Important**: Just because a model *can* handle 100K tokens doesn't mean your deployment environment has the GPU memory for it.
+
+The `max_tokens` parameter serves as your **deployment constraint**:
+
+```python
+from abstractcore import create_llm
+from abstractcore.processing import BasicSummarizer
+
+# Model might support 128K context, but your GPU only has 8GB
+llm = create_llm("ollama", model="qwen3:4b-instruct", max_tokens=16000)
+
+# Adaptive mode (default): Uses up to 16K tokens (respects deployment limit)
+summarizer = BasicSummarizer(llm, max_tokens=16000, adaptive_chunking=True)
+
+# Non-adaptive mode: Strictly enforces 16K limit regardless of model capability
+summarizer = BasicSummarizer(llm, max_tokens=16000, adaptive_chunking=False)
+```
+
+### Adaptive vs Non-Adaptive Chunking
+
+**Adaptive Chunking (default, `adaptive_chunking=True`):**
+- Uses model's context window capacity **up to** your `max_tokens` limit
+- Optimizes performance while respecting deployment constraints
+- Example: Qwen3 (128K capable) with `max_tokens=32000` → uses 32K
+- Recommended for most use cases
+
+**Non-Adaptive Chunking (`adaptive_chunking=False`):**
+- Strictly uses `max_tokens` for chunking decisions
+- Ignores model capability for predictable memory usage
+- Example: Qwen3 (128K capable) with `max_tokens=16000` → uses 16K
+- Recommended for:
+  - Memory-constrained environments (limited GPU/RAM)
+  - Batch processing where predictable memory usage is critical
+  - Shared infrastructure with strict resource limits
+  - Docker containers with hard memory limits
+
+```python
+# Production example: 4GB GPU, need predictable memory
+llm = create_llm("ollama", model="qwen3:4b-instruct", max_tokens=8000)
+summarizer = BasicSummarizer(
+    llm,
+    max_tokens=8000,
+    max_output_tokens=2000,
+    adaptive_chunking=False  # Enforce hard limit
+)
+```
+
+### CLI Usage
+
+```bash
+# Default: Adaptive chunking (uses model capability up to max-tokens)
+summarizer document.txt --max-tokens 16000
+
+# Memory-constrained: Disable adaptive chunking
+summarizer document.txt --max-tokens 16000 --no-adaptive-chunking
+
+# Debug: See chunking decisions
+summarizer document.txt --max-tokens 32000 --debug
+```
+
 ## Configuration Options
 
 ### Summary Styles
@@ -210,11 +274,23 @@ Automatically handles documents of any length:
 # Works with short documents
 short_result = summarizer.summarize(short_article)
 
-# Automatically chunks long documents
+# Automatically chunks long documents (adaptive mode)
 long_result = summarizer.summarize(entire_book_text)
 
-# Customize chunking
-summarizer = BasicSummarizer(llm, max_chunk_size=6000)
+# Customize chunking and memory usage
+summarizer = BasicSummarizer(
+    llm,
+    max_chunk_size=6000,      # Character-based chunks
+    max_tokens=16000,         # Token budget (deployment constraint)
+    adaptive_chunking=True    # Use model capability up to max_tokens
+)
+
+# Memory-constrained environment
+summarizer_constrained = BasicSummarizer(
+    llm,
+    max_tokens=8000,          # Hard limit due to 4GB GPU
+    adaptive_chunking=False   # Strict enforcement
+)
 ```
 
 ## Output Structure
@@ -334,9 +410,27 @@ except Exception as e:
 
 ### Document Length Guidelines
 
-- **< 8,000 chars**: Single-pass summarization (fastest)
-- **8,000-50,000 chars**: Automatic chunking with minimal overhead
-- **> 50,000 chars**: Map-reduce approach, may take longer but handles unlimited size
+Token limits depend on your deployment environment's GPU/RAM:
+
+- **< 8,000 tokens**: Single-pass summarization (fastest)
+- **8,000-50,000 tokens**: Automatic chunking with minimal overhead
+- **> 50,000 tokens**: Map-reduce approach, handles unlimited size
+
+**Memory Considerations:**
+- **8GB GPU**: Recommended `max_tokens=16000-24000`
+- **16GB GPU**: Recommended `max_tokens=32000-48000`
+- **24GB+ GPU**: Can use `max_tokens=64000+` with large models
+- **CPU-only**: Recommended `max_tokens=8000-16000`, use `adaptive_chunking=False`
+
+```python
+# Example: 8GB GPU deployment
+llm = create_llm("ollama", model="qwen3:4b-instruct", max_tokens=24000)
+summarizer = BasicSummarizer(llm, max_tokens=24000, adaptive_chunking=True)
+
+# Example: CPU-only or constrained environment
+llm = create_llm("ollama", model="qwen3:4b-instruct", max_tokens=8000)
+summarizer = BasicSummarizer(llm, max_tokens=8000, adaptive_chunking=False)
+```
 
 ### Provider Selection
 

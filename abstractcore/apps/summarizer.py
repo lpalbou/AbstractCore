@@ -6,23 +6,36 @@ Usage:
     python -m abstractcore.apps.summarizer <file_path> [options]
 
 Options:
-    --style <style>         Summary style (structured, narrative, objective, analytical, executive, conversational)
-    --length <length>       Summary length (brief, standard, detailed, comprehensive)
-    --focus <focus>         Specific focus area for summarization
-    --output <output>       Output file path (optional, prints to console if not provided)
-    --chunk-size <size>     Chunk size in characters (default: 8000, max: 32000)
-    --provider <provider>   LLM provider (requires --model)
-    --model <model>         LLM model (requires --provider)
-    --max-tokens <tokens>   Maximum total tokens for LLM context (default: 32000)
+    --style <style>              Summary style (structured, narrative, objective, analytical, executive, conversational)
+    --length <length>            Summary length (brief, standard, detailed, comprehensive)
+    --focus <focus>              Specific focus area for summarization
+    --output <output>            Output file path (optional, prints to console if not provided)
+    --chunk-size <size>          Chunk size in characters (default: 8000, max: 32000)
+    --provider <provider>        LLM provider (requires --model)
+    --model <model>              LLM model (requires --provider)
+    --max-tokens <tokens>        Maximum total tokens for LLM context (default: 32000, deployment constraint)
     --max-output-tokens <tokens> Maximum tokens for LLM output generation (default: 8000)
-    --verbose              Show detailed progress information
-    --help                 Show this help message
+    --no-adaptive-chunking       Disable adaptive chunking (use in memory-constrained environments)
+    --verbose                    Show detailed progress information
+    --help                       Show this help message
+
+Memory Management:
+    --max-tokens sets your deployment constraint (GPU/RAM limit), not model capability.
+    By default, adaptive chunking uses model capacity up to this limit for best performance.
+    Use --no-adaptive-chunking in memory-constrained environments to strictly enforce the limit.
 
 Examples:
+    # Basic usage (adaptive chunking)
     python -m abstractcore.apps.summarizer document.pdf
-    python -m abstractcore.apps.summarizer report.txt --style executive --length brief --verbose
-    python -m abstractcore.apps.summarizer data.md --focus "technical details" --output summary.txt
-    python -m abstractcore.apps.summarizer large.txt --chunk-size 15000 --provider openai --model gpt-4o-mini
+    
+    # Memory-constrained environment (8GB GPU)
+    python -m abstractcore.apps.summarizer report.txt --max-tokens 16000 --no-adaptive-chunking
+    
+    # Large document with specific style
+    python -m abstractcore.apps.summarizer data.md --max-tokens 32000 --style executive --length brief
+    
+    # Custom model and chunking
+    python -m abstractcore.apps.summarizer large.txt --provider openai --model gpt-4o-mini --max-tokens 24000
 """
 
 import argparse
@@ -241,7 +254,7 @@ Default model setup:
         '--max-tokens',
         type=int,
         default=32000,
-        help='Maximum total tokens for LLM context (default: 32000)'
+        help='Maximum total tokens for LLM context - this is your deployment constraint based on available GPU/RAM (default: 32000)'
     )
 
     parser.add_argument(
@@ -249,6 +262,12 @@ Default model setup:
         type=int,
         default=8000,
         help='Maximum tokens for LLM output generation (default: 8000)'
+    )
+
+    parser.add_argument(
+        '--no-adaptive-chunking',
+        action='store_true',
+        help='Disable adaptive chunking. Use this in memory-constrained environments to strictly enforce --max-tokens limit regardless of model capability'
     )
 
     parser.add_argument(
@@ -343,6 +362,7 @@ Default model setup:
             print(f"   Max tokens: {max_tokens}")
             print(f"   Max output tokens: {args.max_output_tokens}")
             print(f"   Chunk size: {args.chunk_size}")
+            print(f"   Adaptive chunking: {not args.no_adaptive_chunking}")
             print(f"   Timeout: {args.timeout}")
             print(f"   Style: {args.style}")
             print(f"   Length: {args.length}")
@@ -355,6 +375,7 @@ Default model setup:
                 max_chunk_size=args.chunk_size,
                 max_tokens=max_tokens,
                 max_output_tokens=args.max_output_tokens,
+                adaptive_chunking=not args.no_adaptive_chunking,
                 timeout=args.timeout
             )
         except Exception as e:
