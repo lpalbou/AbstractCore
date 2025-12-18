@@ -62,17 +62,20 @@ class FeedbackRetry(Retry):
 
     def should_retry(self, attempt: int, error: Exception) -> bool:
         """
-        Retry only for Pydantic ValidationErrors and within attempt limit.
+        Retry for structured-output errors that the model can often self-correct:
+        - Pydantic ValidationError (schema mismatch)
+        - JSONDecodeError (not valid JSON at all)
         """
-        return isinstance(error, ValidationError) and attempt < self.max_attempts
+        return isinstance(error, (ValidationError, json.JSONDecodeError)) and attempt < self.max_attempts
 
-    def prepare_retry_prompt(self, original_prompt: str, error: ValidationError, attempt: int) -> str:
+    def prepare_retry_prompt(self, original_prompt: str, error: Exception, attempt: int) -> str:
         """
         Create a retry prompt with validation error feedback.
         """
-        error_feedback = self._format_validation_errors(error)
+        if isinstance(error, ValidationError):
+            error_feedback = self._format_validation_errors(error)
 
-        retry_prompt = f"""{original_prompt}
+            retry_prompt = f"""{original_prompt}
 
 IMPORTANT: Your previous response (attempt {attempt}) had validation errors:
 
@@ -80,7 +83,17 @@ IMPORTANT: Your previous response (attempt {attempt}) had validation errors:
 
 Please correct these errors and provide a valid JSON response that matches the required schema exactly."""
 
-        return retry_prompt
+            return retry_prompt
+
+        # JSONDecodeError (or other JSON parsing issues): retry with a simpler instruction.
+        return f"""{original_prompt}
+
+IMPORTANT: Your previous response (attempt {attempt}) was not valid JSON:
+
+{error}
+
+Please respond again with a single valid JSON object that matches the required schema exactly.
+Return ONLY the JSON object, with no additional text or formatting."""
 
     def _format_validation_errors(self, error: ValidationError) -> str:
         """

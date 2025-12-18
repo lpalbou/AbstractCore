@@ -5,23 +5,36 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.6.9] - 2025-12-18
+## [2.8.0] - 2025-12-18
+
+### Added
+- **Model Support**: Added 15+ new models including GLM-4.6V, Qwen3-VL series, Devstral, GPT-OSS, MiniMax-M2, and Granite-4.0-H
+  - Vision models with enhanced OCR (32 languages) and visual agent capabilities
+  - MoE models with detailed expert configurations and quantization specs
+  - Coding models optimized for agentic workflows
+- **Architecture Support**: Added 8 new architectures (glm4v_moe, mistral3, ministral3, granitemoehybrid, gpt_oss, qwen3_vl, qwen3_vl_moe, minimax_m2, harmony)
+- **Compression Modes**: Added `CompressionMode` enum for chat history summarization (LIGHT/STANDARD/HEAVY)
+- **Trace Metadata**: Added HTTP header extraction for distributed tracing support
+
+### Enhanced
+- **Tool Call Parsing**: Improved robustness with sanitization for malformed LLM output
+  - Handles doubled tags, broken closing tags, and unescaped control characters
+  - String-aware JSON escaping preserves structural whitespace
+- **Summarization**: Adaptive chunking now uses model-specific token budgets instead of fixed thresholds
+  - Reduces API calls on large-context models (up to 12x improvement)
+  - Fallback parsing when structured output fails
+- **File Editing**: Added flexible whitespace matching and unified diff support to `edit_file`
+  - Matches patterns ignoring indentation differences
+  - Preserves file's original indentation style
+- **Error Handling**: Added fallback strategies throughout for improved reliability
 
 ### Fixed
 - **Async Trace Capture**: Improved reliability of trace capture in `agenerate()` for async LLM calls
-  - Ensures `response.metadata['trace_id']` is consistently set after async generation
-  - Works across all providers (Ollama, OpenAI-Compatible, Anthropic, vLLM, etc.)
 
-## [2.6.8] - 2025-12-17
-
-### Fixed
-- **Async Generation Tracing**: Fixed missing trace capture in `agenerate()` method
-  - Root cause: `agenerate()` called `_agenerate_internal()` directly without trace capture
-  - Sync `generate()` properly captured traces via `generate_with_telemetry()`, but async did not
-  - Fix: Added trace capture logic to `agenerate()` matching sync behavior
-  - Now sets `response.metadata['trace_id']` for all providers using async generation
-  - Affects all providers: vLLM, Ollama, Anthropic, OpenAI, LMStudio, OpenAI-Compatible
-  - Modified files: `abstractcore/providers/base.py`
+### Technical Details
+- All changes maintain backward compatibility
+- New features use optional parameters with sensible defaults
+- Added deprecation warnings for `execute_tools` parameter
 
 ## [2.6.7] - 2025-12-13
 

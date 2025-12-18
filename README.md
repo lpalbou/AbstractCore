@@ -65,6 +65,50 @@ response = llm.generate(
 print(response.content)
 ```
 
+### Tool Execution Modes
+
+AbstractCore supports two tool execution modes:
+
+**Mode 1: Passthrough (Default)** - Returns raw tool call tags for downstream processing
+
+```python
+from abstractcore import create_llm
+from abstractcore.tools import tool
+
+@tool(name="get_weather", description="Get weather for a city")
+def get_weather(city: str) -> str:
+    return f"Weather in {city}: Sunny, 22°C"
+
+llm = create_llm("ollama", model="qwen3:4b")  # execute_tools=False by default
+response = llm.generate("What's the weather in Paris?", tools=[get_weather])
+# response.content contains raw tool call tags: <|tool_call|>...
+# Downstream runtime (AbstractRuntime, Codex, Claude Code) parses and executes
+```
+
+**Use case**: Agent loops, AbstractRuntime, Codex, Claude Code, custom orchestration
+
+**Mode 2: Direct Execution** - AbstractCore executes tools and returns results
+
+```python
+from abstractcore import create_llm
+from abstractcore.tools import tool
+from abstractcore.tools.registry import register_tool
+
+@tool(name="get_weather", description="Get weather for a city")
+def get_weather(city: str) -> str:
+    return f"Weather in {city}: Sunny, 22°C"
+
+register_tool(get_weather)  # Required for direct execution
+
+llm = create_llm("ollama", model="qwen3:4b", execute_tools=True)
+response = llm.generate("What's the weather in Paris?", tools=[get_weather])
+# response.content contains executed tool results
+```
+
+**Use case**: Simple scripts, single-turn tool use
+
+> **Note**: The `@tool` decorator creates metadata but does NOT register globally. Tools are passed explicitly to `generate()`. Use `register_tool()` only when using direct execution mode.
+
 ### Response Object (GenerateResponse)
 
 Every LLM generation returns a **GenerateResponse** object with consistent structure across all providers:

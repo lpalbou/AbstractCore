@@ -9786,7 +9786,7 @@ requirements. Let me
        554 +  agent = ReActAgent(
        555 +      llm=llm,
        556 +      tools=[my_tool1, my_tool2],
-       557 +      max_iterations=10
+       557 +      max_iterations=20
        558 +  )
        559 +  result = agent.run("Research quantum computing advances in 2025")
        560 +  
@@ -9808,7 +9808,7 @@ requirements. Let me
        576 +      client=client,                    # Uses HTTP, not local LLM
        577 +      model="ollama/qwen3:4b",          # Model selection
        578 +      tools=[my_tool1, my_tool2],
-       579 +      max_iterations=10
+       579 +      max_iterations=20
        580 +  )
        581 +  result = agent.run("Research quantum computing advances in 2025")
        582 +  
@@ -10694,7 +10694,7 @@ requirements. Let me
  agent = ReActAgent(
      llm=llm,
      tools=[my_tool1, my_tool2],
-     max_iterations=10
+     max_iterations=20
  )
  result = agent.run("Research quantum computing advances in 2025")
 
@@ -10716,7 +10716,7 @@ requirements. Let me
      client=client,                    # Uses HTTP, not local LLM
      model="ollama/qwen3:4b",          # Model selection
      tools=[my_tool1, my_tool2],
-     max_iterations=10
+     max_iterations=20
  )
  result = agent.run("Research quantum computing advances in 2025")
 

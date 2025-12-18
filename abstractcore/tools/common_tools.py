@@ -240,7 +240,7 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
 
 
 @tool(
-    description="Search for text patterns INSIDE files using regex (returns file paths with line numbers by default)",
+    description="Search for text patterns INSIDE files and codes using regex (returns file paths with line numbers by default)",
     tags=["search", "content", "regex", "grep", "text"],
     when_to_use="When you need to find specific text, code patterns, or content INSIDE files (NOT for finding files by names)",
     examples=[
@@ -1742,9 +1742,9 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
 
 
 @tool(
-    description="Edit files using pattern matching and replacement - simple, powerful, and intuitive",
-    tags=["file", "edit", "modify", "pattern", "replace", "regex"],
-    when_to_use="When you need to edit files by finding patterns (text, functions, code blocks) and replacing them",
+    description="Edit files by replacing text patterns using simple matching or regex",
+    tags=["file", "edit", "replace", "pattern", "substitute", "regex"],
+    when_to_use="When you need to edit files by replacing text. Supports simple text or regex patterns, line ranges, preview mode, and controlling replacement count.",
     examples=[
         {
             "description": "Replace simple text",
@@ -1764,7 +1764,7 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
             }
         },
         {
-            "description": "Replace with occurrence limit",
+            "description": "Replace only first occurrence",
             "arguments": {
                 "file_path": "document.txt",
                 "pattern": "TODO",
@@ -1780,24 +1780,299 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
                 "replacement": "class NewClass",
                 "preview_only": True
             }
+        },
+        {
+            "description": "Match pattern ignoring whitespace differences (enabled by default)",
+            "arguments": {
+                "file_path": "script.py",
+                "pattern": "if condition:\n    do_something()",
+                "replacement": "if condition:\n    do_something_else()",
+                "flexible_whitespace": True
+            }
         }
     ]
 )
+
+
+def _normalize_escape_sequences(text: str) -> str:
+    """Convert literal escape sequences to actual control characters.
+
+    Handles cases where LLMs send '\\n' (literal) instead of actual newlines.
+    This is a common issue when LLM output is over-escaped in JSON.
+
+    Args:
+        text: Input string potentially containing literal escape sequences
+
+    Returns:
+        String with \\n, \\t, \\r converted to actual control characters
+    """
+    # Only convert if there are literal escape sequences
+    if '\\n' in text or '\\t' in text or '\\r' in text:
+        text = text.replace('\\n', '\n')
+        text = text.replace('\\t', '\t')
+        text = text.replace('\\r', '\r')
+    return text
+
+
+def _flexible_whitespace_match(
+    pattern: str,
+    replacement: str,
+    content: str,
+    max_replacements: int
+) -> Optional[tuple]:
+    """
+    Match pattern with flexible leading whitespace handling.
+
+    Converts a multi-line pattern into a regex that:
+    1. Normalizes line endings (\r\n -> \n)
+    2. Matches any amount of leading whitespace on each line
+    3. Preserves the non-whitespace content exactly
+
+    Returns (updated_content, count) if matches found, None otherwise.
+    """
+    # Normalize line endings in both pattern and content
+    pattern_normalized = pattern.replace('\r\n', '\n')
+    content_normalized = content.replace('\r\n', '\n')
+
+    # Split pattern into lines
+    pattern_lines = pattern_normalized.split('\n')
+
+    # Build regex parts for each line
+    regex_parts = []
+    for i, line in enumerate(pattern_lines):
+        # Get leading whitespace and content
+        stripped = line.lstrip()
+        if stripped:
+            # Escape special regex characters in the content
+            escaped_content = re.escape(stripped)
+            # Match any leading whitespace (spaces or tabs)
+            regex_parts.append(r'[ \t]*' + escaped_content)
+        else:
+            # Empty line or whitespace-only - match any whitespace
+            regex_parts.append(r'[ \t]*')
+
+    # Join with flexible newline matching (handles \n or \r\n)
+    flexible_pattern = r'\r?\n'.join(regex_parts)
+
+    try:
+        regex = re.compile(flexible_pattern, re.MULTILINE)
+    except re.error:
+        return None
+
+    matches = list(regex.finditer(content_normalized))
+    if not matches:
+        return None
+
+    # Apply replacements
+    # For the replacement, we need to adjust indentation to match
+    # the actual indentation found in the match
+
+    def replacement_fn(match):
+        """Adjust replacement to use the indentation from the matched text."""
+        matched_text = match.group(0)
+        matched_lines = matched_text.split('\n')
+
+        # Normalize the replacement's line endings
+        repl_normalized = replacement.replace('\r\n', '\n')
+        repl_lines = repl_normalized.split('\n')
+
+        if not repl_lines:
+            return replacement
+
+        # For each line in the replacement, use the corresponding matched line's
+        # actual indentation. This preserves the file's indentation style exactly.
+        adjusted_lines = []
+        for j, repl_line in enumerate(repl_lines):
+            repl_stripped = repl_line.lstrip()
+
+            if j < len(matched_lines):
+                # We have a corresponding matched line - use its actual indentation
+                matched_line = matched_lines[j]
+                actual_indent_str = matched_line[:len(matched_line) - len(matched_line.lstrip())]
+                adjusted_lines.append(actual_indent_str + repl_stripped)
+            else:
+                # Extra lines in replacement - no matched counterpart
+                # Use the indentation from the last matched line as reference
+                if matched_lines:
+                    last_matched = matched_lines[-1]
+                    base_indent_str = last_matched[:len(last_matched) - len(last_matched.lstrip())]
+                    # Add relative indentation from replacement
+                    repl_indent_len = len(repl_line) - len(repl_stripped)
+                    pattern_last_indent = len(pattern_lines[-1]) - len(pattern_lines[-1].lstrip()) if pattern_lines else 0
+                    extra_spaces = max(0, repl_indent_len - pattern_last_indent)
+                    adjusted_lines.append(base_indent_str + ' ' * extra_spaces + repl_stripped)
+                else:
+                    adjusted_lines.append(repl_line)
+
+        return '\n'.join(adjusted_lines)
+
+    # Apply the replacement
+    if max_replacements == -1:
+        updated = regex.sub(replacement_fn, content_normalized)
+        count = len(matches)
+    else:
+        updated = regex.sub(replacement_fn, content_normalized, count=max_replacements)
+        count = min(len(matches), max_replacements)
+
+    # Restore original line endings if needed
+    if '\r\n' in content and '\r\n' not in updated:
+        updated = updated.replace('\n', '\r\n')
+
+    return (updated, count)
+
+
+_HUNK_HEADER_RE = re.compile(r"^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@")
+
+
+def _normalize_diff_path(raw: str) -> str:
+    raw = raw.strip()
+    raw = raw.split("\t", 1)[0].strip()
+    raw = raw.split(" ", 1)[0].strip()
+    if raw.startswith("a/") or raw.startswith("b/"):
+        raw = raw[2:]
+    return raw
+
+
+def _path_parts(path_str: str) -> tuple[str, ...]:
+    normalized = path_str.replace("\\", "/")
+    parts = [p for p in normalized.split("/") if p and p != "."]
+    return tuple(parts)
+
+
+def _is_suffix_path(candidate: str, target: Path) -> bool:
+    candidate_parts = _path_parts(candidate)
+    if not candidate_parts:
+        return False
+    target_parts = tuple(target.as_posix().split("/"))
+    return len(candidate_parts) <= len(target_parts) and target_parts[-len(candidate_parts) :] == candidate_parts
+
+
+def _parse_unified_diff(patch: str) -> tuple[Optional[str], list[tuple[int, int, int, int, list[str]]], Optional[str]]:
+    """Parse a unified diff for a single file."""
+    lines = patch.splitlines()
+    header_path: Optional[str] = None
+    hunks: list[tuple[int, int, int, int, list[str]]] = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        if line.startswith("--- "):
+            old_path = _normalize_diff_path(line[4:])
+            i += 1
+            if i >= len(lines) or not lines[i].startswith("+++ "):
+                return None, [], "Invalid unified diff: missing '+++ ' header after '--- '"
+            new_path = _normalize_diff_path(lines[i][4:])
+            if old_path != "/dev/null" and new_path != "/dev/null":
+                if header_path is None:
+                    header_path = new_path
+                elif header_path != new_path:
+                    return None, [], "Unified diff appears to reference multiple files"
+            i += 1
+            continue
+
+        if line.startswith("@@"):
+            m = _HUNK_HEADER_RE.match(line)
+            if not m:
+                return header_path, [], f"Invalid hunk header: {line}"
+
+            old_start = int(m.group(1))
+            old_len = int(m.group(2) or 1)
+            new_start = int(m.group(3))
+            new_len = int(m.group(4) or 1)
+
+            i += 1
+            hunk_lines: list[str] = []
+            while i < len(lines):
+                nxt = lines[i]
+                if nxt.startswith("@@") or nxt.startswith("--- ") or nxt.startswith("diff --git "):
+                    break
+                hunk_lines.append(nxt)
+                i += 1
+
+            hunks.append((old_start, old_len, new_start, new_len, hunk_lines))
+            continue
+
+        i += 1
+
+    if not hunks:
+        return header_path, [], "No hunks found in diff (missing '@@ ... @@' sections)"
+
+    return header_path, hunks, None
+
+
+def _apply_unified_diff(original_text: str, hunks: list[tuple[int, int, int, int, list[str]]]) -> tuple[Optional[str], Optional[str]]:
+    """Apply unified diff hunks to text."""
+    ends_with_newline = original_text.endswith("\n")
+    original_lines = original_text.splitlines()
+
+    out: list[str] = []
+    cursor = 0
+
+    for old_start, _old_len, _new_start, _new_len, hunk_lines in hunks:
+        hunk_start = max(old_start - 1, 0)
+        if hunk_start > len(original_lines):
+            return None, f"Hunk starts beyond end of file (start={old_start}, lines={len(original_lines)})"
+
+        out.extend(original_lines[cursor:hunk_start])
+        cursor = hunk_start
+
+        for hl in hunk_lines:
+            if hl == r"\ No newline at end of file":
+                continue
+            if not hl:
+                return None, "Invalid diff line: empty line without prefix"
+
+            prefix = hl[0]
+            text = hl[1:]
+
+            if prefix == " ":
+                if cursor >= len(original_lines) or original_lines[cursor] != text:
+                    got = original_lines[cursor] if cursor < len(original_lines) else "<EOF>"
+                    return None, f"Context mismatch applying patch. Expected {text!r}, got {got!r}"
+                out.append(text)
+                cursor += 1
+            elif prefix == "-":
+                if cursor >= len(original_lines) or original_lines[cursor] != text:
+                    got = original_lines[cursor] if cursor < len(original_lines) else "<EOF>"
+                    return None, f"Remove mismatch applying patch. Expected {text!r}, got {got!r}"
+                cursor += 1
+            elif prefix == "+":
+                out.append(text)
+            else:
+                return None, f"Invalid diff line prefix {prefix!r} (expected one of ' ', '+', '-')"
+
+    out.extend(original_lines[cursor:])
+
+    new_text = "\n".join(out)
+    if ends_with_newline and not new_text.endswith("\n"):
+        new_text += "\n"
+    return new_text, None
+
+
 def edit_file(
     file_path: str,
     pattern: str,
-    replacement: str,
+    replacement: Optional[str] = None,
     use_regex: bool = False,
     max_replacements: int = -1,
     start_line: Optional[int] = None,
     end_line: Optional[int] = None,
     preview_only: bool = False,
-    encoding: str = "utf-8"
+    encoding: str = "utf-8",
+    flexible_whitespace: bool = True,
 ) -> str:
     """
-    Edit files using pattern matching and replacement.
+    Edit a UTF-8 text file.
+
+    Two supported modes:
+    1) **Find/replace mode** (recommended for small edits):
+       - Provide `pattern` and `replacement` (optionally regex).
+    2) **Unified diff mode** (recommended for precise multi-line edits):
+       - Call `edit_file(file_path, patch)` with `replacement=None` and `pattern` set to a single-file unified diff.
 
     Finds patterns (text or regex) in files and replaces them with new content.
+    For complex multi-line edits, prefer unified diff mode to avoid accidental partial matches.
 
     Args:
         file_path: Path to the file to edit
@@ -1809,6 +2084,10 @@ def edit_file(
         end_line: Ending line number to limit search scope (1-indexed, optional)
         preview_only: Show what would be changed without applying (default: False)
         encoding: File encoding (default: "utf-8")
+        flexible_whitespace: Enable whitespace-flexible matching (default: True).
+            When enabled, matches patterns even if indentation differs between
+            the pattern and file content. Handles tabs vs spaces, different
+            indentation levels, and line ending differences (\n vs \r\n).
 
     Returns:
         Success message with replacement details or error message
@@ -1818,6 +2097,13 @@ def edit_file(
         edit_file("script.py", r"def old_func\\([^)]*\\):", "def new_func():", use_regex=True)
         edit_file("document.txt", "TODO", "DONE", max_replacements=1)
         edit_file("test.py", "class OldClass", "class NewClass", preview_only=True)
+        edit_file("app.py", \"\"\"--- a/app.py
++++ b/app.py
+@@ -1,2 +1,2 @@
+ print('hello')
+-print('world')
++print('there')
+\"\"\")
     """
     try:
         # Validate file exists and expand home directory shortcuts like ~
@@ -1837,7 +2123,58 @@ def edit_file(
         except Exception as e:
             return f"❌ Error reading file: {str(e)}"
 
+        # Unified diff mode: treat `pattern` as a patch when `replacement` is omitted.
+        if replacement is None:
+            header_path, hunks, err = _parse_unified_diff(pattern)
+            if err:
+                return f"❌ Error: {err}"
+            if header_path and not _is_suffix_path(header_path, path.resolve()):
+                return (
+                    "❌ Error: Patch file header does not match the provided path.\n"
+                    f"Patch header: {header_path}\n"
+                    f"Target path:  {path.resolve()}\n"
+                    "Generate a unified diff targeting the exact file you want to edit."
+                )
+
+            updated, apply_err = _apply_unified_diff(content, hunks)
+            if apply_err:
+                return f"❌ Error: Patch did not apply cleanly: {apply_err}"
+
+            assert updated is not None
+            if updated == content:
+                return "No changes applied (patch resulted in identical content)."
+
+            import difflib
+
+            old_lines = content.splitlines()
+            new_lines = updated.splitlines()
+            diff_lines = list(
+                difflib.unified_diff(
+                    old_lines,
+                    new_lines,
+                    fromfile=str(path),
+                    tofile=str(path),
+                    lineterm="",
+                    n=3,
+                )
+            )
+            preview = "\n".join(diff_lines[:120])
+            if len(diff_lines) > 120:
+                preview += f"\n... (diff truncated, {len(diff_lines)} lines total)"
+
+            if preview_only:
+                return f"Preview for {str(path)}\n{preview}"
+
+            with open(path, "w", encoding=encoding) as f:
+                f.write(updated)
+
+            return f"Updated {str(path)}\n{preview}"
+
         original_content = content
+
+        # Normalize escape sequences - handles LLMs sending \\n instead of actual newlines
+        pattern = _normalize_escape_sequences(pattern)
+        replacement = _normalize_escape_sequences(replacement)
 
         # Handle line range targeting if specified
         search_content = content
@@ -1889,16 +2226,31 @@ def edit_file(
         else:
             # Simple text replacement on search content
             count = search_content.count(pattern)
-            if count == 0:
+
+            # If exact match fails and flexible_whitespace is enabled, try flexible matching
+            if count == 0 and flexible_whitespace and '\n' in pattern:
+                # Convert pattern to regex with flexible leading whitespace per line
+                # Strategy: Replace each newline + whitespace with a regex that matches
+                # any amount of leading whitespace
+                flexible_result = _flexible_whitespace_match(
+                    pattern, replacement, search_content, max_replacements
+                )
+                if flexible_result is not None:
+                    updated_search_content, replacements_made = flexible_result
+                else:
+                    range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
+                    return f"No occurrences of '{pattern}' found in '{file_path}'{range_info}"
+            elif count == 0:
                 range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
                 return f"No occurrences of '{pattern}' found in '{file_path}'{range_info}"
-
-            if max_replacements == -1:
-                updated_search_content = search_content.replace(pattern, replacement)
-                replacements_made = count
             else:
-                updated_search_content = search_content.replace(pattern, replacement, max_replacements)
-                replacements_made = min(count, max_replacements)
+                # Exact match found
+                if max_replacements == -1:
+                    updated_search_content = search_content.replace(pattern, replacement)
+                    replacements_made = count
+                else:
+                    updated_search_content = search_content.replace(pattern, replacement, max_replacements)
+                    replacements_made = min(count, max_replacements)
 
         # Reconstruct the full file content if line ranges were used
         if start_line is not None or end_line is not None:
@@ -1986,7 +2338,6 @@ def edit_file(
 
     except Exception as e:
         return f"❌ Error editing file: {str(e)}"
-
 
 
 @tool(

@@ -6,6 +6,7 @@ and executing them safely.
 """
 
 import time
+import warnings
 from typing import Dict, List, Any, Callable, Optional, Union
 from functools import wraps
 
@@ -270,6 +271,12 @@ def register_tool(tool: Union[ToolDefinition, Callable]) -> ToolDefinition:
     Returns:
         The registered ToolDefinition
     """
+    warnings.warn(
+        "Global tool registration is deprecated. Prefer passing tools explicitly to generate() "
+        "and executing tool calls via a host-configured ToolExecutor.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return _global_registry.register(tool)
 
 
@@ -308,19 +315,11 @@ def clear_registry():
     return _global_registry.clear()
 
 
-def tool(func: Callable) -> Callable:
-    """
-    Decorator to register a function as a tool.
-
-    Args:
-        func: Function to register as a tool
-
-    Returns:
-        The original function (unchanged)
-    """
-    register_tool(func)
-    return func
-
-
-# Convenience decorator alias
-register = tool
+__all__ = [
+    "ToolRegistry",
+    "get_registry",
+    "register_tool",
+    "execute_tool",
+    "execute_tools",
+    "clear_registry",
+]
