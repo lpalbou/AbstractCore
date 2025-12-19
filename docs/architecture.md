@@ -809,37 +809,44 @@ def my_custom_tool(param: str) -> str:
 - **Performance tests**: Measure latency and throughput
 - **Integration tests**: Test with real external dependencies
 
-## Future Architecture
+## Integration with Abstract Framework
 
-AbstractCore is designed to be the foundation for more advanced capabilities:
+AbstractCore is the foundation layer for the Abstract Framework stack:
 
 ```mermaid
 graph TD
-    A[Complex AI Applications] --> B[AbstractAgent]
-    A --> C[AbstractMemory]
-    A --> D[Custom RAG Systems]
-    A --> E[Multi-Agent Systems]
+    subgraph "UI Layer (peers)"
+        A[AbstractCode<br/>Terminal CLI]
+        B[Visual Blueprint Editor<br/>planned]
+        C2[Web UI<br/>planned]
+    end
 
-    B --> F[AbstractCore]
-    C --> F
-    D --> F
-    E --> F
+    A -.->|optional| F[AbstractFlow]
+    B --> F
+    C2 -.->|optional| F
 
-    F --> G[LLM Providers]
+    F --> C[AbstractAgent]
+    A --> C
+    C --> D[AbstractRuntime]
+    D --> E[AbstractCore]
+    E --> G[LLM Providers]
 
-    style F fill:#e1f5fe
+    style E fill:#e1f5fe
     style A fill:#fff3e0
-    style B fill:#f3e5f5
+    style B fill:#fff3e0
+    style C2 fill:#fff3e0
+    style F fill:#f3e5f5
     style C fill:#f3e5f5
     style D fill:#f3e5f5
-    style E fill:#f3e5f5
 ```
 
-### Planned Extensions
-- **AbstractAgent**: Advanced agent workflows and planning
-- **AbstractMemory**: Temporal knowledge graphs and long-term memory
-- **AbstractSwarm**: Multi-agent orchestration
-- **AbstractPipeline**: Complex workflow orchestration
+### Framework Layers
+- **UI Layer** (peers): AbstractCode, Visual Blueprint Editor, Web UI
+- **AbstractFlow**: Multi-agent orchestration, pipeline composition, specialized agents
+- **AbstractAgent**: Agent patterns (ReactAgent, CodeActAgent) with durable execution
+- **AbstractRuntime**: Effect system, workflows, state persistence
+
+All UIs can optionally use AbstractFlow for orchestration. AbstractCode also works directly with AbstractAgent for single-agent sessions.
 
 ## Summary
 
