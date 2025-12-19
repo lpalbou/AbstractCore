@@ -817,13 +817,11 @@ AbstractCore is the foundation layer for the Abstract Framework stack:
 graph TD
     subgraph "UI Layer (peers)"
         A[AbstractCode<br/>Terminal CLI]
-        B[Visual Blueprint Editor<br/>planned]
-        C2[Web UI<br/>planned]
+        B[AbstractFlow Visual Editor<br/>React + ReactFlow]
     end
 
-    A -.->|optional| F[AbstractFlow]
+    A -.->|optional| F[AbstractFlow Engine]
     B --> F
-    C2 -.->|optional| F
 
     F --> C[AbstractAgent]
     A --> C
@@ -834,19 +832,20 @@ graph TD
     style E fill:#e1f5fe
     style A fill:#fff3e0
     style B fill:#fff3e0
-    style C2 fill:#fff3e0
     style F fill:#f3e5f5
     style C fill:#f3e5f5
     style D fill:#f3e5f5
 ```
 
 ### Framework Layers
-- **UI Layer** (peers): AbstractCode, Visual Blueprint Editor, Web UI
-- **AbstractFlow**: Multi-agent orchestration, pipeline composition, specialized agents
+- **UI Layer** (peers):
+  - AbstractCode: Terminal CLI for interactive sessions
+  - AbstractFlow Visual Editor: Web-based diagram editor (React + ReactFlow + FastAPI)
+- **AbstractFlow**: Multi-agent orchestration engine + visual editor
 - **AbstractAgent**: Agent patterns (ReactAgent, CodeActAgent) with durable execution
 - **AbstractRuntime**: Effect system, workflows, state persistence
 
-All UIs can optionally use AbstractFlow for orchestration. AbstractCode also works directly with AbstractAgent for single-agent sessions.
+AbstractCode can optionally use AbstractFlow for running flows. AbstractFlow includes its own visual editor for designing workflows.
 
 ## Summary
 
