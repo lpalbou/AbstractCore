@@ -47,6 +47,12 @@ class EventType(Enum):
     COMPACTION_STARTED = "compaction_started"      # When chat history compaction begins
     COMPACTION_COMPLETED = "compaction_completed"  # When compaction finishes
 
+    # Runtime/workflow events (4) - durable execution progress (StepRecord)
+    WORKFLOW_STEP_STARTED = "workflow_step_started"
+    WORKFLOW_STEP_COMPLETED = "workflow_step_completed"
+    WORKFLOW_STEP_WAITING = "workflow_step_waiting"
+    WORKFLOW_STEP_FAILED = "workflow_step_failed"
+
 
 @dataclass
 class Event:
