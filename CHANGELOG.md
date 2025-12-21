@@ -5,6 +5,16 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.1 - 2025-12-21
+
+### Added
+Add workflow event types: Introduce new event types for workflow progress tracking
+
+- Added EVENT_TYPE constants for workflow steps: WORKFLOW_STEP_STARTED, WORKFLOW_STEP_COMPLETED, WORKFLOW_STEP_WAITING, and WORKFLOW_STEP_FAILED.
+- Enhances event tracking capabilities for durable execution processes.
+
+
+
 ## [2.8.0] - 2025-12-18
 
 ### Added
