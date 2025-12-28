@@ -809,7 +809,7 @@ def write_file(file_path: str, content: str = "", mode: str = "w", create_dirs: 
 
 
 @tool(
-    description="Search the web for real-time information using DuckDuckGo (no API key required)",
+    description="Search the web for real-time information using DuckDuckGo (no API key required). Returns a JSON string with stable fields (query, params, results).",
     tags=["web", "search", "internet", "information", "research"],
     when_to_use="When you need current information, research topics, or verify facts that might not be in your training data",
     examples=[
@@ -895,19 +895,37 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
             - None: All time (default)
 
     Returns:
-        Search results or error message
+        JSON string with search results or an error message.
 
     Note:
         Time range filtering requires the ddgs library (pip install ddgs).
         For best results with current news, use time_range="d" or "h".
     """
+    def _json_output(payload: Dict[str, Any]) -> str:
+        try:
+            return json.dumps(payload, ensure_ascii=False, indent=2)
+        except Exception:
+            return json.dumps({"error": "Failed to serialize search results", "query": query})
+
+    def _normalize_time_range(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        v = str(value).strip().lower()
+        if not v:
+            return None
+        return {
+            "24h": "h",
+            "7d": "w",
+            "30d": "m",
+            "1y": "y",
+        }.get(v, v)
+
     try:
+        normalized_time_range = _normalize_time_range(time_range)
+
         # Try using duckduckgo-search library first (best approach)
         try:
             from ddgs import DDGS
-
-            time_info = f" (past {time_range})" if time_range else ""
-            results = [f"🔍 Search results for: '{query}'{time_info}"]
 
             with DDGS() as ddgs:
                 # Prepare search parameters
@@ -919,30 +937,32 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
                 }
 
                 # Add time range filter if specified
-                if time_range:
-                    search_params['timelimit'] = time_range
+                if normalized_time_range:
+                    search_params['timelimit'] = normalized_time_range
 
                 # Get text search results
                 search_results = list(ddgs.text(**search_params))
 
-                if search_results:
-                    results.append(f"\n🌐 Web Results:")
-
-                    for i, result in enumerate(search_results, 1):
-                        title = result.get('title', 'No title')
-                        url = result.get('href', '')
-                        body = result.get('body', '')
-
-                        # Clean and format
-                        title = title[:100] + "..." if len(title) > 100 else title
-                        body = body[:150] + "..." if len(body) > 150 else body
-
-                        results.append(f"\n{i}. {title}")
-                        results.append(f"   🔗 {url}")
-                        if body:
-                            results.append(f"   📄 {body}")
-
-                    return "\n".join(results)
+                return _json_output({
+                    "engine": "duckduckgo",
+                    "source": "ddgs.text",
+                    "query": query,
+                    "params": {
+                        "num_results": num_results,
+                        "safe_search": safe_search,
+                        "region": region,
+                        "time_range": normalized_time_range,
+                    },
+                    "results": [
+                        {
+                            "rank": i,
+                            "title": (result.get("title") or "").strip(),
+                            "url": (result.get("href") or "").strip(),
+                            "snippet": (result.get("body") or "").strip(),
+                        }
+                        for i, result in enumerate(search_results, 1)
+                    ],
+                })
 
         except ImportError:
             # Fallback if duckduckgo-search is not installed
@@ -964,51 +984,70 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
         response = requests.get(api_url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
+        results = []
 
-        results = [f"🔍 Search results for: '{query}'"]
-        found_content = False
+        abstract = (data.get("Abstract") or "").strip()
+        abstract_url = (data.get("AbstractURL") or "").strip()
+        if abstract:
+            results.append({
+                "rank": 1,
+                "title": (data.get("Heading") or "Instant Answer").strip(),
+                "url": abstract_url,
+                "snippet": abstract,
+            })
 
-        # Abstract (main result)
-        if data.get('Abstract') and data['Abstract'].strip():
-            results.append(f"\n📝 Summary: {data['Abstract']}")
-            if data.get('AbstractURL'):
-                results.append(f"📎 Source: {data['AbstractURL']}")
-            found_content = True
+        answer = (data.get("Answer") or "").strip()
+        if answer:
+            results.append({
+                "rank": len(results) + 1,
+                "title": "Answer",
+                "url": (data.get("AnswerURL") or "").strip(),
+                "snippet": answer,
+            })
 
-        # Direct Answer
-        if data.get('Answer') and data['Answer'].strip():
-            results.append(f"\n💡 Answer: {data['Answer']}")
-            found_content = True
+        related = data.get("RelatedTopics")
+        if isinstance(related, list):
+            for topic in related:
+                if not isinstance(topic, dict) or not topic.get("Text"):
+                    continue
+                text = str(topic.get("Text", "")).replace("<b>", "").replace("</b>", "").strip()
+                results.append({
+                    "rank": len(results) + 1,
+                    "title": "Related",
+                    "url": (topic.get("FirstURL") or "").strip(),
+                    "snippet": text,
+                })
+                if len(results) >= num_results:
+                    break
 
-        # Related Topics
-        if data.get('RelatedTopics') and isinstance(data['RelatedTopics'], list):
-            valid_topics = [t for t in data['RelatedTopics'] if isinstance(t, dict) and t.get('Text')]
-            if valid_topics:
-                results.append(f"\n🔗 Related Information:")
-                for i, topic in enumerate(valid_topics[:num_results], 1):
-                    text = topic['Text'].replace('<b>', '').replace('</b>', '')
-                    text = text[:200] + "..." if len(text) > 200 else text
-                    results.append(f"{i}. {text}")
-                    if topic.get('FirstURL'):
-                        results.append(f"   🔗 {topic['FirstURL']}")
-                    results.append("")
-                found_content = True
+        payload: Dict[str, Any] = {
+            "engine": "duckduckgo",
+            "source": "duckduckgo.instant_answer",
+            "query": query,
+            "params": {
+                "num_results": num_results,
+                "safe_search": safe_search,
+                "region": region,
+                "time_range": normalized_time_range,
+            },
+            "results": results,
+        }
 
-        if not found_content:
-            results.append(f"\n⚠️ Limited results for '{query}'")
-            results.append(f"\n💡 For better web search results:")
-            results.append(f"• Install ddgs: pip install ddgs")
-            results.append(f"• This provides real web search results, not just instant answers")
-            results.append(f"• Manual search: https://duckduckgo.com/?q={query.replace(' ', '+')}")
+        if not results:
+            payload["warning"] = "Limited results from DuckDuckGo instant answer API; install ddgs for real web results."
 
-        return "\n".join(results)
+        return _json_output(payload)
 
     except Exception as e:
-        return f"Error searching internet: {str(e)}"
+        return _json_output({
+            "engine": "duckduckgo",
+            "query": query,
+            "error": str(e),
+        })
 
 
 @tool(
-    description="Fetch and intelligently parse content from URLs with automatic content type detection and metadata extraction",
+    description="Fetch and parse content from URLs with automatic content type detection and metadata extraction. Set include_full_content=true to disable preview truncation for text/JSON/XML (still limited by max_content_length).",
     tags=["web", "fetch", "url", "http", "content", "parse", "scraping"],
     when_to_use="When you need to retrieve and analyze content from specific URLs, including web pages, APIs, documents, or media files",
     examples=[
