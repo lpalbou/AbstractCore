@@ -145,41 +145,55 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         # Split pattern by | to support multiple patterns
         patterns = [p.strip() for p in pattern.split('|')]
 
-        # Get all files first, then apply case-insensitive pattern matching
+        # Get all entries first (files + directories), then apply case-insensitive pattern matching.
+        #
+        # NOTE: This tool is intentionally named `list_files` for historical reasons, but it
+        # should list directories too. This is important for agent workflows that need to
+        # confirm that `mkdir -p ...` succeeded even before any files exist.
         import fnmatch
-        all_files = []
+        all_entries = []
 
         if recursive:
             for root, dirs, dir_files in os.walk(directory):
+                # Prune hidden directories early unless explicitly requested.
+                if not include_hidden:
+                    dirs[:] = [d for d in dirs if not str(d).startswith(".")]
+
+                # Include directories (so empty folders still show up)
+                for d in dirs:
+                    if not include_hidden and str(d).startswith("."):
+                        continue
+                    all_entries.append(Path(root) / d)
+
+                # Include files
                 for f in dir_files:
-                    all_files.append(Path(root) / f)
+                    if not include_hidden and str(f).startswith("."):
+                        continue
+                    all_entries.append(Path(root) / f)
         else:
             try:
-                all_files = [f for f in directory.iterdir() if f.is_file()]
-                if include_hidden:
-                    # Add hidden files
-                    hidden_files = [f for f in directory.iterdir() if f.name.startswith('.') and f.is_file()]
-                    all_files.extend(hidden_files)
+                # Include both files and directories for better UX and agent correctness.
+                all_entries = list(directory.iterdir())
             except PermissionError:
                 pass
 
         # Apply case-insensitive pattern matching
         matched_files = []
-        for file_path in all_files:
-            filename = file_path.name
+        for entry_path in all_entries:
+            filename = entry_path.name
 
             # Check if file matches any pattern (case-insensitive)
             for single_pattern in patterns:
                 if fnmatch.fnmatch(filename.lower(), single_pattern.lower()):
-                    matched_files.append(str(file_path))
+                    matched_files.append(str(entry_path))
                     break
 
         files = matched_files
 
         if not files:
-            return f"No files found matching pattern '{pattern}' in '{directory_path}'"
+            return f"No files or directories found matching pattern '{pattern}' in '{directory_path}'"
 
-        # Filter out hidden files if include_hidden is False (already handled in file collection above)
+        # Filter out hidden entries if include_hidden is False.
         if not include_hidden:
             filtered_files = []
             for file_path in files:
@@ -192,8 +206,8 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
             files = filtered_files
 
         if not files:
-            hidden_note = " (hidden files excluded)" if not include_hidden else ""
-            return f"No files found matching pattern '{pattern}' in '{directory_path}'{hidden_note}"
+            hidden_note = " (hidden entries excluded)" if not include_hidden else ""
+            return f"No files or directories found matching pattern '{pattern}' in '{directory_path}'{hidden_note}"
 
         # Remove duplicates and sort files by modification time (most recent first), then alphabetically
         unique_files = set(files)
@@ -209,29 +223,39 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         is_truncated = False
         if head_limit is not None and head_limit > 0 and len(files) > head_limit:
             files = files[:head_limit]
-            limit_note = f" (showing {head_limit} of {total_files} files)"
+            limit_note = f" (showing {head_limit} of {total_files} entries)"
             is_truncated = True
         else:
             limit_note = ""
 
-        hidden_note = " (hidden files excluded)" if not include_hidden else ""
-        output = [f"Files in '{directory_path}' matching '{pattern}'{hidden_note}{limit_note}:"]
+        hidden_note = " (hidden entries excluded)" if not include_hidden else ""
+        output = [f"Entries in '{directory_path}' matching '{pattern}'{hidden_note}{limit_note}:"]
 
         for file_path in files:
             path_obj = Path(file_path)
+            # Prefer relative paths for recursive listings; keeps results unambiguous.
+            try:
+                display_path = str(path_obj.relative_to(directory))
+            except Exception:
+                display_path = path_obj.name
             if path_obj.is_file():
                 size = path_obj.stat().st_size
                 size_str = f"{size:,} bytes"
-                output.append(f"  📄 {path_obj.name} ({size_str})")
+                output.append(f"  📄 {display_path} ({size_str})")
             elif path_obj.is_dir():
-                output.append(f"  📁 {path_obj.name}/")
+                # Ensure directories are visually distinct and easy to parse.
+                suffix = "/" if not display_path.endswith("/") else ""
+                output.append(f"  📁 {display_path}{suffix}")
 
         # Add helpful hint when results are truncated
         if is_truncated:
             remaining = total_files - head_limit
             recursive_hint = ", recursive=True" if recursive else ""
             hidden_hint = ", include_hidden=True" if include_hidden else ""
-            output.append(f"\n💡 {remaining} more files available. Use list_files('{directory_path}', '{pattern}'{recursive_hint}{hidden_hint}, head_limit=None) to see all.")
+            output.append(
+                f"\n💡 {remaining} more entries available. "
+                f"Use list_files('{directory_path}', '{pattern}'{recursive_hint}{hidden_hint}, head_limit=None) to see all."
+            )
 
         return "\n".join(output)
 

@@ -7,6 +7,7 @@ responses based on their architecture.
 
 import re
 import json
+import ast
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
@@ -15,6 +16,39 @@ from ..architectures import detect_architecture, get_architecture_format
 from ..utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _loads_dict_like(raw: str) -> Optional[Dict[str, Any]]:
+    """Parse a JSON-ish or Python-literal dict safely.
+
+    Many OSS models emit tool arguments with single quotes and Python literals
+    (True/False/None) even when asked for strict JSON. We accept both to keep
+    tool calling robust.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return None
+
+    try:
+        value = json.loads(text)
+        if isinstance(value, dict):
+            return value
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback: try Python literals safely.
+    # Convert common JSON literals to Python ones so ast can parse them.
+    candidate = re.sub(r"\btrue\b", "True", text, flags=re.IGNORECASE)
+    candidate = re.sub(r"\bfalse\b", "False", candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r"\bnull\b", "None", candidate, flags=re.IGNORECASE)
+    try:
+        value = ast.literal_eval(candidate)
+    except Exception:
+        return None
+
+    if not isinstance(value, dict):
+        return None
+    return {str(k): v for k, v in value.items()}
 
 
 class ToolFormat(Enum):
@@ -41,6 +75,12 @@ def _has_json_tool_pattern(response: str) -> bool:
     json_pattern = r'\{[^{}]*["\']name["\'][^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
     return bool(re.search(json_pattern, response, re.DOTALL))
 
+def _has_bracket_tool_prefix(response: str) -> bool:
+    """Check if response contains a `tool: [name]: {...}` style tool call prefix."""
+    if not response:
+        return False
+    return bool(re.search(r'(?im)^\s*tool\s*:\s*\[[^\]]+\]\s*:\s*\{', response))
+
 
 def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     """
@@ -58,6 +98,10 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
 
     # Get expected format from architecture
     tool_format = _get_tool_format(model_name)
+
+    # Some models emit a CLI-like prefix format regardless of architecture.
+    if _has_bracket_tool_prefix(response):
+        return True
 
     # Check format-specific patterns (case-insensitive)
     response_lower = response.lower()
@@ -77,6 +121,7 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
             "<|tool_call|>" in response_lower,
             "<function_call" in response_lower,
             "<tool_call>" in response_lower,
+            _has_bracket_tool_prefix(response),
             _has_json_tool_pattern(response),
         ])
     
@@ -113,7 +158,12 @@ def parse_tool_calls(response: str, model_name: Optional[str] = None) -> List[To
     }
 
     parser = parsers.get(tool_format, _parse_any_format)
-    return parser(response)
+    calls = parser(response)
+    # Fallback: some models emit tool syntax that doesn't match their expected architecture format
+    # (e.g., `tool: [name]: {...}` or partial tags). Try the generic parser when needed.
+    if not calls and parser is not _parse_any_format:
+        calls = _parse_any_format(response)
+    return calls
 
 
 def format_tool_prompt(tools: List[ToolDefinition], model_name: Optional[str] = None) -> str:
@@ -380,7 +430,9 @@ def _parse_function_call(response: str) -> List[ToolCall]:
     for match in re.finditer(pattern, response, re.DOTALL):
         try:
             json_str = match.group(1)
-            tool_data = json.loads(json_str)
+            tool_data = _loads_dict_like(json_str)
+            if not isinstance(tool_data, dict):
+                continue
 
             tool_call = ToolCall(
                 name=tool_data.get("name", ""),
@@ -405,7 +457,9 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
     for match in re.finditer(pattern, response, re.DOTALL):
         try:
             json_str = match.group(1)
-            tool_data = json.loads(json_str)
+            tool_data = _loads_dict_like(json_str)
+            if not isinstance(tool_data, dict):
+                continue
 
             tool_call = ToolCall(
                 name=tool_data.get("name", ""),
@@ -432,7 +486,9 @@ def _parse_tool_code(response: str) -> List[ToolCall]:
 
         # Try to parse as JSON first
         try:
-            tool_data = json.loads(code_content)
+            tool_data = _loads_dict_like(code_content)
+            if not isinstance(tool_data, dict):
+                raise json.JSONDecodeError("not a dict", code_content, 0)
             tool_call = ToolCall(
                 name=tool_data.get("name", ""),
                 arguments=tool_data.get("arguments", {}),
@@ -449,14 +505,31 @@ def _parse_tool_code(response: str) -> List[ToolCall]:
                 func_name = func_match.group(1)
                 args_str = func_match.group(2)
 
-                # Simple argument parsing (could be enhanced)
+                # Simple, safe argument parsing for common keyword args.
                 arguments = {}
                 if args_str.strip():
-                    try:
-                        # Try eval for simple cases (be careful!)
-                        arguments = eval(f"dict({args_str})")
-                    except:
-                        logger.warning(f"Failed to parse function arguments: {args_str}")
+                    arg_pattern = r'(\w+)\s*=\s*(".*?"|\'.*?\'|[^,\)]+)'
+                    for arg_match in re.finditer(arg_pattern, args_str):
+                        key = arg_match.group(1)
+                        raw_value = arg_match.group(2).strip()
+                        value: Any = raw_value
+                        if (raw_value.startswith('"') and raw_value.endswith('"')) or (
+                            raw_value.startswith("'") and raw_value.endswith("'")
+                        ):
+                            value = raw_value[1:-1]
+                        elif raw_value.lower() in ("true", "false"):
+                            value = raw_value.lower() == "true"
+                        elif raw_value.lower() in ("none", "null"):
+                            value = None
+                        else:
+                            try:
+                                value = int(raw_value)
+                            except Exception:
+                                try:
+                                    value = float(raw_value)
+                                except Exception:
+                                    value = raw_value
+                        arguments[str(key)] = value
 
                 tool_call = ToolCall(
                     name=func_name,
@@ -477,7 +550,9 @@ def _parse_raw_json(response: str) -> List[ToolCall]:
     for match in re.finditer(json_pattern, response):
         try:
             json_str = match.group(0)
-            tool_data = json.loads(json_str)
+            tool_data = _loads_dict_like(json_str)
+            if not isinstance(tool_data, dict):
+                continue
 
             if "name" in tool_data:
                 tool_call = ToolCall(
@@ -495,7 +570,9 @@ def _parse_raw_json(response: str) -> List[ToolCall]:
     for match in re.finditer(code_block_pattern, response, re.DOTALL):
         try:
             json_str = match.group(1).strip()
-            tool_data = json.loads(json_str)
+            tool_data = _loads_dict_like(json_str)
+            if not isinstance(tool_data, dict):
+                continue
 
             if "name" in tool_data:
                 tool_call = ToolCall(
@@ -507,6 +584,28 @@ def _parse_raw_json(response: str) -> List[ToolCall]:
 
         except json.JSONDecodeError:
             continue
+
+    return tool_calls
+
+
+def _parse_bracket_tool_prefix(response: str) -> List[ToolCall]:
+    """Parse `tool: [name]: { ... }` format (arguments-only JSON)."""
+    tool_calls: List[ToolCall] = []
+    if not response:
+        return tool_calls
+
+    # Common in some OSS model tool conventions.
+    # Example: tool: [list_files]: {"directory_path":"rtype","recursive":true}
+    pattern = r'(?im)^\s*tool\s*:\s*\[([a-zA-Z0-9_\-]+)\]\s*:\s*(\{.*\})\s*$'
+    for match in re.finditer(pattern, response):
+        name = str(match.group(1) or "").strip()
+        raw_args = match.group(2)
+        if not name or not raw_args:
+            continue
+        args = _loads_dict_like(raw_args)
+        if not isinstance(args, dict):
+            continue
+        tool_calls.append(ToolCall(name=name, arguments=args))
 
     return tool_calls
 
@@ -524,6 +623,7 @@ def _parse_any_format(response: str) -> List[ToolCall]:
         _parse_function_call,
         _parse_xml_wrapped,
         _parse_tool_code,
+        _parse_bracket_tool_prefix,
         _parse_raw_json
     ]
 
@@ -809,6 +909,14 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         r'<tool_call>.*?</tool_call>',
         r'```tool_code.*?```',
         r'```tool_call.*?```'
+        ,
+        # CLI-like prefix format: tool: [name]: {...}
+        r'(?im)^\s*tool\s*:\s*\[[^\]]+\]\s*:\s*\{.*\}\s*$',
+        # Orphan tags (some models emit a closing tag on its own line)
+        r'(?im)^\s*<\|tool_call\|>\s*$',
+        r'(?im)^\s*</\|tool_call\|>\s*$',
+        r'(?im)^\s*<tool_call>\s*$',
+        r'(?im)^\s*</tool_call>\s*$',
     ]
 
     # Apply all patterns
