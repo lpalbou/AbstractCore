@@ -901,15 +901,21 @@ def write_file(file_path: str, content: str = "", mode: str = "w", create_dirs: 
         }
     ]
 )
-def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", region: str = "us-en", time_range: Optional[str] = None) -> str:
+def web_search(
+    query: str,
+    num_results: int = 15,
+    safe_search: str = "moderate",
+    region: str = "wt-wt",
+    time_range: Optional[str] = None,
+) -> str:
     """
     Search the internet using DuckDuckGo (no API key required).
 
     Args:
         query: Search query
-        num_results: Number of results to return (default: 5)
+        num_results: Number of results to return (default: 15)
         safe_search: Content filtering level - "strict", "moderate", or "off" (default: "moderate")
-        region: Regional results preference - "us-en", "uk-en", "ca-en", "au-en", etc. (default: "us-en")
+        region: Regional results preference - "wt-wt" (worldwide), "us-en", "uk-en", "fr-fr", "de-de", etc. (default: "wt-wt")
         time_range: Time range filter for results (optional):
             - "h" or "24h": Past 24 hours
             - "d": Past day
@@ -922,8 +928,8 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
         JSON string with search results or an error message.
 
     Note:
-        Time range filtering requires the ddgs library (pip install ddgs).
-        For best results with current news, use time_range="d" or "h".
+        For best results, install `ddgs` (`pip install ddgs`). Without it, this tool falls back to
+        parsing DuckDuckGo's HTML results, which may be less stable and may ignore time_range.
     """
     def _json_output(payload: Dict[str, Any]) -> str:
         try:
@@ -947,120 +953,131 @@ def web_search(query: str, num_results: int = 5, safe_search: str = "moderate", 
     try:
         normalized_time_range = _normalize_time_range(time_range)
 
-        # Try using duckduckgo-search library first (best approach)
+        ddgs_error: Optional[str] = None
+
+        # Preferred backend: ddgs (DuckDuckGo text search).
         try:
-            from ddgs import DDGS
-
-            with DDGS() as ddgs:
-                # Prepare search parameters
-                search_params = {
-                    'query': query,
-                    'max_results': num_results,
-                    'region': region,
-                    'safesearch': safe_search
-                }
-
-                # Add time range filter if specified
-                if normalized_time_range:
-                    search_params['timelimit'] = normalized_time_range
-
-                # Get text search results
-                search_results = list(ddgs.text(**search_params))
-
-                return _json_output({
-                    "engine": "duckduckgo",
-                    "source": "ddgs.text",
-                    "query": query,
-                    "params": {
-                        "num_results": num_results,
-                        "safe_search": safe_search,
-                        "region": region,
-                        "time_range": normalized_time_range,
-                    },
-                    "results": [
-                        {
-                            "rank": i,
-                            "title": (result.get("title") or "").strip(),
-                            "url": (result.get("href") or "").strip(),
-                            "snippet": (result.get("body") or "").strip(),
-                        }
-                        for i, result in enumerate(search_results, 1)
-                    ],
-                })
-
-        except ImportError:
-            # Fallback if duckduckgo-search is not installed
-            pass
+            from ddgs import DDGS  # type: ignore
         except Exception as e:
-            # If duckduckgo-search fails, continue with fallback
-            pass
+            DDGS = None  # type: ignore[assignment]
+            ddgs_error = str(e)
 
-        # Fallback: Use instant answer API for basic queries
-        api_url = "https://api.duckduckgo.com/"
-        params = {
-            'q': query,
-            'format': 'json',
-            'no_html': '1',
-            'skip_disambig': '1',
-            'no_redirect': '1'
-        }
+        if DDGS is not None:
+            try:
+                with DDGS() as ddgs:
+                    search_params: Dict[str, Any] = {
+                        "keywords": query,
+                        "max_results": num_results,
+                        "region": region,
+                        "safesearch": safe_search,
+                    }
+                    if normalized_time_range:
+                        search_params["timelimit"] = normalized_time_range
 
-        response = requests.get(api_url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        results = []
+                    search_results = list(ddgs.text(**search_params))
 
-        abstract = (data.get("Abstract") or "").strip()
-        abstract_url = (data.get("AbstractURL") or "").strip()
-        if abstract:
-            results.append({
-                "rank": 1,
-                "title": (data.get("Heading") or "Instant Answer").strip(),
-                "url": abstract_url,
-                "snippet": abstract,
-            })
+                return _json_output(
+                    {
+                        "engine": "duckduckgo",
+                        "source": "duckduckgo.text",
+                        "query": query,
+                        "params": {
+                            "num_results": num_results,
+                            "safe_search": safe_search,
+                            "region": region,
+                            "time_range": normalized_time_range,
+                            "backend": "ddgs.text",
+                        },
+                        "results": [
+                            {
+                                "rank": i,
+                                "title": (result.get("title") or "").strip(),
+                                "url": (result.get("href") or "").strip(),
+                                "snippet": (result.get("body") or "").strip(),
+                            }
+                            for i, result in enumerate(search_results, 1)
+                        ],
+                    }
+                )
+            except Exception as e:
+                ddgs_error = str(e)
 
-        answer = (data.get("Answer") or "").strip()
-        if answer:
-            results.append({
-                "rank": len(results) + 1,
-                "title": "Answer",
-                "url": (data.get("AnswerURL") or "").strip(),
-                "snippet": answer,
-            })
+        # Fallback backend: DuckDuckGo HTML results (best-effort).
+        try:
+            import html as html_lib
 
-        related = data.get("RelatedTopics")
-        if isinstance(related, list):
-            for topic in related:
-                if not isinstance(topic, dict) or not topic.get("Text"):
-                    continue
-                text = str(topic.get("Text", "")).replace("<b>", "").replace("</b>", "").strip()
-                results.append({
-                    "rank": len(results) + 1,
-                    "title": "Related",
-                    "url": (topic.get("FirstURL") or "").strip(),
-                    "snippet": text,
-                })
-                if len(results) >= num_results:
+            url = "https://duckduckgo.com/html/"
+            params: Dict[str, Any] = {"q": query, "kl": region}
+            headers = {"User-Agent": "AbstractCore-WebSearch/1.0", "Accept-Language": region}
+            resp = requests.get(url, params=params, headers=headers, timeout=15)
+            resp.raise_for_status()
+            page = resp.text or ""
+
+            # DuckDuckGo HTML results contain entries like:
+            # <a class="result__a" href="...">Title</a>
+            # <a class="result__snippet">Snippet</a>
+            link_re = re.compile(r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+            snippet_re = re.compile(r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+            tag_re = re.compile(r"<[^>]+>")
+
+            links = list(link_re.finditer(page))
+            results: List[Dict[str, Any]] = []
+            for i, m in enumerate(links, 1):
+                if i > int(num_results or 0):
                     break
+                href = html_lib.unescape((m.group(1) or "").strip())
+                title_html = m.group(2) or ""
+                title = html_lib.unescape(tag_re.sub("", title_html)).strip()
 
-        payload: Dict[str, Any] = {
-            "engine": "duckduckgo",
-            "source": "duckduckgo.instant_answer",
-            "query": query,
-            "params": {
-                "num_results": num_results,
-                "safe_search": safe_search,
-                "region": region,
-                "time_range": normalized_time_range,
-            },
-            "results": results,
-        }
+                # Try to find the snippet in the following chunk of HTML (best-effort).
+                tail = page[m.end() : m.end() + 5000]
+                sm = snippet_re.search(tail)
+                snippet = ""
+                if sm:
+                    snippet_html = sm.group(1) or ""
+                    snippet = html_lib.unescape(tag_re.sub("", snippet_html)).strip()
 
-        if not results:
-            payload["warning"] = "Limited results from DuckDuckGo instant answer API; install ddgs for real web results."
+                results.append({"rank": i, "title": title, "url": href, "snippet": snippet})
 
-        return _json_output(payload)
+            payload: Dict[str, Any] = {
+                "engine": "duckduckgo",
+                "source": "duckduckgo.text",
+                "query": query,
+                "params": {
+                    "num_results": num_results,
+                    "safe_search": safe_search,
+                    "region": region,
+                    "time_range": normalized_time_range,
+                    "backend": "duckduckgo.html",
+                },
+                "results": results,
+            }
+
+            if not results:
+                payload["error"] = "No results found from DuckDuckGo HTML endpoint."
+                payload["hint"] = "Install `ddgs` for more reliable results."
+                if ddgs_error:
+                    payload["ddgs_error"] = ddgs_error
+
+            return _json_output(payload)
+        except Exception as e:
+            payload: Dict[str, Any] = {
+                "engine": "duckduckgo",
+                "source": "duckduckgo.text",
+                "query": query,
+                "params": {
+                    "num_results": num_results,
+                    "safe_search": safe_search,
+                    "region": region,
+                    "time_range": normalized_time_range,
+                },
+                "results": [],
+                "error": str(e),
+                "hint": "Install `ddgs` for more reliable results: pip install ddgs",
+            }
+            if ddgs_error:
+                payload["ddgs_error"] = ddgs_error
+            return _json_output(payload)
 
     except Exception as e:
         return _json_output({

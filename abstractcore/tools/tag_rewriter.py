@@ -7,6 +7,7 @@ supporting different agentic CLI requirements and streaming scenarios.
 
 import re
 import json
+import ast
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
 from ..utils.structured_logging import get_logger
@@ -171,6 +172,10 @@ class ToolCallTagRewriter:
             logger.debug("Early return: text is empty or preserve_json is False")
             return text
 
+        # Pre-pass: convert CLI-like `tool: [name]: {...}` calls into canonical tagged JSON.
+        # Some OSS models emit this format even when prompted for other tags.
+        text = self._rewrite_bracket_prefix_calls(text)
+
         # Check if we already have the target format (avoid double-tagging)
         # Check using output tags (with angle brackets)
         if (self._output_start_tag in text and
@@ -215,6 +220,99 @@ class ToolCallTagRewriter:
                     logger.debug(f"Plain JSON wrapped: {wrapped_json[:100]}")
 
         logger.debug(f"Final rewritten text: {rewritten[:200] if rewritten else None}")
+        return rewritten
+
+    def _rewrite_bracket_prefix_calls(self, text: str) -> str:
+        """Rewrite `tool: [name]: {args}` lines into the configured tag format."""
+        if not text:
+            return text
+
+        pattern = re.compile(r"(?im)^\s*tool\s*:\s*\[([a-zA-Z0-9_\-]+)\]\s*:\s*")
+
+        def _find_matching_brace(s: str, start: int) -> int:
+            depth = 0
+            in_string = False
+            quote = ""
+            escaped = False
+            for i in range(start, len(s)):
+                ch = s[i]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                        continue
+                    if ch == "\\":
+                        escaped = True
+                        continue
+                    if ch == quote:
+                        in_string = False
+                        quote = ""
+                    continue
+                if ch in ("'", '"'):
+                    in_string = True
+                    quote = ch
+                    continue
+                if ch == "{":
+                    depth += 1
+                    continue
+                if ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return i
+            return -1
+
+        def _loads_dict_like(raw: str) -> Optional[Dict[str, Any]]:
+            value = str(raw or "").strip()
+            if not value:
+                return None
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+
+            candidate = re.sub(r"\btrue\b", "True", value, flags=re.IGNORECASE)
+            candidate = re.sub(r"\bfalse\b", "False", candidate, flags=re.IGNORECASE)
+            candidate = re.sub(r"\bnull\b", "None", candidate, flags=re.IGNORECASE)
+            try:
+                parsed = ast.literal_eval(candidate)
+            except Exception:
+                return None
+            if not isinstance(parsed, dict):
+                return None
+            return {str(k): v for k, v in parsed.items()}
+
+        rewritten = text
+        matches = list(pattern.finditer(text))
+        if not matches:
+            return text
+
+        # Replace from end to start to preserve match indices while mutating the string.
+        for match in reversed(matches):
+            name = str(match.group(1) or "").strip()
+            if not name:
+                continue
+
+            brace_start = rewritten.find("{", match.end())
+            if brace_start == -1:
+                continue
+            between = rewritten[match.end() : brace_start]
+            if between and any(not c.isspace() for c in between):
+                continue
+
+            brace_end = _find_matching_brace(rewritten, brace_start)
+            if brace_end == -1:
+                continue
+
+            raw_args = rewritten[brace_start : brace_end + 1]
+            args = _loads_dict_like(raw_args)
+            if not isinstance(args, dict):
+                continue
+
+            payload = json.dumps({"name": name, "arguments": args}, ensure_ascii=False)
+            replacement = f"{self._output_start_tag}{payload}{self._output_end_tag}"
+            rewritten = rewritten[: match.start()] + replacement + rewritten[brace_end + 1 :]
+
         return rewritten
     
     def rewrite_streaming_chunk(self, chunk: str, buffer: str = "") -> Tuple[str, str]:

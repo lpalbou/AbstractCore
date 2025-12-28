@@ -594,17 +594,76 @@ def _parse_bracket_tool_prefix(response: str) -> List[ToolCall]:
     if not response:
         return tool_calls
 
+    def _find_matching_brace(text: str, start: int) -> int:
+        """Return index of the matching '}' for a '{' at `start`, or -1."""
+        depth = 0
+        in_string = False
+        quote = ""
+        escaped = False
+
+        for i in range(start, len(text)):
+            ch = text[i]
+
+            if in_string:
+                if escaped:
+                    escaped = False
+                    continue
+                if ch == "\\":
+                    escaped = True
+                    continue
+                if ch == quote:
+                    in_string = False
+                    quote = ""
+                continue
+
+            if ch in ("'", '"'):
+                in_string = True
+                quote = ch
+                continue
+
+            if ch == "{":
+                depth += 1
+                continue
+            if ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return i
+
+        return -1
+
     # Common in some OSS model tool conventions.
-    # Example: tool: [list_files]: {"directory_path":"rtype","recursive":true}
-    pattern = r'(?im)^\s*tool\s*:\s*\[([a-zA-Z0-9_\-]+)\]\s*:\s*(\{.*\})\s*$'
-    for match in re.finditer(pattern, response):
+    # Example (single-line):
+    #   tool: [list_files]: {"directory_path":"rtype","recursive":true}
+    # Example (multi-line):
+    #   tool: [list_files]: {
+    #     "directory_path": "rtype",
+    #     "recursive": true
+    #   }
+    header_re = re.compile(r"(?im)^\s*tool\s*:\s*\[([a-zA-Z0-9_\-]+)\]\s*:\s*")
+    for match in header_re.finditer(response):
         name = str(match.group(1) or "").strip()
-        raw_args = match.group(2)
-        if not name or not raw_args:
+        if not name:
             continue
+
+        # Find the first opening brace after the header (allow whitespace/newlines).
+        brace_start = response.find("{", match.end())
+        if brace_start == -1:
+            continue
+
+        # Only allow whitespace between header end and '{' (avoid grabbing unrelated JSON).
+        between = response[match.end() : brace_start]
+        if between and any(not c.isspace() for c in between):
+            continue
+
+        brace_end = _find_matching_brace(response, brace_start)
+        if brace_end == -1:
+            continue
+
+        raw_args = response[brace_start : brace_end + 1]
         args = _loads_dict_like(raw_args)
         if not isinstance(args, dict):
             continue
+
         tool_calls.append(ToolCall(name=name, arguments=args))
 
     return tool_calls
@@ -977,5 +1036,7 @@ CRITICAL RULES FOR TOOL USAGE:
 3. DO NOT call tools to show off capabilities - when requested, just describe the tools at your disposal
 4. The "name" field must be at the TOP LEVEL, NOT inside "arguments"
 5. Use the exact JSON structure shown above
+6. Never fabricate tool results. Tool outputs are returned by the system as separate messages.
+7. Do not write your own `tool:` result lines. Only request tools using the exact tool-call format above.
 
 """
