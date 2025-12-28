@@ -598,7 +598,9 @@ def fetch_url(
     max_content_length: int = 10485760,
     follow_redirects: bool = True,
     include_binary_preview: bool = False,
-    extract_links: bool = True
+    extract_links: bool = True,
+    user_agent: str = "AbstractCore-FetchTool/1.0",
+    include_full_content: bool = False
 ) -> str:
     """Fetch and parse content from URLs"""
 ```

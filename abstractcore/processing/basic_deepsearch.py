@@ -757,7 +757,7 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                     
                 try:
                     logger.debug(f"🌐 Fetching content from URL {i+1}: {url}")
-                    content = fetch_url(url, timeout=15)
+                    content = fetch_url(url, timeout=15, include_full_content=self.full_text_extraction)
                     
                     if "Error" in content or len(content) < 100:
                         logger.debug(f"⚠️ Skipping URL due to fetch error or short content: {url}")
