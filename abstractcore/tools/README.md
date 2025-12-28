@@ -586,7 +586,7 @@ def web_search(
     region: str = "us-en",
     time_range: Optional[str] = None
 ) -> str:
-    """Search web using DuckDuckGo (no API key required)"""
+    """Search web using DuckDuckGo (no API key required) and return JSON results"""
 
 @tool
 def fetch_url(
