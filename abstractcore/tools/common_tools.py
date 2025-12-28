@@ -1052,7 +1052,8 @@ def fetch_url(
     follow_redirects: bool = True,
     include_binary_preview: bool = False,
     extract_links: bool = True,
-    user_agent: str = "AbstractCore-FetchTool/1.0"
+    user_agent: str = "AbstractCore-FetchTool/1.0",
+    include_full_content: bool = False,
 ) -> str:
     """
     Fetch and intelligently parse content from URLs with comprehensive content type detection.
@@ -1071,6 +1072,7 @@ def fetch_url(
         include_binary_preview: Whether to include base64 preview for binary content (default: False)
         extract_links: Whether to extract links from HTML content (default: True)
         user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
+        include_full_content: Whether to include full text/JSON/XML content (no preview truncation) (default: False)
     
     Returns:
         Formatted string with parsed content, metadata, and analysis or error message
@@ -1101,115 +1103,118 @@ def fetch_url(
         if headers:
             request_headers.update(headers)
         
-        # Prepare request parameters
-        request_params = {
-            'url': url,
-            'method': method.upper(),
-            'headers': request_headers,
-            'timeout': timeout,
-            'allow_redirects': follow_redirects,
-            'stream': True  # Stream to check content length
-        }
-        
         # Add data for POST/PUT requests
         if data and method.upper() in ['POST', 'PUT', 'PATCH']:
             if isinstance(data, dict):
                 # Try JSON first, fallback to form data
                 if request_headers.get('Content-Type', '').startswith('application/json'):
-                    request_params['json'] = data
+                    request_json = data
+                    request_data = None
                 else:
-                    request_params['data'] = data
+                    request_json = None
+                    request_data = data
             else:
-                request_params['data'] = data
+                request_json = None
+                request_data = data
+        else:
+            request_json = None
+            request_data = None
         
         # Record fetch timestamp
         fetch_timestamp = datetime.now().isoformat()
         
-        # Make the request with session for connection reuse
+        # Make the request with session for connection reuse and keep it open while streaming
         with requests.Session() as session:
             session.headers.update(request_headers)
-            response = session.request(
+            with session.request(
                 method=method.upper(),
                 url=url,
                 timeout=timeout,
                 allow_redirects=follow_redirects,
                 stream=True,
-                json=request_params.get('json'),
-                data=request_params.get('data')
-            )
-        
-        # Check response status
-        if not response.ok:
-            return f"❌ HTTP Error {response.status_code}: {response.reason}\n" \
-                   f"URL: {url}\n" \
-                   f"Timestamp: {fetch_timestamp}\n" \
-                   f"Response headers: {dict(response.headers)}"
-        
-        # Get content info
-        content_type = response.headers.get('content-type', '').lower()
-        content_length = response.headers.get('content-length')
-        if content_length:
-            content_length = int(content_length)
-        
-        # Check content length before downloading
-        if content_length and content_length > max_content_length:
-            return f"⚠️  Content too large: {content_length:,} bytes (max: {max_content_length:,})\n" \
-                   f"URL: {url}\n" \
-                   f"Content-Type: {content_type}\n" \
-                   f"Timestamp: {fetch_timestamp}\n" \
-                   f"Use max_content_length parameter to increase limit if needed"
-        
-        # Download content with optimized chunking
-        content_chunks = []
-        downloaded_size = 0
-        
-        # Use larger chunks for better performance
-        chunk_size = 32768 if 'image/' in content_type or 'video/' in content_type else 16384
-        
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:
-                downloaded_size += len(chunk)
-                if downloaded_size > max_content_length:
-                    return f"⚠️  Content exceeded size limit during download: {downloaded_size:,} bytes (max: {max_content_length:,})\n" \
+                json=request_json,
+                data=request_data,
+            ) as response:
+
+                # Check response status
+                if not response.ok:
+                    return f"❌ HTTP Error {response.status_code}: {response.reason}\n" \
+                           f"URL: {url}\n" \
+                           f"Timestamp: {fetch_timestamp}\n" \
+                           f"Response headers: {dict(response.headers)}"
+
+                # Get content info
+                content_type = response.headers.get('content-type', '').lower()
+                content_length = response.headers.get('content-length')
+                if content_length:
+                    content_length = int(content_length)
+
+                # Check content length before downloading
+                if content_length and content_length > max_content_length:
+                    return f"⚠️  Content too large: {content_length:,} bytes (max: {max_content_length:,})\n" \
                            f"URL: {url}\n" \
                            f"Content-Type: {content_type}\n" \
-                           f"Timestamp: {fetch_timestamp}"
-                content_chunks.append(chunk)
-        
-        content_bytes = b''.join(content_chunks)
-        actual_size = len(content_bytes)
-        
-        # Detect content type and parse accordingly
-        parsed_content = _parse_content_by_type(content_bytes, content_type, url, extract_links, include_binary_preview)
-        
-        # Build comprehensive response
-        result_parts = []
-        result_parts.append(f"🌐 URL Fetch Results")
-        result_parts.append(f"📍 URL: {response.url}")  # Final URL after redirects
-        if response.url != url:
-            result_parts.append(f"🔄 Original URL: {url}")
-        result_parts.append(f"⏰ Timestamp: {fetch_timestamp}")
-        result_parts.append(f"✅ Status: {response.status_code} {response.reason}")
-        result_parts.append(f"📊 Content-Type: {content_type}")
-        result_parts.append(f"📏 Size: {actual_size:,} bytes")
-        
-        # Add important response headers
-        important_headers = ['server', 'last-modified', 'etag', 'cache-control', 'expires', 'location']
-        response_metadata = []
-        for header in important_headers:
-            value = response.headers.get(header)
-            if value:
-                response_metadata.append(f"  {header.title()}: {value}")
-        
-        if response_metadata:
-            result_parts.append(f"📋 Response Headers:")
-            result_parts.extend(response_metadata)
-        
-        # Add parsed content
-        result_parts.append(f"\n📄 Content Analysis:")
-        result_parts.append(parsed_content)
-        
-        return "\n".join(result_parts)
+                           f"Timestamp: {fetch_timestamp}\n" \
+                           f"Use max_content_length parameter to increase limit if needed"
+
+                # Download content with optimized chunking
+                content_chunks = []
+                downloaded_size = 0
+
+                # Use larger chunks for better performance
+                chunk_size = 32768 if 'image/' in content_type or 'video/' in content_type else 16384
+
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        downloaded_size += len(chunk)
+                        if downloaded_size > max_content_length:
+                            return f"⚠️  Content exceeded size limit during download: {downloaded_size:,} bytes (max: {max_content_length:,})\n" \
+                                   f"URL: {url}\n" \
+                                   f"Content-Type: {content_type}\n" \
+                                   f"Timestamp: {fetch_timestamp}"
+                        content_chunks.append(chunk)
+
+                content_bytes = b''.join(content_chunks)
+                actual_size = len(content_bytes)
+
+                # Detect content type and parse accordingly
+                parsed_content = _parse_content_by_type(
+                    content_bytes,
+                    content_type,
+                    url,
+                    extract_links=extract_links,
+                    include_binary_preview=include_binary_preview,
+                    include_full_content=include_full_content,
+                )
+
+                # Build comprehensive response
+                result_parts = []
+                result_parts.append(f"🌐 URL Fetch Results")
+                result_parts.append(f"📍 URL: {response.url}")  # Final URL after redirects
+                if response.url != url:
+                    result_parts.append(f"🔄 Original URL: {url}")
+                result_parts.append(f"⏰ Timestamp: {fetch_timestamp}")
+                result_parts.append(f"✅ Status: {response.status_code} {response.reason}")
+                result_parts.append(f"📊 Content-Type: {content_type}")
+                result_parts.append(f"📏 Size: {actual_size:,} bytes")
+
+                # Add important response headers
+                important_headers = ['server', 'last-modified', 'etag', 'cache-control', 'expires', 'location']
+                response_metadata = []
+                for header in important_headers:
+                    value = response.headers.get(header)
+                    if value:
+                        response_metadata.append(f"  {header.title()}: {value}")
+
+                if response_metadata:
+                    result_parts.append(f"📋 Response Headers:")
+                    result_parts.extend(response_metadata)
+
+                # Add parsed content
+                result_parts.append(f"\n📄 Content Analysis:")
+                result_parts.append(parsed_content)
+
+                return "\n".join(result_parts)
         
     except requests.exceptions.Timeout:
         return f"⏰ Request timeout after {timeout} seconds\n" \
@@ -1235,7 +1240,14 @@ def fetch_url(
                f"URL: {url}"
 
 
-def _parse_content_by_type(content_bytes: bytes, content_type: str, url: str, extract_links: bool = True, include_binary_preview: bool = False) -> str:
+def _parse_content_by_type(
+    content_bytes: bytes,
+    content_type: str,
+    url: str,
+    extract_links: bool = True,
+    include_binary_preview: bool = False,
+    include_full_content: bool = False,
+) -> str:
     """
     Parse content based on detected content type with intelligent fallbacks.
     
@@ -1279,22 +1291,22 @@ def _parse_content_by_type(content_bytes: bytes, content_type: str, url: str, ex
         
         # Parse based on content type with fallback content detection
         if main_type.startswith('text/html') or main_type.startswith('application/xhtml'):
-            return _parse_html_content(text_content, url, extract_links)
+            return _parse_html_content(text_content, url, extract_links, include_full_content)
         
         elif main_type == 'application/json':
-            return _parse_json_content(text_content)
+            return _parse_json_content(text_content, include_full_content)
         
         elif main_type in ['application/xml', 'text/xml', 'application/rss+xml', 'application/atom+xml', 'application/soap+xml']:
-            return _parse_xml_content(text_content)
+            return _parse_xml_content(text_content, include_full_content)
         
         elif main_type.startswith('text/'):
             # For generic text types, check if it's actually XML or JSON
             if text_content and text_content.strip():
                 if _is_xml_content(text_content):
-                    return _parse_xml_content(text_content)
+                    return _parse_xml_content(text_content, include_full_content)
                 elif _is_json_content(text_content):
-                    return _parse_json_content(text_content)
-            return _parse_text_content(text_content, main_type)
+                    return _parse_json_content(text_content, include_full_content)
+            return _parse_text_content(text_content, main_type, include_full_content)
         
         elif main_type.startswith('image/'):
             return _parse_image_content(content_bytes, main_type, include_binary_preview)
@@ -1387,14 +1399,14 @@ def _get_appropriate_parser(content: str) -> str:
     return BS4_PARSER
 
 
-def _parse_html_content(html_content: str, url: str, extract_links: bool = True) -> str:
+def _parse_html_content(html_content: str, url: str, extract_links: bool = True, include_full_content: bool = False) -> str:
     """Parse HTML content and extract meaningful information."""
     if not html_content:
         return "❌ No HTML content to parse"
     
     # Detect if content is actually XML (fallback detection)
     if _is_xml_content(html_content):
-        return _parse_xml_content(html_content)
+        return _parse_xml_content(html_content, include_full_content)
     
     result_parts = []
     result_parts.append("🌐 HTML Document Analysis")
@@ -1421,7 +1433,10 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True)
             # Extract meta description
             meta_desc = soup.find('meta', attrs={'name': 'description'})
             if meta_desc and meta_desc.get('content'):
-                result_parts.append(f"📝 Description: {meta_desc['content'][:200]}...")
+                desc = meta_desc['content'].strip()
+                if not include_full_content and len(desc) > 200:
+                    desc = desc[:200] + "..."
+                result_parts.append(f"📝 Description: {desc}")
             
             # Extract headings
             headings = []
@@ -1470,9 +1485,9 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True)
             text = ' '.join(text.split())
             
             if text:
-                preview_length = 500
-                text_preview = text[:preview_length]
-                if len(text) > preview_length:
+                preview_length = None if include_full_content else 500
+                text_preview = text if preview_length is None else text[:preview_length]
+                if preview_length is not None and len(text) > preview_length:
                     text_preview += "..."
                 result_parts.append(f"📄 Text Content Preview:")
                 result_parts.append(f"{text_preview}")
@@ -1481,7 +1496,10 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True)
         except Exception as e:
             result_parts.append(f"⚠️  BeautifulSoup parsing error: {str(e)}")
             result_parts.append(f"📄 Raw HTML Preview (first 1000 chars):")
-            result_parts.append(html_content[:1000] + ("..." if len(html_content) > 1000 else ""))
+            if include_full_content:
+                result_parts.append(html_content)
+            else:
+                result_parts.append(html_content[:1000] + ("..." if len(html_content) > 1000 else ""))
     
     else:
         # Fallback parsing without BeautifulSoup
@@ -1495,12 +1513,15 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True)
         
         # Show HTML preview
         result_parts.append(f"📄 HTML Preview (first 1000 chars):")
-        result_parts.append(html_content[:1000] + ("..." if len(html_content) > 1000 else ""))
+        if include_full_content:
+            result_parts.append(html_content)
+        else:
+            result_parts.append(html_content[:1000] + ("..." if len(html_content) > 1000 else ""))
     
     return "\n".join(result_parts)
 
 
-def _parse_json_content(json_content: str) -> str:
+def _parse_json_content(json_content: str, include_full_content: bool = False) -> str:
     """Parse JSON content and provide structured analysis."""
     if not json_content:
         return "❌ No JSON content to parse"
@@ -1525,8 +1546,8 @@ def _parse_json_content(json_content: str) -> str:
         
         # Pretty print JSON with smart truncation
         json_str = json.dumps(data, indent=2, ensure_ascii=False, separators=(',', ': '))
-        preview_length = 1500  # Reduced for better readability
-        if len(json_str) > preview_length:
+        preview_length = None if include_full_content else 1500  # Reduced for better readability
+        if preview_length is not None and len(json_str) > preview_length:
             # Try to truncate at a logical point (end of object/array)
             truncate_pos = json_str.rfind('\n', 0, preview_length)
             if truncate_pos > preview_length - 200:  # If close to limit, use it
@@ -1543,12 +1564,15 @@ def _parse_json_content(json_content: str) -> str:
     except json.JSONDecodeError as e:
         result_parts.append(f"❌ JSON parsing error: {str(e)}")
         result_parts.append(f"📄 Raw content preview (first 1000 chars):")
-        result_parts.append(json_content[:1000] + ("..." if len(json_content) > 1000 else ""))
+        if include_full_content:
+            result_parts.append(json_content)
+        else:
+            result_parts.append(json_content[:1000] + ("..." if len(json_content) > 1000 else ""))
     
     return "\n".join(result_parts)
 
 
-def _parse_xml_content(xml_content: str) -> str:
+def _parse_xml_content(xml_content: str, include_full_content: bool = False) -> str:
     """Parse XML content including RSS/Atom feeds."""
     if not xml_content:
         return "❌ No XML content to parse"
@@ -1577,9 +1601,9 @@ def _parse_xml_content(xml_content: str) -> str:
             result_parts.append(f"📊 Top elements: {dict(list(element_counts.most_common(10)))}")
         
         # Show XML preview
-        preview_length = 1500
-        xml_preview = xml_content[:preview_length]
-        if len(xml_content) > preview_length:
+        preview_length = None if include_full_content else 1500
+        xml_preview = xml_content if preview_length is None else xml_content[:preview_length]
+        if preview_length is not None and len(xml_content) > preview_length:
             xml_preview += "\n... (truncated)"
         
         result_parts.append(f"📄 XML Content Preview:")
@@ -1589,12 +1613,15 @@ def _parse_xml_content(xml_content: str) -> str:
     except Exception as e:
         result_parts.append(f"❌ XML parsing error: {str(e)}")
         result_parts.append(f"📄 Raw content preview (first 1000 chars):")
-        result_parts.append(xml_content[:1000] + ("..." if len(xml_content) > 1000 else ""))
+        if include_full_content:
+            result_parts.append(xml_content)
+        else:
+            result_parts.append(xml_content[:1000] + ("..." if len(xml_content) > 1000 else ""))
     
     return "\n".join(result_parts)
 
 
-def _parse_text_content(text_content: str, content_type: str) -> str:
+def _parse_text_content(text_content: str, content_type: str, include_full_content: bool = False) -> str:
     """Parse plain text content."""
     if not text_content:
         return "❌ No text content to parse"
@@ -1612,9 +1639,9 @@ def _parse_text_content(text_content: str, content_type: str) -> str:
     result_parts.append(f"  • Characters: {len(text_content):,}")
     
     # Show text preview
-    preview_length = 2000
-    text_preview = text_content[:preview_length]
-    if len(text_content) > preview_length:
+    preview_length = None if include_full_content else 2000
+    text_preview = text_content if preview_length is None else text_content[:preview_length]
+    if preview_length is not None and len(text_content) > preview_length:
         text_preview += "\n... (truncated)"
     
     result_parts.append(f"📄 Content Preview:")
