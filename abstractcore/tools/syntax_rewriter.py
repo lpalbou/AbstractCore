@@ -8,7 +8,7 @@ Supports multiple target formats including OpenAI, Codex, and custom agent forma
 import re
 import json
 import uuid
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Iterable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -87,7 +87,7 @@ class ToolCallSyntaxRewriter:
     def rewrite_content(
         self,
         content: str,
-        detected_tool_calls: Optional[List[ToolCall]] = None
+        detected_tool_calls: Optional[List[Any]] = None
     ) -> str:
         """
         Rewrite tool call syntax in content.
@@ -99,7 +99,9 @@ class ToolCallSyntaxRewriter:
         Returns:
             Content with rewritten tool call syntax
         """
-        if not content or not content.strip():
+        # Allow formatting tool calls even when there's no surrounding assistant text.
+        # This is useful for streaming: a chunk may contain only tool calls.
+        if (not isinstance(content, str) or not content.strip()) and not detected_tool_calls:
             return content
 
         # Passthrough mode - return unchanged
@@ -110,6 +112,8 @@ class ToolCallSyntaxRewriter:
         if detected_tool_calls is None:
             detected_tool_calls = parse_tool_calls(content, self.model_name)
             logger.debug(f"Detected {len(detected_tool_calls)} tool calls in content")
+        else:
+            detected_tool_calls = list(self._coerce_tool_calls(detected_tool_calls))
 
         # No tool calls found
         if not detected_tool_calls:
@@ -118,7 +122,7 @@ class ToolCallSyntaxRewriter:
         # Apply format-specific rewriting
         return self._apply_format_conversion(content, detected_tool_calls)
 
-    def convert_to_openai_format(self, tool_calls: List[ToolCall]) -> List[Dict[str, Any]]:
+    def convert_to_openai_format(self, tool_calls: List[Any]) -> List[Dict[str, Any]]:
         """
         Convert tool calls to OpenAI API format.
 
@@ -130,7 +134,7 @@ class ToolCallSyntaxRewriter:
         """
         openai_tools = []
 
-        for tool_call in tool_calls:
+        for tool_call in self._coerce_tool_calls(tool_calls):
             # Ensure we have a call ID
             call_id = tool_call.call_id or f"call_{uuid.uuid4().hex[:8]}"
 
@@ -160,6 +164,54 @@ class ToolCallSyntaxRewriter:
             openai_tools.append(openai_tool)
 
         return openai_tools
+
+    def _coerce_tool_calls(self, tool_calls: Iterable[Any]) -> Iterable[ToolCall]:
+        """Coerce ToolCall-like inputs (dicts, dataclasses) into ToolCall objects."""
+        for tc in tool_calls or []:
+            if isinstance(tc, ToolCall):
+                yield tc
+                continue
+
+            if isinstance(tc, dict):
+                raw_id = tc.get("call_id")
+                if raw_id is None:
+                    raw_id = tc.get("id")
+
+                raw_name = tc.get("name")
+                raw_args = tc.get("arguments")
+                func = tc.get("function") if isinstance(tc.get("function"), dict) else None
+                if func and (not isinstance(raw_name, str) or not raw_name.strip()):
+                    raw_name = func.get("name")
+                if func and raw_args is None:
+                    raw_args = func.get("arguments")
+
+                if not isinstance(raw_name, str) or not raw_name.strip():
+                    continue
+                name = raw_name.strip()
+
+                arguments: Any = raw_args if raw_args is not None else {}
+                if isinstance(arguments, str):
+                    # Try to parse JSON-ish args; fall back to string.
+                    try:
+                        parsed = json.loads(arguments)
+                        arguments = parsed if isinstance(parsed, dict) else {}
+                    except Exception:
+                        arguments = {}
+                if not isinstance(arguments, dict):
+                    arguments = {}
+
+                yield ToolCall(name=name, arguments=arguments, call_id=str(raw_id) if raw_id is not None else None)
+                continue
+
+            raw_name = getattr(tc, "name", None)
+            raw_args = getattr(tc, "arguments", None)
+            raw_id = getattr(tc, "call_id", None)
+            if not isinstance(raw_name, str) or not raw_name.strip():
+                continue
+            arguments = raw_args if raw_args is not None else {}
+            if not isinstance(arguments, (dict, str)):
+                arguments = {}
+            yield ToolCall(name=raw_name.strip(), arguments=arguments, call_id=str(raw_id) if raw_id is not None else None)
 
     def _apply_format_conversion(self, content: str, tool_calls: List[ToolCall]) -> str:
         """Apply format-specific conversion."""

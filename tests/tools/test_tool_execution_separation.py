@@ -210,7 +210,7 @@ class TestStreamingIntegration:
         assert "list_files" not in all_content or "banana" in all_content, "Should rewrite or preserve tool calls"
 
     def test_streaming_no_custom_tags_executes_tools(self):
-        """Test that streaming without custom tags DOES execute tools"""
+        """Test that streaming without custom tags emits structured tool calls"""
         register_tool(calculate)
 
         processor = UnifiedStreamProcessor(
@@ -237,8 +237,14 @@ class TestStreamingIntegration:
         # Collect all content
         all_content = "".join([r.content for r in results if r.content])
 
-        # Should have tool execution results
-        assert "Tool Results:" in all_content or "calculate" in all_content, "Should execute tools without custom tags"
+        # Tool execution is handled by the client/runtime. The stream should emit structured tool_calls.
+        assert "Tool Results:" not in all_content
+        emitted = []
+        for r in results:
+            tcs = getattr(r, "tool_calls", None)
+            if isinstance(tcs, list) and tcs:
+                emitted.extend(tcs)
+        assert any(isinstance(tc, dict) and tc.get("name") == "calculate" for tc in emitted), "Should emit tool call"
 
     def test_streaming_tag_rewriting_preserves_tool_calls(self):
         """Test that tag rewriting preserves tool calls in content for rewriting"""
@@ -570,7 +576,7 @@ class TestProductionScenarios:
 
     def test_standard_tags_with_execution(self):
         """
-        Test standard behavior without custom tags - should execute tools
+        Test standard behavior without custom tags - should emit tool calls
         """
         register_tool(calculate)
 
@@ -597,9 +603,14 @@ class TestProductionScenarios:
 
         all_content = "".join([r.content for r in results if r.content])
 
-        # Should execute tools
-        assert "Tool Results:" in all_content or "calculate" in all_content, (
-            "Should execute tools when no custom tags are provided"
+        assert "Tool Results:" not in all_content
+        emitted = []
+        for r in results:
+            tcs = getattr(r, "tool_calls", None)
+            if isinstance(tcs, list) and tcs:
+                emitted.extend(tcs)
+        assert any(isinstance(tc, dict) and tc.get("name") == "calculate" for tc in emitted), (
+            "Should emit tool calls when no custom tags are provided"
         )
 
     def test_performance_custom_tags_vs_standard(self):
