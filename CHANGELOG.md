@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Tools/list_files**: `list_files` now lists **directories as well as files** (as documented), and prints relative entry paths. This helps agent workflows confirm `mkdir` outcomes even when directories are still empty.
+- **Tools/web_search**: improve reliability and debuggability of web search:
+  - Prefer `ddgs` (MIT) with fallback to `duckduckgo_search` when available; HTML scraping remains a last-resort fallback.
+  - Add bounded retries with a **cleaned query** (drop generic words like “url”, keep version identifiers) and region fallback (`us-en`) when relevance is low.
+  - Add a lightweight relevance score per result and include `attempts` metadata for observability.
 
 ## [2.8.1 - 2025-12-21
 

@@ -1502,7 +1502,11 @@
       "notes": "GLM-4.6 MoE model with enhanced capabilities",
       "source": "Zhipu AI GLM-4.6 announcement",
       "canonical_name": "glm-4.6",
-      "aliases": [],
+      "aliases": [
+        "zai-org/GLM-4.6",
+        "zai-org/GLM-4.6-FP8",
+        "glm-4.6-fp8"
+      ],
       "max_tokens": 128000
     },
     "glm-4.5-air": {
@@ -1957,7 +1961,7 @@
       "max_image_tokens": 6400
     },
     "minimax-m2": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 131072,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -1970,8 +1974,8 @@
       "total_parameters": "230B",
       "thinking_paradigm": "interleaved_thinking",
       "thinking_format": "<think>...</think>",
-      "notes": "MiniMax M2 MoE model optimized for coding and agentic workflows. Industry-leading 204K token context window. Uses interleaved thinking with <think> tags for reasoning. 10B active parameters from 230B total. Achieves strong performance on SWE-Bench and Terminal-Bench tasks. Supports complete tool calling for agent workflows.",
-      "source": "MiniMax official docs (minimax-m2.org, HuggingFace, GitHub)",
+      "notes": "MiniMax M2 open-source MoE model (230B total/10B active) optimized for coding and agentic workflows. Industry-leading 204K token context window with 131K output capacity. Uses interleaved thinking with <think> tags for reasoning. Achieves strong performance on SWE-Bench and Terminal-Bench tasks. Ranked #5 on Artificial Analysis Intelligence Index. Efficient deployment at up to 8% cost of comparable models. Supports complete tool calling for agent workflows. Runs seamlessly on 8xH100 setup using vLLM.",
+      "source": "MiniMax official docs (HuggingFace MiniMaxAI/MiniMax-M2, Microsoft Azure AI Foundry blog)",
       "canonical_name": "minimax-m2",
       "aliases": [
         "MiniMaxAI/MiniMax-M2",
@@ -1979,11 +1983,85 @@
         "mlx-community/MiniMax-M2",
         "unsloth/MiniMax-M2-GGUF",
         "minimax-m2-230b",
-        "minimax-m2-10b-active"
+        "minimax-m2-10b-active",
+        "minimax/minimax-m2"
       ],
       "max_tokens": 208896,
       "release_date": "2025-01",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 40
+      },
+      "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2 and is built by MiniMax."
+    },
+    "minimax-m2.1": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "mixture_of_experts",
+      "active_parameters": "10B",
+      "total_parameters": "229B",
+      "tensor_type": "FP8",
+      "thinking_paradigm": "interleaved_thinking",
+      "thinking_format": "<think>...</think>",
+      "agentic_coding": true,
+      "notes": "MiniMax M2.1 enhanced MoE model (229B total/10B active) optimized for advanced coding, agentic workflows, and full-stack development. 200K token context window with massive 128K output capacity. Significant improvements over M2 in multilingual software engineering (SWE-bench Multilingual: 72.5%), achieving performance close to Claude Opus 4.5. Excels at full-stack development with VIBE average of 88.6 (Web: 91.5, Android: 89.7). Uses interleaved thinking with <think> tags. Achieves 74.0% on SWE-bench Verified, 47.9% on Terminal-bench 2.0. Supports complete native tool calling for agent workflows.",
+      "source": "MiniMax official docs (platform.minimax.io, HuggingFace MiniMaxAI/MiniMax-M2.1)",
+      "canonical_name": "minimax-m2.1",
+      "aliases": [
+        "MiniMaxAI/MiniMax-M2.1",
+        "minimaxai/minimax-m2.1",
+        "minimax-m2.1-229b",
+        "minimax-m2.1-10b-active",
+        "minimax/minimax-m2.1"
+      ],
+      "max_tokens": 204800,
+      "release_date": "2024-12",
+      "license": "Modified-MIT",
+      "arxiv": "2509.06501",
+      "benchmarks": {
+        "SWE-bench Verified": 74.0,
+        "Multi-SWE-bench": 49.4,
+        "SWE-bench Multilingual": 72.5,
+        "Terminal-bench 2.0": 47.9,
+        "SWE-bench Verified (Droid)": 71.3,
+        "SWE-bench Verified (mini-swe-agent)": 67.0,
+        "SWT-bench": 69.3,
+        "SWE-Perf": 3.1,
+        "SWE-Review": 8.9,
+        "OctoCodingbench": 26.1,
+        "VIBE Average": 88.6,
+        "VIBE-Web": 91.5,
+        "VIBE-Android": 89.7,
+        "VIBE-Simulation": 87.1,
+        "VIBE-iOS": 88.0,
+        "VIBE-Backend": 86.7,
+        "Toolathlon": 43.5,
+        "BrowseComp": 47.4,
+        "BrowseComp (context management)": 62.0,
+        "AIME25": 83.0,
+        "MMLU-Pro": 88.0,
+        "GPQA-D": 83.0,
+        "HLE w/o tools": 22.2,
+        "LCB": 81.0,
+        "SciCode": 41.0,
+        "IFBench": 70.0,
+        "AA-LCR": 62.0,
+        "τ²-Bench Telecom": 87.0
+      },
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 40
+      },
+      "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2.1 and is built by MiniMax."
     },
     "glm-4.6v": {
       "max_output_tokens": 16384,
@@ -2011,7 +2089,9 @@
       "canonical_name": "glm-4.6v",
       "aliases": [
         "zai-org/GLM-4.6V",
-        "glm-4.6v-106b"
+        "zai-org/GLM-4.6V-FP8",
+        "glm-4.6v-106b",
+        "glm-4.6v-fp8"
       ],
       "max_tokens": 128000,
       "release_date": "2025-05-07",
@@ -2043,12 +2123,72 @@
       "canonical_name": "glm-4.6v-flash",
       "aliases": [
         "zai-org/GLM-4.6V-Flash",
-        "glm-4.6v-9b"
+        "zai-org/GLM-4.6V-Flash-FP8",
+        "glm-4.6v-9b",
+        "glm-4.6v-flash-fp8"
       ],
       "max_tokens": 128000,
       "release_date": "2025-05-07",
       "arxiv": "2507.01006",
       "license": "MIT"
+    },
+    "glm-4.7": {
+      "max_output_tokens": 32768,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "mixture_of_experts",
+      "total_parameters": "358B",
+      "thinking_paradigm": "multi_mode",
+      "thinking_modes": ["interleaved_thinking", "preserved_thinking", "turn_level_thinking"],
+      "native_function_calling": true,
+      "agentic_coding": true,
+      "terminal_tasks": true,
+      "web_browsing": true,
+      "tool_calling_parser": "glm47",
+      "reasoning_parser": "glm45",
+      "notes": "GLM-4.7 latest MoE model (358B params) with enhanced coding, reasoning, and agentic capabilities. Achieves 73.8% on SWE-bench Verified, 66.7% on SWE-bench Multilingual, and 41% on Terminal Bench 2.0. Supports advanced thinking modes: Interleaved (think before actions), Preserved (cross-turn consistency), and Turn-level. Excels at tool using (τ²-Bench: 87.4%), web browsing (BrowseComp: 52%), and complex reasoning (HLE w/ Tools: 42.8%, AIME 2025: 95.7%). 128K context window with 32K output capacity. Optimized for modern coding environments including Claude Code, Kilo Code, Cline, Roo Code.",
+      "source": "HuggingFace zai-org/GLM-4.7 and GLM technical blog",
+      "canonical_name": "glm-4.7",
+      "aliases": [
+        "zai-org/GLM-4.7",
+        "zai-org/GLM-4.7-FP8",
+        "glm-4.7-fp8",
+        "glm-4.7-358b"
+      ],
+      "max_tokens": 128000,
+      "release_date": "2025-06",
+      "arxiv": "2508.06471",
+      "license": "MIT",
+      "benchmarks": {
+        "SWE-bench Verified": 73.8,
+        "SWE-bench Multilingual": 66.7,
+        "Terminal Bench Hard": 33.3,
+        "Terminal Bench 2.0": 41.0,
+        "HLE": 24.8,
+        "HLE (w/ Tools)": 42.8,
+        "AIME 2025": 95.7,
+        "HMMT Feb. 2025": 97.1,
+        "HMMT Nov. 2025": 93.5,
+        "IMOAnswerBench": 82.0,
+        "LiveCodeBench-v6": 84.9,
+        "BrowseComp": 52.0,
+        "BrowseComp (w/ Context Manage)": 67.5,
+        "BrowseComp-Zh": 66.6,
+        "τ²-Bench": 87.4,
+        "MMLU-Pro": 84.3,
+        "GPQA-Diamond": 85.7
+      },
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "enable_thinking": true,
+        "clear_thinking": false
+      }
     },
     "devstral-small-2-24b": {
       "max_output_tokens": 16384,
