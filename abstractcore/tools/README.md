@@ -195,11 +195,11 @@ class ToolCallSyntaxRewriter:
     def rewrite_content(
         self,
         content: str,
-        detected_tool_calls: Optional[List[ToolCall]] = None
+        detected_tool_calls: Optional[List[Any]] = None
     ) -> str:
         """Rewrite tool call syntax to target format"""
 
-    def convert_to_openai_format(self, tool_calls: List[ToolCall]) -> List[Dict[str, Any]]:
+    def convert_to_openai_format(self, tool_calls: List[Any]) -> List[Dict[str, Any]]:
         """Convert to OpenAI API format"""
 ```
 

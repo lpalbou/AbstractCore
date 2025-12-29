@@ -2214,31 +2214,49 @@ def generate_streaming_response(
                     }
                     yield f"data: {json.dumps(openai_chunk)}\n\n"
 
-            # Tool calls - always convert to OpenAI format for streaming
+            # Tool calls
             if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
                 has_tool_calls = True
-                openai_tool_calls = syntax_rewriter.convert_to_openai_format(chunk.tool_calls)
+                # OpenAI/Codex clients expect structured tool_calls deltas.
+                if syntax_rewriter.target_format in [SyntaxFormat.OPENAI, SyntaxFormat.CODEX]:
+                    openai_tool_calls = syntax_rewriter.convert_to_openai_format(chunk.tool_calls)
 
-                for i, openai_tool_call in enumerate(openai_tool_calls):
-                    tool_chunk = {
-                        "id": chat_id,
-                        "object": "chat.completion.chunk",
-                        "created": created_time,
-                        "model": f"{provider}/{model}",
-                        "choices": [{
-                            "index": 0,
-                            "delta": {
-                                "tool_calls": [{
-                                    "index": i,  # Proper indexing for multiple tools
-                                    "id": openai_tool_call["id"],
-                                    "type": "function",
-                                    "function": openai_tool_call["function"]
-                                }]
-                            },
-                            "finish_reason": "tool_calls"  # Critical for Codex
-                        }]
-                    }
-                    yield f"data: {json.dumps(tool_chunk)}\n\n"
+                    for i, openai_tool_call in enumerate(openai_tool_calls):
+                        tool_chunk = {
+                            "id": chat_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_time,
+                            "model": f"{provider}/{model}",
+                            "choices": [{
+                                "index": 0,
+                                "delta": {
+                                    "tool_calls": [{
+                                        "index": i,  # Proper indexing for multiple tools
+                                        "id": openai_tool_call["id"],
+                                        "type": "function",
+                                        "function": openai_tool_call["function"]
+                                    }]
+                                },
+                                "finish_reason": "tool_calls"  # Critical for Codex
+                            }]
+                        }
+                        yield f"data: {json.dumps(tool_chunk)}\n\n"
+                # Tag-based clients parse tool calls from assistant content.
+                elif syntax_rewriter.target_format != SyntaxFormat.PASSTHROUGH:
+                    tool_text = syntax_rewriter.rewrite_content("", detected_tool_calls=chunk.tool_calls)
+                    if tool_text and tool_text.strip():
+                        openai_chunk = {
+                            "id": chat_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_time,
+                            "model": f"{provider}/{model}",
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": tool_text},
+                                "finish_reason": None
+                            }]
+                        }
+                        yield f"data: {json.dumps(openai_chunk)}\n\n"
 
         # Final chunk
         final_chunk = {
@@ -2319,6 +2337,7 @@ def convert_to_openai_response(
 
     # Apply syntax rewriting to content
     content = response.content if hasattr(response, 'content') else str(response)
+    tool_calls = getattr(response, "tool_calls", None) if hasattr(response, "tool_calls") else None
 
     # For OpenAI/Codex format: only clean if content contains tool calls
     # For other formats: apply syntax rewriting
@@ -2328,8 +2347,12 @@ def convert_to_openai_response(
         if any(pattern in content for pattern in ['<function_call>', '<tool_call>', '<|tool_call|>', '```tool_code']):
             content = syntax_rewriter.remove_tool_call_patterns(content)
     elif syntax_rewriter.target_format != SyntaxFormat.PASSTHROUGH:
-        # Apply format-specific rewriting for non-OpenAI formats
-        content = syntax_rewriter.rewrite_content(content)
+        # Apply format-specific rewriting for non-OpenAI formats.
+        # Prefer structured tool_calls when present (content may be cleaned upstream).
+        if tool_calls:
+            content = syntax_rewriter.rewrite_content(content, detected_tool_calls=tool_calls)
+        else:
+            content = syntax_rewriter.rewrite_content(content)
 
     response_dict = {
         "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
@@ -2349,15 +2372,15 @@ def convert_to_openai_response(
     }
 
     # Add tool calls if present
-    if hasattr(response, 'tool_calls') and response.tool_calls:
-        openai_tool_calls = syntax_rewriter.convert_to_openai_format(response.tool_calls)
+    if tool_calls:
+        openai_tool_calls = syntax_rewriter.convert_to_openai_format(tool_calls)
         response_dict["choices"][0]["message"]["tool_calls"] = openai_tool_calls
         response_dict["choices"][0]["finish_reason"] = "tool_calls"
 
         logger.info(
             "🔧 Tool calls converted",
             request_id=request_id,
-            tool_count=len(response.tool_calls),
+            tool_count=len(tool_calls),
             target_format=syntax_rewriter.target_format.value
         )
 

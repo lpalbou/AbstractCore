@@ -347,16 +347,17 @@ class UnifiedStreamProcessor:
     """
 
     def __init__(self, model_name: str, execute_tools: bool = False,
-                 tool_call_tags: Optional[str] = None,
+                 tool_call_tags: Optional[object] = None,
                  default_target_format: str = "qwen3"):
         """Initialize the stream processor."""
         self.model_name = model_name
-        # Note: execute_tools parameter is kept for backward compatibility but ignored
-        # Tool execution is now handled by the client (CLI)
+        # Note: execute_tools is kept for backward compatibility and introspection,
+        # but tool execution is handled by the client/runtime (AbstractRuntime).
+        self.execute_tools = execute_tools
         self.tool_call_tags = tool_call_tags
         self.default_target_format = default_target_format
 
-        # Always initialize tag rewriter - either custom tags or default target format
+        # Initialize tag rewriter only when explicit format conversion is requested.
         self.tag_rewriter = None
         # Backwards compatibility: tag_rewrite_buffer attribute (unused in current implementation)
         self.tag_rewrite_buffer = ""
@@ -364,31 +365,35 @@ class UnifiedStreamProcessor:
         # Flag to indicate if we're converting to OpenAI JSON format (not text rewriting)
         self.convert_to_openai_json = False
 
-        # Determine whether tool_call_tags contains predefined format or custom tags
+        # Determine whether tool_call_tags contains predefined format or custom tags.
         if tool_call_tags:
-            # Check if tool_call_tags is a predefined format name
-            predefined_formats = ["qwen3", "openai", "llama3", "xml", "gemma"]
-
-            if tool_call_tags in predefined_formats:
-                # It's a predefined format - use default rewriter
-                self._initialize_default_rewriter(tool_call_tags)
-                logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as predefined format")
-            elif ',' in tool_call_tags:
-                # It contains comma - likely custom tags like "START,END"
+            # Accept pre-built tag rewriters/config objects (used by some internal callers/tests).
+            if not isinstance(tool_call_tags, str):
                 self._initialize_tag_rewriter(tool_call_tags)
-                logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as custom comma-separated tags")
             else:
-                # Single string that's not a predefined format - could be custom single tag
-                # Try as custom first, fall back to treating as predefined format
-                try:
-                    self._initialize_tag_rewriter(tool_call_tags)
-                    logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as custom single tag")
-                except Exception as e:
-                    logger.debug(f"Failed to initialize as custom tag, trying as predefined format: {e}")
+                # Check if tool_call_tags is a predefined format name
+                predefined_formats = ["qwen3", "openai", "llama3", "xml", "gemma"]
+
+                if tool_call_tags in predefined_formats:
+                    # It's a predefined format - use default rewriter
                     self._initialize_default_rewriter(tool_call_tags)
+                    logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as predefined format")
+                elif ',' in tool_call_tags:
+                    # It contains comma - likely custom tags like "START,END"
+                    self._initialize_tag_rewriter(tool_call_tags)
+                    logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as custom comma-separated tags")
+                else:
+                    # Single string that's not a predefined format - could be custom single tag
+                    # Try as custom first, fall back to treating as predefined format
+                    try:
+                        self._initialize_tag_rewriter(tool_call_tags)
+                        logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as custom single tag")
+                    except Exception as e:
+                        logger.debug(f"Failed to initialize as custom tag, trying as predefined format: {e}")
+                        self._initialize_default_rewriter(tool_call_tags)
         else:
-            # No custom tags - initialize default rewriter to target format
-            self._initialize_default_rewriter(default_target_format)
+            # No explicit format conversion requested - no text rewriting.
+            self.tag_rewriter = None
 
         # Create detector - preserve tool calls when user explicitly wants format conversion
         # Filter out tool calls for clean UX when no explicit format conversion is requested
@@ -447,9 +452,18 @@ class UnifiedStreamProcessor:
                 # Yield tool calls for server processing
                 if completed_tools:
                     logger.debug(f"Detected {len(completed_tools)} tools - yielding for server processing")
+                    tool_payload = [
+                        {
+                            "name": tc.name,
+                            "arguments": tc.arguments,
+                            "call_id": tc.call_id,
+                        }
+                        for tc in completed_tools
+                        if getattr(tc, "name", None)
+                    ]
                     yield GenerateResponse(
                         content="",
-                        tool_calls=completed_tools,
+                        tool_calls=tool_payload,
                         model=chunk.model,
                         finish_reason=chunk.finish_reason,
                         usage=chunk.usage,
@@ -477,9 +491,18 @@ class UnifiedStreamProcessor:
 
             if final_tools:
                 logger.debug(f"Finalized {len(final_tools)} tools - yielding for server processing")
+                tool_payload = [
+                    {
+                        "name": tc.name,
+                        "arguments": tc.arguments,
+                        "call_id": tc.call_id,
+                    }
+                    for tc in final_tools
+                    if getattr(tc, "name", None)
+                ]
                 yield GenerateResponse(
                     content="",
-                    tool_calls=final_tools,
+                    tool_calls=tool_payload,
                     model=self.model_name,
                     finish_reason="tool_calls"
                 )
@@ -705,4 +728,3 @@ class UnifiedStreamProcessor:
                 break
 
         return converted_content
-

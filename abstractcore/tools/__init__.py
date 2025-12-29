@@ -10,8 +10,9 @@ Tool Execution Modes
 AbstractCore supports two tool execution modes:
 
 **Passthrough Mode (Default)** - execute_tools=False
-    The LLM returns raw tool call tags that downstream runtimes
-    (AbstractRuntime, Codex, Claude Code) parse and execute.
+    AbstractCore detects/parses tool calls (native API fields or prompted tags)
+    and returns structured `GenerateResponse.tool_calls` plus cleaned `content`.
+    Downstream runtimes (AbstractRuntime, Codex, Claude Code) execute tools.
     Use case: Agent loops, custom orchestration, multi-step workflows.
 
 **Direct Execution Mode** - execute_tools=True
@@ -38,7 +39,7 @@ def get_weather(city: str) -> str:
 
 llm = create_llm("ollama", model="qwen3:4b")
 response = llm.generate("Weather in Paris?", tools=[get_weather])
-# response.content has tool call tags - parse with your runtime
+# response.tool_calls contains structured tool calls; response.content is cleaned
 ```
 
 Example: Direct Execution Mode

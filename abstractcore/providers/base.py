@@ -509,10 +509,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                 return unified_stream()
             else:
-                # Non-streaming: apply tag rewriting if needed
-                if response and response.content and converted_tools:
-                    # Apply default qwen3 rewriting for non-streaming responses
-                    response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
+                # Non-streaming: normalize tool calls into structured form.
+                if response and converted_tools:
+                    response = self._normalize_tool_calls_passthrough(
+                        response=response,
+                        tools=converted_tools,
+                        tool_call_tags=tool_call_tags,
+                    )
+
+                    # Optional: rewrite tool-call tags in content for downstream clients that parse tags.
+                    # Note: when tool_call_tags is None (default), we return cleaned content.
+                    if tool_call_tags and response.content and not self._should_clean_tool_call_markup(tool_call_tags):
+                        response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
 
                 # Add visual token calculation if media metadata is available
                 if media_metadata and response:
@@ -1348,6 +1356,220 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Return original response if rewriting fails
         return response
+
+    def _normalize_tool_calls_passthrough(
+        self,
+        *,
+        response: GenerateResponse,
+        tools: List[Dict[str, Any]],
+        tool_call_tags: Optional[str] = None,
+    ) -> GenerateResponse:
+        """Populate `response.tool_calls` (and usually clean `response.content`) in passthrough mode.
+
+        Contract:
+        - AbstractCore always returns structured `tool_calls` when tools are provided and the model emits tool syntax,
+          even for prompted tool calling (tool calls embedded in `content`).
+        - By default (`tool_call_tags is None`), tool-call markup is stripped from `content` for clean UX/history.
+        - When `tool_call_tags` is set, we preserve `content` (for clients that parse tags) but still populate
+          structured `tool_calls`.
+        """
+
+        # Only normalize when tools were actually provided.
+        if not tools:
+            return response
+
+        allowed_names = self._get_allowed_tool_names(tools)
+
+        # 1) If provider already returned tool_calls (native tools), normalize shape + args.
+        normalized_existing = self._normalize_tool_calls_payload(
+            response.tool_calls,
+            allowed_tool_names=allowed_names,
+        )
+        if normalized_existing:
+            response.tool_calls = normalized_existing
+
+            # Clean any echoed tool syntax from content unless the caller explicitly requested tag passthrough.
+            if self._should_clean_tool_call_markup(tool_call_tags) and isinstance(response.content, str) and response.content.strip():
+                cleaned = self._clean_content_using_tool_calls(response.content, normalized_existing)
+                response.content = cleaned
+
+            return response
+
+        # 2) Prompted tools: parse tool calls embedded in content.
+        content = response.content
+        if not isinstance(content, str) or not content.strip():
+            return response
+
+        tool_handler = getattr(self, "tool_handler", None)
+        if tool_handler is None:
+            return response
+
+        try:
+            parsed = tool_handler.parse_response(content, mode="prompted")
+        except Exception:
+            return response
+
+        parsed_calls = getattr(parsed, "tool_calls", None)
+        if not isinstance(parsed_calls, list) or not parsed_calls:
+            return response
+
+        normalized_parsed = self._normalize_tool_calls_payload(
+            parsed_calls,
+            allowed_tool_names=allowed_names,
+        )
+        if normalized_parsed:
+            response.tool_calls = normalized_parsed
+
+        # Always use the cleaned content from AbstractCore parsing when we are not explicitly preserving tags.
+        if self._should_clean_tool_call_markup(tool_call_tags):
+            cleaned_content = getattr(parsed, "content", None)
+            if isinstance(cleaned_content, str):
+                response.content = cleaned_content
+
+        return response
+
+    def _should_clean_tool_call_markup(self, tool_call_tags: Optional[str]) -> bool:
+        """Return True when we should strip tool-call markup from assistant content."""
+        if tool_call_tags is None:
+            return True
+        # OpenAI/Codex formats carry tool calls in structured fields, not in content.
+        value = str(tool_call_tags).strip().lower()
+        return value in {"openai", "codex"}
+
+    def _get_allowed_tool_names(self, tools: List[Dict[str, Any]]) -> set[str]:
+        """Extract allowed tool names from provider-normalized tool definitions."""
+        names: set[str] = set()
+        for tool in tools or []:
+            if not isinstance(tool, dict):
+                continue
+            name = tool.get("name")
+            if isinstance(name, str) and name.strip():
+                names.add(name.strip())
+                continue
+            func = tool.get("function") if isinstance(tool.get("function"), dict) else None
+            fname = func.get("name") if isinstance(func, dict) else None
+            if isinstance(fname, str) and fname.strip():
+                names.add(fname.strip())
+        return names
+
+    def _normalize_tool_calls_payload(
+        self,
+        tool_calls: Any,
+        *,
+        allowed_tool_names: Optional[set[str]] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Normalize tool call shapes into a canonical dict form.
+
+        Canonical shape:
+            {"name": str, "arguments": dict, "call_id": Optional[str]}
+        """
+        if tool_calls is None or not isinstance(tool_calls, list):
+            return None
+
+        normalized: List[Dict[str, Any]] = []
+
+        def _loads_dict_like(raw: Any) -> Optional[Dict[str, Any]]:
+            import re
+            import json
+            import ast
+
+            if raw is None:
+                return None
+            text = str(raw).strip()
+            if not text:
+                return None
+
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+
+            candidate = re.sub(r"\\btrue\\b", "True", text, flags=re.IGNORECASE)
+            candidate = re.sub(r"\\bfalse\\b", "False", candidate, flags=re.IGNORECASE)
+            candidate = re.sub(r"\\bnull\\b", "None", candidate, flags=re.IGNORECASE)
+            try:
+                parsed = ast.literal_eval(candidate)
+            except Exception:
+                return None
+            if not isinstance(parsed, dict):
+                return None
+            return {str(k): v for k, v in parsed.items()}
+
+        for tc in tool_calls:
+            name: Optional[str] = None
+            arguments: Any = None
+            call_id: Any = None
+
+            if isinstance(tc, dict):
+                call_id = tc.get("call_id", None)
+                if call_id is None:
+                    call_id = tc.get("id", None)
+
+                raw_name = tc.get("name")
+                raw_args = tc.get("arguments")
+
+                func = tc.get("function") if isinstance(tc.get("function"), dict) else None
+                if func and (not isinstance(raw_name, str) or not raw_name.strip()):
+                    raw_name = func.get("name")
+                if func and raw_args is None:
+                    raw_args = func.get("arguments")
+
+                if isinstance(raw_name, str) and raw_name.strip():
+                    name = raw_name.strip()
+                arguments = raw_args if raw_args is not None else {}
+            else:
+                raw_name = getattr(tc, "name", None)
+                raw_args = getattr(tc, "arguments", None)
+                call_id = getattr(tc, "call_id", None)
+                if isinstance(raw_name, str) and raw_name.strip():
+                    name = raw_name.strip()
+                arguments = raw_args if raw_args is not None else {}
+
+            if not isinstance(name, str) or not name:
+                continue
+            if isinstance(allowed_tool_names, set) and allowed_tool_names and name not in allowed_tool_names:
+                continue
+
+            if isinstance(arguments, str):
+                parsed = _loads_dict_like(arguments)
+                arguments = parsed if isinstance(parsed, dict) else {}
+            if not isinstance(arguments, dict):
+                arguments = {}
+
+            normalized.append(
+                {
+                    "name": name,
+                    "arguments": arguments,
+                    "call_id": str(call_id) if call_id is not None else None,
+                }
+            )
+
+        return normalized or None
+
+    def _clean_content_using_tool_calls(self, content: str, tool_calls: List[Dict[str, Any]]) -> str:
+        """Strip tool-call markup from assistant content using known tool calls."""
+        try:
+            from ..tools.core import ToolCall as CoreToolCall
+            from ..tools.parser import clean_tool_syntax
+
+            core_calls: List[CoreToolCall] = []
+            for tc in tool_calls or []:
+                if not isinstance(tc, dict):
+                    continue
+                name = tc.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                args = tc.get("arguments")
+                args_dict = dict(args) if isinstance(args, dict) else {}
+                core_calls.append(CoreToolCall(name=name.strip(), arguments=args_dict, call_id=tc.get("call_id")))
+
+            if not core_calls:
+                return content
+            return clean_tool_syntax(content, core_calls)
+        except Exception:
+            return content
 
     def _handle_tools_with_structured_output(self,
                                            prompt: str,
