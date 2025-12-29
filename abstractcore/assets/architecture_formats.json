@@ -331,6 +331,18 @@
       "tool_format": "none",
       "patterns": ["gemma-2b", "gemma-7b"]
     },
+    "glm4v_moe": {
+      "description": "Zhipu AI's GLM-4.6V multimodal MoE architecture (May 2025)",
+      "message_format": "glm_special_tokens",
+      "system_prefix": "<|system|>\n",
+      "system_suffix": "\n",
+      "user_prefix": "<|user|>\n",
+      "user_suffix": "\n",
+      "assistant_prefix": "<|assistant|>\n",
+      "assistant_suffix": "\n",
+      "tool_format": "native",
+      "patterns": ["glm-4.6v", "glm4.6v", "zai-org/glm-4.6v", "glm-4.6v-flash", "glm-4.6v-fp8", "glm-4.6v-flash-fp8"]
+    },
     "glm4_moe": {
       "description": "Zhipu AI's GLM-4.5+ MoE architecture (July 2025)",
       "message_format": "im_start_end",
@@ -342,7 +354,7 @@
       "assistant_suffix": "\n",
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
-      "patterns": ["glm-4.5", "glm-4.6", "glm-4.5-air"]
+      "patterns": ["glm-4.7", "glm-4.6", "glm-4.5", "glm-4.5-air"]
     },
     "glm4v": {
       "description": "Zhipu AI's GLM-4V multimodal architecture (June 2024)",
@@ -355,18 +367,6 @@
       "assistant_suffix": "\n",
       "tool_format": "json",
       "patterns": ["glm-4v", "glm4v", "glyph", "zai-org/glyph", "glm-4.1v"]
-    },
-    "glm4v_moe": {
-      "description": "Zhipu AI's GLM-4.6V multimodal MoE architecture (May 2025)",
-      "message_format": "glm_special_tokens",
-      "system_prefix": "<|system|>\n",
-      "system_suffix": "\n",
-      "user_prefix": "<|user|>\n",
-      "user_suffix": "\n",
-      "assistant_prefix": "<|assistant|>\n",
-      "assistant_suffix": "\n",
-      "tool_format": "native",
-      "patterns": ["glm-4.6v", "glm4.6v", "zai-org/glm-4.6v", "glm-4.6v-flash"]
     },
     "glm4": {
       "description": "Zhipu AI's GLM-4 architecture (June 2024)",
@@ -418,6 +418,19 @@
       "tool_format": "json",
       "patterns": ["deepseek"]
     },
+    "minimax_m2_1": {
+      "description": "MiniMax M2.1 enhanced MoE architecture with improved coding and agentic capabilities (December 2024)",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "native",
+      "thinking_format": "<think>...</think>",
+      "patterns": ["minimax-m2.1", "minimaxai/minimax-m2.1", "minimax/minimax-m2.1"]
+    },
     "minimax_m2": {
       "description": "MiniMax M2 MoE architecture with interleaved thinking (January 2025)",
       "message_format": "im_start_end",
@@ -429,7 +442,7 @@
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "native",
       "thinking_format": "<think>...</think>",
-      "patterns": ["minimax-m2", "minimaxai/minimax-m2"]
+      "patterns": ["minimax-m2", "minimaxai/minimax-m2", "minimax/minimax-m2"]
     },
     "seed_oss": {
       "description": "ByteDance's Seed-OSS long-context architecture (August 2025)",
