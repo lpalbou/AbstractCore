@@ -21,18 +21,13 @@ from datetime import datetime
 from urllib.parse import urlparse, urljoin
 import mimetypes
 
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+
 try:
-    from bs4 import BeautifulSoup
-    BS4_AVAILABLE = True
-    # Try to use lxml parser for better performance
-    try:
-        import lxml
-        BS4_PARSER = 'lxml'
-    except ImportError:
-        BS4_PARSER = 'html.parser'
+    import lxml  # noqa: F401
+    BS4_PARSER = "lxml"
 except ImportError:
-    BS4_AVAILABLE = False
-    BS4_PARSER = None
+    BS4_PARSER = "html.parser"
 
 try:
     import psutil
@@ -1088,7 +1083,7 @@ def web_search(
 
 
 @tool(
-    description="Fetch and parse content from URLs with automatic content type detection and metadata extraction. Set include_full_content=true to disable preview truncation for text/JSON/XML (still limited by max_content_length).",
+    description="Fetch and parse content from URLs with automatic content type detection and metadata extraction. By default, text/HTML/JSON/XML content is returned in full parsed form (still limited by max_content_length). Set include_full_content=false to return a shorter preview.",
     tags=["web", "fetch", "url", "http", "content", "parse", "scraping"],
     when_to_use="When you need to retrieve and analyze content from specific URLs, including web pages, APIs, documents, or media files",
     examples=[
@@ -1131,9 +1126,9 @@ def fetch_url(
     max_content_length: int = 10485760,  # 10MB default
     follow_redirects: bool = True,
     include_binary_preview: bool = False,
-    extract_links: bool = True,
+    extract_links: bool = False,
     user_agent: str = "AbstractCore-FetchTool/1.0",
-    include_full_content: bool = False,
+    include_full_content: bool = True,
 ) -> str:
     """
     Fetch and intelligently parse content from URLs with comprehensive content type detection.
@@ -1150,9 +1145,9 @@ def fetch_url(
         max_content_length: Maximum content length to fetch in bytes (default: 10MB)
         follow_redirects: Whether to follow HTTP redirects (default: True)
         include_binary_preview: Whether to include base64 preview for binary content (default: False)
-        extract_links: Whether to extract links from HTML content (default: True)
+        extract_links: Whether to extract links from HTML content (default: False)
         user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
-        include_full_content: Whether to include full text/JSON/XML content (no preview truncation) (default: False)
+        include_full_content: Whether to include full text/JSON/XML content (no preview truncation) (default: True)
     
     Returns:
         Formatted string with parsed content, metadata, and analysis or error message
@@ -1464,16 +1459,9 @@ def _is_json_content(content: str) -> bool:
 
 def _get_appropriate_parser(content: str) -> str:
     """Get the appropriate BeautifulSoup parser for the content."""
-    if not BS4_AVAILABLE:
-        return None
-    
     # If lxml is available and content looks like XML, use xml parser
-    if 'lxml' in BS4_PARSER and _is_xml_content(content):
-        try:
-            import lxml
-            return 'xml'
-        except ImportError:
-            pass
+    if BS4_PARSER == "lxml" and _is_xml_content(content):
+        return "xml"
     
     # Default to the configured parser (lxml or html.parser)
     return BS4_PARSER
@@ -1491,108 +1479,118 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True,
     result_parts = []
     result_parts.append("🌐 HTML Document Analysis")
     
-    # Use BeautifulSoup if available for better parsing
-    if BS4_AVAILABLE:
+    try:
+        # Choose appropriate parser based on content analysis
+        parser = _get_appropriate_parser(html_content)
+
+        # Suppress XML parsing warnings when using HTML parser on XML content
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+            soup = BeautifulSoup(html_content, parser)
+
+        # Extract title
+        title = soup.find("title")
+        if title:
+            result_parts.append(f"📰 Title: {title.get_text().strip()}")
+
+        # Extract meta description
+        meta_desc = soup.find("meta", attrs={"name": "description"})
+        if meta_desc and meta_desc.get("content"):
+            desc = meta_desc["content"].strip()
+            if not include_full_content and len(desc) > 200:
+                desc = desc[:200] + "..."
+            result_parts.append(f"📝 Description: {desc}")
+
+        # Extract headings
+        headings = []
+        for i in range(1, 7):
+            h_tags = soup.find_all(f"h{i}")
+            for h in h_tags[:5]:  # Limit to first 5 of each level
+                headings.append(f"H{i}: {h.get_text().strip()[:100]}")
+
+        if headings:
+            result_parts.append("📋 Headings (first 5 per level):")
+            for heading in headings[:10]:  # Limit total headings
+                result_parts.append(f"  • {heading}")
+
+        # Extract links if requested
+        if extract_links:
+            links = []
+            for a in soup.find_all("a", href=True)[:20]:  # Limit to first 20 links
+                href = a["href"]
+                text = a.get_text().strip()[:50]
+                # Convert relative URLs to absolute
+                if href.startswith("/"):
+                    href = urljoin(url, href)
+                elif not href.startswith(("http://", "https://")):
+                    href = urljoin(url, href)
+                links.append(f"{text} → {href}")
+
+            if links:
+                result_parts.append("🔗 Links (first 20):")
+                for link in links:
+                    result_parts.append(f"  • {link}")
+
+        # Extract main text content with better cleaning
+        # Remove script, style, nav, footer, header elements for cleaner content
+        for element in soup(
+            ["script", "style", "nav", "footer", "header", "aside", "noscript", "svg"]
+        ):
+            element.decompose()
+
+        def _normalize_text(raw_text: str) -> str:
+            return " ".join(str(raw_text or "").split())
+
+        # Pick the most content-dense container (helps avoid menus/boilerplate).
+        content_candidates = []
+        content_selectors = [
+            "main",
+            "article",
+            "[role='main']",
+            "#mw-content-text",
+            "#bodyContent",
+            "#content",
+            "#main",
+            ".mw-parser-output",
+            ".entry-content",
+            ".post-content",
+            ".article-content",
+            ".page-content",
+            ".content",
+        ]
         try:
-            # Choose appropriate parser based on content analysis
-            parser = _get_appropriate_parser(html_content)
-            
-            # Suppress XML parsing warnings when using HTML parser on XML content
-            import warnings
-            from bs4 import XMLParsedAsHTMLWarning
-            
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
-                soup = BeautifulSoup(html_content, parser)
-            
-            # Extract title
-            title = soup.find('title')
-            if title:
-                result_parts.append(f"📰 Title: {title.get_text().strip()}")
-            
-            # Extract meta description
-            meta_desc = soup.find('meta', attrs={'name': 'description'})
-            if meta_desc and meta_desc.get('content'):
-                desc = meta_desc['content'].strip()
-                if not include_full_content and len(desc) > 200:
-                    desc = desc[:200] + "..."
-                result_parts.append(f"📝 Description: {desc}")
-            
-            # Extract headings
-            headings = []
-            for i in range(1, 7):
-                h_tags = soup.find_all(f'h{i}')
-                for h in h_tags[:5]:  # Limit to first 5 of each level
-                    headings.append(f"H{i}: {h.get_text().strip()[:100]}")
-            
-            if headings:
-                result_parts.append(f"📋 Headings (first 5 per level):")
-                for heading in headings[:10]:  # Limit total headings
-                    result_parts.append(f"  • {heading}")
-            
-            # Extract links if requested
-            if extract_links:
-                links = []
-                for a in soup.find_all('a', href=True)[:20]:  # Limit to first 20 links
-                    href = a['href']
-                    text = a.get_text().strip()[:50]
-                    # Convert relative URLs to absolute
-                    if href.startswith('/'):
-                        href = urljoin(url, href)
-                    elif not href.startswith(('http://', 'https://')):
-                        href = urljoin(url, href)
-                    links.append(f"{text} → {href}")
-                
-                if links:
-                    result_parts.append(f"🔗 Links (first 20):")
-                    for link in links:
-                        result_parts.append(f"  • {link}")
-            
-            # Extract main text content with better cleaning
-            # Remove script, style, nav, footer, header elements for cleaner content
-            for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
-                element.decompose()
-            
-            # Try to find main content area first
-            main_content = soup.find(['main', 'article']) or soup.find('div', class_=lambda x: x and any(word in x.lower() for word in ['content', 'article', 'post', 'main']))
-            content_soup = main_content if main_content else soup
-            
-            text = content_soup.get_text()
-            # Clean up text more efficiently
-            lines = (line.strip() for line in text.splitlines() if line.strip())
-            text = ' '.join(lines)
-            # Remove excessive whitespace
-            text = ' '.join(text.split())
-            
-            if text:
-                preview_length = None if include_full_content else 500
-                text_preview = text if preview_length is None else text[:preview_length]
-                if preview_length is not None and len(text) > preview_length:
-                    text_preview += "..."
-                result_parts.append(f"📄 Text Content Preview:")
-                result_parts.append(f"{text_preview}")
-                result_parts.append(f"📊 Total text length: {len(text):,} characters")
-        
-        except Exception as e:
-            result_parts.append(f"⚠️  BeautifulSoup parsing error: {str(e)}")
-            result_parts.append(f"📄 Raw HTML Preview (first 1000 chars):")
-            if include_full_content:
-                result_parts.append(html_content)
-            else:
-                result_parts.append(html_content[:1000] + ("..." if len(html_content) > 1000 else ""))
-    
-    else:
-        # Fallback parsing without BeautifulSoup
-        result_parts.append("⚠️  BeautifulSoup not available - using basic parsing")
-        
-        # Extract title with regex
-        import re
-        title_match = re.search(r'<title[^>]*>(.*?)</title>', html_content, re.IGNORECASE | re.DOTALL)
-        if title_match:
-            result_parts.append(f"📰 Title: {title_match.group(1).strip()}")
-        
-        # Show HTML preview
-        result_parts.append(f"📄 HTML Preview (first 1000 chars):")
+            selector_query = ", ".join(content_selectors)
+            content_candidates.extend(soup.select(selector_query)[:25])
+        except Exception:
+            pass
+        if soup.body:
+            content_candidates.append(soup.body)
+        content_candidates.append(soup)
+
+        content_soup = None
+        best_text_len = -1
+        for candidate in content_candidates:
+            candidate_text = _normalize_text(candidate.get_text(" ", strip=True))
+            if len(candidate_text) > best_text_len:
+                best_text_len = len(candidate_text)
+                content_soup = candidate
+
+        text = _normalize_text((content_soup or soup).get_text(" ", strip=True))
+
+        if text:
+            preview_length = None if include_full_content else 1000
+            text_preview = text if preview_length is None else text[:preview_length]
+            if preview_length is not None and len(text) > preview_length:
+                text_preview += "..."
+            result_parts.append("📄 Text Content:" if include_full_content else "📄 Text Content Preview:")
+            result_parts.append(f"{text_preview}")
+            result_parts.append(f"📊 Total text length: {len(text):,} characters")
+
+    except Exception as e:
+        result_parts.append(f"⚠️  BeautifulSoup parsing error: {str(e)}")
+        result_parts.append("📄 Raw HTML Preview (first 1000 chars):")
         if include_full_content:
             result_parts.append(html_content)
         else:
@@ -1686,7 +1684,7 @@ def _parse_xml_content(xml_content: str, include_full_content: bool = False) -> 
         if preview_length is not None and len(xml_content) > preview_length:
             xml_preview += "\n... (truncated)"
         
-        result_parts.append(f"📄 XML Content Preview:")
+        result_parts.append("📄 XML Content:" if include_full_content else "📄 XML Content Preview:")
         result_parts.append(xml_preview)
         result_parts.append(f"📊 Total size: {len(xml_content):,} characters")
     
@@ -1724,7 +1722,7 @@ def _parse_text_content(text_content: str, content_type: str, include_full_conte
     if preview_length is not None and len(text_content) > preview_length:
         text_preview += "\n... (truncated)"
     
-    result_parts.append(f"📄 Content Preview:")
+    result_parts.append("📄 Content:" if include_full_content else "📄 Content Preview:")
     result_parts.append(text_preview)
     
     return "\n".join(result_parts)
@@ -2578,6 +2576,7 @@ def execute_command(
             # Format results
             output_parts = []
             output_parts.append(f"🖥️  Command executed on {current_platform}")
+            output_parts.append(f"💻 Command: {command}")
             output_parts.append(f"📁 Working directory: {working_dir or os.getcwd()}")
             output_parts.append(f"⏱️  Execution time: {execution_time:.2f}s")
             output_parts.append(f"🔢 Return code: {result.returncode}")
