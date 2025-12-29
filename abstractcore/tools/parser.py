@@ -13,6 +13,7 @@ from enum import Enum
 
 from .core import ToolCall, ToolDefinition
 from ..architectures import detect_architecture, get_architecture_format
+from ..utils.jsonish import loads_dict_like as _jsonish_loads_dict_like
 from ..utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,30 +26,7 @@ def _loads_dict_like(raw: str) -> Optional[Dict[str, Any]]:
     (True/False/None) even when asked for strict JSON. We accept both to keep
     tool calling robust.
     """
-    text = str(raw or "").strip()
-    if not text:
-        return None
-
-    try:
-        value = json.loads(text)
-        if isinstance(value, dict):
-            return value
-    except json.JSONDecodeError:
-        pass
-
-    # Fallback: try Python literals safely.
-    # Convert common JSON literals to Python ones so ast can parse them.
-    candidate = re.sub(r"\btrue\b", "True", text, flags=re.IGNORECASE)
-    candidate = re.sub(r"\bfalse\b", "False", candidate, flags=re.IGNORECASE)
-    candidate = re.sub(r"\bnull\b", "None", candidate, flags=re.IGNORECASE)
-    try:
-        value = ast.literal_eval(candidate)
-    except Exception:
-        return None
-
-    if not isinstance(value, dict):
-        return None
-    return {str(k): v for k, v in value.items()}
+    return _jsonish_loads_dict_like(raw)
 
 
 class ToolFormat(Enum):
@@ -81,6 +59,16 @@ def _has_bracket_tool_prefix(response: str) -> bool:
         return False
     return bool(re.search(r'(?im)^\s*tool\s*:\s*\[[^\]]+\]\s*:\s*\{', response))
 
+def _has_harmony_tool_prefix(response: str) -> bool:
+    """Check if response contains a Harmony/ChatML-style tool call marker.
+
+    Example emitted by some models:
+        <|channel|>commentary to=list_files <|constrain|>json<|message|>{"directory_path": "..."}
+    """
+    if not response:
+        return False
+    return "<|channel|>" in response and "<|message|>" in response and "to=" in response
+
 
 def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     """
@@ -102,6 +90,8 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     # Some models emit a CLI-like prefix format regardless of architecture.
     if _has_bracket_tool_prefix(response):
         return True
+    if _has_harmony_tool_prefix(response):
+        return True
 
     # Check format-specific patterns (case-insensitive)
     response_lower = response.lower()
@@ -122,6 +112,7 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
             "<function_call" in response_lower,
             "<tool_call>" in response_lower,
             _has_bracket_tool_prefix(response),
+            _has_harmony_tool_prefix(response),
             _has_json_tool_pattern(response),
         ])
     
@@ -192,6 +183,8 @@ def format_tool_prompt(tools: List[ToolDefinition], model_name: Optional[str] = 
         return _format_llama_style(tools)
     elif tool_format == ToolFormat.XML_WRAPPED:
         return _format_xml_style(tools)
+    elif tool_format == ToolFormat.RAW_JSON:
+        return _format_json_style(tools)
     else:
         return _format_generic_style(tools)
 
@@ -260,18 +253,36 @@ def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
     architecture = detect_architecture(model_name)
     arch_format = get_architecture_format(architecture)
 
-    tool_format = arch_format.get("tool_format", "json")
+    tool_format = str(arch_format.get("tool_format", "json") or "").strip().lower()
+    message_format = str(arch_format.get("message_format", "") or "").strip().lower()
 
+    # tool_format values are defined in `abstractcore/assets/architecture_formats.json`.
+    # We interpret them as the model's *preferred tool-call syntax* and fall back to
+    # `_parse_any_format` when the model emits a different convention.
     if tool_format == "special_token":
         return ToolFormat.SPECIAL_TOKEN
-    elif tool_format == "xml":
+    if tool_format == "xml":
         return ToolFormat.XML_WRAPPED
-    elif tool_format == "pythonic":
+    if tool_format == "pythonic":
         return ToolFormat.TOOL_CODE
-    elif tool_format == "native":
+    if tool_format == "json":
+        return ToolFormat.RAW_JSON
+    if tool_format in {"openai_functions", "native", "none"}:
+        # Native/OpenAI-functions tool calls are expected in structured response fields, not text.
+        # If tool syntax leaks into content, we parse with the generic fallback.
         return ToolFormat.NATIVE
-    else:
+
+    if tool_format == "prompted":
+        # "prompted" indicates the model relies on prompt-injected tool syntax.
+        # Choose the most likely format based on the architecture's message format.
+        # - Qwen/ChatML-like formats generally use <|tool_call|> special tokens.
+        if message_format == "im_start_end":
+            return ToolFormat.SPECIAL_TOKEN
+        # - LLaMA-style prompted tools commonly use <function_call>...</function_call>.
         return ToolFormat.FUNCTION_CALL
+
+    # Conservative fallback: function-call wrapper (and then _parse_any_format fallback).
+    return ToolFormat.FUNCTION_CALL
 
 
 
@@ -669,6 +680,123 @@ def _parse_bracket_tool_prefix(response: str) -> List[ToolCall]:
     return tool_calls
 
 
+def _parse_harmony_tool_prefix(response: str) -> List[ToolCall]:
+    """Parse Harmony/ChatML-style tool calls embedded in content.
+
+    Example:
+        <|channel|>commentary to=list_files <|constrain|>json<|message|>{"directory_path":"./x","recursive":true}
+    """
+    tool_calls: List[ToolCall] = []
+    if not response:
+        return tool_calls
+
+    if "<|channel|>" not in response or "<|message|>" not in response or "to=" not in response:
+        return tool_calls
+
+    def _find_matching_brace(text: str, start: int) -> int:
+        """Return index of the matching '}' for a '{' at `start`, or -1."""
+        depth = 0
+        in_string = False
+        quote = ""
+        escaped = False
+
+        for i in range(start, len(text)):
+            ch = text[i]
+
+            if in_string:
+                if escaped:
+                    escaped = False
+                    continue
+                if ch == "\\":
+                    escaped = True
+                    continue
+                if ch == quote:
+                    in_string = False
+                    quote = ""
+                continue
+
+            if ch in ("'", '"'):
+                in_string = True
+                quote = ch
+                continue
+
+            if ch == "{":
+                depth += 1
+                continue
+            if ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return i
+
+        return -1
+
+    # Match "<|channel|>... to=TOOL_NAME" and then find the following <|message|>{...}.
+    header_re = re.compile(
+        r"(?i)<\|channel\|>\s*[a-zA-Z0-9_\-]+\s+to=([a-zA-Z0-9_\-\.]+)\b"
+    )
+    for match in header_re.finditer(response):
+        raw_name = str(match.group(1) or "").strip()
+        if not raw_name:
+            continue
+
+        # Normalize common prefixes used by some tool-call transcripts.
+        name = raw_name
+        if name.startswith("functions."):
+            name = name.split(".", 1)[1].strip()
+        if not name:
+            continue
+
+        # Find the next "<|message|>" after the header.
+        msg_tag = "<|message|>"
+        msg_start = response.find(msg_tag, match.end())
+        if msg_start == -1:
+            continue
+
+        brace_start = response.find("{", msg_start + len(msg_tag))
+        if brace_start == -1:
+            continue
+
+        # Only allow whitespace between the message tag and '{'.
+        between = response[msg_start + len(msg_tag) : brace_start]
+        if between and any(not c.isspace() for c in between):
+            continue
+
+        brace_end = _find_matching_brace(response, brace_start)
+        if brace_end == -1:
+            continue
+
+        raw_args = response[brace_start : brace_end + 1]
+        payload = _loads_dict_like(raw_args)
+        if not isinstance(payload, dict):
+            continue
+
+        # Some models (notably OpenAI's gpt-oss via LM Studio) emit a wrapper payload:
+        #   {"name":"tool_name","arguments":{...},"call_id": "..."}
+        # In that case, unwrap `arguments` so runtime tool execution receives only
+        # the tool kwargs (and not unexpected keys like "name").
+        call_id = None
+        args: Any = payload
+        if "arguments" in payload:
+            inner_args = payload.get("arguments")
+            if isinstance(inner_args, dict):
+                args = inner_args
+            elif isinstance(inner_args, str):
+                parsed = _loads_dict_like(inner_args)
+                if isinstance(parsed, dict):
+                    args = parsed
+
+        call_id_value = payload.get("call_id") or payload.get("id")
+        if isinstance(call_id_value, str) and call_id_value.strip():
+            call_id = call_id_value.strip()
+
+        if not isinstance(args, dict):
+            continue
+
+        tool_calls.append(ToolCall(name=name, arguments=args, call_id=call_id))
+
+    return tool_calls
+
+
 def _parse_any_format(response: str) -> List[ToolCall]:
     """Try all parsing formats with comprehensive fallbacks."""
     # SANITIZE FIRST: Fix malformed tags before trying any parser
@@ -682,6 +810,7 @@ def _parse_any_format(response: str) -> List[ToolCall]:
         _parse_function_call,
         _parse_xml_wrapped,
         _parse_tool_code,
+        _parse_harmony_tool_prefix,
         _parse_bracket_tool_prefix,
         _parse_raw_json
     ]
@@ -867,6 +996,45 @@ def _format_xml_style(tools: List[ToolDefinition]) -> str:
     return prompt
 
 
+def _format_json_style(tools: List[ToolDefinition]) -> str:
+    """Format tools for models that prefer raw JSON tool calls in content."""
+    if not tools:
+        return ""
+
+    prompt = "You have access to the following tools:\n\n"
+
+    for tool in tools:
+        prompt += f"**{tool.name}**: {tool.description}\n"
+
+        if tool.when_to_use:
+            prompt += f"  • **When to use**: {tool.when_to_use}\n"
+
+        if tool.tags:
+            prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
+
+        if tool.parameters:
+            prompt += f"  • **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
+        prompt += "\n"
+
+    prompt += """To use a tool, respond with this EXACT format (JSON only, no extra text):
+{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
+""" + _critical_rules()
+
+    if any(tool.examples for tool in tools):
+        prompt += "**EXAMPLES:**\n\n"
+        for tool in tools:
+            if tool.examples:
+                prompt += f"**{tool.name} Examples:**\n"
+                for i, example in enumerate(tool.examples[:3], 1):
+                    desc = example.get("description", f"Example {i}")
+                    args = example.get("arguments", {})
+                    prompt += f"{i}. {desc}:\n"
+                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.RAW_JSON)
+                    prompt += f"{tool_call_example}\n\n"
+
+    return prompt
+
+
 def _format_gemma_style(tools: List[ToolDefinition]) -> str:
     """Format tools for Gemma models using code blocks."""
     if not tools:
@@ -952,6 +1120,79 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
 
     import re
 
+    # Strip Harmony/ChatML tool-call segments first (balanced JSON after <|message|>).
+    # Regex alone is brittle here because tool arguments can contain nested braces.
+    if "<|channel|>" in content and "<|message|>" in content and "to=" in content:
+        def _find_matching_brace(text: str, start: int) -> int:
+            depth = 0
+            in_string = False
+            quote = ""
+            escaped = False
+            for i in range(start, len(text)):
+                ch = text[i]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                        continue
+                    if ch == "\\":
+                        escaped = True
+                        continue
+                    if ch == quote:
+                        in_string = False
+                        quote = ""
+                    continue
+                if ch in ("'", '"'):
+                    in_string = True
+                    quote = ch
+                    continue
+                if ch == "{":
+                    depth += 1
+                    continue
+                if ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return i
+            return -1
+
+        msg_tag = "<|message|>"
+        out_parts = []
+        i = 0
+        while i < len(content):
+            start = content.find("<|channel|>", i)
+            if start == -1:
+                out_parts.append(content[i:])
+                break
+            out_parts.append(content[i:start])
+
+            msg_start = content.find(msg_tag, start)
+            if msg_start == -1:
+                out_parts.append(content[start:])
+                break
+            # Only treat as a tool call when there's a `to=` directive before the message tag.
+            if "to=" not in content[start:msg_start]:
+                out_parts.append(content[start:msg_start])
+                i = msg_start
+                continue
+
+            brace_start = content.find("{", msg_start + len(msg_tag))
+            if brace_start == -1:
+                out_parts.append(content[start:msg_start])
+                i = msg_start
+                continue
+            between = content[msg_start + len(msg_tag) : brace_start]
+            if between and any(not c.isspace() for c in between):
+                out_parts.append(content[start:brace_start])
+                i = brace_start
+                continue
+
+            brace_end = _find_matching_brace(content, brace_start)
+            if brace_end == -1:
+                out_parts.append(content[start:])
+                break
+            i = brace_end + 1
+
+        content = "".join(out_parts)
+
     # Use the same sophisticated patterns as the _parse_special_token function
     patterns = [
         # Strategy 1: Properly closed <|tool_call|> tags
@@ -971,11 +1212,16 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         ,
         # CLI-like prefix format: tool: [name]: {...}
         r'(?im)^\s*tool\s*:\s*\[[^\]]+\]\s*:\s*\{.*\}\s*$',
+        # Harmony/ChatML tool-call transcript format:
+        #   <|channel|>commentary to=tool <|constrain|>json<|message|>{...}
+        r'(?is)<\|channel\|>\s*[a-zA-Z0-9_\-]+\s+to=[a-zA-Z0-9_\-\.]+\b.*?<\|message\|>\s*\{.*?\}',
         # Orphan tags (some models emit a closing tag on its own line)
         r'(?im)^\s*<\|tool_call\|>\s*$',
         r'(?im)^\s*</\|tool_call\|>\s*$',
         r'(?im)^\s*<tool_call>\s*$',
         r'(?im)^\s*</tool_call>\s*$',
+        r'(?im)^\s*<\|channel\|>\s*$',
+        r'(?im)^\s*<\|message\|>\s*$',
     ]
 
     # Apply all patterns

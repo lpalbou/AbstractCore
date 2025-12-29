@@ -122,6 +122,61 @@ class TestIncrementalToolDetector:
         assert "Let me help with that." in combined_streamable
         assert " The answer is ready." in combined_streamable
 
+    def test_complete_tool_call_detection_harmony_format(self):
+        """Test detecting a complete tool call in Harmony/ChatML transcript format."""
+        detector = IncrementalToolDetector("openai/gpt-oss-20b")
+
+        chunks = [
+            "Let me check. <|channel|>commentary to=list_files <|constrain|>json<|message|>",
+            '{"directory_path":".","recursive":true}',
+            "\nDone.",
+        ]
+
+        all_streamable = []
+        all_tools = []
+
+        for chunk in chunks:
+            streamable, tools = detector.process_chunk(chunk)
+            if streamable:
+                all_streamable.append(streamable)
+            all_tools.extend(tools)
+
+        assert len(all_tools) == 1
+        assert all_tools[0].name == "list_files"
+        assert all_tools[0].arguments == {"directory_path": ".", "recursive": True}
+
+        rendered = "".join(all_streamable)
+        assert "Let me check." in rendered
+        assert "Done." in rendered
+
+    def test_complete_tool_call_detection_harmony_wrapper_format(self):
+        """Test detecting a complete tool call in Harmony wrapper transcript format."""
+        detector = IncrementalToolDetector("openai/gpt-oss-20b")
+
+        chunks = [
+            "Let me check. <|channel|>commentary to=list_files <|constrain|>json<|message|>",
+            '{"name":"list_files","arguments":{"directory_path":".","recursive":true},"call_id":null}',
+            "\nDone.",
+        ]
+
+        all_streamable = []
+        all_tools = []
+
+        for chunk in chunks:
+            streamable, tools = detector.process_chunk(chunk)
+            if streamable:
+                all_streamable.append(streamable)
+            all_tools.extend(tools)
+
+        assert len(all_tools) == 1
+        assert all_tools[0].name == "list_files"
+        assert all_tools[0].arguments == {"directory_path": ".", "recursive": True}
+        assert all_tools[0].call_id is None
+
+        rendered = "".join(all_streamable)
+        assert "Let me check." in rendered
+        assert "Done." in rendered
+
     def test_complete_tool_call_detection_llama_format(self):
         """Test detecting a complete tool call in LLaMA format"""
         detector = IncrementalToolDetector("llama-3")

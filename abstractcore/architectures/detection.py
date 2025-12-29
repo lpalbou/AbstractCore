@@ -72,16 +72,36 @@ def detect_architecture(model_name: str) -> str:
         _detected_architectures_cache[model_name] = "generic"
         return "generic"
 
-    model_lower = model_name.lower()
+    # Normalize model names for better pattern matching:
+    # - HuggingFace cache names use `--` as `/` separators (models--org--name).
+    # - Claude versions sometimes appear as `claude-3-5-sonnet` (normalize to `claude-3.5-sonnet`).
+    model_lower = model_name.lower().replace("--", "/")
+    import re
+    model_lower = re.sub(r'(claude-\d+)-(\d+)(?=-|$)', r'\1.\2', model_lower)
 
-    # Check each architecture's patterns
+    # Choose the most specific matching architecture.
+    # Many architectures include broad patterns (e.g. "gpt") that can accidentally
+    # match more specific models (e.g. "gpt-oss"). We resolve this by selecting the
+    # longest matching pattern across all architectures.
+    best_arch = "generic"
+    best_pattern = ""
+
     for arch_name, arch_config in _architecture_formats["architectures"].items():
         patterns = arch_config.get("patterns", [])
         for pattern in patterns:
-            if pattern.lower() in model_lower:
-                logger.debug(f"Detected architecture '{arch_name}' for model '{model_name}' (pattern: '{pattern}')")
-                _detected_architectures_cache[model_name] = arch_name
-                return arch_name
+            pat = str(pattern).lower()
+            if not pat:
+                continue
+            if pat in model_lower and len(pat) > len(best_pattern):
+                best_arch = arch_name
+                best_pattern = pat
+
+    if best_arch != "generic":
+        logger.debug(
+            f"Detected architecture '{best_arch}' for model '{model_name}' (pattern: '{best_pattern}')"
+        )
+        _detected_architectures_cache[model_name] = best_arch
+        return best_arch
 
     # Fallback to generic
     logger.debug(f"No specific architecture detected for '{model_name}', using generic")

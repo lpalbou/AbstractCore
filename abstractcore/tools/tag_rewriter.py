@@ -7,10 +7,10 @@ supporting different agentic CLI requirements and streaming scenarios.
 
 import re
 import json
-import ast
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
 from ..utils.structured_logging import get_logger
+from ..utils.jsonish import loads_dict_like as _loads_dict_like
 
 logger = get_logger(__name__)
 
@@ -175,6 +175,8 @@ class ToolCallTagRewriter:
         # Pre-pass: convert CLI-like `tool: [name]: {...}` calls into canonical tagged JSON.
         # Some OSS models emit this format even when prompted for other tags.
         text = self._rewrite_bracket_prefix_calls(text)
+        # Pre-pass: convert Harmony/ChatML tool transcript format into canonical tagged JSON.
+        text = self._rewrite_harmony_prefix_calls(text)
 
         # Check if we already have the target format (avoid double-tagging)
         # Check using output tags (with angle brackets)
@@ -260,28 +262,6 @@ class ToolCallTagRewriter:
                         return i
             return -1
 
-        def _loads_dict_like(raw: str) -> Optional[Dict[str, Any]]:
-            value = str(raw or "").strip()
-            if not value:
-                return None
-            try:
-                parsed = json.loads(value)
-                if isinstance(parsed, dict):
-                    return parsed
-            except Exception:
-                pass
-
-            candidate = re.sub(r"\btrue\b", "True", value, flags=re.IGNORECASE)
-            candidate = re.sub(r"\bfalse\b", "False", candidate, flags=re.IGNORECASE)
-            candidate = re.sub(r"\bnull\b", "None", candidate, flags=re.IGNORECASE)
-            try:
-                parsed = ast.literal_eval(candidate)
-            except Exception:
-                return None
-            if not isinstance(parsed, dict):
-                return None
-            return {str(k): v for k, v in parsed.items()}
-
         rewritten = text
         matches = list(pattern.finditer(text))
         if not matches:
@@ -308,6 +288,113 @@ class ToolCallTagRewriter:
             args = _loads_dict_like(raw_args)
             if not isinstance(args, dict):
                 continue
+
+            # Some models emit a wrapper payload even when a syntax expects arguments-only JSON:
+            #   {"name":"tool","arguments":{...}}
+            # Unwrap so we rewrite into canonical {"name": ..., "arguments": {...}} once.
+            inner_args = args.get("arguments")
+            if isinstance(inner_args, dict):
+                args = inner_args
+            elif isinstance(inner_args, str):
+                parsed = _loads_dict_like(inner_args)
+                if isinstance(parsed, dict):
+                    args = parsed
+
+            payload = json.dumps({"name": name, "arguments": args}, ensure_ascii=False)
+            replacement = f"{self._output_start_tag}{payload}{self._output_end_tag}"
+            rewritten = rewritten[: match.start()] + replacement + rewritten[brace_end + 1 :]
+
+        return rewritten
+
+    def _rewrite_harmony_prefix_calls(self, text: str) -> str:
+        """Rewrite Harmony/ChatML tool transcript blocks into the configured tag format.
+
+        Example:
+            <|channel|>commentary to=list_files <|constrain|>json<|message|>{"directory_path":"."}
+        """
+        if not text:
+            return text
+        if "<|channel|>" not in text or "<|message|>" not in text or "to=" not in text:
+            return text
+
+        header_re = re.compile(
+            r"(?i)<\|channel\|>\s*[a-zA-Z0-9_\-]+\s+to=([a-zA-Z0-9_\-\.]+)\b"
+        )
+
+        def _find_matching_brace(s: str, start: int) -> int:
+            depth = 0
+            in_string = False
+            quote = ""
+            escaped = False
+            for i in range(start, len(s)):
+                ch = s[i]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                        continue
+                    if ch == "\\":
+                        escaped = True
+                        continue
+                    if ch == quote:
+                        in_string = False
+                        quote = ""
+                    continue
+                if ch in ("'", '"'):
+                    in_string = True
+                    quote = ch
+                    continue
+                if ch == "{":
+                    depth += 1
+                    continue
+                if ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return i
+            return -1
+
+        rewritten = text
+        matches = list(header_re.finditer(text))
+        if not matches:
+            return text
+
+        msg_tag = "<|message|>"
+        for match in reversed(matches):
+            raw_name = str(match.group(1) or "").strip()
+            if not raw_name:
+                continue
+            name = raw_name
+            if name.startswith("functions."):
+                name = name.split(".", 1)[1].strip()
+            if not name:
+                continue
+
+            msg_start = rewritten.find(msg_tag, match.end())
+            if msg_start == -1:
+                continue
+            brace_start = rewritten.find("{", msg_start + len(msg_tag))
+            if brace_start == -1:
+                continue
+            between = rewritten[msg_start + len(msg_tag) : brace_start]
+            if between and any(not c.isspace() for c in between):
+                continue
+            brace_end = _find_matching_brace(rewritten, brace_start)
+            if brace_end == -1:
+                continue
+
+            raw_args = rewritten[brace_start : brace_end + 1]
+            args = _loads_dict_like(raw_args)
+            if not isinstance(args, dict):
+                continue
+
+            # Some models emit a wrapper payload in the Harmony message JSON:
+            #   {"name":"tool","arguments":{...},"call_id": "..."}
+            inner_args = args.get("arguments")
+            if isinstance(inner_args, dict):
+                args = inner_args
+            elif isinstance(inner_args, str):
+                parsed = _loads_dict_like(inner_args)
+                if isinstance(parsed, dict):
+                    args = parsed
 
             payload = json.dumps({"name": name, "arguments": args}, ensure_ascii=False)
             replacement = f"{self._output_start_tag}{payload}{self._output_end_tag}"

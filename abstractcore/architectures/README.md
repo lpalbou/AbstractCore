@@ -24,7 +24,7 @@ JSON-driven architecture detection and capability lookup determining **HOW** to 
 ### 2. Detection Functions (`detection.py`)
 
 **Core**:
-- `detect_architecture(name)` - Pattern matching from JSON (case-insensitive, first match, cached) → "llama3_1", "qwen3", "gemma2", "generic"
+- `detect_architecture(name)` - Pattern matching from JSON (case-insensitive, **most-specific/longest match**, cached) → "llama3_1", "qwen3", "gemma2", "generic"
 - `detect_model_type(name)` - Name-based detection → "chat", "instruct", "code", "vision", "base"
 
 **Configuration**:

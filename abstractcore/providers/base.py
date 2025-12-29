@@ -22,6 +22,7 @@ from ..core.types import GenerateResponse
 from ..events import EventType, Event
 from datetime import datetime
 from ..utils.structured_logging import get_logger
+from ..utils.jsonish import loads_dict_like
 from ..exceptions import (
     ProviderAPIError,
     AuthenticationError,
@@ -1468,35 +1469,6 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         normalized: List[Dict[str, Any]] = []
 
-        def _loads_dict_like(raw: Any) -> Optional[Dict[str, Any]]:
-            import re
-            import json
-            import ast
-
-            if raw is None:
-                return None
-            text = str(raw).strip()
-            if not text:
-                return None
-
-            try:
-                parsed = json.loads(text)
-                if isinstance(parsed, dict):
-                    return parsed
-            except Exception:
-                pass
-
-            candidate = re.sub(r"\\btrue\\b", "True", text, flags=re.IGNORECASE)
-            candidate = re.sub(r"\\bfalse\\b", "False", candidate, flags=re.IGNORECASE)
-            candidate = re.sub(r"\\bnull\\b", "None", candidate, flags=re.IGNORECASE)
-            try:
-                parsed = ast.literal_eval(candidate)
-            except Exception:
-                return None
-            if not isinstance(parsed, dict):
-                return None
-            return {str(k): v for k, v in parsed.items()}
-
         for tc in tool_calls:
             name: Optional[str] = None
             arguments: Any = None
@@ -1533,7 +1505,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 continue
 
             if isinstance(arguments, str):
-                parsed = _loads_dict_like(arguments)
+                parsed = loads_dict_like(arguments)
                 arguments = parsed if isinstance(parsed, dict) else {}
             if not isinstance(arguments, dict):
                 arguments = {}
