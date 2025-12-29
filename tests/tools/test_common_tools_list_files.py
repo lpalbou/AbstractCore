@@ -42,3 +42,4 @@ def test_list_files_can_include_hidden_entries(tmp_path: Path) -> None:
     assert ".hidden_file.txt" in out
 
 
+
