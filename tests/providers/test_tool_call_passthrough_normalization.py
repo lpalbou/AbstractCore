@@ -113,3 +113,79 @@ def test_non_streaming_tool_call_tags_request_preserves_tags_and_rewrites_format
     assert resp.tool_calls == [{"name": "list_files", "arguments": {"directory": "."}, "call_id": None}]
     assert "<function_call>" in (resp.content or "")
     assert "<|tool_call|>" not in (resp.content or "")
+
+
+def test_non_streaming_harmony_tool_calls_are_parsed_and_content_is_cleaned() -> None:
+    provider = _DummyProvider(
+        model="openai/gpt-oss-20b",
+        response=GenerateResponse(
+            content=(
+                "Okay.\n\n"
+                "<|channel|>commentary to=list_files <|constrain|>json<|message|>"
+                '{"directory_path":"./gpt20b-rtype","recursive":true,"pattern":"*"}'
+            ),
+            tool_calls=None,
+            model="openai/gpt-oss-20b",
+        ),
+    )
+
+    tools = [
+        {
+            "name": "list_files",
+            "description": "List files",
+            "parameters": {
+                "directory_path": {"type": "string"},
+                "recursive": {"type": "boolean"},
+                "pattern": {"type": "string"},
+            },
+        }
+    ]
+    resp = provider.generate(prompt="list files", tools=tools)
+
+    assert resp.tool_calls == [
+        {
+            "name": "list_files",
+            "arguments": {"directory_path": "./gpt20b-rtype", "recursive": True, "pattern": "*"},
+            "call_id": None,
+        }
+    ]
+    assert "<|channel|>" not in (resp.content or "")
+    assert resp.content.strip() == "Okay."
+
+
+def test_non_streaming_harmony_wrapper_tool_calls_are_parsed_and_content_is_cleaned() -> None:
+    provider = _DummyProvider(
+        model="openai/gpt-oss-20b",
+        response=GenerateResponse(
+            content=(
+                "Okay.\n\n"
+                "<|channel|>commentary to=list_files <|constrain|>json<|message|>"
+                '{"name":"list_files","arguments":{"directory_path":"./gpt20b-rtype","recursive":true,"pattern":"*"},"call_id":null}'
+            ),
+            tool_calls=None,
+            model="openai/gpt-oss-20b",
+        ),
+    )
+
+    tools = [
+        {
+            "name": "list_files",
+            "description": "List files",
+            "parameters": {
+                "directory_path": {"type": "string"},
+                "recursive": {"type": "boolean"},
+                "pattern": {"type": "string"},
+            },
+        }
+    ]
+    resp = provider.generate(prompt="list files", tools=tools)
+
+    assert resp.tool_calls == [
+        {
+            "name": "list_files",
+            "arguments": {"directory_path": "./gpt20b-rtype", "recursive": True, "pattern": "*"},
+            "call_id": None,
+        }
+    ]
+    assert "<|channel|>" not in (resp.content or "")
+    assert resp.content.strip() == "Okay."

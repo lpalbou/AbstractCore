@@ -400,10 +400,17 @@ class ToolCallSyntaxRewriter:
             r'<function_call>.*?</function_call>',
             r'<tool_call>.*?</tool_call>',
             r'```tool_code.*?```',
+            # Harmony/ChatML tool transcript: <|channel|>... to=tool ... <|message|>{...}
+            r'<\|channel\|>\s*[a-zA-Z0-9_\-]+\s+to=[a-zA-Z0-9_\-\.]+\b.*?<\|message\|>\s*\{.*?\}',
         ]
         
         for pattern in complete_patterns:
             cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+
+        # Remove any remaining Harmony conversation tags that shouldn't appear.
+        cleaned = re.sub(r'<\|channel\|>', '', cleaned)
+        cleaned = re.sub(r'<\|message\|>', '', cleaned)
+        cleaned = re.sub(r'<\|constrain\|>', '', cleaned)
         
         # Second pass: remove orphaned tags (from malformed tool calls)
         orphaned_patterns = [
@@ -414,6 +421,9 @@ class ToolCallSyntaxRewriter:
             r'<tool_call>',
             r'</tool_call>',
             r'```tool_code',
+            r'<\|channel\|>',
+            r'<\|message\|>',
+            r'<\|constrain\|>',
         ]
         
         for pattern in orphaned_patterns:

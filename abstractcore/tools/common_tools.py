@@ -812,10 +812,17 @@ def write_file(file_path: str, content: str = "", mode: str = "w", create_dirs: 
 
         # Get file size for confirmation
         file_size = path.stat().st_size
+        lines_written = len(str(content).splitlines())
+        bytes_written = len(str(content).encode("utf-8"))
 
         # Enhanced success message with emoji and formatting
         action = "appended to" if mode == "a" else "written to"
-        return f"✅ Successfully {action} '{file_path}' ({file_size:,} bytes)"
+        if mode == "a":
+            return (
+                f"✅ Successfully {action} '{file_path}' "
+                f"(+{bytes_written:,} bytes, +{lines_written:,} lines; file now {file_size:,} bytes)"
+            )
+        return f"✅ Successfully {action} '{file_path}' ({file_size:,} bytes, {lines_written:,} lines)"
 
     except PermissionError:
         return f"❌ Permission denied: Cannot write to '{file_path}'"

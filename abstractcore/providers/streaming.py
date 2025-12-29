@@ -13,6 +13,7 @@ from enum import Enum
 
 from ..core.types import GenerateResponse
 from ..tools.core import ToolCall
+from ..utils.jsonish import loads_dict_like
 from ..utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,6 +57,12 @@ class IncrementalToolDetector:
                 'start': r'<\|tool_call\|>',
                 'end': r'</\|tool_call\|>',
             },
+            # Harmony/ChatML-style tool transcript (no explicit closing tag; ends at end of JSON after <|message|>).
+            'harmony': {
+                'start': r'<\|channel\|>',
+                'end': None,
+                'kind': 'harmony',
+            },
             'llama': {
                 'start': r'<function_call>',
                 'end': r'</function_call>',
@@ -86,18 +93,42 @@ class IncrementalToolDetector:
         if not model_name:
             return list(self.patterns.values())
 
-        model_lower = model_name.lower()
+        # Centralized model capability/syntax lookup.
+        # Use `architecture_formats.json` as the source of truth instead of string heuristics.
+        try:
+            from ..architectures import detect_architecture, get_architecture_format
 
-        if 'gemma' in model_lower:
-            return [self.patterns['gemma']]
-        elif 'llama' in model_lower:
-            return [self.patterns['llama'], self.patterns['xml']]
-        else:
-            return [
-                self.patterns['qwen'],
-                self.patterns['llama'],
-                self.patterns['xml']
-            ]
+            architecture = detect_architecture(model_name)
+            arch_format = get_architecture_format(architecture)
+            tool_format = str(arch_format.get("tool_format", "") or "").strip().lower()
+            message_format = str(arch_format.get("message_format", "") or "").strip().lower()
+        except Exception:
+            tool_format = ""
+            message_format = ""
+            architecture = "generic"
+
+        # Harmony/ChatML tool transcripts (GPT-OSS).
+        if message_format == "harmony":
+            return [self.patterns["harmony"]]
+
+        # Pythonic tool blocks (Gemma-style).
+        if tool_format == "pythonic":
+            return [self.patterns["gemma"]]
+
+        # Special-token tools (Qwen-style). Some "prompted" models share this convention.
+        if tool_format == "special_token" or (tool_format == "prompted" and message_format == "im_start_end"):
+            return [self.patterns["qwen"], self.patterns["llama"], self.patterns["xml"]]
+
+        # XML-wrapped tools.
+        if tool_format == "xml":
+            return [self.patterns["xml"], self.patterns["llama"], self.patterns["qwen"]]
+
+        # LLaMA-style prompted tools.
+        if tool_format == "prompted" and "llama" in str(architecture):
+            return [self.patterns["llama"], self.patterns["xml"]]
+
+        # Default: try the common tag-based formats as fallbacks.
+        return [self.patterns["qwen"], self.patterns["llama"], self.patterns["xml"]]
 
     def process_chunk(self, chunk_content: str) -> Tuple[str, List[ToolCall]]:
         """
@@ -181,6 +212,10 @@ class IncrementalToolDetector:
         # Add new content to tool content
         self.current_tool_content += chunk_content
 
+        # Harmony/ChatML tool transcript: detect completion by balanced JSON after <|message|>.
+        if self.current_pattern and self.current_pattern.get('kind') == 'harmony':
+            return self._collect_harmony_tool_content()
+
         # Check for tool end pattern
         end_pattern = self.current_pattern['end']
         end_match = re.search(end_pattern, self.current_tool_content, re.IGNORECASE)
@@ -217,6 +252,107 @@ class IncrementalToolDetector:
 
         return streamable_content, completed_tools
 
+    def _collect_harmony_tool_content(self) -> Tuple[str, List[ToolCall]]:
+        """Collect and parse a Harmony/ChatML tool transcript block."""
+        streamable_content = ""
+        completed_tools: List[ToolCall] = []
+
+        msg_tag = "<|message|>"
+        msg_idx = self.current_tool_content.find(msg_tag)
+        if msg_idx == -1:
+            return streamable_content, completed_tools
+
+        # Extract tool name from the header (between <|channel|> and <|message|>).
+        header = self.current_tool_content[:msg_idx]
+        name_match = re.search(r"\bto=([a-zA-Z0-9_\-\.]+)\b", header)
+        if not name_match:
+            return streamable_content, completed_tools
+        tool_name = str(name_match.group(1) or "").strip()
+        if tool_name.startswith("functions."):
+            tool_name = tool_name.split(".", 1)[1].strip()
+        if not tool_name:
+            return streamable_content, completed_tools
+
+        brace_start = self.current_tool_content.find("{", msg_idx + len(msg_tag))
+        if brace_start == -1:
+            return streamable_content, completed_tools
+        between = self.current_tool_content[msg_idx + len(msg_tag) : brace_start]
+        if between and any(not c.isspace() for c in between):
+            return streamable_content, completed_tools
+
+        def _find_matching_brace(text: str, start: int) -> int:
+            depth = 0
+            in_string = False
+            quote = ""
+            escaped = False
+            for i in range(start, len(text)):
+                ch = text[i]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                        continue
+                    if ch == "\\":
+                        escaped = True
+                        continue
+                    if ch == quote:
+                        in_string = False
+                        quote = ""
+                    continue
+                if ch in ("'", '"'):
+                    in_string = True
+                    quote = ch
+                    continue
+                if ch == "{":
+                    depth += 1
+                    continue
+                if ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return i
+            return -1
+
+        brace_end = _find_matching_brace(self.current_tool_content, brace_start)
+        if brace_end == -1:
+            return streamable_content, completed_tools
+
+        raw_args = self.current_tool_content[brace_start : brace_end + 1]
+        args: Dict[str, Any] = {}
+        call_id: Optional[str] = None
+        loaded = loads_dict_like(raw_args)
+        if isinstance(loaded, dict):
+            # Some models emit a wrapper payload:
+            #   {"name":"tool","arguments":{...},"call_id": "..."}
+            inner_args = loaded.get("arguments")
+            if isinstance(inner_args, dict):
+                args = inner_args
+            elif isinstance(inner_args, str):
+                parsed_inner = loads_dict_like(inner_args)
+                args = parsed_inner if isinstance(parsed_inner, dict) else loaded
+            else:
+                args = loaded
+
+            call_id_value = loaded.get("call_id") or loaded.get("id")
+            if isinstance(call_id_value, str) and call_id_value.strip():
+                call_id = call_id_value.strip()
+
+        completed_tools.append(ToolCall(name=tool_name, arguments=args, call_id=call_id))
+
+        if self.rewrite_tags:
+            # When rewriting, stream the full accumulated content (including the tool transcript).
+            streamable_content = self.accumulated_content
+            self.accumulated_content = ""
+
+        remaining_content = self.current_tool_content[brace_end + 1 :]
+        self.reset()
+
+        if remaining_content:
+            self.accumulated_content = remaining_content
+            additional_streamable, additional_tools = self._scan_for_tool_start("")
+            streamable_content += additional_streamable
+            completed_tools.extend(additional_tools)
+
+        return streamable_content, completed_tools
+
     def _might_have_partial_tool_call(self) -> bool:
         """Check if accumulated content might contain start of a tool call."""
         # Check for partial tool tags more aggressively to handle character-by-character streaming
@@ -227,7 +363,9 @@ class IncrementalToolDetector:
             '<', '<|', '<f', '</', '<t', '`', '``',
             '<fu', '<fun', '<func', '<funct', '<functi', '<functio', '<function',  # <function_call>
             '<tool', '<tool_', '<tool_c', '<tool_ca', '<tool_cal',  # <tool_call>
-            '<|t', '<|to', '<|too', '<|tool', '<|tool_', '<|tool_c'  # <|tool_call|>
+            '<|t', '<|to', '<|too', '<|tool', '<|tool_', '<|tool_c',  # <|tool_call|>
+            '<|c', '<|ch', '<|cha', '<|chan', '<|chann', '<|channe', '<|channel',  # <|channel|>
+            '<|m', '<|me', '<|mes', '<|mess', '<|messa', '<|messag', '<|message',  # <|message|>
         ]
 
         # Check if tail ends with any potential partial start
@@ -239,6 +377,8 @@ class IncrementalToolDetector:
         for pattern_partial in ['<function', '<tool_call', '<|tool', '```tool']:
             if pattern_partial in tail:
                 return True
+        if '<|channel' in tail or '<|message' in tail:
+            return True
 
         # Check if we have an incomplete tool call (start tag but no end tag)
         for pattern_info in self.active_patterns:
