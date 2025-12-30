@@ -6,6 +6,7 @@ import time
 import uuid
 import asyncio
 import warnings
+import json
 from collections import deque
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
 from abc import ABC, abstractmethod
@@ -1467,6 +1468,61 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if tool_calls is None or not isinstance(tool_calls, list):
             return None
 
+        def _unwrap_arguments(arguments: Any, *, expected_tool_name: Optional[str]) -> Any:
+            """Unwrap common wrapper payloads to get tool kwargs.
+
+            Some providers/models emit nested wrappers like:
+              {"name":"tool","arguments":{...},"call_id": "..."}
+            inside the tool call `arguments` field (or even multiple times).
+
+            We unwrap when the object looks like a wrapper (only wrapper keys) OR when
+            it includes wrapper metadata fields (e.g. "name"/"call_id") and an inner
+            "arguments" dict. When wrapper fields and tool kwargs are partially mixed,
+            we merge the outer kwargs into the inner dict (inner takes precedence).
+            """
+            if not isinstance(arguments, dict):
+                return arguments
+
+            wrapper_keys = {"name", "arguments", "call_id", "id"}
+            current = arguments
+            for _ in range(4):
+                if not isinstance(current, dict):
+                    break
+                keys = set(current.keys())
+                if "arguments" not in current:
+                    break
+                inner = current.get("arguments")
+                if isinstance(inner, dict) or isinstance(inner, str):
+                    inner_dict: Any = inner
+                    if isinstance(inner, str):
+                        parsed = loads_dict_like(inner)
+                        inner_dict = parsed if isinstance(parsed, dict) else None
+                    if not isinstance(inner_dict, dict):
+                        break
+
+                    name_matches = False
+                    raw_name = current.get("name")
+                    if isinstance(raw_name, str) and expected_tool_name and raw_name.strip() == expected_tool_name:
+                        name_matches = True
+
+                    wrapperish = keys.issubset(wrapper_keys) or name_matches or bool(keys & {"call_id", "id"})
+                    if not wrapperish:
+                        break
+
+                    # Merge any outer kwargs that were accidentally placed alongside wrapper fields.
+                    extras = {k: v for k, v in current.items() if k not in wrapper_keys}
+                    if extras:
+                        merged = dict(inner_dict)
+                        for k, v in extras.items():
+                            merged.setdefault(k, v)
+                        current = merged
+                    else:
+                        current = inner_dict
+                    continue
+                break
+
+            return current
+
         normalized: List[Dict[str, Any]] = []
 
         for tc in tool_calls:
@@ -1507,6 +1563,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if isinstance(arguments, str):
                 parsed = loads_dict_like(arguments)
                 arguments = parsed if isinstance(parsed, dict) else {}
+
+            # Recover tool kwargs from nested wrapper payloads when present.
+            if isinstance(arguments, dict) and call_id is None:
+                wrapper_id = arguments.get("call_id") or arguments.get("id")
+                if isinstance(wrapper_id, str) and wrapper_id.strip():
+                    call_id = wrapper_id.strip()
+            arguments = _unwrap_arguments(arguments, expected_tool_name=name)
             if not isinstance(arguments, dict):
                 arguments = {}
 
@@ -1518,7 +1581,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 }
             )
 
-        return normalized or None
+        if not normalized:
+            return None
+
+        # Defense-in-depth: remove accidental duplicates introduced by overlapping parsing paths.
+        unique: List[Dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for tc in normalized:
+            try:
+                args_key = json.dumps(tc.get("arguments", {}), sort_keys=True, ensure_ascii=False)
+            except Exception:
+                args_key = str(tc.get("arguments", {}))
+            key = (str(tc.get("name") or ""), args_key)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(tc)
+
+        return unique or None
 
     def _clean_content_using_tool_calls(self, content: str, tool_calls: List[Dict[str, Any]]) -> str:
         """Strip tool-call markup from assistant content using known tool calls."""

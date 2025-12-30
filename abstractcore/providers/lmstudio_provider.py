@@ -293,20 +293,37 @@ class LMStudioProvider(BaseProvider):
             # Extract response from OpenAI format
             if "choices" in result and len(result["choices"]) > 0:
                 choice = result["choices"][0]
-                content = choice.get("message", {}).get("content", "")
+                message = choice.get("message") or {}
+                if not isinstance(message, dict):
+                    message = {}
+
+                content = message.get("content", "")
+                reasoning = message.get("reasoning")
+                tool_calls = message.get("tool_calls")
+                if tool_calls is None:
+                    # Some servers surface tool calls at the choice level.
+                    tool_calls = choice.get("tool_calls")
                 finish_reason = choice.get("finish_reason", "stop")
             else:
                 content = "No response generated"
+                reasoning = None
+                tool_calls = None
                 finish_reason = "error"
 
             # Extract usage info
             usage = result.get("usage", {})
+
+            metadata = {}
+            if isinstance(reasoning, str) and reasoning.strip():
+                metadata["reasoning"] = reasoning
 
             return GenerateResponse(
                 content=content,
                 model=self.model,
                 finish_reason=finish_reason,
                 raw_response=result,
+                tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                metadata=metadata or None,
                 usage={
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),
@@ -368,14 +385,24 @@ class LMStudioProvider(BaseProvider):
                                 if "choices" in chunk and len(chunk["choices"]) > 0:
                                     choice = chunk["choices"][0]
                                     delta = choice.get("delta", {})
+                                    if not isinstance(delta, dict):
+                                        delta = {}
                                     content = delta.get("content", "")
+                                    reasoning = delta.get("reasoning")
+                                    tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
                                     finish_reason = choice.get("finish_reason")
+
+                                    metadata = {}
+                                    if isinstance(reasoning, str) and reasoning.strip():
+                                        metadata["reasoning"] = reasoning
 
                                     yield GenerateResponse(
                                         content=content,
                                         model=self.model,
                                         finish_reason=finish_reason,
-                                        raw_response=chunk
+                                        tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                                        metadata=metadata or None,
+                                        raw_response=chunk,
                                     )
 
                             except json.JSONDecodeError:
@@ -526,20 +553,36 @@ class LMStudioProvider(BaseProvider):
             # Extract response from OpenAI format
             if "choices" in result and len(result["choices"]) > 0:
                 choice = result["choices"][0]
-                content = choice.get("message", {}).get("content", "")
+                message = choice.get("message") or {}
+                if not isinstance(message, dict):
+                    message = {}
+
+                content = message.get("content", "")
+                reasoning = message.get("reasoning")
+                tool_calls = message.get("tool_calls")
+                if tool_calls is None:
+                    tool_calls = choice.get("tool_calls")
                 finish_reason = choice.get("finish_reason", "stop")
             else:
                 content = "No response generated"
+                reasoning = None
+                tool_calls = None
                 finish_reason = "error"
 
             # Extract usage info
             usage = result.get("usage", {})
+
+            metadata = {}
+            if isinstance(reasoning, str) and reasoning.strip():
+                metadata["reasoning"] = reasoning
 
             return GenerateResponse(
                 content=content,
                 model=self.model,
                 finish_reason=finish_reason,
                 raw_response=result,
+                tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                metadata=metadata or None,
                 usage={
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),
@@ -589,13 +632,23 @@ class LMStudioProvider(BaseProvider):
                                 if "choices" in chunk and len(chunk["choices"]) > 0:
                                     choice = chunk["choices"][0]
                                     delta = choice.get("delta", {})
+                                    if not isinstance(delta, dict):
+                                        delta = {}
                                     content = delta.get("content", "")
+                                    reasoning = delta.get("reasoning")
+                                    tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
                                     finish_reason = choice.get("finish_reason")
+
+                                    metadata = {}
+                                    if isinstance(reasoning, str) and reasoning.strip():
+                                        metadata["reasoning"] = reasoning
 
                                     yield GenerateResponse(
                                         content=content,
                                         model=self.model,
                                         finish_reason=finish_reason,
+                                        tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                                        metadata=metadata or None,
                                         raw_response=chunk
                                     )
 

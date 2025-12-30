@@ -763,9 +763,45 @@ def _parse_harmony_tool_prefix(response: str) -> List[ToolCall]:
 
         brace_end = _find_matching_brace(response, brace_start)
         if brace_end == -1:
-            continue
+            # Some models occasionally omit the final closing brace(s) when emitting a
+            # Harmony tool transcript. Try a best-effort recovery by balancing braces
+            # to the end of the message and parsing the result.
+            raw_args = response[brace_start:].strip()
 
-        raw_args = response[brace_start : brace_end + 1]
+            def _balance_braces(text: str) -> str:
+                depth = 0
+                in_string = False
+                quote = ""
+                escaped = False
+                for ch in text:
+                    if in_string:
+                        if escaped:
+                            escaped = False
+                            continue
+                        if ch == "\\":
+                            escaped = True
+                            continue
+                        if ch == quote:
+                            in_string = False
+                            quote = ""
+                        continue
+                    if ch in ("'", '"'):
+                        in_string = True
+                        quote = ch
+                        continue
+                    if ch == "{":
+                        depth += 1
+                        continue
+                    if ch == "}":
+                        depth -= 1
+                        continue
+                if depth > 0:
+                    return text + ("}" * depth)
+                return text
+
+            raw_args = _balance_braces(raw_args)
+        else:
+            raw_args = response[brace_start : brace_end + 1]
         payload = _loads_dict_like(raw_args)
         if not isinstance(payload, dict):
             continue
@@ -830,7 +866,11 @@ def _parse_any_format(response: str) -> List[ToolCall]:
     unique_calls = []
     seen = set()
     for call in tool_calls:
-        call_key = (call.name, str(call.arguments))
+        try:
+            args_key = json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)
+        except Exception:
+            args_key = str(call.arguments)
+        call_key = (call.name, args_key)
         if call_key not in seen:
             seen.add(call_key)
             unique_calls.append(call)

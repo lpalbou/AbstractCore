@@ -42,6 +42,19 @@ def test_parse_harmony_tool_prefix_wrapper_with_unescaped_newlines() -> None:
     assert calls[0].arguments["mode"] == "w"
 
 
+def test_parse_harmony_tool_prefix_recovers_missing_final_brace() -> None:
+    content = (
+        '<|channel|>commentary to=write_file <|constrain|>json<|message|>'
+        '{"name":"write_file","arguments":{"file_path":"oss-rtype/main.py","content":"hi"}'
+    )
+    assert detect_tool_calls(content, model_name="openai/gpt-oss-20b") is True
+    calls = parse_tool_calls(content, model_name="openai/gpt-oss-20b")
+    assert len(calls) == 1
+    assert calls[0].name == "write_file"
+    assert calls[0].arguments["file_path"] == "oss-rtype/main.py"
+    assert calls[0].arguments["content"] == "hi"
+
+
 def test_clean_tool_syntax_removes_harmony_tool_prefix_block() -> None:
     content = (
         "I'll list the directory.\n\n"
