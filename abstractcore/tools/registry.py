@@ -17,6 +17,24 @@ from ..utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
+def _error_from_output(value: Any) -> Optional[str]:
+    """Detect tool failures reported as string outputs (instead of exceptions)."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.startswith("Error:"):
+        cleaned = text[len("Error:") :].strip()
+        return cleaned or text
+    if text.startswith(("❌", "🚫", "⏰")):
+        cleaned = text.lstrip("❌🚫⏰").strip()
+        if cleaned.startswith("Error:"):
+            cleaned = cleaned[len("Error:") :].strip()
+        return cleaned or text
+    return None
+
+
 class ToolRegistry:
     """Registry for managing available tools."""
 
@@ -152,6 +170,31 @@ class ToolRegistry:
             # Execute the function with the provided arguments
             result = tool_def.function(**tool_call.arguments)
             duration_ms = (time.time() - start_time) * 1000
+
+            implied_error = _error_from_output(result)
+            if implied_error is not None:
+                error_result = ToolResult(
+                    call_id=tool_call.call_id or "",
+                    output="",
+                    error=implied_error,
+                    success=False,
+                )
+
+                # Emit tool error event
+                result_data = create_tool_event(
+                    tool_name=tool_call.name,
+                    arguments=tool_call.arguments,
+                    success=False,
+                    error=implied_error,
+                )
+                emit_global(
+                    EventType.TOOL_COMPLETED,
+                    result_data,
+                    source="ToolRegistry",
+                    duration_ms=duration_ms,
+                )
+
+                return error_result
 
             success_result = ToolResult(
                 call_id=tool_call.call_id or "",

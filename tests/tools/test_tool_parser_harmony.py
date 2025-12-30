@@ -67,3 +67,21 @@ def test_clean_tool_syntax_removes_harmony_tool_prefix_block() -> None:
     assert "<|channel|>" not in cleaned
     assert "<|message|>" not in cleaned
     assert "I'll list the directory." in cleaned
+
+
+def test_clean_tool_syntax_removes_malformed_harmony_trailing_kv_fragment() -> None:
+    # Some models occasionally close the JSON object early and then continue emitting
+    # extra key/value pairs (e.g. `,"mode":"w"}`) after the balanced object.
+    # Tool parsing can still succeed (the prefix is valid), but the tail must not leak
+    # into the cleaned assistant content (otherwise the UI "Thought" shows tool payload).
+    content = (
+        "I'll write the file.\n\n"
+        '<|channel|>commentary to=write_file <|constrain|>json<|message|>'
+        '{"name":"write_file","arguments":{"file_path":"attempt/rtype.py","content":"print(1)"},"call_id":null}'
+        ',"mode":"w"}\n'
+    )
+    calls = parse_tool_calls(content, model_name="openai/gpt-oss-20b")
+    assert calls and calls[0].name == "write_file"
+    cleaned = clean_tool_syntax(content, calls)
+    assert "mode" not in cleaned
+    assert cleaned.strip() == "I'll write the file."

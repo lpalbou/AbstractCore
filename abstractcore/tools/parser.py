@@ -1194,6 +1194,78 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
                         return i
             return -1
 
+        def _consume_trailing_kv_fragment(text: str, start_idx: int) -> int:
+            """Consume malformed trailing JSON key/value fragments after a closed object.
+
+            Some models (notably some OSS models emitting Harmony tool transcripts) occasionally
+            close the JSON object early and then continue emitting extra fields outside of it,
+            e.g.:
+              <|message|>{"name":"write_file","arguments":{...},"call_id":null},"mode":"w"}
+
+            Tool parsing can still succeed (the prefix is valid), but the tail fragment must
+            not leak into cleaned assistant content (it otherwise shows up as "Thought" in UIs).
+            """
+            i = start_idx
+            while i < len(text) and text[i].isspace():
+                i += 1
+            if i >= len(text) or text[i] != ",":
+                return start_idx
+
+            # Quick heuristic: only treat as a JSON-ish continuation if we see `,"key":...`.
+            j = i + 1
+            while j < len(text) and text[j].isspace():
+                j += 1
+            if j >= len(text) or text[j] not in ("'", '"'):
+                return start_idx
+
+            in_string = False
+            quote = ""
+            escaped = False
+            brace_depth = 0
+            saw_colon = False
+            pos = i
+            while pos < len(text):
+                # Do not swallow the next Harmony segment (if any).
+                if not in_string and text.startswith("<|channel|>", pos):
+                    return pos
+
+                ch = text[pos]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                        pos += 1
+                        continue
+                    if ch == "\\":
+                        escaped = True
+                        pos += 1
+                        continue
+                    if ch == quote:
+                        in_string = False
+                        quote = ""
+                        pos += 1
+                        continue
+                    pos += 1
+                    continue
+
+                if ch in ("'", '"'):
+                    in_string = True
+                    quote = ch
+                    pos += 1
+                    continue
+
+                if ch == ":":
+                    saw_colon = True
+                elif ch == "{":
+                    brace_depth += 1
+                elif ch == "}":
+                    if saw_colon and brace_depth == 0:
+                        return pos + 1
+                    if brace_depth > 0:
+                        brace_depth -= 1
+                pos += 1
+
+            return len(text) if saw_colon else start_idx
+
         msg_tag = "<|message|>"
         out_parts = []
         i = 0
@@ -1227,9 +1299,16 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
 
             brace_end = _find_matching_brace(content, brace_start)
             if brace_end == -1:
-                out_parts.append(content[start:])
-                break
-            i = brace_end + 1
+                # Best-effort: drop the remainder of this segment up to the next Harmony marker
+                # (or to end-of-content). Leaving partial tool payloads in `content` is more
+                # harmful (it breaks agent scratchpads and UI "Thought" rendering).
+                next_start = content.find("<|channel|>", brace_start + 1)
+                if next_start == -1:
+                    break
+                i = next_start
+                continue
+
+            i = _consume_trailing_kv_fragment(content, brace_end + 1)
 
         content = "".join(out_parts)
 

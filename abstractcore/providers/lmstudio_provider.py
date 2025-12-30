@@ -280,8 +280,9 @@ class LMStudioProvider(BaseProvider):
 
             # Track generation time
             start_time = time.time()
+            request_url = f"{self.base_url}/chat/completions"
             response = self.client.post(
-                f"{self.base_url}/chat/completions",
+                request_url,
                 json=payload,
                 headers={"Content-Type": "application/json"}
             )
@@ -316,6 +317,11 @@ class LMStudioProvider(BaseProvider):
             metadata = {}
             if isinstance(reasoning, str) and reasoning.strip():
                 metadata["reasoning"] = reasoning
+            # Runtime observability: capture the exact HTTP JSON payload we sent.
+            metadata["_provider_request"] = {
+                "url": request_url,
+                "payload": payload,
+            }
 
             return GenerateResponse(
                 content=content,
@@ -540,8 +546,9 @@ class LMStudioProvider(BaseProvider):
         try:
             # Track generation time
             start_time = time.time()
+            request_url = f"{self.base_url}/chat/completions"
             response = await self.async_client.post(
-                f"{self.base_url}/chat/completions",
+                request_url,
                 json=payload,
                 headers={"Content-Type": "application/json"}
             )
@@ -575,6 +582,10 @@ class LMStudioProvider(BaseProvider):
             metadata = {}
             if isinstance(reasoning, str) and reasoning.strip():
                 metadata["reasoning"] = reasoning
+            metadata["_provider_request"] = {
+                "url": request_url,
+                "payload": payload,
+            }
 
             return GenerateResponse(
                 content=content,

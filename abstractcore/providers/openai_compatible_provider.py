@@ -330,8 +330,9 @@ class OpenAICompatibleProvider(BaseProvider):
 
             # Track generation time
             start_time = time.time()
+            request_url = f"{self.base_url}/chat/completions"
             response = self.client.post(
-                f"{self.base_url}/chat/completions",
+                request_url,
                 json=payload,
                 headers=self._get_headers()
             )
@@ -357,6 +358,12 @@ class OpenAICompatibleProvider(BaseProvider):
                 model=self.model,
                 finish_reason=finish_reason,
                 raw_response=result,
+                metadata={
+                    "_provider_request": {
+                        "url": request_url,
+                        "payload": payload,
+                    }
+                },
                 usage={
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),
@@ -563,8 +570,9 @@ class OpenAICompatibleProvider(BaseProvider):
         try:
             # Track generation time
             start_time = time.time()
+            request_url = f"{self.base_url}/chat/completions"
             response = await self.async_client.post(
-                f"{self.base_url}/chat/completions",
+                request_url,
                 json=payload,
                 headers=self._get_headers()
             )
@@ -590,6 +598,12 @@ class OpenAICompatibleProvider(BaseProvider):
                 model=self.model,
                 finish_reason=finish_reason,
                 raw_response=result,
+                metadata={
+                    "_provider_request": {
+                        "url": request_url,
+                        "payload": payload,
+                    }
+                },
                 usage={
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),

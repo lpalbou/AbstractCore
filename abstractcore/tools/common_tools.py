@@ -2350,7 +2350,7 @@ def edit_file(
             matches = list(regex_pattern.finditer(search_content))
             if not matches:
                 range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
-                return f"No matches found for regex pattern '{pattern}' in '{file_path}'{range_info}"
+                return f"❌ No matches found for regex pattern '{pattern}' in '{file_path}'{range_info}"
 
             # Apply replacements to search content
             if max_replacements == -1:
@@ -2375,10 +2375,10 @@ def edit_file(
                     updated_search_content, replacements_made = flexible_result
                 else:
                     range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
-                    return f"No occurrences of '{pattern}' found in '{file_path}'{range_info}"
+                    return f"❌ No occurrences of '{pattern}' found in '{file_path}'{range_info}"
             elif count == 0:
                 range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
-                return f"No occurrences of '{pattern}' found in '{file_path}'{range_info}"
+                return f"❌ No occurrences of '{pattern}' found in '{file_path}'{range_info}"
             else:
                 # Exact match found
                 if max_replacements == -1:
