@@ -1853,59 +1853,6 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
     return "\n".join(result_parts)
 
 
-@tool(
-    description="Edit files by replacing text patterns using simple matching or regex",
-    tags=["file", "edit", "replace", "pattern", "substitute", "regex"],
-    when_to_use="When you need to edit files by replacing text. Supports simple text or regex patterns, line ranges, preview mode, and controlling replacement count.",
-    examples=[
-        {
-            "description": "Replace simple text",
-            "arguments": {
-                "file_path": "config.py",
-                "pattern": "debug = False",
-                "replacement": "debug = True"
-            }
-        },
-        {
-            "description": "Update function definition using regex",
-            "arguments": {
-                "file_path": "script.py",
-                "pattern": r"def old_function\([^)]*\):",
-                "replacement": "def new_function(param1, param2):",
-                "use_regex": True
-            }
-        },
-        {
-            "description": "Replace only first occurrence",
-            "arguments": {
-                "file_path": "document.txt",
-                "pattern": "TODO",
-                "replacement": "DONE",
-                "max_replacements": 1
-            }
-        },
-        {
-            "description": "Preview changes before applying",
-            "arguments": {
-                "file_path": "test.py",
-                "pattern": "class OldClass",
-                "replacement": "class NewClass",
-                "preview_only": True
-            }
-        },
-        {
-            "description": "Match pattern ignoring whitespace differences (enabled by default)",
-            "arguments": {
-                "file_path": "script.py",
-                "pattern": "if condition:\n    do_something()",
-                "replacement": "if condition:\n    do_something_else()",
-                "flexible_whitespace": True
-            }
-        }
-    ]
-)
-
-
 def _normalize_escape_sequences(text: str) -> str:
     """Convert literal escape sequences to actual control characters.
 
@@ -2162,6 +2109,100 @@ def _apply_unified_diff(original_text: str, hunks: list[tuple[int, int, int, int
     return new_text, None
 
 
+def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str, int, int]:
+    """Render a compact unified diff showing only changed lines.
+
+    Output format is optimized for agent scratchpads and CLIs:
+    - First line: `Edited <path> (+A -R)`
+    - Then: unified diff hunks with 0 context (`@@`, `+`, `-`)
+    """
+    import difflib
+
+    old_lines = (before or "").splitlines()
+    new_lines = (after or "").splitlines()
+
+    diff_lines = list(
+        difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile=str(path),
+            tofile=str(path),
+            lineterm="",
+            n=0,
+        )
+    )
+
+    added = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
+
+    kept: list[str] = []
+    for line in diff_lines:
+        if line.startswith("@@"):
+            kept.append(line)
+            continue
+        if line.startswith("+") and not line.startswith("+++"):
+            kept.append(line)
+            continue
+        if line.startswith("-") and not line.startswith("---"):
+            kept.append(line)
+            continue
+
+    body = "\n".join(kept).rstrip("\n")
+    header = f"{str(path)} (+{added} -{removed})"
+    return (f"Edited {header}\n{body}".rstrip(), added, removed)
+
+
+@tool(
+    description="Edit files by replacing text patterns using simple matching or regex",
+    tags=["file", "edit", "replace", "pattern", "substitute", "regex"],
+    when_to_use="When you need to edit files by replacing text. Supports simple text or regex patterns, line ranges, preview mode, and controlling replacement count.",
+    examples=[
+        {
+            "description": "Replace simple text",
+            "arguments": {
+                "file_path": "config.py",
+                "pattern": "debug = False",
+                "replacement": "debug = True",
+            },
+        },
+        {
+            "description": "Update function definition using regex",
+            "arguments": {
+                "file_path": "script.py",
+                "pattern": r"def old_function\\([^)]*\\):",
+                "replacement": "def new_function(param1, param2):",
+                "use_regex": True,
+            },
+        },
+        {
+            "description": "Replace only first occurrence",
+            "arguments": {
+                "file_path": "document.txt",
+                "pattern": "TODO",
+                "replacement": "DONE",
+                "max_replacements": 1,
+            },
+        },
+        {
+            "description": "Preview changes before applying",
+            "arguments": {
+                "file_path": "test.py",
+                "pattern": "class OldClass",
+                "replacement": "class NewClass",
+                "preview_only": True,
+            },
+        },
+        {
+            "description": "Match pattern ignoring whitespace differences (enabled by default)",
+            "arguments": {
+                "file_path": "script.py",
+                "pattern": "if condition:\\n    do_something()",
+                "replacement": "if condition:\\n    do_something_else()",
+                "flexible_whitespace": True,
+            },
+        },
+    ],
+)
 def edit_file(
     file_path: str,
     pattern: str,
@@ -2256,31 +2297,14 @@ def edit_file(
             if updated == content:
                 return "No changes applied (patch resulted in identical content)."
 
-            import difflib
-
-            old_lines = content.splitlines()
-            new_lines = updated.splitlines()
-            diff_lines = list(
-                difflib.unified_diff(
-                    old_lines,
-                    new_lines,
-                    fromfile=str(path),
-                    tofile=str(path),
-                    lineterm="",
-                    n=3,
-                )
-            )
-            preview = "\n".join(diff_lines[:120])
-            if len(diff_lines) > 120:
-                preview += f"\n... (diff truncated, {len(diff_lines)} lines total)"
-
+            rendered, _, _ = _render_edit_file_diff(path=path, before=content, after=updated)
             if preview_only:
-                return f"Preview for {str(path)}\n{preview}"
+                return rendered.replace("Edited ", "Preview ", 1)
 
             with open(path, "w", encoding=encoding) as f:
                 f.write(updated)
 
-            return f"Updated {str(path)}\n{preview}"
+            return rendered
 
         original_content = content
 
@@ -2375,78 +2399,26 @@ def edit_file(
         else:
             updated_content = updated_search_content
 
-        # Preview mode - show changes without applying
+        if updated_content == original_content:
+            return "No changes would be applied." if preview_only else "No changes applied (resulted in identical content)."
+
+        rendered, _, _ = _render_edit_file_diff(path=path, before=original_content, after=updated_content)
+        rendered_lines = rendered.splitlines()
+        if rendered_lines:
+            rendered_lines[0] = f"{rendered_lines[0]} replacements={replacements_made}"
+        rendered = "\n".join(rendered_lines).rstrip()
+
         if preview_only:
-            results = []
-            results.append(f"🔍 Preview Mode - Changes NOT Applied")
-            results.append(f"File: {file_path}")
-            if start_line is not None or end_line is not None:
-                range_desc = f"lines {start_line or 1}-{end_line or 'end'}"
-                results.append(f"Target range: {range_desc}")
-            results.append(f"Pattern: {pattern}")
-            results.append(f"Replacement: {replacement}")
-            results.append(f"Regex mode: {'Yes' if use_regex else 'No'}")
-            results.append(f"Matches found: {replacements_made}")
-
-            if replacements_made > 0:
-                results.append(f"\n📝 Changes that would be made:")
-                results.append(f"  • {replacements_made} replacement(s)")
-
-                # Show preview of first few changes
-                preview_lines = []
-                if use_regex:
-                    regex_pattern = re.compile(pattern, re.MULTILINE | re.DOTALL)
-                    matches = list(regex_pattern.finditer(search_content))
-                    for i, match in enumerate(matches[:3]):  # Show first 3 matches
-                        # Calculate line number relative to original file
-                        match_line_in_search = search_content[:match.start()].count('\n') + 1
-                        actual_line_num = match_line_in_search + line_offset
-                        matched_text = match.group()[:50] + ("..." if len(match.group()) > 50 else "")
-                        preview_lines.append(f"    Match {i+1} at line {actual_line_num}: '{matched_text}'")
-                else:
-                    # For simple text, show where matches occur
-                    pos = 0
-                    match_count = 0
-                    while pos < len(search_content) and match_count < 3:
-                        pos = search_content.find(pattern, pos)
-                        if pos == -1:
-                            break
-                        match_line_in_search = search_content[:pos].count('\n') + 1
-                        actual_line_num = match_line_in_search + line_offset
-                        preview_lines.append(f"    Match {match_count+1} at line {actual_line_num}: '{pattern}'")
-                        pos += len(pattern)
-                        match_count += 1
-
-                results.extend(preview_lines)
-                if replacements_made > 3:
-                    results.append(f"    ... and {replacements_made - 3} more matches")
-
-            return "\n".join(results)
+            return rendered.replace("Edited ", "Preview ", 1)
 
         # Apply changes to file
         try:
-            with open(path, 'w', encoding=encoding) as f:
+            with open(path, "w", encoding=encoding) as f:
                 f.write(updated_content)
         except Exception as e:
             return f"❌ Write failed: {str(e)}"
 
-        # Success message
-        results = []
-        results.append(f"✅ File edited successfully: {file_path}")
-        if start_line is not None or end_line is not None:
-            range_desc = f"lines {start_line or 1}-{end_line or 'end'}"
-            results.append(f"Target range: {range_desc}")
-        results.append(f"Pattern: {pattern}")
-        results.append(f"Replacement: {replacement}")
-        results.append(f"Replacements made: {replacements_made}")
-
-        # Calculate size change
-        size_change = len(updated_content) - len(original_content)
-        if size_change != 0:
-            sign = "+" if size_change > 0 else ""
-            results.append(f"Size change: {sign}{size_change} characters")
-
-        return "\n".join(results)
+        return rendered
 
     except Exception as e:
         return f"❌ Error editing file: {str(e)}"

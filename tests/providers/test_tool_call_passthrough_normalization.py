@@ -189,3 +189,78 @@ def test_non_streaming_harmony_wrapper_tool_calls_are_parsed_and_content_is_clea
     ]
     assert "<|channel|>" not in (resp.content or "")
     assert resp.content.strip() == "Okay."
+
+
+def test_non_streaming_nested_wrapper_arguments_are_unwrapped() -> None:
+    provider = _DummyProvider(
+        model="openai/gpt-oss-20b",
+        response=GenerateResponse(
+            content="",
+            tool_calls=[
+                {
+                    "name": "write_file",
+                    "arguments": {
+                        "name": "write_file",
+                        "arguments": {"file_path": "oss-rtype/main.py", "content": "hi"},
+                    },
+                }
+            ],
+            model="openai/gpt-oss-20b",
+        ),
+    )
+
+    tools = [{"name": "write_file", "description": "Write file", "parameters": {"file_path": {"type": "string"}}}]
+    resp = provider.generate(prompt="write file", tools=tools)
+
+    assert resp.tool_calls == [
+        {"name": "write_file", "arguments": {"file_path": "oss-rtype/main.py", "content": "hi"}, "call_id": None}
+    ]
+
+
+def test_non_streaming_wrapper_arguments_with_extras_are_merged() -> None:
+    provider = _DummyProvider(
+        model="openai/gpt-oss-20b",
+        response=GenerateResponse(
+            content="",
+            tool_calls=[
+                {
+                    "name": "write_file",
+                    "arguments": {
+                        "name": "write_file",
+                        "arguments": {"content": "hi"},
+                        # Some models mistakenly place real kwargs alongside wrapper fields.
+                        "file_path": "oss-rtype/main.py",
+                    },
+                }
+            ],
+            model="openai/gpt-oss-20b",
+        ),
+    )
+
+    tools = [{"name": "write_file", "description": "Write file", "parameters": {"file_path": {"type": "string"}}}]
+    resp = provider.generate(prompt="write file", tools=tools)
+
+    assert resp.tool_calls == [
+        {"name": "write_file", "arguments": {"file_path": "oss-rtype/main.py", "content": "hi"}, "call_id": None}
+    ]
+
+
+def test_non_streaming_duplicate_tool_calls_are_deduped() -> None:
+    provider = _DummyProvider(
+        model="openai/gpt-oss-20b",
+        response=GenerateResponse(
+            content="",
+            tool_calls=[
+                {"name": "list_files", "arguments": {"directory_path": ".", "recursive": True, "pattern": "*"}},
+                {"name": "list_files", "arguments": {"pattern": "*", "recursive": True, "directory_path": "."}},
+            ],
+            model="openai/gpt-oss-20b",
+        ),
+    )
+
+    tools = [{"name": "list_files", "description": "List files", "parameters": {"directory_path": {"type": "string"}}}]
+    resp = provider.generate(prompt="list files", tools=tools)
+
+    assert resp.tool_calls == [
+        {"name": "list_files", "arguments": {"directory_path": ".", "recursive": True, "pattern": "*"}, "call_id": None}
+    ]

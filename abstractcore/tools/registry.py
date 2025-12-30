@@ -172,6 +172,49 @@ class ToolRegistry:
             return success_result
 
         except TypeError as e:
+            # Some models include wrapper/meta keys ("name", nested "arguments") or
+            # stray extras in tool kwargs. Retry once with a sanitized argument dict.
+            try:
+                wrapper_keys = {"name", "arguments", "call_id", "id"}
+                args = dict(tool_call.arguments or {})
+                for _ in range(4):
+                    inner = args.get("arguments")
+                    if not isinstance(inner, dict):
+                        break
+                    extras = {k: v for k, v in args.items() if k not in wrapper_keys}
+                    merged = dict(inner)
+                    for k, v in extras.items():
+                        merged.setdefault(k, v)
+                    args = merged
+
+                allowed = set(tool_def.parameters.keys()) if isinstance(tool_def.parameters, dict) else set()
+                if allowed:
+                    args = {k: v for k, v in args.items() if k in allowed}
+
+                if args != dict(tool_call.arguments or {}):
+                    result = tool_def.function(**args)
+                    duration_ms = (time.time() - start_time) * 1000
+                    success_result = ToolResult(
+                        call_id=tool_call.call_id or "",
+                        output=result,
+                        success=True,
+                    )
+                    result_data = create_tool_event(
+                        tool_name=tool_call.name,
+                        arguments=args,
+                        result=result,
+                        success=True,
+                    )
+                    emit_global(
+                        EventType.TOOL_COMPLETED,
+                        result_data,
+                        source="ToolRegistry",
+                        duration_ms=duration_ms,
+                    )
+                    return success_result
+            except Exception:
+                pass
+
             duration_ms = (time.time() - start_time) * 1000
             error_msg = f"Invalid arguments for tool '{tool_call.name}': {e}"
             logger.warning(error_msg)
