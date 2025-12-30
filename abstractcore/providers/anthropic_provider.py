@@ -213,6 +213,8 @@ class AnthropicProvider(BaseProvider):
                 formatted = self._format_response(response)
                 # Add generation time to response
                 formatted.gen_time = gen_time
+                formatted.metadata = dict(formatted.metadata or {})
+                formatted.metadata["_provider_request"] = {"call_params": call_params}
 
                 # Handle tool execution for Anthropic responses
                 if tools and (formatted.has_tool_calls() or
@@ -365,6 +367,8 @@ class AnthropicProvider(BaseProvider):
 
                 formatted = self._format_response(response)
                 formatted.gen_time = gen_time
+                formatted.metadata = dict(formatted.metadata or {})
+                formatted.metadata["_provider_request"] = {"call_params": call_params}
 
                 if tools and (formatted.has_tool_calls() or
                              (self.tool_handler.supports_prompted and formatted.content)):

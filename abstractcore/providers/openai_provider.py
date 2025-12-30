@@ -196,6 +196,9 @@ class OpenAIProvider(BaseProvider):
                 formatted = self._format_response(response)
                 # Add generation time to response
                 formatted.gen_time = gen_time
+                # Runtime observability: capture the exact client payload we sent.
+                formatted.metadata = dict(formatted.metadata or {})
+                formatted.metadata["_provider_request"] = {"call_params": call_params}
 
                 # Handle tool execution for OpenAI native responses
                 if tools and formatted.has_tool_calls():
@@ -324,6 +327,8 @@ class OpenAIProvider(BaseProvider):
                 formatted = self._format_response(response)
                 # Add generation time to response
                 formatted.gen_time = gen_time
+                formatted.metadata = dict(formatted.metadata or {})
+                formatted.metadata["_provider_request"] = {"call_params": call_params}
 
                 # Handle tool execution for OpenAI native responses
                 if tools and formatted.has_tool_calls():
