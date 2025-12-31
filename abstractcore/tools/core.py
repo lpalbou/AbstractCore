@@ -59,17 +59,17 @@ class ToolDefinition:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format"""
-        result = {
-            "name": self.name,
-            "description": self.description,
-            "parameters": self.parameters
-        }
+        # Preserve a human/LLM-friendly field ordering (also improves UX when dumped as JSON).
+        result: Dict[str, Any] = {"name": self.name, "description": self.description}
+
+        if self.when_to_use:
+            result["when_to_use"] = self.when_to_use
+
+        result["parameters"] = self.parameters
 
         # Include enhanced metadata if available
         if self.tags:
             result["tags"] = self.tags
-        if self.when_to_use:
-            result["when_to_use"] = self.when_to_use
         if self.examples:
             result["examples"] = self.examples
 

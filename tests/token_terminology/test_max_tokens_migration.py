@@ -99,7 +99,7 @@ class TestLayer1Foundation:
             ('gpt-4o-mini', 128000),
             ('claude-3.5-sonnet', 200000),
             ('llama-3.1-8b', 128000),
-            ('qwen3-coder-30b', 32768),
+            ('qwen3-coder-30b', 262144),
         ]
 
         for model_name, expected_max_tokens in test_cases:
@@ -185,6 +185,16 @@ class TestLayer2Integration:
         assert 'max_tokens' in caps, "Alias resolution should preserve max_tokens field"
         assert caps['max_tokens'] == 262144, \
             f"Resolved model should have max_tokens=262144, got {caps['max_tokens']}"
+
+    def test_partial_match_and_provider_prefix_resolution_for_qwen3_next(self):
+        """Prefer the most specific Qwen3-Next model (and strip provider prefixes) for capability lookup."""
+        # Common shorthand used by callers (missing suffix / vendor prefix).
+        caps = get_model_capabilities("qwen3-next-80b")
+        assert caps.get("max_tokens") == 262144, f"Expected 262144, got {caps.get('max_tokens')}"
+
+        # Some callers pass provider/model as a single string.
+        caps = get_model_capabilities("lmstudio/qwen/qwen3-next-80b")
+        assert caps.get("max_tokens") == 262144, f"Expected 262144, got {caps.get('max_tokens')}"
 
     def test_cli_auto_detection_uses_max_tokens(self):
         """Test that CLI auto-detection logic uses max_tokens"""

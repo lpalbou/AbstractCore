@@ -22,6 +22,38 @@ _resolved_aliases_cache: Dict[str, str] = {}
 _detected_architectures_cache: Dict[str, str] = {}
 
 
+# Some callers pass provider/model as a single string (e.g. "lmstudio/qwen/qwen3-next-80b").
+# For capability lookup we want the underlying model id, not the provider prefix.
+_KNOWN_PROVIDER_PREFIXES = {
+    "anthropic",
+    "azure",
+    "bedrock",
+    "fireworks",
+    "gemini",
+    "google",
+    "groq",
+    "huggingface",
+    "lmstudio",
+    "local",
+    "mlx",
+    "ollama",
+    "openai",
+    "openai-compatible",
+    "together",
+    "vllm",
+}
+
+
+def _strip_provider_prefix(model_name: str) -> str:
+    s = str(model_name or "").strip()
+    if not s or "/" not in s:
+        return s
+    head, rest = s.split("/", 1)
+    if head.strip().lower() in _KNOWN_PROVIDER_PREFIXES and rest.strip():
+        return rest.strip()
+    return s
+
+
 def _load_json_assets():
     """Load architecture formats and model capabilities from JSON files."""
     global _architecture_formats, _model_capabilities
@@ -167,22 +199,31 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     if normalized_model_name != model_name:
         logger.debug(f"Normalized model name '{model_name}' to '{normalized_model_name}'")
 
-    # Check if normalized name is a canonical name
-    if normalized_model_name in models:
-        _resolved_aliases_cache[model_name] = normalized_model_name
-        return normalized_model_name
+    # Also support "provider/model" strings by stripping known provider prefixes.
+    stripped_model_name = _strip_provider_prefix(model_name)
+    stripped_normalized_name = _strip_provider_prefix(normalized_model_name)
+
+    # Check if any normalized/stripped name is a canonical name.
+    for candidate in (normalized_model_name, stripped_normalized_name, stripped_model_name):
+        if candidate and candidate in models:
+            _resolved_aliases_cache[model_name] = candidate
+            return candidate
 
     # Check if it's an alias of any model (try both original and normalized)
     for canonical_name, model_info in models.items():
         aliases = model_info.get("aliases", [])
-        if model_name in aliases or normalized_model_name in aliases:
+        if not isinstance(aliases, list) or not aliases:
+            continue
+        candidates = (model_name, normalized_model_name, stripped_model_name, stripped_normalized_name)
+        if any(c and c in aliases for c in candidates):
             logger.debug(f"Resolved alias '{model_name}' to canonical name '{canonical_name}'")
             _resolved_aliases_cache[model_name] = canonical_name
             return canonical_name
 
     # Return normalized name if no alias found
-    _resolved_aliases_cache[model_name] = normalized_model_name
-    return normalized_model_name
+    fallback = stripped_normalized_name or normalized_model_name
+    _resolved_aliases_cache[model_name] = fallback
+    return fallback
 
 
 def get_model_capabilities(model_name: str) -> Dict[str, Any]:
@@ -219,15 +260,44 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
     # Step 3: Try partial matches for common model naming patterns
     # Use canonical_name (which has been normalized) for better matching
     canonical_lower = canonical_name.lower()
-    for model_key, capabilities in models.items():
-        if model_key.lower() in canonical_lower or canonical_lower in model_key.lower():
+    candidates_name_in_key: List[tuple[int, int, str]] = []
+    candidates_key_in_name: List[tuple[int, str]] = []
+    for model_key in models.keys():
+        if not isinstance(model_key, str) or not model_key.strip():
+            continue
+        key_lower = model_key.lower()
+
+        # Prefer a close "superstring" match where the canonical name is missing a suffix.
+        # Example: "qwen3-next-80b" -> "qwen3-next-80b-a3b"
+        if canonical_lower and canonical_lower in key_lower:
+            extra = max(0, len(key_lower) - len(canonical_lower))
+            candidates_name_in_key.append((extra, len(key_lower), model_key))
+            continue
+
+        # Otherwise, prefer the most specific substring match (e.g. provider/model prefixes).
+        if key_lower in canonical_lower:
+            candidates_key_in_name.append((len(key_lower), model_key))
+
+    best_key: Optional[str] = None
+    best_mode: Optional[str] = None
+    if candidates_name_in_key:
+        candidates_name_in_key.sort(key=lambda x: (x[0], -x[1]))
+        best_key = candidates_name_in_key[0][2]
+        best_mode = "name_in_key"
+    elif candidates_key_in_name:
+        best_key = max(candidates_key_in_name, key=lambda x: x[0])[1]
+        best_mode = "key_in_name"
+
+    if best_key is not None:
+        capabilities = models.get(best_key)
+        if isinstance(capabilities, dict):
             result = capabilities.copy()
             # Remove alias-specific fields
             result.pop("canonical_name", None)
             result.pop("aliases", None)
             if "architecture" not in result:
                 result["architecture"] = detect_architecture(model_name)
-            logger.debug(f"Using capabilities from '{model_key}' for '{model_name}'")
+            logger.debug(f"Using capabilities from '{best_key}' for '{model_name}' (partial match: {best_mode})")
             return result
 
     # Step 4: Fallback to default capabilities based on architecture

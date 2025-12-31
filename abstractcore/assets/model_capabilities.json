@@ -1687,7 +1687,7 @@
       "aliases": [
         "google/embeddinggemma-300m"
       ],
-      "max_tokens": 0,
+      "max_tokens": 8192,
       "model_type": "embedding"
     },
     "blip-image-captioning-base": {
@@ -1713,7 +1713,7 @@
       "aliases": [
         "Salesforce/blip-image-captioning-base"
       ],
-      "max_tokens": 512
+      "max_tokens": 2048
     },
     "glyph": {
       "max_output_tokens": 8192,
