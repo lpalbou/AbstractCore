@@ -203,25 +203,63 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     stripped_model_name = _strip_provider_prefix(model_name)
     stripped_normalized_name = _strip_provider_prefix(normalized_model_name)
 
+    def _tail(name: str) -> str:
+        s = str(name or "").strip()
+        if not s or "/" not in s:
+            return s
+        return s.split("/")[-1].strip()
+
+    def _candidates(*names: str) -> List[str]:
+        out: List[str] = []
+        for n in names:
+            s = str(n or "").strip()
+            if not s:
+                continue
+            out.append(s)
+            t = _tail(s)
+            if t and t != s:
+                out.append(t)
+        # Deduplicate while preserving order
+        uniq: List[str] = []
+        seen: set[str] = set()
+        for s in out:
+            if s in seen:
+                continue
+            seen.add(s)
+            uniq.append(s)
+        return uniq
+
     # Check if any normalized/stripped name is a canonical name.
-    for candidate in (normalized_model_name, stripped_normalized_name, stripped_model_name):
-        if candidate and candidate in models:
+    for candidate in _candidates(normalized_model_name, stripped_normalized_name, stripped_model_name):
+        if candidate in models:
             _resolved_aliases_cache[model_name] = candidate
             return candidate
 
-    # Check if it's an alias of any model (try both original and normalized)
+    # Check if it's an alias of any model (try both original and normalized).
+    # Some JSON entries intentionally share aliases (e.g. base + variant). Prefer the
+    # most specific canonical model name deterministically.
+    alias_matches: List[str] = []
     for canonical_name, model_info in models.items():
         aliases = model_info.get("aliases", [])
         if not isinstance(aliases, list) or not aliases:
             continue
-        candidates = (model_name, normalized_model_name, stripped_model_name, stripped_normalized_name)
-        if any(c and c in aliases for c in candidates):
-            logger.debug(f"Resolved alias '{model_name}' to canonical name '{canonical_name}'")
-            _resolved_aliases_cache[model_name] = canonical_name
-            return canonical_name
+        candidates = _candidates(model_name, normalized_model_name, stripped_model_name, stripped_normalized_name)
+        alias_set = {str(a).strip().lower() for a in aliases if isinstance(a, str) and str(a).strip()}
+        cand_set = {str(c).strip().lower() for c in candidates if isinstance(c, str) and str(c).strip()}
+        if alias_set and cand_set and alias_set.intersection(cand_set):
+            alias_matches.append(canonical_name)
+
+    if alias_matches:
+        best = max(alias_matches, key=lambda n: (len(str(n)), str(n)))
+        logger.debug(f"Resolved alias '{model_name}' to canonical name '{best}'")
+        _resolved_aliases_cache[model_name] = best
+        return best
 
     # Return normalized name if no alias found
     fallback = stripped_normalized_name or normalized_model_name
+    fallback_tail = _tail(fallback)
+    if fallback_tail:
+        fallback = fallback_tail
     _resolved_aliases_cache[model_name] = fallback
     return fallback
 

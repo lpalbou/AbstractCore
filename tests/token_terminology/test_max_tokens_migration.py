@@ -196,6 +196,19 @@ class TestLayer2Integration:
         caps = get_model_capabilities("lmstudio/qwen/qwen3-next-80b")
         assert caps.get("max_tokens") == 262144, f"Expected 262144, got {caps.get('max_tokens')}"
 
+    def test_case_insensitive_alias_resolution_for_qwen3_next(self):
+        """Resolve org-prefixed Qwen3-Next aliases even when casing differs."""
+        caps = get_model_capabilities("Qwen/Qwen3-next-80B")
+        assert caps.get("max_tokens") == 262144, f"Expected 262144, got {caps.get('max_tokens')}"
+
+        json_path = Path(__file__).parent.parent.parent / "abstractcore" / "assets" / "model_capabilities.json"
+        with open(json_path, 'r') as f:
+            data = json.load(f)
+        models = data.get("models", {})
+
+        canonical = resolve_model_alias("Qwen/Qwen3-next-80B", models)
+        assert canonical == "qwen3-next-80b-a3b", f"Expected canonical qwen3-next-80b-a3b, got {canonical}"
+
     def test_cli_auto_detection_uses_max_tokens(self):
         """Test that CLI auto-detection logic uses max_tokens"""
         # This tests the updated logic in cli.py

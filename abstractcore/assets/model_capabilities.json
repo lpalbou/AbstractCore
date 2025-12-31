@@ -454,10 +454,7 @@
       "notes": "Multimodal with early fusion, 109B total params (MoE)",
       "source": "Meta announcement",
       "canonical_name": "llama-4",
-      "aliases": [
-        "llama4-17b-scout-16e-instruct",
-        "llama-4-17b-scout-16e-instruct"
-      ],
+      "aliases": [],
       "max_tokens": 10000000
     },
     "qwen2.5-0.5b": {
