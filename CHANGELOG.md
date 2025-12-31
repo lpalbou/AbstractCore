@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prefer `ddgs` (MIT) with fallback to `duckduckgo_search` when available; HTML scraping remains a last-resort fallback.
   - Add bounded retries with a **cleaned query** (drop generic words like “url”, keep version identifiers) and region fallback (`us-en`) when relevance is low.
   - Add a lightweight relevance score per result and include `attempts` metadata for observability.
+- **Providers (LMStudio / OpenAI-compatible)**: timeouts now surface as clearer errors including the configured timeout duration (helps diagnose client-side disconnects during long local generations).
+- **Providers (all)**: default HTTP/tool timeouts are now sourced centrally from `abstractcore/config` (instead of ad-hoc per-provider behavior), and timeout errors are normalized in `BaseProvider` for consistency.
+- **Server (`/v1/chat/completions`)**: added `timeout_s` request field so orchestrators (e.g. AbstractRuntime) can enforce per-request provider timeouts when calling AbstractCore over HTTP.
 
 ## [2.8.1 - 2025-12-21
 

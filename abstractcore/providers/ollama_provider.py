@@ -314,12 +314,8 @@ class OllamaProvider(BaseProvider):
                 available_models = self.list_available_models(base_url=self.base_url)
                 error_message = format_model_error("Ollama", self.model, available_models)
                 raise ModelNotFoundError(error_message)
-            else:
-                return GenerateResponse(
-                    content=f"Error: {str(e)}",
-                    model=self.model,
-                    finish_reason="error"
-                )
+            # Let BaseProvider normalize (timeouts/connectivity/etc.) consistently.
+            raise
 
     def _stream_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Generate streaming response with tool tag rewriting support"""

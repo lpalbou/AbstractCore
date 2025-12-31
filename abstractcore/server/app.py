@@ -517,6 +517,16 @@ class ChatCompletionRequest(BaseModel):
         example="http://localhost:1234/v1"
     )
 
+    # Runtime/orchestrator policy (AbstractCore-specific feature)
+    timeout_s: Optional[float] = Field(
+        default=None,
+        description="Per-request provider HTTP timeout in seconds (AbstractCore-specific feature). "
+                    "Intended for orchestrators (e.g. AbstractRuntime) to enforce execution policy. "
+                    "If omitted, the server uses its own defaults. "
+                    "Values <= 0 are treated as unlimited.",
+        example=7200.0,
+    )
+
     class Config:
         schema_extra = {
             "examples": {
@@ -2064,6 +2074,10 @@ async def process_chat_completion(
                 request_id=request_id,
                 base_url=request.base_url
             )
+        if request.timeout_s is not None:
+            # Orchestrator policy: allow the caller to specify the provider timeout.
+            # Note: BaseProvider treats non-positive values as "unlimited".
+            provider_kwargs["timeout"] = request.timeout_s
 
         llm = create_llm(provider, model=model, **provider_kwargs)
 

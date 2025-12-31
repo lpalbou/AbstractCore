@@ -265,7 +265,7 @@ def add_arguments(parser: argparse.ArgumentParser):
     # Timeout configuration group
     timeout_group = parser.add_argument_group('Timeout Configuration')
     timeout_group.add_argument("--set-default-timeout", type=float, metavar="SECONDS",
-                              help="Set default HTTP request timeout in seconds (default: 600 = 10 minutes)")
+                              help="Set default HTTP request timeout in seconds (default: 7200 = 2 hours)")
     timeout_group.add_argument("--set-tool-timeout", type=float, metavar="SECONDS",
                               help="Set tool execution timeout in seconds (default: 600 = 10 minutes)")
 
@@ -463,7 +463,7 @@ def print_status():
     print("│     abstractcore --set-default-cache-dir PATH")
     print("│")
     print("│  ⏱️  Performance & Timeouts")
-    print("│     abstractcore --set-default-timeout SECONDS  (HTTP requests, default: 600)")
+    print("│     abstractcore --set-default-timeout SECONDS  (HTTP requests, default: 7200)")
     print("│     abstractcore --set-tool-timeout SECONDS  (Tool execution, default: 600)")
     print("│")
     print("│  🎯 Specialized Models")

@@ -7,6 +7,8 @@ import uuid
 import asyncio
 import warnings
 import json
+import re
+import socket
 from collections import deque
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
 from abc import ABC, abstractmethod
@@ -54,10 +56,52 @@ class BaseProvider(AbstractCoreInterface, ABC):
         self.architecture_config = get_architecture_format(self.architecture)
         self.model_capabilities = get_model_capabilities(model)
 
-        # Setup timeout configuration
-        # Default to None for unlimited timeout
-        self._timeout = kwargs.get('timeout', None)  # Default None for unlimited HTTP requests
-        self._tool_timeout = kwargs.get('tool_timeout', None)  # Default None for unlimited tool execution
+        # Setup timeout configuration (centralized defaults).
+        #
+        # Semantics:
+        # - If the caller passes `timeout=...`, we respect it (including `None` for unlimited).
+        # - If the caller omits `timeout`, we use AbstractCore's global config default.
+        # - Same logic for `tool_timeout`.
+        timeout_provided = "timeout" in kwargs
+        tool_timeout_provided = "tool_timeout" in kwargs
+
+        timeout_value = kwargs.get("timeout", None) if timeout_provided else None
+        tool_timeout_value = kwargs.get("tool_timeout", None) if tool_timeout_provided else None
+
+        if not timeout_provided or not tool_timeout_provided:
+            try:
+                from ..config.manager import get_config_manager
+
+                cfg = get_config_manager()
+            except Exception:
+                cfg = None
+
+            if not timeout_provided:
+                try:
+                    timeout_value = float(cfg.get_default_timeout()) if cfg is not None else None
+                except Exception:
+                    timeout_value = None
+
+            if not tool_timeout_provided:
+                try:
+                    tool_timeout_value = float(cfg.get_tool_timeout()) if cfg is not None else None
+                except Exception:
+                    tool_timeout_value = None
+
+        # Validate timeouts: non-positive numbers become "unlimited" (None).
+        try:
+            if isinstance(timeout_value, (int, float)) and float(timeout_value) <= 0:
+                timeout_value = None
+        except Exception:
+            pass
+        try:
+            if isinstance(tool_timeout_value, (int, float)) and float(tool_timeout_value) <= 0:
+                tool_timeout_value = None
+        except Exception:
+            pass
+
+        self._timeout = timeout_value  # None = unlimited HTTP requests
+        self._tool_timeout = tool_timeout_value  # None = unlimited tool execution
 
         # Setup tool execution mode
         # execute_tools: True = AbstractCore executes tools (legacy mode)
@@ -301,10 +345,63 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Returns:
             Custom exception
         """
-        # Don't re-wrap our custom exceptions
-        if isinstance(error, (ModelNotFoundError, AuthenticationError, RateLimitError,
-                            InvalidRequestError, ProviderAPIError)):
+        def _provider_label() -> str:
+            raw = getattr(self, "provider", None)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+            name = self.__class__.__name__
+            return name[:-8] if name.endswith("Provider") else name
+
+        def _configured_timeout_s() -> Optional[float]:
+            v = getattr(self, "_timeout", None)
+            if v is None:
+                return None
+            try:
+                f = float(v)
+            except Exception:
+                return None
+            return f if f > 0 else None
+
+        def _looks_like_timeout(exc: Exception) -> bool:
+            # Type-based (preferred)
+            if isinstance(exc, (TimeoutError, asyncio.TimeoutError, socket.timeout)):
+                return True
+            cls = exc.__class__
+            name = (getattr(cls, "__name__", "") or "").lower()
+            mod = (getattr(cls, "__module__", "") or "").lower()
+            if "timeout" in name:
+                return True
+            if mod.startswith(("httpx", "requests", "aiohttp")) and ("timeout" in name):
+                return True
+
+            # String-based fallback (covers wrapped SDK exceptions)
+            msg = str(exc or "").lower()
+            return ("timed out" in msg) or ("timeout" in msg) or ("time out" in msg)
+
+        def _has_explicit_duration(msg: str) -> bool:
+            # e.g. "... after 300s" or "... after 300.0s"
+            return bool(re.search(r"\bafter\s+\d+(?:\.\d+)?\s*s\b", msg))
+
+        # Preserve typed custom exceptions, but allow ProviderAPIError timeout messages
+        # to be normalized centrally (avoid per-provider inconsistencies).
+        if isinstance(error, ProviderAPIError):
+            msg = str(error)
+            if _looks_like_timeout(error) and not _has_explicit_duration(msg):
+                t = _configured_timeout_s()
+                if t is not None:
+                    return ProviderAPIError(f"{_provider_label()} API error: timed out after {t}s")
+                return ProviderAPIError(f"{_provider_label()} API error: timed out")
             return error
+
+        if isinstance(error, (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError)):
+            return error
+
+        # Central timeout normalization for all providers (httpx/requests/SDKs).
+        if _looks_like_timeout(error):
+            t = _configured_timeout_s()
+            if t is not None:
+                return ProviderAPIError(f"{_provider_label()} API error: timed out after {t}s")
+            return ProviderAPIError(f"{_provider_label()} API error: timed out")
 
         error_str = str(error).lower()
 
