@@ -2483,12 +2483,94 @@ def edit_file(
                 return f"❌ No occurrences of '{pattern}' found in '{file_path}'{range_info}"
             else:
                 # Exact match found
-                if max_replacements == -1:
-                    updated_search_content = search_content.replace(pattern, replacement)
-                    replacements_made = count
+                def _idempotent_insert_replace_exact(
+                    *,
+                    search_content: str,
+                    pattern: str,
+                    replacement: str,
+                    max_replacements: int,
+                ) -> Optional[tuple[str, int]]:
+                    """Idempotent insertion-oriented replace to prevent duplicate insertions.
+
+                    Some edits are expressed as "keep the original text, but insert extra lines"
+                    (e.g. replacement starts/ends with pattern). A naive `str.replace()` can
+                    re-apply that insertion on subsequent identical calls because the pattern
+                    remains present. This helper detects when the insertion is already present
+                    around a match and skips it.
+                    """
+                    if not pattern or replacement == pattern:
+                        return None
+
+                    # Suffix insertion: replacement = pattern + suffix
+                    if replacement.startswith(pattern):
+                        suffix = replacement[len(pattern) :]
+                        if not suffix:
+                            return None
+                        out: list[str] = []
+                        i = 0
+                        replaced = 0
+                        while True:
+                            pos = search_content.find(pattern, i)
+                            if pos == -1:
+                                out.append(search_content[i:])
+                                break
+                            out.append(search_content[i:pos])
+                            after = pos + len(pattern)
+                            if search_content.startswith(suffix, after):
+                                out.append(pattern)
+                            else:
+                                if max_replacements != -1 and replaced >= max_replacements:
+                                    out.append(pattern)
+                                else:
+                                    out.append(pattern + suffix)
+                                    replaced += 1
+                            i = after
+                        return ("".join(out), replaced)
+
+                    # Prefix insertion: replacement = prefix + pattern
+                    if replacement.endswith(pattern):
+                        prefix = replacement[: -len(pattern)]
+                        if not prefix:
+                            return None
+                        out = []
+                        i = 0
+                        replaced = 0
+                        plen = len(prefix)
+                        while True:
+                            pos = search_content.find(pattern, i)
+                            if pos == -1:
+                                out.append(search_content[i:])
+                                break
+                            out.append(search_content[i:pos])
+                            already = pos >= plen and search_content[pos - plen : pos] == prefix
+                            if already:
+                                out.append(pattern)
+                            else:
+                                if max_replacements != -1 and replaced >= max_replacements:
+                                    out.append(pattern)
+                                else:
+                                    out.append(prefix + pattern)
+                                    replaced += 1
+                            i = pos + len(pattern)
+                        return ("".join(out), replaced)
+
+                    return None
+
+                idempotent_result = _idempotent_insert_replace_exact(
+                    search_content=search_content,
+                    pattern=pattern,
+                    replacement=replacement,
+                    max_replacements=max_replacements,
+                )
+                if idempotent_result is not None:
+                    updated_search_content, replacements_made = idempotent_result
                 else:
-                    updated_search_content = search_content.replace(pattern, replacement, max_replacements)
-                    replacements_made = min(count, max_replacements)
+                    if max_replacements == -1:
+                        updated_search_content = search_content.replace(pattern, replacement)
+                        replacements_made = count
+                    else:
+                        updated_search_content = search_content.replace(pattern, replacement, max_replacements)
+                        replacements_made = min(count, max_replacements)
 
         # Reconstruct the full file content if line ranges were used
         if start_line is not None or end_line is not None:
