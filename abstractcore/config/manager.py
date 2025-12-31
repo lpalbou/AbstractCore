@@ -88,7 +88,9 @@ class LoggingConfig:
 @dataclass
 class TimeoutConfig:
     """Timeout configuration settings."""
-    default_timeout: float = 600.0  # 10 minutes for HTTP requests (in seconds)
+    # Default HTTP timeout for LLM providers (in seconds).
+    # This is used as the *process-wide* default unless overridden per-provider/per-call.
+    default_timeout: float = 7200.0  # 2 hours
     tool_timeout: float = 600.0     # 10 minutes for tool execution (in seconds)
 
 

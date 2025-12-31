@@ -49,7 +49,16 @@ class LMStudioProvider(BaseProvider):
         except Exception as e:
             # Fallback with default timeout if client creation fails
             try:
-                self.client = httpx.Client(timeout=300.0)
+                fallback_timeout = None
+                try:
+                    from ..config.manager import get_config_manager
+
+                    fallback_timeout = float(get_config_manager().get_default_timeout())
+                except Exception:
+                    fallback_timeout = 7200.0
+                if isinstance(fallback_timeout, (int, float)) and float(fallback_timeout) <= 0:
+                    fallback_timeout = None
+                self.client = httpx.Client(timeout=fallback_timeout)
             except Exception:
                 raise RuntimeError(f"Failed to create HTTP client for LMStudio: {e}")
 
@@ -359,7 +368,7 @@ class LMStudioProvider(BaseProvider):
                     # If model discovery also fails, provide a generic error
                     raise ModelNotFoundError(f"Model '{self.model}' not found in LMStudio and could not fetch available models")
             else:
-                raise ProviderAPIError(f"LMStudio API error: {str(e)}")
+                raise
 
     def _stream_generate(self, payload: Dict[str, Any]) -> Iterator[GenerateResponse]:
         """Generate streaming response"""
@@ -712,7 +721,16 @@ class LMStudioProvider(BaseProvider):
                     self.logger.warning(f"Failed to update HTTP client timeout: {e}")
                 # Try to create a new client with default timeout
                 try:
-                    self.client = httpx.Client(timeout=300.0)
+                    fallback_timeout = None
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        fallback_timeout = float(get_config_manager().get_default_timeout())
+                    except Exception:
+                        fallback_timeout = 7200.0
+                    if isinstance(fallback_timeout, (int, float)) and float(fallback_timeout) <= 0:
+                        fallback_timeout = None
+                    self.client = httpx.Client(timeout=fallback_timeout)
                 except Exception:
                     pass  # Best effort - don't fail the operation
 

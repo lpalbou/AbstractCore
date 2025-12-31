@@ -234,7 +234,7 @@ class AnthropicProvider(BaseProvider):
                 error_message = format_model_error("Anthropic", self.model, available_models)
                 raise ModelNotFoundError(error_message)
             else:
-                raise ProviderAPIError(f"Anthropic API error: {str(e)}")
+                raise
 
     async def _agenerate_internal(self,
                                    prompt: str,
@@ -385,7 +385,7 @@ class AnthropicProvider(BaseProvider):
                 error_message = format_model_error("Anthropic", self.model, available_models)
                 raise ModelNotFoundError(error_message)
             else:
-                raise ProviderAPIError(f"Anthropic API error: {str(e)}")
+                raise
 
     async def _async_stream_response(self, call_params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[GenerateResponse]:
         """Native async streaming with Anthropic's context manager pattern."""
@@ -401,7 +401,7 @@ class AnthropicProvider(BaseProvider):
                         raw_response=chunk
                     )
         except Exception as e:
-            raise ProviderAPIError(f"Anthropic streaming error: {str(e)}")
+            raise
 
     def unload(self) -> None:
         """Close async client if it was created."""
