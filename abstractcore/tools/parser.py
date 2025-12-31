@@ -920,6 +920,46 @@ def _parse_python_code_blocks(response: str) -> List[ToolCall]:
 
 # Formatting functions
 
+def _format_parameters_compact(parameters: Dict[str, Any]) -> str:
+    """Render a compact, human/LLM-friendly parameter summary.
+
+    We intentionally avoid dumping full JSON schema here to keep the tool prompt small.
+    """
+    if not isinstance(parameters, dict) or not parameters:
+        return "(none)"
+
+    def _fmt_default(value: Any) -> str:
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+
+    parts: List[str] = []
+    for name in sorted([k for k in parameters.keys() if isinstance(k, str)]):
+        meta = parameters.get(name)
+        ptype = "any"
+        required = True
+        default_repr: Optional[str] = None
+
+        if isinstance(meta, dict):
+            if isinstance(meta.get("type"), str) and meta.get("type"):
+                ptype = str(meta.get("type"))
+            required = "default" not in meta
+            if not required:
+                default_repr = _fmt_default(meta.get("default"))
+        else:
+            required = True
+
+        if required:
+            parts.append(f"{name}: {ptype} (required)")
+        elif default_repr is not None:
+            parts.append(f"{name}: {ptype} (default {default_repr})")
+        else:
+            parts.append(f"{name}: {ptype} (optional)")
+
+    return ", ".join(parts) if parts else "(none)"
+
+
 def _format_qwen_style(tools: List[ToolDefinition]) -> str:
     """Format tools for Qwen models using <|tool_call|> format with enhanced metadata."""
     if not tools:
@@ -940,7 +980,7 @@ def _format_qwen_style(tools: List[ToolDefinition]) -> str:
             prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
 
         if tool.parameters:
-            prompt += f"  • **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
+            prompt += f"  • **Parameters**: {_format_parameters_compact(tool.parameters)}\n"
         prompt += "\n"
 
     prompt += """To use a tool, respond with this EXACT format:
@@ -987,7 +1027,7 @@ def _format_llama_style(tools: List[ToolDefinition]) -> str:
             prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
 
         if tool.parameters:
-            prompt += f"  • **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
+            prompt += f"  • **Parameters**: {_format_parameters_compact(tool.parameters)}\n"
         prompt += "\n"
 
     prompt += """To call a function, use this format:

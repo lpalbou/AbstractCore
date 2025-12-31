@@ -43,9 +43,9 @@ logger = get_logger(__name__)
 
 # File Operations
 @tool(
-    description="Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)",
+    description="Find and list files/directories by name/path using glob patterns (case-insensitive; supports multiple patterns). Does NOT search file contents.",
     tags=["file", "directory", "listing", "filesystem"],
-    when_to_use="When you need to find files by their names, paths, or file extensions (NOT for searching file contents)",
+    when_to_use="When you need to find files/directories by their names or paths (NOT for searching file contents). For searching inside files, use search_files().",
     examples=[
         {
             "description": "List all files in current directory",
@@ -137,6 +137,20 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         if not directory.is_dir():
             return f"Error: '{directory_path}' is not a directory"
 
+        # Best-effort existence checks for clearer/no-surprises messaging.
+        has_any_entries = False
+        has_any_visible_entries = False
+        try:
+            for p in directory.iterdir():
+                has_any_entries = True
+                if include_hidden or not p.name.startswith("."):
+                    has_any_visible_entries = True
+                    break
+        except Exception:
+            # If we cannot enumerate entries (permissions, transient FS issues), fall back
+            # to the existing "no matches" messaging below.
+            pass
+
         # Split pattern by | to support multiple patterns
         patterns = [p.strip() for p in pattern.split('|')]
 
@@ -186,7 +200,11 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         files = matched_files
 
         if not files:
-            return f"No files or directories found matching pattern '{pattern}' in '{directory_path}'"
+            if not has_any_entries:
+                return f"Directory '{directory_path}' exists but is empty"
+            if not include_hidden and not has_any_visible_entries:
+                return f"Directory '{directory_path}' exists but contains only hidden entries (use include_hidden=True)"
+            return f"Directory '{directory_path}' exists but no entries match pattern '{pattern}'"
 
         # Filter out hidden entries if include_hidden is False.
         if not include_hidden:
@@ -202,7 +220,11 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
 
         if not files:
             hidden_note = " (hidden entries excluded)" if not include_hidden else ""
-            return f"No files or directories found matching pattern '{pattern}' in '{directory_path}'{hidden_note}"
+            if not has_any_entries:
+                return f"Directory '{directory_path}' exists but is empty"
+            if not include_hidden and not has_any_visible_entries:
+                return f"Directory '{directory_path}' exists but contains only hidden entries (use include_hidden=True)"
+            return f"Directory '{directory_path}' exists but no entries match pattern '{pattern}'{hidden_note}"
 
         # Remove duplicates and sort files by modification time (most recent first), then alphabetically
         unique_files = set(files)
@@ -259,9 +281,13 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
 
 
 @tool(
-    description="Search for text patterns INSIDE files and codes using regex (returns file paths with line numbers by default)",
+    description="Search for text/code patterns INSIDE file contents using regex (grep-like; includes line numbers). Does NOT search filenames/paths.",
     tags=["search", "content", "regex", "grep", "text"],
-    when_to_use="When you need to find specific text, code patterns, or content INSIDE files (NOT for finding files by names)",
+    when_to_use=(
+        "When you need to find which files CONTAIN specific text/code patterns and where they occur (line numbers). "
+        "This searches file CONTENTS (NOT filenames/paths). After locating matches, typically follow with read_file() "
+        "for surrounding context or edit_file(start_line/end_line) for a precise change. For filename/path matching, use list_files()."
+    ),
     examples=[
         {
             "description": "Find files with function definitions containing 'search'",
@@ -477,7 +503,7 @@ def search_files(
                                     # Get only the specific matching line (efficient)
                                     if line_num <= len(lines):
                                         full_line = lines[line_num - 1]
-                                        results.append(f"    Line {line_num}: {full_line}")
+                                        results.append(f"    {line_num}: {full_line}")
                                         global_content_lines_added += 1
                                         
                                         # Check global head_limit after adding content
@@ -513,7 +539,7 @@ def search_files(
                                         results.append(f"\n📄 {file_path}:")
                                         file_header_added = True
                                     
-                                    results.append(f"    Line {line_num}: {line_content}")
+                                    results.append(f"    {line_num}: {line_content}")
                                     global_content_lines_added += 1
                                     
                                     # Check global head_limit after adding content
@@ -607,13 +633,13 @@ def search_files(
             # Apply head_limit to final output if specified
             final_results = results
             if head_limit:
-                content_lines = [r for r in results if r.startswith("    Line")]
+                content_lines = [r for r in results if re.match("^\\s+\\d+:", r)]
                 if len(content_lines) > head_limit:
                     # Keep file headers and trim content lines
                     trimmed_results = []
                     content_count = 0
                     for line in results:
-                        if line.startswith("    Line"):
+                        if re.match("^\\s+\\d+:", line):
                             if content_count < head_limit:
                                 trimmed_results.append(line)
                                 content_count += 1
@@ -634,7 +660,7 @@ def search_files(
 
 
 @tool(
-    description="Read the contents of a file with optional line range and hidden file access",
+    description="Read file contents with an optional inclusive line range (output includes 1-indexed line numbers)",
     tags=["file", "read", "content", "text"],
     when_to_use="When you need to read file contents, examine code, or extract specific line ranges from files",
     examples=[
@@ -703,27 +729,63 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
                 # Read entire file
                 content = f.read()
                 line_count = len(content.splitlines())
-                return f"File: {file_path} ({line_count} lines)\n\n{content}"
+                num_width = max(1, len(str(line_count or 1)))
+                numbered = "\n".join(
+                    [f"{i:>{num_width}}: {line}" for i, line in enumerate(content.splitlines(), 1)]
+                )
+                max_chars = 12000
+                if len(numbered) > max_chars:
+                    preview = numbered[:max_chars]
+                    return (
+                        f"File: {file_path} ({line_count} lines, {len(content)} chars total)\n\n"
+                        f"{preview}\n\n"
+                        f"... (truncated; showing first {max_chars} chars). "
+                        "Tip: call read_file with start_line_one_indexed/end_line_one_indexed_inclusive for a smaller range."
+                    )
+                return f"File: {file_path} ({line_count} lines)\n\n{numbered}"
             else:
                 # Read specific line range
                 lines = f.readlines()
                 total_lines = len(lines)
 
-                # Convert to 0-indexed and validate
-                start_idx = max(0, start_line_one_indexed - 1)
-                end_idx = min(total_lines, end_line_one_indexed_inclusive or total_lines)
+                # Validate and convert to 0-indexed [start, end) slice with inclusive end.
+                try:
+                    start_line = int(start_line_one_indexed or 1)
+                except Exception:
+                    start_line = 1
+                if start_line < 1:
+                    return f"Error: start_line_one_indexed must be >= 1 (got {start_line_one_indexed})"
+
+                end_line = None
+                if end_line_one_indexed_inclusive is not None:
+                    try:
+                        end_line = int(end_line_one_indexed_inclusive)
+                    except Exception:
+                        return f"Error: end_line_one_indexed_inclusive must be an integer (got {end_line_one_indexed_inclusive})"
+                    if end_line < 1:
+                        return f"Error: end_line_one_indexed_inclusive must be >= 1 (got {end_line_one_indexed_inclusive})"
+
+                if end_line is not None and start_line > end_line:
+                    return f"Error: start_line_one_indexed ({start_line}) cannot be greater than end_line_one_indexed_inclusive ({end_line})"
+
+                start_idx = start_line - 1
+                end_effective = end_line if end_line is not None else total_lines
+                end_effective = min(total_lines, end_effective)
+                end_idx = end_effective
 
                 if start_idx >= total_lines:
-                    return f"Error: Start line {start_line_one_indexed} exceeds file length ({total_lines} lines)"
+                    return f"Error: Start line {start_line} exceeds file length ({total_lines} lines)"
 
                 selected_lines = lines[start_idx:end_idx]
 
-                # Format without line numbers (as in legacy)
+                # Always include line numbers (1-indexed). Strip only line endings to preserve whitespace.
+                num_width = max(1, len(str(total_lines or 1)))
                 result_lines = []
-                for line in selected_lines:
-                    result_lines.append(f"{line.rstrip()}")
+                for i, line in enumerate(selected_lines, start=start_line):
+                    result_lines.append(f"{i:>{num_width}}: {line.rstrip('\r\n')}")
 
-                return "\n".join(result_lines)
+                header = f"File: {file_path} ({len(selected_lines)} lines)"
+                return header + "\n\n" + "\n".join(result_lines)
 
     except UnicodeDecodeError:
         return f"Error: Cannot read '{file_path}' - file appears to be binary"
@@ -2110,13 +2172,14 @@ def _apply_unified_diff(original_text: str, hunks: list[tuple[int, int, int, int
 
 
 def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str, int, int]:
-    """Render a compact unified diff showing only changed lines.
+    """Render a compact, context-aware diff with per-line numbers.
 
     Output format is optimized for agent scratchpads and CLIs:
     - First line: `Edited <path> (+A -R)`
-    - Then: unified diff hunks with 0 context (`@@`, `+`, `-`)
+    - Then: unified diff hunks with 1 line of context, rendered with old/new line numbers.
     """
     import difflib
+    import re
 
     old_lines = (before or "").splitlines()
     new_lines = (after or "").splitlines()
@@ -2128,7 +2191,7 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
             fromfile=str(path),
             tofile=str(path),
             lineterm="",
-            n=0,
+            n=1,
         )
     )
 
@@ -2136,16 +2199,55 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
     removed = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
 
     kept: list[str] = []
+    max_line = max(len(old_lines), len(new_lines), 1)
+    width = max(1, len(str(max_line)))
+    blank = " " * width
+
+    old_no: int | None = None
+    new_no: int | None = None
+    hunk_re = re.compile(r"^@@ -(?P<o>\d+)(?:,(?P<oc>\d+))? \+(?P<n>\d+)(?:,(?P<nc>\d+))? @@")
+
     for line in diff_lines:
+        if line.startswith(("---", "+++")):
+            continue
         if line.startswith("@@"):
             kept.append(line)
+            m = hunk_re.match(line)
+            if m:
+                old_no = int(m.group("o"))
+                new_no = int(m.group("n"))
+            else:
+                old_no = None
+                new_no = None
             continue
-        if line.startswith("+") and not line.startswith("+++"):
-            kept.append(line)
+
+        if not line:
             continue
-        if line.startswith("-") and not line.startswith("---"):
-            kept.append(line)
+
+        # Only annotate hunk body lines once we've seen a hunk header.
+        if old_no is None or new_no is None:
             continue
+
+        prefix = line[0]
+        text = line[1:]
+
+        if prefix == " ":
+            # Context line: advances both old and new counters.
+            kept.append(f" {old_no:>{width}} {new_no:>{width}} | {text}")
+            old_no += 1
+            new_no += 1
+            continue
+        if prefix == "-":
+            kept.append(f"-{old_no:>{width}} {blank} | {text}")
+            old_no += 1
+            continue
+        if prefix == "+":
+            kept.append(f"+{blank} {new_no:>{width}} | {text}")
+            new_no += 1
+            continue
+
+        # Fallback (rare): keep any other lines as-is (e.g. "\ No newline at end of file").
+        kept.append(line)
 
     body = "\n".join(kept).rstrip("\n")
     header = f"{str(path)} (+{added} -{removed})"
@@ -2433,6 +2535,18 @@ def edit_file(
             "description": "List current directory contents",
             "arguments": {
                 "command": "ls -la"
+            }
+        },
+        {
+            "description": "Search for a pattern in files (grep)",
+            "arguments": {
+                "command": "grep -R \"ActiveContextPolicy\" -n abstractruntime/src/abstractruntime | head"
+            }
+        },
+        {
+            "description": "Print a line range from a file (sed)",
+            "arguments": {
+                "command": "sed -n '1,120p' README.md"
             }
         },
         {
