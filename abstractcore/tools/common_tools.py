@@ -285,8 +285,9 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
     tags=["search", "content", "regex", "grep", "text"],
     when_to_use=(
         "When you need to find which files CONTAIN specific text/code patterns and where they occur (line numbers). "
-        "This searches file CONTENTS (NOT filenames/paths). After locating matches, typically follow with read_file() "
-        "for surrounding context or edit_file(start_line/end_line) for a precise change. For filename/path matching, use list_files()."
+        "This searches file CONTENTS (NOT filenames/paths). For making edits, prefer output_mode='context' (±N lines) to get "
+        "a small, line-numbered window you can target with read_file(start/end) or edit_file(start_line/end_line). "
+        "For filename/path matching, use list_files()."
     ),
     examples=[
         {
@@ -312,6 +313,15 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
                 "path": "abstractcore/session.py",
                 "head_limit": 5
             }
+        },
+        {
+            "description": "Show line-numbered context (±5 lines) around matches for precise editing",
+            "arguments": {
+                "pattern": "K_SPACE",
+                "path": "game.py",
+                "output_mode": "context",
+                "context_lines": 5
+            }
         }
     ]
 )
@@ -319,6 +329,7 @@ def search_files(
     pattern: str,
     path: str = ".",
     output_mode: str = "content",
+    context_lines: int = 0,
     head_limit: Optional[int] = 20,
     file_pattern: str = "*",
     case_sensitive: bool = False,
@@ -335,7 +346,8 @@ def search_files(
     Args:
         pattern: Regular expression pattern to search for
         path: File or directory path to search in (default: current directory)
-        output_mode: Output format - "content" (show matching lines), "files_with_matches" (show file paths with line numbers), "count" (show match counts) (default: "content")
+        output_mode: Output format - "content" (show matching lines), "context" (show ±N lines around matches), "files_with_matches" (show file paths with line numbers), "count" (show match counts) (default: "content")
+        context_lines: When output_mode="context", show this many lines before/after each match (default: 5 when output_mode="context" and context_lines=0)
         head_limit: Limit output to first N entries (default: 20)
         file_pattern: Glob pattern(s) for files to search. Use "|" to separate multiple patterns (default: "*" for all files)
         case_sensitive: Whether search should be case sensitive (default: False)
@@ -349,16 +361,20 @@ def search_files(
         search_files("def.*search", ".", file_pattern="*.py")  # Search Python files only, show content
         search_files("import.*re", ".", file_pattern="*.py|*.js")  # Search Python and JavaScript files, show content
         search_files("TODO|FIXME", ".", file_pattern="*.py|*.md|*.txt")  # Find TODO/FIXME in multiple file types, show content
+        search_files("K_SPACE", "game.py", output_mode="context", context_lines=5)  # Show context for editing
         search_files("import.*re", ".", "files_with_matches")  # Show file paths with line numbers instead of content
         search_files("pattern", ".", "count")  # Count matches per file
     """
     try:
-        # Convert head_limit to int if it's a string (defensive programming)
-        if isinstance(head_limit, str):
+        output_mode = str(output_mode or "content").strip().lower()
+
+        # Normalize head_limit (treat <= 0 as "no limit").
+        if head_limit is not None:
             try:
-                head_limit = int(head_limit)
-            except ValueError:
-                head_limit = 20  # fallback to default
+                head_limit_int = int(head_limit)
+            except (TypeError, ValueError):
+                head_limit_int = 20  # fallback to default
+            head_limit = head_limit_int if head_limit_int > 0 else None
         
         # Expand home directory shortcuts like ~
         search_path = Path(path).expanduser()
@@ -372,6 +388,48 @@ def search_files(
             regex_pattern = re.compile(pattern, flags)
         except re.error as e:
             return f"Error: Invalid regex pattern '{pattern}': {str(e)}"
+
+        # Context output defaults to ±5 lines unless explicitly set.
+        try:
+            ctx = int(context_lines or 0)
+        except Exception:
+            ctx = 0
+        if ctx < 0:
+            ctx = 0
+        if output_mode == "context" and ctx == 0:
+            ctx = 5
+
+        def _append_context_blocks(file_path_for_display: Path, line_texts: list, match_lines: list) -> None:
+            if not match_lines:
+                return
+            results.append(f"\n📄 {file_path_for_display}:")
+
+            total_lines = len(line_texts)
+            ranges = []
+            for ln in match_lines:
+                start = max(1, ln - ctx)
+                end = min(total_lines, ln + ctx)
+                ranges.append((start, end))
+            ranges.sort()
+
+            merged = []
+            for start, end in ranges:
+                if not merged:
+                    merged.append([start, end])
+                    continue
+                if start <= merged[-1][1] + 1:
+                    merged[-1][1] = max(merged[-1][1], end)
+                else:
+                    merged.append([start, end])
+
+            selected_set = set(match_lines)
+            for block_index, (start, end) in enumerate(merged, 1):
+                if block_index > 1:
+                    results.append("    …")
+                for ln in range(start, end + 1):
+                    text = line_texts[ln - 1]
+                    prefix = "  >" if ln in selected_set else "   "
+                    results.append(f"{prefix} {ln}: {text}")
 
         # Determine if path is a file or directory
         if search_path.is_file():
@@ -468,8 +526,12 @@ def search_files(
         match_counts = {}
         total_matches = 0
         global_content_lines_added = 0  # Track content lines across all files
+        global_context_matches_added = 0  # Count match LINES rendered in context mode (not output lines)
 
         for file_path in files_to_search:
+            if output_mode == "context" and head_limit is not None and global_context_matches_added >= head_limit:
+                break
+
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     if multiline:
@@ -485,9 +547,14 @@ def search_files(
                             # Collect line numbers and prepare content efficiently
                             line_numbers = []
                             file_header_added = False
-                            
+                            context_match_lines = []
+                            context_seen = set()
+                            remaining_context = None
+                            if output_mode == "context" and head_limit is not None:
+                                remaining_context = max(0, head_limit - global_context_matches_added)
+
                             for match in matches:
-                                line_num = content[:match.start()].count('\n') + 1
+                                line_num = content.count('\n', 0, match.start()) + 1
                                 line_numbers.append(line_num)
                                 
                                 if output_mode == "content":
@@ -509,16 +576,30 @@ def search_files(
                                         # Check global head_limit after adding content
                                         if head_limit and global_content_lines_added >= head_limit:
                                             break
+                                elif output_mode == "context":
+                                    if line_num not in context_seen:
+                                        context_seen.add(line_num)
+                                        context_match_lines.append(line_num)
+                                        if remaining_context is not None and len(context_match_lines) >= remaining_context:
+                                            break
 
                             files_with_matches.append((str(file_path), line_numbers))
                             match_counts[str(file_path)] = len(matches)
                             total_matches += len(matches)
+
+                            if output_mode == "context":
+                                _append_context_blocks(file_path, lines, context_match_lines)
+                                global_context_matches_added += len(context_match_lines)
                     else:
                         # Non-multiline mode: process line by line (more efficient)
                         lines = f.readlines()
                         matching_lines = []
                         line_numbers = []
                         file_header_added = False
+                        context_match_lines = []
+                        remaining_context = None
+                        if output_mode == "context" and head_limit is not None:
+                            remaining_context = max(0, head_limit - global_context_matches_added)
                         
                         for line_num, line in enumerate(lines, 1):
                             line_content = line.rstrip()
@@ -545,11 +626,19 @@ def search_files(
                                     # Check global head_limit after adding content
                                     if head_limit and global_content_lines_added >= head_limit:
                                         break
+                                elif output_mode == "context":
+                                    context_match_lines.append(line_num)
+                                    if remaining_context is not None and len(context_match_lines) >= remaining_context:
+                                        break
 
                         if matching_lines:
                             files_with_matches.append((str(file_path), line_numbers))
                             match_counts[str(file_path)] = len(matching_lines)
                             total_matches += len(matching_lines)
+                            if output_mode == "context":
+                                line_texts = [l.rstrip("\n").rstrip("\r") for l in lines]
+                                _append_context_blocks(file_path, line_texts, context_match_lines)
+                                global_context_matches_added += len(context_match_lines)
 
             except Exception as e:
                 if output_mode == "content":
@@ -557,6 +646,8 @@ def search_files(
             
             # Break out of file loop if we've reached the global head_limit
             if head_limit and output_mode == "content" and global_content_lines_added >= head_limit:
+                break
+            if head_limit and output_mode == "context" and global_context_matches_added >= head_limit:
                 break
 
         # Format output based on mode
@@ -622,6 +713,19 @@ def search_files(
             else:
                 return f"No matches found for pattern '{pattern}'"
 
+        elif output_mode == "context":
+            if not results:
+                return f"No matches found for pattern '{pattern}'"
+
+            file_count = len([r for r in results if r.startswith("\n📄")])
+            header = f"Search context for pattern '{pattern}' in {file_count} files (±{ctx} lines):"
+
+            # Head-limit note (cap is on number of matches, not output lines).
+            result_text = header + "\n" + "\n".join(results)
+            if head_limit and global_context_matches_added >= head_limit:
+                result_text += f"\n\n... (showing context for first {head_limit} matches)"
+            return result_text
+
         else:  # content mode
             if not results:
                 return f"No matches found for pattern '{pattern}'"
@@ -660,12 +764,19 @@ def search_files(
 
 
 @tool(
-    description="Read file contents with an optional inclusive line range (output includes 1-indexed line numbers)",
+    description=(
+        "Read text file contents with an optional inclusive line range (output includes 1-indexed line numbers). "
+        "If you request the entire file, this tool either returns the full content or refuses when the file is too large."
+    ),
     tags=["file", "read", "content", "text"],
-    when_to_use="When you need to read file contents, examine code, or extract specific line ranges from files",
+    when_to_use=(
+        "When you need exact file contents for reasoning or to prepare a precise edit. Prefer bounded reads "
+        "(start_line_one_indexed/end_line_one_indexed_inclusive) to avoid re-reading entire files and bloating context. "
+        "If you don't know line numbers yet, use search_files(..., output_mode='context') first."
+    ),
     examples=[
         {
-            "description": "Read entire file",
+            "description": "Read entire file (only when it's small; large files are refused)",
             "arguments": {
                 "file_path": "README.md"
             }
@@ -691,6 +802,15 @@ def search_files(
                 "file_path": "large_file.txt",
                 "should_read_entire_file": False,
                 "end_line_one_indexed_inclusive": 50
+            }
+        },
+        {
+            "description": "Read a small slice around an anchor line (for precise editing)",
+            "arguments": {
+                "file_path": "src/main.py",
+                "should_read_entire_file": False,
+                "start_line_one_indexed": 120,
+                "end_line_one_indexed_inclusive": 160
             }
         }
     ]
@@ -719,6 +839,17 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
         if not path.is_file():
             return f"Error: '{file_path}' is not a file"
 
+        # Guardrails: keep tool outputs bounded and avoid huge memory/time spikes.
+        # These limits intentionally push agents toward: search_files(output_mode="context") → read_file(start/end) → edit_file(...)
+        MAX_LINES_PER_CALL = 400
+        MAX_BYTES_FOR_FULL_READ = 100_000  # bytes on disk; output will be larger due to line numbers
+
+        file_size = None
+        try:
+            file_size = path.stat().st_size
+        except Exception:
+            file_size = None
+
 
         # Auto-override should_read_entire_file if line range parameters are provided
         if start_line_one_indexed != 1 or end_line_one_indexed_inclusive is not None:
@@ -726,28 +857,33 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
 
         with open(path, 'r', encoding='utf-8') as f:
             if should_read_entire_file:
-                # Read entire file
-                content = f.read()
-                line_count = len(content.splitlines())
-                num_width = max(1, len(str(line_count or 1)))
-                numbered = "\n".join(
-                    [f"{i:>{num_width}}: {line}" for i, line in enumerate(content.splitlines(), 1)]
-                )
-                max_chars = 12000
-                if len(numbered) > max_chars:
-                    preview = numbered[:max_chars]
+                if file_size is not None and file_size > MAX_BYTES_FOR_FULL_READ:
                     return (
-                        f"File: {file_path} ({line_count} lines, {len(content)} chars total)\n\n"
-                        f"{preview}\n\n"
-                        f"... (truncated; showing first {max_chars} chars). "
-                        "Tip: call read_file with start_line_one_indexed/end_line_one_indexed_inclusive for a smaller range."
+                        f"Refused: File '{file_path}' is too large to read entirely "
+                        f"({file_size:,} bytes > {MAX_BYTES_FOR_FULL_READ:,} bytes).\n"
+                        "Next step: locate an anchor with "
+                        "search_files(..., output_mode='context'), then read a small slice with "
+                        "read_file(should_read_entire_file=False, start_line_one_indexed=..., end_line_one_indexed_inclusive=...)."
                     )
+
+                # Read entire file (bounded by MAX_LINES_PER_CALL). No truncation: either full content or refusal.
+                raw_lines: list[str] = []
+                for idx, line in enumerate(f, 1):
+                    if idx > MAX_LINES_PER_CALL:
+                        return (
+                            f"Refused: File '{file_path}' is too large to read entirely "
+                            f"(> {MAX_LINES_PER_CALL} lines).\n"
+                            "Next step: use search_files(..., output_mode='context') to find the relevant line number(s), "
+                            "then call read_file with start_line_one_indexed/end_line_one_indexed_inclusive for a smaller range."
+                        )
+                    raw_lines.append(line.rstrip("\r\n"))
+
+                line_count = len(raw_lines)
+                num_width = max(1, len(str(line_count or 1)))
+                numbered = "\n".join([f"{i:>{num_width}}: {line}" for i, line in enumerate(raw_lines, 1)])
                 return f"File: {file_path} ({line_count} lines)\n\n{numbered}"
             else:
                 # Read specific line range
-                lines = f.readlines()
-                total_lines = len(lines)
-
                 # Validate and convert to 0-indexed [start, end) slice with inclusive end.
                 try:
                     start_line = int(start_line_one_indexed or 1)
@@ -768,21 +904,43 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
                 if end_line is not None and start_line > end_line:
                     return f"Error: start_line_one_indexed ({start_line}) cannot be greater than end_line_one_indexed_inclusive ({end_line})"
 
-                start_idx = start_line - 1
-                end_effective = end_line if end_line is not None else total_lines
-                end_effective = min(total_lines, end_effective)
-                end_idx = end_effective
+                if end_line is not None:
+                    requested_lines = end_line - start_line + 1
+                    if requested_lines > MAX_LINES_PER_CALL:
+                        return (
+                            f"Refused: Requested range would return {requested_lines} lines "
+                            f"(> {MAX_LINES_PER_CALL} lines).\n"
+                            "Next step: request a smaller range by narrowing end_line_one_indexed_inclusive, "
+                            "or use search_files(..., output_mode='context') to target the exact region."
+                        )
 
-                if start_idx >= total_lines:
-                    return f"Error: Start line {start_line} exceeds file length ({total_lines} lines)"
+                # Stream the file; collect only the requested lines.
+                selected_lines: list[tuple[int, str]] = []
+                last_line_seen = 0
+                for line_no, line in enumerate(f, 1):
+                    last_line_seen = line_no
+                    if line_no < start_line:
+                        continue
+                    if end_line is not None and line_no > end_line:
+                        break
+                    selected_lines.append((line_no, line.rstrip("\r\n")))
+                    if len(selected_lines) > MAX_LINES_PER_CALL:
+                        return (
+                            f"Refused: Requested range is too large to return in one call "
+                            f"(> {MAX_LINES_PER_CALL} lines).\n"
+                            "Next step: specify a smaller end_line_one_indexed_inclusive, "
+                            "or split the read into multiple smaller ranges."
+                        )
 
-                selected_lines = lines[start_idx:end_idx]
+                if last_line_seen < start_line:
+                    return f"Error: Start line {start_line} exceeds file length ({last_line_seen} lines)"
 
                 # Always include line numbers (1-indexed). Strip only line endings to preserve whitespace.
-                num_width = max(1, len(str(total_lines or 1)))
+                end_width = selected_lines[-1][0] if selected_lines else start_line
+                num_width = max(1, len(str(end_width)))
                 result_lines = []
-                for i, line in enumerate(selected_lines, start=start_line):
-                    result_lines.append(f"{i:>{num_width}}: {line.rstrip('\r\n')}")
+                for line_no, text in selected_lines:
+                    result_lines.append(f"{line_no:>{num_width}}: {text}")
 
                 header = f"File: {file_path} ({len(selected_lines)} lines)"
                 return header + "\n\n" + "\n".join(result_lines)
