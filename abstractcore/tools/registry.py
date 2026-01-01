@@ -19,6 +19,17 @@ logger = get_logger(__name__)
 
 def _error_from_output(value: Any) -> Optional[str]:
     """Detect tool failures reported as string outputs (instead of exceptions)."""
+    # Allow tools to return structured outputs while still communicating failure
+    # without raising exceptions. We only treat this as an error when the tool
+    # explicitly marks itself as unsuccessful.
+    if isinstance(value, dict):
+        success = value.get("success")
+        ok = value.get("ok")
+        if success is False or ok is False:
+            err = value.get("error") or value.get("message") or "Tool reported failure"
+            text = str(err).strip()
+            return text or "Tool reported failure"
+        return None
     if not isinstance(value, str):
         return None
     text = value.strip()
@@ -175,7 +186,9 @@ class ToolRegistry:
             if implied_error is not None:
                 error_result = ToolResult(
                     call_id=tool_call.call_id or "",
-                    output="",
+                    # Preserve structured outputs for post-mortem evidence/provenance.
+                    # For string-only error outputs, store the message in `error` and keep output empty.
+                    output=result if not isinstance(result, str) else "",
                     error=implied_error,
                     success=False,
                 )

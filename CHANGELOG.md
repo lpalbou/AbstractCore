@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Tools/execute_command**: now returns a structured JSON result (including `success`, `return_code`, `stdout`/`stderr`, and a human-friendly `rendered` string) instead of a single decorated string. This enables durable evidence capture and cleaner downstream processing.
+- **Tools/fetch_url**: now returns a structured JSON result including a `rendered` summary plus evidence-only fields (`raw_text`, `normalized_text`) for provenance-first storage.
+
 ### Fixed
 - **Tools/list_files**: `list_files` now lists **directories as well as files** (as documented), and prints relative entry paths. This helps agent workflows confirm `mkdir` outcomes even when directories are still empty.
 - **Tools/web_search**: improve reliability and debuggability of web search:
@@ -16,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Providers (LMStudio / OpenAI-compatible)**: timeouts now surface as clearer errors including the configured timeout duration (helps diagnose client-side disconnects during long local generations).
 - **Providers (all)**: default HTTP/tool timeouts are now sourced centrally from `abstractcore/config` (instead of ad-hoc per-provider behavior), and timeout errors are normalized in `BaseProvider` for consistency.
 - **Server (`/v1/chat/completions`)**: added `timeout_s` request field so orchestrators (e.g. AbstractRuntime) can enforce per-request provider timeouts when calling AbstractCore over HTTP.
+- **Tool failure semantics**: the ToolRegistry now supports tools reporting structured failures (`{"success": false, ...}`) while preserving structured outputs for post-mortem evidence.
 
 ## [2.8.1 - 2025-12-21
 

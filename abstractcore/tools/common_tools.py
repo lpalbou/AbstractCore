@@ -1364,7 +1364,7 @@ def fetch_url(
     extract_links: bool = False,
     user_agent: str = "AbstractCore-FetchTool/1.0",
     include_full_content: bool = True,
-) -> str:
+) -> Dict[str, Any]:
     """
     Fetch and intelligently parse content from URLs with comprehensive content type detection.
     
@@ -1397,10 +1397,18 @@ def fetch_url(
         # Validate URL
         parsed_url = urlparse(url)
         if not parsed_url.scheme or not parsed_url.netloc:
-            return f"❌ Invalid URL format: {url}"
+            rendered = f"❌ Invalid URL format: {url}"
+            return {"success": False, "error": rendered.lstrip("❌").strip(), "url": url, "rendered": rendered}
         
         if parsed_url.scheme not in ['http', 'https']:
-            return f"❌ Unsupported URL scheme: {parsed_url.scheme}. Only HTTP and HTTPS are supported."
+            rendered = f"❌ Unsupported URL scheme: {parsed_url.scheme}. Only HTTP and HTTPS are supported."
+            return {
+                "success": False,
+                "error": rendered.lstrip("❌").strip(),
+                "url": url,
+                "scheme": str(parsed_url.scheme),
+                "rendered": rendered,
+            }
         
         # Prepare request headers
         request_headers = {
@@ -1432,6 +1440,48 @@ def fetch_url(
         
         # Record fetch timestamp
         fetch_timestamp = datetime.now().isoformat()
+
+        def _decode_text_bytes(content: bytes, content_type_header: str) -> str:
+            """Best-effort decode of text-based HTTP responses."""
+            encoding = "utf-8"
+            if "charset=" in (content_type_header or ""):
+                try:
+                    encoding = str(content_type_header).split("charset=")[1].split(";")[0].strip() or "utf-8"
+                except Exception:
+                    encoding = "utf-8"
+
+            for enc in [encoding, "utf-8", "iso-8859-1", "windows-1252"]:
+                try:
+                    return content.decode(enc)
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            return content.decode("utf-8", errors="replace")
+
+        def _normalize_text_for_evidence(*, raw_text: str, content_type_header: str, url: str) -> str:
+            """Extract a readable text representation for evidence storage."""
+            text = str(raw_text or "")
+            if not text.strip():
+                return ""
+
+            main_type = str(content_type_header or "").split(";")[0].strip().lower()
+            try:
+                if main_type.startswith(("text/html", "application/xhtml+xml", "application/xhtml")):
+                    # HTML: strip tags and normalize whitespace.
+                    parser = _get_appropriate_parser(text)
+                    import warnings
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+                        soup = BeautifulSoup(text, parser)
+                    return _normalize_text(soup.get_text(" ", strip=True))
+
+                if main_type == "application/json":
+                    data = json.loads(text)
+                    return json.dumps(data, ensure_ascii=False, indent=2, separators=(",", ": "))
+            except Exception:
+                # Fall back to raw text on parse failures.
+                pass
+
+            return text
         
         # Make the request with session for connection reuse and keep it open while streaming
         with requests.Session() as session:
@@ -1448,10 +1498,22 @@ def fetch_url(
 
                 # Check response status
                 if not response.ok:
-                    return f"❌ HTTP Error {response.status_code}: {response.reason}\n" \
-                           f"URL: {url}\n" \
-                           f"Timestamp: {fetch_timestamp}\n" \
-                           f"Response headers: {dict(response.headers)}"
+                    rendered = (
+                        f"❌ HTTP Error {response.status_code}: {response.reason}\n"
+                        f"URL: {url}\n"
+                        f"Timestamp: {fetch_timestamp}\n"
+                        f"Response headers: {dict(response.headers)}"
+                    )
+                    return {
+                        "success": False,
+                        "error": f"HTTP Error {int(response.status_code)}: {str(response.reason)}",
+                        "url": url,
+                        "timestamp": fetch_timestamp,
+                        "status_code": int(response.status_code),
+                        "reason": str(response.reason),
+                        "content_type": str(response.headers.get("content-type", "") or ""),
+                        "rendered": rendered,
+                    }
 
                 # Get content info
                 content_type = response.headers.get('content-type', '').lower()
@@ -1461,11 +1523,23 @@ def fetch_url(
 
                 # Check content length before downloading
                 if content_length and content_length > max_content_length:
-                    return f"⚠️  Content too large: {content_length:,} bytes (max: {max_content_length:,})\n" \
-                           f"URL: {url}\n" \
-                           f"Content-Type: {content_type}\n" \
-                           f"Timestamp: {fetch_timestamp}\n" \
-                           f"Use max_content_length parameter to increase limit if needed"
+                    rendered = (
+                        f"⚠️  Content too large: {content_length:,} bytes (max: {max_content_length:,})\n"
+                        f"URL: {url}\n"
+                        f"Content-Type: {content_type}\n"
+                        f"Timestamp: {fetch_timestamp}\n"
+                        "Use max_content_length parameter to increase limit if needed"
+                    )
+                    return {
+                        "success": False,
+                        "error": "Content too large",
+                        "url": url,
+                        "timestamp": fetch_timestamp,
+                        "content_type": str(content_type or ""),
+                        "content_length": int(content_length),
+                        "max_content_length": int(max_content_length),
+                        "rendered": rendered,
+                    }
 
                 # Download content with optimized chunking
                 content_chunks = []
@@ -1478,10 +1552,22 @@ def fetch_url(
                     if chunk:
                         downloaded_size += len(chunk)
                         if downloaded_size > max_content_length:
-                            return f"⚠️  Content exceeded size limit during download: {downloaded_size:,} bytes (max: {max_content_length:,})\n" \
-                                   f"URL: {url}\n" \
-                                   f"Content-Type: {content_type}\n" \
-                                   f"Timestamp: {fetch_timestamp}"
+                            rendered = (
+                                f"⚠️  Content exceeded size limit during download: {downloaded_size:,} bytes (max: {max_content_length:,})\n"
+                                f"URL: {url}\n"
+                                f"Content-Type: {content_type}\n"
+                                f"Timestamp: {fetch_timestamp}"
+                            )
+                            return {
+                                "success": False,
+                                "error": "Content exceeded size limit during download",
+                                "url": url,
+                                "timestamp": fetch_timestamp,
+                                "content_type": str(content_type or ""),
+                                "downloaded_size": int(downloaded_size),
+                                "max_content_length": int(max_content_length),
+                                "rendered": rendered,
+                            }
                         content_chunks.append(chunk)
 
                 content_bytes = b''.join(content_chunks)
@@ -1524,30 +1610,94 @@ def fetch_url(
                 result_parts.append(f"\n📄 Content Analysis:")
                 result_parts.append(parsed_content)
 
-                return "\n".join(result_parts)
+                rendered = "\n".join(result_parts)
+
+                raw_text: Optional[str] = None
+                normalized_text: Optional[str] = None
+                try:
+                    main_type = str(content_type or "").split(";")[0].strip().lower()
+                    text_based_types = [
+                        "text/",
+                        "application/json",
+                        "application/xml",
+                        "application/javascript",
+                        "application/rss+xml",
+                        "application/atom+xml",
+                        "application/xhtml+xml",
+                    ]
+                    is_text_based = any(main_type.startswith(t) for t in text_based_types)
+                    if is_text_based:
+                        raw_text = _decode_text_bytes(content_bytes, content_type)
+                        normalized_text = _normalize_text_for_evidence(raw_text=raw_text, content_type_header=content_type, url=url)
+                except Exception:
+                    raw_text = None
+                    normalized_text = None
+
+                return {
+                    "success": True,
+                    "error": None,
+                    "url": str(url),
+                    "final_url": str(response.url),
+                    "timestamp": str(fetch_timestamp),
+                    "status_code": int(response.status_code),
+                    "reason": str(response.reason),
+                    "content_type": str(content_type or ""),
+                    "size_bytes": int(actual_size),
+                    # Evidence-only fields (large). Higher layers should persist these as artifacts and drop them from
+                    # tool outputs to keep run state/prompt size bounded.
+                    "raw_text": raw_text,
+                    "normalized_text": normalized_text,
+                    # LLM-visible / UI-friendly rendering.
+                    "rendered": rendered,
+                }
         
     except requests.exceptions.Timeout:
-        return f"⏰ Request timeout after {timeout} seconds\n" \
-               f"URL: {url}\n" \
-               f"Consider increasing timeout parameter"
+        rendered = (
+            f"⏰ Request timeout after {timeout} seconds\n"
+            f"URL: {url}\n"
+            "Consider increasing timeout parameter"
+        )
+        return {
+            "success": False,
+            "error": f"Request timeout after {int(timeout)} seconds",
+            "url": str(url),
+            "timeout_s": int(timeout),
+            "rendered": rendered,
+        }
     
     except requests.exceptions.ConnectionError as e:
-        return f"🔌 Connection error: {str(e)}\n" \
-               f"URL: {url}\n" \
-               f"Check network connectivity and URL validity"
+        rendered = (
+            f"🔌 Connection error: {str(e)}\n"
+            f"URL: {url}\n"
+            "Check network connectivity and URL validity"
+        )
+        return {
+            "success": False,
+            "error": f"Connection error: {str(e)}",
+            "url": str(url),
+            "rendered": rendered,
+        }
     
     except requests.exceptions.TooManyRedirects:
-        return f"🔄 Too many redirects\n" \
-               f"URL: {url}\n" \
-               f"Try setting follow_redirects=False to see redirect chain"
+        rendered = (
+            "🔄 Too many redirects\n"
+            f"URL: {url}\n"
+            "Try setting follow_redirects=False to see redirect chain"
+        )
+        return {
+            "success": False,
+            "error": "Too many redirects",
+            "url": str(url),
+            "rendered": rendered,
+        }
     
     except requests.exceptions.RequestException as e:
-        return f"❌ Request error: {str(e)}\n" \
-               f"URL: {url}"
+        rendered = f"❌ Request error: {str(e)}\nURL: {url}"
+        return {"success": False, "error": str(e), "url": str(url), "rendered": rendered}
     
     except Exception as e:
-        return f"❌ Unexpected error fetching URL: {str(e)}\n" \
-               f"URL: {url}"
+        rendered = f"❌ Unexpected error fetching URL: {str(e)}\nURL: {url}"
+        return {"success": False, "error": str(e), "url": str(url), "rendered": rendered}
 
 
 def _parse_content_by_type(
@@ -3014,7 +3164,7 @@ def execute_command(
     capture_output: bool = True,
     require_confirmation: bool = False,
     allow_dangerous: bool = False
-) -> str:
+) -> Dict[str, Any]:
     """
     Execute a shell command safely with comprehensive security controls.
 
@@ -3027,20 +3177,38 @@ def execute_command(
         allow_dangerous: Whether to allow potentially dangerous commands (default: False)
 
     Returns:
-        Command execution result with stdout, stderr, and return code information
+        Structured command execution result (JSON-safe).
     """
     try:
         # Platform detection
         current_platform = platform.system()
 
+        def _truncate(text: str, *, limit: int) -> tuple[str, bool]:
+            s = "" if text is None else str(text)
+            if limit <= 0:
+                return s, False
+            if len(s) <= limit:
+                return s, False
+            return s[:limit], True
+
         # CRITICAL SECURITY VALIDATION - Dangerous commands MUST be blocked
         security_check = _validate_command_security(command, allow_dangerous)
         if not security_check["safe"]:
-            return f"🚫 CRITICAL SECURITY BLOCK: {security_check['reason']}\n" \
-                   f"BLOCKED COMMAND: {command}\n" \
-                   f"⚠️  DANGER: This command could cause IRREVERSIBLE DAMAGE\n" \
-                   f"Only use allow_dangerous=True with EXPRESS USER CONSENT\n" \
-                   f"This safety mechanism protects your system and data"
+            rendered = (
+                f"🚫 CRITICAL SECURITY BLOCK: {security_check['reason']}\n"
+                f"BLOCKED COMMAND: {command}\n"
+                f"⚠️  DANGER: This command could cause IRREVERSIBLE DAMAGE\n"
+                f"Only use allow_dangerous=True with EXPRESS USER CONSENT\n"
+                f"This safety mechanism protects your system and data"
+            )
+            return {
+                "success": False,
+                "error": str(security_check.get("reason") or "CRITICAL SECURITY BLOCK").strip(),
+                "command": str(command),
+                "platform": str(current_platform),
+                "working_directory": str(working_directory or ""),
+                "rendered": rendered,
+            }
 
         # User confirmation for risky commands
         if require_confirmation:
@@ -3054,9 +3222,25 @@ def execute_command(
             # Expand home directory shortcuts like ~ before resolving
             working_dir = Path(working_directory).expanduser().resolve()
             if not working_dir.exists():
-                return f"❌ Error: Working directory does not exist: {working_directory}"
+                rendered = f"❌ Error: Working directory does not exist: {working_directory}"
+                return {
+                    "success": False,
+                    "error": rendered.lstrip("❌").strip(),
+                    "command": str(command),
+                    "platform": str(current_platform),
+                    "working_directory": str(working_directory),
+                    "rendered": rendered,
+                }
             if not working_dir.is_dir():
-                return f"❌ Error: Working directory path is not a directory: {working_directory}"
+                rendered = f"❌ Error: Working directory path is not a directory: {working_directory}"
+                return {
+                    "success": False,
+                    "error": rendered.lstrip("❌").strip(),
+                    "command": str(command),
+                    "platform": str(current_platform),
+                    "working_directory": str(working_directory),
+                    "rendered": rendered,
+                }
         else:
             working_dir = None
 
@@ -3085,19 +3269,28 @@ def execute_command(
             output_parts.append(f"⏱️  Execution time: {execution_time:.2f}s")
             output_parts.append(f"🔢 Return code: {result.returncode}")
 
-            if capture_output:
-                if result.stdout:
-                    # Limit output size for agent usability while allowing substantial content
-                    stdout = result.stdout[:20000]  # First 20000 chars for agent processing
-                    if len(result.stdout) > 20000:
-                        stdout += f"\n... (output truncated, {len(result.stdout)} total chars)"
-                    output_parts.append(f"\n📤 STDOUT:\n{stdout}")
+            stdout_full = result.stdout or ""
+            stderr_full = result.stderr or ""
 
-                if result.stderr:
-                    stderr = result.stderr[:5000]  # First 5000 chars for errors
-                    if len(result.stderr) > 5000:
-                        stderr += f"\n... (error output truncated, {len(result.stderr)} total chars)"
-                    output_parts.append(f"\n❌ STDERR:\n{stderr}")
+            stdout_preview = ""
+            stderr_preview = ""
+            stdout_truncated = False
+            stderr_truncated = False
+
+            if capture_output:
+                if stdout_full:
+                    # Keep the rendered preview bounded for LLM usability. Full output is still returned
+                    # in structured fields so higher layers can store it durably as evidence.
+                    stdout_preview, stdout_truncated = _truncate(stdout_full, limit=20000)
+                    if stdout_truncated:
+                        stdout_preview += f"\n... (output truncated, {len(stdout_full)} total chars)"
+                    output_parts.append(f"\n📤 STDOUT:\n{stdout_preview}")
+
+                if stderr_full:
+                    stderr_preview, stderr_truncated = _truncate(stderr_full, limit=5000)
+                    if stderr_truncated:
+                        stderr_preview += f"\n... (error output truncated, {len(stderr_full)} total chars)"
+                    output_parts.append(f"\n❌ STDERR:\n{stderr_preview}")
 
                 if result.returncode == 0:
                     output_parts.append("\n✅ Command completed successfully")
@@ -3106,22 +3299,70 @@ def execute_command(
             else:
                 output_parts.append("📝 Output capture disabled")
 
-            return "\n".join(output_parts)
+            rendered = "\n".join(output_parts)
+            ok = bool(result.returncode == 0)
+            err = None if ok else f"Command completed with non-zero exit code: {int(result.returncode)}"
+            return {
+                "success": ok,
+                "error": err,
+                "command": str(command),
+                "platform": str(current_platform),
+                "working_directory": str(working_dir or os.getcwd()),
+                "duration_s": float(execution_time),
+                "return_code": int(result.returncode),
+                "stdout": stdout_full if capture_output else "",
+                "stderr": stderr_full if capture_output else "",
+                "stdout_preview": stdout_preview,
+                "stderr_preview": stderr_preview,
+                "stdout_truncated": bool(stdout_truncated),
+                "stderr_truncated": bool(stderr_truncated),
+                "rendered": rendered,
+            }
 
         except subprocess.TimeoutExpired:
-            return f"⏰ Timeout: Command exceeded {timeout} seconds\n" \
-                   f"Command: {command}\n" \
-                   f"Consider increasing timeout or breaking down the command"
+            rendered = (
+                f"⏰ Timeout: Command exceeded {timeout} seconds\n"
+                f"Command: {command}\n"
+                "Consider increasing timeout or breaking down the command"
+            )
+            return {
+                "success": False,
+                "error": f"Tool timeout after {int(timeout)}s",
+                "command": str(command),
+                "platform": str(current_platform),
+                "working_directory": str(working_dir or os.getcwd()) if "working_dir" in locals() else str(working_directory or ""),
+                "timeout_s": int(timeout),
+                "rendered": rendered,
+            }
 
         except subprocess.CalledProcessError as e:
-            return f"❌ Command execution failed\n" \
-                   f"Command: {command}\n" \
-                   f"Return code: {e.returncode}\n" \
-                   f"Error: {e.stderr if e.stderr else 'No error details'}"
+            rendered = (
+                "❌ Command execution failed\n"
+                f"Command: {command}\n"
+                f"Return code: {e.returncode}\n"
+                f"Error: {e.stderr if e.stderr else 'No error details'}"
+            )
+            return {
+                "success": False,
+                "error": "Command execution failed",
+                "command": str(command),
+                "platform": str(current_platform),
+                "working_directory": str(working_dir or os.getcwd()) if "working_dir" in locals() else str(working_directory or ""),
+                "return_code": int(getattr(e, "returncode", -1) or -1),
+                "stderr": str(getattr(e, "stderr", "") or ""),
+                "rendered": rendered,
+            }
 
     except Exception as e:
-        return f"❌ Execution error: {str(e)}\n" \
-               f"Command: {command}"
+        rendered = f"❌ Execution error: {str(e)}\nCommand: {command}"
+        return {
+            "success": False,
+            "error": str(e),
+            "command": str(command),
+            "platform": str(platform.system()),
+            "working_directory": str(working_directory or ""),
+            "rendered": rendered,
+        }
 
 
 def _validate_command_security(command: str, allow_dangerous: bool = False) -> dict:
