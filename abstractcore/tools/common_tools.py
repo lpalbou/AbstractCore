@@ -1935,6 +1935,131 @@ def _normalize_escape_sequences(text: str) -> str:
     return text
 
 
+def _extract_pattern_tokens_for_diagnostics(pattern: str, *, max_tokens: int = 6) -> list[str]:
+    """Extract human-meaningful tokens from a pattern for no-match diagnostics.
+
+    This is intentionally heuristic and safe:
+    - Only used to *suggest* likely locations (never to apply edits).
+    - Prefers longer identifiers to reduce noise.
+    """
+    raw = str(pattern or "")
+    if not raw:
+        return []
+
+    # Extract identifier-like tokens (e.g. pygame, draw, polygon, MyClass, render_foo).
+    tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", raw)
+    if not tokens:
+        return []
+
+    stop = {
+        "self",
+        "this",
+        "true",
+        "false",
+        "null",
+        "none",
+        "return",
+        "class",
+        "def",
+        "import",
+        "from",
+    }
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for t in tokens:
+        tl = t.lower()
+        if tl in stop:
+            continue
+        if tl in seen:
+            continue
+        seen.add(tl)
+        ordered.append(t)
+
+    if not ordered:
+        return []
+
+    ranked = sorted(enumerate(ordered), key=lambda pair: (-len(pair[1]), pair[0]))
+    return [t for _, t in ranked[: max(1, int(max_tokens or 6))]]
+
+
+def _pick_search_anchor_for_diagnostics(pattern: str) -> str:
+    """Pick a concise anchor string for search_files() suggestions."""
+    raw = str(pattern or "").strip()
+    if not raw:
+        return ""
+    # Prefer dotted identifiers if present (common in Python/JS), else fall back to a token.
+    dotted = re.findall(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+", raw)
+    if dotted:
+        return max(dotted, key=len)
+    tokens = _extract_pattern_tokens_for_diagnostics(raw, max_tokens=1)
+    if tokens:
+        return tokens[0]
+    return raw[:40]
+
+
+def _find_candidate_lines_for_diagnostics(
+    *,
+    content: str,
+    tokens: list[str],
+    max_results: int = 5,
+) -> list[tuple[int, str, int]]:
+    if not content or not tokens:
+        return []
+    lines = content.splitlines()
+
+    tokens_l = [t.lower() for t in tokens if isinstance(t, str) and t]
+    if not tokens_l:
+        return []
+
+    scored: list[tuple[int, str, int]] = []
+    for idx, line in enumerate(lines, 1):
+        line_l = line.lower()
+        score = 0
+        for tok in tokens_l:
+            if tok in line_l:
+                score += 1
+        if score <= 0:
+            continue
+        scored.append((idx, line, score))
+
+    if not scored:
+        return []
+
+    scored.sort(key=lambda item: (-item[2], item[0]))
+    return scored[: max(1, int(max_results or 5))]
+
+
+def _format_edit_file_no_match_diagnostics(*, content: str, pattern: str, file_path: str) -> str:
+    """Format compact diagnostics appended to edit_file no-match errors."""
+    tokens = _extract_pattern_tokens_for_diagnostics(pattern)
+    if not tokens:
+        return ""
+
+    candidates = _find_candidate_lines_for_diagnostics(content=content, tokens=tokens, max_results=5)
+    if not candidates:
+        return ""
+
+    anchor = _pick_search_anchor_for_diagnostics(pattern)
+    token_list = ", ".join(tokens[:3])
+
+    def _truncate(line: str, limit: int = 200) -> str:
+        s = "" if line is None else str(line)
+        s = s.replace("\t", "    ")
+        if len(s) <= limit:
+            return s
+        return s[: max(0, limit - 1)] + "…"
+
+    out: list[str] = []
+    if anchor:
+        out.append(f"Tip: Use search_files(pattern=\"{anchor}\", path=\"{file_path}\") to locate the exact line(s).")
+    out.append(f"Closest lines (token match: {token_list}):")
+    for ln, text, _score in candidates:
+        out.append(f"  {ln}: {_truncate(text)}")
+
+    return "\n" + "\n".join(out)
+
+
 def _flexible_whitespace_match(
     pattern: str,
     replacement: str,
@@ -2414,6 +2539,9 @@ def edit_file(
         pattern = _normalize_escape_sequences(pattern)
         replacement = _normalize_escape_sequences(replacement)
 
+        if not isinstance(pattern, str) or not pattern:
+            return "❌ Invalid pattern: pattern must be a non-empty string."
+
         # Handle line range targeting if specified
         search_content = content
         line_offset = 0
@@ -2455,7 +2583,8 @@ def edit_file(
                 hint = ""
                 if start_line is not None or end_line is not None:
                     hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
-                return f"❌ No matches found for regex pattern '{pattern}' in '{file_path}'{range_info}{hint}"
+                diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern, file_path=file_path)
+                return f"❌ No matches found for regex pattern '{pattern}' in '{file_path}'{range_info}{hint}{diag}"
 
             # Apply replacements to search content
             if max_replacements == -1:
@@ -2483,13 +2612,15 @@ def edit_file(
                     hint = ""
                     if start_line is not None or end_line is not None:
                         hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
-                    return f"❌ No occurrences of '{pattern}' found in '{file_path}'{range_info}{hint}"
+                    diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern, file_path=file_path)
+                    return f"❌ No occurrences of '{pattern}' found in '{file_path}'{range_info}{hint}{diag}"
             elif count == 0:
                 range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
                 hint = ""
                 if start_line is not None or end_line is not None:
                     hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
-                return f"❌ No occurrences of '{pattern}' found in '{file_path}'{range_info}{hint}"
+                diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern, file_path=file_path)
+                return f"❌ No occurrences of '{pattern}' found in '{file_path}'{range_info}{hint}{diag}"
             else:
                 # Exact match found
                 def _idempotent_insert_replace_exact(
