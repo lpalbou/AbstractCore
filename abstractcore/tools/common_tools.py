@@ -798,9 +798,16 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
 
 
 @tool(
-    description="Write content to a file with robust error handling, creating directories if needed",
+    description=(
+        "Create/overwrite a file with the provided full content (whole-file write). "
+        "WARNING: mode='w' overwrites the entire file. For surgical edits to an existing file, use edit_file()."
+    ),
     tags=["file", "write", "create", "append", "content", "output"],
-    when_to_use="When you need to create new files, save content, or append to existing files",
+    when_to_use=(
+        "When you need to CREATE a new file, OVERWRITE an entire file with known-good full content, "
+        "or APPEND content (e.g. logs). This is not an editing tool: if you only need to change a small part "
+        "of an existing file, use edit_file() instead."
+    ),
     examples=[
         {
             "description": "Write a simple text file",
@@ -810,11 +817,19 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
             }
         },
         {
-            "description": "Create a Python script",
+            "description": "Create a new Python script (whole file content)",
             "arguments": {
                 "file_path": "script.py",
                 "content": "#!/usr/bin/env python3\nprint('Hello from Python!')"
             }
+        },
+        {
+            "description": "Overwrite an existing config file with complete new content (intentional whole-file rewrite)",
+            "arguments": {
+                "file_path": "config.json",
+                "content": "{\n  \"api_key\": \"test\",\n  \"debug\": true\n}\n",
+                "mode": "w",
+            },
         },
         {
             "description": "Append to existing file",
@@ -831,13 +846,6 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
                 "content": "# API Endpoints\n\n## Authentication\n..."
             }
         },
-        {
-            "description": "Write JSON data",
-            "arguments": {
-                "file_path": "config.json",
-                "content": "{\n  \"api_key\": \"test\",\n  \"debug\": true\n}"
-            }
-        }
     ]
 )
 def write_file(file_path: str, content: str = "", mode: str = "w", create_dirs: bool = True) -> str:
@@ -2380,16 +2388,28 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
 
 
 @tool(
-    description="Edit files by replacing text patterns using simple matching or regex",
+    description=(
+        "Surgically edit a text file via small find/replace (literal or regex) or by applying a single-file unified diff patch. "
+        "Not intended for rewriting whole files."
+    ),
     tags=["file", "edit", "replace", "pattern", "substitute", "regex"],
-    when_to_use="When you need to edit files by replacing text. Supports simple text or regex patterns, line ranges, preview mode, and controlling replacement count.",
+    when_to_use=(
+        "Use for SMALL, PRECISE edits to an existing file. Best practice:\n"
+        "- Read context first (read_file) and/or locate anchors (search_files).\n"
+        "- Keep `pattern` small and uniquely identifying (often 1–5 lines).\n"
+        "- Prefer `max_replacements=1` and `start_line/end_line` to bound the change.\n"
+        "- Use `preview_only=True` if unsure.\n"
+        "- For multi-line/structural edits, prefer unified-diff mode (replacement=None) so context is explicit.\n"
+        "If you need to replace the ENTIRE file content, use write_file() instead."
+    ),
     examples=[
         {
-            "description": "Replace simple text",
+            "description": "Surgical one-line replacement (bounded, safe)",
             "arguments": {
                 "file_path": "config.py",
                 "pattern": "debug = False",
                 "replacement": "debug = True",
+                "max_replacements": 1,
             },
         },
         {
@@ -2399,6 +2419,7 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
                 "pattern": r"def old_function\\([^)]*\\):",
                 "replacement": "def new_function(param1, param2):",
                 "use_regex": True,
+                "max_replacements": 1,
             },
         },
         {
@@ -2417,6 +2438,7 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
                 "pattern": "class OldClass",
                 "replacement": "class NewClass",
                 "preview_only": True,
+                "max_replacements": 1,
             },
         },
         {
@@ -2426,6 +2448,15 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
                 "pattern": "if condition:\\n    do_something()",
                 "replacement": "if condition:\\n    do_something_else()",
                 "flexible_whitespace": True,
+                "max_replacements": 1,
+            },
+        },
+        {
+            "description": "Apply a precise multi-line change using unified diff mode (recommended for code blocks)",
+            "arguments": {
+                "file_path": "app.py",
+                "pattern": "--- a/app.py\n+++ b/app.py\n@@ -10,3 +10,3 @@\n-    old_line()\n+    new_line()\n",
+                "replacement": None,
             },
         },
     ],
