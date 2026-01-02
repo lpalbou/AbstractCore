@@ -36,6 +36,7 @@ _KNOWN_PROVIDER_PREFIXES = {
     "lmstudio",
     "local",
     "mlx",
+    "nvidia",
     "ollama",
     "openai",
     "openai-compatible",

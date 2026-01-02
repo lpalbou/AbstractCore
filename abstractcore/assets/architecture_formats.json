@@ -499,6 +499,20 @@
       "reasoning_levels": ["low", "medium", "high"],
       "patterns": ["gpt-oss", "openai/gpt-oss"]
     },
+    "nemotron_hybrid_moe": {
+      "description": "NVIDIA Nemotron-3-Nano hybrid MoE architecture with Mamba-2 and Attention layers (December 2025)",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "native",
+      "tool_calling_format": "chatml-function-calling",
+      "reasoning_support": true,
+      "patterns": ["nemotron-3-nano", "nemotron-nano", "nvidia/nemotron"]
+    },
     "generic": {
       "description": "Generic/unknown architecture fallback",
       "message_format": "basic",
