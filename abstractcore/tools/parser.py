@@ -157,13 +157,21 @@ def parse_tool_calls(response: str, model_name: Optional[str] = None) -> List[To
     return calls
 
 
-def format_tool_prompt(tools: List[ToolDefinition], model_name: Optional[str] = None) -> str:
+def format_tool_prompt(
+    tools: List[ToolDefinition],
+    model_name: Optional[str] = None,
+    *,
+    include_tool_list: bool = True,
+    include_examples: bool = True,
+) -> str:
     """
     Format tools into a system prompt based on model architecture.
 
     Args:
         tools: List of tool definitions
         model_name: Optional model name for architecture detection
+        include_tool_list: If False, omit per-tool listings (only include tool-call protocol/rules)
+        include_examples: If False, omit examples even if tools provide them
 
     Returns:
         Formatted system prompt
@@ -176,17 +184,17 @@ def format_tool_prompt(tools: List[ToolDefinition], model_name: Optional[str] = 
 
     # Format based on architecture
     if tool_format == ToolFormat.TOOL_CODE:
-        return _format_gemma_style(tools)
+        return _format_gemma_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.SPECIAL_TOKEN:
-        return _format_qwen_style(tools)
+        return _format_qwen_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.FUNCTION_CALL:
-        return _format_llama_style(tools)
+        return _format_llama_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.XML_WRAPPED:
-        return _format_xml_style(tools)
+        return _format_xml_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.RAW_JSON:
-        return _format_json_style(tools)
+        return _format_json_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     else:
-        return _format_generic_style(tools)
+        return _format_generic_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
 
 
 # Internal helpers
@@ -946,7 +954,10 @@ def _format_parameters_compact(parameters: Dict[str, Any]) -> str:
                 ptype = str(meta.get("type"))
             required = "default" not in meta
             if not required:
-                default_repr = _fmt_default(meta.get("default"))
+                default_value = meta.get("default")
+                # Avoid printing `default null` / `default None` in prompts; treat that as optional.
+                if default_value is not None:
+                    default_repr = _fmt_default(default_value)
         else:
             required = True
 
@@ -960,220 +971,226 @@ def _format_parameters_compact(parameters: Dict[str, Any]) -> str:
     return ", ".join(parts) if parts else "(none)"
 
 
-def _format_qwen_style(tools: List[ToolDefinition]) -> str:
+def _append_tool_examples(
+    prompt: str,
+    tools: List[ToolDefinition],
+    *,
+    tool_format: ToolFormat,
+    max_examples_total: int = 6,
+) -> str:
+    """Append a small, globally-capped examples section.
+
+    Notes:
+    - Examples are useful, but they are extremely token-expensive when included per-tool.
+    - We cap examples globally and prioritize the "core editing loop" tools first.
+    """
+    if max_examples_total <= 0:
+        return prompt
+
+    tools_with_examples = [t for t in tools if getattr(t, "examples", None)]
+    if not tools_with_examples:
+        return prompt
+
+    by_name = {t.name: t for t in tools_with_examples if isinstance(t.name, str) and t.name}
+    preferred_order = [
+        "list_files",
+        "search_files",
+        "read_file",
+        "edit_file",
+        "write_file",
+        "execute_command",
+        "fetch_url",
+        "web_search",
+    ]
+
+    ordered_names = []
+    seen: set[str] = set()
+    for name in preferred_order:
+        if name in by_name and name not in seen:
+            ordered_names.append(name)
+            seen.add(name)
+    for name in sorted(by_name.keys()):
+        if name not in seen:
+            ordered_names.append(name)
+
+    out = prompt + "**EXAMPLES:**\n\n"
+    added = 0
+    for name in ordered_names:
+        tool = by_name.get(name)
+        if tool is None:
+            continue
+        examples = getattr(tool, "examples", None)
+        if not isinstance(examples, list) or not examples:
+            continue
+        example = examples[0] if isinstance(examples[0], dict) else {}
+        desc = str(example.get("description") or "Example").strip()
+        args = example.get("arguments")
+        args_dict = dict(args) if isinstance(args, dict) else {}
+
+        out += f"- {tool.name}: {desc}\n"
+        out += _format_tool_call_example(tool.name, args_dict, tool_format) + "\n\n"
+        added += 1
+        if added >= max_examples_total:
+            break
+
+    return out
+
+
+def _format_qwen_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for Qwen models using <|tool_call|> format with enhanced metadata."""
     if not tools:
         return ""
 
     prompt = "You are a helpful AI assistant with access to the following tools:\n\n"
 
-    # Tool descriptions with enhanced metadata
-    for tool in tools:
-        prompt += f"**{tool.name}**: {tool.description}\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"**{tool.name}**: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"  • **Args**: {_format_parameters_compact(tool.parameters)}\n"
+            prompt += "\n"
 
-        # Add when_to_use guidance if available
-        if tool.when_to_use:
-            prompt += f"  • **When to use**: {tool.when_to_use}\n"
-
-        # Add tags if available
-        if tool.tags:
-            prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
-
-        if tool.parameters:
-            prompt += f"  • **Parameters**: {_format_parameters_compact(tool.parameters)}\n"
-        prompt += "\n"
-
-    prompt += """To use a tool, respond with this EXACT format:
+    prompt += """To use a tool, respond with one or more tool-call blocks (no other text):
 <|tool_call|>
 {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
 </|tool_call|>
+
+To call multiple tools, repeat the block once per call.
 """ + _critical_rules()
 
 
-    # Add examples from tool metadata
-    if any(tool.examples for tool in tools):
-        prompt += "**EXAMPLES:**\n\n"
-        for tool in tools:
-            if tool.examples:
-                prompt += f"**{tool.name} Examples:**\n"
-                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
-                    desc = example.get("description", f"Example {i}")
-                    args = example.get("arguments", {})
-                    prompt += f"{i}. {desc}:\n"
-                    # Use Qwen3-specific tool call format
-                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.SPECIAL_TOKEN)
-                    prompt += f"{tool_call_example}\n\n"
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.SPECIAL_TOKEN)
 
     return prompt
 
 
-def _format_llama_style(tools: List[ToolDefinition]) -> str:
+def _format_llama_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for LLaMA models using <function_call> format with enhanced metadata."""
     if not tools:
         return ""
 
     prompt = "You have access to the following functions. Use them when needed:\n\n"
 
-    # Tool descriptions with enhanced metadata
-    for tool in tools:
-        prompt += f"**{tool.name}**: {tool.description}\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"**{tool.name}**: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"  • **Args**: {_format_parameters_compact(tool.parameters)}\n"
+            prompt += "\n"
 
-        # Add when_to_use guidance if available
-        if tool.when_to_use:
-            prompt += f"  • **When to use**: {tool.when_to_use}\n"
-
-        # Add tags if available
-        if tool.tags:
-            prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
-
-        if tool.parameters:
-            prompt += f"  • **Parameters**: {_format_parameters_compact(tool.parameters)}\n"
-        prompt += "\n"
-
-    prompt += """To call a function, use this format:
+    prompt += """To call a function, output one or more <function_call> blocks (no other text):
 <function_call>
 {"name": "function_name", "arguments": {"param1": "value1", "param2": "value2"}}
 </function_call>
+
+To call multiple functions, repeat the block once per call.
 """ + _critical_rules()
 
-    # Add examples from tool metadata
-    if any(tool.examples for tool in tools):
-        prompt += "**EXAMPLES:**\n\n"
-        for tool in tools:
-            if tool.examples:
-                prompt += f"**{tool.name} Examples:**\n"
-                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
-                    desc = example.get("description", f"Example {i}")
-                    args = example.get("arguments", {})
-                    prompt += f"{i}. {desc}:\n"
-                    # Use architecture-specific tool call format
-                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.FUNCTION_CALL)
-                    prompt += f"{tool_call_example}\n\n"
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.FUNCTION_CALL)
 
     return prompt
 
 
-def _format_xml_style(tools: List[ToolDefinition]) -> str:
+def _format_xml_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for XML-based models."""
     if not tools:
         return ""
 
     prompt = "You have access to these tools:\n\n"
 
-    for tool in tools:
-        prompt += f'<tool name="{tool.name}">\n'
-        prompt += f"  <description>{tool.description}</description>\n"
-        if tool.parameters:
-            prompt += f"  <parameters>{json.dumps(tool.parameters)}</parameters>\n"
-        prompt += "</tool>\n\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f'<tool name="{tool.name}">\n'
+            prompt += f"  <description>{tool.description}</description>\n"
+            if tool.parameters:
+                prompt += f"  <args>{_format_parameters_compact(tool.parameters)}</args>\n"
+            prompt += "</tool>\n\n"
 
-    prompt += """To use a tool, format your call as:
+    prompt += """To use a tool, output one or more <tool_call> blocks (no other text):
 <tool_call>
 {"name": "tool_name", "arguments": {"param1": "value1"}}
 </tool_call>
+
+To call multiple tools, repeat the block once per call.
 """ + _critical_rules()
+
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.XML_WRAPPED)
 
     return prompt
 
 
-def _format_json_style(tools: List[ToolDefinition]) -> str:
+def _format_json_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for models that prefer raw JSON tool calls in content."""
     if not tools:
         return ""
 
     prompt = "You have access to the following tools:\n\n"
 
-    for tool in tools:
-        prompt += f"**{tool.name}**: {tool.description}\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"- {tool.name}: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"  args: {_format_parameters_compact(tool.parameters)}\n"
 
-        if tool.when_to_use:
-            prompt += f"  • **When to use**: {tool.when_to_use}\n"
-
-        if tool.tags:
-            prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
-
-        if tool.parameters:
-            prompt += f"  • **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
-        prompt += "\n"
-
-    prompt += """To use a tool, respond with this EXACT format (JSON only, no extra text):
+    prompt += """To use a tool, respond with one or more JSON objects (no extra text):
 {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
+
+To call multiple tools, output multiple JSON objects (one per line/block).
 """ + _critical_rules()
 
-    if any(tool.examples for tool in tools):
-        prompt += "**EXAMPLES:**\n\n"
-        for tool in tools:
-            if tool.examples:
-                prompt += f"**{tool.name} Examples:**\n"
-                for i, example in enumerate(tool.examples[:3], 1):
-                    desc = example.get("description", f"Example {i}")
-                    args = example.get("arguments", {})
-                    prompt += f"{i}. {desc}:\n"
-                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.RAW_JSON)
-                    prompt += f"{tool_call_example}\n\n"
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.RAW_JSON)
 
     return prompt
 
 
-def _format_gemma_style(tools: List[ToolDefinition]) -> str:
+def _format_gemma_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for Gemma models using code blocks."""
     if not tools:
         return ""
 
     prompt = "You can use these tools by writing tool_code blocks:\n\n"
 
-    for tool in tools:
-        prompt += f"**{tool.name}**: {tool.description}\n"
-        if tool.parameters:
-            param_list = ", ".join([f"{name}: {info.get('type', 'any')}" for name, info in tool.parameters.items()])
-            prompt += f"Usage: {tool.name}({param_list})\n"
-        prompt += "\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"**{tool.name}**: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"Args: {_format_parameters_compact(tool.parameters)}\n"
+            prompt += "\n"
 
-    prompt += """To call a tool, use:
+    prompt += """To call a tool, output one or more tool_code blocks (no other text):
 ```tool_code
 {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
-```"""
+```
+
+To call multiple tools, repeat the block once per call."""
+
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.TOOL_CODE)
 
     return prompt
 
 
-def _format_generic_style(tools: List[ToolDefinition]) -> str:
+def _format_generic_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Generic tool formatting for unknown architectures with enhanced metadata."""
     if not tools:
         return ""
 
     prompt = "You have access to the following tools:\n\n"
 
-    for tool in tools:
-        prompt += f"- **{tool.name}**: {tool.description}\n"
-
-        # Add when_to_use guidance if available
-        if tool.when_to_use:
-            prompt += f"  **When to use**: {tool.when_to_use}\n"
-
-        # Add tags if available
-        if tool.tags:
-            prompt += f"  **Tags**: {', '.join(tool.tags)}\n"
-
-        if tool.parameters:
-            prompt += f"  **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
-        prompt += "\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"- {tool.name}: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"  args: {_format_parameters_compact(tool.parameters)}\n"
 
     prompt += _critical_rules()
 
-    # Add examples from tool metadata
-    if any(tool.examples for tool in tools):
-        prompt += "**EXAMPLES:**\n\n"
-        for tool in tools:
-            if tool.examples:
-                prompt += f"**{tool.name} Examples:**\n"
-                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
-                    desc = example.get("description", f"Example {i}")
-                    args = example.get("arguments", {})
-                    prompt += f"{i}. {desc}:\n"
-                    # Use generic format for unknown architectures
-                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.RAW_JSON)
-                    prompt += f"{tool_call_example}\n\n"
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.RAW_JSON)
 
     return prompt
 
@@ -1403,7 +1420,7 @@ def _format_tool_call_example(tool_name: str, arguments: Dict[str, Any], tool_fo
     Returns:
         Formatted tool call example string
     """
-    tool_call_json = json.dumps({"name": tool_name, "arguments": arguments})
+    tool_call_json = json.dumps({"name": tool_name, "arguments": arguments}, separators=(",", ":"), ensure_ascii=False)
     
     if tool_format == ToolFormat.SPECIAL_TOKEN:
         # Qwen3, GLM-4.5+ format
@@ -1433,15 +1450,14 @@ def _critical_rules():
     Returns:
         str: The critical rules for tool usage.
     """
-    return """
-    
-CRITICAL RULES FOR TOOL USAGE:
-1. If you can answer the question directly, do not call a tool
-2. If you can't answer the question directly, call a tool to extend your capabilities, gain further insights or perform an action
-3. DO NOT call tools to show off capabilities - when requested, just describe the tools at your disposal
-4. The "name" field must be at the TOP LEVEL, NOT inside "arguments"
-5. Use the exact JSON structure shown above
-6. Never fabricate tool results. Tool outputs are returned by the system as separate messages.
-7. Do not write your own `tool:` result lines. Only request tools using the exact tool-call format above.
-
-"""
+    return (
+        "CRITICAL RULES FOR TOOL USAGE:\n"
+        "1. If you can answer directly, do not call a tool.\n"
+        "2. If you need info or an action, call the smallest relevant tool.\n"
+        "3. Do not call tools to show off; if asked, describe capabilities.\n"
+        "4. The \"name\" field must be top-level (not inside \"arguments\").\n"
+        "5. Use the exact tool-call JSON structure.\n"
+        "6. Never fabricate tool results; outputs are returned separately.\n"
+        "7. Do not write your own `tool:` result lines.\n"
+        "8. You MAY batch multiple tool calls by repeating the tool-call block once per call (prefer independent calls).\n"
+    )

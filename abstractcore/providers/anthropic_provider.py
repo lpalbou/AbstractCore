@@ -194,7 +194,9 @@ class AnthropicProvider(BaseProvider):
                     call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
             else:
                 # Add tools as system prompt for prompted models
-                tool_prompt = self.tool_handler.format_tools_prompt(tools)
+                system_text = call_params.get("system") if isinstance(call_params.get("system"), str) else ""
+                include_tool_list = "## Tools (session)" not in system_text
+                tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
                 if call_params.get("system"):
                     call_params["system"] += f"\n\n{tool_prompt}"
                 else:
@@ -350,7 +352,9 @@ class AnthropicProvider(BaseProvider):
                 elif kwargs.get("tool_choice"):
                     call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
             else:
-                tool_prompt = self.tool_handler.format_tools_prompt(tools)
+                system_text = call_params.get("system") if isinstance(call_params.get("system"), str) else ""
+                include_tool_list = "## Tools (session)" not in system_text
+                tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
                 if call_params.get("system"):
                     call_params["system"] += f"\n\n{tool_prompt}"
                 else:

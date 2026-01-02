@@ -118,14 +118,12 @@ def test_read_file_entire_file_refuses_when_over_line_limit(tmp_path) -> None:
     assert "Next step:" in out
 
 
-def test_read_file_entire_file_refuses_when_over_byte_limit(tmp_path) -> None:
+def test_read_file_entire_file_does_not_refuse_based_on_bytes_only(tmp_path) -> None:
     path = tmp_path / "large-bytes.txt"
     path.write_text("a" * 100_001, encoding="utf-8")
 
     out = read_file(file_path=str(path))
-    assert out.startswith(f"Refused: File '{path}' is too large to read entirely")
-    assert "bytes > 100,000 bytes" in out
-    assert "Next step:" in out
+    assert out.startswith(f"File: {path} (1 lines)\n\n1: a")
 
 
 def test_read_file_range_refuses_when_requested_lines_over_limit(tmp_path) -> None:

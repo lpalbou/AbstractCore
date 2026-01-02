@@ -151,19 +151,22 @@ class LMStudioProvider(BaseProvider):
         chat_messages = []
 
         # Add tools to system prompt if provided
-        enhanced_system_prompt = system_prompt
+        final_system_prompt = system_prompt
         if tools and self.tool_handler.supports_prompted:
-            tool_prompt = self.tool_handler.format_tools_prompt(tools)
-            if enhanced_system_prompt:
-                enhanced_system_prompt += f"\n\n{tool_prompt}"
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt += f"\n\n{tool_prompt}"
             else:
-                enhanced_system_prompt = tool_prompt
+                final_system_prompt = tool_prompt
 
         # Add system message if provided
-        if enhanced_system_prompt:
+        if final_system_prompt:
             chat_messages.append({
                 "role": "system",
-                "content": enhanced_system_prompt
+                "content": final_system_prompt
             })
 
         # Add conversation history
@@ -447,19 +450,22 @@ class LMStudioProvider(BaseProvider):
         chat_messages = []
 
         # Add tools to system prompt if provided
-        enhanced_system_prompt = system_prompt
+        final_system_prompt = system_prompt
         if tools and self.tool_handler.supports_prompted:
-            tool_prompt = self.tool_handler.format_tools_prompt(tools)
-            if enhanced_system_prompt:
-                enhanced_system_prompt += f"\n\n{tool_prompt}"
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt += f"\n\n{tool_prompt}"
             else:
-                enhanced_system_prompt = tool_prompt
+                final_system_prompt = tool_prompt
 
         # Add system message if provided
-        if enhanced_system_prompt:
+        if final_system_prompt:
             chat_messages.append({
                 "role": "system",
-                "content": enhanced_system_prompt
+                "content": final_system_prompt
             })
 
         # Add conversation history

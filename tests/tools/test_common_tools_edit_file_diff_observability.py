@@ -23,4 +23,5 @@ def test_edit_file_diff_includes_context_and_old_new_line_numbers(tmp_path) -> N
     assert re.search(r"(?m)^\\s+2\\s+2\\s+\\| b$", out), out
     assert re.search(r"(?m)^\\+\\s+3\\s+\\| X$", out), out
     assert re.search(r"(?m)^\\s+3\\s+4\\s+\\| c$", out), out
-
+    assert "Tip:" in out
+    assert "read_file(" in out
