@@ -264,3 +264,34 @@ def test_non_streaming_duplicate_tool_calls_are_deduped() -> None:
     assert resp.tool_calls == [
         {"name": "list_files", "arguments": {"directory_path": ".", "recursive": True, "pattern": "*"}, "call_id": None}
     ]
+
+
+def test_native_tool_call_arguments_are_canonicalized() -> None:
+    provider = _DummyProvider(
+        model="openai/gpt-4o-mini",
+        response=GenerateResponse(
+            content="",
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": {"file_path": "README.md", "start_line_one_indexed": 2, "end_line_one_indexed_inclusive": 2},
+                    },
+                }
+            ],
+            model="openai/gpt-4o-mini",
+        ),
+    )
+
+    tools = [{"name": "read_file", "description": "Read a file", "parameters": {"file_path": {"type": "string"}}}]
+    resp = provider.generate(prompt="read line 2", tools=tools)
+
+    assert resp.tool_calls == [
+        {
+            "name": "read_file",
+            "arguments": {"file_path": "README.md", "start_line": 2, "end_line": 2},
+            "call_id": "call_1",
+        }
+    ]

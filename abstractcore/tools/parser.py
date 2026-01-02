@@ -154,6 +154,11 @@ def parse_tool_calls(response: str, model_name: Optional[str] = None) -> List[To
     # (e.g., `tool: [name]: {...}` or partial tags). Try the generic parser when needed.
     if not calls and parser is not _parse_any_format:
         calls = _parse_any_format(response)
+    if calls:
+        from .arg_canonicalizer import canonicalize_tool_arguments
+
+        for call in calls:
+            call.arguments = canonicalize_tool_arguments(call.name, call.arguments)
     return calls
 
 

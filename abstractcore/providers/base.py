@@ -1670,6 +1670,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if not isinstance(arguments, dict):
                 arguments = {}
 
+            try:
+                from ..tools.arg_canonicalizer import canonicalize_tool_arguments
+
+                arguments = canonicalize_tool_arguments(name, arguments)
+            except Exception:
+                pass
+
             normalized.append(
                 {
                     "name": name,

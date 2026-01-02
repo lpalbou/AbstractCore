@@ -251,6 +251,9 @@ class UniversalToolHandler:
                             logger.warning(f"Failed to parse tool arguments: {tool_call.arguments}")
                             tool_call.arguments = {}
 
+                    from .arg_canonicalizer import canonicalize_tool_arguments
+
+                    tool_call.arguments = canonicalize_tool_arguments(tool_call.name, tool_call.arguments)
                     tool_calls.append(tool_call)
             
             return ToolCallResponse(
@@ -279,6 +282,9 @@ class UniversalToolHandler:
                             logger.warning(f"Failed to parse tool arguments: {tool_call.arguments}")
                             tool_call.arguments = {}
 
+                    from .arg_canonicalizer import canonicalize_tool_arguments
+
+                    tool_call.arguments = canonicalize_tool_arguments(tool_call.name, tool_call.arguments)
                     tool_calls.append(tool_call)
 
             return ToolCallResponse(
