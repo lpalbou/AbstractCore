@@ -7,6 +7,43 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 
 
+_MAX_TOOL_DESCRIPTION_CHARS = 200
+_MAX_TOOL_WHEN_TO_USE_CHARS = 240
+_MAX_TOOL_EXAMPLES = 3
+
+
+def _first_non_empty_line(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    for line in str(text).splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def _normalize_one_line(text: Optional[str]) -> str:
+    """Collapse whitespace (including newlines) into a single, prompt-friendly line."""
+    return " ".join(str(text or "").split()).strip()
+
+
+def _validate_tool_metadata(*, name: str, description: str, when_to_use: Optional[str], examples: List[Dict[str, Any]]) -> None:
+    if not description:
+        raise ValueError(f"Tool '{name}': description must be a non-empty string")
+    if len(description) > _MAX_TOOL_DESCRIPTION_CHARS:
+        raise ValueError(
+            f"Tool '{name}': description is too long ({len(description)} chars; max {_MAX_TOOL_DESCRIPTION_CHARS}). "
+            "Keep it to a single short sentence; put detailed guidance in `when_to_use` or docs."
+        )
+    if when_to_use is not None and len(when_to_use) > _MAX_TOOL_WHEN_TO_USE_CHARS:
+        raise ValueError(
+            f"Tool '{name}': when_to_use is too long ({len(when_to_use)} chars; max {_MAX_TOOL_WHEN_TO_USE_CHARS}). "
+            "Keep it to a single short sentence."
+        )
+    if len(examples) > _MAX_TOOL_EXAMPLES:
+        raise ValueError(f"Tool '{name}': too many examples ({len(examples)}; max {_MAX_TOOL_EXAMPLES}).")
+
+
 @dataclass
 class ToolDefinition:
     """Definition of a tool that can be called by LLM"""
@@ -20,6 +57,20 @@ class ToolDefinition:
     when_to_use: Optional[str] = None
     examples: List[Dict[str, Any]] = field(default_factory=list)
 
+    def __post_init__(self) -> None:
+        # Normalize to a single line for prompt-friendly catalogs.
+        self.name = str(self.name or "").strip()
+        self.description = _normalize_one_line(self.description)
+        self.when_to_use = _normalize_one_line(self.when_to_use) if self.when_to_use else None
+        self.tags = list(self.tags) if isinstance(self.tags, list) else []
+        self.examples = list(self.examples) if isinstance(self.examples, list) else []
+        _validate_tool_metadata(
+            name=self.name,
+            description=self.description,
+            when_to_use=self.when_to_use,
+            examples=self.examples,
+        )
+
     @classmethod
     def from_function(cls, func: Callable) -> 'ToolDefinition':
         """Create tool definition from a function"""
@@ -27,7 +78,11 @@ class ToolDefinition:
 
         # Extract function name and docstring
         name = func.__name__
-        description = func.__doc__ or "No description provided"
+        # Tool `description` must be short; use the first docstring line (not the whole docstring).
+        description = _first_non_empty_line(func.__doc__) or "No description provided"
+        description = _normalize_one_line(description)
+        if description != "No description provided":
+            _validate_tool_metadata(name=name, description=description, when_to_use=None, examples=[])
 
         # Extract parameters from function signature
         sig = inspect.signature(func)
@@ -144,7 +199,8 @@ def tool(
     """
     def decorator(f):
         tool_name = name or f.__name__
-        tool_description = description or f.__doc__ or f"Execute {tool_name}"
+        tool_description = description or _first_non_empty_line(f.__doc__) or f"Execute {tool_name}"
+        tool_description = _normalize_one_line(tool_description)
 
         # Create tool definition from function and customize
         tool_def = ToolDefinition.from_function(f)
@@ -153,8 +209,14 @@ def tool(
 
         # Add enhanced metadata
         tool_def.tags = tags or []
-        tool_def.when_to_use = when_to_use
-        tool_def.examples = examples or []
+        tool_def.when_to_use = _normalize_one_line(when_to_use) if when_to_use else None
+        tool_def.examples = list(examples) if isinstance(examples, list) else []
+        _validate_tool_metadata(
+            name=tool_def.name,
+            description=tool_def.description,
+            when_to_use=tool_def.when_to_use,
+            examples=tool_def.examples,
+        )
 
         # Attach tool definition to function for easy access
         f._tool_definition = tool_def

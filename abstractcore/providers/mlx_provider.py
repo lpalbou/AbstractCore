@@ -291,21 +291,24 @@ class MLXProvider(BaseProvider):
         """Build prompt for MLX model with tool support"""
 
         # Add tools to system prompt if provided
-        enhanced_system_prompt = system_prompt
+        final_system_prompt = system_prompt
         if tools and self.tool_handler.supports_prompted:
-            tool_prompt = self.tool_handler.format_tools_prompt(tools)
-            if enhanced_system_prompt:
-                enhanced_system_prompt += f"\n\n{tool_prompt}"
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt += f"\n\n{tool_prompt}"
             else:
-                enhanced_system_prompt = tool_prompt
+                final_system_prompt = tool_prompt
 
         # For Qwen models, use chat template format
         if "qwen" in self.model.lower():
             full_prompt = ""
 
             # Add system prompt
-            if enhanced_system_prompt:
-                full_prompt += f"<|im_start|>system\n{enhanced_system_prompt}<|im_end|>\n"
+            if final_system_prompt:
+                full_prompt += f"<|im_start|>system\n{final_system_prompt}<|im_end|>\n"
 
             # Add conversation history
             if messages:
@@ -321,8 +324,8 @@ class MLXProvider(BaseProvider):
         else:
             # Generic format for other models
             full_prompt = prompt
-            if enhanced_system_prompt:
-                full_prompt = f"{enhanced_system_prompt}\n\n{prompt}"
+            if final_system_prompt:
+                full_prompt = f"{final_system_prompt}\n\n{prompt}"
 
             # Add conversation context if provided
             if messages:

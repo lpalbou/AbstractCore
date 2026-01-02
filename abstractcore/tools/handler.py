@@ -51,7 +51,10 @@ class UniversalToolHandler:
 
     def format_tools_prompt(
         self,
-        tools: List[Union[ToolDefinition, Callable, Dict[str, Any]]]
+        tools: List[Union[ToolDefinition, Callable, Dict[str, Any]]],
+        *,
+        include_tool_list: bool = True,
+        include_examples: bool = True,
     ) -> str:
         """
         Format tools into a system prompt for prompted models.
@@ -71,7 +74,12 @@ class UniversalToolHandler:
             return ""
 
         # Use architecture-specific formatting
-        return format_tool_prompt(tool_defs, self.model_name)
+        return format_tool_prompt(
+            tool_defs,
+            self.model_name,
+            include_tool_list=include_tool_list,
+            include_examples=include_examples,
+        )
 
     def prepare_tools_for_native(
         self,

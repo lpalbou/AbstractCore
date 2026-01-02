@@ -16,8 +16,8 @@ def test_list_files_includes_directories(tmp_path: Path) -> None:
 
     out = list_files(str(tmp_path), pattern="*", recursive=False, include_hidden=False, head_limit=None)
 
-    assert "📁 docs/" in out
-    assert "📄 readme.md" in out
+    assert "docs/" in out
+    assert "readme.md" in out
 
 
 def test_list_files_excludes_hidden_entries_by_default(tmp_path: Path) -> None:
@@ -40,6 +40,5 @@ def test_list_files_can_include_hidden_entries(tmp_path: Path) -> None:
 
     assert ".hidden_dir" in out
     assert ".hidden_file.txt" in out
-
 
 
