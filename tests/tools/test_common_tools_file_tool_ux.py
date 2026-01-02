@@ -26,9 +26,8 @@ def test_read_file_inclusive_single_line_range_returns_line_number(tmp_path) -> 
 
     out = read_file(
         file_path=str(path),
-        should_read_entire_file=False,
-        start_line_one_indexed=2,
-        end_line_one_indexed_inclusive=2,
+        start_line=2,
+        end_line=2,
     )
 
     assert out.startswith(f"File: {path} (1 lines)\n\n")
@@ -41,9 +40,8 @@ def test_read_file_inclusive_two_line_range_returns_both_lines(tmp_path) -> None
 
     out = read_file(
         file_path=str(path),
-        should_read_entire_file=False,
-        start_line_one_indexed=2,
-        end_line_one_indexed_inclusive=3,
+        start_line=2,
+        end_line=3,
     )
     assert "\n2: b\n3: c\n" in out + "\n"
 
@@ -54,9 +52,8 @@ def test_read_file_preserves_trailing_spaces(tmp_path) -> None:
 
     out = read_file(
         file_path=str(path),
-        should_read_entire_file=False,
-        start_line_one_indexed=1,
-        end_line_one_indexed_inclusive=1,
+        start_line=1,
+        end_line=1,
     )
     assert "1: a  " in out
 
@@ -132,9 +129,8 @@ def test_read_file_range_refuses_when_requested_lines_over_limit(tmp_path) -> No
 
     out = read_file(
         file_path=str(path),
-        should_read_entire_file=False,
-        start_line_one_indexed=1,
-        end_line_one_indexed_inclusive=401,
+        start_line=1,
+        end_line=401,
     )
 
     assert out.startswith("Refused: Requested range would return 401 lines")

@@ -178,8 +178,12 @@ class ToolRegistry:
             return error_result
 
         try:
+            from .arg_canonicalizer import canonicalize_tool_arguments
+
+            arguments = canonicalize_tool_arguments(tool_call.name, tool_call.arguments)
+
             # Execute the function with the provided arguments
-            result = tool_def.function(**tool_call.arguments)
+            result = tool_def.function(**arguments)
             duration_ms = (time.time() - start_time) * 1000
 
             implied_error = _error_from_output(result)
@@ -196,7 +200,7 @@ class ToolRegistry:
                 # Emit tool error event
                 result_data = create_tool_event(
                     tool_name=tool_call.name,
-                    arguments=tool_call.arguments,
+                    arguments=arguments,
                     success=False,
                     error=implied_error,
                 )
@@ -218,7 +222,7 @@ class ToolRegistry:
             # Emit successful tool result event
             result_data = create_tool_event(
                 tool_name=tool_call.name,
-                arguments=tool_call.arguments,
+                arguments=arguments,
                 result=result,
                 success=True
             )
@@ -232,7 +236,9 @@ class ToolRegistry:
             # stray extras in tool kwargs. Retry once with a sanitized argument dict.
             try:
                 wrapper_keys = {"name", "arguments", "call_id", "id"}
-                args = dict(tool_call.arguments or {})
+                from .arg_canonicalizer import canonicalize_tool_arguments
+
+                args = canonicalize_tool_arguments(tool_call.name, tool_call.arguments)
                 for _ in range(4):
                     inner = args.get("arguments")
                     if not isinstance(inner, dict):

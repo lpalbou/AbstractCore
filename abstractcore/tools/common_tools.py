@@ -286,7 +286,7 @@ def _brace_match_end_line(lines: list[str], *, start_line_index: int, start_col:
 
 @tool(
     description="Return a structured outline of a Python/JavaScript file (imports/classes/functions with line ranges) to guide precise edits.",
-    when_to_use="Use before editing to locate the right block quickly; then read_file(start/end) around that block instead of re-reading the whole file.",
+    when_to_use="Use before editing to locate the right block quickly; then read_file(start_line/end_line) around that block instead of re-reading the whole file.",
     examples=[
         {"description": "Outline a Python file", "arguments": {"file_path": "src/app.py"}},
         {"description": "Outline a JavaScript file", "arguments": {"file_path": "web/app.js"}},
@@ -316,7 +316,10 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
     lines = text.splitlines()
     total_lines = len(lines)
 
-    out: list[str] = [f"Code Analysis: {display_path} (language={lang}, lines={total_lines})"]
+    out: list[str] = [
+        f"Code Analysis: {display_path} (language={lang}, lines={total_lines})",
+        "Next step: use read_file(start_line/end_line) around the block you want to change, then edit_file(start_line/end_line) for a bounded edit.",
+    ]
 
     if lang == "python":
         try:
@@ -1288,8 +1291,9 @@ def search_files(
 
 
 @tool(
-    description="Read a text file (line-numbered) with an optional inclusive line range; full reads may be refused if too large.",
-    when_to_use="Use to inspect exact file contents. Prefer bounded reads; if line numbers are unknown, use search_files(output_mode='context') first.",
+    description="Read a text file (line-numbered). Prefer analyze_code for code, then read_file(start_line/end_line); full reads may be refused if too large.",
+    when_to_use="Use to inspect exact file contents. For code, prefer analyze_code first. Prefer bounded reads; if line numbers are unknown, use search_files(output_mode='context') first.",
+    hide_args=["should_read_entire_file"],
     examples=[
         {
             "description": "Read entire file (only when it's small; large files are refused)",
@@ -1301,31 +1305,38 @@ def search_files(
             "description": "Read specific line range",
             "arguments": {
                 "file_path": "src/main.py",
-                "should_read_entire_file": False,
-                "start_line_one_indexed": 10,
-                "end_line_one_indexed_inclusive": 25
+                "start_line": 10,
+                "end_line": 25
             }
         },
         {
             "description": "Read first 50 lines",
             "arguments": {
                 "file_path": "large_file.txt",
-                "should_read_entire_file": False,
-                "end_line_one_indexed_inclusive": 50
+                "end_line": 50
             }
         }
     ]
 )
-def read_file(file_path: str, should_read_entire_file: bool = True, start_line_one_indexed: int = 1, end_line_one_indexed_inclusive: Optional[int] = None) -> str:
+def read_file(
+    file_path: str,
+    should_read_entire_file: Optional[bool] = None,
+    start_line: int = 1,
+    end_line: Optional[int] = None,
+) -> str:
     """
     Read the contents of a file with optional line range.
 
     Args:
         file_path: Path to the file to read
-        should_read_entire_file: Whether to read the entire file (default: True)
-            Note: Automatically set to False if start_line_one_indexed != 1 or end_line_one_indexed_inclusive is provided
-        start_line_one_indexed: Starting line number (1-indexed, default: 1)
-        end_line_one_indexed_inclusive: Ending line number (1-indexed, inclusive, optional)
+        start_line: Starting line number (1-indexed, default: 1)
+        end_line: Ending line number (1-indexed, inclusive, optional)
+        should_read_entire_file: Legacy/compatibility flag. If provided, overrides inference:
+            - True  => attempt full read (or refuse if too large)
+            - False => range mode (bounded by start_line/end_line)
+            When omitted (recommended), mode is inferred:
+            - no start/end hint => full read
+            - start_line and/or end_line provided => range read
 
     Returns:
         File contents or error message
@@ -1342,15 +1353,25 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
             return f"Error: '{display_path}' is not a file"
 
         # Guardrails: keep tool outputs bounded and avoid huge memory/time spikes.
-        # These limits intentionally push agents toward: search_files(output_mode="context") → read_file(start/end) → edit_file(...)
+        # These limits intentionally push agents toward: search_files(output_mode="context") → read_file(start_line/end_line) → edit_file(...)
         MAX_LINES_PER_CALL = 400
 
-        # Auto-override should_read_entire_file if line range parameters are provided
-        if start_line_one_indexed != 1 or end_line_one_indexed_inclusive is not None:
-            should_read_entire_file = False
+        # Mode selection:
+        # - Explicit legacy flag wins (for backwards compatibility).
+        # - Otherwise infer: no range hint => full read; any range hint => slice read.
+        try:
+            inferred_start = int(start_line or 1)
+        except Exception:
+            inferred_start = 1
+        if should_read_entire_file is True:
+            read_entire = True
+        elif should_read_entire_file is False:
+            read_entire = False
+        else:
+            read_entire = end_line is None and inferred_start == 1
 
         with open(path, 'r', encoding='utf-8') as f:
-            if should_read_entire_file:
+            if read_entire:
                 # Read entire file (bounded by MAX_LINES_PER_CALL). No truncation: either full content or refusal.
                 raw_lines: list[str] = []
                 for idx, line in enumerate(f, 1):
@@ -1359,7 +1380,7 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
                             f"Refused: File '{display_path}' is too large to read entirely "
                             f"(> {MAX_LINES_PER_CALL} lines).\n"
                             "Next step: use search_files(..., output_mode='context') to find the relevant line number(s), "
-                            "then call read_file with start_line_one_indexed/end_line_one_indexed_inclusive for a smaller range."
+                            "then call read_file with start_line/end_line for a smaller range."
                         )
                     raw_lines.append(line.rstrip("\r\n"))
 
@@ -1371,31 +1392,31 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
                 # Read specific line range
                 # Validate and convert to 0-indexed [start, end) slice with inclusive end.
                 try:
-                    start_line = int(start_line_one_indexed or 1)
+                    start_line = int(start_line or 1)
                 except Exception:
                     start_line = 1
                 if start_line < 1:
-                    return f"Error: start_line_one_indexed must be >= 1 (got {start_line_one_indexed})"
+                    return f"Error: start_line must be >= 1 (got {start_line})"
 
-                end_line = None
-                if end_line_one_indexed_inclusive is not None:
-                    try:
-                        end_line = int(end_line_one_indexed_inclusive)
-                    except Exception:
-                        return f"Error: end_line_one_indexed_inclusive must be an integer (got {end_line_one_indexed_inclusive})"
-                    if end_line < 1:
-                        return f"Error: end_line_one_indexed_inclusive must be >= 1 (got {end_line_one_indexed_inclusive})"
-
-                if end_line is not None and start_line > end_line:
-                    return f"Error: start_line_one_indexed ({start_line}) cannot be greater than end_line_one_indexed_inclusive ({end_line})"
-
+                end_line_value = None
                 if end_line is not None:
-                    requested_lines = end_line - start_line + 1
+                    try:
+                        end_line_value = int(end_line)
+                    except Exception:
+                        return f"Error: end_line must be an integer (got {end_line})"
+                    if end_line_value < 1:
+                        return f"Error: end_line must be >= 1 (got {end_line_value})"
+
+                if end_line_value is not None and start_line > end_line_value:
+                    return f"Error: start_line ({start_line}) cannot be greater than end_line ({end_line_value})"
+
+                if end_line_value is not None:
+                    requested_lines = end_line_value - start_line + 1
                     if requested_lines > MAX_LINES_PER_CALL:
                         return (
                             f"Refused: Requested range would return {requested_lines} lines "
                             f"(> {MAX_LINES_PER_CALL} lines).\n"
-                            "Next step: request a smaller range by narrowing end_line_one_indexed_inclusive, "
+                            "Next step: request a smaller range by narrowing end_line, "
                             "or use search_files(..., output_mode='context') to target the exact region."
                         )
 
@@ -1406,14 +1427,14 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
                     last_line_seen = line_no
                     if line_no < start_line:
                         continue
-                    if end_line is not None and line_no > end_line:
+                    if end_line_value is not None and line_no > end_line_value:
                         break
                     selected_lines.append((line_no, line.rstrip("\r\n")))
                     if len(selected_lines) > MAX_LINES_PER_CALL:
                         return (
                             f"Refused: Requested range is too large to return in one call "
                             f"(> {MAX_LINES_PER_CALL} lines).\n"
-                            "Next step: specify a smaller end_line_one_indexed_inclusive, "
+                            "Next step: specify a smaller end_line, "
                             "or split the read into multiple smaller ranges."
                         )
 
@@ -1443,6 +1464,7 @@ def read_file(file_path: str, should_read_entire_file: bool = True, start_line_o
 @tool(
     description="Write full file content (create/overwrite/append). WARNING: mode='w' overwrites the entire file; for small edits, use edit_file().",
     when_to_use="Use to create new files or intentionally overwrite/append full content. For small edits, use edit_file().",
+    hide_args=["create_dirs"],
     examples=[
         {
             "description": "Write a simple text file",
@@ -3143,8 +3165,7 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
                 b = end + 3
                 prefix = "Tip" if len(unique) == 1 else f"Tip (hunk {idx})"
                 tips.append(
-                    f"{prefix}: verify with read_file(file_path=\"{abs_path}\", should_read_entire_file=False, "
-                    f"start_line_one_indexed={a}, end_line_one_indexed_inclusive={b})"
+                    f"{prefix}: verify with read_file(file_path=\"{abs_path}\", start_line={a}, end_line={b})"
                 )
             if len(unique) > 3:
                 tips.append(f"Tip: {len(unique) - 3} more hunks not shown; use the diff above to choose ranges.")
@@ -3156,6 +3177,7 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
 @tool(
     description="Surgically edit a text file via small find/replace (literal/regex) or a single-file unified diff patch.",
     when_to_use="Use for small, precise edits. Prefer search_files → read_file → edit_file with a small unique pattern; for whole-file rewrites, use write_file().",
+    hide_args=["encoding", "flexible_whitespace"],
     examples=[
         {
             "description": "Surgical one-line replacement (bounded, safe)",

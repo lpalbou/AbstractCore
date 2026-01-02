@@ -551,9 +551,8 @@ def search_files(
 @tool
 def read_file(
     file_path: str,
-    should_read_entire_file: bool = True,
-    start_line_one_indexed: int = 1,
-    end_line_one_indexed_inclusive: Optional[int] = None
+    start_line: int = 1,
+    end_line: Optional[int] = None
 ) -> str:
     """Read file contents with optional line range"""
 
@@ -561,8 +560,7 @@ def read_file(
 def write_file(
     file_path: str,
     content: str = "",
-    mode: str = "w",
-    create_dirs: bool = True
+    mode: str = "w"
 ) -> str:
     """Write content to file with directory creation"""
 

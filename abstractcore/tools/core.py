@@ -167,7 +167,8 @@ def tool(
     description: Optional[str] = None,
     tags: Optional[List[str]] = None,
     when_to_use: Optional[str] = None,
-    examples: Optional[List[Dict[str, Any]]] = None
+    examples: Optional[List[Dict[str, Any]]] = None,
+    hide_args: Optional[List[str]] = None,
 ):
     """
     Enhanced decorator to convert a function into a tool with rich metadata.
@@ -211,6 +212,21 @@ def tool(
         tool_def.tags = tags or []
         tool_def.when_to_use = _normalize_one_line(when_to_use) if when_to_use else None
         tool_def.examples = list(examples) if isinstance(examples, list) else []
+
+        # Optionally hide parameters from the exported schema (LLM-facing), while
+        # keeping them accepted by the underlying Python callable for backwards
+        # compatibility (e.g. legacy callers still passing deprecated kwargs).
+        hidden = [str(a).strip() for a in (hide_args or []) if str(a).strip()]
+        if hidden:
+            for arg in hidden:
+                if arg not in tool_def.parameters:
+                    continue
+                # Avoid hiding required args (no default), which would make the
+                # tool schema incomplete for tool-call generation.
+                if "default" not in tool_def.parameters.get(arg, {}):
+                    raise ValueError(f"Tool '{tool_def.name}': cannot hide required arg '{arg}'")
+                tool_def.parameters.pop(arg, None)
+
         _validate_tool_metadata(
             name=tool_def.name,
             description=tool_def.description,
