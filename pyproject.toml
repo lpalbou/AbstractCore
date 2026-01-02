@@ -136,6 +136,15 @@ tools = [
     "psutil>=5.9.0,<6.0.0",
 ]
 
+# Compatibility alias (common typo): `abstractcore[tool]` -> `abstractcore[tools]`
+tool = [
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+]
+
 media = [
     "Pillow>=10.0.0,<12.0.0",
     "pymupdf4llm>=0.0.20,<1.0.0",
