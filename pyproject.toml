@@ -269,6 +269,7 @@ packages = [
     "abstractcore.architectures",
     "abstractcore.utils",
     "abstractcore.assets",
+    "abstractcore.mcp",
     "abstractcore.server",
     "abstractcore.apps",
     "abstractcore.processing",
