@@ -340,7 +340,11 @@
       "user_suffix": "\n",
       "assistant_prefix": "<|assistant|>\n",
       "assistant_suffix": "\n",
-      "tool_format": "native",
+      "tool_format": "glm_xml",
+      "tool_calling_format": "<tool_call>function_name\n<arg_key>key</arg_key>\n<arg_value>value</arg_value>\n</tool_call>",
+      "thinking_output_field": "reasoning_content",
+      "thinking_tags": ["<think>", "</think>"],
+      "thinking_control": "/nothink",
       "patterns": ["glm-4.6v", "glm4.6v", "zai-org/glm-4.6v", "glm-4.6v-flash", "glm-4.6v-fp8", "glm-4.6v-flash-fp8"]
     },
     "glm4_moe": {
