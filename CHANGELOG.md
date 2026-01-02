@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Aliases: `nvidia/nemotron-3-nano`, `nemotron-3-nano`, `nemotron-nano-30b`, and full HuggingFace paths
 - **Architecture Support**: Added `nemotron_hybrid_moe` architecture for NVIDIA Nemotron models
 - **Provider Support**: Added "nvidia" to known provider prefixes for proper model name resolution
+- **Documentation**: Added GLM-4.6V tool format inconsistency note (`docs/misc/glm-4.6v-tool-format-inconsistency.md`)
+  - Documents observed format mixing issues with `<|end_of_box|>` tokens
+  - Likely caused by LMStudio using incorrect Jinja template
+  - Provides troubleshooting steps and workarounds
 
 ### Changed
 - **Tools/execute_command**: now returns a structured JSON result (including `success`, `return_code`, `stdout`/`stderr`, and a human-friendly `rendered` string) instead of a single decorated string. This enables durable evidence capture and cleaner downstream processing.

@@ -6,6 +6,7 @@ Tests that providers can maintain conversation context across multiple messages.
 import pytest
 import os
 from abstractcore import create_llm, BasicSession
+from abstractcore.exceptions import ModelNotFoundError
 
 
 class TestProviderBasicSession:
@@ -32,6 +33,8 @@ class TestProviderBasicSession:
             assert context_maintained, "Session should remember the name Laurent"
 
         except Exception as e:
+            if isinstance(e, ModelNotFoundError):
+                pytest.skip("Ollama model not available")
             if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
                 pytest.skip("Ollama not running")
             else:
@@ -57,6 +60,8 @@ class TestProviderBasicSession:
             assert context_maintained, "Session should remember the favorite color"
 
         except Exception as e:
+            if isinstance(e, ModelNotFoundError):
+                pytest.skip("LMStudio model not available")
             if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
                 pytest.skip("LMStudio not running")
             else:
