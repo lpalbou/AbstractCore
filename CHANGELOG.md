@@ -11,11 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Model Support**: Added NVIDIA Nemotron-3-Nano-30B-A3B-BF16 hybrid MoE model
   - 30B total parameters with 3.5B active (128 experts + 1 shared, 6 activated per token)
   - Combines 23 Mamba-2 layers with 6 Attention layers
-  - Native tool calling via chatml-function-calling format
+  - Native tool calling via JSON format (OpenAI-style function calling)
   - Configurable reasoning mode with unified reasoning/response generation
   - 256K context extendable to 1M tokens with YaRN
   - Strong performance: AIME25 (99.2% with tools), SWE-Bench (38.8%), MiniF2F (50.0% pass@1)
   - Multilingual support: English, German, Spanish, French, Italian, Japanese
+  - Aliases: `nvidia/nemotron-3-nano`, `nemotron-3-nano`, `nemotron-nano-30b`, and full HuggingFace paths
 - **Architecture Support**: Added `nemotron_hybrid_moe` architecture for NVIDIA Nemotron models
 - **Provider Support**: Added "nvidia" to known provider prefixes for proper model name resolution
 

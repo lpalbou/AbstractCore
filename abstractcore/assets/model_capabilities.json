@@ -2621,7 +2621,7 @@
       "reasoning_configurable": true,
       "agentic_capabilities": true,
       "function_calling": true,
-      "tool_calling_format": "chatml-function-calling",
+      "tool_calling_format": "json",
       "languages": ["English", "German", "Spanish", "French", "Italian", "Japanese"],
       "notes": "NVIDIA Nemotron-3-Nano hybrid MoE model (30B total/3.5B active, 128 experts/6 activated + 1 shared). Combines 23 Mamba-2 layers with 6 Attention layers. Unified model for reasoning and non-reasoning tasks with configurable reasoning mode. Generates reasoning trace before final response. 256K context extendable to 1M with YaRN. Strong performance on AIME25 (99.2% with tools), SWE-Bench (38.8%), MiniF2F (50.0% pass@1). Native tool calling via chatml-function-calling format. Commercial use ready.",
       "source": "NVIDIA Nemotron HuggingFace and technical report",

@@ -475,25 +475,73 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
     """Parse XML-wrapped tool calls."""
     tool_calls = []
 
-    # Pattern for XML format
-    pattern = r'<tool_call>\s*({.*?})\s*</tool_call>'
+    # Pattern for XML format.
+    #
+    # Supported inner payloads:
+    # 1) JSON-ish dict (our canonical prompted-tool wrapper):
+    #    <tool_call>{"name":"read_file","arguments":{...}}</tool_call>
+    # 2) Nemotron XML-ish wrapper (observed in the wild):
+    #    <tool_call>
+    #      <function=write_file>
+    #        <parameter=file_path>...</parameter>
+    #        <parameter=content>...</parameter>
+    #      </function>
+    #    </tool_call>
+    pattern = r'<tool_call>\s*(.*?)\s*</tool_call>'
 
-    for match in re.finditer(pattern, response, re.DOTALL):
-        try:
-            json_str = match.group(1)
-            tool_data = _loads_dict_like(json_str)
-            if not isinstance(tool_data, dict):
+    for match in re.finditer(pattern, response, re.DOTALL | re.IGNORECASE):
+        body = match.group(1)
+        if not isinstance(body, str):
+            continue
+
+        body_stripped = body.strip()
+
+        # Case 1: JSON-ish dict inside <tool_call>...</tool_call>
+        if body_stripped.startswith("{") and body_stripped.endswith("}"):
+            try:
+                tool_data = _loads_dict_like(body_stripped)
+                if not isinstance(tool_data, dict):
+                    continue
+
+                tool_calls.append(ToolCall(
+                    name=tool_data.get("name", ""),
+                    arguments=tool_data.get("arguments", {}),
+                    call_id=tool_data.get("id")
+                ))
+                continue
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse XML tool call JSON: {body_stripped} - {e}")
                 continue
 
-            tool_call = ToolCall(
-                name=tool_data.get("name", ""),
-                arguments=tool_data.get("arguments", {}),
-                call_id=tool_data.get("id")
-            )
-            tool_calls.append(tool_call)
+        # Case 2: Nemotron XML-ish function/parameter encoding
+        func_match = re.search(r'<function\s*=\s*([a-zA-Z0-9_-]+)\s*>', body, re.IGNORECASE)
+        if not func_match:
+            continue
+        func_name = func_match.group(1).strip()
+        if not func_name:
+            continue
 
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse XML tool call JSON: {json_str} - {e}")
+        arguments: Dict[str, Any] = {}
+        for param_match in re.finditer(
+            r'<parameter\s*=\s*([a-zA-Z0-9_-]+)\s*>(.*?)</parameter>',
+            body,
+            re.DOTALL | re.IGNORECASE,
+        ):
+            key = (param_match.group(1) or "").strip()
+            raw_value = param_match.group(2) or ""
+            if not key:
+                continue
+
+            # Preserve content as-is, but strip the common leading/trailing newline artifacts
+            # introduced by pretty-printed tag blocks.
+            value = raw_value.replace("\r\n", "\n")
+            if value.startswith("\n"):
+                value = value[1:]
+            if value.endswith("\n"):
+                value = value[:-1]
+            arguments[key] = value
+
+        tool_calls.append(ToolCall(name=func_name, arguments=arguments, call_id=None))
 
     return tool_calls
 
