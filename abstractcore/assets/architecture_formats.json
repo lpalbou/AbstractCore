@@ -508,8 +508,7 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "native",
-      "tool_calling_format": "chatml-function-calling",
+      "tool_format": "json",
       "reasoning_support": true,
       "patterns": ["nemotron-3-nano", "nemotron-nano", "nvidia/nemotron"]
     },

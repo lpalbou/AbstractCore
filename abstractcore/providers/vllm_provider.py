@@ -164,7 +164,9 @@ class VLLMProvider(BaseProvider):
 
         # Add tools to system prompt if provided
         final_system_prompt = system_prompt
-        if tools and self.tool_handler.supports_prompted:
+        # Prefer native tools when the model supports them. Only inject a prompted tool list
+        # when native tool calling is not available.
+        if tools and self.tool_handler.supports_prompted and not self.tool_handler.supports_native:
             include_tool_list = True
             if final_system_prompt and "## Tools (session)" in final_system_prompt:
                 include_tool_list = False
@@ -233,6 +235,11 @@ class VLLMProvider(BaseProvider):
             "max_tokens": max_output_tokens,
             "top_p": kwargs.get("top_p", 0.9),
         }
+
+        # Native tools (OpenAI-compatible): send structured tools/tool_choice when supported.
+        if tools and self.tool_handler.supports_native:
+            payload["tools"] = self.tool_handler.prepare_tools_for_native(tools)
+            payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
         # Add additional generation parameters if provided
         if "frequency_penalty" in kwargs:
@@ -421,7 +428,8 @@ class VLLMProvider(BaseProvider):
         chat_messages = []
 
         final_system_prompt = system_prompt
-        if tools and self.tool_handler.supports_prompted:
+        # Prefer native tools when available; only inject prompted tool syntax as fallback.
+        if tools and self.tool_handler.supports_prompted and not self.tool_handler.supports_native:
             include_tool_list = True
             if final_system_prompt and "## Tools (session)" in final_system_prompt:
                 include_tool_list = False
@@ -483,6 +491,11 @@ class VLLMProvider(BaseProvider):
             "max_tokens": max_output_tokens,
             "top_p": kwargs.get("top_p", 0.9),
         }
+
+        # Native tools (OpenAI-compatible): send structured tools/tool_choice when supported.
+        if tools and self.tool_handler.supports_native:
+            payload["tools"] = self.tool_handler.prepare_tools_for_native(tools)
+            payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
         if "frequency_penalty" in kwargs:
             payload["frequency_penalty"] = kwargs["frequency_penalty"]
