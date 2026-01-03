@@ -342,6 +342,10 @@
       "assistant_suffix": "\n",
       "tool_format": "glm_xml",
       "tool_calling_format": "<tool_call>function_name\n<arg_key>key</arg_key>\n<arg_value>value</arg_value>\n</tool_call>",
+      "output_wrappers": {
+        "start": "<|begin_of_box|>",
+        "end": "<|end_of_box|>"
+      },
       "thinking_output_field": "reasoning_content",
       "thinking_tags": ["<think>", "</think>"],
       "thinking_control": "/nothink",

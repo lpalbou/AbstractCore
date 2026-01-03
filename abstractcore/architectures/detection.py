@@ -348,10 +348,15 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
     arch_format = get_architecture_format(architecture)
     if arch_format.get("tool_format") == "native":
         default_caps["tool_support"] = "native"
-    elif arch_format.get("tool_format") in ["special_token", "json", "xml", "pythonic"]:
+    elif arch_format.get("tool_format") in ["special_token", "json", "xml", "pythonic", "glm_xml"]:
         default_caps["tool_support"] = "prompted"
     else:
         default_caps["tool_support"] = "none"
+
+    # Propagate architecture-level output wrappers into default capabilities.
+    wrappers = arch_format.get("output_wrappers")
+    if isinstance(wrappers, dict) and wrappers:
+        default_caps["output_wrappers"] = dict(wrappers)
 
     logger.debug(f"Using default capabilities for '{model_name}' (architecture: {architecture})")
     return default_caps

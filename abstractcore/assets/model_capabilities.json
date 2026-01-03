@@ -2085,6 +2085,10 @@
       "frontend_replication": true,
       "tool_calling_format": "glm_xml",
       "tool_calling_parser": "glm46v",
+      "output_wrappers": {
+        "start": "<|begin_of_box|>",
+        "end": "<|end_of_box|>"
+      },
       "thinking_control": "/nothink",
       "thinking_tags": ["<think>", "</think>"],
       "notes": "GLM-4.6V foundation model (106B params) for cloud deployment. Native multimodal function calling with vision-driven tool use using XML format: <tool_call>function_name\\n<arg_key>key</arg_key>\\n<arg_value>value</arg_value>\\n</tool_call>. Supports interleaved image-text generation, 128K context, multimodal document understanding, and frontend replication from screenshots. Generates reasoning in 'reasoning_content' field or <think></think> tags. Achieves SoTA performance in visual understanding among similar parameter scales. Thinking can be disabled with '/nothink' suffix in user message. See: https://github.com/zai-org/GLM-V",
@@ -2125,6 +2129,10 @@
       "frontend_replication": true,
       "tool_calling_format": "glm_xml",
       "tool_calling_parser": "glm46v",
+      "output_wrappers": {
+        "start": "<|begin_of_box|>",
+        "end": "<|end_of_box|>"
+      },
       "thinking_control": "/nothink",
       "thinking_tags": ["<think>", "</think>"],
       "notes": "GLM-4.6V-Flash lightweight model (9B params) optimized for local deployment and low-latency applications. Maintains native multimodal function calling using XML format: <tool_call>function_name\\n<arg_key>key</arg_key>\\n<arg_value>value</arg_value>\\n</tool_call>. Generates reasoning in 'reasoning_content' field or <think></think> tags. Ideal for edge and resource-constrained environments while preserving core GLM-4.6V capabilities. Thinking can be disabled with '/nothink' suffix. See: https://github.com/zai-org/GLM-V",
