@@ -273,6 +273,24 @@ To use a tool, respond with this EXACT format:
 
 AbstractCore's tool system works across all providers through two mechanisms:
 
+### Control Tokens vs Tool Transcript Tags (Important)
+
+It’s easy to conflate two separate layers:
+
+1) **Chat-template control tokens** (provider responsibility)
+   - These are the hidden/model-specific role separators that turn `{role:"system"}` vs `{role:"user"}` into the model’s expected prompt template.
+   - Examples (model-dependent): Llama role headers, Qwen `im_start` blocks, etc.
+   - When you use a messages API (OpenAI-compatible, Anthropic, Ollama, LMStudio), the server usually applies these automatically.
+
+2) **Tool-call transcript tags** (prompted strategy)
+   - These are literal strings the model emits in *assistant content* that we parse, such as:
+     - Qwen-style: `<|tool_call|>…</|tool_call|>`
+     - LLaMA-style: `<function_call>…</function_call>`
+     - XML-ish: `<tool_call>…</tool_call>`
+   - They may correspond to special tokens in some tokenizers, but in prompted mode we still treat them as transcript text and parse them from the output.
+
+Native tool calling uses structured request/response fields (`tools` / `tool_calls` / Anthropic `tool_use`) and relies on the provider/server to apply the correct chat template; prompted tool calling describes tools in the system prompt and expects transcript tags in assistant text.
+
 ### 1. Native Tool Support
 
 For providers with native tool APIs (OpenAI, Anthropic):
