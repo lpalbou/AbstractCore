@@ -302,8 +302,9 @@ class VLLMProvider(BaseProvider):
                 raise ProviderAPIError("HTTP client not initialized")
 
             start_time = time.time()
+            request_url = f"{self.base_url}/chat/completions"
             response = self.client.post(
-                f"{self.base_url}/chat/completions",
+                request_url,
                 json=payload,
                 headers=self._get_headers()
             )
@@ -315,10 +316,18 @@ class VLLMProvider(BaseProvider):
             # Extract response from OpenAI format
             if "choices" in result and len(result["choices"]) > 0:
                 choice = result["choices"][0]
-                content = choice.get("message", {}).get("content", "")
+                message = choice.get("message") or {}
+                if not isinstance(message, dict):
+                    message = {}
+
+                content = message.get("content", "")
+                tool_calls = message.get("tool_calls")
+                if tool_calls is None:
+                    tool_calls = choice.get("tool_calls")
                 finish_reason = choice.get("finish_reason", "stop")
             else:
                 content = "No response generated"
+                tool_calls = None
                 finish_reason = "error"
 
             # Extract usage info
@@ -329,6 +338,13 @@ class VLLMProvider(BaseProvider):
                 model=self.model,
                 finish_reason=finish_reason,
                 raw_response=result,
+                tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                metadata={
+                    "_provider_request": {
+                        "url": request_url,
+                        "payload": payload,
+                    }
+                },
                 usage={
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),
@@ -385,13 +401,17 @@ class VLLMProvider(BaseProvider):
                                 if "choices" in chunk and len(chunk["choices"]) > 0:
                                     choice = chunk["choices"][0]
                                     delta = choice.get("delta", {})
+                                    if not isinstance(delta, dict):
+                                        delta = {}
                                     content = delta.get("content", "")
+                                    tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
                                     finish_reason = choice.get("finish_reason")
 
                                     yield GenerateResponse(
                                         content=content,
                                         model=self.model,
                                         finish_reason=finish_reason,
+                                        tool_calls=tool_calls if isinstance(tool_calls, list) else None,
                                         raw_response=chunk
                                     )
 
