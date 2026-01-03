@@ -20,6 +20,8 @@ _model_capabilities: Optional[Dict[str, Any]] = None
 # Cache for resolved model names and architectures to reduce redundant logging
 _resolved_aliases_cache: Dict[str, str] = {}
 _detected_architectures_cache: Dict[str, str] = {}
+# Cache to avoid repeating default-capabilities warnings for the same unknown model.
+_default_capabilities_warning_cache: set[str] = set()
 
 
 # Some callers pass provider/model as a single string (e.g. "lmstudio/qwen/qwen3-next-80b").
@@ -359,6 +361,25 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
         default_caps["output_wrappers"] = dict(wrappers)
 
     logger.debug(f"Using default capabilities for '{model_name}' (architecture: {architecture})")
+
+    # Emit a one-time warning for unknown models to keep model_capabilities.json up to date.
+    try:
+        raw_name = str(model_name).strip()
+    except Exception:
+        raw_name = ""
+
+    if raw_name and raw_name not in _default_capabilities_warning_cache:
+        _default_capabilities_warning_cache.add(raw_name)
+        logger.warning(
+            "Model not found in model_capabilities.json; falling back to architecture defaults",
+            model_name=raw_name,
+            detected_architecture=architecture,
+            default_tool_support=default_caps.get("tool_support"),
+            next_steps=(
+                "Add this model (or an alias) to abstractcore/abstractcore/assets/model_capabilities.json "
+                "or email contact@abstractcore.ai with the exact model id and provider."
+            ),
+        )
     return default_caps
 
 
