@@ -16,7 +16,13 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error, format_provider_error
+from ..exceptions import (
+    ProviderAPIError,
+    ModelNotFoundError,
+    InvalidRequestError,
+    format_model_error,
+    format_provider_error,
+)
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
@@ -359,6 +365,44 @@ class LMStudioProvider(BaseProvider):
                 },
                 gen_time=gen_time
             )
+
+        except httpx.HTTPStatusError as e:
+            # Improve debuggability: include LMStudio's error response body (often a JSON error envelope).
+            resp = getattr(e, "response", None)
+            status = getattr(resp, "status_code", None)
+
+            body_text = ""
+            try:
+                if resp is not None:
+                    # Try to extract a structured error message if the server returns JSON.
+                    try:
+                        j = resp.json()
+                        if isinstance(j, dict):
+                            err = j.get("error")
+                            if isinstance(err, dict):
+                                msg = err.get("message") or err.get("error") or err.get("detail")
+                                if isinstance(msg, str) and msg.strip():
+                                    body_text = msg.strip()
+                            if not body_text:
+                                msg2 = j.get("message") or j.get("detail")
+                                if isinstance(msg2, str) and msg2.strip():
+                                    body_text = msg2.strip()
+                        if not body_text:
+                            body_text = json.dumps(j, ensure_ascii=False)
+                    except Exception:
+                        body_text = str(getattr(resp, "text", "") or "").strip()
+            except Exception:
+                body_text = ""
+
+            if body_text and len(body_text) > 2000:
+                body_text = body_text[:2000] + "…"
+
+            # Preserve classification for BaseProvider error normalization.
+            base = str(e)
+            detail = f"{base} | response={body_text}" if body_text else base
+            if isinstance(status, int) and 400 <= status < 500:
+                raise InvalidRequestError(detail)
+            raise ProviderAPIError(detail)
 
         except AttributeError as e:
             # Handle None type errors specifically

@@ -598,6 +598,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         # Process stream with incremental tool detection and execution
                         ttft_ms: Optional[float] = None
                         for processed_chunk in processor.process_stream(response, converted_tools):
+                            if isinstance(processed_chunk.content, str) and processed_chunk.content:
+                                processed_chunk.content = self._strip_output_wrappers(processed_chunk.content)
                             if ttft_ms is None:
                                 has_content = isinstance(processed_chunk.content, str) and bool(processed_chunk.content)
                                 has_tools = isinstance(processed_chunk.tool_calls, list) and bool(processed_chunk.tool_calls)
@@ -634,6 +636,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     # Note: when tool_call_tags is None (default), we return cleaned content.
                     if tool_call_tags and response.content and not self._should_clean_tool_call_markup(tool_call_tags):
                         response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
+
+                # Strip model-specific output wrappers (e.g. GLM <|begin_of_box|>…<|end_of_box|>).
+                if response and isinstance(response.content, str) and response.content:
+                    response.content = self._strip_output_wrappers(response.content)
 
                 # Add visual token calculation if media metadata is available
                 if media_metadata and response:
@@ -1469,6 +1475,45 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Return original response if rewriting fails
         return response
+
+    def _strip_output_wrappers(self, content: str) -> str:
+        """Strip known model-specific wrapper tokens around assistant output.
+
+        Some model/server combinations emit wrapper tokens like:
+          <|begin_of_box|> ... <|end_of_box|>
+        We remove these only when they appear as leading/trailing wrappers (not when
+        embedded mid-text).
+        """
+        if not isinstance(content, str) or not content:
+            return content
+
+        wrappers: Dict[str, str] = {}
+        for src in (self.architecture_config, self.model_capabilities):
+            if not isinstance(src, dict):
+                continue
+            w = src.get("output_wrappers")
+            if not isinstance(w, dict):
+                continue
+            start = w.get("start")
+            end = w.get("end")
+            if isinstance(start, str) and start.strip():
+                wrappers.setdefault("start", start.strip())
+            if isinstance(end, str) and end.strip():
+                wrappers.setdefault("end", end.strip())
+
+        if not wrappers:
+            return content
+
+        out = content
+        start_token = wrappers.get("start")
+        end_token = wrappers.get("end")
+
+        if isinstance(start_token, str) and start_token:
+            out = re.sub(r"^\s*" + re.escape(start_token) + r"\s*", "", out, count=1)
+        if isinstance(end_token, str) and end_token:
+            out = re.sub(r"\s*" + re.escape(end_token) + r"\s*$", "", out, count=1)
+
+        return out
 
     def _normalize_tool_calls_passthrough(
         self,
