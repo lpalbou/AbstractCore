@@ -536,6 +536,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Define generation function for retry wrapper
         def _execute_generation():
             start_time = time.time()
+            start_perf = time.perf_counter()
 
             # Emit generation started event (covers request received)
             event_data = {
@@ -563,7 +564,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     **kwargs
                 )
 
-                return response, start_time
+                return response, start_time, start_perf
 
             except Exception as e:
                 # Convert to custom exception and re-raise for retry handling
@@ -572,7 +573,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Execute with retry
         try:
-            response, start_time = self.retry_manager.execute_with_retry(
+            response, start_time, start_perf = self.retry_manager.execute_with_retry(
                 _execute_generation,
                 provider_key=self.provider_key
             )
@@ -595,7 +596,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         )
 
                         # Process stream with incremental tool detection and execution
+                        ttft_ms: Optional[float] = None
                         for processed_chunk in processor.process_stream(response, converted_tools):
+                            if ttft_ms is None:
+                                has_content = isinstance(processed_chunk.content, str) and bool(processed_chunk.content)
+                                has_tools = isinstance(processed_chunk.tool_calls, list) and bool(processed_chunk.tool_calls)
+                                if has_content or has_tools:
+                                    ttft_ms = round((time.perf_counter() - start_perf) * 1000, 1)
+                                    meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else {}
+                                    timing = meta.get("_timing") if isinstance(meta.get("_timing"), dict) else {}
+                                    merged = dict(timing)
+                                    merged.setdefault("source", "client_wall")
+                                    merged["ttft_ms"] = ttft_ms
+                                    meta["_timing"] = merged
+                                    processed_chunk.metadata = meta
                             yield processed_chunk
 
                         # Track generation after streaming completes
