@@ -294,7 +294,25 @@ def _brace_match_end_line(lines: list[str], *, start_line_index: int, start_col:
     ],
 )
 def analyze_code(file_path: str, language: Optional[str] = None) -> str:
-    """Return a code outline (imports/classes/functions) with line ranges."""
+    """
+    Return a structured outline of a Python/JavaScript code file with line ranges.
+
+    IMPORTANT: Use this tool first for code navigation. Then use `read_file(start_line/end_line)`
+    around the specific block you want to change, followed by `edit_file(...)` for bounded edits.
+
+    Args:
+        file_path: required; Path to the file to analyze (required; relative or absolute)
+        language: Optional override for language detection ("python" or "javascript")
+
+    Returns:
+        A formatted outline including imports, classes, functions/methods, and (for JavaScript)
+        resolved references to local modules.
+
+    Examples:
+        analyze_code(file_path="src/app.py")
+        analyze_code(file_path="web/app.js")
+        analyze_code(file_path="script.txt", language="python")
+    """
     path = Path(file_path).expanduser()
     display_path = _path_for_display(path)
     if not path.exists():
