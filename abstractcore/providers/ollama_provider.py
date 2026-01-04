@@ -295,6 +295,14 @@ class OllamaProvider(BaseProvider):
                 },
                 gen_time=gen_time
             )
+
+            # Runtime observability: capture the exact HTTP JSON payload we sent to Ollama.
+            if not generate_response.metadata:
+                generate_response.metadata = {}
+            generate_response.metadata["_provider_request"] = {
+                "url": f"{self.base_url}{endpoint}",
+                "payload": payload,
+            }
             
             # Attach media metadata if available
             if media_metadata:
@@ -366,7 +374,13 @@ class OllamaProvider(BaseProvider):
                                 content=content,
                                 model=self.model,
                                 finish_reason="stop" if done else None,
-                                raw_response=chunk
+                                raw_response=chunk,
+                                metadata={
+                                    "_provider_request": {
+                                        "url": f"{self.base_url}{endpoint}",
+                                        "payload": payload,
+                                    }
+                                },
                             )
 
                             yield chunk_response
