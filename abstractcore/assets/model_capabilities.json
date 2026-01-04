@@ -1195,7 +1195,7 @@
     },
     "qwen3-next-80b-a3b": {
       "max_output_tokens": 16384,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": true,
       "vision_support": false,
