@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Tools/execute_command**: now returns a structured JSON result (including `success`, `return_code`, `stdout`/`stderr`, and a human-friendly `rendered` string) instead of a single decorated string. This enables durable evidence capture and cleaner downstream processing.
 - **Tools/fetch_url**: now returns a structured JSON result including a `rendered` summary plus evidence-only fields (`raw_text`, `normalized_text`) for provenance-first storage.
+- **Providers (all)**: `max_tokens` generation kwarg is now treated as an alias for `max_output_tokens` at the AbstractCore provider boundary. This keeps host/runtime contracts stable while centralizing provider-compatibility logic in AbstractCore.
+- **Tools (schema export)**: `ToolDefinition.to_dict()` now includes `required_args` (best-effort, inferred by absence of defaults) so hosts rendering tool specs directly can show required parameters without re-inferring.
 
 ### Fixed
 - **Tools/list_files**: `list_files` now lists **directories as well as files** (as documented), and prints relative entry paths. This helps agent workflows confirm `mkdir` outcomes even when directories are still empty.
@@ -37,10 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Providers (LMStudio / OpenAI-compatible)**: timeouts now surface as clearer errors including the configured timeout duration (helps diagnose client-side disconnects during long local generations).
 - **Providers (tool calls)**: normalize OpenAI-compatible tool calls even when a server returns a **wrapped tool name** (e.g. `"{function-name: write_file}"`), mapping it back to the allowed tool name so the call is not dropped.
 - **Providers (Anthropic/Claude)**: unknown/new `claude*` model IDs now default to **native tool calling** (and `claude-haiku-4-5` is explicitly recognized), avoiding prompted `<tool_call>...</tool_call>` transcript injection.
+- **Providers (Anthropic/Claude)**: when callers provide tool outputs as internal `role="tool"` messages, `AnthropicProvider` now converts them to proper `tool_result` content blocks (Anthropic Messages API format) instead of treating them as plain user text.
 - **Providers (all)**: default HTTP/tool timeouts are now sourced centrally from `abstractcore/config` (instead of ad-hoc per-provider behavior), and timeout errors are normalized in `BaseProvider` for consistency.
 - **Server (`/v1/chat/completions`)**: added `timeout_s` request field so orchestrators (e.g. AbstractRuntime) can enforce per-request provider timeouts when calling AbstractCore over HTTP.
 - **Tool failure semantics**: the ToolRegistry now supports tools reporting structured failures (`{"success": false, ...}`) while preserving structured outputs for post-mortem evidence.
 - **Tools/write_file**: `content` is now **required** in the tool schema (pass `content=""` explicitly for empty files). This prevents models from accidentally writing 0‑byte files by omitting the `content` argument.
+- **Model capabilities (Claude 4.5)**: updated `claude-haiku-4-5` + `claude-4.5-sonnet` to reflect Claude Docs’ current **64K max output** / **200K context** limits, added `claude-opus-4-5`, and added 4.5 alias ids (e.g. `claude-sonnet-4-5`).
 
 ## [2.8.1 - 2025-12-21
 

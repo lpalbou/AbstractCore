@@ -283,7 +283,7 @@
       "max_tokens": 200000
     },
     "claude-haiku-4-5": {
-      "max_output_tokens": 4096,
+      "max_output_tokens": 64000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -293,8 +293,8 @@
         "up to 1568x1568"
       ],
       "audio_support": false,
-      "notes": "Claude Haiku 4.5 series (treat as native tools by default).",
-      "source": "Anthropic official docs",
+      "notes": "Claude Haiku 4.5 series. Anthropic API enforces a 64K max output token cap (currently 64000).",
+      "source": "Anthropic API error cap (max_tokens <= 64000)",
       "canonical_name": "claude-haiku-4-5",
       "aliases": [
         "claude-haiku-4-5-20251001",
@@ -354,7 +354,7 @@
       "max_tokens": 200000
     },
     "claude-4.5-sonnet": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 64000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -364,10 +364,34 @@
         "up to 1568x1568"
       ],
       "audio_support": false,
-      "notes": "Claude 4.5 Sonnet with enhanced reasoning",
-      "source": "Anthropic official docs",
+      "notes": "Claude 4.5 Sonnet. Anthropic API enforces a 64K max output token cap (currently 64000).",
+      "source": "Anthropic API error cap (max_tokens <= 64000)",
       "canonical_name": "claude-4.5-sonnet",
-      "aliases": [],
+      "aliases": [
+        "claude-sonnet-4-5",
+        "claude-sonnet-4-5-20250929",
+        "anthropic/claude-sonnet-4-5"
+      ],
+      "max_tokens": 200000
+    },
+    "claude-opus-4-5": {
+      "max_output_tokens": 64000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "notes": "Claude Opus 4.5. Anthropic API enforces a 64K max output token cap (currently 64000).",
+      "source": "Anthropic API error cap (max_tokens <= 64000)",
+      "canonical_name": "claude-opus-4-5",
+      "aliases": [
+        "claude-opus-4-5-20251101",
+        "anthropic/claude-opus-4-5"
+      ],
       "max_tokens": 200000
     },
     "llama-3.2-1b": {
@@ -584,7 +608,7 @@
     },
     "qwen3-1.7b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -598,7 +622,7 @@
     },
     "qwen3-4b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -612,7 +636,7 @@
     },
     "qwen3-32b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -626,7 +650,7 @@
     },
     "qwen3-30b-a3b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -640,7 +664,7 @@
     },
     "qwen3-30b-a3b-2507": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -1201,7 +1225,7 @@
     },
     "qwen3-14b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1304,7 +1328,7 @@
     },
     "qwen3-8b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1318,7 +1342,7 @@
     },
     "qwen3-235b-a22b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1332,7 +1356,7 @@
     },
     "qwen3-vl": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": true,
@@ -1481,7 +1505,7 @@
     },
     "seed-oss": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1496,7 +1520,7 @@
     },
     "glm-4.5": {
       "max_output_tokens": 4096,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1510,7 +1534,7 @@
     },
     "glm-4.6": {
       "max_output_tokens": 4096,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1528,7 +1552,7 @@
     },
     "glm-4.5-air": {
       "max_output_tokens": 4096,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,

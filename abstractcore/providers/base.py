@@ -10,7 +10,7 @@ import json
 import re
 import socket
 from collections import deque
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
 from abc import ABC, abstractmethod
 
 try:
@@ -36,6 +36,10 @@ from ..exceptions import (
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
 from ..tools import execute_tools
 from ..core.retry import RetryManager, RetryConfig
+
+if TYPE_CHECKING:  # pragma: no cover
+    # Imported for type checking only to avoid hard dependencies in minimal installs.
+    from ..media.types import MediaContent
 
 
 class BaseProvider(AbstractCoreInterface, ABC):
@@ -444,6 +448,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
             execute_tools: Whether to execute tools automatically (True) or let agent handle execution (False)
             glyph_compression: Glyph compression preference ("auto", "always", "never")
         """
+        # Normalize token limit naming at the provider boundary.
+        #
+        # - OpenAI-style APIs use `max_tokens` for the output-token cap.
+        # - AbstractCore's unified internal name is `max_output_tokens`.
+        #
+        # AbstractRuntime (and some hosts) may still emit `max_tokens` in effect payloads.
+        # That translation is a provider integration concern, so keep it in AbstractCore.
+        if "max_output_tokens" not in kwargs and "max_tokens" in kwargs and kwargs.get("max_tokens") is not None:
+            kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
+
         # Handle structured output request
         if response_model is not None:
             if not PYDANTIC_AVAILABLE:
@@ -944,10 +958,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Override max_output_tokens if provided in kwargs
         effective_max_output = kwargs.get("max_output_tokens", max_output_tokens)
+        # Safety clamp: never exceed the provider/model's configured max_output_tokens.
+        #
+        # Upstream callers (runtimes/agents) may request large output budgets based on
+        # stale capabilities or user configuration. Providers should not forward values
+        # that violate the model's hard limits (Anthropic returns 400 for this).
+        try:
+            if effective_max_output is None:
+                effective_max_output_i = int(max_output_tokens)
+            else:
+                effective_max_output_i = int(effective_max_output)
+        except Exception:
+            effective_max_output_i = int(max_output_tokens)
+        if effective_max_output_i <= 0:
+            effective_max_output_i = int(max_output_tokens)
+        if effective_max_output_i > int(max_output_tokens):
+            effective_max_output_i = int(max_output_tokens)
 
         # Return base kwargs with unified parameter
         result_kwargs = kwargs.copy()
-        result_kwargs["max_output_tokens"] = effective_max_output
+        result_kwargs["max_output_tokens"] = effective_max_output_i
 
         # Add unified generation parameters with fallback hierarchy: kwargs → instance → defaults
         result_kwargs["temperature"] = result_kwargs.get("temperature", self.temperature)
