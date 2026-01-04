@@ -485,6 +485,7 @@
       "user_suffix": "\n",
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
+      "default_tool_support": "native",
       "tool_format": "xml",
       "patterns": ["claude", "claude-3", "claude-4", "claude-4.1", "claude-4.5"]
     },

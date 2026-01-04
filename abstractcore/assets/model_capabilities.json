@@ -282,6 +282,26 @@
       "aliases": [],
       "max_tokens": 200000
     },
+    "claude-haiku-4-5": {
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "notes": "Claude Haiku 4.5 series (treat as native tools by default).",
+      "source": "Anthropic official docs",
+      "canonical_name": "claude-haiku-4-5",
+      "aliases": [
+        "claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5"
+      ],
+      "max_tokens": 200000
+    },
     "claude-4-opus": {
       "max_output_tokens": 4096,
       "tool_support": "native",

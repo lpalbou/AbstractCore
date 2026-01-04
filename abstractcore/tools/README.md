@@ -559,7 +559,7 @@ def read_file(
 @tool
 def write_file(
     file_path: str,
-    content: str = "",
+    content: str,
     mode: str = "w"
 ) -> str:
     """Write content to file with directory creation"""
