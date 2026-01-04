@@ -122,6 +122,24 @@ class ToolDefinition:
 
         result["parameters"] = self.parameters
 
+        # Expose required args explicitly for hosts that render ToolDefinitions directly
+        # (e.g. AbstractRuntime prompt payloads / debug traces). This is additive metadata:
+        # providers still rely on JSON Schema `required` when building native tool payloads.
+        try:
+            required: List[str] = []
+            for param_name, meta in (self.parameters or {}).items():
+                if not isinstance(param_name, str) or not param_name.strip():
+                    continue
+                # Convention in this repo: absence of `default` means "required".
+                if not isinstance(meta, dict) or "default" not in meta:
+                    required.append(param_name)
+            required.sort()
+            if required:
+                result["required_args"] = required
+        except Exception:
+            # Best-effort only; never break tool serialization.
+            pass
+
         # Include enhanced metadata if available
         if self.tags:
             result["tags"] = self.tags

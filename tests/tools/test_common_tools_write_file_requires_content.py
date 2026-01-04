@@ -14,4 +14,10 @@ def test_write_file_tool_schema_requires_content() -> None:
     # Required args are inferred by absence of a default in the schema.
     assert "default" not in params["content"]
 
+    exported = tool_def.to_dict()
+    required_args = exported.get("required_args")
+    assert isinstance(required_args, list)
+    assert "file_path" in required_args
+    assert "content" in required_args
+
 

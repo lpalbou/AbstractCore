@@ -95,3 +95,49 @@ def test_anthropic_provider_parses_tool_use_blocks_into_canonical_tool_calls(mon
     ]
 
 
+def test_anthropic_provider_converts_role_tool_messages_to_tool_result_blocks(monkeypatch):
+    """Anthropic Messages API does not accept role='tool'; tool outputs must be tool_result blocks."""
+    provider = AnthropicProvider(model="claude-haiku-4-5", api_key="test")
+
+    captured = {}
+
+    def fake_create(**call_params):
+        captured["call_params"] = call_params
+        return _fake_anthropic_response(tool_use=False)
+
+    monkeypatch.setattr(provider.client.messages, "create", fake_create)
+
+    messages = [
+        {"role": "assistant", "content": "ok"},
+        {
+            "role": "tool",
+            "content": "[write_file]: Error: Invalid tool call: write_file requires content",
+            "metadata": {"name": "write_file", "call_id": "toolu_123"},
+        },
+    ]
+
+    provider.generate(prompt="continue", messages=messages, temperature=0, max_output_tokens=16)
+
+    api_messages = (captured.get("call_params") or {}).get("messages") or []
+    assert isinstance(api_messages, list)
+
+    found = False
+    for m in api_messages:
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") != "user":
+            continue
+        blocks = m.get("content")
+        if not isinstance(blocks, list):
+            continue
+        for b in blocks:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") != "tool_result":
+                continue
+            if b.get("tool_use_id") == "toolu_123":
+                found = True
+                assert "write_file" in str(b.get("content") or "")
+    assert found, "Expected a tool_result content block for role='tool' messages"
+
+

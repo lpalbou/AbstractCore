@@ -100,6 +100,30 @@ class AnthropicProvider(BaseProvider):
                             "role": "assistant",
                             "content": msg["content"]
                         })
+                    elif role == "tool":
+                        # Anthropic Messages API represents tool outputs as `tool_result`
+                        # content blocks inside a USER message (there is no `role="tool"`).
+                        meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+                        tool_use_id = meta.get("call_id") or meta.get("tool_use_id") or meta.get("id")
+                        tool_text = msg.get("content", "")
+                        tool_text = "" if tool_text is None else str(tool_text)
+
+                        if isinstance(tool_use_id, str) and tool_use_id.strip():
+                            api_messages.append(
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_use_id.strip(),
+                                            "content": tool_text,
+                                        }
+                                    ],
+                                }
+                            )
+                        else:
+                            # Fallback: preserve as plain user text when no tool_use_id is available.
+                            api_messages.append({"role": "user", "content": tool_text})
                     else:
                         api_messages.append({
                             "role": "user",
@@ -264,6 +288,30 @@ class AnthropicProvider(BaseProvider):
                             "role": "assistant",
                             "content": msg["content"]
                         })
+                    elif role == "tool":
+                        # Anthropic Messages API represents tool outputs as `tool_result`
+                        # content blocks inside a USER message (there is no `role="tool"`).
+                        meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+                        tool_use_id = meta.get("call_id") or meta.get("tool_use_id") or meta.get("id")
+                        tool_text = msg.get("content", "")
+                        tool_text = "" if tool_text is None else str(tool_text)
+
+                        if isinstance(tool_use_id, str) and tool_use_id.strip():
+                            api_messages.append(
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_use_id.strip(),
+                                            "content": tool_text,
+                                        }
+                                    ],
+                                }
+                            )
+                        else:
+                            # Fallback: preserve as plain user text when no tool_use_id is available.
+                            api_messages.append({"role": "user", "content": tool_text})
                     else:
                         api_messages.append({
                             "role": "user",
