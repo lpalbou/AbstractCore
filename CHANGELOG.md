@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Providers (tool calls)**: normalize OpenAI-compatible tool calls even when a server returns a **wrapped tool name** (e.g. `"{function-name: write_file}"`), mapping it back to the allowed tool name so the call is not dropped.
 - **Providers (Anthropic/Claude)**: unknown/new `claude*` model IDs now default to **native tool calling** (and `claude-haiku-4-5` is explicitly recognized), avoiding prompted `<tool_call>...</tool_call>` transcript injection.
 - **Providers (Anthropic/Claude)**: when callers provide tool outputs as internal `role="tool"` messages, `AnthropicProvider` now converts them to proper `tool_result` content blocks (Anthropic Messages API format) instead of treating them as plain user text.
+- **Providers (Ollama)**: attach `metadata._provider_request` with the exact Ollama URL + JSON payload for per-call provider-wire observability.
 - **Providers (all)**: default HTTP/tool timeouts are now sourced centrally from `abstractcore/config` (instead of ad-hoc per-provider behavior), and timeout errors are normalized in `BaseProvider` for consistency.
 - **Server (`/v1/chat/completions`)**: added `timeout_s` request field so orchestrators (e.g. AbstractRuntime) can enforce per-request provider timeouts when calling AbstractCore over HTTP.
 - **Tool failure semantics**: the ToolRegistry now supports tools reporting structured failures (`{"success": false, ...}`) while preserving structured outputs for post-mortem evidence.
