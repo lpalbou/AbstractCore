@@ -422,13 +422,38 @@ class AnthropicProvider(BaseProvider):
         """Format tools for Anthropic API format"""
         formatted_tools = []
         for tool in tools:
-            # Get parameters and ensure proper JSON schema format
+            # Anthropic expects `input_schema` to be a JSON Schema object:
+            # https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use
+            #
+            # Our internal tool representation typically uses:
+            #   tool["parameters"] = { "arg": {"type": "...", "default": ...?}, ... }
+            # or, less commonly:
+            #   tool["parameters"] = {"type":"object","properties":{...},"required":[...]}
             params = tool.get("parameters", {})
-            input_schema = {
+
+            properties: Dict[str, Any] = {}
+            required: List[str] = []
+
+            if isinstance(params, dict) and "properties" in params:
+                # Treat as already-schema-like.
+                raw_props = params.get("properties") if isinstance(params.get("properties"), dict) else {}
+                properties = dict(raw_props)
+                raw_required = params.get("required")
+                if isinstance(raw_required, list):
+                    required = [str(x) for x in raw_required if isinstance(x, (str, int))]
+            elif isinstance(params, dict):
+                # Treat as compact parameter dict; infer required args by absence of `default`.
+                properties = dict(params)
+                for k, v in params.items():
+                    if isinstance(v, dict) and "default" not in v:
+                        required.append(str(k))
+
+            input_schema: Dict[str, Any] = {
                 "type": "object",
-                "properties": params.get("properties", params),  # Handle both formats
-                "required": params.get("required", list(params.keys()) if "properties" not in params else [])
+                "properties": properties,
             }
+            if required:
+                input_schema["required"] = required
 
             formatted_tool = {
                 "name": tool.get("name"),
@@ -448,7 +473,7 @@ class AnthropicProvider(BaseProvider):
         # Handle different content types
         for content_block in response.content:
             if content_block.type == "text":
-                content = content_block.text
+                content += content_block.text
             elif content_block.type == "tool_use":
                 if tool_calls is None:
                     tool_calls = []

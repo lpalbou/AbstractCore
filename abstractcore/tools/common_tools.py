@@ -861,7 +861,7 @@ def search_files(
     with various output formats and options.
 
     Args:
-        pattern: Regular expression pattern to search for
+        pattern: required; Regular expression pattern to search for
         path: File or directory path to search in (default: current directory)
         output_mode: Output format - "content" (show matching lines), "context" (show ±N lines around matches), "files_with_matches" (show file paths with line numbers), "count" (show match counts) (default: "content")
         context_lines: When output_mode="context", show this many lines before/after each match (default: 5 when output_mode="context" and context_lines=0)
@@ -1328,7 +1328,7 @@ def read_file(
     Read the contents of a file with optional line range.
 
     Args:
-        file_path: Path to the file to read
+        file_path: required; Path to the file to read
         start_line: Starting line number (1-indexed, default: 1)
         end_line: Ending line number (1-indexed, inclusive, optional)
         should_read_entire_file: Legacy/compatibility flag. If provided, overrides inference:
@@ -1491,7 +1491,7 @@ def read_file(
         },
     ]
 )
-def write_file(file_path: str, content: str = "", mode: str = "w", create_dirs: bool = True) -> str:
+def write_file(file_path: str, content: str, mode: str = "w", create_dirs: bool = True) -> str:
     """
     Write content to a file with robust error handling.
 
@@ -1499,8 +1499,8 @@ def write_file(file_path: str, content: str = "", mode: str = "w", create_dirs: 
     It can optionally create parent directories if they don't exist.
 
     Args:
-        file_path: Path to the file to write (relative or absolute)
-        content: The content to write to the file (default: empty string)
+        file_path: Path to the file to write (required; can be relative or absolute)
+        content: The content to write to the file (required; use "" explicitly for an empty file)
         mode: Write mode - "w" to overwrite, "a" to append (default: "w")
         create_dirs: Whether to create parent directories if they don't exist (default: True)
 

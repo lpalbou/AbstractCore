@@ -35,9 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Add bounded retries with a **cleaned query** (drop generic words like “url”, keep version identifiers) and region fallback (`us-en`) when relevance is low.
   - Add a lightweight relevance score per result and include `attempts` metadata for observability.
 - **Providers (LMStudio / OpenAI-compatible)**: timeouts now surface as clearer errors including the configured timeout duration (helps diagnose client-side disconnects during long local generations).
+- **Providers (tool calls)**: normalize OpenAI-compatible tool calls even when a server returns a **wrapped tool name** (e.g. `"{function-name: write_file}"`), mapping it back to the allowed tool name so the call is not dropped.
+- **Providers (Anthropic/Claude)**: unknown/new `claude*` model IDs now default to **native tool calling** (and `claude-haiku-4-5` is explicitly recognized), avoiding prompted `<tool_call>...</tool_call>` transcript injection.
 - **Providers (all)**: default HTTP/tool timeouts are now sourced centrally from `abstractcore/config` (instead of ad-hoc per-provider behavior), and timeout errors are normalized in `BaseProvider` for consistency.
 - **Server (`/v1/chat/completions`)**: added `timeout_s` request field so orchestrators (e.g. AbstractRuntime) can enforce per-request provider timeouts when calling AbstractCore over HTTP.
 - **Tool failure semantics**: the ToolRegistry now supports tools reporting structured failures (`{"success": false, ...}`) while preserving structured outputs for post-mortem evidence.
+- **Tools/write_file**: `content` is now **required** in the tool schema (pass `content=""` explicitly for empty files). This prevents models from accidentally writing 0‑byte files by omitting the `content` argument.
 
 ## [2.8.1 - 2025-12-21
 

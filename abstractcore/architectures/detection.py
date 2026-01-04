@@ -346,9 +346,19 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
     default_caps = _model_capabilities.get("default_capabilities", {}).copy()
     default_caps["architecture"] = architecture
 
-    # Enhance defaults based on architecture
+    # Enhance defaults based on architecture.
+    #
+    # NOTE: `architecture_formats.json.tool_format` describes the *prompted transcript syntax*
+    # for tool calls (e.g. XML-wrapped, <|tool_call|> blocks, etc). Some architectures/models
+    # also support *native tool APIs* (provider-level `tools` payloads) even when their prompted
+    # transcript format is non-native. For those cases, architectures can set an explicit
+    # `default_tool_support` to avoid relying on tool_format heuristics.
     arch_format = get_architecture_format(architecture)
-    if arch_format.get("tool_format") == "native":
+
+    explicit_support = str(arch_format.get("default_tool_support") or "").strip().lower()
+    if explicit_support in {"native", "prompted", "none"}:
+        default_caps["tool_support"] = explicit_support
+    elif arch_format.get("tool_format") == "native":
         default_caps["tool_support"] = "native"
     elif arch_format.get("tool_format") in ["special_token", "json", "xml", "pythonic", "glm_xml"]:
         default_caps["tool_support"] = "prompted"
