@@ -295,3 +295,31 @@ def test_native_tool_call_arguments_are_canonicalized() -> None:
             "call_id": "call_1",
         }
     ]
+
+
+def test_native_tool_calls_with_wrapped_function_names_are_mapped_to_allowed_tools() -> None:
+    """Some OpenAI-compatible servers return wrapped function names like '{function-name: write_file}'."""
+    provider = _DummyProvider(
+        model="glm-4.6v",
+        response=GenerateResponse(
+            content="I will now call the function.",
+            tool_calls=[
+                {
+                    "type": "function",
+                    "id": "call_x",
+                    "function": {
+                        "name": "{function-name: write_file}",
+                        "arguments": '{"file_path":"x.txt","content":"hello"}',
+                    },
+                }
+            ],
+            model="glm-4.6v",
+        ),
+    )
+
+    tools = [{"name": "write_file", "description": "Write file", "parameters": {"file_path": {"type": "string"}}}]
+    resp = provider.generate(prompt="write file", tools=tools)
+
+    assert resp.tool_calls == [
+        {"name": "write_file", "arguments": {"file_path": "x.txt", "content": "hello"}, "call_id": "call_x"}
+    ]

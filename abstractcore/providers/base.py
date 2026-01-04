@@ -1679,6 +1679,39 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
             return current
 
+        def _map_wrapped_name_to_allowed(raw: str, allowed: set[str]) -> Optional[str]:
+            """Best-effort mapping when a provider returns a wrapped tool name.
+
+            Some OpenAI-compatible servers/models occasionally return tool names wrapped in
+            extra tokens/text (e.g. "{function-name: write_file}"). If we can confidently
+            detect an allowed tool name as a standalone token within the raw string, map it
+            back to the exact allowed name so tool execution can proceed.
+            """
+            s = str(raw or "").strip()
+            if not s:
+                return None
+            if s in allowed:
+                return s
+
+            try:
+                import re
+
+                # Prefer exact token-boundary matches (tool names are usually snake_case).
+                candidates: List[str] = []
+                for name in allowed:
+                    if not isinstance(name, str) or not name:
+                        continue
+                    pat = r"(^|[^\w])" + re.escape(name) + r"([^\w]|$)"
+                    if re.search(pat, s):
+                        candidates.append(name)
+                if candidates:
+                    # Prefer the most specific (longest) match deterministically.
+                    return max(candidates, key=lambda n: (len(n), n))
+            except Exception:
+                return None
+
+            return None
+
         normalized: List[Dict[str, Any]] = []
 
         for tc in tool_calls:
@@ -1714,7 +1747,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if not isinstance(name, str) or not name:
                 continue
             if isinstance(allowed_tool_names, set) and allowed_tool_names and name not in allowed_tool_names:
-                continue
+                mapped = _map_wrapped_name_to_allowed(name, allowed_tool_names)
+                if not isinstance(mapped, str) or not mapped:
+                    continue
+                name = mapped
 
             if isinstance(arguments, str):
                 parsed = loads_dict_like(arguments)
