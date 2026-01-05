@@ -315,6 +315,12 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
     """
     path = Path(file_path).expanduser()
     display_path = _path_for_display(path)
+    # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
+    from .abstractignore import AbstractIgnore
+
+    ignore = AbstractIgnore.for_path(path)
+    if ignore.is_ignored(path, is_dir=False):
+        return f"Error: File '{display_path}' is ignored by .abstractignore policy"
     if not path.exists():
         return f"Error: File '{display_path}' does not exist"
     if not path.is_file():
@@ -672,6 +678,13 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         directory = directory_input.absolute()
         directory_display = str(directory)
 
+        # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
+        from .abstractignore import AbstractIgnore
+
+        ignore = AbstractIgnore.for_path(directory)
+        if ignore.is_ignored(directory, is_dir=True):
+            return f"Error: Directory '{directory_display}' is ignored by .abstractignore policy"
+
         if not directory.exists():
             return f"Error: Directory '{directory_display}' does not exist"
 
@@ -708,22 +721,31 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
                 # Prune hidden directories early unless explicitly requested.
                 if not include_hidden:
                     dirs[:] = [d for d in dirs if not str(d).startswith(".")]
+                # Prune ignored directories (including AbstractRuntime store dirs like `*.d/`).
+                try:
+                    dirs[:] = [d for d in dirs if not ignore.is_ignored(Path(root) / d, is_dir=True)]
+                except Exception:
+                    pass
 
                 # Include directories (so empty folders still show up)
                 for d in dirs:
                     if not include_hidden and str(d).startswith("."):
                         continue
-                    all_entries.append(Path(root) / d)
+                    p = Path(root) / d
+                    if not ignore.is_ignored(p, is_dir=True):
+                        all_entries.append(p)
 
                 # Include files
                 for f in dir_files:
                     if not include_hidden and str(f).startswith("."):
                         continue
-                    all_entries.append(Path(root) / f)
+                    p = Path(root) / f
+                    if not ignore.is_ignored(p, is_dir=False):
+                        all_entries.append(p)
         else:
             try:
                 # Include both files and directories for better UX and agent correctness.
-                all_entries = list(directory.iterdir())
+                all_entries = [p for p in directory.iterdir() if not ignore.is_ignored(p)]
             except PermissionError:
                 pass
 
@@ -916,6 +938,17 @@ def search_files(
         search_path = search_path_input.absolute()
         search_path_display = str(search_path)
 
+        # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
+        from .abstractignore import AbstractIgnore
+
+        ignore = AbstractIgnore.for_path(search_path)
+        try:
+            if ignore.is_ignored(search_path, is_dir=search_path.is_dir()):
+                return f"Error: Path '{search_path_display}' is ignored by .abstractignore policy"
+        except Exception:
+            # Best-effort; continue without policy if filesystem queries fail.
+            ignore = AbstractIgnore.for_path(Path.cwd())
+
         # Compile regex pattern
         flags = 0 if case_sensitive else re.IGNORECASE
         if multiline:
@@ -970,6 +1003,8 @@ def search_files(
 
         # Determine if path is a file or directory
         if search_path.is_file():
+            if ignore.is_ignored(search_path, is_dir=False):
+                return f"Error: File '{search_path_display}' is ignored by .abstractignore policy"
             files_to_search = [search_path]
         elif search_path.is_dir():
             # Find files matching pattern in directory
@@ -991,12 +1026,16 @@ def search_files(
                     # Prune directories in-place
                     dirs[:] = [
                         d for d in dirs
-                        if (include_hidden or not d.startswith('.')) and d not in ignore_set
+                        if (include_hidden or not d.startswith('.'))
+                        and d not in ignore_set
+                        and not ignore.is_ignored(Path(root) / d, is_dir=True)
                     ]
                     for file in files:
                         file_path = Path(root) / file
                         # Skip hidden files unless allowed
                         if not include_hidden and file_path.name.startswith('.'):
+                            continue
+                        if ignore.is_ignored(file_path, is_dir=False):
                             continue
                         # Skip non-regular files (sockets, fifos, etc.) and symlinks
                         try:
@@ -1021,13 +1060,17 @@ def search_files(
                     # Prune directories in-place
                     dirs[:] = [
                         d for d in dirs
-                        if (include_hidden or not d.startswith('.')) and d not in ignore_set
+                        if (include_hidden or not d.startswith('.'))
+                        and d not in ignore_set
+                        and not ignore.is_ignored(Path(root) / d, is_dir=True)
                     ]
                     for file in files:
                         file_path = Path(root) / file
                         filename = file_path.name
                         # Skip hidden files unless allowed
                         if not include_hidden and filename.startswith('.'):
+                            continue
+                        if ignore.is_ignored(file_path, is_dir=False):
                             continue
                         # Skip non-regular files (sockets, fifos, etc.) and symlinks
                         try:
@@ -1364,6 +1407,13 @@ def read_file(
         path = Path(file_path).expanduser()
         display_path = _path_for_display(path)
 
+        # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
+        from .abstractignore import AbstractIgnore
+
+        ignore = AbstractIgnore.for_path(path)
+        if ignore.is_ignored(path, is_dir=False):
+            return f"Error: File '{display_path}' is ignored by .abstractignore policy"
+
         if not path.exists():
             return f"Error: File '{display_path}' does not exist"
 
@@ -1533,6 +1583,13 @@ def write_file(file_path: str, content: str, mode: str = "w", create_dirs: bool 
         # Convert to Path object for better handling and expand home directory shortcuts like ~
         path = Path(file_path).expanduser()
         display_path = _path_for_display(path)
+
+        # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
+        from .abstractignore import AbstractIgnore
+
+        ignore = AbstractIgnore.for_path(path)
+        if ignore.is_ignored(path, is_dir=False) or ignore.is_ignored(path.parent, is_dir=True):
+            return f"❌ Refused: Path '{display_path}' is ignored by .abstractignore policy"
 
         # Create parent directories if requested and they don't exist
         if create_dirs and path.parent != path:
@@ -3287,6 +3344,12 @@ def edit_file(
         # Validate file exists and expand home directory shortcuts like ~
         path = Path(file_path).expanduser()
         display_path = _path_for_display(path)
+        # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
+        from .abstractignore import AbstractIgnore
+
+        ignore = AbstractIgnore.for_path(path)
+        if ignore.is_ignored(path, is_dir=False) or ignore.is_ignored(path.parent, is_dir=True):
+            return f"❌ Refused: Path '{display_path}' is ignored by .abstractignore policy"
         if not path.exists():
             return f"❌ File not found: {display_path}"
 
