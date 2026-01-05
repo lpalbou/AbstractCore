@@ -124,7 +124,7 @@
     },
     "o1": {
       "max_output_tokens": 32768,
-      "tool_support": "none",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -137,7 +137,7 @@
     },
     "o1-mini": {
       "max_output_tokens": 65536,
-      "tool_support": "none",
+      "tool_support": "prompted",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -396,7 +396,7 @@
     },
     "llama-3.2-1b": {
       "max_output_tokens": 2048,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -409,7 +409,7 @@
     },
     "llama-3.2-3b": {
       "max_output_tokens": 2048,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -438,7 +438,7 @@
     },
     "llama-3.3-70b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
       "vision_support": false,
@@ -503,7 +503,7 @@
     },
     "qwen2.5-0.5b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -516,7 +516,7 @@
     },
     "qwen2.5-1.5b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -529,7 +529,7 @@
     },
     "qwen2.5-3b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -542,7 +542,7 @@
     },
     "qwen2.5-7b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -555,7 +555,7 @@
     },
     "qwen2.5-14b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -568,7 +568,7 @@
     },
     "qwen2.5-32b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -581,7 +581,7 @@
     },
     "qwen2.5-72b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -594,7 +594,7 @@
     },
     "qwen3-0.6b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -822,7 +822,7 @@
     },
     "phi-4": {
       "max_output_tokens": 16000,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -835,7 +835,7 @@
     },
     "mistral-7b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -847,7 +847,7 @@
     },
     "mixtral-8x7b": {
       "max_output_tokens": 32768,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -1212,7 +1212,7 @@
     },
     "qwen3": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -1579,7 +1579,7 @@
     },
     "granite3.2:2b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1594,7 +1594,7 @@
     },
     "granite3.2:8b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1609,7 +1609,7 @@
     },
     "granite3.2-vision:2b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": true,
@@ -1687,7 +1687,7 @@
     },
     "granite3.3:2b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1702,7 +1702,7 @@
     },
     "granite3.3:8b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
