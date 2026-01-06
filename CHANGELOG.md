@@ -7,46 +7,217 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2025-01-06
+
 ### Added
-- **Model Support**: Added NVIDIA Nemotron-3-Nano-30B-A3B-BF16 hybrid MoE model
+
+#### MCP (Model Context Protocol) Integration
+- **Full MCP Support**: First-class integration with Model Context Protocol servers
+  - `abstractcore.mcp` package with JSON-RPC client for MCP servers (Streamable HTTP transport)
+  - `McpClient`: HTTP-based MCP client with session management
+  - `McpStdioClient`: stdio-based MCP client for local server processes
+  - `McpToolSource`: Automatic tool discovery via `tools/list` with schema normalization
+  - `create_mcp_client()`: Factory for creating appropriate MCP client instances
+  - Tool namespacing with `mcp:server_name:tool_name` format to prevent collisions
+  - MCP treated as tool server protocol (not LLM provider) with host/runtime-owned execution
+  - Comprehensive test coverage including stdio client and integration tests
+
+#### Model Support
+- **NVIDIA Nemotron-3-Nano-30B-A3B-BF16**: Hybrid MoE model with exceptional performance
   - 30B total parameters with 3.5B active (128 experts + 1 shared, 6 activated per token)
-  - Combines 23 Mamba-2 layers with 6 Attention layers
+  - Combines 23 Mamba-2 layers with 6 Attention layers for efficiency
   - Native tool calling via JSON format (OpenAI-style function calling)
   - Configurable reasoning mode with unified reasoning/response generation
   - 256K context extendable to 1M tokens with YaRN
-  - Strong performance: AIME25 (99.2% with tools), SWE-Bench (38.8%), MiniF2F (50.0% pass@1)
+  - Strong benchmark performance: AIME25 (99.2% with tools), SWE-Bench (38.8%), MiniF2F (50.0% pass@1)
   - Multilingual support: English, German, Spanish, French, Italian, Japanese
   - Aliases: `nvidia/nemotron-3-nano`, `nemotron-3-nano`, `nemotron-nano-30b`, and full HuggingFace paths
 - **Architecture Support**: Added `nemotron_hybrid_moe` architecture for NVIDIA Nemotron models
 - **Provider Support**: Added "nvidia" to known provider prefixes for proper model name resolution
-- **Documentation**: Added GLM-4.6V tool format inconsistency note (`docs/misc/glm-4.6v-tool-format-inconsistency.md`)
+
+#### Tools & Infrastructure
+- **Filesystem Ignore Policy**: Runtime-enforced `.abstractignore` + default ignores
+  - Prevents accidental scanning/editing of runtime artifacts during agent runs
+  - Includes `*.d/` runtime store directories in default ignore patterns
+  - `abstractcore.tools.abstractignore` module with policy enforcement
+  - Configurable via `.abstractignore` files in project roots
+- **Argument Canonicalization**: Tools now support flexible argument naming
+  - `arg_canonicalizer.py` handles common parameter name variations
+  - Maps aliases like `file_path`/`filepath`/`path` to canonical names
+  - Improves LLM tool call success rate across different naming conventions
+- **Tool Schema Enhancement**: `ToolDefinition.to_dict()` now includes `required_args`
+  - Best-effort inference based on parameter defaults
+  - Enables hosts to render tool specs without re-inferring requirements
+- **JSON-ish Parser**: New `abstractcore.utils.jsonish` module
+  - Robust parsing of LLM-generated JSON-like structures
+  - Handles common malformations and syntax errors gracefully
+
+#### Documentation & Observability
+- **GLM-4.6V Tool Format Documentation**: Added comprehensive troubleshooting guide
   - Documents observed format mixing issues with `<|end_of_box|>` tokens
   - Likely caused by LMStudio using incorrect Jinja template
   - Provides troubleshooting steps and workarounds
-- **Filesystem ignore policy**: filesystem tools now enforce `.abstractignore` + default ignores (including `*.d/` runtime store directories) to avoid accidental scanning/editing of runtime artifacts during agent runs.
+  - Location: `docs/misc/glm-4.6v-tool-format-inconsistency.md`
+- **Tool Calling Documentation**: Enhanced `docs/tool-calling.md` with best practices
+- **Performance Tracking**: Enhanced execution flow tracking in `BaseProvider`
+  - Detailed timing metrics for request/response cycles
+  - Better observability for debugging slow provider calls
 
 ### Changed
-- **Tools/execute_command**: now returns a structured JSON result (including `success`, `return_code`, `stdout`/`stderr`, and a human-friendly `rendered` string) instead of a single decorated string. This enables durable evidence capture and cleaner downstream processing.
-- **Tools/fetch_url**: now returns a structured JSON result including a `rendered` summary plus evidence-only fields (`raw_text`, `normalized_text`) for provenance-first storage.
-- **Providers (all)**: `max_tokens` generation kwarg is now treated as an alias for `max_output_tokens` at the AbstractCore provider boundary. This keeps host/runtime contracts stable while centralizing provider-compatibility logic in AbstractCore.
-- **Tools (schema export)**: `ToolDefinition.to_dict()` now includes `required_args` (best-effort, inferred by absence of defaults) so hosts rendering tool specs directly can show required parameters without re-inferring.
+
+#### Tool Output Format (Breaking Change for Tool Consumers)
+- **Structured JSON Results**: Core tools now return structured JSON instead of plain strings
+  - `execute_command`: Returns `{success, return_code, stdout, stderr, rendered}` instead of decorated string
+  - `fetch_url`: Returns `{rendered, raw_text, normalized_text, ...}` for provenance-first storage
+  - Enables durable evidence capture and cleaner downstream processing
+  - Maintains human-readable `rendered` field for backward compatibility
+  - Tool Registry supports structured failure reporting: `{"success": false, ...}`
+
+#### Provider Enhancements
+- **Token Parameter Standardization**: `max_tokens` now treated as alias for `max_output_tokens`
+  - Unified handling across all providers at AbstractCore boundary
+  - Keeps host/runtime contracts stable while centralizing compatibility logic
+  - Automatic clamping to model capabilities with warnings
+- **Timeout Configuration**: Centralized timeout management from `abstractcore/config`
+  - Consistent timeout behavior across all providers (replaces ad-hoc per-provider logic)
+  - Normalized timeout errors in `BaseProvider` for consistency
+  - Clearer error messages including configured timeout duration
+  - Server endpoint (`/v1/chat/completions`) now accepts `timeout_s` request field
+- **Tool Prompt Handling**: Refactored tool prompt generation across providers
+  - Improved flexibility and consistency in tool calling instructions
+  - Better support for model-specific tool calling formats
+  - Enhanced format selection based on model capabilities
+
+#### File Operations
+- **File Size Limits**: Increased max lines for `read_file` from 600 to 1000
+  - Better support for reading larger configuration and documentation files
+  - Maintains performance while improving utility
+- **File Listing**: `list_files` now includes directories and relative paths
+  - Lists both files and directories as documented
+  - Prints relative entry paths for clarity
+  - Helps agent workflows confirm `mkdir` outcomes even when directories are empty
+- **File Editing**: Enhanced `edit_file` with better error diagnostics
+  - Idempotent insertion-oriented replace behavior
+  - Improved error messaging when patterns don't match
+  - Range error hints for better debugging
+  - Diff observability for tracking changes
+  - Total replacements count in output
 
 ### Fixed
-- **Tools/list_files**: `list_files` now lists **directories as well as files** (as documented), and prints relative entry paths. This helps agent workflows confirm `mkdir` outcomes even when directories are still empty.
-- **Tools/web_search**: improve reliability and debuggability of web search:
-  - Prefer `ddgs` (MIT) with fallback to `duckduckgo_search` when available; HTML scraping remains a last-resort fallback.
-  - Add bounded retries with a **cleaned query** (drop generic words like “url”, keep version identifiers) and region fallback (`us-en`) when relevance is low.
-  - Add a lightweight relevance score per result and include `attempts` metadata for observability.
-- **Providers (LMStudio / OpenAI-compatible)**: timeouts now surface as clearer errors including the configured timeout duration (helps diagnose client-side disconnects during long local generations).
-- **Providers (tool calls)**: normalize OpenAI-compatible tool calls even when a server returns a **wrapped tool name** (e.g. `"{function-name: write_file}"`), mapping it back to the allowed tool name so the call is not dropped.
-- **Providers (Anthropic/Claude)**: unknown/new `claude*` model IDs now default to **native tool calling** (and `claude-haiku-4-5` is explicitly recognized), avoiding prompted `<tool_call>...</tool_call>` transcript injection.
-- **Providers (Anthropic/Claude)**: when callers provide tool outputs as internal `role="tool"` messages, `AnthropicProvider` now converts them to proper `tool_result` content blocks (Anthropic Messages API format) instead of treating them as plain user text.
-- **Providers (Ollama)**: attach `metadata._provider_request` with the exact Ollama URL + JSON payload for per-call provider-wire observability.
-- **Providers (all)**: default HTTP/tool timeouts are now sourced centrally from `abstractcore/config` (instead of ad-hoc per-provider behavior), and timeout errors are normalized in `BaseProvider` for consistency.
-- **Server (`/v1/chat/completions`)**: added `timeout_s` request field so orchestrators (e.g. AbstractRuntime) can enforce per-request provider timeouts when calling AbstractCore over HTTP.
-- **Tool failure semantics**: the ToolRegistry now supports tools reporting structured failures (`{"success": false, ...}`) while preserving structured outputs for post-mortem evidence.
-- **Tools/write_file**: `content` is now **required** in the tool schema (pass `content=""` explicitly for empty files). This prevents models from accidentally writing 0‑byte files by omitting the `content` argument.
-- **Model capabilities (Claude 4.5)**: updated `claude-haiku-4-5` + `claude-4.5-sonnet` to reflect Claude Docs’ current **64K max output** / **200K context** limits, added `claude-opus-4-5`, and added 4.5 alias ids (e.g. `claude-sonnet-4-5`).
+
+#### Provider Fixes
+- **Anthropic/Claude Models**:
+  - Unknown/new `claude*` model IDs now default to **native tool calling**
+  - Explicitly recognized `claude-haiku-4-5` to avoid prompted `<tool_call>` injection
+  - Fixed tool output handling: converts `role="tool"` messages to proper `tool_result` content blocks
+  - Updated capabilities for `claude-haiku-4-5` and `claude-4.5-sonnet`: 64K max output / 200K context
+  - Added `claude-opus-4-5` and 4.5 alias IDs (e.g., `claude-sonnet-4-5`)
+  - Enhanced schema validation for tool support
+- **OpenAI-Compatible Providers**:
+  - Fixed tool call normalization for wrapped tool names (e.g., `"{function-name: write_file}"`)
+  - Maps wrapped names back to allowed tool names so calls aren't dropped
+  - Enhanced tool call extraction and handling
+  - Better timeout error messages for long local generations
+- **Ollama Provider**:
+  - Added `metadata._provider_request` with exact Ollama URL + JSON payload
+  - Improved per-call provider-wire observability for debugging
+- **VLLM Provider**: Enhanced tool call handling and output processing
+- **LMStudio Provider**: Improved timeout handling and error reporting
+- **All Providers**:
+  - Normalized timeout error handling across all providers
+  - Enhanced metadata handling and error detection
+  - Better architecture detection and model alias resolution
+  - Improved async provider error handling and test coverage
+
+#### Tool Fixes
+- **Web Search**: Major reliability and debuggability improvements
+  - Prefer `ddgs` (MIT license) with fallback to `duckduckgo_search` when available
+  - HTML scraping as last-resort fallback
+  - Bounded retries with cleaned queries (drop generic words like "url", keep version identifiers)
+  - Region fallback to `us-en` when relevance is low
+  - Lightweight relevance scoring per result
+  - Includes `attempts` metadata for observability
+  - Better default parameters and error handling
+- **File Operations**:
+  - `write_file`: `content` parameter now **required** in schema (prevents accidental 0-byte files)
+  - `edit_file`: Multiple enhancements for robustness and usability
+    - Better no-match diagnostics with helpful error messages
+    - Idempotent insertion behavior for reliability
+    - Improved diff observability
+  - `search_files` and `read_file`: Enhanced context handling and feedback
+- **Code Analysis**: Enhanced `analyze_code` function documentation and behavior
+
+#### Tool Calling Infrastructure
+- **Parser Enhancements**: Major improvements to tool call parsing robustness
+  - Handles doubled tags, broken closing tags, and unescaped control characters
+  - String-aware JSON escaping preserves structural whitespace
+  - Bracket prefix support for alternative tool call formats
+  - Better handling of Nemotron XMLish format
+  - Enhanced harmony between different parsing strategies
+- **Tag Rewriting**: Improved `tag_rewriter.py` with bracket prefix support
+  - Better handling of model-specific tool call formats
+  - More robust extraction of tool calls from LLM output
+- **Tool Call Passthrough**: Enhanced normalization and validation
+  - Better handling of edge cases in tool call extraction
+  - Improved native tool call field requirements
+  - Comprehensive test coverage for normalization scenarios
+- **Wrapped Tool Names**: Added mapping in `BaseProvider` for wrapped tool names
+  - Prevents tool calls from being dropped due to name wrapping
+  - Maintains compatibility with various LLM output formats
+
+#### Model Capabilities
+- **Capability Warnings**: Added caching for default capabilities warnings
+  - Reduces log noise for frequently used models
+  - Maintains visibility for actual issues
+- **Tool Support Updates**: Updated multiple models to "native" tool support
+  - `qwen3-next-80b-a3b` and other models now correctly marked
+  - Better alignment with actual model capabilities
+- **Output Handling**: Enhanced max output token handling and validation
+  - Proper clamping to model capabilities
+  - Better error messages for constraint violations
+
+#### Testing & Quality
+- **Test Coverage**: Added 30+ new test files covering:
+  - MCP integration (stdio client, tool sources)
+  - Tool call normalization and passthrough
+  - Provider-specific tool calling formats
+  - Async provider error handling
+  - Filesystem ignore policy
+  - File tool UX improvements
+  - Streaming and TTFT metrics
+  - Packaging extras validation
+- **Test Organization**: Improved test file readability with empty lines
+- **Hidden Files**: Added test for hidden file inclusion in `list_files`
+
+### Documentation
+- **Backlog Cleanup**: Moved completed items to `docs/backlog/completed/` and added README
+  - Better organization of historical decisions and completed work
+  - Clearer separation of active vs. completed backlog items
+- **Architecture Documentation**: Enhanced architecture detection and format documentation
+- **Tool Calling Guide**: Expanded with examples and best practices
+
+### Technical Details
+- **Package Structure**: Added `abstractcore.mcp` to package list in `pyproject.toml`
+- **Dependencies**: Added compatibility alias `tool` → `tools` in optional dependencies
+- **Code Quality**: Extensive refactoring for maintainability and robustness
+- **Performance**: Improved execution flow tracking and observability
+- **Error Handling**: Consistent error reporting across all components
+
+### Migration Notes
+- **Tool Output Format**: If you parse tool outputs directly, update to handle structured JSON
+  - `execute_command` and `fetch_url` now return dictionaries instead of strings
+  - Use the `rendered` field for human-readable output
+  - Access structured fields (`success`, `return_code`, etc.) for programmatic handling
+- **File Operations**: Update `write_file` calls to explicitly provide `content` parameter
+  - Use `content=""` for empty files instead of omitting the parameter
+- **Model Capabilities**: Review tool support settings if using Claude 4.5 models
+  - Models now default to native tool calling instead of prompted format
+
+### Statistics
+- **Files Changed**: 120 files modified
+- **Lines Changed**: 8,738 insertions, 12,472 deletions (net improvement in code quality)
+- **Commits**: 41 focused commits improving tools, providers, and infrastructure
+- **Test Coverage**: 30+ new test files ensuring reliability and correctness
 
 ## [2.8.1 - 2025-12-21
 
