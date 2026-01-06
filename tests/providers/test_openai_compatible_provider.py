@@ -41,7 +41,17 @@ def server_available():
                 response = httpx.get(f"{base_url}/models", headers=headers, timeout=5.0)
             else:
                 return False
-        return response.status_code == 200
+        if response.status_code != 200:
+            return False
+        # Avoid false positives: require a JSON OpenAI-compatible `/models` shape.
+        try:
+            payload = response.json()
+        except Exception:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        data = payload.get("data")
+        return isinstance(data, list) and len(data) > 0
     except:
         return False
 

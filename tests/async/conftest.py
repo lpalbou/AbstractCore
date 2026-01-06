@@ -4,6 +4,7 @@ Async test fixtures and configuration.
 import pytest
 import asyncio
 import os
+from typing import Any, Dict, Optional, Tuple
 
 
 @pytest.fixture(scope="session")
@@ -17,13 +18,47 @@ def event_loop():
 
 
 # Provider availability helpers
-def is_provider_available(provider: str, model: str = None) -> tuple[bool, str]:
+def _ollama_has_model(model: str) -> Tuple[bool, str]:
+    """Return (ok, reason) for whether a given Ollama model exists locally.
+
+    We intentionally use the public Ollama tags endpoint so tests can skip cleanly
+    when the required model isn't installed on the machine running the suite.
+    """
+    model = str(model or "").strip()
+    if not model:
+        return False, "No model specified"
+
+    try:
+        import httpx
+
+        resp = httpx.get("http://localhost:11434/api/tags", timeout=1.0)
+        if resp.status_code != 200:
+            return False, f"Ollama tags endpoint returned {resp.status_code}"
+        data: Dict[str, Any] = resp.json() if isinstance(resp.json(), dict) else {}
+        models = data.get("models", [])
+        if not isinstance(models, list):
+            models = []
+        names = {str(m.get("name") or "").strip() for m in models if isinstance(m, dict)}
+        return (model in names), ("" if model in names else f"Model '{model}' not installed")
+    except Exception as e:
+        return False, f"Could not query Ollama models: {e}"
+
+
+def is_provider_available(provider: str, model: Optional[str] = None) -> Tuple[bool, str]:
     """Check if a provider is available."""
     if provider == "ollama":
         try:
             import httpx
             response = httpx.get("http://localhost:11434/api/tags", timeout=1.0)
-            return response.status_code == 200, ""
+            if response.status_code != 200:
+                return False, f"Ollama returned {response.status_code}"
+
+            if model:
+                ok, reason = _ollama_has_model(model)
+                if not ok:
+                    return False, reason
+
+            return True, ""
         except Exception:
             return False, "Ollama not running"
 
@@ -61,7 +96,7 @@ def is_provider_available(provider: str, model: str = None) -> tuple[bool, str]:
 @pytest.fixture
 def skip_if_provider_unavailable():
     """Fixture to skip tests if provider is unavailable."""
-    def _skip(provider: str, model: str = None):
+    def _skip(provider: str, model: Optional[str] = None):
         available, reason = is_provider_available(provider, model)
         if not available:
             pytest.skip(reason)

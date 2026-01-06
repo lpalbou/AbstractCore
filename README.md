@@ -152,6 +152,8 @@ print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Toke
 
 AbstractCore includes a comprehensive set of ready-to-use tools for common tasks:
 
+> Note: `abstractcore.tools.common_tools` requires `abstractcore[tools]` (BeautifulSoup, lxml, web search backends, etc.).
+
 ```python
 from abstractcore.tools.common_tools import fetch_url, search_files, read_file
 

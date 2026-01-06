@@ -6,8 +6,11 @@ import time
 import uuid
 import asyncio
 import warnings
+import json
+import re
+import socket
 from collections import deque
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
 from abc import ABC, abstractmethod
 
 try:
@@ -22,6 +25,7 @@ from ..core.types import GenerateResponse
 from ..events import EventType, Event
 from datetime import datetime
 from ..utils.structured_logging import get_logger
+from ..utils.jsonish import loads_dict_like
 from ..exceptions import (
     ProviderAPIError,
     AuthenticationError,
@@ -32,6 +36,10 @@ from ..exceptions import (
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
 from ..tools import execute_tools
 from ..core.retry import RetryManager, RetryConfig
+
+if TYPE_CHECKING:  # pragma: no cover
+    # Imported for type checking only to avoid hard dependencies in minimal installs.
+    from ..media.types import MediaContent
 
 
 class BaseProvider(AbstractCoreInterface, ABC):
@@ -52,10 +60,52 @@ class BaseProvider(AbstractCoreInterface, ABC):
         self.architecture_config = get_architecture_format(self.architecture)
         self.model_capabilities = get_model_capabilities(model)
 
-        # Setup timeout configuration
-        # Default to None for unlimited timeout
-        self._timeout = kwargs.get('timeout', None)  # Default None for unlimited HTTP requests
-        self._tool_timeout = kwargs.get('tool_timeout', None)  # Default None for unlimited tool execution
+        # Setup timeout configuration (centralized defaults).
+        #
+        # Semantics:
+        # - If the caller passes `timeout=...`, we respect it (including `None` for unlimited).
+        # - If the caller omits `timeout`, we use AbstractCore's global config default.
+        # - Same logic for `tool_timeout`.
+        timeout_provided = "timeout" in kwargs
+        tool_timeout_provided = "tool_timeout" in kwargs
+
+        timeout_value = kwargs.get("timeout", None) if timeout_provided else None
+        tool_timeout_value = kwargs.get("tool_timeout", None) if tool_timeout_provided else None
+
+        if not timeout_provided or not tool_timeout_provided:
+            try:
+                from ..config.manager import get_config_manager
+
+                cfg = get_config_manager()
+            except Exception:
+                cfg = None
+
+            if not timeout_provided:
+                try:
+                    timeout_value = float(cfg.get_default_timeout()) if cfg is not None else None
+                except Exception:
+                    timeout_value = None
+
+            if not tool_timeout_provided:
+                try:
+                    tool_timeout_value = float(cfg.get_tool_timeout()) if cfg is not None else None
+                except Exception:
+                    tool_timeout_value = None
+
+        # Validate timeouts: non-positive numbers become "unlimited" (None).
+        try:
+            if isinstance(timeout_value, (int, float)) and float(timeout_value) <= 0:
+                timeout_value = None
+        except Exception:
+            pass
+        try:
+            if isinstance(tool_timeout_value, (int, float)) and float(tool_timeout_value) <= 0:
+                tool_timeout_value = None
+        except Exception:
+            pass
+
+        self._timeout = timeout_value  # None = unlimited HTTP requests
+        self._tool_timeout = tool_timeout_value  # None = unlimited tool execution
 
         # Setup tool execution mode
         # execute_tools: True = AbstractCore executes tools (legacy mode)
@@ -299,10 +349,63 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Returns:
             Custom exception
         """
-        # Don't re-wrap our custom exceptions
-        if isinstance(error, (ModelNotFoundError, AuthenticationError, RateLimitError,
-                            InvalidRequestError, ProviderAPIError)):
+        def _provider_label() -> str:
+            raw = getattr(self, "provider", None)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+            name = self.__class__.__name__
+            return name[:-8] if name.endswith("Provider") else name
+
+        def _configured_timeout_s() -> Optional[float]:
+            v = getattr(self, "_timeout", None)
+            if v is None:
+                return None
+            try:
+                f = float(v)
+            except Exception:
+                return None
+            return f if f > 0 else None
+
+        def _looks_like_timeout(exc: Exception) -> bool:
+            # Type-based (preferred)
+            if isinstance(exc, (TimeoutError, asyncio.TimeoutError, socket.timeout)):
+                return True
+            cls = exc.__class__
+            name = (getattr(cls, "__name__", "") or "").lower()
+            mod = (getattr(cls, "__module__", "") or "").lower()
+            if "timeout" in name:
+                return True
+            if mod.startswith(("httpx", "requests", "aiohttp")) and ("timeout" in name):
+                return True
+
+            # String-based fallback (covers wrapped SDK exceptions)
+            msg = str(exc or "").lower()
+            return ("timed out" in msg) or ("timeout" in msg) or ("time out" in msg)
+
+        def _has_explicit_duration(msg: str) -> bool:
+            # e.g. "... after 300s" or "... after 300.0s"
+            return bool(re.search(r"\bafter\s+\d+(?:\.\d+)?\s*s\b", msg))
+
+        # Preserve typed custom exceptions, but allow ProviderAPIError timeout messages
+        # to be normalized centrally (avoid per-provider inconsistencies).
+        if isinstance(error, ProviderAPIError):
+            msg = str(error)
+            if _looks_like_timeout(error) and not _has_explicit_duration(msg):
+                t = _configured_timeout_s()
+                if t is not None:
+                    return ProviderAPIError(f"{_provider_label()} API error: timed out after {t}s")
+                return ProviderAPIError(f"{_provider_label()} API error: timed out")
             return error
+
+        if isinstance(error, (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError)):
+            return error
+
+        # Central timeout normalization for all providers (httpx/requests/SDKs).
+        if _looks_like_timeout(error):
+            t = _configured_timeout_s()
+            if t is not None:
+                return ProviderAPIError(f"{_provider_label()} API error: timed out after {t}s")
+            return ProviderAPIError(f"{_provider_label()} API error: timed out")
 
         error_str = str(error).lower()
 
@@ -345,6 +448,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
             execute_tools: Whether to execute tools automatically (True) or let agent handle execution (False)
             glyph_compression: Glyph compression preference ("auto", "always", "never")
         """
+        # Normalize token limit naming at the provider boundary.
+        #
+        # - OpenAI-style APIs use `max_tokens` for the output-token cap.
+        # - AbstractCore's unified internal name is `max_output_tokens`.
+        #
+        # AbstractRuntime (and some hosts) may still emit `max_tokens` in effect payloads.
+        # That translation is a provider integration concern, so keep it in AbstractCore.
+        if "max_output_tokens" not in kwargs and "max_tokens" in kwargs and kwargs.get("max_tokens") is not None:
+            kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
+
         # Handle structured output request
         if response_model is not None:
             if not PYDANTIC_AVAILABLE:
@@ -437,6 +550,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Define generation function for retry wrapper
         def _execute_generation():
             start_time = time.time()
+            start_perf = time.perf_counter()
 
             # Emit generation started event (covers request received)
             event_data = {
@@ -464,7 +578,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     **kwargs
                 )
 
-                return response, start_time
+                return response, start_time, start_perf
 
             except Exception as e:
                 # Convert to custom exception and re-raise for retry handling
@@ -473,7 +587,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Execute with retry
         try:
-            response, start_time = self.retry_manager.execute_with_retry(
+            response, start_time, start_perf = self.retry_manager.execute_with_retry(
                 _execute_generation,
                 provider_key=self.provider_key
             )
@@ -496,7 +610,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         )
 
                         # Process stream with incremental tool detection and execution
+                        ttft_ms: Optional[float] = None
                         for processed_chunk in processor.process_stream(response, converted_tools):
+                            if isinstance(processed_chunk.content, str) and processed_chunk.content:
+                                processed_chunk.content = self._strip_output_wrappers(processed_chunk.content)
+                            if ttft_ms is None:
+                                has_content = isinstance(processed_chunk.content, str) and bool(processed_chunk.content)
+                                has_tools = isinstance(processed_chunk.tool_calls, list) and bool(processed_chunk.tool_calls)
+                                if has_content or has_tools:
+                                    ttft_ms = round((time.perf_counter() - start_perf) * 1000, 1)
+                                    meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else {}
+                                    timing = meta.get("_timing") if isinstance(meta.get("_timing"), dict) else {}
+                                    merged = dict(timing)
+                                    merged.setdefault("source", "client_wall")
+                                    merged["ttft_ms"] = ttft_ms
+                                    meta["_timing"] = merged
+                                    processed_chunk.metadata = meta
                             yield processed_chunk
 
                         # Track generation after streaming completes
@@ -509,10 +638,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                 return unified_stream()
             else:
-                # Non-streaming: apply tag rewriting if needed
-                if response and response.content and converted_tools:
-                    # Apply default qwen3 rewriting for non-streaming responses
-                    response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
+                # Non-streaming: normalize tool calls into structured form.
+                if response and converted_tools:
+                    response = self._normalize_tool_calls_passthrough(
+                        response=response,
+                        tools=converted_tools,
+                        tool_call_tags=tool_call_tags,
+                    )
+
+                    # Optional: rewrite tool-call tags in content for downstream clients that parse tags.
+                    # Note: when tool_call_tags is None (default), we return cleaned content.
+                    if tool_call_tags and response.content and not self._should_clean_tool_call_markup(tool_call_tags):
+                        response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
+
+                # Strip model-specific output wrappers (e.g. GLM <|begin_of_box|>…<|end_of_box|>).
+                if response and isinstance(response.content, str) and response.content:
+                    response.content = self._strip_output_wrappers(response.content)
 
                 # Add visual token calculation if media metadata is available
                 if media_metadata and response:
@@ -817,10 +958,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Override max_output_tokens if provided in kwargs
         effective_max_output = kwargs.get("max_output_tokens", max_output_tokens)
+        # Safety clamp: never exceed the provider/model's configured max_output_tokens.
+        #
+        # Upstream callers (runtimes/agents) may request large output budgets based on
+        # stale capabilities or user configuration. Providers should not forward values
+        # that violate the model's hard limits (Anthropic returns 400 for this).
+        try:
+            if effective_max_output is None:
+                effective_max_output_i = int(max_output_tokens)
+            else:
+                effective_max_output_i = int(effective_max_output)
+        except Exception:
+            effective_max_output_i = int(max_output_tokens)
+        if effective_max_output_i <= 0:
+            effective_max_output_i = int(max_output_tokens)
+        if effective_max_output_i > int(max_output_tokens):
+            effective_max_output_i = int(max_output_tokens)
 
         # Return base kwargs with unified parameter
         result_kwargs = kwargs.copy()
-        result_kwargs["max_output_tokens"] = effective_max_output
+        result_kwargs["max_output_tokens"] = effective_max_output_i
 
         # Add unified generation parameters with fallback hierarchy: kwargs → instance → defaults
         result_kwargs["temperature"] = result_kwargs.get("temperature", self.temperature)
@@ -1348,6 +1505,352 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Return original response if rewriting fails
         return response
+
+    def _strip_output_wrappers(self, content: str) -> str:
+        """Strip known model-specific wrapper tokens around assistant output.
+
+        Some model/server combinations emit wrapper tokens like:
+          <|begin_of_box|> ... <|end_of_box|>
+        We remove these only when they appear as leading/trailing wrappers (not when
+        embedded mid-text).
+        """
+        if not isinstance(content, str) or not content:
+            return content
+
+        wrappers: Dict[str, str] = {}
+        for src in (self.architecture_config, self.model_capabilities):
+            if not isinstance(src, dict):
+                continue
+            w = src.get("output_wrappers")
+            if not isinstance(w, dict):
+                continue
+            start = w.get("start")
+            end = w.get("end")
+            if isinstance(start, str) and start.strip():
+                wrappers.setdefault("start", start.strip())
+            if isinstance(end, str) and end.strip():
+                wrappers.setdefault("end", end.strip())
+
+        if not wrappers:
+            return content
+
+        out = content
+        start_token = wrappers.get("start")
+        end_token = wrappers.get("end")
+
+        if isinstance(start_token, str) and start_token:
+            out = re.sub(r"^\s*" + re.escape(start_token) + r"\s*", "", out, count=1)
+        if isinstance(end_token, str) and end_token:
+            out = re.sub(r"\s*" + re.escape(end_token) + r"\s*$", "", out, count=1)
+
+        return out
+
+    def _normalize_tool_calls_passthrough(
+        self,
+        *,
+        response: GenerateResponse,
+        tools: List[Dict[str, Any]],
+        tool_call_tags: Optional[str] = None,
+    ) -> GenerateResponse:
+        """Populate `response.tool_calls` (and usually clean `response.content`) in passthrough mode.
+
+        Contract:
+        - AbstractCore always returns structured `tool_calls` when tools are provided and the model emits tool syntax,
+          even for prompted tool calling (tool calls embedded in `content`).
+        - By default (`tool_call_tags is None`), tool-call markup is stripped from `content` for clean UX/history.
+        - When `tool_call_tags` is set, we preserve `content` (for clients that parse tags) but still populate
+          structured `tool_calls`.
+        """
+
+        # Only normalize when tools were actually provided.
+        if not tools:
+            return response
+
+        allowed_names = self._get_allowed_tool_names(tools)
+
+        # 1) If provider already returned tool_calls (native tools), normalize shape + args.
+        normalized_existing = self._normalize_tool_calls_payload(
+            response.tool_calls,
+            allowed_tool_names=allowed_names,
+        )
+        if normalized_existing:
+            response.tool_calls = normalized_existing
+
+            # Clean any echoed tool syntax from content unless the caller explicitly requested tag passthrough.
+            if self._should_clean_tool_call_markup(tool_call_tags) and isinstance(response.content, str) and response.content.strip():
+                cleaned = self._clean_content_using_tool_calls(response.content, normalized_existing)
+                response.content = cleaned
+
+            return response
+
+        # 2) Prompted tools: parse tool calls embedded in content.
+        content = response.content
+        if not isinstance(content, str) or not content.strip():
+            return response
+
+        tool_handler = getattr(self, "tool_handler", None)
+        if tool_handler is None:
+            return response
+
+        try:
+            parsed = tool_handler.parse_response(content, mode="prompted")
+        except Exception:
+            return response
+
+        parsed_calls = getattr(parsed, "tool_calls", None)
+        if not isinstance(parsed_calls, list) or not parsed_calls:
+            return response
+
+        normalized_parsed = self._normalize_tool_calls_payload(
+            parsed_calls,
+            allowed_tool_names=allowed_names,
+        )
+        if normalized_parsed:
+            response.tool_calls = normalized_parsed
+
+        # Always use the cleaned content from AbstractCore parsing when we are not explicitly preserving tags.
+        if self._should_clean_tool_call_markup(tool_call_tags):
+            cleaned_content = getattr(parsed, "content", None)
+            if isinstance(cleaned_content, str):
+                response.content = cleaned_content
+
+        return response
+
+    def _should_clean_tool_call_markup(self, tool_call_tags: Optional[str]) -> bool:
+        """Return True when we should strip tool-call markup from assistant content."""
+        if tool_call_tags is None:
+            return True
+        # OpenAI/Codex formats carry tool calls in structured fields, not in content.
+        value = str(tool_call_tags).strip().lower()
+        return value in {"openai", "codex"}
+
+    def _get_allowed_tool_names(self, tools: List[Dict[str, Any]]) -> set[str]:
+        """Extract allowed tool names from provider-normalized tool definitions."""
+        names: set[str] = set()
+        for tool in tools or []:
+            if not isinstance(tool, dict):
+                continue
+            name = tool.get("name")
+            if isinstance(name, str) and name.strip():
+                names.add(name.strip())
+                continue
+            func = tool.get("function") if isinstance(tool.get("function"), dict) else None
+            fname = func.get("name") if isinstance(func, dict) else None
+            if isinstance(fname, str) and fname.strip():
+                names.add(fname.strip())
+        return names
+
+    def _normalize_tool_calls_payload(
+        self,
+        tool_calls: Any,
+        *,
+        allowed_tool_names: Optional[set[str]] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Normalize tool call shapes into a canonical dict form.
+
+        Canonical shape:
+            {"name": str, "arguments": dict, "call_id": Optional[str]}
+        """
+        if tool_calls is None or not isinstance(tool_calls, list):
+            return None
+
+        def _unwrap_arguments(arguments: Any, *, expected_tool_name: Optional[str]) -> Any:
+            """Unwrap common wrapper payloads to get tool kwargs.
+
+            Some providers/models emit nested wrappers like:
+              {"name":"tool","arguments":{...},"call_id": "..."}
+            inside the tool call `arguments` field (or even multiple times).
+
+            We unwrap when the object looks like a wrapper (only wrapper keys) OR when
+            it includes wrapper metadata fields (e.g. "name"/"call_id") and an inner
+            "arguments" dict. When wrapper fields and tool kwargs are partially mixed,
+            we merge the outer kwargs into the inner dict (inner takes precedence).
+            """
+            if not isinstance(arguments, dict):
+                return arguments
+
+            wrapper_keys = {"name", "arguments", "call_id", "id"}
+            current = arguments
+            for _ in range(4):
+                if not isinstance(current, dict):
+                    break
+                keys = set(current.keys())
+                if "arguments" not in current:
+                    break
+                inner = current.get("arguments")
+                if isinstance(inner, dict) or isinstance(inner, str):
+                    inner_dict: Any = inner
+                    if isinstance(inner, str):
+                        parsed = loads_dict_like(inner)
+                        inner_dict = parsed if isinstance(parsed, dict) else None
+                    if not isinstance(inner_dict, dict):
+                        break
+
+                    name_matches = False
+                    raw_name = current.get("name")
+                    if isinstance(raw_name, str) and expected_tool_name and raw_name.strip() == expected_tool_name:
+                        name_matches = True
+
+                    wrapperish = keys.issubset(wrapper_keys) or name_matches or bool(keys & {"call_id", "id"})
+                    if not wrapperish:
+                        break
+
+                    # Merge any outer kwargs that were accidentally placed alongside wrapper fields.
+                    extras = {k: v for k, v in current.items() if k not in wrapper_keys}
+                    if extras:
+                        merged = dict(inner_dict)
+                        for k, v in extras.items():
+                            merged.setdefault(k, v)
+                        current = merged
+                    else:
+                        current = inner_dict
+                    continue
+                break
+
+            return current
+
+        def _map_wrapped_name_to_allowed(raw: str, allowed: set[str]) -> Optional[str]:
+            """Best-effort mapping when a provider returns a wrapped tool name.
+
+            Some OpenAI-compatible servers/models occasionally return tool names wrapped in
+            extra tokens/text (e.g. "{function-name: write_file}"). If we can confidently
+            detect an allowed tool name as a standalone token within the raw string, map it
+            back to the exact allowed name so tool execution can proceed.
+            """
+            s = str(raw or "").strip()
+            if not s:
+                return None
+            if s in allowed:
+                return s
+
+            try:
+                import re
+
+                # Prefer exact token-boundary matches (tool names are usually snake_case).
+                candidates: List[str] = []
+                for name in allowed:
+                    if not isinstance(name, str) or not name:
+                        continue
+                    pat = r"(^|[^\w])" + re.escape(name) + r"([^\w]|$)"
+                    if re.search(pat, s):
+                        candidates.append(name)
+                if candidates:
+                    # Prefer the most specific (longest) match deterministically.
+                    return max(candidates, key=lambda n: (len(n), n))
+            except Exception:
+                return None
+
+            return None
+
+        normalized: List[Dict[str, Any]] = []
+
+        for tc in tool_calls:
+            name: Optional[str] = None
+            arguments: Any = None
+            call_id: Any = None
+
+            if isinstance(tc, dict):
+                call_id = tc.get("call_id", None)
+                if call_id is None:
+                    call_id = tc.get("id", None)
+
+                raw_name = tc.get("name")
+                raw_args = tc.get("arguments")
+
+                func = tc.get("function") if isinstance(tc.get("function"), dict) else None
+                if func and (not isinstance(raw_name, str) or not raw_name.strip()):
+                    raw_name = func.get("name")
+                if func and raw_args is None:
+                    raw_args = func.get("arguments")
+
+                if isinstance(raw_name, str) and raw_name.strip():
+                    name = raw_name.strip()
+                arguments = raw_args if raw_args is not None else {}
+            else:
+                raw_name = getattr(tc, "name", None)
+                raw_args = getattr(tc, "arguments", None)
+                call_id = getattr(tc, "call_id", None)
+                if isinstance(raw_name, str) and raw_name.strip():
+                    name = raw_name.strip()
+                arguments = raw_args if raw_args is not None else {}
+
+            if not isinstance(name, str) or not name:
+                continue
+            if isinstance(allowed_tool_names, set) and allowed_tool_names and name not in allowed_tool_names:
+                mapped = _map_wrapped_name_to_allowed(name, allowed_tool_names)
+                if not isinstance(mapped, str) or not mapped:
+                    continue
+                name = mapped
+
+            if isinstance(arguments, str):
+                parsed = loads_dict_like(arguments)
+                arguments = parsed if isinstance(parsed, dict) else {}
+
+            # Recover tool kwargs from nested wrapper payloads when present.
+            if isinstance(arguments, dict) and call_id is None:
+                wrapper_id = arguments.get("call_id") or arguments.get("id")
+                if isinstance(wrapper_id, str) and wrapper_id.strip():
+                    call_id = wrapper_id.strip()
+            arguments = _unwrap_arguments(arguments, expected_tool_name=name)
+            if not isinstance(arguments, dict):
+                arguments = {}
+
+            try:
+                from ..tools.arg_canonicalizer import canonicalize_tool_arguments
+
+                arguments = canonicalize_tool_arguments(name, arguments)
+            except Exception:
+                pass
+
+            normalized.append(
+                {
+                    "name": name,
+                    "arguments": arguments,
+                    "call_id": str(call_id) if call_id is not None else None,
+                }
+            )
+
+        if not normalized:
+            return None
+
+        # Defense-in-depth: remove accidental duplicates introduced by overlapping parsing paths.
+        unique: List[Dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for tc in normalized:
+            try:
+                args_key = json.dumps(tc.get("arguments", {}), sort_keys=True, ensure_ascii=False)
+            except Exception:
+                args_key = str(tc.get("arguments", {}))
+            key = (str(tc.get("name") or ""), args_key)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(tc)
+
+        return unique or None
+
+    def _clean_content_using_tool_calls(self, content: str, tool_calls: List[Dict[str, Any]]) -> str:
+        """Strip tool-call markup from assistant content using known tool calls."""
+        try:
+            from ..tools.core import ToolCall as CoreToolCall
+            from ..tools.parser import clean_tool_syntax
+
+            core_calls: List[CoreToolCall] = []
+            for tc in tool_calls or []:
+                if not isinstance(tc, dict):
+                    continue
+                name = tc.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                args = tc.get("arguments")
+                args_dict = dict(args) if isinstance(args, dict) else {}
+                core_calls.append(CoreToolCall(name=name.strip(), arguments=args_dict, call_id=tc.get("call_id")))
+
+            if not core_calls:
+                return content
+            return clean_tool_syntax(content, core_calls)
+        except Exception:
+            return content
 
     def _handle_tools_with_structured_output(self,
                                            prompt: str,

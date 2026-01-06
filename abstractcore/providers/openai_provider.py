@@ -196,15 +196,18 @@ class OpenAIProvider(BaseProvider):
                 formatted = self._format_response(response)
                 # Add generation time to response
                 formatted.gen_time = gen_time
+                # Runtime observability: capture the exact client payload we sent.
+                formatted.metadata = dict(formatted.metadata or {})
+                formatted.metadata["_provider_request"] = {"call_params": call_params}
 
                 # Handle tool execution for OpenAI native responses
                 if tools and formatted.has_tool_calls():
                     formatted = self._handle_tool_execution(formatted, tools)
 
                 return formatted
-        except Exception as e:
-            # Model validation is done at initialization, so this is likely an API error
-            raise ProviderAPIError(f"OpenAI API error: {str(e)}")
+        except Exception:
+            # Let BaseProvider normalize (timeouts/auth/rate limits) consistently.
+            raise
 
     async def _agenerate_internal(self,
                                    prompt: str,
@@ -324,23 +327,23 @@ class OpenAIProvider(BaseProvider):
                 formatted = self._format_response(response)
                 # Add generation time to response
                 formatted.gen_time = gen_time
+                formatted.metadata = dict(formatted.metadata or {})
+                formatted.metadata["_provider_request"] = {"call_params": call_params}
 
                 # Handle tool execution for OpenAI native responses
                 if tools and formatted.has_tool_calls():
                     formatted = self._handle_tool_execution(formatted, tools)
 
                 return formatted
-        except Exception as e:
-            # Model validation is done at initialization, so this is likely an API error
-            raise ProviderAPIError(f"OpenAI API error: {str(e)}")
+        except Exception:
+            raise
 
     async def _async_stream_response(self, call_params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[GenerateResponse]:
         """Native async streaming responses from OpenAI."""
         try:
             stream = await self.async_client.chat.completions.create(**call_params)
-        except Exception as e:
-            # Model validation is done at initialization, so this is likely an API error
-            raise ProviderAPIError(f"OpenAI API error: {str(e)}")
+        except Exception:
+            raise
 
         # For streaming with tools, we need to collect the complete response
         collected_content = ""

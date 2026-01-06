@@ -13,6 +13,7 @@ from enum import Enum
 
 from .core import ToolCall, ToolDefinition
 from ..architectures import detect_architecture, get_architecture_format
+from ..utils.jsonish import loads_dict_like as _jsonish_loads_dict_like
 from ..utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,30 +26,7 @@ def _loads_dict_like(raw: str) -> Optional[Dict[str, Any]]:
     (True/False/None) even when asked for strict JSON. We accept both to keep
     tool calling robust.
     """
-    text = str(raw or "").strip()
-    if not text:
-        return None
-
-    try:
-        value = json.loads(text)
-        if isinstance(value, dict):
-            return value
-    except json.JSONDecodeError:
-        pass
-
-    # Fallback: try Python literals safely.
-    # Convert common JSON literals to Python ones so ast can parse them.
-    candidate = re.sub(r"\btrue\b", "True", text, flags=re.IGNORECASE)
-    candidate = re.sub(r"\bfalse\b", "False", candidate, flags=re.IGNORECASE)
-    candidate = re.sub(r"\bnull\b", "None", candidate, flags=re.IGNORECASE)
-    try:
-        value = ast.literal_eval(candidate)
-    except Exception:
-        return None
-
-    if not isinstance(value, dict):
-        return None
-    return {str(k): v for k, v in value.items()}
+    return _jsonish_loads_dict_like(raw)
 
 
 class ToolFormat(Enum):
@@ -81,6 +59,16 @@ def _has_bracket_tool_prefix(response: str) -> bool:
         return False
     return bool(re.search(r'(?im)^\s*tool\s*:\s*\[[^\]]+\]\s*:\s*\{', response))
 
+def _has_harmony_tool_prefix(response: str) -> bool:
+    """Check if response contains a Harmony/ChatML-style tool call marker.
+
+    Example emitted by some models:
+        <|channel|>commentary to=list_files <|constrain|>json<|message|>{"directory_path": "..."}
+    """
+    if not response:
+        return False
+    return "<|channel|>" in response and "<|message|>" in response and "to=" in response
+
 
 def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     """
@@ -102,6 +90,8 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     # Some models emit a CLI-like prefix format regardless of architecture.
     if _has_bracket_tool_prefix(response):
         return True
+    if _has_harmony_tool_prefix(response):
+        return True
 
     # Check format-specific patterns (case-insensitive)
     response_lower = response.lower()
@@ -122,6 +112,7 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
             "<function_call" in response_lower,
             "<tool_call>" in response_lower,
             _has_bracket_tool_prefix(response),
+            _has_harmony_tool_prefix(response),
             _has_json_tool_pattern(response),
         ])
     
@@ -163,16 +154,29 @@ def parse_tool_calls(response: str, model_name: Optional[str] = None) -> List[To
     # (e.g., `tool: [name]: {...}` or partial tags). Try the generic parser when needed.
     if not calls and parser is not _parse_any_format:
         calls = _parse_any_format(response)
+    if calls:
+        from .arg_canonicalizer import canonicalize_tool_arguments
+
+        for call in calls:
+            call.arguments = canonicalize_tool_arguments(call.name, call.arguments)
     return calls
 
 
-def format_tool_prompt(tools: List[ToolDefinition], model_name: Optional[str] = None) -> str:
+def format_tool_prompt(
+    tools: List[ToolDefinition],
+    model_name: Optional[str] = None,
+    *,
+    include_tool_list: bool = True,
+    include_examples: bool = True,
+) -> str:
     """
     Format tools into a system prompt based on model architecture.
 
     Args:
         tools: List of tool definitions
         model_name: Optional model name for architecture detection
+        include_tool_list: If False, omit per-tool listings (only include tool-call protocol/rules)
+        include_examples: If False, omit examples even if tools provide them
 
     Returns:
         Formatted system prompt
@@ -185,15 +189,17 @@ def format_tool_prompt(tools: List[ToolDefinition], model_name: Optional[str] = 
 
     # Format based on architecture
     if tool_format == ToolFormat.TOOL_CODE:
-        return _format_gemma_style(tools)
+        return _format_gemma_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.SPECIAL_TOKEN:
-        return _format_qwen_style(tools)
+        return _format_qwen_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.FUNCTION_CALL:
-        return _format_llama_style(tools)
+        return _format_llama_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.XML_WRAPPED:
-        return _format_xml_style(tools)
+        return _format_xml_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
+    elif tool_format == ToolFormat.RAW_JSON:
+        return _format_json_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     else:
-        return _format_generic_style(tools)
+        return _format_generic_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
 
 
 # Internal helpers
@@ -260,18 +266,36 @@ def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
     architecture = detect_architecture(model_name)
     arch_format = get_architecture_format(architecture)
 
-    tool_format = arch_format.get("tool_format", "json")
+    tool_format = str(arch_format.get("tool_format", "json") or "").strip().lower()
+    message_format = str(arch_format.get("message_format", "") or "").strip().lower()
 
+    # tool_format values are defined in `abstractcore/assets/architecture_formats.json`.
+    # We interpret them as the model's *preferred tool-call syntax* and fall back to
+    # `_parse_any_format` when the model emits a different convention.
     if tool_format == "special_token":
         return ToolFormat.SPECIAL_TOKEN
-    elif tool_format == "xml":
+    if tool_format == "xml":
         return ToolFormat.XML_WRAPPED
-    elif tool_format == "pythonic":
+    if tool_format == "pythonic":
         return ToolFormat.TOOL_CODE
-    elif tool_format == "native":
+    if tool_format == "json":
+        return ToolFormat.RAW_JSON
+    if tool_format in {"openai_functions", "native", "none"}:
+        # Native/OpenAI-functions tool calls are expected in structured response fields, not text.
+        # If tool syntax leaks into content, we parse with the generic fallback.
         return ToolFormat.NATIVE
-    else:
+
+    if tool_format == "prompted":
+        # "prompted" indicates the model relies on prompt-injected tool syntax.
+        # Choose the most likely format based on the architecture's message format.
+        # - Qwen/ChatML-like formats generally use <|tool_call|> special tokens.
+        if message_format == "im_start_end":
+            return ToolFormat.SPECIAL_TOKEN
+        # - LLaMA-style prompted tools commonly use <function_call>...</function_call>.
         return ToolFormat.FUNCTION_CALL
+
+    # Conservative fallback: function-call wrapper (and then _parse_any_format fallback).
+    return ToolFormat.FUNCTION_CALL
 
 
 
@@ -451,25 +475,73 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
     """Parse XML-wrapped tool calls."""
     tool_calls = []
 
-    # Pattern for XML format
-    pattern = r'<tool_call>\s*({.*?})\s*</tool_call>'
+    # Pattern for XML format.
+    #
+    # Supported inner payloads:
+    # 1) JSON-ish dict (our canonical prompted-tool wrapper):
+    #    <tool_call>{"name":"read_file","arguments":{...}}</tool_call>
+    # 2) Nemotron XML-ish wrapper (observed in the wild):
+    #    <tool_call>
+    #      <function=write_file>
+    #        <parameter=file_path>...</parameter>
+    #        <parameter=content>...</parameter>
+    #      </function>
+    #    </tool_call>
+    pattern = r'<tool_call>\s*(.*?)\s*</tool_call>'
 
-    for match in re.finditer(pattern, response, re.DOTALL):
-        try:
-            json_str = match.group(1)
-            tool_data = _loads_dict_like(json_str)
-            if not isinstance(tool_data, dict):
+    for match in re.finditer(pattern, response, re.DOTALL | re.IGNORECASE):
+        body = match.group(1)
+        if not isinstance(body, str):
+            continue
+
+        body_stripped = body.strip()
+
+        # Case 1: JSON-ish dict inside <tool_call>...</tool_call>
+        if body_stripped.startswith("{") and body_stripped.endswith("}"):
+            try:
+                tool_data = _loads_dict_like(body_stripped)
+                if not isinstance(tool_data, dict):
+                    continue
+
+                tool_calls.append(ToolCall(
+                    name=tool_data.get("name", ""),
+                    arguments=tool_data.get("arguments", {}),
+                    call_id=tool_data.get("id")
+                ))
+                continue
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse XML tool call JSON: {body_stripped} - {e}")
                 continue
 
-            tool_call = ToolCall(
-                name=tool_data.get("name", ""),
-                arguments=tool_data.get("arguments", {}),
-                call_id=tool_data.get("id")
-            )
-            tool_calls.append(tool_call)
+        # Case 2: Nemotron XML-ish function/parameter encoding
+        func_match = re.search(r'<function\s*=\s*([a-zA-Z0-9_-]+)\s*>', body, re.IGNORECASE)
+        if not func_match:
+            continue
+        func_name = func_match.group(1).strip()
+        if not func_name:
+            continue
 
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse XML tool call JSON: {json_str} - {e}")
+        arguments: Dict[str, Any] = {}
+        for param_match in re.finditer(
+            r'<parameter\s*=\s*([a-zA-Z0-9_-]+)\s*>(.*?)</parameter>',
+            body,
+            re.DOTALL | re.IGNORECASE,
+        ):
+            key = (param_match.group(1) or "").strip()
+            raw_value = param_match.group(2) or ""
+            if not key:
+                continue
+
+            # Preserve content as-is, but strip the common leading/trailing newline artifacts
+            # introduced by pretty-printed tag blocks.
+            value = raw_value.replace("\r\n", "\n")
+            if value.startswith("\n"):
+                value = value[1:]
+            if value.endswith("\n"):
+                value = value[:-1]
+            arguments[key] = value
+
+        tool_calls.append(ToolCall(name=func_name, arguments=arguments, call_id=None))
 
     return tool_calls
 
@@ -594,18 +666,230 @@ def _parse_bracket_tool_prefix(response: str) -> List[ToolCall]:
     if not response:
         return tool_calls
 
+    def _find_matching_brace(text: str, start: int) -> int:
+        """Return index of the matching '}' for a '{' at `start`, or -1."""
+        depth = 0
+        in_string = False
+        quote = ""
+        escaped = False
+
+        for i in range(start, len(text)):
+            ch = text[i]
+
+            if in_string:
+                if escaped:
+                    escaped = False
+                    continue
+                if ch == "\\":
+                    escaped = True
+                    continue
+                if ch == quote:
+                    in_string = False
+                    quote = ""
+                continue
+
+            if ch in ("'", '"'):
+                in_string = True
+                quote = ch
+                continue
+
+            if ch == "{":
+                depth += 1
+                continue
+            if ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return i
+
+        return -1
+
     # Common in some OSS model tool conventions.
-    # Example: tool: [list_files]: {"directory_path":"rtype","recursive":true}
-    pattern = r'(?im)^\s*tool\s*:\s*\[([a-zA-Z0-9_\-]+)\]\s*:\s*(\{.*\})\s*$'
-    for match in re.finditer(pattern, response):
+    # Example (single-line):
+    #   tool: [list_files]: {"directory_path":"rtype","recursive":true}
+    # Example (multi-line):
+    #   tool: [list_files]: {
+    #     "directory_path": "rtype",
+    #     "recursive": true
+    #   }
+    header_re = re.compile(r"(?im)^\s*tool\s*:\s*\[([a-zA-Z0-9_\-]+)\]\s*:\s*")
+    for match in header_re.finditer(response):
         name = str(match.group(1) or "").strip()
-        raw_args = match.group(2)
-        if not name or not raw_args:
+        if not name:
             continue
+
+        # Find the first opening brace after the header (allow whitespace/newlines).
+        brace_start = response.find("{", match.end())
+        if brace_start == -1:
+            continue
+
+        # Only allow whitespace between header end and '{' (avoid grabbing unrelated JSON).
+        between = response[match.end() : brace_start]
+        if between and any(not c.isspace() for c in between):
+            continue
+
+        brace_end = _find_matching_brace(response, brace_start)
+        if brace_end == -1:
+            continue
+
+        raw_args = response[brace_start : brace_end + 1]
         args = _loads_dict_like(raw_args)
         if not isinstance(args, dict):
             continue
+
         tool_calls.append(ToolCall(name=name, arguments=args))
+
+    return tool_calls
+
+
+def _parse_harmony_tool_prefix(response: str) -> List[ToolCall]:
+    """Parse Harmony/ChatML-style tool calls embedded in content.
+
+    Example:
+        <|channel|>commentary to=list_files <|constrain|>json<|message|>{"directory_path":"./x","recursive":true}
+    """
+    tool_calls: List[ToolCall] = []
+    if not response:
+        return tool_calls
+
+    if "<|channel|>" not in response or "<|message|>" not in response or "to=" not in response:
+        return tool_calls
+
+    def _find_matching_brace(text: str, start: int) -> int:
+        """Return index of the matching '}' for a '{' at `start`, or -1."""
+        depth = 0
+        in_string = False
+        quote = ""
+        escaped = False
+
+        for i in range(start, len(text)):
+            ch = text[i]
+
+            if in_string:
+                if escaped:
+                    escaped = False
+                    continue
+                if ch == "\\":
+                    escaped = True
+                    continue
+                if ch == quote:
+                    in_string = False
+                    quote = ""
+                continue
+
+            if ch in ("'", '"'):
+                in_string = True
+                quote = ch
+                continue
+
+            if ch == "{":
+                depth += 1
+                continue
+            if ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return i
+
+        return -1
+
+    # Match "<|channel|>... to=TOOL_NAME" and then find the following <|message|>{...}.
+    header_re = re.compile(
+        r"(?i)<\|channel\|>\s*[a-zA-Z0-9_\-]+\s+to=([a-zA-Z0-9_\-\.]+)\b"
+    )
+    for match in header_re.finditer(response):
+        raw_name = str(match.group(1) or "").strip()
+        if not raw_name:
+            continue
+
+        # Normalize common prefixes used by some tool-call transcripts.
+        name = raw_name
+        if name.startswith("functions."):
+            name = name.split(".", 1)[1].strip()
+        if not name:
+            continue
+
+        # Find the next "<|message|>" after the header.
+        msg_tag = "<|message|>"
+        msg_start = response.find(msg_tag, match.end())
+        if msg_start == -1:
+            continue
+
+        brace_start = response.find("{", msg_start + len(msg_tag))
+        if brace_start == -1:
+            continue
+
+        # Only allow whitespace between the message tag and '{'.
+        between = response[msg_start + len(msg_tag) : brace_start]
+        if between and any(not c.isspace() for c in between):
+            continue
+
+        brace_end = _find_matching_brace(response, brace_start)
+        if brace_end == -1:
+            # Some models occasionally omit the final closing brace(s) when emitting a
+            # Harmony tool transcript. Try a best-effort recovery by balancing braces
+            # to the end of the message and parsing the result.
+            raw_args = response[brace_start:].strip()
+
+            def _balance_braces(text: str) -> str:
+                depth = 0
+                in_string = False
+                quote = ""
+                escaped = False
+                for ch in text:
+                    if in_string:
+                        if escaped:
+                            escaped = False
+                            continue
+                        if ch == "\\":
+                            escaped = True
+                            continue
+                        if ch == quote:
+                            in_string = False
+                            quote = ""
+                        continue
+                    if ch in ("'", '"'):
+                        in_string = True
+                        quote = ch
+                        continue
+                    if ch == "{":
+                        depth += 1
+                        continue
+                    if ch == "}":
+                        depth -= 1
+                        continue
+                if depth > 0:
+                    return text + ("}" * depth)
+                return text
+
+            raw_args = _balance_braces(raw_args)
+        else:
+            raw_args = response[brace_start : brace_end + 1]
+        payload = _loads_dict_like(raw_args)
+        if not isinstance(payload, dict):
+            continue
+
+        # Some models (notably OpenAI's gpt-oss via LM Studio) emit a wrapper payload:
+        #   {"name":"tool_name","arguments":{...},"call_id": "..."}
+        # In that case, unwrap `arguments` so runtime tool execution receives only
+        # the tool kwargs (and not unexpected keys like "name").
+        call_id = None
+        args: Any = payload
+        if "arguments" in payload:
+            inner_args = payload.get("arguments")
+            if isinstance(inner_args, dict):
+                args = inner_args
+            elif isinstance(inner_args, str):
+                parsed = _loads_dict_like(inner_args)
+                if isinstance(parsed, dict):
+                    args = parsed
+
+        call_id_value = payload.get("call_id") or payload.get("id")
+        if isinstance(call_id_value, str) and call_id_value.strip():
+            call_id = call_id_value.strip()
+
+        if not isinstance(args, dict):
+            continue
+
+        tool_calls.append(ToolCall(name=name, arguments=args, call_id=call_id))
 
     return tool_calls
 
@@ -623,6 +907,7 @@ def _parse_any_format(response: str) -> List[ToolCall]:
         _parse_function_call,
         _parse_xml_wrapped,
         _parse_tool_code,
+        _parse_harmony_tool_prefix,
         _parse_bracket_tool_prefix,
         _parse_raw_json
     ]
@@ -642,7 +927,11 @@ def _parse_any_format(response: str) -> List[ToolCall]:
     unique_calls = []
     seen = set()
     for call in tool_calls:
-        call_key = (call.name, str(call.arguments))
+        try:
+            args_key = json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)
+        except Exception:
+            args_key = str(call.arguments)
+        call_key = (call.name, args_key)
         if call_key not in seen:
             seen.add(call_key)
             unique_calls.append(call)
@@ -692,181 +981,269 @@ def _parse_python_code_blocks(response: str) -> List[ToolCall]:
 
 # Formatting functions
 
-def _format_qwen_style(tools: List[ToolDefinition]) -> str:
+def _format_parameters_compact(parameters: Dict[str, Any]) -> str:
+    """Render a compact, human/LLM-friendly parameter summary.
+
+    We intentionally avoid dumping full JSON schema here to keep the tool prompt small.
+    """
+    if not isinstance(parameters, dict) or not parameters:
+        return "(none)"
+
+    def _fmt_default(value: Any) -> str:
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+
+    parts: List[str] = []
+    for name in sorted([k for k in parameters.keys() if isinstance(k, str)]):
+        meta = parameters.get(name)
+        ptype = "any"
+        required = True
+        default_repr: Optional[str] = None
+
+        if isinstance(meta, dict):
+            if isinstance(meta.get("type"), str) and meta.get("type"):
+                ptype = str(meta.get("type"))
+            required = "default" not in meta
+            if not required:
+                default_value = meta.get("default")
+                # Avoid printing `default null` / `default None` in prompts; treat that as optional.
+                if default_value is not None:
+                    default_repr = _fmt_default(default_value)
+        else:
+            required = True
+
+        if required:
+            parts.append(f"{name}: {ptype} (required)")
+        elif default_repr is not None:
+            parts.append(f"{name}: {ptype} (default {default_repr})")
+        else:
+            parts.append(f"{name}: {ptype} (optional)")
+
+    return ", ".join(parts) if parts else "(none)"
+
+
+def _append_tool_examples(
+    prompt: str,
+    tools: List[ToolDefinition],
+    *,
+    tool_format: ToolFormat,
+    max_examples_total: int = 6,
+) -> str:
+    """Append a small, globally-capped examples section.
+
+    Notes:
+    - Examples are useful, but they are extremely token-expensive when included per-tool.
+    - We cap examples globally and prioritize the "core editing loop" tools first.
+    """
+    if max_examples_total <= 0:
+        return prompt
+
+    tools_with_examples = [t for t in tools if getattr(t, "examples", None)]
+    if not tools_with_examples:
+        return prompt
+
+    by_name = {t.name: t for t in tools_with_examples if isinstance(t.name, str) and t.name}
+    preferred_order = [
+        "list_files",
+        "search_files",
+        "read_file",
+        "edit_file",
+        "write_file",
+        "execute_command",
+        "fetch_url",
+        "web_search",
+    ]
+
+    ordered_names = []
+    seen: set[str] = set()
+    for name in preferred_order:
+        if name in by_name and name not in seen:
+            ordered_names.append(name)
+            seen.add(name)
+    for name in sorted(by_name.keys()):
+        if name not in seen:
+            ordered_names.append(name)
+
+    out = prompt + "**EXAMPLES:**\n\n"
+    added = 0
+    for name in ordered_names:
+        tool = by_name.get(name)
+        if tool is None:
+            continue
+        examples = getattr(tool, "examples", None)
+        if not isinstance(examples, list) or not examples:
+            continue
+        example = examples[0] if isinstance(examples[0], dict) else {}
+        desc = str(example.get("description") or "Example").strip()
+        args = example.get("arguments")
+        args_dict = dict(args) if isinstance(args, dict) else {}
+
+        out += f"- {tool.name}: {desc}\n"
+        out += _format_tool_call_example(tool.name, args_dict, tool_format) + "\n\n"
+        added += 1
+        if added >= max_examples_total:
+            break
+
+    return out
+
+
+def _format_qwen_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for Qwen models using <|tool_call|> format with enhanced metadata."""
     if not tools:
         return ""
 
     prompt = "You are a helpful AI assistant with access to the following tools:\n\n"
 
-    # Tool descriptions with enhanced metadata
-    for tool in tools:
-        prompt += f"**{tool.name}**: {tool.description}\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"**{tool.name}**: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"  • **Args**: {_format_parameters_compact(tool.parameters)}\n"
+            prompt += "\n"
 
-        # Add when_to_use guidance if available
-        if tool.when_to_use:
-            prompt += f"  • **When to use**: {tool.when_to_use}\n"
-
-        # Add tags if available
-        if tool.tags:
-            prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
-
-        if tool.parameters:
-            prompt += f"  • **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
-        prompt += "\n"
-
-    prompt += """To use a tool, respond with this EXACT format:
+    prompt += """To use a tool, respond with one or more tool-call blocks (no other text):
 <|tool_call|>
 {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
 </|tool_call|>
+
+To call multiple tools, repeat the block once per call.
 """ + _critical_rules()
 
 
-    # Add examples from tool metadata
-    if any(tool.examples for tool in tools):
-        prompt += "**EXAMPLES:**\n\n"
-        for tool in tools:
-            if tool.examples:
-                prompt += f"**{tool.name} Examples:**\n"
-                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
-                    desc = example.get("description", f"Example {i}")
-                    args = example.get("arguments", {})
-                    prompt += f"{i}. {desc}:\n"
-                    # Use Qwen3-specific tool call format
-                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.SPECIAL_TOKEN)
-                    prompt += f"{tool_call_example}\n\n"
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.SPECIAL_TOKEN)
 
     return prompt
 
 
-def _format_llama_style(tools: List[ToolDefinition]) -> str:
+def _format_llama_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for LLaMA models using <function_call> format with enhanced metadata."""
     if not tools:
         return ""
 
     prompt = "You have access to the following functions. Use them when needed:\n\n"
 
-    # Tool descriptions with enhanced metadata
-    for tool in tools:
-        prompt += f"**{tool.name}**: {tool.description}\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"**{tool.name}**: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"  • **Args**: {_format_parameters_compact(tool.parameters)}\n"
+            prompt += "\n"
 
-        # Add when_to_use guidance if available
-        if tool.when_to_use:
-            prompt += f"  • **When to use**: {tool.when_to_use}\n"
-
-        # Add tags if available
-        if tool.tags:
-            prompt += f"  • **Tags**: {', '.join(tool.tags)}\n"
-
-        if tool.parameters:
-            prompt += f"  • **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
-        prompt += "\n"
-
-    prompt += """To call a function, use this format:
+    prompt += """To call a function, output one or more <function_call> blocks (no other text):
 <function_call>
 {"name": "function_name", "arguments": {"param1": "value1", "param2": "value2"}}
 </function_call>
+
+To call multiple functions, repeat the block once per call.
 """ + _critical_rules()
 
-    # Add examples from tool metadata
-    if any(tool.examples for tool in tools):
-        prompt += "**EXAMPLES:**\n\n"
-        for tool in tools:
-            if tool.examples:
-                prompt += f"**{tool.name} Examples:**\n"
-                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
-                    desc = example.get("description", f"Example {i}")
-                    args = example.get("arguments", {})
-                    prompt += f"{i}. {desc}:\n"
-                    # Use architecture-specific tool call format
-                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.FUNCTION_CALL)
-                    prompt += f"{tool_call_example}\n\n"
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.FUNCTION_CALL)
 
     return prompt
 
 
-def _format_xml_style(tools: List[ToolDefinition]) -> str:
+def _format_xml_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for XML-based models."""
     if not tools:
         return ""
 
     prompt = "You have access to these tools:\n\n"
 
-    for tool in tools:
-        prompt += f'<tool name="{tool.name}">\n'
-        prompt += f"  <description>{tool.description}</description>\n"
-        if tool.parameters:
-            prompt += f"  <parameters>{json.dumps(tool.parameters)}</parameters>\n"
-        prompt += "</tool>\n\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f'<tool name="{tool.name}">\n'
+            prompt += f"  <description>{tool.description}</description>\n"
+            if tool.parameters:
+                prompt += f"  <args>{_format_parameters_compact(tool.parameters)}</args>\n"
+            prompt += "</tool>\n\n"
 
-    prompt += """To use a tool, format your call as:
+    prompt += """To use a tool, output one or more <tool_call> blocks (no other text):
 <tool_call>
 {"name": "tool_name", "arguments": {"param1": "value1"}}
 </tool_call>
+
+To call multiple tools, repeat the block once per call.
 """ + _critical_rules()
+
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.XML_WRAPPED)
 
     return prompt
 
 
-def _format_gemma_style(tools: List[ToolDefinition]) -> str:
+def _format_json_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
+    """Format tools for models that prefer raw JSON tool calls in content."""
+    if not tools:
+        return ""
+
+    prompt = "You have access to the following tools:\n\n"
+
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"- {tool.name}: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"  args: {_format_parameters_compact(tool.parameters)}\n"
+
+    prompt += """To use a tool, respond with one or more JSON objects (no extra text):
+{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
+
+To call multiple tools, output multiple JSON objects (one per line/block).
+""" + _critical_rules()
+
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.RAW_JSON)
+
+    return prompt
+
+
+def _format_gemma_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Format tools for Gemma models using code blocks."""
     if not tools:
         return ""
 
     prompt = "You can use these tools by writing tool_code blocks:\n\n"
 
-    for tool in tools:
-        prompt += f"**{tool.name}**: {tool.description}\n"
-        if tool.parameters:
-            param_list = ", ".join([f"{name}: {info.get('type', 'any')}" for name, info in tool.parameters.items()])
-            prompt += f"Usage: {tool.name}({param_list})\n"
-        prompt += "\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"**{tool.name}**: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"Args: {_format_parameters_compact(tool.parameters)}\n"
+            prompt += "\n"
 
-    prompt += """To call a tool, use:
+    prompt += """To call a tool, output one or more tool_code blocks (no other text):
 ```tool_code
 {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
-```"""
+```
+
+To call multiple tools, repeat the block once per call."""
+
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.TOOL_CODE)
 
     return prompt
 
 
-def _format_generic_style(tools: List[ToolDefinition]) -> str:
+def _format_generic_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
     """Generic tool formatting for unknown architectures with enhanced metadata."""
     if not tools:
         return ""
 
     prompt = "You have access to the following tools:\n\n"
 
-    for tool in tools:
-        prompt += f"- **{tool.name}**: {tool.description}\n"
-
-        # Add when_to_use guidance if available
-        if tool.when_to_use:
-            prompt += f"  **When to use**: {tool.when_to_use}\n"
-
-        # Add tags if available
-        if tool.tags:
-            prompt += f"  **Tags**: {', '.join(tool.tags)}\n"
-
-        if tool.parameters:
-            prompt += f"  **Parameters**: {json.dumps(tool.parameters, indent=2)}\n"
-        prompt += "\n"
+    if include_tool_list:
+        for tool in tools:
+            prompt += f"- {tool.name}: {tool.description}\n"
+            if tool.parameters:
+                prompt += f"  args: {_format_parameters_compact(tool.parameters)}\n"
 
     prompt += _critical_rules()
 
-    # Add examples from tool metadata
-    if any(tool.examples for tool in tools):
-        prompt += "**EXAMPLES:**\n\n"
-        for tool in tools:
-            if tool.examples:
-                prompt += f"**{tool.name} Examples:**\n"
-                for i, example in enumerate(tool.examples[:3], 1):  # Limit to 3 examples
-                    desc = example.get("description", f"Example {i}")
-                    args = example.get("arguments", {})
-                    prompt += f"{i}. {desc}:\n"
-                    # Use generic format for unknown architectures
-                    tool_call_example = _format_tool_call_example(tool.name, args, ToolFormat.RAW_JSON)
-                    prompt += f"{tool_call_example}\n\n"
+    if include_examples:
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.RAW_JSON)
 
     return prompt
 
@@ -893,6 +1270,158 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
 
     import re
 
+    # Strip Harmony/ChatML tool-call segments first (balanced JSON after <|message|>).
+    # Regex alone is brittle here because tool arguments can contain nested braces.
+    if "<|channel|>" in content and "<|message|>" in content and "to=" in content:
+        def _find_matching_brace(text: str, start: int) -> int:
+            depth = 0
+            in_string = False
+            quote = ""
+            escaped = False
+            for i in range(start, len(text)):
+                ch = text[i]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                        continue
+                    if ch == "\\":
+                        escaped = True
+                        continue
+                    if ch == quote:
+                        in_string = False
+                        quote = ""
+                    continue
+                if ch in ("'", '"'):
+                    in_string = True
+                    quote = ch
+                    continue
+                if ch == "{":
+                    depth += 1
+                    continue
+                if ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return i
+            return -1
+
+        def _consume_trailing_kv_fragment(text: str, start_idx: int) -> int:
+            """Consume malformed trailing JSON key/value fragments after a closed object.
+
+            Some models (notably some OSS models emitting Harmony tool transcripts) occasionally
+            close the JSON object early and then continue emitting extra fields outside of it,
+            e.g.:
+              <|message|>{"name":"write_file","arguments":{...},"call_id":null},"mode":"w"}
+
+            Tool parsing can still succeed (the prefix is valid), but the tail fragment must
+            not leak into cleaned assistant content (it otherwise shows up as "Thought" in UIs).
+            """
+            i = start_idx
+            while i < len(text) and text[i].isspace():
+                i += 1
+            if i >= len(text) or text[i] != ",":
+                return start_idx
+
+            # Quick heuristic: only treat as a JSON-ish continuation if we see `,"key":...`.
+            j = i + 1
+            while j < len(text) and text[j].isspace():
+                j += 1
+            if j >= len(text) or text[j] not in ("'", '"'):
+                return start_idx
+
+            in_string = False
+            quote = ""
+            escaped = False
+            brace_depth = 0
+            saw_colon = False
+            pos = i
+            while pos < len(text):
+                # Do not swallow the next Harmony segment (if any).
+                if not in_string and text.startswith("<|channel|>", pos):
+                    return pos
+
+                ch = text[pos]
+                if in_string:
+                    if escaped:
+                        escaped = False
+                        pos += 1
+                        continue
+                    if ch == "\\":
+                        escaped = True
+                        pos += 1
+                        continue
+                    if ch == quote:
+                        in_string = False
+                        quote = ""
+                        pos += 1
+                        continue
+                    pos += 1
+                    continue
+
+                if ch in ("'", '"'):
+                    in_string = True
+                    quote = ch
+                    pos += 1
+                    continue
+
+                if ch == ":":
+                    saw_colon = True
+                elif ch == "{":
+                    brace_depth += 1
+                elif ch == "}":
+                    if saw_colon and brace_depth == 0:
+                        return pos + 1
+                    if brace_depth > 0:
+                        brace_depth -= 1
+                pos += 1
+
+            return len(text) if saw_colon else start_idx
+
+        msg_tag = "<|message|>"
+        out_parts = []
+        i = 0
+        while i < len(content):
+            start = content.find("<|channel|>", i)
+            if start == -1:
+                out_parts.append(content[i:])
+                break
+            out_parts.append(content[i:start])
+
+            msg_start = content.find(msg_tag, start)
+            if msg_start == -1:
+                out_parts.append(content[start:])
+                break
+            # Only treat as a tool call when there's a `to=` directive before the message tag.
+            if "to=" not in content[start:msg_start]:
+                out_parts.append(content[start:msg_start])
+                i = msg_start
+                continue
+
+            brace_start = content.find("{", msg_start + len(msg_tag))
+            if brace_start == -1:
+                out_parts.append(content[start:msg_start])
+                i = msg_start
+                continue
+            between = content[msg_start + len(msg_tag) : brace_start]
+            if between and any(not c.isspace() for c in between):
+                out_parts.append(content[start:brace_start])
+                i = brace_start
+                continue
+
+            brace_end = _find_matching_brace(content, brace_start)
+            if brace_end == -1:
+                # Best-effort: drop the remainder of this segment up to the next Harmony marker
+                # (or to end-of-content). Leaving partial tool payloads in `content` is more
+                # harmful (it breaks agent scratchpads and UI "Thought" rendering).
+                next_start = content.find("<|channel|>", brace_start + 1)
+                if next_start == -1:
+                    break
+                i = next_start
+                continue
+
+            i = _consume_trailing_kv_fragment(content, brace_end + 1)
+
+        content = "".join(out_parts)
+
     # Use the same sophisticated patterns as the _parse_special_token function
     patterns = [
         # Strategy 1: Properly closed <|tool_call|> tags
@@ -912,11 +1441,16 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         ,
         # CLI-like prefix format: tool: [name]: {...}
         r'(?im)^\s*tool\s*:\s*\[[^\]]+\]\s*:\s*\{.*\}\s*$',
+        # Harmony/ChatML tool-call transcript format:
+        #   <|channel|>commentary to=tool <|constrain|>json<|message|>{...}
+        r'(?is)<\|channel\|>\s*[a-zA-Z0-9_\-]+\s+to=[a-zA-Z0-9_\-\.]+\b.*?<\|message\|>\s*\{.*?\}',
         # Orphan tags (some models emit a closing tag on its own line)
         r'(?im)^\s*<\|tool_call\|>\s*$',
         r'(?im)^\s*</\|tool_call\|>\s*$',
         r'(?im)^\s*<tool_call>\s*$',
         r'(?im)^\s*</tool_call>\s*$',
+        r'(?im)^\s*<\|channel\|>\s*$',
+        r'(?im)^\s*<\|message\|>\s*$',
     ]
 
     # Apply all patterns
@@ -939,7 +1473,7 @@ def _format_tool_call_example(tool_name: str, arguments: Dict[str, Any], tool_fo
     Returns:
         Formatted tool call example string
     """
-    tool_call_json = json.dumps({"name": tool_name, "arguments": arguments})
+    tool_call_json = json.dumps({"name": tool_name, "arguments": arguments}, separators=(",", ":"), ensure_ascii=False)
     
     if tool_format == ToolFormat.SPECIAL_TOKEN:
         # Qwen3, GLM-4.5+ format
@@ -969,13 +1503,14 @@ def _critical_rules():
     Returns:
         str: The critical rules for tool usage.
     """
-    return """
-    
-CRITICAL RULES FOR TOOL USAGE:
-1. If you can answer the question directly, do not call a tool
-2. If you can't answer the question directly, call a tool to extend your capabilities, gain further insights or perform an action
-3. DO NOT call tools to show off capabilities - when requested, just describe the tools at your disposal
-4. The "name" field must be at the TOP LEVEL, NOT inside "arguments"
-5. Use the exact JSON structure shown above
-
-"""
+    return (
+        "CRITICAL RULES FOR TOOL USAGE:\n"
+        "1. If you can answer directly, do not call a tool.\n"
+        "2. If you need info or an action, call the smallest relevant tool.\n"
+        "3. Do not call tools to show off; if asked, describe capabilities.\n"
+        "4. The \"name\" field must be top-level (not inside \"arguments\").\n"
+        "5. Use the exact tool-call JSON structure.\n"
+        "6. Never fabricate tool results; outputs are returned separately.\n"
+        "7. Do not write your own `tool:` result lines.\n"
+        "8. You MAY batch multiple tool calls by repeating the tool-call block once per call (prefer independent calls).\n"
+    )

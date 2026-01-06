@@ -59,7 +59,16 @@ class VLLMProvider(BaseProvider):
             self.client = httpx.Client(timeout=timeout_value)
         except Exception as e:
             try:
-                self.client = httpx.Client(timeout=300.0)
+                fallback_timeout = None
+                try:
+                    from ..config.manager import get_config_manager
+
+                    fallback_timeout = float(get_config_manager().get_default_timeout())
+                except Exception:
+                    fallback_timeout = 7200.0
+                if isinstance(fallback_timeout, (int, float)) and float(fallback_timeout) <= 0:
+                    fallback_timeout = None
+                self.client = httpx.Client(timeout=fallback_timeout)
             except Exception:
                 raise RuntimeError(f"Failed to create HTTP client for vLLM: {e}")
 
@@ -154,19 +163,24 @@ class VLLMProvider(BaseProvider):
         chat_messages = []
 
         # Add tools to system prompt if provided
-        enhanced_system_prompt = system_prompt
-        if tools and self.tool_handler.supports_prompted:
-            tool_prompt = self.tool_handler.format_tools_prompt(tools)
-            if enhanced_system_prompt:
-                enhanced_system_prompt += f"\n\n{tool_prompt}"
+        final_system_prompt = system_prompt
+        # Prefer native tools when the model supports them. Only inject a prompted tool list
+        # when native tool calling is not available.
+        if tools and self.tool_handler.supports_prompted and not self.tool_handler.supports_native:
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt += f"\n\n{tool_prompt}"
             else:
-                enhanced_system_prompt = tool_prompt
+                final_system_prompt = tool_prompt
 
         # Add system message if provided
-        if enhanced_system_prompt:
+        if final_system_prompt:
             chat_messages.append({
                 "role": "system",
-                "content": enhanced_system_prompt
+                "content": final_system_prompt
             })
 
         # Add conversation history
@@ -221,6 +235,11 @@ class VLLMProvider(BaseProvider):
             "max_tokens": max_output_tokens,
             "top_p": kwargs.get("top_p", 0.9),
         }
+
+        # Native tools (OpenAI-compatible): send structured tools/tool_choice when supported.
+        if tools and self.tool_handler.supports_native:
+            payload["tools"] = self.tool_handler.prepare_tools_for_native(tools)
+            payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
         # Add additional generation parameters if provided
         if "frequency_penalty" in kwargs:
@@ -283,8 +302,9 @@ class VLLMProvider(BaseProvider):
                 raise ProviderAPIError("HTTP client not initialized")
 
             start_time = time.time()
+            request_url = f"{self.base_url}/chat/completions"
             response = self.client.post(
-                f"{self.base_url}/chat/completions",
+                request_url,
                 json=payload,
                 headers=self._get_headers()
             )
@@ -296,10 +316,18 @@ class VLLMProvider(BaseProvider):
             # Extract response from OpenAI format
             if "choices" in result and len(result["choices"]) > 0:
                 choice = result["choices"][0]
-                content = choice.get("message", {}).get("content", "")
+                message = choice.get("message") or {}
+                if not isinstance(message, dict):
+                    message = {}
+
+                content = message.get("content", "")
+                tool_calls = message.get("tool_calls")
+                if tool_calls is None:
+                    tool_calls = choice.get("tool_calls")
                 finish_reason = choice.get("finish_reason", "stop")
             else:
                 content = "No response generated"
+                tool_calls = None
                 finish_reason = "error"
 
             # Extract usage info
@@ -310,6 +338,13 @@ class VLLMProvider(BaseProvider):
                 model=self.model,
                 finish_reason=finish_reason,
                 raw_response=result,
+                tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                metadata={
+                    "_provider_request": {
+                        "url": request_url,
+                        "payload": payload,
+                    }
+                },
                 usage={
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),
@@ -335,7 +370,7 @@ class VLLMProvider(BaseProvider):
                 except Exception:
                     raise ModelNotFoundError(f"Model '{self.model}' not found in vLLM and could not fetch available models")
             else:
-                raise ProviderAPIError(f"vLLM API error: {str(e)}")
+                raise
 
     def _stream_generate(self, payload: Dict[str, Any]) -> Iterator[GenerateResponse]:
         """Generate streaming response."""
@@ -366,13 +401,17 @@ class VLLMProvider(BaseProvider):
                                 if "choices" in chunk and len(chunk["choices"]) > 0:
                                     choice = chunk["choices"][0]
                                     delta = choice.get("delta", {})
+                                    if not isinstance(delta, dict):
+                                        delta = {}
                                     content = delta.get("content", "")
+                                    tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
                                     finish_reason = choice.get("finish_reason")
 
                                     yield GenerateResponse(
                                         content=content,
                                         model=self.model,
                                         finish_reason=finish_reason,
+                                        tool_calls=tool_calls if isinstance(tool_calls, list) else None,
                                         raw_response=chunk
                                     )
 
@@ -408,16 +447,20 @@ class VLLMProvider(BaseProvider):
         # Build messages (same logic as sync)
         chat_messages = []
 
-        enhanced_system_prompt = system_prompt
-        if tools and self.tool_handler.supports_prompted:
-            tool_prompt = self.tool_handler.format_tools_prompt(tools)
-            if enhanced_system_prompt:
-                enhanced_system_prompt += f"\n\n{tool_prompt}"
+        final_system_prompt = system_prompt
+        # Prefer native tools when available; only inject prompted tool syntax as fallback.
+        if tools and self.tool_handler.supports_prompted and not self.tool_handler.supports_native:
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt += f"\n\n{tool_prompt}"
             else:
-                enhanced_system_prompt = tool_prompt
+                final_system_prompt = tool_prompt
 
-        if enhanced_system_prompt:
-            chat_messages.append({"role": "system", "content": enhanced_system_prompt})
+        if final_system_prompt:
+            chat_messages.append({"role": "system", "content": final_system_prompt})
 
         if messages:
             chat_messages.extend(messages)
@@ -468,6 +511,11 @@ class VLLMProvider(BaseProvider):
             "max_tokens": max_output_tokens,
             "top_p": kwargs.get("top_p", 0.9),
         }
+
+        # Native tools (OpenAI-compatible): send structured tools/tool_choice when supported.
+        if tools and self.tool_handler.supports_native:
+            payload["tools"] = self.tool_handler.prepare_tools_for_native(tools)
+            payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
         if "frequency_penalty" in kwargs:
             payload["frequency_penalty"] = kwargs["frequency_penalty"]
@@ -700,7 +748,16 @@ class VLLMProvider(BaseProvider):
                 if hasattr(self, 'logger'):
                     self.logger.warning(f"Failed to update HTTP client timeout: {e}")
                 try:
-                    self.client = httpx.Client(timeout=300.0)
+                    fallback_timeout = None
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        fallback_timeout = float(get_config_manager().get_default_timeout())
+                    except Exception:
+                        fallback_timeout = 7200.0
+                    if isinstance(fallback_timeout, (int, float)) and float(fallback_timeout) <= 0:
+                        fallback_timeout = None
+                    self.client = httpx.Client(timeout=fallback_timeout)
                 except Exception:
                     pass
 

@@ -13,6 +13,14 @@ from abstractcore.tools import register_tool, clear_registry
 from abstractcore.tools.parser import detect_tool_calls
 
 
+def _real_provider_tests_enabled() -> bool:
+    """Gate real provider/model tests behind an explicit opt-in env var.
+
+    These tests require network/local-daemon access and can be flaky in sandboxed CI.
+    """
+    return os.getenv("ABSTRACTCORE_TEST_REAL_PROVIDERS") == "1"
+
+
 def list_files(directory: str = ".") -> str:
     """List files in the specified directory"""
     import os
@@ -78,6 +86,8 @@ class TestToolCalling:
 
     def test_openai_tool_calling(self, tool_definitions, test_cases):
         """Test OpenAI provider tool calling with gpt-4o-mini."""
+        if not _real_provider_tests_enabled():
+            pytest.skip("Real provider tests disabled (set ABSTRACTCORE_TEST_REAL_PROVIDERS=1)")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
@@ -112,6 +122,8 @@ class TestToolCalling:
 
     def test_anthropic_tool_calling(self, tool_definitions, test_cases):
         """Test Anthropic provider tool calling with claude-3-5-haiku-20241022."""
+        if not _real_provider_tests_enabled():
+            pytest.skip("Real provider tests disabled (set ABSTRACTCORE_TEST_REAL_PROVIDERS=1)")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
@@ -146,6 +158,8 @@ class TestToolCalling:
 
     def test_ollama_basic_generation(self):
         """Test Ollama basic generation (tool calling may not work with qwen3-coder:30b)."""
+        if not _real_provider_tests_enabled():
+            pytest.skip("Real provider tests disabled (set ABSTRACTCORE_TEST_REAL_PROVIDERS=1)")
         try:
             llm = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
@@ -163,6 +177,8 @@ class TestToolCalling:
 
     def test_ollama_tool_format(self):
         """Test Ollama with architecture-specific tool format"""
+        if not _real_provider_tests_enabled():
+            pytest.skip("Real provider tests disabled (set ABSTRACTCORE_TEST_REAL_PROVIDERS=1)")
         try:
             llm = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
 
@@ -187,6 +203,8 @@ Please list the files in /tmp directory."""
 
     def test_lmstudio_basic_generation(self):
         """Test LMStudio basic generation (tool calling may vary)."""
+        if not _real_provider_tests_enabled():
+            pytest.skip("Real provider tests disabled (set ABSTRACTCORE_TEST_REAL_PROVIDERS=1)")
         try:
             llm = create_llm("lmstudio", model="qwen/qwen3-coder-30b", base_url="http://localhost:1234/v1")
 

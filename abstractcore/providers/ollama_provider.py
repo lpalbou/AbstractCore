@@ -148,13 +148,16 @@ class OllamaProvider(BaseProvider):
         """Internal generation with Ollama"""
 
         # Handle tools for prompted models
-        effective_system_prompt = system_prompt
+        final_system_prompt = system_prompt
         if tools and self.tool_handler.supports_prompted:
-            tool_prompt = self.tool_handler.format_tools_prompt(tools)
-            if effective_system_prompt:
-                effective_system_prompt = f"{effective_system_prompt}\n\n{tool_prompt}"
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt = f"{final_system_prompt}\n\n{tool_prompt}"
             else:
-                effective_system_prompt = tool_prompt
+                final_system_prompt = tool_prompt
 
         # Build request payload using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -189,10 +192,10 @@ class OllamaProvider(BaseProvider):
             payload["messages"] = []
 
             # Add system message if provided
-            if effective_system_prompt:
+            if final_system_prompt:
                 payload["messages"].append({
                     "role": "system",
-                    "content": effective_system_prompt
+                    "content": final_system_prompt
                 })
 
             # Add conversation history (converted to Ollama-compatible format)
@@ -245,8 +248,8 @@ class OllamaProvider(BaseProvider):
         else:
             # Use generate format for single prompt (legacy fallback)
             full_prompt = prompt
-            if effective_system_prompt:
-                full_prompt = f"{effective_system_prompt}\n\n{prompt}"
+            if final_system_prompt:
+                full_prompt = f"{final_system_prompt}\n\n{prompt}"
 
             payload["prompt"] = full_prompt
             endpoint = "/api/generate"
@@ -292,6 +295,14 @@ class OllamaProvider(BaseProvider):
                 },
                 gen_time=gen_time
             )
+
+            # Runtime observability: capture the exact HTTP JSON payload we sent to Ollama.
+            if not generate_response.metadata:
+                generate_response.metadata = {}
+            generate_response.metadata["_provider_request"] = {
+                "url": f"{self.base_url}{endpoint}",
+                "payload": payload,
+            }
             
             # Attach media metadata if available
             if media_metadata:
@@ -314,12 +325,8 @@ class OllamaProvider(BaseProvider):
                 available_models = self.list_available_models(base_url=self.base_url)
                 error_message = format_model_error("Ollama", self.model, available_models)
                 raise ModelNotFoundError(error_message)
-            else:
-                return GenerateResponse(
-                    content=f"Error: {str(e)}",
-                    model=self.model,
-                    finish_reason="error"
-                )
+            # Let BaseProvider normalize (timeouts/connectivity/etc.) consistently.
+            raise
 
     def _stream_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Generate streaming response with tool tag rewriting support"""
@@ -367,7 +374,13 @@ class OllamaProvider(BaseProvider):
                                 content=content,
                                 model=self.model,
                                 finish_reason="stop" if done else None,
-                                raw_response=chunk
+                                raw_response=chunk,
+                                metadata={
+                                    "_provider_request": {
+                                        "url": f"{self.base_url}{endpoint}",
+                                        "payload": payload,
+                                    }
+                                },
                             )
 
                             yield chunk_response
@@ -416,13 +429,16 @@ class OllamaProvider(BaseProvider):
                                    **kwargs):
         """Native async implementation using httpx.AsyncClient - 3-10x faster for batch operations."""
         # Handle tools for prompted models
-        effective_system_prompt = system_prompt
+        final_system_prompt = system_prompt
         if tools and self.tool_handler.supports_prompted:
-            tool_prompt = self.tool_handler.format_tools_prompt(tools)
-            if effective_system_prompt:
-                effective_system_prompt = f"{effective_system_prompt}\n\n{tool_prompt}"
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt = f"{final_system_prompt}\n\n{tool_prompt}"
             else:
-                effective_system_prompt = tool_prompt
+                final_system_prompt = tool_prompt
 
         # Build request payload (same logic as sync)
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -453,10 +469,10 @@ class OllamaProvider(BaseProvider):
         if use_chat_format:
             payload["messages"] = []
 
-            if effective_system_prompt:
+            if final_system_prompt:
                 payload["messages"].append({
                     "role": "system",
-                    "content": effective_system_prompt
+                    "content": final_system_prompt
                 })
 
             if messages:
@@ -486,8 +502,8 @@ class OllamaProvider(BaseProvider):
             endpoint = "/api/chat"
         else:
             full_prompt = prompt
-            if effective_system_prompt:
-                full_prompt = f"{effective_system_prompt}\n\n{prompt}"
+            if final_system_prompt:
+                full_prompt = f"{final_system_prompt}\n\n{prompt}"
             payload["prompt"] = full_prompt
             endpoint = "/api/generate"
 

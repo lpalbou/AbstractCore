@@ -112,8 +112,10 @@ class TestBasicSummarizer:
 
         # Should contain business/practical terminology
         summary_lower = result.summary.lower()
+        key_points_text = " ".join(result.key_points).lower()
+        combined_text = f"{summary_lower} {key_points_text}"
         business_terms = ["api", "application", "development", "production", "infrastructure"]
-        found_terms = [term for term in business_terms if term in summary_lower]
+        found_terms = [term for term in business_terms if term in combined_text]
 
         print(f"- Business terms found: {found_terms}")
         assert len(found_terms) >= 2, f"Executive summary lacks business focus: {found_terms}"

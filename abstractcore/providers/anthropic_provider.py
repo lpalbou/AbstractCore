@@ -100,6 +100,30 @@ class AnthropicProvider(BaseProvider):
                             "role": "assistant",
                             "content": msg["content"]
                         })
+                    elif role == "tool":
+                        # Anthropic Messages API represents tool outputs as `tool_result`
+                        # content blocks inside a USER message (there is no `role="tool"`).
+                        meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+                        tool_use_id = meta.get("call_id") or meta.get("tool_use_id") or meta.get("id")
+                        tool_text = msg.get("content", "")
+                        tool_text = "" if tool_text is None else str(tool_text)
+
+                        if isinstance(tool_use_id, str) and tool_use_id.strip():
+                            api_messages.append(
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_use_id.strip(),
+                                            "content": tool_text,
+                                        }
+                                    ],
+                                }
+                            )
+                        else:
+                            # Fallback: preserve as plain user text when no tool_use_id is available.
+                            api_messages.append({"role": "user", "content": tool_text})
                     else:
                         api_messages.append({
                             "role": "user",
@@ -194,7 +218,9 @@ class AnthropicProvider(BaseProvider):
                     call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
             else:
                 # Add tools as system prompt for prompted models
-                tool_prompt = self.tool_handler.format_tools_prompt(tools)
+                system_text = call_params.get("system") if isinstance(call_params.get("system"), str) else ""
+                include_tool_list = "## Tools (session)" not in system_text
+                tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
                 if call_params.get("system"):
                     call_params["system"] += f"\n\n{tool_prompt}"
                 else:
@@ -213,6 +239,8 @@ class AnthropicProvider(BaseProvider):
                 formatted = self._format_response(response)
                 # Add generation time to response
                 formatted.gen_time = gen_time
+                formatted.metadata = dict(formatted.metadata or {})
+                formatted.metadata["_provider_request"] = {"call_params": call_params}
 
                 # Handle tool execution for Anthropic responses
                 if tools and (formatted.has_tool_calls() or
@@ -232,7 +260,7 @@ class AnthropicProvider(BaseProvider):
                 error_message = format_model_error("Anthropic", self.model, available_models)
                 raise ModelNotFoundError(error_message)
             else:
-                raise ProviderAPIError(f"Anthropic API error: {str(e)}")
+                raise
 
     async def _agenerate_internal(self,
                                    prompt: str,
@@ -260,6 +288,30 @@ class AnthropicProvider(BaseProvider):
                             "role": "assistant",
                             "content": msg["content"]
                         })
+                    elif role == "tool":
+                        # Anthropic Messages API represents tool outputs as `tool_result`
+                        # content blocks inside a USER message (there is no `role="tool"`).
+                        meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+                        tool_use_id = meta.get("call_id") or meta.get("tool_use_id") or meta.get("id")
+                        tool_text = msg.get("content", "")
+                        tool_text = "" if tool_text is None else str(tool_text)
+
+                        if isinstance(tool_use_id, str) and tool_use_id.strip():
+                            api_messages.append(
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "tool_result",
+                                            "tool_use_id": tool_use_id.strip(),
+                                            "content": tool_text,
+                                        }
+                                    ],
+                                }
+                            )
+                        else:
+                            # Fallback: preserve as plain user text when no tool_use_id is available.
+                            api_messages.append({"role": "user", "content": tool_text})
                     else:
                         api_messages.append({
                             "role": "user",
@@ -348,7 +400,9 @@ class AnthropicProvider(BaseProvider):
                 elif kwargs.get("tool_choice"):
                     call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
             else:
-                tool_prompt = self.tool_handler.format_tools_prompt(tools)
+                system_text = call_params.get("system") if isinstance(call_params.get("system"), str) else ""
+                include_tool_list = "## Tools (session)" not in system_text
+                tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
                 if call_params.get("system"):
                     call_params["system"] += f"\n\n{tool_prompt}"
                 else:
@@ -365,6 +419,8 @@ class AnthropicProvider(BaseProvider):
 
                 formatted = self._format_response(response)
                 formatted.gen_time = gen_time
+                formatted.metadata = dict(formatted.metadata or {})
+                formatted.metadata["_provider_request"] = {"call_params": call_params}
 
                 if tools and (formatted.has_tool_calls() or
                              (self.tool_handler.supports_prompted and formatted.content)):
@@ -381,7 +437,7 @@ class AnthropicProvider(BaseProvider):
                 error_message = format_model_error("Anthropic", self.model, available_models)
                 raise ModelNotFoundError(error_message)
             else:
-                raise ProviderAPIError(f"Anthropic API error: {str(e)}")
+                raise
 
     async def _async_stream_response(self, call_params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None) -> AsyncIterator[GenerateResponse]:
         """Native async streaming with Anthropic's context manager pattern."""
@@ -397,7 +453,7 @@ class AnthropicProvider(BaseProvider):
                         raw_response=chunk
                     )
         except Exception as e:
-            raise ProviderAPIError(f"Anthropic streaming error: {str(e)}")
+            raise
 
     def unload(self) -> None:
         """Close async client if it was created."""
@@ -414,13 +470,38 @@ class AnthropicProvider(BaseProvider):
         """Format tools for Anthropic API format"""
         formatted_tools = []
         for tool in tools:
-            # Get parameters and ensure proper JSON schema format
+            # Anthropic expects `input_schema` to be a JSON Schema object:
+            # https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use
+            #
+            # Our internal tool representation typically uses:
+            #   tool["parameters"] = { "arg": {"type": "...", "default": ...?}, ... }
+            # or, less commonly:
+            #   tool["parameters"] = {"type":"object","properties":{...},"required":[...]}
             params = tool.get("parameters", {})
-            input_schema = {
+
+            properties: Dict[str, Any] = {}
+            required: List[str] = []
+
+            if isinstance(params, dict) and "properties" in params:
+                # Treat as already-schema-like.
+                raw_props = params.get("properties") if isinstance(params.get("properties"), dict) else {}
+                properties = dict(raw_props)
+                raw_required = params.get("required")
+                if isinstance(raw_required, list):
+                    required = [str(x) for x in raw_required if isinstance(x, (str, int))]
+            elif isinstance(params, dict):
+                # Treat as compact parameter dict; infer required args by absence of `default`.
+                properties = dict(params)
+                for k, v in params.items():
+                    if isinstance(v, dict) and "default" not in v:
+                        required.append(str(k))
+
+            input_schema: Dict[str, Any] = {
                 "type": "object",
-                "properties": params.get("properties", params),  # Handle both formats
-                "required": params.get("required", list(params.keys()) if "properties" not in params else [])
+                "properties": properties,
             }
+            if required:
+                input_schema["required"] = required
 
             formatted_tool = {
                 "name": tool.get("name"),
@@ -440,7 +521,7 @@ class AnthropicProvider(BaseProvider):
         # Handle different content types
         for content_block in response.content:
             if content_block.type == "text":
-                content = content_block.text
+                content += content_block.text
             elif content_block.type == "tool_use":
                 if tool_calls is None:
                     tool_calls = []

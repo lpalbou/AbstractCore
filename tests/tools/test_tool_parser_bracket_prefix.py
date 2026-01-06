@@ -20,6 +20,20 @@ def test_detect_and_parse_bracket_prefix_python_literal_args() -> None:
     assert calls[0].name == "list_files"
     assert calls[0].arguments == {"directory_path": "rtype", "recursive": True}
 
+def test_detect_and_parse_bracket_prefix_multiline_args() -> None:
+    content = (
+        "tool: [list_files]: {\n"
+        '  "directory_path": "rtype",\n'
+        '  "pattern": "*",\n'
+        '  "recursive": true\n'
+        "}\n"
+    )
+    assert detect_tool_calls(content) is True
+    calls = parse_tool_calls(content)
+    assert len(calls) == 1
+    assert calls[0].name == "list_files"
+    assert calls[0].arguments == {"directory_path": "rtype", "pattern": "*", "recursive": True}
+
 
 def test_clean_tool_syntax_removes_orphan_closing_tag() -> None:
     content = (
@@ -33,4 +47,3 @@ def test_clean_tool_syntax_removes_orphan_closing_tag() -> None:
     assert "tool:" not in cleaned
     assert "</tool_call>" not in cleaned
     assert "I'll list files now." in cleaned
-
