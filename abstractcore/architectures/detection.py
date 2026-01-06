@@ -20,6 +20,41 @@ _model_capabilities: Optional[Dict[str, Any]] = None
 # Cache for resolved model names and architectures to reduce redundant logging
 _resolved_aliases_cache: Dict[str, str] = {}
 _detected_architectures_cache: Dict[str, str] = {}
+# Cache to avoid repeating default-capabilities warnings for the same unknown model.
+_default_capabilities_warning_cache: set[str] = set()
+
+
+# Some callers pass provider/model as a single string (e.g. "lmstudio/qwen/qwen3-next-80b").
+# For capability lookup we want the underlying model id, not the provider prefix.
+_KNOWN_PROVIDER_PREFIXES = {
+    "anthropic",
+    "azure",
+    "bedrock",
+    "fireworks",
+    "gemini",
+    "google",
+    "groq",
+    "huggingface",
+    "lmstudio",
+    "local",
+    "mlx",
+    "nvidia",
+    "ollama",
+    "openai",
+    "openai-compatible",
+    "together",
+    "vllm",
+}
+
+
+def _strip_provider_prefix(model_name: str) -> str:
+    s = str(model_name or "").strip()
+    if not s or "/" not in s:
+        return s
+    head, rest = s.split("/", 1)
+    if head.strip().lower() in _KNOWN_PROVIDER_PREFIXES and rest.strip():
+        return rest.strip()
+    return s
 
 
 def _load_json_assets():
@@ -72,16 +107,36 @@ def detect_architecture(model_name: str) -> str:
         _detected_architectures_cache[model_name] = "generic"
         return "generic"
 
-    model_lower = model_name.lower()
+    # Normalize model names for better pattern matching:
+    # - HuggingFace cache names use `--` as `/` separators (models--org--name).
+    # - Claude versions sometimes appear as `claude-3-5-sonnet` (normalize to `claude-3.5-sonnet`).
+    model_lower = model_name.lower().replace("--", "/")
+    import re
+    model_lower = re.sub(r'(claude-\d+)-(\d+)(?=-|$)', r'\1.\2', model_lower)
 
-    # Check each architecture's patterns
+    # Choose the most specific matching architecture.
+    # Many architectures include broad patterns (e.g. "gpt") that can accidentally
+    # match more specific models (e.g. "gpt-oss"). We resolve this by selecting the
+    # longest matching pattern across all architectures.
+    best_arch = "generic"
+    best_pattern = ""
+
     for arch_name, arch_config in _architecture_formats["architectures"].items():
         patterns = arch_config.get("patterns", [])
         for pattern in patterns:
-            if pattern.lower() in model_lower:
-                logger.debug(f"Detected architecture '{arch_name}' for model '{model_name}' (pattern: '{pattern}')")
-                _detected_architectures_cache[model_name] = arch_name
-                return arch_name
+            pat = str(pattern).lower()
+            if not pat:
+                continue
+            if pat in model_lower and len(pat) > len(best_pattern):
+                best_arch = arch_name
+                best_pattern = pat
+
+    if best_arch != "generic":
+        logger.debug(
+            f"Detected architecture '{best_arch}' for model '{model_name}' (pattern: '{best_pattern}')"
+        )
+        _detected_architectures_cache[model_name] = best_arch
+        return best_arch
 
     # Fallback to generic
     logger.debug(f"No specific architecture detected for '{model_name}', using generic")
@@ -147,22 +202,69 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     if normalized_model_name != model_name:
         logger.debug(f"Normalized model name '{model_name}' to '{normalized_model_name}'")
 
-    # Check if normalized name is a canonical name
-    if normalized_model_name in models:
-        _resolved_aliases_cache[model_name] = normalized_model_name
-        return normalized_model_name
+    # Also support "provider/model" strings by stripping known provider prefixes.
+    stripped_model_name = _strip_provider_prefix(model_name)
+    stripped_normalized_name = _strip_provider_prefix(normalized_model_name)
 
-    # Check if it's an alias of any model (try both original and normalized)
+    def _tail(name: str) -> str:
+        s = str(name or "").strip()
+        if not s or "/" not in s:
+            return s
+        return s.split("/")[-1].strip()
+
+    def _candidates(*names: str) -> List[str]:
+        out: List[str] = []
+        for n in names:
+            s = str(n or "").strip()
+            if not s:
+                continue
+            out.append(s)
+            t = _tail(s)
+            if t and t != s:
+                out.append(t)
+        # Deduplicate while preserving order
+        uniq: List[str] = []
+        seen: set[str] = set()
+        for s in out:
+            if s in seen:
+                continue
+            seen.add(s)
+            uniq.append(s)
+        return uniq
+
+    # Check if any normalized/stripped name is a canonical name.
+    for candidate in _candidates(normalized_model_name, stripped_normalized_name, stripped_model_name):
+        if candidate in models:
+            _resolved_aliases_cache[model_name] = candidate
+            return candidate
+
+    # Check if it's an alias of any model (try both original and normalized).
+    # Some JSON entries intentionally share aliases (e.g. base + variant). Prefer the
+    # most specific canonical model name deterministically.
+    alias_matches: List[str] = []
     for canonical_name, model_info in models.items():
         aliases = model_info.get("aliases", [])
-        if model_name in aliases or normalized_model_name in aliases:
-            logger.debug(f"Resolved alias '{model_name}' to canonical name '{canonical_name}'")
-            _resolved_aliases_cache[model_name] = canonical_name
-            return canonical_name
+        if not isinstance(aliases, list) or not aliases:
+            continue
+        candidates = _candidates(model_name, normalized_model_name, stripped_model_name, stripped_normalized_name)
+        alias_set = {str(a).strip().lower() for a in aliases if isinstance(a, str) and str(a).strip()}
+        cand_set = {str(c).strip().lower() for c in candidates if isinstance(c, str) and str(c).strip()}
+        if alias_set and cand_set and alias_set.intersection(cand_set):
+            alias_matches.append(canonical_name)
+
+    if alias_matches:
+        best = max(alias_matches, key=lambda n: (len(str(n)), str(n)))
+        logger.debug(f"Resolved alias '{model_name}' to canonical name '{best}'")
+        _resolved_aliases_cache[model_name] = best
+        return best
 
     # Return normalized name if no alias found
-    _resolved_aliases_cache[model_name] = normalized_model_name
-    return normalized_model_name
+    fallback = stripped_normalized_name or normalized_model_name
+    fallback_tail = _tail(fallback)
+    if fallback_tail:
+        fallback = fallback_tail
+    _resolved_aliases_cache[model_name] = fallback
+    return fallback
 
 
 def get_model_capabilities(model_name: str) -> Dict[str, Any]:
@@ -199,15 +301,44 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
     # Step 3: Try partial matches for common model naming patterns
     # Use canonical_name (which has been normalized) for better matching
     canonical_lower = canonical_name.lower()
-    for model_key, capabilities in models.items():
-        if model_key.lower() in canonical_lower or canonical_lower in model_key.lower():
+    candidates_name_in_key: List[tuple[int, int, str]] = []
+    candidates_key_in_name: List[tuple[int, str]] = []
+    for model_key in models.keys():
+        if not isinstance(model_key, str) or not model_key.strip():
+            continue
+        key_lower = model_key.lower()
+
+        # Prefer a close "superstring" match where the canonical name is missing a suffix.
+        # Example: "qwen3-next-80b" -> "qwen3-next-80b-a3b"
+        if canonical_lower and canonical_lower in key_lower:
+            extra = max(0, len(key_lower) - len(canonical_lower))
+            candidates_name_in_key.append((extra, len(key_lower), model_key))
+            continue
+
+        # Otherwise, prefer the most specific substring match (e.g. provider/model prefixes).
+        if key_lower in canonical_lower:
+            candidates_key_in_name.append((len(key_lower), model_key))
+
+    best_key: Optional[str] = None
+    best_mode: Optional[str] = None
+    if candidates_name_in_key:
+        candidates_name_in_key.sort(key=lambda x: (x[0], -x[1]))
+        best_key = candidates_name_in_key[0][2]
+        best_mode = "name_in_key"
+    elif candidates_key_in_name:
+        best_key = max(candidates_key_in_name, key=lambda x: x[0])[1]
+        best_mode = "key_in_name"
+
+    if best_key is not None:
+        capabilities = models.get(best_key)
+        if isinstance(capabilities, dict):
             result = capabilities.copy()
             # Remove alias-specific fields
             result.pop("canonical_name", None)
             result.pop("aliases", None)
             if "architecture" not in result:
                 result["architecture"] = detect_architecture(model_name)
-            logger.debug(f"Using capabilities from '{model_key}' for '{model_name}'")
+            logger.debug(f"Using capabilities from '{best_key}' for '{model_name}' (partial match: {best_mode})")
             return result
 
     # Step 4: Fallback to default capabilities based on architecture
@@ -215,16 +346,50 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
     default_caps = _model_capabilities.get("default_capabilities", {}).copy()
     default_caps["architecture"] = architecture
 
-    # Enhance defaults based on architecture
+    # Enhance defaults based on architecture.
+    #
+    # NOTE: `architecture_formats.json.tool_format` describes the *prompted transcript syntax*
+    # for tool calls (e.g. XML-wrapped, <|tool_call|> blocks, etc). Some architectures/models
+    # also support *native tool APIs* (provider-level `tools` payloads) even when their prompted
+    # transcript format is non-native. For those cases, architectures can set an explicit
+    # `default_tool_support` to avoid relying on tool_format heuristics.
     arch_format = get_architecture_format(architecture)
-    if arch_format.get("tool_format") == "native":
+
+    explicit_support = str(arch_format.get("default_tool_support") or "").strip().lower()
+    if explicit_support in {"native", "prompted", "none"}:
+        default_caps["tool_support"] = explicit_support
+    elif arch_format.get("tool_format") == "native":
         default_caps["tool_support"] = "native"
-    elif arch_format.get("tool_format") in ["special_token", "json", "xml", "pythonic"]:
+    elif arch_format.get("tool_format") in ["special_token", "json", "xml", "pythonic", "glm_xml"]:
         default_caps["tool_support"] = "prompted"
     else:
         default_caps["tool_support"] = "none"
 
+    # Propagate architecture-level output wrappers into default capabilities.
+    wrappers = arch_format.get("output_wrappers")
+    if isinstance(wrappers, dict) and wrappers:
+        default_caps["output_wrappers"] = dict(wrappers)
+
     logger.debug(f"Using default capabilities for '{model_name}' (architecture: {architecture})")
+
+    # Emit a one-time warning for unknown models to keep model_capabilities.json up to date.
+    try:
+        raw_name = str(model_name).strip()
+    except Exception:
+        raw_name = ""
+
+    if raw_name and raw_name not in _default_capabilities_warning_cache:
+        _default_capabilities_warning_cache.add(raw_name)
+        logger.warning(
+            "Model not found in model_capabilities.json; falling back to architecture defaults",
+            model_name=raw_name,
+            detected_architecture=architecture,
+            default_tool_support=default_caps.get("tool_support"),
+            next_steps=(
+                "Add this model (or an alias) to abstractcore/abstractcore/assets/model_capabilities.json "
+                "or email contact@abstractcore.ai with the exact model id and provider."
+            ),
+        )
     return default_caps
 
 

@@ -6,6 +6,11 @@ The `abstractcore/tools/` module provides a **universal tool calling system** th
 
 This module is the cornerstone of AbstractCore's **provider-agnostic architecture**, allowing models that lack native tool support to use tools through intelligent prompting, while seamlessly leveraging native tool APIs when available.
 
+## Installation
+
+- Tool parsing/rewriting is part of core `abstractcore`.
+- The built-in toolset in `abstractcore.tools.common_tools` (notably `fetch_url` and `web_search`) requires `abstractcore[tools]` so runtime dependencies like BeautifulSoup are available.
+
 ## Quick Reference
 
 ### Tool Format Quick Reference
@@ -195,11 +200,11 @@ class ToolCallSyntaxRewriter:
     def rewrite_content(
         self,
         content: str,
-        detected_tool_calls: Optional[List[ToolCall]] = None
+        detected_tool_calls: Optional[List[Any]] = None
     ) -> str:
         """Rewrite tool call syntax to target format"""
 
-    def convert_to_openai_format(self, tool_calls: List[ToolCall]) -> List[Dict[str, Any]]:
+    def convert_to_openai_format(self, tool_calls: List[Any]) -> List[Dict[str, Any]]:
         """Convert to OpenAI API format"""
 ```
 
@@ -546,18 +551,16 @@ def search_files(
 @tool
 def read_file(
     file_path: str,
-    should_read_entire_file: bool = True,
-    start_line_one_indexed: int = 1,
-    end_line_one_indexed_inclusive: Optional[int] = None
+    start_line: int = 1,
+    end_line: Optional[int] = None
 ) -> str:
     """Read file contents with optional line range"""
 
 @tool
 def write_file(
     file_path: str,
-    content: str = "",
-    mode: str = "w",
-    create_dirs: bool = True
+    content: str,
+    mode: str = "w"
 ) -> str:
     """Write content to file with directory creation"""
 
@@ -598,9 +601,9 @@ def fetch_url(
     max_content_length: int = 10485760,
     follow_redirects: bool = True,
     include_binary_preview: bool = False,
-    extract_links: bool = True,
+    extract_links: bool = False,
     user_agent: str = "AbstractCore-FetchTool/1.0",
-    include_full_content: bool = False
+    include_full_content: bool = True
 ) -> str:
     """Fetch and parse content from URLs"""
 ```

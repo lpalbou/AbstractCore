@@ -145,7 +145,7 @@ class LoggingConfig:
 @dataclass
 class TimeoutConfig:
     """HTTP and tool execution timeouts."""
-    default_timeout: float = 600.0  # 10 minutes for HTTP requests
+    default_timeout: float = 7200.0  # 2 hours for HTTP requests
     tool_timeout: float = 600.0     # 10 minutes for tool execution
 
 @dataclass
@@ -406,7 +406,7 @@ Downloads local vision models for offline use:
     "file_json": true
   },
   "timeouts": {
-    "default_timeout": 600.0,
+    "default_timeout": 7200.0,
     "tool_timeout": 600.0
   },
   "offline": {
@@ -577,11 +577,14 @@ abstractcore --set-log-base-dir /path/to/logs
 
 **Set HTTP Request Timeout**:
 ```bash
-# 10 minutes (default)
-abstractcore --set-default-timeout 600
+# 2 hours (default)
+abstractcore --set-default-timeout 7200
 
 # 5 minutes
 abstractcore --set-default-timeout 300
+
+# 10 minutes
+abstractcore --set-default-timeout 600
 
 # 30 minutes for slow connections
 abstractcore --set-default-timeout 1800
@@ -674,7 +677,7 @@ from abstractcore.config import get_config_manager
 config_manager = get_config_manager()
 
 # Get timeouts
-http_timeout = config_manager.get_default_timeout()  # Default: 600 seconds
+http_timeout = config_manager.get_default_timeout()  # Default: 7200 seconds
 tool_timeout = config_manager.get_tool_timeout()     # Default: 600 seconds
 
 # Use in HTTP client
@@ -977,7 +980,7 @@ AbstractCore follows a clear priority hierarchy:
    abstractcore --set-default-timeout 10  # 10 seconds
 
    # ✅ GOOD: Reasonable timeout
-   abstractcore --set-default-timeout 600  # 10 minutes (default)
+   abstractcore --set-default-timeout 7200  # 2 hours (default)
    ```
 
 7. **DON'T** set network-dependent configuration in offline environments:

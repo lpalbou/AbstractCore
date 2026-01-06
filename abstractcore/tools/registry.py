@@ -17,6 +17,35 @@ from ..utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
+def _error_from_output(value: Any) -> Optional[str]:
+    """Detect tool failures reported as string outputs (instead of exceptions)."""
+    # Allow tools to return structured outputs while still communicating failure
+    # without raising exceptions. We only treat this as an error when the tool
+    # explicitly marks itself as unsuccessful.
+    if isinstance(value, dict):
+        success = value.get("success")
+        ok = value.get("ok")
+        if success is False or ok is False:
+            err = value.get("error") or value.get("message") or "Tool reported failure"
+            text = str(err).strip()
+            return text or "Tool reported failure"
+        return None
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.startswith("Error:"):
+        cleaned = text[len("Error:") :].strip()
+        return cleaned or text
+    if text.startswith(("❌", "🚫", "⏰")):
+        cleaned = text.lstrip("❌🚫⏰").strip()
+        if cleaned.startswith("Error:"):
+            cleaned = cleaned[len("Error:") :].strip()
+        return cleaned or text
+    return None
+
+
 class ToolRegistry:
     """Registry for managing available tools."""
 
@@ -149,9 +178,40 @@ class ToolRegistry:
             return error_result
 
         try:
+            from .arg_canonicalizer import canonicalize_tool_arguments
+
+            arguments = canonicalize_tool_arguments(tool_call.name, tool_call.arguments)
+
             # Execute the function with the provided arguments
-            result = tool_def.function(**tool_call.arguments)
+            result = tool_def.function(**arguments)
             duration_ms = (time.time() - start_time) * 1000
+
+            implied_error = _error_from_output(result)
+            if implied_error is not None:
+                error_result = ToolResult(
+                    call_id=tool_call.call_id or "",
+                    # Preserve structured outputs for post-mortem evidence/provenance.
+                    # For string-only error outputs, store the message in `error` and keep output empty.
+                    output=result if not isinstance(result, str) else "",
+                    error=implied_error,
+                    success=False,
+                )
+
+                # Emit tool error event
+                result_data = create_tool_event(
+                    tool_name=tool_call.name,
+                    arguments=arguments,
+                    success=False,
+                    error=implied_error,
+                )
+                emit_global(
+                    EventType.TOOL_COMPLETED,
+                    result_data,
+                    source="ToolRegistry",
+                    duration_ms=duration_ms,
+                )
+
+                return error_result
 
             success_result = ToolResult(
                 call_id=tool_call.call_id or "",
@@ -162,7 +222,7 @@ class ToolRegistry:
             # Emit successful tool result event
             result_data = create_tool_event(
                 tool_name=tool_call.name,
-                arguments=tool_call.arguments,
+                arguments=arguments,
                 result=result,
                 success=True
             )
@@ -172,6 +232,51 @@ class ToolRegistry:
             return success_result
 
         except TypeError as e:
+            # Some models include wrapper/meta keys ("name", nested "arguments") or
+            # stray extras in tool kwargs. Retry once with a sanitized argument dict.
+            try:
+                wrapper_keys = {"name", "arguments", "call_id", "id"}
+                from .arg_canonicalizer import canonicalize_tool_arguments
+
+                args = canonicalize_tool_arguments(tool_call.name, tool_call.arguments)
+                for _ in range(4):
+                    inner = args.get("arguments")
+                    if not isinstance(inner, dict):
+                        break
+                    extras = {k: v for k, v in args.items() if k not in wrapper_keys}
+                    merged = dict(inner)
+                    for k, v in extras.items():
+                        merged.setdefault(k, v)
+                    args = merged
+
+                allowed = set(tool_def.parameters.keys()) if isinstance(tool_def.parameters, dict) else set()
+                if allowed:
+                    args = {k: v for k, v in args.items() if k in allowed}
+
+                if args != dict(tool_call.arguments or {}):
+                    result = tool_def.function(**args)
+                    duration_ms = (time.time() - start_time) * 1000
+                    success_result = ToolResult(
+                        call_id=tool_call.call_id or "",
+                        output=result,
+                        success=True,
+                    )
+                    result_data = create_tool_event(
+                        tool_name=tool_call.name,
+                        arguments=args,
+                        result=result,
+                        success=True,
+                    )
+                    emit_global(
+                        EventType.TOOL_COMPLETED,
+                        result_data,
+                        source="ToolRegistry",
+                        duration_ms=duration_ms,
+                    )
+                    return success_result
+            except Exception:
+                pass
+
             duration_ms = (time.time() - start_time) * 1000
             error_msg = f"Invalid arguments for tool '{tool_call.name}': {e}"
             logger.warning(error_msg)

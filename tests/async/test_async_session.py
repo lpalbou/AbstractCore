@@ -12,7 +12,7 @@ class TestAsyncSession:
     @pytest.mark.asyncio
     async def test_session_async_generate(self, skip_if_provider_unavailable):
         """Test session async generation."""
-        skip_if_provider_unavailable("ollama")
+        skip_if_provider_unavailable("ollama", model="qwen3:4b")
         llm = create_llm("ollama", model="qwen3:4b")
         session = BasicSession(provider=llm)
 
@@ -24,7 +24,7 @@ class TestAsyncSession:
     @pytest.mark.asyncio
     async def test_session_async_conversation(self, skip_if_provider_unavailable):
         """Test multi-turn async conversation."""
-        skip_if_provider_unavailable("ollama")
+        skip_if_provider_unavailable("ollama", model="qwen3:4b")
         llm = create_llm("ollama", model="qwen3:4b")
         session = BasicSession(provider=llm)
 
@@ -37,12 +37,14 @@ class TestAsyncSession:
     @pytest.mark.asyncio
     async def test_session_async_streaming(self, skip_if_provider_unavailable):
         """Test session async streaming."""
-        skip_if_provider_unavailable("ollama")
+        skip_if_provider_unavailable("ollama", model="qwen3:4b")
         llm = create_llm("ollama", model="qwen3:4b")
         session = BasicSession(provider=llm)
 
         chunks = []
-        async for chunk in session.agenerate("Count to 3", stream=True):
+        # NOTE: agenerate() is async; when stream=True it resolves to an async iterator.
+        stream_gen = await session.agenerate("Count to 3", stream=True)
+        async for chunk in stream_gen:
             chunks.append(chunk)
 
         assert len(chunks) > 0

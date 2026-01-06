@@ -124,7 +124,7 @@
     },
     "o1": {
       "max_output_tokens": 32768,
-      "tool_support": "none",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -137,7 +137,7 @@
     },
     "o1-mini": {
       "max_output_tokens": 65536,
-      "tool_support": "none",
+      "tool_support": "prompted",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -282,6 +282,26 @@
       "aliases": [],
       "max_tokens": 200000
     },
+    "claude-haiku-4-5": {
+      "max_output_tokens": 64000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "notes": "Claude Haiku 4.5 series. Anthropic API enforces a 64K max output token cap (currently 64000).",
+      "source": "Anthropic API error cap (max_tokens <= 64000)",
+      "canonical_name": "claude-haiku-4-5",
+      "aliases": [
+        "claude-haiku-4-5-20251001",
+        "anthropic/claude-haiku-4-5"
+      ],
+      "max_tokens": 200000
+    },
     "claude-4-opus": {
       "max_output_tokens": 4096,
       "tool_support": "native",
@@ -334,7 +354,7 @@
       "max_tokens": 200000
     },
     "claude-4.5-sonnet": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 64000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -344,15 +364,39 @@
         "up to 1568x1568"
       ],
       "audio_support": false,
-      "notes": "Claude 4.5 Sonnet with enhanced reasoning",
-      "source": "Anthropic official docs",
+      "notes": "Claude 4.5 Sonnet. Anthropic API enforces a 64K max output token cap (currently 64000).",
+      "source": "Anthropic API error cap (max_tokens <= 64000)",
       "canonical_name": "claude-4.5-sonnet",
-      "aliases": [],
+      "aliases": [
+        "claude-sonnet-4-5",
+        "claude-sonnet-4-5-20250929",
+        "anthropic/claude-sonnet-4-5"
+      ],
+      "max_tokens": 200000
+    },
+    "claude-opus-4-5": {
+      "max_output_tokens": 64000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "notes": "Claude Opus 4.5. Anthropic API enforces a 64K max output token cap (currently 64000).",
+      "source": "Anthropic API error cap (max_tokens <= 64000)",
+      "canonical_name": "claude-opus-4-5",
+      "aliases": [
+        "claude-opus-4-5-20251101",
+        "anthropic/claude-opus-4-5"
+      ],
       "max_tokens": 200000
     },
     "llama-3.2-1b": {
       "max_output_tokens": 2048,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -365,7 +409,7 @@
     },
     "llama-3.2-3b": {
       "max_output_tokens": 2048,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -394,7 +438,7 @@
     },
     "llama-3.3-70b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
       "vision_support": false,
@@ -454,15 +498,12 @@
       "notes": "Multimodal with early fusion, 109B total params (MoE)",
       "source": "Meta announcement",
       "canonical_name": "llama-4",
-      "aliases": [
-        "llama4-17b-scout-16e-instruct",
-        "llama-4-17b-scout-16e-instruct"
-      ],
+      "aliases": [],
       "max_tokens": 10000000
     },
     "qwen2.5-0.5b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -475,7 +516,7 @@
     },
     "qwen2.5-1.5b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -488,7 +529,7 @@
     },
     "qwen2.5-3b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -501,7 +542,7 @@
     },
     "qwen2.5-7b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -514,7 +555,7 @@
     },
     "qwen2.5-14b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -527,7 +568,7 @@
     },
     "qwen2.5-32b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -540,7 +581,7 @@
     },
     "qwen2.5-72b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -553,7 +594,7 @@
     },
     "qwen3-0.6b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -567,7 +608,7 @@
     },
     "qwen3-1.7b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -581,7 +622,7 @@
     },
     "qwen3-4b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -595,7 +636,7 @@
     },
     "qwen3-32b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -609,7 +650,7 @@
     },
     "qwen3-30b-a3b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -623,7 +664,7 @@
     },
     "qwen3-30b-a3b-2507": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -781,7 +822,7 @@
     },
     "phi-4": {
       "max_output_tokens": 16000,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -794,7 +835,7 @@
     },
     "mistral-7b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -806,7 +847,7 @@
     },
     "mixtral-8x7b": {
       "max_output_tokens": 32768,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -1171,7 +1212,7 @@
     },
     "qwen3": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
       "vision_support": false,
@@ -1184,7 +1225,7 @@
     },
     "qwen3-14b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1198,7 +1239,7 @@
     },
     "qwen3-next-80b-a3b": {
       "max_output_tokens": 16384,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": true,
       "vision_support": false,
@@ -1287,7 +1328,7 @@
     },
     "qwen3-8b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1301,7 +1342,7 @@
     },
     "qwen3-235b-a22b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1315,7 +1356,7 @@
     },
     "qwen3-vl": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": true,
@@ -1464,7 +1505,7 @@
     },
     "seed-oss": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1479,7 +1520,7 @@
     },
     "glm-4.5": {
       "max_output_tokens": 4096,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1493,7 +1534,7 @@
     },
     "glm-4.6": {
       "max_output_tokens": 4096,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1502,12 +1543,16 @@
       "notes": "GLM-4.6 MoE model with enhanced capabilities",
       "source": "Zhipu AI GLM-4.6 announcement",
       "canonical_name": "glm-4.6",
-      "aliases": [],
+      "aliases": [
+        "zai-org/GLM-4.6",
+        "zai-org/GLM-4.6-FP8",
+        "glm-4.6-fp8"
+      ],
       "max_tokens": 128000
     },
     "glm-4.5-air": {
       "max_output_tokens": 4096,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1534,7 +1579,7 @@
     },
     "granite3.2:2b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1549,7 +1594,7 @@
     },
     "granite3.2:8b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1564,7 +1609,7 @@
     },
     "granite3.2-vision:2b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": true,
@@ -1642,7 +1687,7 @@
     },
     "granite3.3:2b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1657,7 +1702,7 @@
     },
     "granite3.3:8b": {
       "max_output_tokens": 8192,
-      "tool_support": "prompted",
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -1683,7 +1728,7 @@
       "aliases": [
         "google/embeddinggemma-300m"
       ],
-      "max_tokens": 0,
+      "max_tokens": 8192,
       "model_type": "embedding"
     },
     "blip-image-captioning-base": {
@@ -1709,7 +1754,7 @@
       "aliases": [
         "Salesforce/blip-image-captioning-base"
       ],
-      "max_tokens": 512
+      "max_tokens": 2048
     },
     "glyph": {
       "max_output_tokens": 8192,
@@ -1957,7 +2002,7 @@
       "max_image_tokens": 6400
     },
     "minimax-m2": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 131072,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -1970,8 +2015,8 @@
       "total_parameters": "230B",
       "thinking_paradigm": "interleaved_thinking",
       "thinking_format": "<think>...</think>",
-      "notes": "MiniMax M2 MoE model optimized for coding and agentic workflows. Industry-leading 204K token context window. Uses interleaved thinking with <think> tags for reasoning. 10B active parameters from 230B total. Achieves strong performance on SWE-Bench and Terminal-Bench tasks. Supports complete tool calling for agent workflows.",
-      "source": "MiniMax official docs (minimax-m2.org, HuggingFace, GitHub)",
+      "notes": "MiniMax M2 open-source MoE model (230B total/10B active) optimized for coding and agentic workflows. Industry-leading 204K token context window with 131K output capacity. Uses interleaved thinking with <think> tags for reasoning. Achieves strong performance on SWE-Bench and Terminal-Bench tasks. Ranked #5 on Artificial Analysis Intelligence Index. Efficient deployment at up to 8% cost of comparable models. Supports complete tool calling for agent workflows. Runs seamlessly on 8xH100 setup using vLLM.",
+      "source": "MiniMax official docs (HuggingFace MiniMaxAI/MiniMax-M2, Microsoft Azure AI Foundry blog)",
       "canonical_name": "minimax-m2",
       "aliases": [
         "MiniMaxAI/MiniMax-M2",
@@ -1979,11 +2024,85 @@
         "mlx-community/MiniMax-M2",
         "unsloth/MiniMax-M2-GGUF",
         "minimax-m2-230b",
-        "minimax-m2-10b-active"
+        "minimax-m2-10b-active",
+        "minimax/minimax-m2"
       ],
       "max_tokens": 208896,
       "release_date": "2025-01",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 40
+      },
+      "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2 and is built by MiniMax."
+    },
+    "minimax-m2.1": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "mixture_of_experts",
+      "active_parameters": "10B",
+      "total_parameters": "229B",
+      "tensor_type": "FP8",
+      "thinking_paradigm": "interleaved_thinking",
+      "thinking_format": "<think>...</think>",
+      "agentic_coding": true,
+      "notes": "MiniMax M2.1 enhanced MoE model (229B total/10B active) optimized for advanced coding, agentic workflows, and full-stack development. 200K token context window with massive 128K output capacity. Significant improvements over M2 in multilingual software engineering (SWE-bench Multilingual: 72.5%), achieving performance close to Claude Opus 4.5. Excels at full-stack development with VIBE average of 88.6 (Web: 91.5, Android: 89.7). Uses interleaved thinking with <think> tags. Achieves 74.0% on SWE-bench Verified, 47.9% on Terminal-bench 2.0. Supports complete native tool calling for agent workflows.",
+      "source": "MiniMax official docs (platform.minimax.io, HuggingFace MiniMaxAI/MiniMax-M2.1)",
+      "canonical_name": "minimax-m2.1",
+      "aliases": [
+        "MiniMaxAI/MiniMax-M2.1",
+        "minimaxai/minimax-m2.1",
+        "minimax-m2.1-229b",
+        "minimax-m2.1-10b-active",
+        "minimax/minimax-m2.1"
+      ],
+      "max_tokens": 204800,
+      "release_date": "2024-12",
+      "license": "Modified-MIT",
+      "arxiv": "2509.06501",
+      "benchmarks": {
+        "SWE-bench Verified": 74.0,
+        "Multi-SWE-bench": 49.4,
+        "SWE-bench Multilingual": 72.5,
+        "Terminal-bench 2.0": 47.9,
+        "SWE-bench Verified (Droid)": 71.3,
+        "SWE-bench Verified (mini-swe-agent)": 67.0,
+        "SWT-bench": 69.3,
+        "SWE-Perf": 3.1,
+        "SWE-Review": 8.9,
+        "OctoCodingbench": 26.1,
+        "VIBE Average": 88.6,
+        "VIBE-Web": 91.5,
+        "VIBE-Android": 89.7,
+        "VIBE-Simulation": 87.1,
+        "VIBE-iOS": 88.0,
+        "VIBE-Backend": 86.7,
+        "Toolathlon": 43.5,
+        "BrowseComp": 47.4,
+        "BrowseComp (context management)": 62.0,
+        "AIME25": 83.0,
+        "MMLU-Pro": 88.0,
+        "GPQA-D": 83.0,
+        "HLE w/o tools": 22.2,
+        "LCB": 81.0,
+        "SciCode": 41.0,
+        "IFBench": 70.0,
+        "AA-LCR": 62.0,
+        "τ²-Bench Telecom": 87.0
+      },
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 40
+      },
+      "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2.1 and is built by MiniMax."
     },
     "glm-4.6v": {
       "max_output_tokens": 16384,
@@ -1993,6 +2112,8 @@
       "vision_support": true,
       "audio_support": false,
       "video_support": false,
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
       "image_resolutions": [
         "up to 4096x4096"
       ],
@@ -2006,12 +2127,22 @@
       "interleaved_generation": true,
       "document_understanding": true,
       "frontend_replication": true,
-      "notes": "GLM-4.6V foundation model (106B params) for cloud deployment. Native multimodal function calling with vision-driven tool use. Supports interleaved image-text generation, 128K context, multimodal document understanding, and frontend replication from screenshots. Achieves SoTA performance in visual understanding among similar parameter scales.",
+      "tool_calling_format": "glm_xml",
+      "tool_calling_parser": "glm46v",
+      "output_wrappers": {
+        "start": "<|begin_of_box|>",
+        "end": "<|end_of_box|>"
+      },
+      "thinking_control": "/nothink",
+      "thinking_tags": ["<think>", "</think>"],
+      "notes": "GLM-4.6V foundation model (106B params) for cloud deployment. Native multimodal function calling with vision-driven tool use using XML format: <tool_call>function_name\\n<arg_key>key</arg_key>\\n<arg_value>value</arg_value>\\n</tool_call>. Supports interleaved image-text generation, 128K context, multimodal document understanding, and frontend replication from screenshots. Generates reasoning in 'reasoning_content' field or <think></think> tags. Achieves SoTA performance in visual understanding among similar parameter scales. Thinking can be disabled with '/nothink' suffix in user message. See: https://github.com/zai-org/GLM-V",
       "source": "HuggingFace zai-org/GLM-4.6V and GLM-V GitHub",
       "canonical_name": "glm-4.6v",
       "aliases": [
         "zai-org/GLM-4.6V",
-        "glm-4.6v-106b"
+        "zai-org/GLM-4.6V-FP8",
+        "glm-4.6v-106b",
+        "glm-4.6v-fp8"
       ],
       "max_tokens": 128000,
       "release_date": "2025-05-07",
@@ -2026,6 +2157,8 @@
       "vision_support": true,
       "audio_support": false,
       "video_support": false,
+      "thinking_support": true,
+      "thinking_output_field": "reasoning_content",
       "image_resolutions": [
         "up to 4096x4096"
       ],
@@ -2038,17 +2171,85 @@
       "interleaved_generation": true,
       "document_understanding": true,
       "frontend_replication": true,
-      "notes": "GLM-4.6V-Flash lightweight model (9B params) optimized for local deployment and low-latency applications. Maintains native multimodal function calling, interleaved generation, and 128K context. Ideal for edge and resource-constrained environments while preserving core GLM-4.6V capabilities.",
+      "tool_calling_format": "glm_xml",
+      "tool_calling_parser": "glm46v",
+      "output_wrappers": {
+        "start": "<|begin_of_box|>",
+        "end": "<|end_of_box|>"
+      },
+      "thinking_control": "/nothink",
+      "thinking_tags": ["<think>", "</think>"],
+      "notes": "GLM-4.6V-Flash lightweight model (9B params) optimized for local deployment and low-latency applications. Maintains native multimodal function calling using XML format: <tool_call>function_name\\n<arg_key>key</arg_key>\\n<arg_value>value</arg_value>\\n</tool_call>. Generates reasoning in 'reasoning_content' field or <think></think> tags. Ideal for edge and resource-constrained environments while preserving core GLM-4.6V capabilities. Thinking can be disabled with '/nothink' suffix. See: https://github.com/zai-org/GLM-V",
       "source": "HuggingFace zai-org/GLM-4.6V-Flash and GLM-V GitHub",
       "canonical_name": "glm-4.6v-flash",
       "aliases": [
         "zai-org/GLM-4.6V-Flash",
-        "glm-4.6v-9b"
+        "zai-org/GLM-4.6V-Flash-FP8",
+        "glm-4.6v-9b",
+        "glm-4.6v-flash-fp8"
       ],
       "max_tokens": 128000,
       "release_date": "2025-05-07",
       "arxiv": "2507.01006",
       "license": "MIT"
+    },
+    "glm-4.7": {
+      "max_output_tokens": 32768,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "mixture_of_experts",
+      "total_parameters": "358B",
+      "thinking_paradigm": "multi_mode",
+      "thinking_modes": ["interleaved_thinking", "preserved_thinking", "turn_level_thinking"],
+      "native_function_calling": true,
+      "agentic_coding": true,
+      "terminal_tasks": true,
+      "web_browsing": true,
+      "tool_calling_parser": "glm47",
+      "reasoning_parser": "glm45",
+      "notes": "GLM-4.7 latest MoE model (358B params) with enhanced coding, reasoning, and agentic capabilities. Achieves 73.8% on SWE-bench Verified, 66.7% on SWE-bench Multilingual, and 41% on Terminal Bench 2.0. Supports advanced thinking modes: Interleaved (think before actions), Preserved (cross-turn consistency), and Turn-level. Excels at tool using (τ²-Bench: 87.4%), web browsing (BrowseComp: 52%), and complex reasoning (HLE w/ Tools: 42.8%, AIME 2025: 95.7%). 128K context window with 32K output capacity. Optimized for modern coding environments including Claude Code, Kilo Code, Cline, Roo Code.",
+      "source": "HuggingFace zai-org/GLM-4.7 and GLM technical blog",
+      "canonical_name": "glm-4.7",
+      "aliases": [
+        "zai-org/GLM-4.7",
+        "zai-org/GLM-4.7-FP8",
+        "glm-4.7-fp8",
+        "glm-4.7-358b"
+      ],
+      "max_tokens": 128000,
+      "release_date": "2025-06",
+      "arxiv": "2508.06471",
+      "license": "MIT",
+      "benchmarks": {
+        "SWE-bench Verified": 73.8,
+        "SWE-bench Multilingual": 66.7,
+        "Terminal Bench Hard": 33.3,
+        "Terminal Bench 2.0": 41.0,
+        "HLE": 24.8,
+        "HLE (w/ Tools)": 42.8,
+        "AIME 2025": 95.7,
+        "HMMT Feb. 2025": 97.1,
+        "HMMT Nov. 2025": 93.5,
+        "IMOAnswerBench": 82.0,
+        "LiveCodeBench-v6": 84.9,
+        "BrowseComp": 52.0,
+        "BrowseComp (w/ Context Manage)": 67.5,
+        "BrowseComp-Zh": 66.6,
+        "τ²-Bench": 87.4,
+        "MMLU-Pro": 84.3,
+        "GPQA-Diamond": 85.7
+      },
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "enable_thinking": true,
+        "clear_thinking": false
+      }
     },
     "devstral-small-2-24b": {
       "max_output_tokens": 16384,
@@ -2460,6 +2661,66 @@
       "release_date": "2025-05",
       "arxiv": "2505.09388",
       "license": "Apache-2.0"
+    },
+    "nemotron-3-nano-30b-a3b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_budget": false,
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "30B",
+      "active_parameters": "3.5B",
+      "experts": 128,
+      "experts_activated": 6,
+      "shared_experts": 1,
+      "attention_layers": 6,
+      "mamba2_layers": 23,
+      "tensor_type": "BF16",
+      "reasoning_paradigm": "unified_reasoning_response",
+      "reasoning_configurable": true,
+      "agentic_capabilities": true,
+      "function_calling": true,
+      "tool_calling_format": "json",
+      "languages": ["English", "German", "Spanish", "French", "Italian", "Japanese"],
+      "notes": "NVIDIA Nemotron-3-Nano hybrid MoE model (30B total/3.5B active, 128 experts/6 activated + 1 shared). Combines 23 Mamba-2 layers with 6 Attention layers. Unified model for reasoning and non-reasoning tasks with configurable reasoning mode. Generates reasoning trace before final response. 256K context extendable to 1M with YaRN. Strong performance on AIME25 (99.2% with tools), SWE-Bench (38.8%), MiniF2F (50.0% pass@1). Native tool calling via chatml-function-calling format. Commercial use ready.",
+      "source": "NVIDIA Nemotron HuggingFace and technical report",
+      "canonical_name": "nemotron-3-nano-30b-a3b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+        "NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+        "nvidia/nemotron-3-nano",
+        "nemotron-3-nano",
+        "nemotron-nano-30b"
+      ],
+      "max_tokens": 262144,
+      "release_date": "2025-12",
+      "license": "nvidia-open-model-license",
+      "benchmarks": {
+        "MMLU-Pro": 78.3,
+        "AIME25 (no tools)": 89.1,
+        "AIME25 (with tools)": 99.2,
+        "GPQA (no tools)": 73.0,
+        "GPQA (with tools)": 75.0,
+        "LiveCodeBench v6": 68.3,
+        "SciCode (subtask)": 33.3,
+        "HLE (no tools)": 10.6,
+        "HLE (with tools)": 15.5,
+        "MiniF2F pass@1": 50.0,
+        "MiniF2F pass@32": 79.9,
+        "Terminal Bench (hard subset)": 8.5,
+        "SWE-Bench (OpenHands)": 38.8,
+        "TauBench V2 (Average)": 49.0,
+        "BFCL v4": 53.8,
+        "IFBench (prompt)": 71.5,
+        "Scale AI Multi Challenge": 38.5,
+        "Arena-Hard-V2 (Hard Prompt)": 72.1,
+        "Arena-Hard-V2 (Average)": 67.7
+      }
     }
   },
   "tool_support_levels": {

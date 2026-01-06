@@ -1287,7 +1287,13 @@ class HuggingFaceProvider(BaseProvider):
 
             elif self.tool_handler.supports_prompted:
                 # Add tools as system prompt for prompted models
-                tool_prompt = self.tool_handler.format_tools_prompt(tools)
+                system_text = (
+                    chat_messages[0].get("content", "")
+                    if chat_messages and chat_messages[0].get("role") == "system"
+                    else ""
+                )
+                include_tool_list = "## Tools (session)" not in str(system_text)
+                tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
                 if chat_messages and chat_messages[0]["role"] == "system":
                     chat_messages[0]["content"] += f"\n\n{tool_prompt}"
                 else:
@@ -1577,21 +1583,24 @@ class HuggingFaceProvider(BaseProvider):
         """Build input text for transformers model with tool support"""
 
         # Add tools to system prompt if provided
-        enhanced_system_prompt = system_prompt
+        final_system_prompt = system_prompt
         if tools and self.tool_handler.supports_prompted:
-            tool_prompt = self.tool_handler.format_tools_prompt(tools)
-            if enhanced_system_prompt:
-                enhanced_system_prompt += f"\n\n{tool_prompt}"
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt += f"\n\n{tool_prompt}"
             else:
-                enhanced_system_prompt = tool_prompt
+                final_system_prompt = tool_prompt
 
         # Check if model has chat template
         if hasattr(self.tokenizer, 'chat_template') and self.tokenizer.chat_template:
             # Use chat template if available
             chat_messages = []
 
-            if enhanced_system_prompt:
-                chat_messages.append({"role": "system", "content": enhanced_system_prompt})
+            if final_system_prompt:
+                chat_messages.append({"role": "system", "content": final_system_prompt})
 
             if messages:
                 chat_messages.extend(messages)
