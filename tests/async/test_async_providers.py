@@ -12,7 +12,7 @@ class TestAsyncProviders:
     @pytest.mark.asyncio
     async def test_ollama_async(self, skip_if_provider_unavailable):
         """Test Ollama async generation."""
-        skip_if_provider_unavailable("ollama")
+        skip_if_provider_unavailable("ollama", model="gemma3:1b")
         llm = create_llm("ollama", model="gemma3:1b")
         response = await llm.agenerate("Say hello")
         assert response is not None
@@ -70,7 +70,7 @@ class TestAsyncConcurrent:
     @pytest.mark.asyncio
     async def test_concurrent_same_provider(self, skip_if_provider_unavailable):
         """Test concurrent requests to same provider."""
-        skip_if_provider_unavailable("ollama")
+        skip_if_provider_unavailable("ollama", model="gemma3:1b")
         llm = create_llm("ollama", model="gemma3:1b")
 
         # Execute 3 requests concurrently
@@ -85,7 +85,7 @@ class TestAsyncConcurrent:
     @pytest.mark.asyncio
     async def test_concurrent_multi_provider(self, skip_if_provider_unavailable):
         """Test concurrent requests to multiple providers."""
-        skip_if_provider_unavailable("ollama")
+        skip_if_provider_unavailable("ollama", model="gemma3:1b")
         skip_if_provider_unavailable("openai")
 
         ollama = create_llm("ollama", model="gemma3:1b")
@@ -107,7 +107,7 @@ class TestAsyncStreaming:
     @pytest.mark.asyncio
     async def test_async_streaming_ollama(self, skip_if_provider_unavailable):
         """Test async streaming with Ollama."""
-        skip_if_provider_unavailable("ollama")
+        skip_if_provider_unavailable("ollama", model="gemma3:1b")
         llm = create_llm("ollama", model="gemma3:1b")
 
         chunks = []

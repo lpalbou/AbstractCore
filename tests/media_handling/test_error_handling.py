@@ -36,7 +36,7 @@ class TestDependencyHandling:
         monkeypatch.setattr("openai.OpenAI", mock_openai_constructor)
 
         # Test that AbstractCore raises proper AuthenticationError
-        with pytest.raises(AuthenticationError, match="OpenAI authentication failed"):
+        with pytest.raises(AuthenticationError, match=r"(?i)openai authentication failed"):
             llm = create_llm("openai", model="gpt-4", api_key="test-key")
 
     def test_pil_missing_error_handling(self):
