@@ -348,7 +348,8 @@ class TestGGUFToolCalling:
         # If tool calls were made, verify structure
         if response.tool_calls:
             tool_call = response.tool_calls[0]
-            assert "id" in tool_call
+            # Canonical key in AbstractCore is `call_id` (OpenAI-style `id` may also appear).
+            assert "call_id" in tool_call or "id" in tool_call
             assert "name" in tool_call
             assert "arguments" in tool_call
             # Should be the weather tool
