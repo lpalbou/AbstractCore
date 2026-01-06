@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documents observed format mixing issues with `<|end_of_box|>` tokens
   - Likely caused by LMStudio using incorrect Jinja template
   - Provides troubleshooting steps and workarounds
+- **Filesystem ignore policy**: filesystem tools now enforce `.abstractignore` + default ignores (including `*.d/` runtime store directories) to avoid accidental scanning/editing of runtime artifacts during agent runs.
 
 ### Changed
 - **Tools/execute_command**: now returns a structured JSON result (including `success`, `return_code`, `stdout`/`stderr`, and a human-friendly `rendered` string) instead of a single decorated string. This enables durable evidence capture and cleaner downstream processing.
