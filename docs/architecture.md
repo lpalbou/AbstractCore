@@ -116,10 +116,13 @@ This ensures:
 
 #### Memory Management
 
-The `unload()` method provides explicit memory management for local providers:
+The `unload()` method is a **best-effort resource cleanup hook**.
 
-- **Local Providers** (Ollama, MLX, HuggingFace, LMStudio): Actually unloads models from memory
-- **API Providers** (OpenAI, Anthropic): No-op, safe to call but has no effect
+- **API providers** (OpenAI, Anthropic): typically a no-op (safe to call).
+- **Local / self-hosted providers**: behavior is provider-specific:
+  - some can actively release memory (or request server-side eviction),
+  - others can only close client connections and rely on server-side TTL/auto-eviction.
+  - Example: **LMStudio** does not expose an explicit “unload model” API; `unload()` closes HTTP clients and relies on LMStudio TTL/auto-evict.
 
 ```python
 # Load model, use it, then free memory
