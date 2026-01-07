@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-01-07
+
+### Fixed
+- **Packaging / installability**: `pip install abstractcore` now includes `beautifulsoup4` so `import abstractcore` does not fail due to `ModuleNotFoundError: bs4`.
+
 ## [2.9.0] - 2025-01-06
 
 ### Added
