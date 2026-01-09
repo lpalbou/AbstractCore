@@ -268,9 +268,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Extract generation parameters
         temperature = kwargs.get('temperature', self.temperature)
+        if temperature is None:
+            temperature = self.temperature
         max_tokens = kwargs.get('max_tokens', self.max_tokens)
         max_output_tokens = kwargs.get('max_output_tokens', self.max_output_tokens)
-        seed = kwargs.get('seed', self.seed)
+        seed = self._normalize_seed(kwargs.get('seed', self.seed))
         top_p = kwargs.get('top_p', getattr(self, 'top_p', None))
         top_k = kwargs.get('top_k', getattr(self, 'top_k', None))
 
@@ -980,11 +982,36 @@ class BaseProvider(AbstractCoreInterface, ABC):
         result_kwargs["max_output_tokens"] = effective_max_output_i
 
         # Add unified generation parameters with fallback hierarchy: kwargs → instance → defaults
-        result_kwargs["temperature"] = result_kwargs.get("temperature", self.temperature)
-        if self.seed is not None:
-            result_kwargs["seed"] = result_kwargs.get("seed", self.seed)
+        temperature = result_kwargs.get("temperature", self.temperature)
+        if temperature is None:
+            temperature = self.temperature
+        result_kwargs["temperature"] = temperature
+
+        seed_value = self._normalize_seed(result_kwargs.get("seed", self.seed))
+        if seed_value is not None:
+            result_kwargs["seed"] = seed_value
+        else:
+            # Do not forward seed when unset/random (None or negative sentinel like -1).
+            result_kwargs.pop("seed", None)
 
         return result_kwargs
+
+    @staticmethod
+    def _normalize_seed(seed: Any) -> Optional[int]:
+        """Normalize seed semantics across providers.
+
+        - None or any negative value -> None (meaning: don't send a provider seed / random).
+        - Non-bool numeric-ish values -> int(seed) if >= 0.
+        """
+        try:
+            if seed is None:
+                return None
+            if isinstance(seed, bool):
+                return None
+            seed_i = int(seed)
+            return seed_i if seed_i >= 0 else None
+        except Exception:
+            return None
 
     def _extract_generation_params(self, **kwargs) -> Dict[str, Any]:
         """
@@ -996,10 +1023,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
         params = {}
         
         # Temperature (always present)
-        params["temperature"] = kwargs.get("temperature", self.temperature)
+        temperature = kwargs.get("temperature", self.temperature)
+        if temperature is None:
+            temperature = self.temperature
+        params["temperature"] = temperature
         
         # Seed (only if not None)
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = self._normalize_seed(kwargs.get("seed", self.seed))
         if seed_value is not None:
             params["seed"] = seed_value
             

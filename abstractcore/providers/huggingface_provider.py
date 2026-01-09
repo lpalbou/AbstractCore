@@ -821,9 +821,9 @@ class HuggingFaceProvider(BaseProvider):
         # Generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_new_tokens = self._get_provider_max_tokens_param(generation_kwargs)
-        temperature = kwargs.get("temperature", self.temperature)
+        temperature = generation_kwargs.get("temperature", self.temperature)
         top_p = kwargs.get("top_p", 0.9)
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
 
         try:
             if stream:
@@ -1033,16 +1033,19 @@ class HuggingFaceProvider(BaseProvider):
                 return_tensors="pt"
             ).to(self.model_instance.device)
             
-            # Generation parameters
+            temperature_value = kwargs.get("temperature", self.temperature)
+            if temperature_value is None:
+                temperature_value = self.temperature
+
             generation_kwargs = {
                 "max_new_tokens": kwargs.get("max_tokens", self.max_output_tokens or 512),
-                "temperature": kwargs.get("temperature", self.temperature),
+                "temperature": temperature_value,
                 "do_sample": True,
                 "pad_token_id": self.processor.tokenizer.eos_token_id,
             }
             
             # Add seed if provided
-            seed_value = kwargs.get("seed", self.seed)
+            seed_value = self._normalize_seed(kwargs.get("seed", self.seed))
             if seed_value is not None:
                 torch.manual_seed(seed_value)
                 if torch.cuda.is_available():
@@ -1242,13 +1245,13 @@ class HuggingFaceProvider(BaseProvider):
         generation_kwargs = {
             "messages": chat_messages,
             "max_tokens": max_output_tokens,  # This is max_output_tokens for llama-cpp
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": unified_kwargs.get("temperature", self.temperature),
             "top_p": kwargs.get("top_p", 0.9),
             "stream": stream
         }
 
         # Add seed if provided (GGUF/llama-cpp supports seed)
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = unified_kwargs.get("seed")
         if seed_value is not None:
             generation_kwargs["seed"] = seed_value
 

@@ -167,13 +167,13 @@ class OllamaProvider(BaseProvider):
             "model": self.model,
             "stream": stream,
             "options": {
-                "temperature": kwargs.get("temperature", self.temperature),
+                "temperature": generation_kwargs.get("temperature", self.temperature),
                 "num_predict": max_output_tokens,  # Ollama uses num_predict for max output tokens
             }
         }
 
         # Add seed if provided (Ollama supports seed for deterministic outputs)
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             payload["options"]["seed"] = seed_value
 
@@ -449,12 +449,12 @@ class OllamaProvider(BaseProvider):
             "model": self.model,
             "stream": stream,
             "options": {
-                "temperature": kwargs.get("temperature", self.temperature),
+                "temperature": generation_kwargs.get("temperature", self.temperature),
                 "num_predict": max_output_tokens,
             }
         }
 
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             payload["options"]["seed"] = seed_value
 

@@ -247,7 +247,7 @@ class LMStudioProvider(BaseProvider):
             "model": self.model,
             "messages": chat_messages,
             "stream": stream,
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": generation_kwargs.get("temperature", self.temperature),
             "max_tokens": max_output_tokens,  # LMStudio uses max_tokens for output tokens
             "top_p": kwargs.get("top_p", 0.9),
         }
@@ -267,7 +267,7 @@ class LMStudioProvider(BaseProvider):
             payload["repetition_penalty"] = kwargs["repetition_penalty"]
 
         # Add seed if provided (LMStudio supports seed via OpenAI-compatible API)
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             payload["seed"] = seed_value
 
@@ -568,7 +568,7 @@ class LMStudioProvider(BaseProvider):
             "model": self.model,
             "messages": chat_messages,
             "stream": stream,
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": generation_kwargs.get("temperature", self.temperature),
             "max_tokens": max_output_tokens,
             "top_p": kwargs.get("top_p", 0.9),
         }
@@ -587,7 +587,7 @@ class LMStudioProvider(BaseProvider):
             payload["repetition_penalty"] = kwargs["repetition_penalty"]
 
         # Add seed if provided
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             payload["seed"] = seed_value
 

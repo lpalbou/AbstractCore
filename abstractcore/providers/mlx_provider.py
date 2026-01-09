@@ -263,9 +263,9 @@ class MLXProvider(BaseProvider):
         # MLX generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_tokens = self._get_provider_max_tokens_param(generation_kwargs)
-        temperature = kwargs.get("temperature", self.temperature)
+        temperature = generation_kwargs.get("temperature", self.temperature)
         top_p = kwargs.get("top_p", 0.9)
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
 
         try:
             if stream:
