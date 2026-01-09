@@ -1249,7 +1249,8 @@
       "source": "Alibaba Qwen3-Next technical report",
       "canonical_name": "qwen3-next-80b-a3b",
       "aliases": [
-        "qwen/qwen3-next-80b"
+        "qwen/qwen3-next-80b",
+        "qwen3-next-80b"
       ],
       "max_tokens": 262144
     },
