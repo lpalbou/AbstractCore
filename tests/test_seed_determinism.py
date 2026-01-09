@@ -252,6 +252,9 @@ def test_ollama_seed_determinism():
 
 def test_session_seed_persistence():
     """Test that session-level seed parameters work correctly"""
+    if not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
+
     # Use OpenAI provider for this test if available
     try:
         from abstractcore.providers.openai_provider import OpenAIProvider
@@ -269,8 +272,8 @@ def test_session_seed_persistence():
         # With seed, responses should be deterministic
         assert len(set(responses)) <= 2, "Session should maintain some consistency with seed"
         
-    except ImportError:
-        pytest.skip("OpenAI provider not available")
+    except (ImportError, ValueError) as e:
+        pytest.skip(f"OpenAI provider not available: {e}")
 
 
 def test_temperature_zero_consistency():

@@ -5,6 +5,7 @@ OpenAI provider implementation.
 import os
 import json
 import time
+import warnings
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
 
 try:
@@ -139,15 +140,30 @@ class OpenAIProvider(BaseProvider):
         # Add parameters that are supported by this model
         if not self._is_reasoning_model():
             # Reasoning models (o1, gpt-5) don't support many parameters
-            call_params["temperature"] = kwargs.get("temperature", self.temperature)
+            call_params["temperature"] = generation_kwargs.get("temperature", self.temperature)
             call_params["top_p"] = kwargs.get("top_p", self.top_p)
             call_params["frequency_penalty"] = kwargs.get("frequency_penalty", self.frequency_penalty)
             call_params["presence_penalty"] = kwargs.get("presence_penalty", self.presence_penalty)
             
             # Add seed if provided (OpenAI supports seed for deterministic outputs)
-            seed_value = kwargs.get("seed", self.seed)
+            seed_value = generation_kwargs.get("seed")
             if seed_value is not None:
                 call_params["seed"] = seed_value
+        else:
+            # Best-effort: expose a warning when a caller requests params that are ignored.
+            seed_value = generation_kwargs.get("seed")
+            if seed_value is not None:
+                warnings.warn(
+                    f"Seed parameter ({seed_value}) requested but not supported by OpenAI reasoning models ({self.model}).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            if ("temperature" in kwargs) or (getattr(self, "temperature", 0.7) != 0.7):
+                warnings.warn(
+                    f"Temperature parameter requested but not supported by OpenAI reasoning models ({self.model}).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
         # Handle different token parameter names for different model families
         if self._uses_max_completion_tokens():
@@ -270,15 +286,29 @@ class OpenAIProvider(BaseProvider):
         # Add parameters that are supported by this model
         if not self._is_reasoning_model():
             # Reasoning models (o1, gpt-5) don't support many parameters
-            call_params["temperature"] = kwargs.get("temperature", self.temperature)
+            call_params["temperature"] = generation_kwargs.get("temperature", self.temperature)
             call_params["top_p"] = kwargs.get("top_p", self.top_p)
             call_params["frequency_penalty"] = kwargs.get("frequency_penalty", self.frequency_penalty)
             call_params["presence_penalty"] = kwargs.get("presence_penalty", self.presence_penalty)
 
             # Add seed if provided (OpenAI supports seed for deterministic outputs)
-            seed_value = kwargs.get("seed", self.seed)
+            seed_value = generation_kwargs.get("seed")
             if seed_value is not None:
                 call_params["seed"] = seed_value
+        else:
+            seed_value = generation_kwargs.get("seed")
+            if seed_value is not None:
+                warnings.warn(
+                    f"Seed parameter ({seed_value}) requested but not supported by OpenAI reasoning models ({self.model}).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            if ("temperature" in kwargs) or (getattr(self, "temperature", 0.7) != 0.7):
+                warnings.warn(
+                    f"Temperature parameter requested but not supported by OpenAI reasoning models ({self.model}).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
         # Handle different token parameter names for different model families
         if self._uses_max_completion_tokens():

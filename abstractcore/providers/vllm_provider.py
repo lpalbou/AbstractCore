@@ -231,7 +231,7 @@ class VLLMProvider(BaseProvider):
             "model": self.model,
             "messages": chat_messages,
             "stream": stream,
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": generation_kwargs.get("temperature", self.temperature),
             "max_tokens": max_output_tokens,
             "top_p": kwargs.get("top_p", 0.9),
         }
@@ -248,7 +248,7 @@ class VLLMProvider(BaseProvider):
             payload["presence_penalty"] = kwargs["presence_penalty"]
 
         # Add seed if provided
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             payload["seed"] = seed_value
 
@@ -507,7 +507,7 @@ class VLLMProvider(BaseProvider):
             "model": self.model,
             "messages": chat_messages,
             "stream": stream,
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": generation_kwargs.get("temperature", self.temperature),
             "max_tokens": max_output_tokens,
             "top_p": kwargs.get("top_p", 0.9),
         }
@@ -522,7 +522,7 @@ class VLLMProvider(BaseProvider):
         if "presence_penalty" in kwargs:
             payload["presence_penalty"] = kwargs["presence_penalty"]
 
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             payload["seed"] = seed_value
 

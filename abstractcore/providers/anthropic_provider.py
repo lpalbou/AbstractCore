@@ -158,7 +158,7 @@ class AnthropicProvider(BaseProvider):
             "model": self.model,
             "messages": api_messages,
             "max_tokens": max_output_tokens,  # This is max_output_tokens for Anthropic
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": generation_kwargs.get("temperature", self.temperature),
             "stream": stream
         }
 
@@ -175,7 +175,7 @@ class AnthropicProvider(BaseProvider):
             call_params["top_k"] = kwargs.get("top_k", self.top_k)
 
         # Handle seed parameter (Anthropic doesn't support seed natively)
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             import warnings
             warnings.warn(
@@ -346,7 +346,7 @@ class AnthropicProvider(BaseProvider):
             "model": self.model,
             "messages": api_messages,
             "max_tokens": max_output_tokens,
-            "temperature": kwargs.get("temperature", self.temperature),
+            "temperature": generation_kwargs.get("temperature", self.temperature),
             "stream": stream
         }
 
@@ -363,7 +363,7 @@ class AnthropicProvider(BaseProvider):
             call_params["top_k"] = kwargs.get("top_k", self.top_k)
 
         # Handle seed parameter (Anthropic doesn't support seed natively)
-        seed_value = kwargs.get("seed", self.seed)
+        seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             import warnings
             warnings.warn(

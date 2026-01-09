@@ -71,7 +71,7 @@ class AbstractCoreInterface(ABC):
                  max_input_tokens: Optional[int] = None,
                  max_output_tokens: int = 2048,
                  temperature: float = 0.7,
-                 seed: Optional[int] = None,
+                 seed: Optional[int] = -1,
                  debug: bool = False,
                  **kwargs):
         self.model = model
@@ -84,12 +84,39 @@ class AbstractCoreInterface(ABC):
         
         # Unified generation parameters
         self.temperature = temperature
-        self.seed = seed
+        # Default seed policy: -1 means "random" (do not forward a provider seed).
+        # Accept None for backward compatibility and normalize it to -1.
+        self.seed = -1 if seed is None else seed
         
         self.debug = debug
 
         # Validate token parameters
         self._validate_token_parameters()
+
+    # Unified generation parameter accessors (provider-agnostic)
+    def get_temperature(self) -> float:
+        return float(self.temperature)
+
+    def set_temperature(self, temperature: float) -> None:
+        self.temperature = float(temperature)
+
+    def get_seed(self) -> int:
+        try:
+            return int(self.seed)  # type: ignore[arg-type]
+        except Exception:
+            return -1
+
+    def set_seed(self, seed: Optional[int]) -> None:
+        # Normalize: None or negative -> -1 (random)
+        if seed is None:
+            self.seed = -1
+            return
+        try:
+            seed_i = int(seed)
+        except Exception:
+            self.seed = -1
+            return
+        self.seed = seed_i if seed_i >= 0 else -1
 
     @abstractmethod
     def generate(self,

@@ -34,8 +34,8 @@ class BasicSession:
                  recovery_timeout: Optional[float] = None,
                  auto_compact: bool = False,
                  auto_compact_threshold: int = 6000,
-                 temperature: Optional[float] = None,
-                 seed: Optional[int] = None,
+                 temperature: Optional[float] = 0.7,
+                 seed: Optional[int] = -1,
                  enable_tracing: bool = False):
         """Initialize basic session
 
@@ -48,8 +48,8 @@ class BasicSession:
             recovery_timeout: Circuit breaker recovery timeout
             auto_compact: Enable automatic conversation compaction
             auto_compact_threshold: Token threshold for auto-compaction
-            temperature: Default temperature for generation (0.0-1.0)
-            seed: Default seed for deterministic generation
+            temperature: Default temperature for generation (provider-agnostic)
+            seed: Default seed for deterministic generation (-1 means random/unset)
             enable_tracing: Enable interaction tracing for observability
         """
 
@@ -63,9 +63,15 @@ class BasicSession:
         self.auto_compact_threshold = auto_compact_threshold
         self._original_session = None  # Track if this is a compacted session
 
-        # Store session-level generation parameters
-        self.temperature = temperature
-        self.seed = seed
+        # Store session-level generation parameters.
+        self.temperature = None if temperature is None else float(temperature)
+        # Normalize: None or negative -> -1 (random/unset)
+        try:
+            self.seed = -1 if seed is None else int(seed)
+        except Exception:
+            self.seed = -1
+        if isinstance(self.seed, int) and self.seed < 0:
+            self.seed = -1
 
         # Setup interaction tracing
         self.enable_tracing = enable_tracing
@@ -218,7 +224,7 @@ class BasicSession:
         # Add session-level parameters if not overridden in kwargs
         if 'temperature' not in kwargs and self.temperature is not None:
             kwargs['temperature'] = self.temperature
-        if 'seed' not in kwargs and self.seed is not None:
+        if 'seed' not in kwargs and isinstance(self.seed, int) and self.seed >= 0:
             kwargs['seed'] = self.seed
 
         # Add trace metadata if tracing is enabled
@@ -329,7 +335,7 @@ class BasicSession:
         # Add session-level parameters if not overridden in kwargs
         if 'temperature' not in kwargs and self.temperature is not None:
             kwargs['temperature'] = self.temperature
-        if 'seed' not in kwargs and self.seed is not None:
+        if 'seed' not in kwargs and isinstance(self.seed, int) and self.seed >= 0:
             kwargs['seed'] = self.seed
 
         # Add trace metadata if tracing is enabled
