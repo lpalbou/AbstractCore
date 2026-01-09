@@ -468,8 +468,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     "Install with: pip install pydantic>=2.0.0"
                 )
 
-            # Handle hybrid case: tools + structured output
-            if tools is not None:
+            # Handle hybrid case: tools + structured output.
+            #
+            # NOTE: `tools=[]` should behave like "no tools". Treating an empty list as
+            # "tools present" triggers the hybrid 2-pass flow (unstructured call + structured
+            # follow-up) which is both slower and can cause provider-side timeouts/unloads.
+            if isinstance(tools, list) and len(tools) > 0:
                 return self._handle_tools_with_structured_output(
                     prompt=prompt,
                     messages=messages,

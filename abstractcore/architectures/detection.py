@@ -378,7 +378,9 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
     except Exception:
         raw_name = ""
 
-    if raw_name and raw_name not in _default_capabilities_warning_cache:
+    # Some provider registries use placeholders like "default" to probe capabilities/model lists.
+    # Don't warn for these non-model sentinel values.
+    if raw_name and raw_name not in {"default", "local-model"} and raw_name not in _default_capabilities_warning_cache:
         _default_capabilities_warning_cache.add(raw_name)
         logger.warning(
             "Model not found in model_capabilities.json; falling back to architecture defaults",
