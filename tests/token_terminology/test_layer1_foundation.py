@@ -262,10 +262,10 @@ class TestNoContextLengthReferences:
 
 
 class TestAllModelsHaveMaxTokens:
-    """Verify all 85 models in JSON have valid max_tokens values."""
+    """Verify models in JSON have valid max_tokens values."""
 
     def test_all_models_count(self):
-        """Verify we have approximately 85 models in the JSON."""
+        """Verify we have a reasonable number of models in the JSON."""
         assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
         json_file = assets_dir / "model_capabilities.json"
 
@@ -275,9 +275,8 @@ class TestAllModelsHaveMaxTokens:
         models = data.get("models", {})
         model_count = len(models)
 
-        # Should have around 85 models (allow some variance for additions/removals)
-        assert 80 <= model_count <= 90, \
-            f"Expected around 85 models, found {model_count}"
+        # The catalog grows over time; keep a sanity bound rather than a brittle exact count.
+        assert 100 <= model_count <= 500, f"Unexpected model count: {model_count}"
 
     def test_all_models_have_valid_max_tokens(self):
         """Verify every model has a valid max_tokens value."""

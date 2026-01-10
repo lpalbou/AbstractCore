@@ -10,6 +10,7 @@ Tests with actual SOTA embedding models:
 Plus integration with real LLM providers.
 """
 
+import os
 import pytest
 import tempfile
 import shutil
@@ -18,6 +19,12 @@ import time
 
 from abstractcore.embeddings import EmbeddingManager, get_model_config
 from abstractcore import create_llm
+
+if os.getenv("ABSTRACTCORE_RUN_EMBEDDINGS_TESTS") != "1":
+    pytest.skip(
+        "Comprehensive real-model embeddings tests are slow and may download models; set ABSTRACTCORE_RUN_EMBEDDINGS_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.integration

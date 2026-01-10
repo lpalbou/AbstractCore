@@ -252,11 +252,14 @@ class TestToolExecution:
         stream = (GenerateResponse(content=c, model="test") for c in chunks)
         results = list(processor.process_stream(stream, [tool_def]))
 
-        # Should have tool execution results
         all_content = " ".join([r.content for r in results if r.content])
+        all_tool_calls = []
+        for r in results:
+            if isinstance(getattr(r, "tool_calls", None), list):
+                all_tool_calls.extend(r.tool_calls)
 
-        # Tool should be executed
-        assert "Tool Results:" in all_content or "read_file" in all_content
+        # Tool call should be surfaced in passthrough mode (execution happens in host/runtime).
+        assert any(tc.get("name") == "read_file" for tc in all_tool_calls)
 
         # Original content should be preserved
         assert "I'll read that file for you." in all_content
@@ -306,10 +309,15 @@ class TestToolExecution:
         results = list(processor.process_stream(stream, tools))
 
         all_content = " ".join([r.content for r in results if r.content])
+        all_tool_calls = []
+        for r in results:
+            if isinstance(getattr(r, "tool_calls", None), list):
+                all_tool_calls.extend(r.tool_calls)
 
-        # Both tools should be executed
-        assert "tool1" in all_content
-        assert "tool2" in all_content
+        # Tool calls should be surfaced in passthrough mode (execution happens in host/runtime).
+        names = {tc.get("name") for tc in all_tool_calls if isinstance(tc, dict)}
+        assert "tool1" in names
+        assert "tool2" in names
 
         # No tool tags should leak
         assert "<|tool_call|>" not in all_content
@@ -666,10 +674,14 @@ class TestProductionReadiness:
         results = list(processor.process_stream(stream, [tool_def]))
 
         all_content = " ".join([r.content for r in results if r.content])
+        all_tool_calls = []
+        for r in results:
+            if isinstance(getattr(r, "tool_calls", None), list):
+                all_tool_calls.extend(r.tool_calls)
 
-        # 1. Tool SHOULD be executed (original issue: wasn't executing)
-        assert "Tool Results:" in all_content or "test_tool" in all_content, \
-            "CRITICAL: Tool execution still broken!"
+        # 1. Tool call SHOULD be surfaced (execution is handled by host/runtime).
+        assert any(tc.get("name") == "test_tool" for tc in all_tool_calls), \
+            "CRITICAL: Tool call not detected in stream!"
 
         # 2. Tool tags SHOULD NOT appear in output (original issue: were appearing)
         assert "<|tool_call|>" not in all_content, \

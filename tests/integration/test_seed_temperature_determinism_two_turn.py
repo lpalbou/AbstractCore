@@ -34,7 +34,7 @@ def _run_two_turn_session(*, provider: str, model: str, params: Dict[str, Any]) 
     [
         (
             "lmstudio",
-            os.getenv("LMSTUDIO_MODEL", "gemma-3-1b-it"),
+            os.getenv("LMSTUDIO_MODEL", "qwen/qwen3-4b-2507"),
             {
                 "base_url": os.getenv("LMSTUDIO_BASE_URL", "http://localhost:1234/v1"),
                 "temperature": 0.0,
@@ -44,7 +44,7 @@ def _run_two_turn_session(*, provider: str, model: str, params: Dict[str, Any]) 
         ),
         (
             "ollama",
-            os.getenv("OLLAMA_MODEL", "cogito:3b"),
+            os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct"),
             {
                 "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
                 "temperature": 0.0,
@@ -64,7 +64,7 @@ def _run_two_turn_session(*, provider: str, model: str, params: Dict[str, Any]) 
         ),
         (
             "anthropic",
-            os.getenv("ANTHROPIC_MODEL", "claude-4.5-haiku"),
+            os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5"),
             {
                 "api_key": os.getenv("ANTHROPIC_API_KEY"),
                 "temperature": 0.0,
@@ -75,6 +75,10 @@ def _run_two_turn_session(*, provider: str, model: str, params: Dict[str, Any]) 
     ],
 )
 def test_seed_temperature_two_turn_determinism(provider: str, model: str, params: Dict[str, Any], expect_seed_supported: bool):
+    if provider in {"ollama", "lmstudio"} and os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+        pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
+    if provider in {"openai", "anthropic"} and os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
     if provider == "openai" and not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
     if provider == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
@@ -83,8 +87,25 @@ def test_seed_temperature_two_turn_determinism(provider: str, model: str, params
     # Best-effort detection for providers/models that ignore seed/temperature.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        out1 = _run_two_turn_session(provider=provider, model=model, params=params)
-        out2 = _run_two_turn_session(provider=provider, model=model, params=params)
+        try:
+            out1 = _run_two_turn_session(provider=provider, model=model, params=params)
+            out2 = _run_two_turn_session(provider=provider, model=model, params=params)
+        except Exception as e:
+            msg = str(e).lower()
+            if any(
+                keyword in msg
+                for keyword in (
+                    "connection error",
+                    "connecterror",
+                    "operation not permitted",
+                    "connection refused",
+                    "timeout",
+                    "not running",
+                    "nodename nor servname provided",
+                )
+            ):
+                pytest.skip(f"{provider} not reachable in this environment: {e}")
+            raise
 
     unsupported_msgs = [
         str(w.message).lower()
@@ -99,4 +120,3 @@ def test_seed_temperature_two_turn_determinism(provider: str, model: str, params
         return
 
     assert out1 == out2, f"Expected deterministic two-turn outputs, got {out1!r} vs {out2!r}"
-

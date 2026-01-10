@@ -391,7 +391,7 @@ class TestUnifiedStreamProcessor:
         assert any("The result is ready." in r.content for r in results if r.content)
 
     def test_tool_execution_during_streaming(self):
-        """Test that tools are executed immediately during streaming"""
+        """Test that tool calls are surfaced during streaming (passthrough mode)."""
         # Create a simple test tool
         def test_tool(value: int) -> int:
             """Test tool that returns double the value"""
@@ -418,16 +418,11 @@ class TestUnifiedStreamProcessor:
 
         results = list(processor.process_stream(stream, converted_tools))
 
-        # Should have tool execution results
-        tool_result_found = False
+        all_tool_calls = []
         for result in results:
-            if result.content and "Tool Results:" in result.content:
-                tool_result_found = True
-                # Check that result contains the tool execution
-                assert "test_tool" in result.content
-                break
-
-        assert tool_result_found, "Tool execution results not found in stream"
+            if isinstance(getattr(result, "tool_calls", None), list):
+                all_tool_calls.extend(result.tool_calls)
+        assert any(tc.get("name") == "test_tool" for tc in all_tool_calls), "Tool call not found in stream"
 
         # Cleanup
         clear_registry()
@@ -466,10 +461,13 @@ class TestUnifiedStreamProcessor:
 
         results = list(processor.process_stream(stream, tools))
 
-        # Should execute both tools
-        all_content = " ".join([r.content for r in results if r.content])
-        assert "tool1" in all_content
-        assert "tool2" in all_content
+        all_tool_calls = []
+        for result in results:
+            if isinstance(getattr(result, "tool_calls", None), list):
+                all_tool_calls.extend(result.tool_calls)
+        names = {tc.get("name") for tc in all_tool_calls if isinstance(tc, dict)}
+        assert "tool1" in names
+        assert "tool2" in names
 
         # Cleanup
         clear_registry()
@@ -539,9 +537,11 @@ class TestProviderIntegration:
 
     def test_unified_streaming_replaces_dual_mode(self):
         """Verify unified streaming is used instead of dual-mode approach"""
-        # Read the base provider implementation
-        with open('/Users/albou/projects/abstractcore_core/abstractcore/providers/base.py', 'r') as f:
-            base_provider_code = f.read()
+        # Read the base provider implementation from the installed source tree.
+        from pathlib import Path
+        from abstractcore.providers import base as base_provider_module
+
+        base_provider_code = Path(base_provider_module.__file__).read_text(encoding="utf-8")
 
         # Verify UnifiedStreamProcessor is imported and used
         assert 'from .streaming import UnifiedStreamProcessor' in base_provider_code
@@ -553,16 +553,20 @@ class TestProviderIntegration:
 
     def test_streaming_implementation_uses_unified_processor(self):
         """Test that streaming implementation uses UnifiedStreamProcessor"""
-        with open('/Users/albou/projects/abstractcore_core/abstractcore/providers/base.py', 'r') as f:
-            content = f.read()
+        from pathlib import Path
+        from abstractcore.providers import base as base_provider_module
+
+        content = Path(base_provider_module.__file__).read_text(encoding="utf-8")
 
         # Check for unified streaming pattern
         assert 'processor.process_stream(response, converted_tools)' in content
 
     def test_stream_processor_receives_correct_parameters(self):
         """Test that UnifiedStreamProcessor receives correct initialization params"""
-        with open('/Users/albou/projects/abstractcore_core/abstractcore/providers/base.py', 'r') as f:
-            content = f.read()
+        from pathlib import Path
+        from abstractcore.providers import base as base_provider_module
+
+        content = Path(base_provider_module.__file__).read_text(encoding="utf-8")
 
         # Verify processor initialization includes required params
         assert 'model_name=self.model' in content
@@ -609,11 +613,10 @@ class TestEndToEndStreaming:
         assert total_time >= 0.02
 
     def test_tool_execution_timing(self):
-        """Test that tools execute immediately when detected, not at end"""
-        execution_times = []
+        """Test that tool calls are surfaced when detected, not at end."""
+        emission_times = []
 
         def timed_tool(x: int) -> int:
-            execution_times.append(time.time())
             return x * 2
 
         # Register tool
@@ -643,14 +646,14 @@ class TestEndToEndStreaming:
                 yield GenerateResponse(content=chunk, model="test")
 
         start_time = time.time()
-        list(processor.process_stream(delayed_stream(), [tool_def]))
+        for chunk in processor.process_stream(delayed_stream(), [tool_def]):
+            if isinstance(getattr(chunk, "tool_calls", None), list) and chunk.tool_calls:
+                emission_times.append(time.time())
         end_time = time.time()
 
-        # Should have executed both tools
-        assert len(execution_times) == 2
+        assert len(emission_times) == 2
 
-        # First tool should execute near the middle, not at end
-        first_tool_time = execution_times[0] - start_time
+        first_tool_time = emission_times[0] - start_time
         total_time = end_time - start_time
 
         # First tool should execute well before the end (within first 60% of stream)
@@ -696,11 +699,14 @@ class TestEndToEndStreaming:
         # Should have multiple results
         assert len(results) > 0
 
-        # Should have tool execution
-        all_content = " ".join([r.content for r in results if r.content])
-        assert "calculator" in all_content
+        all_tool_calls = []
+        for result in results:
+            if isinstance(getattr(result, "tool_calls", None), list):
+                all_tool_calls.extend(result.tool_calls)
+        assert any(tc.get("name") == "calculator" for tc in all_tool_calls)
 
         # Original content should be preserved
+        all_content = " ".join([r.content for r in results if r.content])
         assert "I'll help you calculate" in all_content or any("I'll help you calculate" in r.content for r in results if r.content)
 
         # Cleanup

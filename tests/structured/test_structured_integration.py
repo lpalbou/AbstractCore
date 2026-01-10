@@ -3,6 +3,7 @@ Integration tests for structured output with real providers.
 """
 
 import pytest
+import os
 from typing import List, Optional
 
 try:
@@ -38,8 +39,10 @@ class TestStructuredOutputIntegration:
 
     def test_mlx_provider_structured_output(self):
         """Test structured output with MLX provider (local)."""
+        if os.getenv("ABSTRACTCORE_RUN_MLX_TESTS") != "1":
+            pytest.skip("MLX structured output test is heavy; set ABSTRACTCORE_RUN_MLX_TESTS=1 to run")
         try:
-            llm = create_llm("mlx", model="mlx-community/GLM-4.5-Air-4bit")
+            llm = create_llm("mlx", model="mlx-community/GLM-4.5-Air-4bit", timeout=5.0)
 
             result = llm.generate(
                 "Extract user info: John Doe, 25 years old",
@@ -56,8 +59,10 @@ class TestStructuredOutputIntegration:
     @pytest.mark.provider
     def test_openai_structured_output(self):
         """Test structured output with OpenAI provider."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         try:
-            llm = create_llm("openai", model="gpt-4o-mini")
+            llm = create_llm("openai", model="gpt-4o-mini", timeout=5.0)
 
             result = llm.generate(
                 "Extract the following user information: Sarah Johnson, 28 years old, sarah.j@email.com, phone: 555-0123",
@@ -75,8 +80,10 @@ class TestStructuredOutputIntegration:
     @pytest.mark.provider
     def test_anthropic_structured_output(self):
         """Test structured output with Anthropic provider using tool trick."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         try:
-            llm = create_llm("anthropic", model="claude-3-haiku-20240307")
+            llm = create_llm("anthropic", model="claude-3-haiku-20240307", timeout=5.0)
 
             result = llm.generate(
                 "Create a task: 'Review quarterly reports' with high priority",
@@ -94,7 +101,9 @@ class TestStructuredOutputIntegration:
     def test_ollama_structured_output(self):
         """Test structured output with Ollama provider."""
         try:
-            llm = create_llm("ollama", model="qwen3-coder:30b")
+            if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+                pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
+            llm = create_llm("ollama", model="qwen3:4b-instruct", timeout=10.0)
 
             result = llm.generate(
                 "User profile: Mike Chen, age 35",
@@ -112,7 +121,9 @@ class TestStructuredOutputIntegration:
     def test_ollama_provider_structured_output(self):
         """Test structured output with Ollama provider (local)."""
         try:
-            llm = create_llm("ollama", model="qwen3-coder:30b")
+            if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+                pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
+            llm = create_llm("ollama", model="qwen3:4b-instruct", timeout=10.0)
 
             result = llm.generate(
                 "Extract contact info: Alice Johnson, alice@company.com",

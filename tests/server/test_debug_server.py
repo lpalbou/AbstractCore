@@ -5,6 +5,7 @@ Simple test to trigger debug logging.
 import base64
 import requests
 import json
+import pytest
 
 def test_csv_with_debug():
     """Test CSV processing with debug logging enabled."""
@@ -48,7 +49,10 @@ Bob,25,65000"""
             "max_tokens": 200
         }
 
-        response = requests.post("http://localhost:8000/v1/chat/completions", json=payload, timeout=30)
+        try:
+            response = requests.post("http://localhost:8000/v1/chat/completions", json=payload, timeout=30)
+        except requests.RequestException as e:
+            pytest.skip(f"Debug server not reachable at http://localhost:8000: {e}")
 
         if response.status_code == 200:
             data = response.json()

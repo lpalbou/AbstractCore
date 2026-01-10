@@ -16,9 +16,11 @@ class TestProviders:
     """Test all providers with real implementations - no mocking."""
 
     def test_ollama_simple_message(self):
-        """Test Ollama simple message generation with qwen3-coder:30b."""
+        """Test Ollama simple message generation with a lightweight model."""
+        if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434", timeout=10.0)
 
             prompt = "Who are you? Please respond in one sentence."
             start_time = time.time()
@@ -31,15 +33,17 @@ class TestProviders:
             assert elapsed < 30  # Should respond within 30 seconds
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("Ollama not running")
             else:
                 raise
 
     def test_lmstudio_simple_message(self):
-        """Test LMStudio simple message generation with qwen/qwen3-coder-30b."""
+        """Test LMStudio simple message generation with a lightweight model."""
+        if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("lmstudio", model="qwen/qwen3-coder-30b", base_url="http://localhost:1234/v1")
+            provider = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1", timeout=10.0)
 
             prompt = "Who are you? Please respond in one sentence."
             start_time = time.time()
@@ -52,15 +56,17 @@ class TestProviders:
             assert elapsed < 30  # Should respond within 30 seconds
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("LMStudio not running")
             else:
                 raise
 
     def test_mlx_simple_message(self):
         """Test MLX simple message generation with mlx-community/Qwen3-4B-4bit."""
+        if os.getenv("ABSTRACTCORE_RUN_MLX_TESTS") != "1":
+            pytest.skip("MLX provider integration test is heavy; set ABSTRACTCORE_RUN_MLX_TESTS=1 to run")
         try:
-            provider = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
+            provider = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit", timeout=5.0)
 
             prompt = "Who are you? Please respond in one sentence."
             start_time = time.time()
@@ -80,6 +86,8 @@ class TestProviders:
 
     def test_huggingface_simple_message(self):
         """Test HuggingFace simple message generation with Qwen/Qwen3-4B."""
+        if os.getenv("ABSTRACTCORE_RUN_HUGGINGFACE_TESTS") != "1":
+            pytest.skip("HuggingFace provider integration test is heavy; set ABSTRACTCORE_RUN_HUGGINGFACE_TESTS=1 to run")
         try:
             provider = create_llm("huggingface", model="Qwen/Qwen3-4B")
 
@@ -101,11 +109,13 @@ class TestProviders:
 
     def test_openai_simple_message(self):
         """Test OpenAI simple message generation with gpt-4o-mini."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-5-mini", timeout=30.0)
 
             prompt = "Who are you? Please respond in one sentence."
             start_time = time.time()
@@ -125,16 +135,20 @@ class TestProviders:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "network"]):
+                pytest.skip("OpenAI not reachable")
             else:
                 raise
 
     def test_anthropic_simple_message(self):
         """Test Anthropic simple message generation with claude-3-5-haiku-20241022."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+            provider = create_llm("anthropic", model="claude-haiku-4-5", timeout=30.0)
 
             prompt = "Who are you? Please respond in one sentence."
             start_time = time.time()
@@ -154,16 +168,20 @@ class TestProviders:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("Anthropic authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "network"]):
+                pytest.skip("Anthropic not reachable")
             else:
                 raise
 
     def test_openai_tool_call(self):
         """Test OpenAI tool calling with gpt-4o-mini."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-5-mini", timeout=30.0)
 
             # Define a simple tool
             tools = [{
@@ -199,16 +217,20 @@ class TestProviders:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "network"]):
+                pytest.skip("OpenAI not reachable")
             else:
                 raise
 
     def test_anthropic_tool_call(self):
         """Test Anthropic tool calling with claude-3-5-haiku-20241022."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+            provider = create_llm("anthropic", model="claude-haiku-4-5", timeout=30.0)
 
             # Define a simple tool
             tools = [{
@@ -257,13 +279,17 @@ class TestProviders:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("Anthropic authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "network"]):
+                pytest.skip("Anthropic not reachable")
             else:
                 raise
 
     def test_ollama_session(self):
         """Test BasicSession with Ollama provider."""
+        if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434", timeout=10.0)
 
             # Create session
             session = BasicSession(
@@ -285,18 +311,20 @@ class TestProviders:
             assert context_maintained, "Session should maintain context about previous question"
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("Ollama not running")
             else:
                 raise
 
     def test_openai_session(self):
         """Test BasicSession with OpenAI provider."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-5-mini", timeout=30.0)
 
             # Create session
             session = BasicSession(
@@ -320,16 +348,20 @@ class TestProviders:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "network"]):
+                pytest.skip("OpenAI not reachable")
             else:
                 raise
 
     def test_anthropic_session(self):
         """Test BasicSession with Anthropic provider."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+            provider = create_llm("anthropic", model="claude-haiku-4-5", timeout=30.0)
 
             # Create session
             session = BasicSession(
@@ -353,6 +385,8 @@ class TestProviders:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("Anthropic authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "network"]):
+                pytest.skip("Anthropic not reachable")
             else:
                 raise
 

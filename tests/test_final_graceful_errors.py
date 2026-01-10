@@ -5,17 +5,23 @@ Shows the exact user experience now vs before.
 """
 
 import os
+import pytest
 from abstractcore import create_llm, ModelNotFoundError
 
 
 def test_anthropic_clean_error():
     """Test user's original case - now with clean error"""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
+
     print("🔧 Testing Anthropic with invalid model (original user case):")
-    print("   Model: 'claude-3.5-haiku:latest' (invalid)")
+    print("   Model: 'claude-haiku-4-5:latest' (invalid)")
     print()
 
     try:
-        llm = create_llm("anthropic", model="claude-3.5-haiku:latest")
+        llm = create_llm("anthropic", model="claude-haiku-4-5:latest")
         response = llm.generate("Hello, who are you? identify yourself")
         assert False, "Should have failed with ModelNotFoundError"
     except ModelNotFoundError as e:
@@ -36,8 +42,9 @@ def test_anthropic_clean_error():
 
 def test_openai_dynamic_models():
     """Test OpenAI with dynamic model fetching"""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
     if not os.getenv("OPENAI_API_KEY"):
-        import pytest
         pytest.skip("OPENAI_API_KEY not set")
 
     print("🔧 Testing OpenAI with dynamic model discovery:")
@@ -63,6 +70,9 @@ def test_openai_dynamic_models():
 
 def test_ollama_dynamic_models():
     """Test Ollama with dynamic model fetching"""
+    if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+        pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
+
     print("🔧 Testing Ollama with dynamic model discovery:")
     print("   Model: 'fake-local-model' (invalid)")
     print()
@@ -82,8 +92,7 @@ def test_ollama_dynamic_models():
         assert has_models, "Should show available models in error message"
     except Exception as e:
         # Allow connection errors when Ollama isn't running
-        if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
-            import pytest
+        if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
             pytest.skip("Ollama not running")
         else:
             assert False, f"Wrong exception: {type(e).__name__}: {e}"

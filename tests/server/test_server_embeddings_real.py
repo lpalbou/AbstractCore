@@ -5,12 +5,19 @@ NO MOCKING - Tests with real embedding models and actual API calls.
 Tests the /{provider}/v1/embeddings endpoints with real embeddings.
 """
 
+import os
 import pytest
 from fastapi.testclient import TestClient
 import numpy as np
 from abstractcore.server.app import app
 
 client = TestClient(app)
+
+if os.getenv("ABSTRACTCORE_RUN_EMBEDDINGS_TESTS") != "1":
+    pytest.skip(
+        "Server embeddings integration tests are slow and may download models; set ABSTRACTCORE_RUN_EMBEDDINGS_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.integration
@@ -22,10 +29,10 @@ class TestServerEmbeddingsReal:
         try:
             # Test with Ollama model that should use native API
             response = client.post(
-                "/ollama/v1/embeddings",
+                "/v1/embeddings",
                 json={
                     "input": "Hello world, this is a test sentence for embedding.",
-                    "model": "all-minilm:l6-v2"
+                    "model": "ollama/all-minilm:l6-v2"
                 }
             )
 
@@ -71,10 +78,10 @@ class TestServerEmbeddingsReal:
         try:
             # Test with any non-Ollama provider (should use EmbeddingManager)
             response = client.post(
-                "/openai/v1/embeddings",
+                "/v1/embeddings",
                 json={
                     "input": "This text should generate real embeddings via HuggingFace.",
-                    "model": "text-embedding-ada-002"  # Any model - will use HF sentence-transformers
+                    "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2"
                 }
             )
 
@@ -87,7 +94,7 @@ class TestServerEmbeddingsReal:
                 assert len(data["data"]) == 1
                 assert data["data"][0]["object"] == "embedding"
                 assert data["data"][0]["index"] == 0
-                assert data["model"] == "openai/text-embedding-ada-002"
+                assert data["model"] == "huggingface/sentence-transformers/all-MiniLM-L6-v2"
 
                 # Verify real embedding (not mock)
                 embedding = data["data"][0]["embedding"]
@@ -103,7 +110,6 @@ class TestServerEmbeddingsReal:
                 embedding_array = np.array(embedding)
                 assert -1.0 <= embedding_array.min() <= embedding_array.max() <= 1.0
 
-                # Should be 384 dimensions for all-MiniLM-L6-v2
                 assert len(embedding) == 384, f"Expected 384 dimensions, got {len(embedding)}"
 
                 print(f"✅ Real HuggingFace embedding generated: {len(embedding)} dimensions, range [{embedding_array.min():.3f}, {embedding_array.max():.3f}]")
@@ -129,10 +135,10 @@ class TestServerEmbeddingsReal:
             ]
 
             response = client.post(
-                "/anthropic/v1/embeddings",  # Use EmbeddingManager route
+                "/v1/embeddings",
                 json={
                     "input": texts,
-                    "model": "any-model"  # Will use HF sentence-transformers
+                    "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2"
                 }
             )
 
@@ -184,13 +190,12 @@ class TestServerEmbeddingsReal:
         """Verify that mocking is completely removed from embedding endpoints."""
         # This test ensures we never fall back to mock embeddings
 
-        # Try a provider that definitely should use EmbeddingManager
         response = client.post(
-            "/test-provider/v1/embeddings",  # Non-Ollama provider
+            "/v1/embeddings",
             json={
                 "input": "Test sentence to verify no mocking occurs.",
-                "model": "test-model"
-            }
+                "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+            },
         )
 
         # Should either succeed with real embeddings or fail properly
@@ -208,7 +213,7 @@ class TestServerEmbeddingsReal:
             print("✅ No mock embeddings detected")
         else:
             # Should fail gracefully, not return mock data
-            assert response.status_code in [500, 404, 400]
+            assert response.status_code in [500, 400]
             print("✅ Proper error handling - no fallback to mock embeddings")
 
 

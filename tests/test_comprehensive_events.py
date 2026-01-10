@@ -218,17 +218,30 @@ class TestProviderEvents:
         on_global(EventType.GENERATION_STARTED, event_capture.capture_event)
         on_global(EventType.GENERATION_COMPLETED, event_capture.capture_event)
 
-        # Create provider and generate response
-        try:
-            llm = create_llm("openai", model="gpt-4o")
-        except ImportError:
-            pytest.skip("OpenAI provider not available")
-        response = llm.generate("Test prompt")
+        # Use a lightweight in-process provider to avoid network calls.
+        from abstractcore.providers.base import BaseProvider
+
+        class OpenAIProviderStub(BaseProvider):
+            def __init__(self, model: str = "gpt-5-mini"):
+                super().__init__(model=model)
+                self.provider = "openai"
+
+            def _generate_internal(self, prompt: str, **kwargs):
+                return GenerateResponse(content="ok", model=self.model)
+
+            def list_available_models(self, **kwargs):
+                return [self.model]
+
+            def get_capabilities(self):
+                return ["chat", "streaming", "tools"]
+
+        llm = OpenAIProviderStub()
+        _ = llm.generate("Test prompt")
 
         # Verify generation events were emitted
         start_events = event_capture.get_events_by_type(EventType.GENERATION_STARTED)
         assert len(start_events) == 1
-        assert start_events[0].data["model"] == "test-model"
+        assert start_events[0].data["model"] == llm.model
 
         complete_events = event_capture.get_events_by_type(EventType.GENERATION_COMPLETED)
         assert len(complete_events) == 1

@@ -113,16 +113,15 @@ class TestEnvironmentVariableToolCallTags:
         assert processor.tag_rewriter.target_tags.auto_format == True
 
     def test_fallback_to_default_when_no_tool_call_tags(self):
-        """Test fallback to default format when no tool_call_tags provided"""
+        """When no tool_call_tags are provided, no tag rewriting should occur by default."""
         processor = UnifiedStreamProcessor(
             model_name="test-model",
             tool_call_tags=None,
             default_target_format="llama3"
         )
 
-        assert processor.tag_rewriter is not None
-        assert processor.tag_rewriter.target_tags.start_tag == "<function_call>"
-        assert processor.tag_rewriter.target_tags.end_tag == "</function_call>"
+        assert processor.tag_rewriter is None
+        assert processor.convert_to_openai_json is False
 
     def test_invalid_comma_separated_format(self):
         """Test handling of invalid comma-separated format"""
@@ -136,17 +135,15 @@ class TestEnvironmentVariableToolCallTags:
         assert processor is not None
 
     def test_empty_tool_call_tags(self):
-        """Test handling of empty tool_call_tags"""
+        """Empty tool_call_tags should behave like not provided (no rewriting)."""
         processor = UnifiedStreamProcessor(
             model_name="test-model",
             tool_call_tags="",
             default_target_format="qwen3"
         )
 
-        assert processor.tag_rewriter is not None
-        # Should fall back to default format
-        assert processor.tag_rewriter.target_tags.start_tag == "<|tool_call|>"
-        assert processor.tag_rewriter.target_tags.end_tag == "</|tool_call|>"
+        assert processor.tag_rewriter is None
+        assert processor.convert_to_openai_json is False
 
 
 class TestEnvironmentVariableTagRewriting:
@@ -319,29 +316,26 @@ class TestEnvironmentVariableEdgeCases:
         assert processor.tag_rewriter.target_tags.auto_format == True
 
     def test_none_tool_call_tags_with_custom_default(self):
-        """Test None tool_call_tags with custom default format"""
+        """None tool_call_tags should not enable rewriting, even with a default_target_format."""
         processor = UnifiedStreamProcessor(
             model_name="test-model",
             tool_call_tags=None,
             default_target_format="xml"
         )
 
-        assert processor.tag_rewriter is not None
-        assert processor.tag_rewriter.target_tags.start_tag == "<tool_call>"
-        assert processor.tag_rewriter.target_tags.end_tag == "</tool_call>"
+        assert processor.tag_rewriter is None
+        assert processor.convert_to_openai_json is False
 
     def test_empty_string_tool_call_tags(self):
-        """Test empty string tool_call_tags"""
+        """Empty string tool_call_tags should behave like not provided (no rewriting)."""
         processor = UnifiedStreamProcessor(
             model_name="test-model",
             tool_call_tags="",
             default_target_format="llama3"
         )
 
-        # Should fall back to default format
-        assert processor.tag_rewriter is not None
-        assert processor.tag_rewriter.target_tags.start_tag == "<function_call>"
-        assert processor.tag_rewriter.target_tags.end_tag == "</function_call>"
+        assert processor.tag_rewriter is None
+        assert processor.convert_to_openai_json is False
 
 
 class TestEnvironmentVariableStreamingIntegration:

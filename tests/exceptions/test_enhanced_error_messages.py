@@ -6,6 +6,7 @@ as well as their integration with providers.
 
 All tests use REAL implementations (no mocking) per project requirements.
 """
+import os
 import pytest
 from abstractcore import create_llm
 from abstractcore.exceptions import (
@@ -102,6 +103,8 @@ class TestProviderIntegration:
     @pytest.mark.slow
     def test_openai_auth_error_format(self):
         """Test OpenAI provider uses format_auth_error() with REAL invalid API key."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Requires live OpenAI network call; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         with pytest.raises(AuthenticationError) as exc_info:
             # Use obviously invalid API key to trigger auth error
             llm = create_llm(
@@ -127,6 +130,8 @@ class TestProviderIntegration:
     @pytest.mark.slow
     def test_anthropic_auth_error_format(self):
         """Test Anthropic provider uses format_auth_error() with REAL invalid API key."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Requires live Anthropic network call; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         with pytest.raises(AuthenticationError) as exc_info:
             # Use obviously invalid API key
             llm = create_llm(

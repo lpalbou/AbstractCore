@@ -525,7 +525,7 @@ def interactive_configure():
     print("\n3. API Keys Setup")
     api_choice = input("Configure API keys? [y/N]: ").lower().strip()
     if api_choice == 'y':
-        for provider in ["openai", "anthropic", "google"]:
+        for provider in ["openai", "anthropic", "openrouter", "google"]:
             key = input(f"Enter {provider} API key (or press Enter to skip): ").strip()
             if key:
                 config_manager.set_api_key(provider, key)

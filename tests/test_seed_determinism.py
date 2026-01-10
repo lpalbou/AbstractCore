@@ -125,19 +125,19 @@ class SeedDeterminismTester:
         # Provider configurations
         provider_configs = {
             "openai": {
-                "models": ["gpt-3.5-turbo", "gpt-4o-mini"],
+                "models": ["gpt-5-mini"],
                 "config": {"api_key": os.getenv("OPENAI_API_KEY")}
             },
             "anthropic": {
-                "models": ["claude-3-haiku-20240307"],
+                "models": ["claude-haiku-4-5"],
                 "config": {"api_key": os.getenv("ANTHROPIC_API_KEY")}
             },
             "ollama": {
-                "models": ["llama3.2:1b", "qwen2.5:0.5b"],
+                "models": ["qwen3:4b-instruct"],
                 "config": {"base_url": "http://localhost:11434"}
             },
             "lmstudio": {
-                "models": ["local-model"],
+                "models": ["qwen/qwen3-4b-2507"],
                 "config": {"base_url": "http://localhost:1234/v1"}
             },
             "huggingface": {
@@ -145,7 +145,7 @@ class SeedDeterminismTester:
                 "config": {}
             },
             "mlx": {
-                "models": ["mlx-community/Qwen2.5-0.5B-Instruct-4bit"],
+                "models": ["mlx-community/Qwen3-4B-4bit"],
                 "config": {}
             }
         }
@@ -206,11 +206,13 @@ class SeedDeterminismTester:
 # Pytest test functions
 def test_openai_seed_determinism():
     """Test OpenAI seed determinism (if API key available)"""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
     
     tester = SeedDeterminismTester()
-    result = tester.test_provider_determinism("openai", "gpt-3.5-turbo")
+    result = tester.test_provider_determinism("openai", "gpt-5-mini")
     
     assert result["success"], f"OpenAI test failed: {result.get('error')}"
     assert result["seed_supported"], "OpenAI should support seed"
@@ -220,11 +222,13 @@ def test_openai_seed_determinism():
 
 def test_anthropic_seed_fallback():
     """Test Anthropic seed fallback behavior (if API key available)"""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
     if not os.getenv("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")
     
     tester = SeedDeterminismTester()
-    result = tester.test_provider_determinism("anthropic", "claude-3-haiku-20240307")
+    result = tester.test_provider_determinism("anthropic", "claude-haiku-4-5")
     
     assert result["success"], f"Anthropic test failed: {result.get('error')}"
     assert not result["seed_supported"], "Anthropic should not support seed natively"
@@ -234,9 +238,11 @@ def test_anthropic_seed_fallback():
 def test_ollama_seed_determinism():
     """Test Ollama seed determinism (if server running)"""
     tester = SeedDeterminismTester()
+    if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+        pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
     
     try:
-        result = tester.test_provider_determinism("ollama", "llama3.2:1b")
+        result = tester.test_provider_determinism("ollama", "qwen3:4b-instruct")
         
         if not result["success"] and "connection" in result.get("error", "").lower():
             pytest.skip("Ollama server not running")
@@ -252,6 +258,8 @@ def test_ollama_seed_determinism():
 
 def test_session_seed_persistence():
     """Test that session-level seed parameters work correctly"""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
 
@@ -260,7 +268,7 @@ def test_session_seed_persistence():
         from abstractcore.providers.openai_provider import OpenAIProvider
         
         # Create session with seed
-        provider = OpenAIProvider(model="gpt-4o", temperature=0.0, seed=42)
+        provider = OpenAIProvider(model="gpt-5-mini", temperature=0.0, seed=42)
         session = BasicSession(provider=provider, temperature=0.0, seed=42)
         
         # Generate multiple responses
@@ -278,11 +286,13 @@ def test_session_seed_persistence():
 
 def test_temperature_zero_consistency():
     """Test that temperature=0 provides more consistent outputs"""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
     
     try:
-        llm = create_llm("openai", model="gpt-3.5-turbo")
+        llm = create_llm("openai", model="gpt-5-mini")
         
         # Test with temperature=0
         responses_temp_0 = []

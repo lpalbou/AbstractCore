@@ -462,6 +462,30 @@ class MockProvider(BaseProvider):
         self._fail_count = fail_count
 
 
+class TestRetryProvider(BaseProvider):
+    """Minimal BaseProvider subclass used for retry integration scenarios."""
+
+    def __init__(self, model: str = "test-model", **kwargs):
+        super().__init__(model=model, **kwargs)
+        self.provider = "test-retry"
+
+    def _generate_internal(self, prompt: str, **kwargs):
+        return GenerateResponse(
+            content="Generated response",
+            model=self.model,
+            finish_reason="stop",
+        )
+
+    def generate(self, prompt: str, **kwargs):
+        return self.generate_with_telemetry(prompt, **kwargs)
+
+    def list_available_models(self, **kwargs):
+        return [self.model]
+
+    def get_capabilities(self):
+        return ["chat", "streaming", "tools"]
+
+
 class TestBaseProviderIntegration:
     """Test retry integration with BaseProvider."""
 

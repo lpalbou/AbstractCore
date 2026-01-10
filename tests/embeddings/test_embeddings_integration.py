@@ -3,6 +3,7 @@ Real-world integration tests for embeddings with LLMs.
 Tests actual embedding models and LLM integration scenarios.
 """
 
+import os
 import pytest
 import tempfile
 import shutil
@@ -11,7 +12,14 @@ import numpy as np
 from unittest.mock import patch
 
 from abstractcore.embeddings import EmbeddingManager
-from abstractcore import create_llm
+import abstractcore
+from abstractcore.core.types import GenerateResponse
+
+if os.getenv("ABSTRACTCORE_RUN_EMBEDDINGS_TESTS") != "1":
+    pytest.skip(
+        "Embeddings integration tests are slow and may download models; set ABSTRACTCORE_RUN_EMBEDDINGS_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.integration
@@ -200,21 +208,22 @@ class TestLLMEmbeddingIntegration:
             )
 
             # Mock LLM (don't actually call APIs in tests)
-            with patch('abstractcore.create_llm') as mock_create_llm:
+            with patch("abstractcore.create_llm") as mock_create_llm:
                 mock_llm = mock_create_llm.return_value
-                mock_llm.generate.return_value = "Mock response"
+                mock_llm.generate.return_value = GenerateResponse(
+                    content="Mock response",
+                    model="mock",
+                    finish_reason="stop",
+                )
 
-                try:
-                    llm = create_llm("openai", model="gpt-4o")
-                except ImportError:
-                    pytest.skip("OpenAI provider not available")
+                llm = abstractcore.create_llm("openai", model="gpt-4o")
 
                 # Use both independently
                 embedding = embedder.embed("Test text")
                 response = llm.generate("Test prompt")
 
                 assert len(embedding) == 384
-                # Real API response - just verify it's not empty
+                # Mock response - verify contract shape.
                 assert response.content is not None
                 assert len(response.content) > 0
 

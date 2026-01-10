@@ -158,7 +158,7 @@ class TestResultTracker:
 # Test Functions
 # ============================================================================
 
-def test_simple_schema(llm, tracker: TestResultTracker):
+def run_simple_schema(llm, tracker: TestResultTracker):
     """Test simple schema (3 fields)"""
     prompt = "Extract: Alice Smith, 28 years old, alice.smith@example.com"
 
@@ -201,7 +201,7 @@ def test_simple_schema(llm, tracker: TestResultTracker):
         return False
 
 
-def test_medium_schema(llm, tracker: TestResultTracker):
+def run_medium_schema(llm, tracker: TestResultTracker):
     """Test medium schema (nested with enums)"""
     prompt = """Create project: Mobile App Development
 Description: Build iOS and Android app for customer portal
@@ -252,7 +252,7 @@ Total: 140 hours"""
         return False
 
 
-def test_complex_schema(llm, tracker: TestResultTracker):
+def run_complex_schema(llm, tracker: TestResultTracker):
     """Test complex schema (3+ levels deep)"""
     prompt = """Create organization: DataCorp, founded 2018
 Team: Data Science
@@ -323,9 +323,9 @@ def run_all_tests():
         print(f"Model: {model_name}")
         llm = create_llm("mlx", model=model_name)
 
-        test_simple_schema(llm, tracker)
-        test_medium_schema(llm, tracker)
-        test_complex_schema(llm, tracker)
+        run_simple_schema(llm, tracker)
+        run_medium_schema(llm, tracker)
+        run_complex_schema(llm, tracker)
 
         print()
     except Exception as e:

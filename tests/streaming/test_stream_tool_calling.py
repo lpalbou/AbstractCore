@@ -14,13 +14,16 @@ from abstractcore.core.types import GenerateResponse
 
 # Test models as specified by user
 TEST_MODELS = {
-    "ollama": "qwen3-coder:30b",
-    "lmstudio": "qwen/qwen3-coder-30b",
+    "ollama": "qwen3:4b-instruct",
+    "lmstudio": "qwen/qwen3-4b-2507",
     "mlx": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
     "huggingface": "Qwen/Qwen3-4B",  # GGUF not supported, using standard model
-    "openai": "gpt-5-nano",  # User claims it exists
-    "anthropic": "claude-3-5-haiku-latest"  # User claims it exists
+    "openai": "gpt-5-mini",
+    "anthropic": "claude-haiku-4-5",
 }
+
+RUN_LIVE = os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") == "1"
+RUN_LOCAL = os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") == "1"
 
 
 class TestStreamToolCalling:
@@ -61,12 +64,14 @@ class TestStreamToolCalling:
         ]
 
     def test_openai_streaming_tools(self, simple_tools):
-        """Test OpenAI streaming with tool calling using gpt-5-nano."""
+        """Test OpenAI streaming with tool calling."""
+        if not RUN_LIVE:
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model=TEST_MODELS["openai"])
+            provider = create_llm("openai", model=TEST_MODELS["openai"], timeout=30.0)
 
             # Test streaming with tools
             stream = provider.generate(
@@ -122,18 +127,32 @@ class TestStreamToolCalling:
             error_msg = str(e).lower()
             if "authentication" in error_msg or "api_key" in error_msg:
                 pytest.skip("OpenAI authentication failed")
+            elif any(
+                keyword in error_msg
+                for keyword in (
+                    "connection error",
+                    "connecterror",
+                    "operation not permitted",
+                    "network is unreachable",
+                    "nodename nor servname provided",
+                    "timeout",
+                )
+            ):
+                pytest.skip("OpenAI not reachable in this environment")
             elif "model" in error_msg and "not found" in error_msg:
                 pytest.skip(f"Model {TEST_MODELS['openai']} not found - user's claim may be incorrect")
             else:
                 raise
 
     def test_anthropic_streaming_tools(self, simple_tools):
-        """Test Anthropic streaming with tool calling using claude-3-5-haiku-latest."""
+        """Test Anthropic streaming with tool calling."""
+        if not RUN_LIVE:
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            provider = create_llm("anthropic", model=TEST_MODELS["anthropic"])
+            provider = create_llm("anthropic", model=TEST_MODELS["anthropic"], timeout=30.0)
 
             # Test streaming with tools
             stream = provider.generate(
@@ -174,15 +193,34 @@ class TestStreamToolCalling:
             error_msg = str(e).lower()
             if "authentication" in error_msg or "api_key" in error_msg:
                 pytest.skip("Anthropic authentication failed")
+            elif any(
+                keyword in error_msg
+                for keyword in (
+                    "connection error",
+                    "connecterror",
+                    "operation not permitted",
+                    "network is unreachable",
+                    "nodename nor servname provided",
+                    "timeout",
+                )
+            ):
+                pytest.skip("Anthropic not reachable in this environment")
             elif "model" in error_msg and "not found" in error_msg:
                 pytest.skip(f"Model {TEST_MODELS['anthropic']} not found - user's claim may be incorrect")
             else:
                 raise
 
     def test_ollama_streaming_tools(self, simple_tools):
-        """Test Ollama streaming with qwen3-coder:30b."""
+        """Test Ollama streaming with a lightweight model."""
+        if not RUN_LOCAL:
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("ollama", model=TEST_MODELS["ollama"], base_url="http://localhost:11434")
+            provider = create_llm(
+                "ollama",
+                model=TEST_MODELS["ollama"],
+                base_url="http://localhost:11434",
+                timeout=10.0,
+            )
 
             # Test streaming - Ollama models may not support OpenAI-style tools
             # but we can test the streaming works
@@ -221,9 +259,16 @@ class TestStreamToolCalling:
                 raise
 
     def test_lmstudio_streaming_tools(self, simple_tools):
-        """Test LMStudio streaming with qwen/qwen3-coder-30b."""
+        """Test LMStudio streaming with a lightweight model."""
+        if not RUN_LOCAL:
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("lmstudio", model=TEST_MODELS["lmstudio"], base_url="http://localhost:1234/v1")
+            provider = create_llm(
+                "lmstudio",
+                model=TEST_MODELS["lmstudio"],
+                base_url="http://localhost:1234/v1",
+                timeout=10.0,
+            )
 
             # LMStudio is OpenAI-compatible, so tools might work
             stream = provider.generate(
@@ -255,7 +300,7 @@ class TestStreamToolCalling:
 
         except Exception as e:
             error_msg = str(e).lower()
-            if any(keyword in error_msg for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in error_msg for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("LMStudio not running")
             elif "model" in error_msg:
                 pytest.skip(f"Model {TEST_MODELS['lmstudio']} not loaded in LMStudio")
@@ -264,6 +309,8 @@ class TestStreamToolCalling:
 
     def test_mlx_streaming_tools(self, simple_tools):
         """Test MLX streaming with Qwen3-Coder-30B-A3B-Instruct-4bit."""
+        if os.getenv("ABSTRACTCORE_RUN_MLX_TESTS") != "1":
+            pytest.skip("MLX streaming test is heavy; set ABSTRACTCORE_RUN_MLX_TESTS=1 to run")
         try:
             provider = create_llm("mlx", model=TEST_MODELS["mlx"])
 
@@ -303,6 +350,8 @@ class TestStreamToolCalling:
 
         Now with full GGUF support via llama-cpp-python!
         """
+        if os.getenv("ABSTRACTCORE_RUN_GGUF_TESTS") != "1":
+            pytest.skip("GGUF streaming test is opt-in; set ABSTRACTCORE_RUN_GGUF_TESTS=1 to run")
         try:
             # Test GGUF model
             gguf_model = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF"
@@ -379,17 +428,20 @@ class TestStreamToolCalling:
         # Test each provider that's available
         providers_to_test = []
 
-        if os.getenv("OPENAI_API_KEY"):
+        if RUN_LIVE and os.getenv("OPENAI_API_KEY"):
             providers_to_test.append(("openai", TEST_MODELS["openai"], {}))
 
-        if os.getenv("ANTHROPIC_API_KEY"):
+        if RUN_LIVE and os.getenv("ANTHROPIC_API_KEY"):
             providers_to_test.append(("anthropic", TEST_MODELS["anthropic"], {}))
 
-        # Always try local providers
-        providers_to_test.extend([
-            ("ollama", "qwen3-coder:30b", {"base_url": "http://localhost:11434"}),  # Use standardized model
-            ("openai", "gpt-4o-mini", {})
-        ])
+        if RUN_LOCAL:
+            providers_to_test.extend([
+                ("ollama", TEST_MODELS["ollama"], {"base_url": "http://localhost:11434", "timeout": 10.0}),
+                ("lmstudio", TEST_MODELS["lmstudio"], {"base_url": "http://localhost:1234/v1", "timeout": 10.0}),
+            ])
+
+        if not providers_to_test:
+            pytest.skip("No providers enabled for performance comparison (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 and/or ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
 
         for provider_name, model, config in providers_to_test:
             try:
@@ -441,12 +493,13 @@ class TestStreamToolCalling:
 
     def test_streaming_tool_accumulation(self, simple_tools):
         """Test accumulating tool call arguments across streaming chunks."""
+        if not RUN_LIVE:
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            # Use a model we know works (fallback from gpt-5-nano if needed)
-            provider = create_llm("openai", model="gpt-4o-mini")  # Known working model
+            provider = create_llm("openai", model=TEST_MODELS["openai"], timeout=30.0)
 
             stream = provider.generate(
                 "Get the weather for Paris and calculate 100 + 200",
@@ -488,7 +541,7 @@ class TestStreamToolCalling:
             if "authentication" in str(e).lower():
                 pytest.skip("Authentication failed")
             else:
-                # Try with known model if gpt-5-nano doesn't exist
+                # Keep this as a best-effort integration test; model availability can vary.
                 pass
 
 

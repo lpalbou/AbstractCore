@@ -6,6 +6,7 @@ This test validates that the EmbeddingManager is actually using vector embedding
 from the loaded model and that semantic similarity relationships work as expected.
 """
 
+import os
 import pytest
 import tempfile
 import shutil
@@ -13,6 +14,12 @@ import numpy as np
 from pathlib import Path
 
 from abstractcore.embeddings import EmbeddingManager
+
+if os.getenv("ABSTRACTCORE_RUN_EMBEDDINGS_TESTS") != "1":
+    pytest.skip(
+        "Embeddings semantic-validation tests are slow and may download models; set ABSTRACTCORE_RUN_EMBEDDINGS_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 class TestEmbeddingSemanticValidation:

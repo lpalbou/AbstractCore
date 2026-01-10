@@ -519,9 +519,12 @@ class TestRegressionValidation:
         # Should have results
         assert len(results) > 0
 
-        # Should have tool execution
-        all_content = " ".join([r.content for r in results if r.content])
-        assert "test_tool" in all_content
+        # Tool call should be surfaced in passthrough mode (execution happens in host/runtime).
+        all_tool_calls = []
+        for r in results:
+            if isinstance(getattr(r, "tool_calls", None), list):
+                all_tool_calls.extend(r.tool_calls)
+        assert any(tc.get("name") == "test_tool" for tc in all_tool_calls)
 
         clear_registry()
 
@@ -588,7 +591,7 @@ def test_compatibility_with_existing_tests():
     This test ensures the existing 59 tests will still pass.
     """
     # Import existing test module
-    import tests.test_unified_streaming as existing_tests
+    import tests.streaming.test_unified_streaming as existing_tests
 
     # Verify key test classes exist
     assert hasattr(existing_tests, 'TestIncrementalToolDetector')

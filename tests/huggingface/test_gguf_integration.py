@@ -11,6 +11,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from abstractcore import create_llm
 
+if os.getenv("ABSTRACTCORE_RUN_GGUF_TESTS") != "1":
+    pytest.skip(
+        "GGUF tests are opt-in; set ABSTRACTCORE_RUN_GGUF_TESTS=1 to run",
+        allow_module_level=True,
+    )
+
 
 TEST_GGUF_MODEL = "unsloth--Qwen3-4B-Instruct-2507-GGUF"
 
