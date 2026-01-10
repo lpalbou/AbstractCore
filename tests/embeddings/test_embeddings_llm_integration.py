@@ -6,6 +6,7 @@ Tests the complete integration between embeddings and actual LLM providers.
 NO MOCKING - Uses real embedding models and mock LLM provider for structure validation.
 """
 
+import os
 import pytest
 import tempfile
 import shutil
@@ -13,6 +14,12 @@ from pathlib import Path
 
 from abstractcore.embeddings import EmbeddingManager
 from abstractcore import create_llm
+
+if os.getenv("ABSTRACTCORE_RUN_EMBEDDINGS_TESTS") != "1":
+    pytest.skip(
+        "Embeddings+LLM integration tests are slow and may require network; set ABSTRACTCORE_RUN_EMBEDDINGS_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.integration

@@ -56,8 +56,10 @@ def check_provider_availability(provider: str, model: str = None) -> tuple[bool,
     """
     try:
         if provider == "ollama":
+            if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+                return False, "Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)"
             # Check if Ollama is running
-            llm = create_llm(provider, model=model or "qwen2.5vl:7b")
+            llm = create_llm(provider, model=model or "qwen2.5vl:7b", timeout=5.0)
             # Try to get model info to verify it's actually available
             if model and hasattr(llm, '_client'):
                 # This will fail if model isn't installed
@@ -65,32 +67,48 @@ def check_provider_availability(provider: str, model: str = None) -> tuple[bool,
             return True, ""
 
         elif provider == "lmstudio":
+            if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+                return False, "Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)"
             # Check if LMStudio is running
-            llm = create_llm(provider, model=model or "qwen/qwen2.5-vl-7b")
+            llm = create_llm(provider, model=model or "qwen/qwen2.5-vl-7b", timeout=5.0)
             return True, ""
 
         elif provider == "openai":
+            if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+                return False, "Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)"
             # Check for API key
             if not os.getenv("OPENAI_API_KEY"):
                 return False, "OPENAI_API_KEY not set"
-            llm = create_llm(provider, model=model or "gpt-4o")
+            llm = create_llm(provider, model=model or "gpt-4o", timeout=5.0)
             return True, ""
 
         elif provider == "anthropic":
+            if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+                return False, "Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)"
             # Check for API key
             if not os.getenv("ANTHROPIC_API_KEY"):
                 return False, "ANTHROPIC_API_KEY not set"
-            llm = create_llm(provider, model=model or "claude-3-5-sonnet-20241022")
+            llm = create_llm(provider, model=model or "claude-3-5-sonnet-20241022", timeout=5.0)
             return True, ""
 
         elif provider == "huggingface":
-            # Check for HF token (optional for some models)
-            llm = create_llm(provider, model=model or "unsloth/Qwen2.5-VL-7B-Instruct-GGUF")
+            # HuggingFace model loading can be heavy and may require large downloads / native backends.
+            # Default to "unavailable" unless explicitly enabled.
+            if os.getenv("ABSTRACTCORE_RUN_HUGGINGFACE_TESTS") != "1" and os.getenv("ABSTRACTCORE_RUN_GGUF_TESTS") != "1":
+                return False, "HuggingFace tests disabled (set ABSTRACTCORE_RUN_HUGGINGFACE_TESTS=1)"
+
+            # Best-effort lightweight check: if a specific model is requested, only claim availability
+            # when it appears to be cached locally.
+            if model:
+                model_dir = (Path.home() / ".cache" / "huggingface" / "hub" / f"models--{model.replace('/', '--')}")
+                if not model_dir.exists():
+                    return False, f"HuggingFace model not found in cache: {model}"
             return True, ""
 
         elif provider == "mlx":
-            # Check if MLX is available (should be in this environment)
-            llm = create_llm(provider, model=model or "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit")
+            if os.getenv("ABSTRACTCORE_RUN_MLX_TESTS") != "1":
+                return False, "MLX tests disabled (set ABSTRACTCORE_RUN_MLX_TESTS=1)"
+            # Avoid loading a model here; tests that opt-in can create the provider directly.
             return True, ""
 
         else:
@@ -100,7 +118,7 @@ def check_provider_availability(provider: str, model: str = None) -> tuple[bool,
         return False, f"Missing dependency for {provider}: {e}"
     except Exception as e:
         error_msg = str(e).lower()
-        if any(keyword in error_msg for keyword in ["connection", "refused", "timeout", "not found", "not running"]):
+        if any(keyword in error_msg for keyword in ["connection", "refused", "timeout", "operation not permitted", "not found", "not running"]):
             return False, f"{provider} not available: {e}"
         else:
             # Re-raise unexpected errors

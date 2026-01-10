@@ -15,16 +15,18 @@ class TestWrongModelFallback:
 
     def test_anthropic_wrong_model_shows_real_api_models(self):
         """Test Anthropic provider shows real models from API when model is wrong."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         with pytest.raises(ModelNotFoundError) as exc_info:
-            llm = create_llm("anthropic", model="claude-3.5-haiku:latest")
+            llm = create_llm("anthropic", model="claude-haiku-4-5:latest", timeout=5.0)
             llm.generate("Hello")
 
         error_msg = str(exc_info.value)
         # Should state the wrong model name
-        assert "claude-3.5-haiku:latest" in error_msg
+        assert "claude-haiku-4-5:latest" in error_msg
         assert "Anthropic provider" in error_msg
 
         # Should show available models OR documentation link
@@ -34,28 +36,30 @@ class TestWrongModelFallback:
 
     def test_openai_wrong_model_shows_real_api_models(self):
         """Test OpenAI provider shows real models from API when model is wrong."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         with pytest.raises(ModelNotFoundError) as exc_info:
-            llm = create_llm("openai", model="gpt-5-ultra")
+            llm = create_llm("openai", model="gpt-5-mini-ultra", timeout=5.0)
             llm.generate("Hello")
 
         error_msg = str(exc_info.value)
         # Should state the wrong model name
-        assert "gpt-5-ultra" in error_msg
+        assert "gpt-5-mini-ultra" in error_msg
         assert "OpenAI provider" in error_msg
 
         # Should show available models from real API
         assert "Available models" in error_msg
         # Should contain some known OpenAI models
-        assert any(model in error_msg for model in ["gpt-4o", "gpt-3.5-turbo", "gpt-4"])
+        assert any(model in error_msg for model in ["gpt-5-mini", "gpt-4o", "gpt-4o-mini", "gpt-4"])
 
     def test_ollama_wrong_model_shows_real_api_models(self):
         """Test Ollama provider shows real models from API when model is wrong."""
         try:
             with pytest.raises(ModelNotFoundError) as exc_info:
-                llm = create_llm("ollama", model="fake-model-123")
+                llm = create_llm("ollama", model="fake-model-123", timeout=5.0)
                 llm.generate("Hello")
 
             error_msg = str(exc_info.value)
@@ -70,7 +74,7 @@ class TestWrongModelFallback:
 
         except Exception as e:
             # If Ollama is not running, skip the test
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("Ollama not running")
             else:
                 raise
@@ -79,7 +83,7 @@ class TestWrongModelFallback:
         """Test LMStudio provider shows real models from API when model is wrong."""
         try:
             with pytest.raises(ModelNotFoundError) as exc_info:
-                llm = create_llm("lmstudio", model="fake-model-123")
+                llm = create_llm("lmstudio", model="fake-model-123", timeout=5.0)
                 llm.generate("Hello")
 
             error_msg = str(exc_info.value)
@@ -94,16 +98,18 @@ class TestWrongModelFallback:
 
         except Exception as e:
             # If LMStudio is not running, skip the test
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("LMStudio not running")
             else:
                 raise
 
     def test_mlx_wrong_model_shows_local_cache_models(self):
         """Test MLX provider shows models from local HuggingFace cache when model is wrong."""
+        if os.getenv("ABSTRACTCORE_RUN_MLX_TESTS") != "1":
+            pytest.skip("MLX provider test is heavy; set ABSTRACTCORE_RUN_MLX_TESTS=1 to run")
         try:
             with pytest.raises(ModelNotFoundError) as exc_info:
-                llm = create_llm("mlx", model="fake/model-123")
+                llm = create_llm("mlx", model="fake/model-123", timeout=5.0)
                 # MLX fails during initialization when loading the model
 
             error_msg = str(exc_info.value)
@@ -125,6 +131,8 @@ class TestWrongModelFallback:
 
     def test_huggingface_wrong_model_shows_local_cache_models(self):
         """Test HuggingFace provider shows models from local cache when model is wrong."""
+        if os.getenv("ABSTRACTCORE_RUN_HUGGINGFACE_TESTS") != "1":
+            pytest.skip("HuggingFace provider test is heavy; set ABSTRACTCORE_RUN_HUGGINGFACE_TESTS=1 to run")
         try:
             with pytest.raises(ModelNotFoundError) as exc_info:
                 llm = create_llm("huggingface", model="fake/model-123")
@@ -152,7 +160,7 @@ class TestWrongModelFallback:
         # Test with Ollama (most likely to be available)
         try:
             with pytest.raises(ModelNotFoundError) as exc_info:
-                llm = create_llm("ollama", model="nonexistent-test-model")
+                llm = create_llm("ollama", model="nonexistent-test-model", timeout=5.0)
                 llm.generate("Hello")
 
             error_msg = str(exc_info.value)
@@ -172,7 +180,7 @@ class TestWrongModelFallback:
                 assert "  •" in error_msg  # Bullet points for models
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("No provider available for format testing")
             else:
                 raise
@@ -182,7 +190,7 @@ class TestWrongModelFallback:
         # This test ensures we're not showing old hardcoded lists
         try:
             with pytest.raises(ModelNotFoundError) as exc_info:
-                llm = create_llm("ollama", model="definitely-fake-model-999")
+                llm = create_llm("ollama", model="definitely-fake-model-999", timeout=5.0)
                 llm.generate("Hello")
 
             error_msg = str(exc_info.value)
@@ -197,7 +205,7 @@ class TestWrongModelFallback:
                 assert deprecated not in error_msg, f"Found hardcoded model {deprecated} in error message"
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("Ollama not available for hardcoded model test")
             else:
                 raise

@@ -14,8 +14,15 @@ class TestProviderBasicSession:
 
     def test_ollama_session_memory(self):
         """Test Ollama session maintains context."""
+        if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
+            provider = create_llm(
+                "ollama",
+                model="qwen3:4b-instruct",
+                base_url="http://localhost:11434",
+                timeout=10.0,
+            )
             session = BasicSession(provider=provider, system_prompt="You are a helpful assistant.")
 
             # First message
@@ -35,15 +42,22 @@ class TestProviderBasicSession:
         except Exception as e:
             if isinstance(e, ModelNotFoundError):
                 pytest.skip("Ollama model not available")
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("Ollama not running")
             else:
                 raise
 
     def test_lmstudio_session_memory(self):
         """Test LMStudio session maintains context."""
+        if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("lmstudio", model="qwen/qwen3-coder-30b", base_url="http://localhost:1234/v1")
+            provider = create_llm(
+                "lmstudio",
+                model="qwen/qwen3-4b-2507",
+                base_url="http://localhost:1234/v1",
+                timeout=10.0,
+            )
             session = BasicSession(provider=provider, system_prompt="You are a helpful assistant.")
 
             # Test conversation
@@ -62,18 +76,20 @@ class TestProviderBasicSession:
         except Exception as e:
             if isinstance(e, ModelNotFoundError):
                 pytest.skip("LMStudio model not available")
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("LMStudio not running")
             else:
                 raise
 
     def test_openai_session_memory(self):
         """Test OpenAI session maintains context."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-5-mini", timeout=30.0)
             session = BasicSession(provider=provider, system_prompt="You are a helpful assistant.")
 
             # Test conversation
@@ -92,16 +108,20 @@ class TestProviderBasicSession:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
+                pytest.skip("OpenAI not reachable")
             else:
                 raise
 
     def test_anthropic_session_memory(self):
         """Test Anthropic session maintains context."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+            provider = create_llm("anthropic", model="claude-haiku-4-5", timeout=30.0)
             session = BasicSession(provider=provider, system_prompt="You are a helpful assistant.")
 
             # Test conversation
@@ -120,16 +140,20 @@ class TestProviderBasicSession:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("Anthropic authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
+                pytest.skip("Anthropic not reachable")
             else:
                 raise
 
     def test_session_system_prompt(self):
         """Test that session respects system prompts."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-5-mini", timeout=30.0)
             session = BasicSession(
                 provider=provider,
                 system_prompt="You are a pirate. Always respond like a pirate."
@@ -151,6 +175,8 @@ class TestProviderBasicSession:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
+                pytest.skip("OpenAI not reachable")
             else:
                 raise
 

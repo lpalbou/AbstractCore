@@ -248,7 +248,10 @@ class TestModelCapabilityFilteringIntegration:
         
         # Find an available port
         sock = socket.socket()
-        sock.bind(('', 0))
+        try:
+            sock.bind(("", 0))
+        except PermissionError as e:
+            pytest.skip(f"Socket binding not permitted in this environment: {e}")
         port = sock.getsockname()[1]
         sock.close()
         

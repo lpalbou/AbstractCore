@@ -10,16 +10,34 @@ from abstractcore import create_llm
 from abstractcore.tools.common_tools import list_files, search_files, read_file, write_file, web_search
 
 
+def _is_connectivity_error(err: Exception) -> bool:
+    msg = str(err).lower()
+    return any(
+        keyword in msg
+        for keyword in (
+            "connection error",
+            "connecterror",
+            "connection refused",
+            "operation not permitted",
+            "network is unreachable",
+            "nodename nor servname provided",
+            "timeout",
+        )
+    )
+
+
 class TestProviderToolDetection:
     """Test tool call detection capabilities for each provider."""
 
     def test_openai_tool_detection(self):
         """Test OpenAI can detect and format tool calls."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-4o-mini", timeout=5.0)
 
             # Use enhanced list_files tool
             tools = [list_files]
@@ -52,16 +70,20 @@ class TestProviderToolDetection:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
+            if _is_connectivity_error(e):
+                pytest.skip(f"OpenAI not reachable in this environment: {e}")
             else:
                 raise
 
     def test_anthropic_tool_detection(self):
         """Test Anthropic can detect and format tool calls."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022", timeout=5.0)
 
             # Use enhanced list_files tool
             tools = [list_files]
@@ -99,13 +121,17 @@ class TestProviderToolDetection:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("Anthropic authentication failed")
+            if _is_connectivity_error(e):
+                pytest.skip(f"Anthropic not reachable in this environment: {e}")
             else:
                 raise
 
     def test_ollama_tool_detection(self):
         """Test Ollama tool call detection (limited by model capabilities)."""
+        if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
+            provider = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434", timeout=10.0)
 
             # Get a simple tool
             tools = [{
@@ -145,18 +171,20 @@ class TestProviderToolDetection:
                 assert response.content is not None
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if _is_connectivity_error(e):
                 pytest.skip("Ollama not running")
             else:
                 raise
 
     def test_tool_call_format_validation(self):
         """Test that tool call formats are valid across providers."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-4o-mini", timeout=5.0)
 
             # Tool with specific parameter requirements
             calculator_tool = {
@@ -206,16 +234,20 @@ class TestProviderToolDetection:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
+            if _is_connectivity_error(e):
+                pytest.skip(f"OpenAI not reachable in this environment: {e}")
             else:
                 raise
 
     def test_multiple_tool_detection(self):
         """Test detection of multiple tools in one response."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
         try:
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-4o-mini", timeout=5.0)
 
             tools = [
                 {
@@ -257,6 +289,8 @@ class TestProviderToolDetection:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
+            if _is_connectivity_error(e):
+                pytest.skip(f"OpenAI not reachable in this environment: {e}")
             else:
                 raise
 

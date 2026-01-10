@@ -25,9 +25,15 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error, format_provider_error
-from ..tools import UniversalToolHandler, execute_tools
-from ..events import EventType
+from ..exceptions import (
+    ProviderAPIError,
+    ModelNotFoundError,
+    AuthenticationError,
+    RateLimitError,
+    InvalidRequestError,
+    format_model_error,
+)
+from ..tools import UniversalToolHandler
 
 
 class OpenAICompatibleProvider(BaseProvider):
@@ -61,24 +67,23 @@ class OpenAICompatibleProvider(BaseProvider):
         llm = create_llm("openai-compatible", model="my-model")
     """
 
+    PROVIDER_ID = "openai-compatible"
+    PROVIDER_DISPLAY_NAME = "OpenAI-compatible server"
+    BASE_URL_ENV_VAR = "OPENAI_COMPATIBLE_BASE_URL"
+    API_KEY_ENV_VAR = "OPENAI_COMPATIBLE_API_KEY"  # Optional for many servers
+    DEFAULT_BASE_URL = "http://localhost:8080/v1"
+
     def __init__(self, model: str = "default", base_url: Optional[str] = None,
                  api_key: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
-        self.provider = "openai-compatible"
+        self.provider = self.PROVIDER_ID
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
 
-        # Base URL priority: parameter > OPENAI_COMPATIBLE_BASE_URL > default
-        self.base_url = (
-            base_url or
-            os.getenv("OPENAI_COMPATIBLE_BASE_URL") or
-            "http://localhost:8080/v1"
-        ).rstrip('/')
+        self.base_url = self._resolve_base_url(base_url)
 
-        # API key: OPTIONAL (many local servers don't require authentication)
-        # Priority: parameter > OPENAI_COMPATIBLE_API_KEY > None
-        self.api_key = api_key or os.getenv("OPENAI_COMPATIBLE_API_KEY")
+        self.api_key = self._resolve_api_key(api_key)
 
         # Get timeout value - None means unlimited timeout
         timeout_value = getattr(self, '_timeout', None)
@@ -102,7 +107,7 @@ class OpenAICompatibleProvider(BaseProvider):
                     fallback_timeout = None
                 self.client = httpx.Client(timeout=fallback_timeout)
             except Exception:
-                raise RuntimeError(f"Failed to create HTTP client for OpenAI-compatible provider: {e}")
+                raise RuntimeError(f"Failed to create HTTP client for {self.PROVIDER_DISPLAY_NAME}: {e}")
 
         self._async_client = None  # Lazy-loaded async client
 
@@ -122,13 +127,129 @@ class OpenAICompatibleProvider(BaseProvider):
     def _get_headers(self) -> Dict[str, str]:
         """Get HTTP headers with optional API key authentication."""
         headers = {"Content-Type": "application/json"}
-        # Only add Authorization header if api_key is provided and truthy
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        # Only add Authorization header if api_key is provided and meaningful.
+        api_key = None if self.api_key is None else str(self.api_key).strip()
+        if api_key and api_key.upper() != "EMPTY":
+            headers["Authorization"] = f"Bearer {api_key}"
         return headers
 
+    def _mutate_payload(self, payload: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        """Provider-specific payload hook (default: no-op)."""
+        return payload
+
+    def _resolve_base_url(self, base_url: Optional[str]) -> str:
+        """Resolve base URL with parameter > env var > default precedence."""
+        if base_url is not None:
+            resolved = str(base_url).strip()
+            if not resolved:
+                raise ValueError("base_url cannot be empty")
+            return resolved.rstrip("/")
+
+        env_var = getattr(self, "BASE_URL_ENV_VAR", None)
+        env_val = os.getenv(env_var) if isinstance(env_var, str) and env_var else None
+        if isinstance(env_val, str) and env_val.strip():
+            return env_val.strip().rstrip("/")
+
+        default = getattr(self, "DEFAULT_BASE_URL", None) or ""
+        return str(default).strip().rstrip("/")
+
+    def _resolve_api_key(self, api_key: Optional[str]) -> Optional[str]:
+        """Resolve API key with parameter > env var > config fallback."""
+        if api_key is not None:
+            # Allow callers to explicitly disable auth by passing an empty string.
+            return api_key
+
+        env_var = getattr(self, "API_KEY_ENV_VAR", None)
+        env_val = os.getenv(env_var) if isinstance(env_var, str) and env_var else None
+        if env_val is not None:
+            return env_val
+
+        return self._get_api_key_from_config()
+
+    def _get_api_key_from_config(self) -> Optional[str]:
+        """Optional config-manager fallback for subclasses (default: none)."""
+        return None
+
+    def _extract_error_detail(self, response: Optional[httpx.Response]) -> Optional[str]:
+        """Extract a useful error message from an HTTPX response, if possible."""
+        if response is None:
+            return None
+
+        try:
+            data = response.json()
+            if isinstance(data, dict):
+                err = data.get("error")
+                if isinstance(err, dict):
+                    for k in ("message", "error", "detail"):
+                        v = err.get(k)
+                        if isinstance(v, str) and v.strip():
+                            return v.strip()
+                for k in ("message", "detail"):
+                    v = data.get(k)
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+            # If it's JSON but not a dict, stringify it.
+            if data is not None:
+                return json.dumps(data, ensure_ascii=False)
+        except Exception:
+            pass
+
+        try:
+            text = response.text
+            if isinstance(text, str) and text.strip():
+                # Bound size to avoid dumping huge error bodies.
+                return text.strip()[:2000]
+        except Exception:
+            pass
+
+        return None
+
+    def _raise_for_status(self, response: httpx.Response, *, request_url: Optional[str] = None) -> None:
+        """Raise rich provider exceptions on HTTP errors."""
+        status_code = getattr(response, "status_code", None)
+        if status_code is None:
+            # Unit tests sometimes stub the HTTP response with only `.raise_for_status()`/`.json()`.
+            # Treat as success if `.raise_for_status()` does not raise.
+            raise_for_status = getattr(response, "raise_for_status", None)
+            if callable(raise_for_status):
+                raise_for_status()
+            return
+
+        if int(status_code) < 400:
+            return
+
+        detail = self._extract_error_detail(response)
+        prefix = f"{self.PROVIDER_DISPLAY_NAME} API error ({status_code})"
+        msg = f"{prefix}: {detail}" if detail else prefix
+
+        status = int(status_code)
+        if status in (401, 403):
+            raise AuthenticationError(msg)
+        if status == 429:
+            raise RateLimitError(msg)
+        if status == 400:
+            # Many OpenAI-compatible servers use 400 for schema/model errors.
+            if detail and ("model" in detail.lower()) and ("not found" in detail.lower()):
+                self._raise_model_not_found()
+            raise InvalidRequestError(msg)
+        if status == 404:
+            # Could be endpoint misconfiguration (missing /v1) or an unknown model.
+            if detail and ("model" in detail.lower()) and ("not found" in detail.lower()):
+                self._raise_model_not_found()
+            raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]")
+
+        raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]")
+
+    def _raise_model_not_found(self) -> None:
+        """Raise ModelNotFoundError with a best-effort available-model list."""
+        try:
+            available_models = self.list_available_models(base_url=self.base_url)
+        except Exception:
+            available_models = []
+        raise ModelNotFoundError(format_model_error(self.PROVIDER_DISPLAY_NAME, self.model, available_models))
+
     def _validate_model(self):
-        """Validate that the model exists on the OpenAI-compatible server"""
+        """Validate that the model exists on the server (best-effort)."""
         # Skip validation for "default" placeholder (used by registry for model listing)
         if self.model == "default":
             return
@@ -137,12 +258,12 @@ class OpenAICompatibleProvider(BaseProvider):
             # Use base_url as-is (should include /v1) for model discovery
             available_models = self.list_available_models(base_url=self.base_url)
             if available_models and self.model not in available_models:
-                error_message = format_model_error("OpenAI-compatible server", self.model, available_models)
+                error_message = format_model_error(self.PROVIDER_DISPLAY_NAME, self.model, available_models)
                 raise ModelNotFoundError(error_message)
         except httpx.ConnectError:
             # Server not running - will fail later when trying to generate
             if hasattr(self, 'logger'):
-                self.logger.debug(f"OpenAI-compatible server not accessible at {self.base_url} - model validation skipped")
+                self.logger.debug(f"{self.PROVIDER_DISPLAY_NAME} not accessible at {self.base_url} - model validation skipped")
             pass
         except ModelNotFoundError:
             # Re-raise model not found errors
@@ -328,6 +449,9 @@ class OpenAICompatibleProvider(BaseProvider):
                 }
             }
 
+        # Provider-specific request extensions (vLLM extra_body, OpenRouter headers, etc.)
+        payload = self._mutate_payload(payload, **kwargs)
+
         if stream:
             # Return streaming response - BaseProvider will handle tag rewriting via UnifiedStreamProcessor
             return self._stream_generate(payload)
@@ -355,7 +479,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 json=payload,
                 headers=self._get_headers()
             )
-            response.raise_for_status()
+            self._raise_for_status(response, request_url=request_url)
             gen_time = round((time.time() - start_time) * 1000, 1)
 
             result = response.json()
@@ -368,6 +492,7 @@ class OpenAICompatibleProvider(BaseProvider):
                     message = {}
 
                 content = message.get("content", "")
+                reasoning = message.get("reasoning")
                 tool_calls = message.get("tool_calls")
                 if tool_calls is None:
                     # Some servers surface tool calls at the choice level.
@@ -375,11 +500,21 @@ class OpenAICompatibleProvider(BaseProvider):
                 finish_reason = choice.get("finish_reason", "stop")
             else:
                 content = "No response generated"
+                reasoning = None
                 tool_calls = None
                 finish_reason = "error"
 
             # Extract usage info
             usage = result.get("usage", {})
+
+            metadata: Dict[str, Any] = {
+                "_provider_request": {
+                    "url": request_url,
+                    "payload": payload,
+                }
+            }
+            if isinstance(reasoning, str) and reasoning.strip():
+                metadata["reasoning"] = reasoning
 
             return GenerateResponse(
                 content=content,
@@ -387,12 +522,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 finish_reason=finish_reason,
                 raw_response=result,
                 tool_calls=tool_calls if isinstance(tool_calls, list) else None,
-                metadata={
-                    "_provider_request": {
-                        "url": request_url,
-                        "payload": payload,
-                    }
-                },
+                metadata=metadata,
                 usage={
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),
@@ -407,76 +537,68 @@ class OpenAICompatibleProvider(BaseProvider):
         except AttributeError as e:
             # Handle None type errors specifically
             if "'NoneType'" in str(e):
-                raise ProviderAPIError(f"OpenAI-compatible provider not properly initialized: {str(e)}")
+                raise ProviderAPIError(f"{self.PROVIDER_DISPLAY_NAME} not properly initialized: {str(e)}")
             else:
-                raise ProviderAPIError(f"OpenAI-compatible provider configuration error: {str(e)}")
+                raise ProviderAPIError(f"{self.PROVIDER_DISPLAY_NAME} configuration error: {str(e)}")
         except Exception as e:
             error_str = str(e).lower()
-            if ('404' in error_str or 'not found' in error_str or 'model' in error_str) and ('not found' in error_str):
-                # Model not found - show available models
-                try:
-                    available_models = self.list_available_models(base_url=self.base_url)
-                    error_message = format_model_error("OpenAI-compatible server", self.model, available_models)
-                    raise ModelNotFoundError(error_message)
-                except Exception:
-                    # If model discovery also fails, provide a generic error
-                    raise ModelNotFoundError(f"Model '{self.model}' not found on OpenAI-compatible server and could not fetch available models")
-            else:
-                raise
+            if ("not found" in error_str) and ("model" in error_str):
+                self._raise_model_not_found()
+            raise
 
     def _stream_generate(self, payload: Dict[str, Any]) -> Iterator[GenerateResponse]:
         """Generate streaming response"""
-        try:
-            with self.client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                headers=self._get_headers()
-            ) as response:
-                response.raise_for_status()
+        request_url = f"{self.base_url}/chat/completions"
 
-                for line in response.iter_lines():
-                    if line:
-                        # Decode bytes to string if necessary
-                        if isinstance(line, bytes):
-                            line = line.decode('utf-8')
-                        line = line.strip()
+        with self.client.stream(
+            "POST",
+            request_url,
+            json=payload,
+            headers=self._get_headers()
+        ) as response:
+            self._raise_for_status(response, request_url=request_url)
 
-                        if line.startswith("data: "):
-                            data = line[6:]  # Remove "data: " prefix
+            for line in response.iter_lines():
+                if line:
+                    # Decode bytes to string if necessary
+                    if isinstance(line, bytes):
+                        line = line.decode('utf-8')
+                    line = line.strip()
 
-                            if data == "[DONE]":
-                                break
+                    if line.startswith("data: "):
+                        data = line[6:]  # Remove "data: " prefix
 
-                            try:
-                                chunk = json.loads(data)
+                        if data == "[DONE]":
+                            break
 
-                                if "choices" in chunk and len(chunk["choices"]) > 0:
-                                    choice = chunk["choices"][0]
-                                    delta = choice.get("delta", {})
-                                    if not isinstance(delta, dict):
-                                        delta = {}
-                                    content = delta.get("content", "")
-                                    tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
-                                    finish_reason = choice.get("finish_reason")
+                        try:
+                            chunk = json.loads(data)
 
-                                    yield GenerateResponse(
-                                        content=content,
-                                        model=self.model,
-                                        finish_reason=finish_reason,
-                                        tool_calls=tool_calls if isinstance(tool_calls, list) else None,
-                                        raw_response=chunk
-                                    )
+                            if "choices" in chunk and len(chunk["choices"]) > 0:
+                                choice = chunk["choices"][0]
+                                delta = choice.get("delta", {})
+                                if not isinstance(delta, dict):
+                                    delta = {}
+                                content = delta.get("content", "")
+                                reasoning = delta.get("reasoning")
+                                tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
+                                finish_reason = choice.get("finish_reason")
 
-                            except json.JSONDecodeError:
-                                continue
+                                metadata = {}
+                                if isinstance(reasoning, str) and reasoning.strip():
+                                    metadata["reasoning"] = reasoning
 
-        except Exception as e:
-            yield GenerateResponse(
-                content=f"Error: {str(e)}",
-                model=self.model,
-                finish_reason="error"
-            )
+                                yield GenerateResponse(
+                                    content=content,
+                                    model=self.model,
+                                    finish_reason=finish_reason,
+                                    tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                                    metadata=metadata or None,
+                                    raw_response=chunk
+                                )
+
+                        except json.JSONDecodeError:
+                            continue
 
     async def _agenerate_internal(self,
                                    prompt: str,
@@ -596,6 +718,9 @@ class OpenAICompatibleProvider(BaseProvider):
                 }
             }
 
+        # Provider-specific request extensions (vLLM extra_body, OpenRouter headers, etc.)
+        payload = self._mutate_payload(payload, **kwargs)
+
         if stream:
             return self._async_stream_generate(payload)
         else:
@@ -618,7 +743,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 json=payload,
                 headers=self._get_headers()
             )
-            response.raise_for_status()
+            self._raise_for_status(response, request_url=request_url)
             gen_time = round((time.time() - start_time) * 1000, 1)
 
             result = response.json()
@@ -626,26 +751,41 @@ class OpenAICompatibleProvider(BaseProvider):
             # Extract response from OpenAI format
             if "choices" in result and len(result["choices"]) > 0:
                 choice = result["choices"][0]
-                content = choice.get("message", {}).get("content", "")
+                message = choice.get("message") or {}
+                if not isinstance(message, dict):
+                    message = {}
+
+                content = message.get("content", "")
+                reasoning = message.get("reasoning")
+                tool_calls = message.get("tool_calls")
+                if tool_calls is None:
+                    tool_calls = choice.get("tool_calls")
                 finish_reason = choice.get("finish_reason", "stop")
             else:
                 content = "No response generated"
+                reasoning = None
+                tool_calls = None
                 finish_reason = "error"
 
             # Extract usage info
             usage = result.get("usage", {})
+
+            metadata: Dict[str, Any] = {
+                "_provider_request": {
+                    "url": request_url,
+                    "payload": payload,
+                }
+            }
+            if isinstance(reasoning, str) and reasoning.strip():
+                metadata["reasoning"] = reasoning
 
             return GenerateResponse(
                 content=content,
                 model=self.model,
                 finish_reason=finish_reason,
                 raw_response=result,
-                metadata={
-                    "_provider_request": {
-                        "url": request_url,
-                        "payload": payload,
-                    }
-                },
+                tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                metadata=metadata,
                 usage={
                     "input_tokens": usage.get("prompt_tokens", 0),
                     "output_tokens": usage.get("completion_tokens", 0),
@@ -656,64 +796,64 @@ class OpenAICompatibleProvider(BaseProvider):
                 gen_time=gen_time
             )
 
+        except (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError, ProviderAPIError):
+            raise
         except Exception as e:
             error_str = str(e).lower()
-            if ('404' in error_str or 'not found' in error_str or 'model' in error_str) and ('not found' in error_str):
-                try:
-                    available_models = self.list_available_models(base_url=self.base_url)
-                    error_message = format_model_error("OpenAI-compatible server", self.model, available_models)
-                    raise ModelNotFoundError(error_message)
-                except Exception:
-                    raise ModelNotFoundError(f"Model '{self.model}' not found on OpenAI-compatible server")
-            else:
-                raise ProviderAPIError(f"OpenAI-compatible server API error: {str(e)}")
+            if ("not found" in error_str) and ("model" in error_str):
+                self._raise_model_not_found()
+            raise
 
     async def _async_stream_generate(self, payload: Dict[str, Any]) -> AsyncIterator[GenerateResponse]:
         """Native async streaming response generation."""
-        try:
-            async with self.async_client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                headers=self._get_headers()
-            ) as response:
-                response.raise_for_status()
+        request_url = f"{self.base_url}/chat/completions"
 
-                async for line in response.aiter_lines():
-                    if line:
-                        line = line.strip()
+        async with self.async_client.stream(
+            "POST",
+            request_url,
+            json=payload,
+            headers=self._get_headers()
+        ) as response:
+            self._raise_for_status(response, request_url=request_url)
 
-                        if line.startswith("data: "):
-                            data = line[6:]  # Remove "data: " prefix
+            async for line in response.aiter_lines():
+                if line:
+                    line = line.strip()
 
-                            if data == "[DONE]":
-                                break
+                    if line.startswith("data: "):
+                        data = line[6:]  # Remove "data: " prefix
 
-                            try:
-                                chunk = json.loads(data)
+                        if data == "[DONE]":
+                            break
 
-                                if "choices" in chunk and len(chunk["choices"]) > 0:
-                                    choice = chunk["choices"][0]
-                                    delta = choice.get("delta", {})
-                                    content = delta.get("content", "")
-                                    finish_reason = choice.get("finish_reason")
+                        try:
+                            chunk = json.loads(data)
 
-                                    yield GenerateResponse(
-                                        content=content,
-                                        model=self.model,
-                                        finish_reason=finish_reason,
-                                        raw_response=chunk
-                                    )
+                            if "choices" in chunk and len(chunk["choices"]) > 0:
+                                choice = chunk["choices"][0]
+                                delta = choice.get("delta", {})
+                                if not isinstance(delta, dict):
+                                    delta = {}
+                                content = delta.get("content", "")
+                                reasoning = delta.get("reasoning")
+                                tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
+                                finish_reason = choice.get("finish_reason")
 
-                            except json.JSONDecodeError:
-                                continue
+                                metadata = {}
+                                if isinstance(reasoning, str) and reasoning.strip():
+                                    metadata["reasoning"] = reasoning
 
-        except Exception as e:
-            yield GenerateResponse(
-                content=f"Error: {str(e)}",
-                model=self.model,
-                finish_reason="error"
-            )
+                                yield GenerateResponse(
+                                    content=content,
+                                    model=self.model,
+                                    finish_reason=finish_reason,
+                                    tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                                    metadata=metadata or None,
+                                    raw_response=chunk
+                                )
+
+                        except json.JSONDecodeError:
+                            continue
 
     def get_capabilities(self) -> List[str]:
         """Get OpenAI-compatible server capabilities"""
@@ -765,24 +905,14 @@ class OpenAICompatibleProvider(BaseProvider):
                 except Exception:
                     pass  # Best effort - don't fail the operation
 
-    def _normalize_model_name(self, model_name: str) -> str:
-        """Remove common provider prefixes from model name."""
-        for prefix in ["openai-compatible/", "lmstudio/", "qwen/", "ollama/", "huggingface/"]:
-            if model_name.startswith(prefix):
-                model_name = model_name[len(prefix):]
-        return model_name
-
     def _get_media_handler_for_model(self, model_name: str):
         """Get appropriate media handler based on model vision capabilities."""
         from ..media.handlers import OpenAIMediaHandler, LocalMediaHandler
 
-        # Normalize model name by removing provider prefixes
-        clean_model_name = self._normalize_model_name(model_name)
-
         # Determine if model supports vision
         try:
             from ..architectures.detection import supports_vision
-            use_vision_handler = supports_vision(clean_model_name)
+            use_vision_handler = supports_vision(model_name)
         except Exception as e:
             self.logger.debug(f"Vision detection failed: {e}, defaulting to LocalMediaHandler")
             use_vision_handler = False
@@ -790,10 +920,10 @@ class OpenAICompatibleProvider(BaseProvider):
         # Create appropriate handler
         if use_vision_handler:
             handler = OpenAIMediaHandler(self.model_capabilities, model_name=model_name)
-            self.logger.debug(f"Using OpenAIMediaHandler for vision model: {clean_model_name}")
+            self.logger.debug(f"Using OpenAIMediaHandler for vision model: {model_name}")
         else:
-            handler = LocalMediaHandler("openai-compatible", self.model_capabilities, model_name=model_name)
-            self.logger.debug(f"Using LocalMediaHandler for model: {clean_model_name}")
+            handler = LocalMediaHandler(self.provider, self.model_capabilities, model_name=model_name)
+            self.logger.debug(f"Using LocalMediaHandler for model: {model_name}")
 
         return handler
 
@@ -835,10 +965,12 @@ class OpenAICompatibleProvider(BaseProvider):
 
                 return models
             else:
-                self.logger.warning(f"OpenAI-compatible server API returned status {response.status_code}")
+                detail = self._extract_error_detail(response)
+                suffix = f": {detail}" if detail else ""
+                self.logger.warning(f"{self.PROVIDER_DISPLAY_NAME} /models returned {response.status_code}{suffix}")
                 return []
         except Exception as e:
-            self.logger.warning(f"Failed to list models from OpenAI-compatible server: {e}")
+            self.logger.warning(f"Failed to list models from {self.PROVIDER_DISPLAY_NAME}: {e}")
             return []
 
     def embed(self, input_text: Union[str, List[str]], **kwargs) -> Dict[str, Any]:
@@ -879,7 +1011,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 json=payload,
                 headers=self._get_headers()
             )
-            response.raise_for_status()
+            self._raise_for_status(response, request_url=f"{self.base_url}/embeddings")
 
             # Server returns OpenAI-compatible format
             result = response.json()
@@ -889,6 +1021,8 @@ class OpenAICompatibleProvider(BaseProvider):
 
             return result
 
+        except (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError, ProviderAPIError):
+            raise
         except Exception as e:
             self.logger.error(f"Failed to generate embeddings: {e}")
-            raise ProviderAPIError(f"OpenAI-compatible server embedding error: {str(e)}")
+            raise ProviderAPIError(f"{self.PROVIDER_DISPLAY_NAME} embedding error: {str(e)}")

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-01-10
+
+### Added
+- **OpenRouter provider**: `create_llm("openrouter", ...)` via the OpenAI-compatible API (`https://openrouter.ai/api/v1`), with config support for `OPENROUTER_API_KEY`.
+
+### Changed
+- **OpenAI-compatible consolidation**: refactored `OpenAICompatibleProvider` into the shared implementation and made `LMStudioProvider` / `VLLMProvider` thin subclasses.
+- **Config**: added `api_keys.openrouter` support and wiring for `abstractcore --set-api-key openrouter ...`.
+
+### Fixed
+- **Test stability**: live-network and local-server provider tests are consistently opt-in via env flags; tracing tests no longer require a running Ollama server.
+
 ## [2.9.1] - 2026-01-07
 
 ### Fixed

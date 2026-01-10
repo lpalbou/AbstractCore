@@ -29,6 +29,8 @@ class TestIntegratedFunctionality:
 
     def test_ollama_integrated_functionality(self, temp_telemetry_file):
         """Test Ollama with all components integrated."""
+        if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
             # Setup telemetry
             configure_logging(
@@ -40,7 +42,12 @@ class TestIntegratedFunctionality:
             logger = get_logger("test.provider")
 
             # Create provider
-            provider = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
+            provider = create_llm(
+                "ollama",
+                model="qwen3:4b-instruct",
+                base_url="http://localhost:11434",
+                timeout=10.0,
+            )
 
             # Test 1: Basic generation
             prompt = "Who are you? Answer in one sentence."
@@ -71,7 +78,7 @@ class TestIntegratedFunctionality:
             assert context_maintained, "Session should remember the name Laurent"
 
             # Test 3: Architecture detection
-            arch = detect_architecture("qwen3-coder:30b")
+            arch = detect_architecture("qwen3:4b-instruct")
             assert arch is not None
 
             # Test 4: Telemetry verification
@@ -89,13 +96,15 @@ class TestIntegratedFunctionality:
                         assert "prompt" in last["metadata"]
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("Ollama not running")
             else:
                 raise
 
     def test_openai_integrated_functionality(self, temp_telemetry_file):
         """Test OpenAI with all components integrated."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         if not os.getenv("OPENAI_API_KEY"):
             pytest.skip("OPENAI_API_KEY not set")
 
@@ -110,7 +119,7 @@ class TestIntegratedFunctionality:
             logger = get_logger("test.provider")
 
             # Create provider
-            provider = create_llm("openai", model="gpt-4o-mini")
+            provider = create_llm("openai", model="gpt-5-mini", timeout=30.0)
 
             # Test 1: Basic generation
             prompt = "Who are you? Answer in one sentence."
@@ -173,11 +182,14 @@ class TestIntegratedFunctionality:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("OpenAI authentication failed")
-            else:
-                raise
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "network", "operation not permitted"]):
+                pytest.skip("OpenAI not reachable in this environment")
+            raise
 
     def test_anthropic_integrated_functionality(self, temp_telemetry_file):
         """Test Anthropic with all components integrated."""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         if not os.getenv("ANTHROPIC_API_KEY"):
             pytest.skip("ANTHROPIC_API_KEY not set")
 
@@ -192,7 +204,7 @@ class TestIntegratedFunctionality:
             logger = get_logger("test.provider")
 
             # Create provider
-            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+            provider = create_llm("anthropic", model="claude-haiku-4-5", timeout=30.0)
 
             # Test 1: Basic generation
             prompt = "Who are you? Answer in one sentence."
@@ -255,8 +267,9 @@ class TestIntegratedFunctionality:
         except Exception as e:
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
                 pytest.skip("Anthropic authentication failed")
-            else:
-                raise
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "network", "operation not permitted"]):
+                pytest.skip("Anthropic not reachable in this environment")
+            raise
 
     def test_telemetry_functionality(self, temp_telemetry_file):
         """Test telemetry functionality independently."""

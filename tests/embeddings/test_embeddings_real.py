@@ -3,6 +3,7 @@ Real integration tests for embeddings with actual models.
 NO MOCKING - Tests with real embedding models and real LLM scenarios.
 """
 
+import os
 import pytest
 import tempfile
 import shutil
@@ -11,6 +12,12 @@ import numpy as np
 
 from abstractcore.embeddings import EmbeddingManager
 from abstractcore import create_llm
+
+if os.getenv("ABSTRACTCORE_RUN_EMBEDDINGS_TESTS") != "1":
+    pytest.skip(
+        "Real embeddings tests are slow and may download models; set ABSTRACTCORE_RUN_EMBEDDINGS_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.integration

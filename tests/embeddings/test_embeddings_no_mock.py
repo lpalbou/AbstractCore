@@ -6,6 +6,7 @@ Comprehensive tests with absolutely NO MOCKING - only real models and real funct
 Tests the complete embeddings pipeline with actual sentence-transformers models.
 """
 
+import os
 import pytest
 import tempfile
 import shutil
@@ -14,6 +15,12 @@ import numpy as np
 import time
 
 from abstractcore.embeddings import EmbeddingManager, get_model_config, list_available_models
+
+if os.getenv("ABSTRACTCORE_RUN_EMBEDDINGS_TESTS") != "1":
+    pytest.skip(
+        "Zero-mock embeddings tests are slow and may download models; set ABSTRACTCORE_RUN_EMBEDDINGS_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 @pytest.mark.integration

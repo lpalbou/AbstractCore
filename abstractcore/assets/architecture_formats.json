@@ -328,8 +328,8 @@
       "user_suffix": "\n",
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
-      "tool_format": "none",
-      "patterns": ["gemma-2b", "gemma-7b"]
+      "tool_format": "pythonic",
+      "patterns": ["gemma-2b", "gemma-7b", "gemma-2", "gemma2-", "gemma3"]
     },
     "glm4v_moe": {
       "description": "Zhipu AI's GLM-4.6V multimodal MoE architecture (May 2025)",

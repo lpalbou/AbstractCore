@@ -3,6 +3,7 @@ Comprehensive tests for embedding matrix operations and clustering functionality
 Tests compute_similarities_matrix, find_similar_clusters, and optimizations.
 """
 
+import os
 import pytest
 import tempfile
 import shutil
@@ -10,6 +11,12 @@ import numpy as np
 from pathlib import Path
 
 from abstractcore.embeddings import EmbeddingManager
+
+if os.getenv("ABSTRACTCORE_RUN_EMBEDDINGS_TESTS") != "1":
+    pytest.skip(
+        "Embeddings matrix-operation tests are slow and may download models; set ABSTRACTCORE_RUN_EMBEDDINGS_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 class TestEmbeddingMatrixOperations:

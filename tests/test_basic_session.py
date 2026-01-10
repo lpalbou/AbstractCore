@@ -3,6 +3,7 @@ Unit tests for BasicSession - the core conversation manager.
 """
 
 import pytest
+import os
 from datetime import datetime
 from abstractcore.core.session import BasicSession
 from abstractcore.core.types import Message
@@ -67,13 +68,22 @@ class TestBasicSession:
 
     def test_generation_with_openai_provider(self):
         """Test generation with OpenAI provider"""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OPENAI_API_KEY not set")
         try:
-            provider = OpenAIProvider()
+            provider = OpenAIProvider(model="gpt-5-mini", api_key=os.getenv("OPENAI_API_KEY"))
             session = BasicSession(provider=provider)
         except ImportError:
             pytest.skip("OpenAI provider not available")
 
-        response = session.generate("Hello")
+        try:
+            response = session.generate("Hello")
+        except Exception as e:
+            if any(keyword in str(e).lower() for keyword in ["connection", "timeout", "network", "nodename nor servname"]):
+                pytest.skip(f"OpenAI not reachable in this environment: {e}")
+            raise
         assert response.content is not None
         assert len(response.content) > 0
         assert len(session.messages) == 2  # user + assistant

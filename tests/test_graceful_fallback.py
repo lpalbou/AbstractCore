@@ -1,89 +1,111 @@
 #!/usr/bin/env python3
 """
-Test graceful fallback for wrong model names.
+Lightweight smoke tests for provider availability.
+
+These tests are intentionally opt-in to avoid:
+- accidental cloud usage (cost)
+- flaky CI environments without network/localhost access
 """
 
 import pytest
+import os
 from abstractcore import create_llm
-from abstractcore.exceptions import ModelNotFoundError, AuthenticationError
 
 
-def test_anthropic_wrong_model():
-    """Test Anthropic provider with wrong model name."""
+def _is_connectivity_error(err: Exception) -> bool:
+    msg = str(err).lower()
+    return any(
+        keyword in msg
+        for keyword in (
+            "connection error",
+            "connecterror",
+            "connection refused",
+            "operation not permitted",
+            "network is unreachable",
+            "nodename nor servname provided",
+            "timeout",
+        )
+    )
+
+
+def test_anthropic_generation_smoke():
+    """Test Anthropic provider with a current Haiku model."""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
+
+    llm = create_llm("anthropic", model="claude-haiku-4-5", timeout=30.0)
     try:
-        llm = create_llm("anthropic", model="claude-3.5-haiku:latest")
-        llm.generate("Hello")
-        assert False, "Should have raised ModelNotFoundError"
-    except ModelNotFoundError as e:
-        error_msg = str(e)
-        assert "claude-3.5-haiku:latest" in error_msg
-        assert "Anthropic provider" in error_msg
-        assert "Available models" in error_msg
-        assert "claude-3-5-haiku-20241022" in error_msg  # Should show correct model
-        print("✅ Anthropic graceful fallback working")
-
-
-def test_openai_wrong_model():
-    """Test OpenAI provider with wrong model name (with valid API to get model list)."""
-    try:
-        # This should fail due to wrong model, not auth
-        llm = create_llm("openai", model="gpt-5-ultra")
-        llm.generate("Hello")
-        assert False, "Should have raised an error"
-    except (ModelNotFoundError, AuthenticationError) as e:
-        # Either auth error (no API key) or model error is fine for this test
-        error_msg = str(e)
-        assert "gpt-5-ultra" in error_msg or "api_key" in error_msg.lower()
-        print("✅ OpenAI error handling working")
-
-
-def test_ollama_wrong_model():
-    """Test Ollama provider with wrong model name."""
-    try:
-        llm = create_llm("ollama", model="nonexistent-model-123")
-        llm.generate("Hello")
-        assert False, "Should have raised ModelNotFoundError"
-    except ModelNotFoundError as e:
-        error_msg = str(e)
-        assert "nonexistent-model-123" in error_msg
-        assert "Ollama provider" in error_msg
-        assert "Available models" in error_msg
-        print("✅ Ollama graceful fallback working")
+        resp = llm.generate("Say 'ok' and nothing else.", max_output_tokens=10)
     except Exception as e:
-        # Ollama might not be running
-        if "connection" in str(e).lower() or "refused" in str(e).lower():
-            print("⚠️  Ollama not running, skipping test")
-        else:
-            raise
+        if _is_connectivity_error(e):
+            pytest.skip(f"Anthropic not reachable in this environment: {e}")
+        raise
+
+    assert resp is not None
+    assert isinstance(resp.content, str) and resp.content.strip()
 
 
-def test_mlx_wrong_model():
-    """Test MLX provider with wrong model name."""
+def test_openai_generation_smoke():
+    """Test OpenAI provider with a current GPT-5 mini model."""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
+    if not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
+
+    llm = create_llm("openai", model="gpt-5-mini", timeout=30.0)
     try:
-        llm = create_llm("mlx", model="nonexistent/model-123")
-        # MLX fails during init when loading model
-        assert False, "Should have raised ModelNotFoundError"
-    except ModelNotFoundError as e:
-        error_msg = str(e)
-        assert "nonexistent/model-123" in error_msg
-        assert "MLX provider" in error_msg
-        print("✅ MLX graceful fallback working")
+        resp = llm.generate("Say 'ok' and nothing else.", max_output_tokens=10)
     except Exception as e:
-        # MLX might not be available or have issues
-        if "mlx" in str(e).lower() or "import" in str(e).lower():
-            print("⚠️  MLX not available, skipping test")
-        else:
-            print(f"MLX error: {e}")
+        if _is_connectivity_error(e):
+            pytest.skip(f"OpenAI not reachable in this environment: {e}")
+        raise
+
+    assert resp is not None
+    assert isinstance(resp.content, str) and resp.content.strip()
+
+
+def test_ollama_generation_smoke():
+    """Test Ollama provider with a lightweight local model."""
+    if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+        pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
+    try:
+        llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434", timeout=10.0)
+        resp = llm.generate("Say 'ok' and nothing else.", max_output_tokens=10)
+    except Exception as e:
+        if _is_connectivity_error(e):
+            pytest.skip("Ollama not reachable in this environment")
+        raise
+
+    assert resp is not None
+    assert isinstance(resp.content, str) and resp.content.strip()
+
+
+def test_mlx_generation_smoke():
+    """Test MLX provider with a small local model."""
+    if os.getenv("ABSTRACTCORE_RUN_MLX_TESTS") != "1":
+        pytest.skip("MLX test is heavy; set ABSTRACTCORE_RUN_MLX_TESTS=1 to run")
+    try:
+        llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit", timeout=30.0)
+        resp = llm.generate("Say 'ok' and nothing else.", max_output_tokens=10)
+    except Exception as e:
+        if any(keyword in str(e).lower() for keyword in ["mlx", "import", "not installed", "not found", "failed to load"]):
+            pytest.skip(f"MLX not available: {e}")
+        raise
+
+    assert resp is not None
+    assert isinstance(resp.content, str) and resp.content.strip()
 
 
 if __name__ == "__main__":
-    print("🧪 Testing graceful fallback for wrong model names...")
+    print("🧪 Running provider smoke tests (opt-in)...")
     print()
 
-    test_anthropic_wrong_model()
-    test_openai_wrong_model()
-    test_ollama_wrong_model()
-    test_mlx_wrong_model()
+    test_anthropic_generation_smoke()
+    test_openai_generation_smoke()
+    test_ollama_generation_smoke()
+    test_mlx_generation_smoke()
 
     print()
-    print("✅ All graceful fallback tests completed!")
+    print("✅ All provider smoke tests completed!")

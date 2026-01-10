@@ -166,6 +166,20 @@ class ProviderRegistry:
             import_path="..providers.openai_compatible_provider"
         ))
 
+        # OpenRouter Provider
+        self.register_provider(ProviderInfo(
+            name="openrouter",
+            display_name="OpenRouter",
+            provider_class=None,
+            description="OpenAI-compatible aggregator API (multi-provider routing and unified billing)",
+            default_model="openai/gpt-4o-mini",
+            supported_features=["chat", "completion", "embeddings", "native_tools", "streaming", "structured_output"],
+            authentication_required=True,
+            local_provider=False,
+            installation_extras=None,
+            import_path="..providers.openrouter_provider"
+        ))
+
 
     def register_provider(self, provider_info: ProviderInfo):
         """Register a provider in the registry."""
@@ -223,6 +237,9 @@ class ProviderRegistry:
             elif provider_info.name == "openai-compatible":
                 from ..providers.openai_compatible_provider import OpenAICompatibleProvider
                 return OpenAICompatibleProvider
+            elif provider_info.name == "openrouter":
+                from ..providers.openrouter_provider import OpenRouterProvider
+                return OpenRouterProvider
             else:
                 raise ImportError(f"No import logic for provider: {provider_info.name}")
         except ImportError as e:

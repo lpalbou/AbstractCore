@@ -157,11 +157,11 @@ class TestToolCalling:
                 raise
 
     def test_ollama_basic_generation(self):
-        """Test Ollama basic generation (tool calling may not work with qwen3-coder:30b)."""
+        """Test Ollama basic generation (tool calling may vary)."""
         if not _real_provider_tests_enabled():
             pytest.skip("Real provider tests disabled (set ABSTRACTCORE_TEST_REAL_PROVIDERS=1)")
         try:
-            llm = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
+            llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434", timeout=10.0)
 
             # Test basic generation (without tools first)
             response = llm.generate("What is 2+2?")
@@ -170,7 +170,7 @@ class TestToolCalling:
             assert len(response.content) > 0
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("Ollama not running")
             else:
                 raise
@@ -180,7 +180,7 @@ class TestToolCalling:
         if not _real_provider_tests_enabled():
             pytest.skip("Real provider tests disabled (set ABSTRACTCORE_TEST_REAL_PROVIDERS=1)")
         try:
-            llm = create_llm("ollama", model="qwen3-coder:30b", base_url="http://localhost:11434")
+            llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434", timeout=10.0)
 
             # Qwen3 uses special tool format
             prompt = """<|tool_call|>
@@ -196,7 +196,7 @@ Please list the files in /tmp directory."""
             assert len(response.content) > 0
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("Ollama not running")
             else:
                 raise
@@ -206,7 +206,7 @@ Please list the files in /tmp directory."""
         if not _real_provider_tests_enabled():
             pytest.skip("Real provider tests disabled (set ABSTRACTCORE_TEST_REAL_PROVIDERS=1)")
         try:
-            llm = create_llm("lmstudio", model="qwen/qwen3-coder-30b", base_url="http://localhost:1234/v1")
+            llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1", timeout=10.0)
 
             # Test basic generation
             response = llm.generate("What is the capital of France?")
@@ -215,7 +215,7 @@ Please list the files in /tmp directory."""
             assert len(response.content) > 0
 
         except Exception as e:
-            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout"]):
+            if any(keyword in str(e).lower() for keyword in ["connection", "refused", "timeout", "operation not permitted"]):
                 pytest.skip("LMStudio not running")
             else:
                 raise

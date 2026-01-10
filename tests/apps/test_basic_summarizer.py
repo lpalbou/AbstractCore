@@ -6,6 +6,7 @@ with real models and real content.
 """
 
 import pytest
+import os
 from abstractcore import create_llm
 from abstractcore.processing import BasicSummarizer, SummaryStyle, SummaryLength
 
@@ -13,12 +14,40 @@ from abstractcore.processing import BasicSummarizer, SummaryStyle, SummaryLength
 class TestBasicSummarizer:
     """Test BasicSummarizer with real LLM and real content"""
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def llm(self):
         """Create a real LLM instance for testing"""
-        return create_llm("openai", model="gpt-4o-mini")
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OPENAI_API_KEY not set")
+        try:
+            llm = create_llm(
+                "openai",
+                model="gpt-5-mini",
+                timeout=60.0,
+                temperature=0.0,
+                seed=42,
+            )
+            # Proactively verify the endpoint is reachable; OpenAIProvider preflight is best-effort.
+            llm.generate("ping", max_output_tokens=1)
+            return llm
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(
+                keyword in error_msg
+                for keyword in (
+                    "connection error",
+                    "connecterror",
+                    "operation not permitted",
+                    "nodename nor servname provided",
+                    "network is unreachable",
+                )
+            ):
+                pytest.skip(f"OpenAI not reachable in this environment: {e}")
+            raise
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def summarizer(self, llm):
         """Create BasicSummarizer instance"""
         return BasicSummarizer(llm)

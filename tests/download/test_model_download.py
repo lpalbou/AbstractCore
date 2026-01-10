@@ -7,7 +7,18 @@ Tests require actual services to be running:
 - HuggingFace: Internet connection to HuggingFace Hub
 """
 import pytest
+import os
 from abstractcore import download_model, DownloadProgress, DownloadStatus
+
+
+def _ollama_is_available() -> bool:
+    try:
+        import httpx
+
+        resp = httpx.get("http://localhost:11434/api/tags", timeout=1.0)
+        return resp.status_code == 200
+    except Exception:
+        return False
 
 
 class TestOllamaDownload:
@@ -16,6 +27,8 @@ class TestOllamaDownload:
     @pytest.mark.asyncio
     async def test_download_small_model(self):
         """Test downloading a small Ollama model with real server."""
+        if not _ollama_is_available():
+            pytest.skip("Ollama not available at http://localhost:11434")
         progress_updates = []
 
         async for progress in download_model("ollama", "gemma3:1b"):
@@ -40,6 +53,8 @@ class TestOllamaDownload:
     @pytest.mark.asyncio
     async def test_download_with_custom_base_url(self):
         """Test download with custom Ollama base URL."""
+        if not _ollama_is_available():
+            pytest.skip("Ollama not available at http://localhost:11434")
         progress_updates = []
 
         async for progress in download_model(
@@ -54,6 +69,8 @@ class TestOllamaDownload:
     @pytest.mark.asyncio
     async def test_download_nonexistent_model(self):
         """Test downloading non-existent model returns error."""
+        if not _ollama_is_available():
+            pytest.skip("Ollama not available at http://localhost:11434")
         progress_updates = []
 
         async for progress in download_model("ollama", "nonexistent-model-xyz:1b"):
@@ -71,6 +88,8 @@ class TestHuggingFaceDownload:
     @pytest.mark.asyncio
     async def test_download_small_model(self):
         """Test downloading a small HuggingFace model."""
+        if os.getenv("ABSTRACTCORE_RUN_HUGGINGFACE_TESTS") != "1":
+            pytest.skip("HuggingFace download test requires network; set ABSTRACTCORE_RUN_HUGGINGFACE_TESTS=1 to run")
         progress_updates = []
 
         async for progress in download_model(
@@ -89,6 +108,8 @@ class TestHuggingFaceDownload:
     @pytest.mark.asyncio
     async def test_download_with_mlx_provider_name(self):
         """Test that 'mlx' provider works (same as HuggingFace)."""
+        if os.getenv("ABSTRACTCORE_RUN_HUGGINGFACE_TESTS") != "1":
+            pytest.skip("MLX/HuggingFace download test requires network; set ABSTRACTCORE_RUN_HUGGINGFACE_TESTS=1 to run")
         progress_updates = []
 
         async for progress in download_model(
@@ -102,6 +123,8 @@ class TestHuggingFaceDownload:
     @pytest.mark.asyncio
     async def test_download_nonexistent_model(self):
         """Test downloading non-existent HuggingFace model returns error."""
+        if os.getenv("ABSTRACTCORE_RUN_HUGGINGFACE_TESTS") != "1":
+            pytest.skip("HuggingFace download test requires network; set ABSTRACTCORE_RUN_HUGGINGFACE_TESTS=1 to run")
         progress_updates = []
 
         async for progress in download_model(

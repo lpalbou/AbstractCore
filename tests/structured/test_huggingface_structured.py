@@ -15,6 +15,7 @@ This test suite will help verify:
 4. Performance comparison between GGUF and transformers
 """
 
+import os
 import json
 import time
 import pytest
@@ -25,6 +26,12 @@ from dataclasses import dataclass
 
 from abstractcore import create_llm
 from abstractcore.structured import StructuredOutputHandler
+
+if os.getenv("ABSTRACTCORE_RUN_STRUCTURED_HF_TESTS") != "1":
+    pytest.skip(
+        "HuggingFace structured-output tests are opt-in (may load GGUF/llama.cpp backends); set ABSTRACTCORE_RUN_STRUCTURED_HF_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 # ============================================================================

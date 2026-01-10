@@ -271,7 +271,9 @@ class TestProviderIntegration:
     @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not set")
     def test_openai_generation(self):
         """Test OpenAI provider generation"""
-        provider = create_llm("openai", model="gpt-3.5-turbo")
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
+        provider = create_llm("openai", model="gpt-5-mini", timeout=30.0)
         response = provider.generate("Say 'test passed' and nothing else")
 
         assert response is not None
@@ -281,7 +283,9 @@ class TestProviderIntegration:
     @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not set")
     def test_anthropic_generation(self):
         """Test Anthropic provider generation"""
-        provider = create_llm("anthropic", model="claude-3-haiku-20240307")
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
+        provider = create_llm("anthropic", model="claude-haiku-4-5", timeout=30.0)
         response = provider.generate("Say 'test passed' and nothing else")
 
         assert response is not None
@@ -290,6 +294,8 @@ class TestProviderIntegration:
 
     def test_ollama_generation(self):
         """Test Ollama provider generation (if available)"""
+        if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+            pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
             import httpx
             client = httpx.Client(timeout=5.0)
@@ -299,7 +305,7 @@ class TestProviderIntegration:
         except:
             pytest.skip("Ollama not available")
 
-        provider = create_llm("ollama", model="qwen3-coder:30b")
+        provider = create_llm("ollama", model="qwen3:4b-instruct", timeout=10.0)
         response = provider.generate("Say 'test passed' and nothing else")
 
         assert response is not None
@@ -307,6 +313,8 @@ class TestProviderIntegration:
 
     def test_session_with_provider(self):
         """Test session with OpenAI provider"""
+        if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+            pytest.skip("Live API tests disabled (set ABSTRACTCORE_RUN_LIVE_API_TESTS=1)")
         try:
             provider = create_llm("openai")
             session = BasicSession(provider=provider, system_prompt="Test system")

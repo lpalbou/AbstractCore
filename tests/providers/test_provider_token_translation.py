@@ -22,11 +22,17 @@ from abstractcore.providers.mlx_provider import MLXProvider
 from abstractcore.providers.lmstudio_provider import LMStudioProvider
 
 
+def _skip_if_gguf_tests_disabled() -> None:
+    if os.getenv("ABSTRACTCORE_RUN_GGUF_TESTS") != "1":
+        pytest.skip("GGUF tests are heavy; set ABSTRACTCORE_RUN_GGUF_TESTS=1 to run")
+
+
 class TestProviderTokenTranslation:
     """Test that unified token parameters are correctly translated to provider-specific APIs"""
 
     def test_huggingface_gguf_token_translation(self):
         """Test HuggingFace GGUF provider translates tokens correctly - REAL IMPLEMENTATION"""
+        _skip_if_gguf_tests_disabled()
         if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
@@ -62,6 +68,7 @@ class TestProviderTokenTranslation:
 
     def test_huggingface_transformers_token_translation(self):
         """Test HuggingFace GGUF provider translates tokens correctly"""
+        _skip_if_gguf_tests_disabled()
         # Skip if model not available
         if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("GGUF model not found in cache")
@@ -126,6 +133,7 @@ class TestTokenLimitValidation:
 
     def test_huggingface_gguf_token_validation(self):
         """Test GGUF model enforces token limits - REAL IMPLEMENTATION"""
+        _skip_if_gguf_tests_disabled()
         if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
@@ -156,6 +164,7 @@ class TestTokenLimitValidation:
 
     def test_effective_token_calculation(self):
         """Test effective token limit calculations across different scenarios"""
+        _skip_if_gguf_tests_disabled()
 
         # Test with all parameters set
         if os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
@@ -194,6 +203,7 @@ class TestActualTokenUsage:
 
     def test_gguf_generation_respects_limits(self):
         """Test GGUF generation actually respects token limits - REAL IMPLEMENTATION"""
+        _skip_if_gguf_tests_disabled()
         if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
@@ -226,6 +236,7 @@ class TestActualTokenUsage:
 
     def test_streaming_respects_limits(self):
         """Test streaming generation respects token limits - REAL IMPLEMENTATION"""
+        _skip_if_gguf_tests_disabled()
         if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 
@@ -261,6 +272,7 @@ class TestActualTokenUsage:
 
     def test_parameter_override_in_generation(self):
         """Test that generation-time parameter overrides work correctly"""
+        _skip_if_gguf_tests_disabled()
         if not os.path.exists(Path.home() / ".cache" / "huggingface" / "hub" / "models--unsloth--Qwen3-4B-Instruct-2507-GGUF"):
             pytest.skip("Test GGUF model not found in cache")
 

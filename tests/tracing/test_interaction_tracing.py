@@ -10,10 +10,38 @@ Tests cover:
 
 import pytest
 import json
-from pathlib import Path
-from abstractcore import create_llm
 from abstractcore.core.session import BasicSession
+from abstractcore.core.types import GenerateResponse
+from abstractcore.providers.base import BaseProvider
 from abstractcore.utils import export_traces, summarize_traces
+
+
+class TracingProviderStub(BaseProvider):
+    """Deterministic in-process provider used to test tracing without external services."""
+
+    def __init__(self, model: str = "qwen3:4b-instruct", **kwargs):
+        super().__init__(model=model, **kwargs)
+        self.provider = "stub"
+
+    def generate(self, prompt: str, **kwargs):
+        return self.generate_with_telemetry(prompt, **kwargs)
+
+    def _generate_internal(self, prompt: str, **kwargs):
+        # Keep usage non-zero so trace aggregation utilities can be validated.
+        usage = {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}
+        return GenerateResponse(
+            content=f"Echo: {prompt}",
+            model=self.model,
+            finish_reason="stop",
+            usage=usage,
+            gen_time=0.0,
+        )
+
+    def list_available_models(self, **kwargs):
+        return [self.model]
+
+    def get_capabilities(self):
+        return ["chat", "streaming", "tools"]
 
 
 class TestProviderTracing:
@@ -21,7 +49,7 @@ class TestProviderTracing:
 
     def test_tracing_disabled_by_default(self):
         """Tracing should be disabled by default."""
-        llm = create_llm('ollama', model='qwen3:4b-instruct-2507-q4_K_M')
+        llm = TracingProviderStub(model="qwen3:4b-instruct")
 
         assert hasattr(llm, 'enable_tracing')
         assert llm.enable_tracing is False
@@ -30,11 +58,7 @@ class TestProviderTracing:
 
     def test_enable_tracing(self):
         """Test enabling tracing on provider."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         assert llm.enable_tracing is True
         assert hasattr(llm, '_traces')
@@ -42,12 +66,7 @@ class TestProviderTracing:
 
     def test_trace_capture(self):
         """Test that traces are captured during generation."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True,
-            max_traces=10
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True, max_traces=10)
 
         # Generate response
         response = llm.generate(
@@ -66,8 +85,8 @@ class TestProviderTracing:
 
         trace = traces[0]
         assert trace['trace_id'] == response.metadata['trace_id']
-        assert trace['provider'] == 'OllamaProvider'
-        assert trace['model'] == 'qwen3:4b-instruct-2507-q4_K_M'
+        assert trace['provider'] == 'TracingProviderStub'
+        assert trace['model'] == 'qwen3:4b-instruct'
         assert trace['prompt'] == "Say 'Hello World' exactly"
         assert 'response' in trace
         assert 'content' in trace['response']
@@ -75,11 +94,7 @@ class TestProviderTracing:
 
     def test_trace_retrieval_by_id(self):
         """Test retrieving specific trace by ID."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         response1 = llm.generate("Test 1", temperature=0)
         response2 = llm.generate("Test 2", temperature=0)
@@ -94,11 +109,7 @@ class TestProviderTracing:
 
     def test_trace_retrieval_last_n(self):
         """Test retrieving last N traces."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         # Generate 5 responses
         for i in range(5):
@@ -115,12 +126,7 @@ class TestProviderTracing:
 
     def test_trace_ring_buffer(self):
         """Test that trace ring buffer respects max_traces limit."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True,
-            max_traces=3  # Small buffer
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True, max_traces=3)
 
         # Generate 5 responses (exceeds buffer)
         for i in range(5):
@@ -135,11 +141,7 @@ class TestProviderTracing:
 
     def test_trace_metadata_custom(self):
         """Test custom trace metadata."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         response = llm.generate(
             "Test with metadata",
@@ -160,11 +162,7 @@ class TestProviderTracing:
 
     def test_trace_with_system_prompt(self):
         """Test tracing with system prompt."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         response = llm.generate(
             "Test",
@@ -179,11 +177,7 @@ class TestProviderTracing:
 
     def test_trace_with_messages(self):
         """Test tracing with conversation history."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         messages = [
             {"role": "user", "content": "Hello"},
@@ -207,7 +201,7 @@ class TestSessionTracing:
 
     def test_session_tracing_disabled_by_default(self):
         """Session tracing should be disabled by default."""
-        llm = create_llm('ollama', model='qwen3:4b-instruct-2507-q4_K_M')
+        llm = TracingProviderStub(model="qwen3:4b-instruct")
         session = BasicSession(provider=llm)
 
         assert session.enable_tracing is False
@@ -215,22 +209,14 @@ class TestSessionTracing:
 
     def test_session_enable_tracing(self):
         """Test enabling tracing on session."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
         session = BasicSession(provider=llm, enable_tracing=True)
 
         assert session.enable_tracing is True
 
     def test_session_trace_capture(self):
         """Test that session captures traces from provider."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
         session = BasicSession(provider=llm, enable_tracing=True)
 
         # Generate responses
@@ -251,11 +237,7 @@ class TestSessionTracing:
 
     def test_session_trace_with_custom_metadata(self):
         """Test session trace with custom metadata."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
         session = BasicSession(provider=llm, enable_tracing=True)
 
         response = session.generate(
@@ -274,11 +256,7 @@ class TestSessionTracing:
 
     def test_session_trace_isolation(self):
         """Test that traces are isolated between sessions."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         session1 = BasicSession(provider=llm, enable_tracing=True)
         session2 = BasicSession(provider=llm, enable_tracing=True)
@@ -300,11 +278,7 @@ class TestTraceExport:
 
     def test_export_jsonl(self, tmp_path):
         """Test exporting traces to JSONL format."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         llm.generate("Test 1", temperature=0)
         llm.generate("Test 2", temperature=0)
@@ -329,11 +303,7 @@ class TestTraceExport:
 
     def test_export_json(self, tmp_path):
         """Test exporting traces to JSON format."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         llm.generate("Test", temperature=0)
         traces = llm.get_traces()
@@ -351,11 +321,7 @@ class TestTraceExport:
 
     def test_export_markdown(self, tmp_path):
         """Test exporting traces to markdown format."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         llm.generate("Test", temperature=0)
         traces = llm.get_traces()
@@ -371,15 +337,11 @@ class TestTraceExport:
         assert "# LLM Interaction Trace Report" in content
         assert "## Interaction 1:" in content
         assert "Test" in content
-        assert "OllamaProvider" in content
+        assert "TracingProviderStub" in content
 
     def test_export_single_trace(self, tmp_path):
         """Test exporting a single trace."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         response = llm.generate("Test", temperature=0)
         trace = llm.get_traces(trace_id=response.metadata['trace_id'])
@@ -393,11 +355,7 @@ class TestTraceExport:
 
     def test_export_as_string(self):
         """Test exporting traces as string (no file)."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         llm.generate("Test", temperature=0)
         traces = llm.get_traces()
@@ -411,11 +369,7 @@ class TestTraceExport:
 
     def test_summarize_traces(self):
         """Test trace summarization."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         # Generate multiple responses
         for i in range(3):
@@ -427,8 +381,8 @@ class TestTraceExport:
         assert summary['total_interactions'] == 3
         assert summary['total_tokens'] > 0
         assert summary['avg_tokens_per_interaction'] > 0
-        assert 'OllamaProvider' in summary['providers']
-        assert 'qwen3:4b-instruct-2507-q4_K_M' in summary['models']
+        assert 'TracingProviderStub' in summary['providers']
+        assert 'qwen3:4b-instruct' in summary['models']
         assert summary['date_range'] is not None
 
     def test_summarize_empty_traces(self):
@@ -447,11 +401,7 @@ class TestTraceContent:
 
     def test_trace_contains_all_fields(self):
         """Test that trace contains all expected fields."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         response = llm.generate(
             "Test prompt",
@@ -487,11 +437,7 @@ class TestTraceContent:
 
     def test_trace_usage_metrics(self):
         """Test that trace captures usage metrics."""
-        llm = create_llm(
-            'ollama',
-            model='qwen3:4b-instruct-2507-q4_K_M',
-            enable_tracing=True
-        )
+        llm = TracingProviderStub(model="qwen3:4b-instruct", enable_tracing=True)
 
         response = llm.generate("Test", temperature=0)
 

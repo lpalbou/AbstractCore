@@ -7,12 +7,29 @@ Tests three levels of complexity:
 3. Deep Nested JSON (4 levels) - complex hierarchical structures
 """
 
+import pytest
 from pydantic import BaseModel, field_validator
 from typing import List, Optional, Dict
 from enum import Enum
 import json
 import os
 from abstractcore import create_llm
+
+
+def _is_connectivity_error(err: Exception) -> bool:
+    msg = str(err).lower()
+    return any(
+        keyword in msg
+        for keyword in (
+            "connection error",
+            "connecterror",
+            "connection refused",
+            "operation not permitted",
+            "network is unreachable",
+            "nodename nor servname provided",
+            "timeout",
+        )
+    )
 
 
 # Level 1: Flat JSON (1 level)
@@ -86,7 +103,7 @@ def test_provider_complexity():
 
     # Define test configurations
     providers_to_test = [
-        ("ollama", "qwen3-coder:30b"),
+        ("ollama", "qwen3:4b-instruct"),
     ]
 
     # Add cloud providers if available
@@ -117,13 +134,14 @@ def test_provider_complexity():
     # Test each provider
     success_count = 0
     total_tests = 0
+    had_non_connectivity_error = False
 
     for provider_name, model_name in providers_to_test:
         print(f"\n--- Testing {provider_name.upper()} ---")
 
         try:
             # Create LLM instance
-            llm = create_llm(provider_name, model=model_name)
+            llm = create_llm(provider_name, model=model_name, timeout=5.0)
 
             # Test each complexity level
             for complexity, test_data in complexity_tests.items():
@@ -149,15 +167,21 @@ def test_provider_complexity():
 
                 except Exception as e:
                     print(f"  ❌ {complexity} complexity failed: {str(e)}")
+                    if not _is_connectivity_error(e):
+                        had_non_connectivity_error = True
                     # Continue testing other complexity levels
                     continue
 
         except Exception as e:
             print(f"⏭️  Skipping {provider_name}: {str(e)}")
+            if not _is_connectivity_error(e):
+                had_non_connectivity_error = True
             # Skip to next provider
             continue
 
     print(f"\n✅ Progressive complexity test completed: {success_count}/{total_tests} tests passed")
 
     # Ensure at least some tests passed (don't require 100% success)
+    if success_count == 0 and total_tests > 0 and not had_non_connectivity_error:
+        pytest.skip("No providers reachable in this environment for structured-output complexity testing")
     assert success_count > 0, "No complexity tests passed for any provider"

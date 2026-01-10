@@ -123,7 +123,7 @@ def test_streaming_preserves_tool_calls():
 
 
 def test_no_rewriting_without_custom_tags():
-    """Test that tool calls pass through unchanged when no custom tags set."""
+    """Test that without custom tags we don't rewrite, but we still extract tool_calls."""
     processor = UnifiedStreamProcessor(
         model_name="test-model",
         execute_tools=False,
@@ -140,9 +140,18 @@ def test_no_rewriting_without_custom_tags():
     results = list(processor.process_stream(test_stream()))
     full_output = "".join([r.content for r in results if r.content])
 
-    # Without custom tags and rewriting, behavior depends on detector mode
-    # Key: no crash, content is present
-    assert '"name": "test"' in full_output
+    # Without custom tags, the streaming processor strips tool markup from `content`
+    # (clean UX), but it should still emit structured `tool_calls`.
+    assert full_output == ""
+
+    tool_calls = []
+    for chunk in results:
+        if chunk.tool_calls:
+            tool_calls.extend(chunk.tool_calls)
+
+    assert len(tool_calls) == 1
+    assert tool_calls[0]["name"] == "test"
+    assert tool_calls[0]["arguments"] == {}
 
 
 if __name__ == "__main__":
