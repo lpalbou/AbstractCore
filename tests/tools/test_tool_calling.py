@@ -128,7 +128,7 @@ class TestToolCalling:
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            llm = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+            llm = create_llm("anthropic", model="claude-haiku-4-5")
 
             results = []
             for prompt, expected_tool in test_cases:

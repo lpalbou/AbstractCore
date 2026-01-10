@@ -28,8 +28,8 @@ class TestAsyncProviders:
     @pytest.mark.asyncio
     async def test_ollama_async(self, skip_if_provider_unavailable):
         """Test Ollama async generation."""
-        skip_if_provider_unavailable("ollama", model="gemma3:1b")
-        llm = create_llm("ollama", model="gemma3:1b")
+        skip_if_provider_unavailable("ollama", model="qwen3:4b-instruct")
+        llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434")
         response = await llm.agenerate("Say hello")
         assert response is not None
         assert response.content is not None
@@ -39,7 +39,7 @@ class TestAsyncProviders:
     async def test_lmstudio_async(self, skip_if_provider_unavailable):
         """Test LMStudio async generation."""
         skip_if_provider_unavailable("lmstudio")
-        llm = create_llm("lmstudio", model="qwen/qwen3-vl-30b")
+        llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
         response = await llm.agenerate("Say hello")
         assert response is not None
         assert response.content is not None
@@ -83,7 +83,7 @@ class TestAsyncProviders:
     async def test_anthropic_async(self, skip_if_provider_unavailable):
         """Test Anthropic async generation."""
         skip_if_provider_unavailable("anthropic")
-        llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+        llm = create_llm("anthropic", model="claude-haiku-4-5")
         try:
             response = await llm.agenerate("Say hello")
         except Exception as e:
@@ -100,8 +100,8 @@ class TestAsyncConcurrent:
     @pytest.mark.asyncio
     async def test_concurrent_same_provider(self, skip_if_provider_unavailable):
         """Test concurrent requests to same provider."""
-        skip_if_provider_unavailable("ollama", model="gemma3:1b")
-        llm = create_llm("ollama", model="gemma3:1b")
+        skip_if_provider_unavailable("ollama", model="qwen3:4b-instruct")
+        llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434")
 
         # Execute 3 requests concurrently
         tasks = [
@@ -115,10 +115,10 @@ class TestAsyncConcurrent:
     @pytest.mark.asyncio
     async def test_concurrent_multi_provider(self, skip_if_provider_unavailable):
         """Test concurrent requests to multiple providers."""
-        skip_if_provider_unavailable("ollama", model="gemma3:1b")
+        skip_if_provider_unavailable("ollama", model="qwen3:4b-instruct")
         skip_if_provider_unavailable("openai")
 
-        ollama = create_llm("ollama", model="gemma3:1b")
+        ollama = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434")
         openai = create_llm("openai", model="gpt-4o-mini")
 
         # Execute concurrently across providers
@@ -142,8 +142,8 @@ class TestAsyncStreaming:
     @pytest.mark.asyncio
     async def test_async_streaming_ollama(self, skip_if_provider_unavailable):
         """Test async streaming with Ollama."""
-        skip_if_provider_unavailable("ollama", model="gemma3:1b")
-        llm = create_llm("ollama", model="gemma3:1b")
+        skip_if_provider_unavailable("ollama", model="qwen3:4b-instruct")
+        llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434")
 
         chunks = []
         async for chunk in await llm.agenerate("Count to 5", stream=True):

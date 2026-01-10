@@ -52,17 +52,17 @@ class OpenAICompatibleProvider(BaseProvider):
     Usage:
         # Basic usage
         llm = create_llm("openai-compatible",
-                        base_url="http://localhost:8080/v1",
+                        base_url="http://127.0.0.1:1234/v1",
                         model="llama-3.1-8b")
 
         # With API key (optional for many local servers)
         llm = create_llm("openai-compatible",
-                        base_url="http://localhost:8080/v1",
+                        base_url="http://127.0.0.1:1234/v1",
                         model="my-model",
                         api_key="your-key")
 
         # Environment variable configuration
-        export OPENAI_COMPATIBLE_BASE_URL="http://localhost:8080/v1"
+        export OPENAI_COMPATIBLE_BASE_URL="http://127.0.0.1:1234/v1"
         export OPENAI_COMPATIBLE_API_KEY="your-key"  # Optional
         llm = create_llm("openai-compatible", model="my-model")
     """
@@ -70,8 +70,7 @@ class OpenAICompatibleProvider(BaseProvider):
     PROVIDER_ID = "openai-compatible"
     PROVIDER_DISPLAY_NAME = "OpenAI-compatible server"
     BASE_URL_ENV_VAR = "OPENAI_COMPATIBLE_BASE_URL"
-    API_KEY_ENV_VAR = "OPENAI_COMPATIBLE_API_KEY"  # Optional for many servers
-    DEFAULT_BASE_URL = "http://localhost:8080/v1"
+    DEFAULT_BASE_URL = "http://localhost:1234/v1"
 
     def __init__(self, model: str = "default", base_url: Optional[str] = None,
                  api_key: Optional[str] = None, **kwargs):

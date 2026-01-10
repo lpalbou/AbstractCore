@@ -147,7 +147,7 @@ class TestMultiProviderCompatibility:
         """Test provider-specific models use correct values."""
         provider_models = [
             ("openai", "gpt-4o-mini"),
-            ("openai", "gpt-5-turbo"),
+            ("openai", "gpt-5-mini"),
             ("ollama", "phi-4"),
         ]
 

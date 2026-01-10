@@ -125,7 +125,7 @@ class SeedDeterminismTester:
         # Provider configurations
         provider_configs = {
             "openai": {
-                "models": ["gpt-5-mini"],
+                "models": ["gpt-4o-mini"],
                 "config": {"api_key": os.getenv("OPENAI_API_KEY")}
             },
             "anthropic": {
@@ -212,7 +212,7 @@ def test_openai_seed_determinism():
         pytest.skip("OPENAI_API_KEY not set")
     
     tester = SeedDeterminismTester()
-    result = tester.test_provider_determinism("openai", "gpt-5-mini")
+    result = tester.test_provider_determinism("openai", "gpt-4o-mini")
     
     assert result["success"], f"OpenAI test failed: {result.get('error')}"
     assert result["seed_supported"], "OpenAI should support seed"
@@ -268,7 +268,7 @@ def test_session_seed_persistence():
         from abstractcore.providers.openai_provider import OpenAIProvider
         
         # Create session with seed
-        provider = OpenAIProvider(model="gpt-5-mini", temperature=0.0, seed=42)
+        provider = OpenAIProvider(model="gpt-4o-mini", temperature=0.0, seed=42)
         session = BasicSession(provider=provider, temperature=0.0, seed=42)
         
         # Generate multiple responses

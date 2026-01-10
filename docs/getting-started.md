@@ -52,7 +52,7 @@ from abstractcore import create_llm
 
 # Choose your provider (uncomment one):
 llm = create_llm("openai", model="gpt-4o-mini")        # Cloud
-# llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Cloud
+# llm = create_llm("anthropic", model="claude-haiku-4-5")  # Cloud
 # llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")   # Local
 
 # Generate your first response
@@ -80,7 +80,7 @@ from abstractcore import create_llm
 
 # Same interface, different providers
 openai_llm = create_llm("openai", model="gpt-4o-mini")
-claude_llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+claude_llm = create_llm("anthropic", model="claude-haiku-4-5")
 local_llm = create_llm("ollama", model="qwen3-coder:30b")
 
 question = "Explain Python list comprehensions"
@@ -236,7 +236,7 @@ asyncio.run(main())
 **Async streaming:**
 ```python
 async def stream_example():
-    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
 
     async for chunk in llm.agenerate("Tell me a story", stream=True):
         print(chunk.content, end='', flush=True)
@@ -261,7 +261,7 @@ llm = create_llm("openai", model="gpt-4o-mini")
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 ```python
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 ```
 
 ### Ollama (Local)
@@ -306,7 +306,7 @@ from abstractcore import create_llm
 
 providers = [
     ("openai", "gpt-4o-mini"),
-    ("anthropic", "claude-3-5-haiku-latest"),
+    ("anthropic", "claude-haiku-4-5"),
     ("ollama", "qwen3-coder:30b")
 ]
 
@@ -456,7 +456,7 @@ python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini --prompt "What is Python?"
 
 # With streaming mode for real-time responses
-python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest --stream
+python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5 --stream
 
 # With web search capabilities
 # Try: "search for today's AI news" or "find recent Python tutorials"

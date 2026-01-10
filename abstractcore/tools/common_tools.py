@@ -1423,7 +1423,10 @@ def read_file(
         # Guardrails: keep tool outputs bounded and avoid huge memory/time spikes.
         # These limits intentionally push agents toward:
         # search_files(output_mode="context") → read_file(start_line/end_line) → edit_file(...)
-        MAX_LINES_PER_CALL = 400
+        # This is a pragmatic compromise:
+        # - large enough to avoid constant "Refused" loops for typical source files
+        # - still bounded to keep tool outputs manageable for remote hosts and models
+        MAX_LINES_PER_CALL = 2000
 
         # Mode selection:
         # - Explicit legacy flag wins (for backwards compatibility).

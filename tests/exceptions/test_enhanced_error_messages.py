@@ -88,10 +88,10 @@ class TestErrorMessageHelpers:
     def test_format_model_error_still_works(self):
         """Test that existing format_model_error() still works correctly."""
         available = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]
-        msg = format_model_error("OpenAI", "gpt-5-turbo", available)
+        msg = format_model_error("OpenAI", "gpt-5-mini", available)
 
         # Verify content
-        assert "gpt-5-turbo" in msg
+        assert "gpt-5-mini" in msg
         assert "OpenAI" in msg
         assert "gpt-4o" in msg
         assert "Available models" in msg
@@ -136,7 +136,7 @@ class TestProviderIntegration:
             # Use obviously invalid API key
             llm = create_llm(
                 "anthropic",
-                model="claude-sonnet-4-5-20250929",
+                model="claude-haiku-4-5",
                 api_key="sk-ant-invalid-key-for-testing-12345"
             )
             # Try to generate

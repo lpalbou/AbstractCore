@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **OpenAI-compatible consolidation**: refactored `OpenAICompatibleProvider` into the shared implementation and made `LMStudioProvider` / `VLLMProvider` thin subclasses.
 - **Config**: added `api_keys.openrouter` support and wiring for `abstractcore --set-api-key openrouter ...`.
+- **Defaults**: updated Anthropic default model to `claude-haiku-4-5`.
 
 ### Fixed
 - **Test stability**: live-network and local-server provider tests are consistently opt-in via env flags; tracing tests no longer require a running Ollama server.

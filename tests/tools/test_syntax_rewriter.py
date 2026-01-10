@@ -318,7 +318,7 @@ class TestAutoDetection:
         assert auto_detect_format("gemma:7b") == SyntaxFormat.GEMMA
 
         # Claude models
-        assert auto_detect_format("claude-3-5-haiku-latest") == SyntaxFormat.XML
+        assert auto_detect_format("claude-haiku-4-5") == SyntaxFormat.XML
 
         # Unknown model defaults to OpenAI
         assert auto_detect_format("unknown-model") == SyntaxFormat.OPENAI

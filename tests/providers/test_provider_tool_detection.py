@@ -83,7 +83,7 @@ class TestProviderToolDetection:
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         try:
-            provider = create_llm("anthropic", model="claude-3-5-haiku-20241022", timeout=5.0)
+            provider = create_llm("anthropic", model="claude-haiku-4-5", timeout=5.0)
 
             # Use enhanced list_files tool
             tools = [list_files]

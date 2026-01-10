@@ -6,6 +6,7 @@ eliminating the need for manual synchronization across factory.py, server/app.py
 and __init__.py files.
 """
 
+import os
 from typing import List, Dict, Any, Optional, Type, Callable
 from dataclasses import dataclass, field
 from abc import ABC
@@ -49,6 +50,30 @@ class ProviderRegistry:
         self._logger = get_logger("ProviderRegistry")
         self._register_all_providers()
 
+    def _has_configured_base_url(self, provider_name: str, *, env_var: str) -> bool:
+        """Return True if a provider has an explicit base_url configured.
+
+        We intentionally treat providers like `openai-compatible` / `vllm` as *opt-in* for
+        model probing: their defaults (8080/8000) are not universally valid and can cause
+        noisy timeouts in multi-service dev environments.
+        """
+        if isinstance(env_var, str) and env_var.strip():
+            env_val = os.getenv(env_var)
+            if isinstance(env_val, str) and env_val.strip():
+                return True
+
+        try:
+            from ..config import get_provider_config
+
+            cfg = get_provider_config(provider_name)
+            base_url = cfg.get("base_url")
+            if isinstance(base_url, str) and base_url.strip():
+                return True
+        except Exception:
+            pass
+
+        return False
+
     def _register_all_providers(self):
         """Register all available providers with their metadata."""
 
@@ -71,8 +96,8 @@ class ProviderRegistry:
             name="anthropic",
             display_name="Anthropic",
             provider_class=None,
-            description="Commercial API with Claude 3 family models",
-            default_model="claude-3-5-haiku-latest",
+            description="Commercial API with Claude models",
+            default_model="claude-haiku-4-5",
             supported_features=["chat", "completion", "native_tools", "streaming", "structured_output"],
             authentication_required=True,
             local_provider=False,
@@ -265,6 +290,20 @@ class ProviderRegistry:
             List of available model names, optionally filtered by capabilities
         """
         try:
+            provider_name_norm = str(provider_name or "").strip().lower()
+            base_url_override = kwargs.get("base_url")
+
+            # Avoid probing generic OpenAI-compatible endpoints unless explicitly configured.
+            # (Default ports like :8080/:8000 are often wrong in real setups.)
+            if provider_name_norm == "openai-compatible" and not (
+                isinstance(base_url_override, str) and base_url_override.strip()
+            ):
+                if not self._has_configured_base_url(provider_name_norm, env_var="OPENAI_COMPATIBLE_BASE_URL"):
+                    return []
+            if provider_name_norm == "vllm" and not (isinstance(base_url_override, str) and base_url_override.strip()):
+                if not self._has_configured_base_url(provider_name_norm, env_var="VLLM_BASE_URL"):
+                    return []
+
             provider_class = self.get_provider_class(provider_name)
 
             # Handle providers that need instance for model listing

@@ -56,10 +56,33 @@ def test_openai_generation_smoke():
 
     llm = create_llm("openai", model="gpt-5-mini", timeout=30.0)
     try:
-        resp = llm.generate("Say 'ok' and nothing else.", max_output_tokens=10)
+        resp = llm.generate("Say 'ok' and nothing else.", max_output_tokens=64)
+        # Reasoning models can consume small token budgets entirely in hidden reasoning tokens and return
+        # empty visible content. Retry once with a larger budget to keep this smoke test stable.
+        if not (isinstance(resp.content, str) and resp.content.strip()):
+            resp = llm.generate("Say 'ok' and nothing else.", max_output_tokens=512)
     except Exception as e:
         if _is_connectivity_error(e):
             pytest.skip(f"OpenAI not reachable in this environment: {e}")
+        raise
+
+    assert resp is not None
+    assert isinstance(resp.content, str) and resp.content.strip()
+
+
+def test_openrouter_generation_smoke():
+    """Test OpenRouter provider via OpenAI-compatible API (opt-in)."""
+    if os.getenv("ABSTRACTCORE_RUN_LIVE_API_TESTS") != "1":
+        pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
+    if not os.getenv("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY not set")
+
+    llm = create_llm("openrouter", model="openai/gpt-4o-mini", timeout=30.0)
+    try:
+        resp = llm.generate("Say 'ok' and nothing else.", max_output_tokens=16)
+    except Exception as e:
+        if _is_connectivity_error(e):
+            pytest.skip(f"OpenRouter not reachable in this environment: {e}")
         raise
 
     assert resp is not None

@@ -6,7 +6,7 @@ This test validates all the providers and models mentioned in the specifications
 - lmstudio qwen/qwen3-coder-30b
 - mlx mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
 - openai gpt-4o-mini (cost-effective alternative to gpt-4-turbo)
-- anthropic claude-3-5-haiku-latest
+- anthropic claude-haiku-4-5
 """
 
 import os
@@ -43,7 +43,7 @@ def test_provider_model():
 
     # Add cloud providers if available
     if os.getenv("ANTHROPIC_API_KEY"):
-        test_configs.append(("anthropic", "claude-3-5-haiku-20241022", CodeReview, "Please review this Python code: def hello(): print('world')"))
+        test_configs.append(("anthropic", "claude-haiku-4-5", CodeReview, "Please review this Python code: def hello(): print('world')"))
     if os.getenv("OPENAI_API_KEY"):
         test_configs.append(("openai", "gpt-4o-mini", CodeReview, "Please review this Python code: def hello(): print('world')"))
 
@@ -129,7 +129,7 @@ def run_all_provider_tests():
         },
         {
             "provider": "anthropic",
-            "model": "claude-3-5-haiku-latest",
+            "model": "claude-haiku-4-5",
             "response_model": ContactInfo,
             "prompt": "Extract contact: Sarah Wilson, sarah.w@company.org, 555-9876"
         }

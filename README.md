@@ -27,7 +27,7 @@ pip install abstractcore[all-non-mlx]
 from abstractcore import create_llm
 
 # Works with any provider - just change the provider name
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
@@ -38,7 +38,7 @@ print(response.content)
 from abstractcore import create_llm
 
 # Deterministic outputs with seed + temperature=0
-llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+llm = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
 
 # These will produce identical outputs
 response1 = llm.generate("Write exactly 3 words about coding")
@@ -79,7 +79,7 @@ from abstractcore.tools import tool
 def get_weather(city: str) -> str:
     return f"Weather in {city}: Sunny, 22°C"
 
-llm = create_llm("ollama", model="qwen3:4b")  # execute_tools=False by default
+llm = create_llm("ollama", model="qwen3:4b-instruct")  # execute_tools=False by default
 response = llm.generate("What's the weather in Paris?", tools=[get_weather])
 # response.content contains raw tool call tags: <|tool_call|>...
 # Downstream runtime (AbstractRuntime, Codex, Claude Code) parses and executes
@@ -100,7 +100,7 @@ def get_weather(city: str) -> str:
 
 register_tool(get_weather)  # Required for direct execution
 
-llm = create_llm("ollama", model="qwen3:4b", execute_tools=True)
+llm = create_llm("ollama", model="qwen3:4b-instruct", execute_tools=True)
 response = llm.generate("What's the weather in Paris?", tools=[get_weather])
 # response.content contains executed tool results
 ```
@@ -166,7 +166,7 @@ files = search_files("def.*fetch", ".", file_pattern="*.py")  # Find function de
 content = read_file("config.json")  # Read file contents
 
 # Use with any LLM
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate(
     "Analyze this API response and summarize the key information",
     tools=[fetch_url]
@@ -313,7 +313,7 @@ AbstractCore includes an educational [async CLI demo](examples/async_cli_demo.py
 
 ```bash
 # Try the educational async demo
-python examples/async_cli_demo.py --provider ollama --model qwen3:4b --stream
+python examples/async_cli_demo.py --provider ollama --model qwen3:4b-instruct --stream
 ```
 
 [Learn more in CLI docs](docs/acore-cli.md#async-cli-demo-educational-reference)
@@ -334,7 +334,7 @@ response = llm.generate(
 )
 
 # Document analysis - works with any model
-llm = create_llm("anthropic", model="claude-3.5-sonnet")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate(
     "Summarize this research paper",
     media=["research_paper.pdf"]
@@ -361,7 +361,7 @@ response = llm.generate(
 - **Vision Optimization**: Model-specific image processing for vision results
 
 **Provider compatibility:**
-- **High-resolution vision**: GPT-4o (up to 4096x4096), Claude 3.5 Sonnet (up to 1568x1568)
+- **High-resolution vision**: GPT-4o (up to 4096x4096), Claude Haiku 4.5 (vision)
 - **Local models**: qwen3-vl (up to 3584x3584), gemma3:4b, llama3.2-vision
 - **All models**: Automatic text extraction for non-vision models
 
@@ -369,7 +369,7 @@ response = llm.generate(
 
 ### Glyph Visual-Text Compression (🧪 EXPERIMENTAL)
 
-> ⚠️ **Vision Model Requirement**: This feature ONLY works with vision-capable models (e.g., gpt-4o, claude-3-5-sonnet, llama3.2-vision)
+> ⚠️ **Vision Model Requirement**: This feature ONLY works with vision-capable models (e.g., gpt-4o, claude-haiku-4-5, llama3.2-vision)
 
 Achieve **3-4x token compression** and **faster inference** with Glyph's revolutionary visual-text compression:
 
@@ -465,7 +465,7 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-haiku-latest",
+    model="anthropic/claude-haiku-4-5",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
@@ -499,7 +499,7 @@ python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini --stream
 
 # Single prompt execution
-python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest --prompt "What is Python?"
+python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5 --prompt "What is Python?"
 ```
 
 **Key Features:**
@@ -678,7 +678,7 @@ abstractcore --set-global-default ollama/llama3:8b
 # Or configure specific applications (examples of customization)
 abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
-abstractcore --set-app-default judge anthropic claude-3-5-haiku
+abstractcore --set-app-default judge anthropic claude-haiku-4-5
 
 # Configure logging (common examples)
 abstractcore --set-console-log-level WARNING  # Reduce console output
@@ -719,7 +719,7 @@ summarizer document.pdf --provider openai --model gpt-4o-mini
 summarizer document.pdf
 
 # Explicit parameters still override when needed
-summarizer document.pdf --provider anthropic --model claude-3-5-sonnet
+summarizer document.pdf --provider anthropic --model claude-haiku-4-5
 ```
 
 ### Configuration Features
@@ -841,7 +841,7 @@ openai_llm = create_llm("openai", model="gpt-4o")
 openai_analysis = openai_llm.generate(prompt, media=image_files)
 
 # Anthropic Claude
-claude_llm = create_llm("anthropic", model="claude-3.5-sonnet")
+claude_llm = create_llm("anthropic", model="claude-haiku-4-5")
 claude_analysis = claude_llm.generate(prompt, media=image_files)
 
 # Local model (free)
@@ -857,7 +857,7 @@ documents = ["contract.pdf", "financial_data.xlsx", "presentation.ppt"]
 analysis_prompt = "Extract key information and identify potential risks"
 
 # Works with any provider
-llm = create_llm("anthropic", model="claude-3.5-sonnet")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate(analysis_prompt, media=documents)
 
 # Automatic format handling:
@@ -870,7 +870,7 @@ response = llm.generate(analysis_prompt, media=documents)
 
 ```python
 # Development (free, local)
-llm_dev = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+llm_dev = create_llm("ollama", model="qwen3:4b-instruct")
 
 # Production (high quality, cloud)
 llm_prod = create_llm("openai", model="gpt-4o-mini")

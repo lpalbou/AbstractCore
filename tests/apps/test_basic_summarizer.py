@@ -30,7 +30,7 @@ class TestBasicSummarizer:
                 seed=42,
             )
             # Proactively verify the endpoint is reachable; OpenAIProvider preflight is best-effort.
-            llm.generate("ping", max_output_tokens=1)
+            llm.generate("ping", max_output_tokens=16)
             return llm
         except Exception as e:
             error_msg = str(e).lower()

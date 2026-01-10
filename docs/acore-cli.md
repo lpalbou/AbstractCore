@@ -50,7 +50,7 @@ python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 
 # Or with any provider
 python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini
-python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest
+python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
 
 # With streaming enabled (--stream flag)
 python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream

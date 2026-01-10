@@ -16,7 +16,7 @@ from abstractcore.core.types import GenerateResponse
 TEST_MODELS = {
     "ollama": "qwen3:4b-instruct",
     "lmstudio": "qwen/qwen3-4b-2507",
-    "mlx": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+    "mlx": "mlx-community/Qwen3-4B-4bit",
     "huggingface": "Qwen/Qwen3-4B",  # GGUF not supported, using standard model
     "openai": "gpt-5-mini",
     "anthropic": "claude-haiku-4-5",
@@ -231,6 +231,7 @@ class TestStreamToolCalling:
             )
 
             chunks = []
+            tool_calls_detected = []
             content_accumulated = ""
 
             for chunk in stream:
@@ -240,8 +241,11 @@ class TestStreamToolCalling:
                 if chunk.content:
                     content_accumulated += chunk.content
 
+                if chunk.has_tool_calls():
+                    tool_calls_detected.extend(chunk.tool_calls)
+
             assert len(chunks) > 0, "Should receive chunks"
-            assert len(content_accumulated) > 0, "Should accumulate content"
+            assert len(content_accumulated) > 0 or tool_calls_detected, "Should receive content and/or tool calls"
 
             print(f"✅ Ollama streaming works, received {len(chunks)} chunks")
             print(f"   Content sample: {content_accumulated[:100]}...")
