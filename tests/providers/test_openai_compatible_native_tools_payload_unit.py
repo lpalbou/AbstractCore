@@ -9,12 +9,14 @@ from abstractcore.providers.vllm_provider import VLLMProvider
 @pytest.mark.parametrize(
     ("provider_cls", "base_url"),
     [
-        (LMStudioProvider, "http://localhost:1234/v1"),
-        (OpenAICompatibleProvider, "http://localhost:8080/v1"),
-        (VLLMProvider, "http://localhost:8000/v1"),
+        (LMStudioProvider, "http://127.0.0.1:1234/v1"),
+        (OpenAICompatibleProvider, "http://127.0.0.1:1234/v1"),
+        (VLLMProvider, "http://127.0.0.1:8000/v1"),
     ],
 )
 def test_openai_compatible_providers_send_native_tools_payload_when_supported(provider_cls, base_url, monkeypatch):
+    # Avoid any dependency on a running server during provider init.
+    monkeypatch.setattr(provider_cls, "_validate_model", lambda self: None, raising=False)
     provider = provider_cls(model="nvidia/nemotron-3-nano", base_url=base_url)
 
     tools = [
@@ -42,4 +44,3 @@ def test_openai_compatible_providers_send_native_tools_payload_when_supported(pr
     assert "tools" in payload
     assert payload["tool_choice"] == "auto"
     assert payload["tools"][0]["function"]["name"] == "write_file"
-

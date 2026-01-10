@@ -108,7 +108,7 @@ def test_provider_complexity():
 
     # Add cloud providers if available
     if os.getenv("ANTHROPIC_API_KEY"):
-        providers_to_test.append(("anthropic", "claude-3-5-haiku-20241022"))
+        providers_to_test.append(("anthropic", "claude-haiku-4-5"))
     if os.getenv("OPENAI_API_KEY"):
         providers_to_test.append(("openai", "gpt-4o-mini"))
 

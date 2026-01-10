@@ -160,9 +160,9 @@ payload["response_format"] = {
 The provider forces execution of a tool whose input schema matches the desired output structure.
 
 **Models with Native Support**:
-- claude-3-5-sonnet-latest
-- claude-3-5-haiku-latest
-- claude-3-opus-latest
+- claude-haiku-4-5
+- claude-sonnet-4-5
+- claude-opus-4-5
 
 **Reference**: [Anthropic API Documentation](https://docs.anthropic.com/)
 
@@ -569,7 +569,7 @@ class Organization(BaseModel):
     teams: List[Team]
     total_employees: int
 
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 org = llm.generate(
     """Create organization: TechCorp, founded 2020
     Team: Platform (engineering)

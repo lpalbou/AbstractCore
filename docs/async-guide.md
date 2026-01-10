@@ -165,7 +165,7 @@ async def chat_session(llm, topic, name):
     print(f"  Question 2: {response2.content[:50]}...")
 
 async def main():
-    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
 
     # Run 3 independent conversations concurrently
     await asyncio.gather(
@@ -201,7 +201,7 @@ async def main():
     # Query multiple providers simultaneously
     results = await asyncio.gather(
         query_provider("openai", "gpt-4o-mini", prompt),
-        query_provider("anthropic", "claude-3-5-haiku-latest", prompt),
+        query_provider("anthropic", "claude-haiku-4-5", prompt),
         query_provider("ollama", "qwen3:4b", prompt)
     )
 
@@ -223,7 +223,7 @@ async def main():
 
     # Get consensus from 3 providers
     llm_openai = create_llm("openai", model="gpt-4o-mini")
-    llm_anthropic = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    llm_anthropic = create_llm("anthropic", model="claude-haiku-4-5")
     llm_ollama = create_llm("ollama", model="qwen3:4b")
 
     responses = await asyncio.gather(
@@ -411,7 +411,7 @@ import asyncio
 from abstractcore import create_llm
 
 async def main():
-    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
 
     # Concurrent: LLM generation + file I/O
     llm_task = llm.agenerate("Explain async")

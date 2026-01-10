@@ -80,7 +80,7 @@ class TestAnthropicBaseUrl:
         """Test base_url parameter is accepted programmatically."""
         llm = create_llm(
             "anthropic",
-            model="claude-sonnet-4-5-20250929",
+            model="claude-haiku-4-5",
             api_key="sk-ant-test-key-for-base-url-testing",
             base_url="https://custom.example.com"
         )
@@ -94,7 +94,7 @@ class TestAnthropicBaseUrl:
         try:
             llm = create_llm(
                 "anthropic",
-                model="claude-sonnet-4-5-20250929",
+                model="claude-haiku-4-5",
                 api_key="sk-ant-test-key"
             )
             assert llm.base_url == "https://env.example.com"
@@ -108,7 +108,7 @@ class TestAnthropicBaseUrl:
         try:
             llm = create_llm(
                 "anthropic",
-                model="claude-sonnet-4-5-20250929",
+                model="claude-haiku-4-5",
                 api_key="sk-ant-test-key",
                 base_url="https://param.example.com"
             )
@@ -120,7 +120,7 @@ class TestAnthropicBaseUrl:
         """Test that base_url is None when not specified."""
         llm = create_llm(
             "anthropic",
-            model="claude-sonnet-4-5-20250929",
+            model="claude-haiku-4-5",
             api_key="sk-ant-test-key"
         )
         assert llm.base_url is None
@@ -152,11 +152,11 @@ class TestBackwardCompatibility:
         """Verify Anthropic provider works without base_url (backward compatible)."""
         llm = create_llm(
             "anthropic",
-            model="claude-sonnet-4-5-20250929",
+            model="claude-haiku-4-5",
             api_key="sk-ant-test-key"
         )
         assert llm.provider == "anthropic"
-        assert llm.model == "claude-sonnet-4-5-20250929"
+        assert llm.model == "claude-haiku-4-5"
         assert hasattr(llm, 'base_url')
         assert llm.base_url is None
 

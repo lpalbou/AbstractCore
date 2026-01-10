@@ -159,7 +159,7 @@ class TestUnsupportedProvider:
     async def test_anthropic_unsupported(self):
         """Test that Anthropic raises ValueError (cloud-only)."""
         with pytest.raises(ValueError, match="does not support"):
-            async for _ in download_model("anthropic", "claude-sonnet-4-5-20250929"):
+            async for _ in download_model("anthropic", "claude-haiku-4-5"):
                 pass
 
 

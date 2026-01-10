@@ -795,7 +795,7 @@ COMMON TASKS:
 
 SPECIALIZED MODELS:
   abstractcore --set-chat-model openai/gpt-4o-mini      # For chat applications
-  abstractcore --set-code-model anthropic/claude-3-5-sonnet  # For coding tasks
+  abstractcore --set-code-model anthropic/claude-haiku-4-5    # For coding tasks (cost-effective default)
 
 PRIORITY SYSTEM:
   1. Explicit parameters (highest):  summarizer doc.pdf --provider openai --model gpt-4o

@@ -18,8 +18,8 @@ class _StubHttpResponse:
 @pytest.mark.parametrize(
     ("provider_cls", "base_url"),
     [
-        (OpenAICompatibleProvider, "http://localhost:8080/v1"),
-        (VLLMProvider, "http://localhost:8000/v1"),
+        (OpenAICompatibleProvider, "http://127.0.0.1:1234/v1"),
+        (VLLMProvider, "http://127.0.0.1:8000/v1"),
     ],
 )
 def test_openai_compatible_providers_extract_tool_calls_from_response_json(provider_cls, base_url, monkeypatch):
@@ -80,4 +80,3 @@ def test_openai_compatible_providers_extract_tool_calls_from_response_json(provi
             "call_id": "call_123",
         }
     ]
-

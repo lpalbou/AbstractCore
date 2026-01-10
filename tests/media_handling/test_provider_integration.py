@@ -196,7 +196,7 @@ class TestMediaCapabilityValidation:
         # Test real capability detection
         assert supports_vision("gpt-4o") is True
         assert supports_vision("gpt-4o-mini") is True
-        assert supports_vision("claude-3-5-sonnet") is True  # Use base model name
+        assert supports_vision("claude-haiku-4-5") is True
         assert supports_vision("llama3.2-vision:11b") is True
 
         # Non-vision models

@@ -88,7 +88,7 @@ def check_provider_availability(provider: str, model: str = None) -> tuple[bool,
             # Check for API key
             if not os.getenv("ANTHROPIC_API_KEY"):
                 return False, "ANTHROPIC_API_KEY not set"
-            llm = create_llm(provider, model=model or "claude-3-5-sonnet-20241022", timeout=5.0)
+            llm = create_llm(provider, model=model or "claude-haiku-4-5", timeout=5.0)
             return True, ""
 
         elif provider == "huggingface":
@@ -158,8 +158,7 @@ def available_vision_providers():
             "gpt-4-turbo"
         ],
         "anthropic": [
-            "claude-3-5-sonnet-20241022",
-            "claude-3-haiku-20240307"
+            "claude-haiku-4-5",
         ],
         "huggingface": [
             "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"

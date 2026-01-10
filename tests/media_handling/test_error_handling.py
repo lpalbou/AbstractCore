@@ -295,7 +295,7 @@ class TestProviderErrorHandling:
             handler = AnthropicMediaHandler()
 
             # Should validate size limits
-            is_valid = handler.validate_media_for_model(large_media, "claude-3.5-sonnet")
+            is_valid = handler.validate_media_for_model(large_media, "claude-haiku-4-5")
 
             # May reject oversized content
             if not is_valid:

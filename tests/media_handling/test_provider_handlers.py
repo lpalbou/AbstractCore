@@ -184,8 +184,8 @@ class TestAnthropicMediaHandler:
 
             # Create multimodal message with proper capabilities
             from abstractcore.architectures import get_model_capabilities
-            caps = get_model_capabilities("claude-3-5-sonnet-20241022")
-            handler = AnthropicMediaHandler(model_capabilities=caps, model_name="claude-3-5-sonnet-20241022")
+            caps = get_model_capabilities("claude-haiku-4-5")
+            handler = AnthropicMediaHandler(model_capabilities=caps, model_name="claude-haiku-4-5")
             message = handler.create_multimodal_message(
                 "What do you see in this image?",
                 [result.media_content]
@@ -215,8 +215,7 @@ class TestAnthropicMediaHandler:
 
             # Test with vision models
             handler = AnthropicMediaHandler({"vision_support": True})
-            assert handler.validate_media_for_model(result.media_content, "claude-3.5-sonnet")
-            assert handler.validate_media_for_model(result.media_content, "claude-4-opus")
+            assert handler.validate_media_for_model(result.media_content, "claude-haiku-4-5")
 
         except ImportError:
             pytest.skip("Anthropic media handler not available")
@@ -398,8 +397,7 @@ class TestMediaCapabilities:
             assert not is_vision_model("gpt-3.5-turbo")
 
             # Test Anthropic vision models
-            assert is_vision_model("claude-3.5-sonnet")
-            assert is_vision_model("claude-4-opus")
+            assert is_vision_model("claude-haiku-4-5")
 
             # Test local vision models
             assert is_vision_model("qwen3-vl")

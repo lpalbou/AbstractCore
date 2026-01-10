@@ -36,7 +36,7 @@ class TestVisionModelAvailability:
         vision_models = [
             "gpt-4o",
             "gpt-4-turbo",
-            "claude-3-5-sonnet",
+            "claude-haiku-4-5",
             "qwen2.5vl:7b",
             "llama3.2-vision:11b"
         ]
@@ -251,7 +251,7 @@ class TestSingleModelComprehensive:
         ("lmstudio", "qwen/qwen2.5-vl-7b"),
         ("lmstudio", "qwen/qwen3-vl-4b"),
         ("openai", "gpt-4o"),
-        ("anthropic", "claude-3-5-sonnet-20241022"),
+        ("anthropic", "claude-haiku-4-5"),
         ("huggingface", "unsloth/Qwen2.5-VL-7B-Instruct-GGUF")
     ])
     @pytest.mark.slow

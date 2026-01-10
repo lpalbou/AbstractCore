@@ -78,7 +78,7 @@ class TestArchitectureDetection:
             ('openai/gpt-oss-20b', 'gpt_oss'),
             ('qwen3-coder:30b', 'qwen3_moe'),  # Updated: more specific detection
             ('llama-3.1-8b', 'llama3_1'),  # Updated: more specific detection
-            ('claude-3.5-sonnet', 'claude'),
+            ('claude-haiku-4-5', 'claude'),
             ('unknown-model', 'generic')
         ]
 

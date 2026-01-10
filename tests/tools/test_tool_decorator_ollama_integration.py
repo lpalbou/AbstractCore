@@ -21,7 +21,6 @@ import pytest
 
 from abstractcore import create_llm
 from abstractcore.tools.core import tool
-from abstractcore.tools.parser import parse_tool_calls
 
 
 def _skip_if_ollama_unavailable(exc: Exception) -> None:
@@ -45,7 +44,7 @@ def _skip_if_ollama_unavailable(exc: Exception) -> None:
 
 @pytest.mark.integration
 def test_ollama_tool_calling_with_core_tool_decorator(tmp_path: Path) -> None:
-    model = os.getenv("ABSTRACTCORE_OLLAMA_TOOL_MODEL", "qwen3:4b-instruct-2507-q4_K_M")
+    model = os.getenv("ABSTRACTCORE_OLLAMA_TOOL_MODEL", "qwen3:4b-instruct")
     base_url = os.getenv("ABSTRACTCORE_OLLAMA_BASE_URL", "http://localhost:11434")
 
     target_file = tmp_path / "tool_call_sentinel.txt"
@@ -88,15 +87,19 @@ def test_ollama_tool_calling_with_core_tool_decorator(tmp_path: Path) -> None:
         _skip_if_ollama_unavailable(RuntimeError(content))
         pytest.fail(f"Ollama provider returned error content: {content!r}")
 
-    tool_calls = parse_tool_calls(content, model_name=model)
-
+    tool_calls = response.tool_calls or []
     assert tool_calls, f"No tool calls detected. Response content: {content!r}"
-    assert any(tc.name == "read_file" for tc in tool_calls), (
-        f"Expected read_file tool call. Parsed: {tool_calls}. Content: {content!r}"
-    )
 
-    call = next(tc for tc in tool_calls if tc.name == "read_file")
-    assert isinstance(call.arguments, dict)
-    asserted_path = call.arguments.get("path")
+    call = next((tc for tc in tool_calls if tc.get("name") == "read_file"), None)
+    assert call is not None, f"Expected read_file tool call. Tool calls: {tool_calls}. Content: {content!r}"
+
+    args = call.get("arguments", {})
+    if isinstance(args, str) and args.strip():
+        import json
+
+        args = json.loads(args)
+
+    assert isinstance(args, dict)
+    asserted_path = args.get("path")
     assert isinstance(asserted_path, str)
     assert asserted_path.strip() == str(target_file)

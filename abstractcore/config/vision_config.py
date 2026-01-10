@@ -155,9 +155,9 @@ def handle_list_vision(handler: 'VisionFallbackHandler') -> bool:
             "gpt-4-turbo-with-vision - GPT-4 Turbo Vision"
         ],
         "anthropic": [
-            "claude-3.5-sonnet - Claude 3.5 Sonnet",
-            "claude-3.5-haiku - Claude 3.5 Haiku",
-            "claude-3-opus - Claude 3 Opus"
+            "claude-haiku-4-5 - Claude Haiku 4.5 (vision, cost-effective)",
+            "claude-sonnet-4-5 - Claude Sonnet 4.5 (vision)",
+            "claude-opus-4-5 - Claude Opus 4.5 (vision)"
         ],
         "huggingface": [
             "unsloth/Qwen2.5-VL-7B-Instruct-GGUF - GGUF format",
@@ -400,7 +400,7 @@ def configure_cloud_provider(handler: 'VisionFallbackHandler') -> bool:
         # Suggest models based on provider
         model_suggestions = {
             "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo-with-vision"],
-            "anthropic": ["claude-3.5-sonnet", "claude-3.5-haiku", "claude-3-opus"]
+            "anthropic": ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-5"]
         }
 
         print(f"\nSuggested models for {provider}:")

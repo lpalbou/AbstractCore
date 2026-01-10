@@ -25,7 +25,7 @@ class TestFactory:
         try:
             llm = create_llm("anthropic")
             assert isinstance(llm, AnthropicProvider)
-            assert llm.model == "claude-3-5-haiku-latest"  # Default model
+            assert llm.model == "claude-haiku-4-5"  # Default model
         except ImportError:
             pytest.skip("Anthropic dependencies not available")
 

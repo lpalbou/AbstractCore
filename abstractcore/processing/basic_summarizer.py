@@ -166,7 +166,7 @@ class BasicSummarizer:
                     "   summarizer = BasicSummarizer(llm)\n"
                     "   \n"
                     "   # Using Anthropic\n"
-                    "   llm = create_llm('anthropic', model='claude-3-5-haiku-latest')\n"
+                    "   llm = create_llm('anthropic', model='claude-haiku-4-5')\n"
                     "   summarizer = BasicSummarizer(llm)\n"
                     "   \n"
                     "   # Using different Ollama model\n"

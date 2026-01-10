@@ -29,7 +29,7 @@ class TestProviderConnectivity:
         if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
             pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434", timeout=5.0)
+            provider = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://127.0.0.1:11434", timeout=5.0)
             assert provider is not None
             assert provider.model == "qwen3:4b-instruct"
         except Exception as e:
@@ -43,7 +43,7 @@ class TestProviderConnectivity:
         if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
             pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
         try:
-            provider = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1", timeout=5.0)
+            provider = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://127.0.0.1:1234/v1", timeout=5.0)
             assert provider is not None
             assert provider.model == "qwen/qwen3-4b-2507"
         except Exception as e:

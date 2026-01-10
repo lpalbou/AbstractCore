@@ -261,7 +261,7 @@ class TestIntegratedFunctionality:
                         assert len(result) > 0
 
             # Test 4: Architecture detection
-            arch = detect_architecture("claude-3-5-haiku-20241022")
+            arch = detect_architecture("claude-haiku-4-5")
             assert arch is not None
 
         except Exception as e:
@@ -307,7 +307,7 @@ class TestIntegratedFunctionality:
         """Test architecture detection for various models."""
         test_cases = [
             ("gpt-4o", "gpt"),
-            ("claude-3-5-haiku-20241022", "claude"),
+            ("claude-haiku-4-5", "claude"),
             ("qwen3-coder:30b", "qwen"),
             ("llama3.1:8b", "llama"),
             ("mlx-community/Qwen3-4B-4bit", "qwen")

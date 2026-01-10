@@ -59,7 +59,7 @@ llm = create_llm("openai", model="gpt-4o-mini")
 # With configuration
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     temperature=0.7,
     max_tokens=1000,
     timeout=30
@@ -251,7 +251,7 @@ asyncio.run(stream_response())
 ```python
 async def compare_providers():
     openai = create_llm("openai", model="gpt-4o-mini")
-    claude = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    claude = create_llm("anthropic", model="claude-haiku-4-5")
 
     responses = await asyncio.gather(
         openai.agenerate("What is 2+2?"),
@@ -860,7 +860,7 @@ llm = create_llm(
 providers = {
     "fast": create_llm("openai", model="gpt-4o-mini"),
     "smart": create_llm("openai", model="gpt-4o"),
-    "long_context": create_llm("anthropic", model="claude-3-5-sonnet-latest"),
+    "long_context": create_llm("anthropic", model="claude-haiku-4-5"),
     "local": create_llm("ollama", model="qwen2.5-coder:7b")
 }
 

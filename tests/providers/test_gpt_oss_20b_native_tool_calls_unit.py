@@ -20,9 +20,9 @@ class _StubHttpResponse:
 @pytest.mark.parametrize(
     ("provider_cls", "base_url"),
     [
-        (LMStudioProvider, "http://localhost:1234/v1"),
-        (OpenAICompatibleProvider, "http://localhost:8080/v1"),
-        (VLLMProvider, "http://localhost:8000/v1"),
+        (LMStudioProvider, "http://127.0.0.1:1234/v1"),
+        (OpenAICompatibleProvider, "http://127.0.0.1:1234/v1"),
+        (VLLMProvider, "http://127.0.0.1:8000/v1"),
     ],
 )
 def test_gpt_oss_20b_native_tools_send_tools_and_extract_tool_calls(provider_cls, base_url, monkeypatch):
@@ -103,5 +103,4 @@ def test_gpt_oss_20b_native_tools_send_tools_and_extract_tool_calls(provider_cls
             "call_id": "call_123",
         }
     ]
-
 

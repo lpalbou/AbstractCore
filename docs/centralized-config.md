@@ -33,7 +33,7 @@ abstractcore --set-global-default ollama/llama3:8b
 
 # Set specialized defaults
 abstractcore --set-chat-model openai/gpt-4o-mini
-abstractcore --set-code-model anthropic/claude-3-5-sonnet
+abstractcore --set-code-model anthropic/claude-haiku-4-5
 ```
 
 ### Cache Directories
