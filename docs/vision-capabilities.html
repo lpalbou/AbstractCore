@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vision Capabilities - AbstractCore</title>
     <meta name="description" content="Image analysis across all providers with automatic optimization and vision fallback for text-only models.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -120,7 +120,7 @@ prompt = "Analyze the data in these files"
 
 # All work identically
 openai_response = create_llm("openai", model="gpt-4o").generate(prompt, media=image_files)
-anthropic_response = create_llm("anthropic", model="claude-3.5-sonnet").generate(prompt, media=image_files)
+anthropic_response = create_llm("anthropic", model="claude-haiku-4-5").generate(prompt, media=image_files)
 ollama_response = create_llm("ollama", model="qwen2.5vl:7b").generate(prompt, media=image_files)</code></pre>
                 </div>
 
@@ -202,7 +202,7 @@ analysis = json.loads(response.content)</code></pre>
                 <h3>Comparison Tasks</h3>
                 <div class="code-block">
                     <pre><code class="language-python"># Compare multiple images
-llm = create_llm("anthropic", model="claude-3.5-sonnet")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 response = llm.generate(
     "Compare these three architectural designs and identify common elements",

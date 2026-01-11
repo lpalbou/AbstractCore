@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Centralized Configuration - AbstractCore</title>
     <meta name="description" content="AbstractCore centralized configuration system - set global defaults, app-specific preferences, and never specify providers repeatedly again.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -68,11 +68,11 @@
 abstractcore --status
 
 # Set global fallback model (used when no app-specific default)
-abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-global-default ollama/qwen3:4b-instruct
 
 # Set app-specific defaults for optimal performance
-abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli ollama llama3.2:3b
+abstractcore --set-app-default summarizer openai gpt-5-mini
+abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
@@ -88,19 +88,19 @@ abstractcore --set-console-log-level WARNING</code></pre>
                 <ol>
                     <li><strong>Explicit Parameters</strong> (highest priority)
                         <div class="code-block">
-                            <pre><code class="language-bash">summarizer document.txt --provider openai --model gpt-4o-mini</code></pre>
+                            <pre><code class="language-bash">summarizer document.txt --provider openai --model gpt-5-mini</code></pre>
                         </div>
                     </li>
 
                     <li><strong>App-Specific Configuration</strong>
                         <div class="code-block">
-                            <pre><code class="language-bash">abstractcore --set-app-default summarizer openai gpt-4o-mini</code></pre>
+                            <pre><code class="language-bash">abstractcore --set-app-default summarizer openai gpt-5-mini</code></pre>
                         </div>
                     </li>
 
                     <li><strong>Global Configuration</strong>
                         <div class="code-block">
-                            <pre><code class="language-bash">abstractcore --set-global-default openai/gpt-4o-mini</code></pre>
+                            <pre><code class="language-bash">abstractcore --set-global-default openai/gpt-5-mini</code></pre>
                         </div>
                     </li>
 
@@ -114,16 +114,16 @@ abstractcore --set-console-log-level WARNING</code></pre>
 
                 <div class="code-block">
                     <pre><code class="language-bash"># Fast local model for CLI testing
-abstractcore --set-app-default cli ollama llama3.2:3b
+abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # High-quality cloud model for document summarization
-abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default summarizer openai gpt-5-mini
 
 # Balanced model for extraction tasks
-abstractcore --set-app-default extractor anthropic claude-3-5-haiku
+abstractcore --set-app-default extractor anthropic claude-haiku-4-5
 
 # Analytical model for evaluation
-abstractcore --set-app-default judge anthropic claude-3-5-haiku</code></pre>
+abstractcore --set-app-default judge anthropic claude-haiku-4-5</code></pre>
                 </div>
 
                 <h2>Vision Fallback Configuration</h2>
@@ -197,7 +197,7 @@ abstractcore --set-local-models-cache-dir ~/.abstractcore/models</code></pre>
 abstractcore --status
 
 # Configure for development (free local models)
-abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-global-default ollama/qwen3:4b-instruct
 abstractcore --set-console-log-level WARNING
 
 # Add API keys when ready for cloud providers
@@ -211,26 +211,26 @@ abstractcore --status</code></pre>
                 <h3>Development Environment</h3>
                 <div class="code-block">
                     <pre><code class="language-bash"># Optimize for local development
-abstractcore --set-global-default ollama/llama3:8b  # Free local models
+abstractcore --set-global-default ollama/qwen3:4b-instruct  # Free local models
 abstractcore --enable-debug-logging                 # Detailed logs for debugging
-abstractcore --set-app-default cli ollama llama3.2:3b  # Fast model for CLI testing</code></pre>
+abstractcore --set-app-default cli ollama qwen3:4b-instruct  # Fast model for CLI testing</code></pre>
                 </div>
 
                 <h3>Production Environment</h3>
                 <div class="code-block">
                     <pre><code class="language-bash"># Configure for production reliability and performance
-abstractcore --set-global-default openai/gpt-4o-mini  # Reliable cloud provider
+abstractcore --set-global-default openai/gpt-5-mini  # Reliable cloud provider
 abstractcore --set-console-log-level WARNING          # Reduce noise
 abstractcore --enable-file-logging                    # Persistent logs
-abstractcore --set-app-default summarizer openai gpt-4o-mini  # Optimize for quality</code></pre>
+abstractcore --set-app-default summarizer openai gpt-5-mini  # Optimize for quality</code></pre>
                 </div>
 
                 <h3>Multi-Environment Approach</h3>
                 <div class="code-block">
                     <pre><code class="language-bash"># Use different providers for different applications
-abstractcore --set-app-default cli ollama llama3.2:3b           # Fast for development
-abstractcore --set-app-default summarizer openai gpt-4o-mini # Quality for documents
-abstractcore --set-app-default judge anthropic claude-3-5-haiku # Detailed analysis</code></pre>
+abstractcore --set-app-default cli ollama qwen3:4b-instruct           # Fast for development
+abstractcore --set-app-default summarizer openai gpt-5-mini # Quality for documents
+abstractcore --set-app-default judge anthropic claude-haiku-4-5 # Detailed analysis</code></pre>
                 </div>
 
                 <h2>Configuration File Location</h2>

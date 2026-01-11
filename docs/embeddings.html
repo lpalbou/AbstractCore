@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vector Embeddings - AbstractCore</title>
     <meta name="description" content="SOTA embedding models for semantic search, RAG applications, and similarity computation with AbstractCore.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -245,7 +245,7 @@ for doc, score in results:
 from abstractcore.embeddings import EmbeddingManager
 
 class SimpleRAG:
-    def __init__(self, llm_provider="openai", llm_model="gpt-4o-mini"):
+    def __init__(self, llm_provider="openai", llm_model="gpt-5-mini"):
         self.llm = create_llm(llm_provider, model=llm_model)
         self.embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
         self.knowledge_base = []

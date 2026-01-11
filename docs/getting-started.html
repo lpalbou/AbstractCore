@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Getting Started - AbstractCore</title>
     <meta name="description" content="Get started with AbstractCore in 5 minutes. Learn how to install and make your first LLM call.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -118,7 +118,7 @@ export OPENAI_API_KEY="your-key-here"</code></pre>
                         <div class="code-block">
                             <pre><code class="language-bash"># Ollama setup
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.2:3b
+ollama pull qwen3:4b-instruct
 pip install abstractcore[ollama]</code></pre>
                         </div>
                     </div>
@@ -131,16 +131,16 @@ pip install abstractcore[ollama]</code></pre>
                     <pre><code class="language-python">from abstractcore import create_llm
 
 # Choose your provider (uncomment one):
-llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7, seed=42)        # Cloud
-# llm = create_llm("anthropic", model="claude-3-5-haiku-latest", temperature=0.0)  # Cloud (use temp=0 for consistency)
-# llm = create_llm("ollama", model="llama3.2:3b", seed=42)   # Local
+llm = create_llm("openai", model="gpt-5-mini", temperature=0.7, seed=42)        # Cloud
+# llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.0)  # Cloud (use temp=0 for consistency)
+# llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42)   # Local
 
 # Generate your first response
 response = llm.generate("What is the capital of France?")
 print(response.content)
 
 # For deterministic outputs across calls
-deterministic_llm = create_llm("openai", model="gpt-4o-mini", temperature=0.0, seed=42)
+deterministic_llm = create_llm("openai", model="gpt-5-mini", temperature=0.0, seed=42)
 response1 = deterministic_llm.generate("Write exactly 3 words about AI")
 response2 = deterministic_llm.generate("Write exactly 3 words about AI")
 # response1.content == response2.content (identical outputs)</code></pre>
@@ -165,10 +165,10 @@ response2 = deterministic_llm.generate("Write exactly 3 words about AI")
 abstractcore --status
 
 # Set global default
-abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-global-default ollama/qwen3:4b-instruct
 
 # Set app-specific defaults
-abstractcore --set-app-default cli ollama llama3.2:3b
+abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # Configure API keys (stored in config file)
 abstractcore --set-api-key openai sk-your-key-here</code></pre>
@@ -201,9 +201,9 @@ for provider in providers:
                     <pre><code class="language-python">from abstractcore import create_llm
 
 # Same interface, different providers - all support deterministic generation
-openai_llm = create_llm("openai", model="gpt-4o-mini", seed=42)
-claude_llm = create_llm("anthropic", model="claude-3-5-haiku-latest", temperature=0.0)  # Use temp=0 for consistency
-local_llm = create_llm("ollama", model="llama3.2:3b", seed=42)
+openai_llm = create_llm("openai", model="gpt-5-mini", seed=42)
+claude_llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.0)  # Use temp=0 for consistency
+local_llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42)
 
 question = "Explain Python list comprehensions"
 
@@ -225,7 +225,7 @@ class MovieReview(BaseModel):
     rating: int  # 1-5 stars
     summary: str
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Get structured data automatically
 review = llm.generate(
@@ -262,7 +262,7 @@ def calculate(expression: str) -> float:
         return float('nan')
 
 # Instantiate the LLM
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Automatically extract tool definitions from decorated functions
 response = llm.generate(
@@ -280,7 +280,7 @@ print(response.content)
                 <div class="code-block">
                     <pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 print("AI: ", end="", flush=True)
 for chunk in llm.generate("Write a haiku about programming", stream=True):
@@ -295,7 +295,7 @@ print("\n")
                 <div class="code-block">
                     <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 session = BasicSession(provider=llm, system_prompt="You are a helpful coding tutor.")
 
 # First exchange

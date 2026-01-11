@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Reference - AbstractCore</title>
     <meta name="description" content="Complete Python API reference for AbstractCore. All examples work across any provider.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -90,7 +90,7 @@
                         <h4>Parameters</h4>
                         <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
                             <ul style="margin: 0;">
-                                <li><code>provider</code> (str): Provider name ("openai", "anthropic", "ollama", "mlx", "lmstudio", "huggingface")</li>
+                                <li><code>provider</code> (str): Provider name ("openai", "anthropic", "openrouter", "ollama", "lmstudio", "mlx", "huggingface", "vllm", "openai-compatible")</li>
                                 <li><code>model</code> (str, optional): Model name. If not provided, uses provider default</li>
                                 <li><code>retry_config</code> (RetryConfig, optional): Custom retry configuration</li>
                                 <li><code>tool_call_tags</code> (str or tuple, optional): Custom tool call format for agent CLI compatibility</li>
@@ -121,12 +121,12 @@
                             <pre><code class="language-python">from abstractcore import create_llm
 
 # Basic usage
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # With unified token management and deterministic generation
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     temperature=0.7,
     seed=42,                    # For deterministic outputs (issues warning on Anthropic)
     max_tokens=32000,           # Context window (input + output)
@@ -135,15 +135,15 @@ llm = create_llm(
     timeout=30
 )
 
-# With tool syntax rewriting for agent CLI compatibility
+# With tool syntax rewriting (keep tool-call markup in content)
 llm = create_llm(
     "ollama",
-    model="llama3.2:3b",
-    tool_call_tags="function_call"  # Converts to <function_call>...JSON...</function_call>
+    model="qwen3:4b-instruct",
+    tool_call_tags="llama3"  # <function_call>...JSON...</function_call>
 )
 
 # Local provider
-llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:11434")</code></pre>
+llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434")</code></pre>
                         </div>
                     </div>
                 </section>
@@ -219,6 +219,40 @@ response = llm.generate(
                             <li>If <code>stream=True</code>: Iterator[GenerateResponse]</li>
                         </ul>
 
+                        <h4>agenerate()</h4>
+                        <p>Async version of <code>generate()</code> (supports async streaming when <code>stream=True</code>).</p>
+
+                        <div class="code-block">
+                            <pre><code class="language-python">async def agenerate(
+    self,
+    prompt: str,
+    messages: Optional[List[Dict]] = None,
+    system_prompt: Optional[str] = None,
+    media: Optional[List[str]] = None,
+    tools: Optional[List[Callable]] = None,
+    response_model: Optional[BaseModel] = None,
+    retry_strategy: Optional[Retry] = None,
+    stream: bool = False,
+    **kwargs
+) -> Union[GenerateResponse, AsyncIterator[GenerateResponse]]</code></pre>
+                        </div>
+
+                        <div class="code-block">
+                            <pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("openai", model="gpt-5-mini")
+    response = await llm.agenerate("Explain async/await in one paragraph.")
+    print(response.content)
+
+asyncio.run(main())</code></pre>
+                        </div>
+
+                        <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
+                            <p style="margin: 0; color: #1e40af;"><strong>See also:</strong> <a href="async-guide.html">Async Guide</a> for patterns like <code>asyncio.gather()</code> and async streaming loops.</p>
+                        </div>
+
                         <h4>unload()</h4>
                         <p>Unload model from memory (local providers only).</p>
                         
@@ -230,7 +264,7 @@ llm.unload()  # Explicitly free memory
 del llm
 
 # API providers (OpenAI, Anthropic) - unload() is safe but no-op
-api_llm = create_llm("openai", model="gpt-4o-mini")
+api_llm = create_llm("openai", model="gpt-5-mini")
 api_llm.unload()  # Safe to call, but has no effect</code></pre>
                         </div>
                     </div>
@@ -286,7 +320,7 @@ class GenerateResponse:
                         <h4>Methods</h4>
                         <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
                             <ul style="margin: 0;">
-                                <li><code>get_summary()</code> (str): Returns comprehensive summary with timing: "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"</li>
+                                <li><code>get_summary()</code> (str): Returns comprehensive summary with timing: "Model: gpt-5-mini | Tokens: 117 | Time: 1234.5ms"</li>
                             </ul>
                         </div>
                     </div>
@@ -320,6 +354,12 @@ class GenerateResponse:
                         </div>
                         <p>Generate response and add to conversation history.</p>
 
+                        <h5>agenerate()</h5>
+                        <div class="code-block">
+                            <pre><code class="language-python">async def agenerate(self, prompt: str, **kwargs) -> GenerateResponse</code></pre>
+                        </div>
+                        <p>Async version of <code>generate()</code> (use for concurrent sessions/calls).</p>
+
                         <h5>add_message()</h5>
                         <div class="code-block">
                             <pre><code class="language-python">def add_message(self, role: str, content: str, **metadata) -> Message</code></pre>
@@ -343,7 +383,7 @@ def load(cls, filepath: Path, provider: AbstractCoreInterface) -> "BasicSession"
                         <div class="code-block">
                             <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 session = BasicSession(
     provider=llm,
     system_prompt="You are a helpful coding tutor."
@@ -430,7 +470,7 @@ config = RetryConfig(
     recovery_timeout=60.0     # Test recovery after 1 minute
 )
 
-llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)</code></pre>
+llm = create_llm("openai", model="gpt-5-mini", retry_config=config)</code></pre>
                     </div>
                 </section>
 
@@ -445,7 +485,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -453,7 +493,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+estimated = estimate_tokens(text, model="claude-haiku-4-5")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings
@@ -476,7 +516,7 @@ from abstractcore.events import EventType, on_global
 # Production resilience with retry and circuit breaker
 llm = create_llm(
     "openai",
-    model="gpt-4o-mini",
+    model="gpt-5-mini",
     retry_manager=RetryManager(max_attempts=3, backoff_strategy="exponential"),
     circuit_breaker=CircuitBreaker(failure_threshold=5, timeout=60)
 )
@@ -505,7 +545,7 @@ from abstractcore import create_llm
 
 # Initialize components
 embedder = EmbeddingManager()
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Documents to search
 documents = [

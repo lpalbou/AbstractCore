@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Architecture Overview - AbstractCore</title>
     <meta name="description" content="Interactive architecture overview of AbstractCore's system design, components, and data flow.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     
@@ -205,7 +205,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -314,7 +314,7 @@
                         <pre><code class="language-python">from abstractcore import create_llm
 
 # Factory creates the right provider
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate("Hello, world!")</code></pre>
                     </div>
                     <p><strong>Benefits:</strong> Same interface for all providers, automatic reliability, built-in tool support.</p>
@@ -326,7 +326,7 @@ response = llm.generate("Hello, world!")</code></pre>
                     <div class="code-block">
                         <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}'</code></pre>
+  -d '{"model": "openai/gpt-5-mini", "messages": [{"role": "user", "content": "Hello"}]}'</code></pre>
                     </div>
                     <p><strong>Benefits:</strong> Drop-in OpenAI replacement, universal provider access, tool call format conversion.</p>
                 </div>

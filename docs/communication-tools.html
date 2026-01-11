@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Communication Tools - AbstractCore</title>
+    <meta name="description" content="Email + WhatsApp tools for agentic workflows: send, list, read. Secrets-safe defaults and opt-in runtime gating.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [
+                    { text: 'Features', href: '/docs/capabilities.html' },
+                    { text: 'Quick Start', href: '/docs/getting-started.html' },
+                    { text: 'Documentation', href: '/#docs' },
+                    { text: 'Examples', href: '/docs/examples.html' },
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/abstractcore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1300px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Communication Tools (Email + WhatsApp)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Optional, side-effecting tools for real-world agent workflows: send, list, and read email/WhatsApp messages.
+                </p>
+            </div>
+
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1.5rem; margin-bottom: 3rem; border-radius: 0.75rem;">
+                <h2 style="margin: 0 0 0.75rem 0; color: #92400e;">Safety first</h2>
+                <ul style="margin: 0; padding-left: 1.5rem; color: #92400e;">
+                    <li>These tools can send real messages. Keep them behind an approval boundary / allowlist.</li>
+                    <li>Secrets are resolved from env vars at execution time (tool args carry env var <em>names</em>, not secrets).</li>
+                    <li>Default toolsets in AbstractRuntime only expose these tools when explicitly enabled.</li>
+                </ul>
+            </div>
+
+            <div class="doc-content">
+                <section id="what-exists">
+                    <h2>What exists today</h2>
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
+                        <h3 style="margin: 0 0 1rem 0;">Email tools (SMTP/IMAP)</h3>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><code>send_email</code></li>
+                            <li><code>list_emails</code></li>
+                            <li><code>read_email</code></li>
+                        </ul>
+
+                        <h3 style="margin: 1.5rem 0 1rem 0;">WhatsApp tools (v1 provider: Twilio)</h3>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><code>send_whatsapp_message</code></li>
+                            <li><code>list_whatsapp_messages</code></li>
+                            <li><code>read_whatsapp_message</code></li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section id="import" style="margin-top: 3rem;">
+                    <h2>Importing the tools</h2>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore.tools.comms_tools import (
+    send_email,
+    list_emails,
+    read_email,
+    send_whatsapp_message,
+    list_whatsapp_messages,
+    read_whatsapp_message,
+)</code></pre>
+                    </div>
+                </section>
+
+                <section id="runtime-gating" style="margin-top: 3rem;">
+                    <h2>Opt-in gating (AbstractRuntime default toolsets)</h2>
+                    <p>If you use AbstractRuntime’s default tool discovery/execution, comms tools are disabled unless explicitly enabled:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">export ABSTRACT_ENABLE_COMMS_TOOLS=1
+# or:
+export ABSTRACT_ENABLE_EMAIL_TOOLS=1
+export ABSTRACT_ENABLE_WHATSAPP_TOOLS=1</code></pre>
+                    </div>
+                    <p style="color: var(--text-secondary);">
+                        If you manually pass <code>tools=[...]</code> in your own Python host, you control the allowlist directly.
+                    </p>
+                </section>
+
+                <section id="email" style="margin-top: 3rem;">
+                    <h2>Email (Gmail example)</h2>
+                    <p>Send and read email via SMTP/IMAP. Passwords are read from an env var (default: <code>EMAIL_PASSWORD</code>).</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash">export EMAIL_PASSWORD="xxxx xxxx xxxx xxxx"  # Gmail App Password</code></pre>
+                    </div>
+
+                    <h3>Send an email (tool call payload)</h3>
+                    <div class="code-block">
+                        <pre><code class="language-json">{
+  "name": "send_email",
+  "arguments": {
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "use_starttls": true,
+    "username": "xxx@gmail.com",
+    "password_env_var": "EMAIL_PASSWORD",
+    "to": "you@example.com",
+    "subject": "Daily report",
+    "body_text": "Hello! Here is the report..."
+  }
+}</code></pre>
+                    </div>
+
+                    <h3>List unread emails since yesterday</h3>
+                    <div class="code-block">
+                        <pre><code class="language-json">{
+  "name": "list_emails",
+  "arguments": {
+    "imap_host": "imap.gmail.com",
+    "imap_port": 993,
+    "username": "xxx@gmail.com",
+    "password_env_var": "EMAIL_PASSWORD",
+    "since": "1d",
+    "status": "unread",
+    "limit": 20
+  }
+}</code></pre>
+                    </div>
+                </section>
+
+                <section id="whatsapp" style="margin-top: 3rem;">
+                    <h2>WhatsApp (Twilio example)</h2>
+                    <p>WhatsApp automation typically uses a provider (v1 uses Twilio). Credentials are read from env vars by default.</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash">export TWILIO_ACCOUNT_SID="AC..."
+export TWILIO_AUTH_TOKEN="..."</code></pre>
+                    </div>
+
+                    <h3>Send a WhatsApp message</h3>
+                    <div class="code-block">
+                        <pre><code class="language-json">{
+  "name": "send_whatsapp_message",
+  "arguments": {
+    "provider": "twilio",
+    "to": "+3306XXXXXXXX",
+    "from_number": "+14155238886",
+    "body": "Hello from AbstractCore",
+    "account_sid_env_var": "TWILIO_ACCOUNT_SID",
+    "auth_token_env_var": "TWILIO_AUTH_TOKEN"
+  }
+}</code></pre>
+                    </div>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling System</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Allowlists, execution boundaries, tool_calls</p>
+                        </a>
+                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server Guide</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Gateway execution boundaries</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
+

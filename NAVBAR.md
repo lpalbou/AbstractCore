@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
             { text: 'Examples', href: 'index.html#examples' },
             { 
                 text: 'GitHub', 
-                href: 'https://github.com/lpalbou/AbstractCore',
+                href: 'https://github.com/lpalbou/abstractcore',
                 target: '_blank',
                 icon: 'github'
             }
@@ -90,7 +90,7 @@ If no configuration is provided, the component uses these defaults:
         { text: 'Examples', href: '#examples' },
         { 
             text: 'GitHub', 
-            href: 'https://github.com/lpalbou/AbstractCore',
+            href: 'https://github.com/lpalbou/abstractcore',
             target: '_blank',
             icon: 'github'
         },
@@ -137,7 +137,7 @@ If no configuration is provided, the component uses these defaults:
             menuItems: [
                 { text: 'Home', href: 'index.html' },
                 { text: 'API Docs', href: 'api-reference.html' },
-                { text: 'GitHub', href: 'https://github.com/lpalbou/AbstractCore', target: '_blank', icon: 'github' }
+                { text: 'GitHub', href: 'https://github.com/lpalbou/abstractcore', target: '_blank', icon: 'github' }
             ]
         });
     });

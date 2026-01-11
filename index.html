@@ -10,23 +10,20 @@
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://lpalbou.github.io/AbstractCore/">
+    <meta property="og:url" content="https://www.abstractcore.ai/">
     <meta property="og:title" content="AbstractCore - Unified LLM Provider Interface">
     <meta property="og:description" content="A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.">
-    <meta property="og:image" content="https://lpalbou.github.io/AbstractCore/assets/og-image.png">
+    <meta property="og:image" content="https://www.abstractcore.ai/assets/logo.svg">
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
-    <meta property="twitter:url" content="https://lpalbou.github.io/AbstractCore/">
+    <meta property="twitter:url" content="https://www.abstractcore.ai/">
     <meta property="twitter:title" content="AbstractCore - Unified LLM Provider Interface">
     <meta property="twitter:description" content="A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.">
-    <meta property="twitter:image" content="https://lpalbou.github.io/AbstractCore/assets/og-image.png">
+    <meta property="twitter:image" content="https://www.abstractcore.ai/assets/logo.svg">
 
     <!-- Favicon -->
-    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
+    <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -43,7 +40,7 @@
     <script src="assets/js/navbar-component.js"></script>
     
     <!-- Analytics -->
-    <script defer data-domain="lpalbou.github.io" src="https://plausible.io/js/script.js"></script>
+    <script defer data-domain="abstractcore.ai" src="https://plausible.io/js/script.js"></script>
     
     <!-- AI Documentation Styles -->
     <style>
@@ -118,7 +115,7 @@
                         </svg>
                         Quick Start
                     </a>
-                    <a href="https://github.com/lpalbou/AbstractCore" class="btn btn-secondary" target="_blank">
+                    <a href="https://github.com/lpalbou/abstractcore" class="btn btn-secondary" target="_blank">
                         <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                         </svg>
@@ -142,12 +139,12 @@
 
                 <div class="hero-stats">
                     <div class="stat">
-                        <div class="stat-number">6+</div>
+                        <div class="stat-number">9+</div>
                         <div class="stat-label">Providers</div>
                     </div>
                     <div class="stat">
-                        <div class="stat-number">130+</div>
-                        <div class="stat-label">Models</div>
+                        <div class="stat-number">2.10.1</div>
+                        <div class="stat-label">Version</div>
                     </div>
                     <div class="stat">
                         <div class="stat-number">MIT</div>
@@ -167,16 +164,16 @@
                         <div class="code-title">example.py</div>
                     </div>
                     <div class="code-content">
-                        <pre><code class="language-python">from abstractcore import create_llm
+<pre><code class="language-python">from abstractcore import create_llm
 
 # Works with any provider - just change the name
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest", temperature=0.7, seed=42)
+llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.0)  # Use temp=0 for consistency
 response = llm.generate("What is the capital of France?")
 print(response.content)
 
 # Switch providers with zero code changes
-llm = create_llm("openai", model="gpt-4o-mini", seed=42)
-llm = create_llm("ollama", model="llama3.2:3b", seed=42)
+llm = create_llm("openai", model="gpt-5-mini", seed=42)
+llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42)
 
 # Same interface, deterministic results ✨</code></pre>
                     </div>
@@ -245,7 +242,7 @@ llm = create_llm("ollama", model="llama3.2:3b", seed=42)
                     </div>
                     <h3 class="feature-title">Provider Discovery</h3>
                     <p class="feature-description">
-                        Centralized registry with 130+ models across 6 providers. Programmatically discover all available providers and models with comprehensive metadata.
+                        Centralized registry for providers, defaults, and capabilities. Discover what's installed (local vs cloud) and what each provider supports.
                     </p>
                 </div>
                 
@@ -404,7 +401,7 @@ export ANTHROPIC_API_KEY="your-key-here"
                                 <pre><code class="language-python">from abstractcore import create_llm
 
 # Create LLM instance
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Generate response
 response = llm.generate("Hello, world!")
@@ -438,11 +435,11 @@ print(response.content)</code></pre>
 abstractcore --status
 
 # Set global fallback model (used when no app-specific default)
-abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-global-default ollama/qwen3:4b-instruct
 
 # Set app-specific defaults for optimal performance
-abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli ollama llama3.2:3b
+abstractcore --set-app-default summarizer openai gpt-5-mini
+abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # Configure vision fallback for text-only models
 abstractcore --download-vision-model  # Download local model
@@ -470,11 +467,11 @@ python -m abstractcore.utils.cli --prompt &quot;Hello!&quot;  # Uses configured 
 abstractcore --status
 
 # Set global fallback model (used when no app-specific default)
-abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-global-default ollama/qwen3:4b-instruct
 
 # Set app-specific defaults for optimal performance
-abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli ollama llama3.2:3b
+abstractcore --set-app-default summarizer openai gpt-5-mini
+abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # Configure vision fallback for text-only models
 abstractcore --download-vision-model  # Download local model
@@ -522,7 +519,7 @@ response = llm.generate(
 # - Data: CSV, TSV, TXT, MD, JSON
 
 # Same code works with any provider
-llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-3.5-sonnet&quot;)
+	llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 response = llm.generate(
     &quot;Summarize these materials&quot;,
     media=[&quot;chart.png&quot;, &quot;data.csv&quot;, &quot;presentation.pptx&quot;]
@@ -556,7 +553,7 @@ response = llm.generate(
 # - Data: CSV, TSV, TXT, MD, JSON
 
 # Same code works with any provider
-llm = create_llm("anthropic", model="claude-3.5-sonnet")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate(
     "Summarize these materials",
     media=["chart.png", "data.csv", "presentation.pptx"]
@@ -592,7 +589,7 @@ response = ollama_llm.generate(
 
 # Vision fallback for text-only models
 # Configure once: abstractcore --download-vision-model
-text_llm = create_llm(&quot;lmstudio&quot;, model=&quot;llama-3.2-8b-instruct&quot;)  # No native vision
+text_llm = create_llm(&quot;lmstudio&quot;, model=&quot;qwen/qwen3-4b-2507&quot;)  # No native vision
 response = text_llm.generate(
     &quot;What's in this image?&quot;,
     media=[&quot;complex_scene.jpg&quot;]
@@ -631,7 +628,7 @@ response = ollama_llm.generate(
 
 # Vision fallback for text-only models
 # Configure once: abstractcore --download-vision-model
-text_llm = create_llm("lmstudio", model="llama-3.2-8b-instruct")  # No native vision
+text_llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507")  # No native vision
 response = text_llm.generate(
     "What's in this image?",
     media=["complex_scene.jpg"]
@@ -667,7 +664,7 @@ def calculate(expression: str) -&gt; float:
 # Custom tag configuration for agent CLI compatibility
 llm = create_llm(
     &quot;ollama&quot;,
-    model=&quot;llama3.2:3b&quot;,
+    model=&quot;qwen3:4b-instruct&quot;,
     tool_call_tags=&quot;function_call&quot;  # Converts to &lt;function_call&gt;...&lt;/function_call&gt;
 )
 
@@ -696,7 +693,7 @@ def calculate(expression: str) -> float:
 # Custom tag configuration for agent CLI compatibility
 llm = create_llm(
     "ollama",
-    model="llama3.2:3b",
+    model="qwen3:4b-instruct",
     tool_call_tags="function_call"  # Converts to <function_call>...</function_call>
 )
 
@@ -720,7 +717,7 @@ for chunk in llm.generate("Calculate 15 * 23", tools=[calculate], stream=True):
                                     <div class="code-title">session_analytics.py</div>
                                     <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import BasicSession, create_llm
 
-llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-5-mini&quot;)
 session = BasicSession(llm, system_prompt=&quot;You are a helpful assistant.&quot;)
 
 response1 = session.generate(&quot;My name is Alice&quot;)
@@ -747,7 +744,7 @@ session.save(&quot;conversation.json&quot;, summary=True, assessment=True, facts
                                 <div class="code-content">
                                     <pre><code class="language-python">from abstractcore import BasicSession, create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 session = BasicSession(llm, system_prompt="You are a helpful assistant.")
 
 response1 = session.generate("My name is Alice")
@@ -782,7 +779,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified token parameters work across ALL providers
 llm = create_llm(
     &quot;anthropic&quot;,
-    model=&quot;claude-3-5-haiku-latest&quot;,
+    model=&quot;claude-haiku-4-5&quot;,
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -790,7 +787,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = &quot;Your input text here...&quot;
-estimated = estimate_tokens(text, model=&quot;claude-3-5-haiku-latest&quot;)
+estimated = estimate_tokens(text, model=&quot;claude-haiku-4-5&quot;)
 print(f&quot;Estimated tokens: {estimated}&quot;)
 
 # Budget validation with warnings
@@ -813,7 +810,7 @@ from abstractcore.utils.token_utils import estimate_tokens
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -821,7 +818,7 @@ llm = create_llm(
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+estimated = estimate_tokens(text, model="claude-haiku-4-5")
 print(f"Estimated tokens: {estimated}")
 
 # Budget validation with warnings
@@ -845,7 +842,7 @@ print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
                                     <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
 
 # Deterministic outputs with seed + temperature=0
-llm = create_llm(&quot;openai&quot;, model=&quot;gpt-3.5-turbo&quot;, seed=42, temperature=0.0)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-5-mini&quot;, seed=42, temperature=0.0)
 
 # These will produce identical outputs
 response1 = llm.generate(&quot;Write exactly 3 words about coding&quot;)
@@ -854,16 +851,16 @@ print(f&quot;Response 1: {response1.content}&quot;)  # &quot;Innovative, challen
 print(f&quot;Response 2: {response2.content}&quot;)  # &quot;Innovative, challenging, rewarding.&quot;
 
 # Empirically verified deterministic behavior:
-# ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-# ✅ Ollama (llama3.2:3b): Same seed → Identical outputs  
-# ✅ MLX (Qwen2.5-Coder-7B): Same seed → Identical outputs
+# ✅ OpenAI (gpt-5-mini): Same seed → Identical outputs
+# ✅ Ollama (qwen3:4b-instruct): Same seed → Identical outputs  
+# ✅ MLX (mlx-community/Qwen3-4B-4bit): Same seed → Identical outputs
 # ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
 # ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
-# ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (issues warning for seed)
+# ⚠️ Anthropic (claude-haiku-4-5): temperature=0 → Consistent outputs (issues warning for seed)
 
 # Works across all providers with same interface
-ollama_llm = create_llm(&quot;ollama&quot;, model=&quot;llama3.2:3b&quot;, seed=42, temperature=0.0)
-mlx_llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen2.5-Coder-7B-Instruct-4bit&quot;, seed=42, temperature=0.0)">
+ollama_llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;, seed=42, temperature=0.0)
+mlx_llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B-4bit&quot;, seed=42, temperature=0.0)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -876,7 +873,7 @@ mlx_llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen2.5-Coder-7B
                                     <pre><code class="language-python">from abstractcore import create_llm
 
 # Deterministic outputs with seed + temperature=0
-llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+llm = create_llm("openai", model="gpt-5-mini", seed=42, temperature=0.0)
 
 # These will produce identical outputs
 response1 = llm.generate("Write exactly 3 words about coding")
@@ -885,16 +882,16 @@ print(f"Response 1: {response1.content}")  # "Innovative, challenging, rewarding
 print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding."
 
 # Empirically verified deterministic behavior:
-# ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-# ✅ Ollama (llama3.2:3b): Same seed → Identical outputs  
-# ✅ MLX (Qwen2.5-Coder-7B): Same seed → Identical outputs
+# ✅ OpenAI (gpt-5-mini): Same seed → Identical outputs
+# ✅ Ollama (qwen3:4b-instruct): Same seed → Identical outputs  
+# ✅ MLX (mlx-community/Qwen3-4B-4bit): Same seed → Identical outputs
 # ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
 # ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
-# ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (issues warning for seed)
+# ⚠️ Anthropic (claude-haiku-4-5): temperature=0 → Consistent outputs (issues warning for seed)
 
 # Works across all providers with same interface
-ollama_llm = create_llm("ollama", model="llama3.2:3b", seed=42, temperature=0.0)
-mlx_llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit", seed=42, temperature=0.0)</code></pre>
+ollama_llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42, temperature=0.0)
+mlx_llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit", seed=42, temperature=0.0)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -935,7 +932,7 @@ response = requests.post(
 import openai
 client = openai.OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=&quot;unused&quot;)
 response = client.chat.completions.create(
-    model=&quot;ollama/llama3.2:3b&quot;,
+    model=&quot;ollama/qwen3:4b-instruct&quot;,
     messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Analyze @report.pdf&quot;}]
 )">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -974,7 +971,7 @@ response = requests.post(
 import openai
 client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 response = client.chat.completions.create(
-    model="ollama/llama3.2:3b",
+    model="ollama/qwen3:4b-instruct",
     messages=[{"role": "user", "content": "Analyze @report.pdf"}]
 )</code></pre>
                                 </div>
@@ -1003,7 +1000,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/openai.svg" alt="OpenAI">
                         </div>
                         <h3 class="provider-name">OpenAI</h3>
-                        <p class="provider-description">gpt-5-nano-2025-08-07, GPT-4o, GPT-4o-mini</p>
+                        <p class="provider-description">gpt-5-mini, GPT-4o (vision), embeddings</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1017,7 +1014,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/anthropic.svg" alt="Anthropic">
                         </div>
                         <h3 class="provider-name">Anthropic</h3>
-                        <p class="provider-description">claude-3-5-sonnet-latest, claude-3-5-haiku-latest, claude-3-opus</p>
+                        <p class="provider-description">claude-sonnet-4-5, claude-haiku-4-5, claude-opus-4-5</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-warning">⚠️ SEED Warning*</span>
@@ -1031,7 +1028,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/ollama.svg" alt="Ollama">
                         </div>
                         <h3 class="provider-name">Ollama</h3>
-                        <p class="provider-description">llama3.2:3b, Local models, privacy-first</p>
+                        <p class="provider-description">qwen3:4b-instruct, Local models, privacy-first</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1045,7 +1042,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/lmstudio.svg" alt="LMStudio">
                         </div>
                         <h3 class="provider-name">LMStudio</h3>
-                        <p class="provider-description">llama-3.2-8b-instruct, Local models</p>
+                        <p class="provider-description">qwen/qwen3-4b-2507, Local models</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1059,7 +1056,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/mlx.svg" alt="MLX">
                         </div>
                         <h3 class="provider-name">MLX</h3>
-                        <p class="provider-description">mlx-community/Qwen2.5-Coder-7B-Instruct-4bit, Apple Silicon optimized</p>
+                        <p class="provider-description">mlx-community/Qwen3-4B-4bit, Apple Silicon optimized</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1073,10 +1070,49 @@ response = client.chat.completions.create(
                             <img src="assets/providers/huggingface.svg" alt="HuggingFace">
                         </div>
                         <h3 class="provider-name">HuggingFace</h3>
-                        <p class="provider-description">unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit, Open source models</p>
+                        <p class="provider-description">unsloth/Qwen3-4B-Instruct-2507-GGUF, Open source models</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
+                        </div>
+                    </a>
+                </div>
+
+                <div class="provider-card">
+                    <a href="docs/prerequisites.html#openrouter-setup" class="provider-link">
+                        <div class="provider-logo">
+                            <img src="assets/providers/openrouter.svg" alt="OpenRouter">
+                        </div>
+                        <h3 class="provider-name">OpenRouter</h3>
+                        <p class="provider-description">OpenAI-compatible aggregator API (OPENROUTER_API_KEY)</p>
+                        <div class="provider-status">
+                            <span class="status-badge status-full">✅ Full Support</span>
+                        </div>
+                    </a>
+                </div>
+
+                <div class="provider-card">
+                    <a href="docs/prerequisites.html#openai-compatible-setup" class="provider-link">
+                        <div class="provider-logo">
+                            <img src="assets/providers/openai-compatible.svg" alt="OpenAI-Compatible">
+                        </div>
+                        <h3 class="provider-name">OpenAI-Compatible</h3>
+                        <p class="provider-description">Bring any OpenAI-compatible /v1 endpoint</p>
+                        <div class="provider-status">
+                            <span class="status-badge status-full">✅ Full Support</span>
+                        </div>
+                    </a>
+                </div>
+
+                <div class="provider-card">
+                    <a href="docs/prerequisites.html#vllm-setup" class="provider-link">
+                        <div class="provider-logo">
+                            <img src="assets/providers/vllm.svg" alt="vLLM">
+                        </div>
+                        <h3 class="provider-name">vLLM</h3>
+                        <p class="provider-description">High-throughput GPU inference (OpenAI-compatible)</p>
+                        <div class="provider-status">
+                            <span class="status-badge status-full">✅ Full Support</span>
                         </div>
                     </a>
                 </div>
@@ -1136,6 +1172,10 @@ response = client.chat.completions.create(
                 <div class="doc-category">
                     <h3 class="doc-category-title">📚 Core Library</h3>
                     <div class="doc-links">
+                        <a href="docs/async-guide.html" class="doc-link">
+                            <span class="doc-title">Async/Await Guide</span>
+                            <span class="doc-description">agenerate(), async streaming, concurrency</span>
+                        </a>
                         <a href="docs/media-handling-system.html" class="doc-link">
                             <span class="doc-title">Media Handling System</span>
                             <span class="doc-description">Universal file attachment - images, PDFs, Office docs</span>
@@ -1144,6 +1184,10 @@ response = client.chat.completions.create(
                             <span class="doc-title">Vision Capabilities</span>
                             <span class="doc-description">Image analysis with vision fallback for text-only models</span>
                         </a>
+                        <a href="docs/structured-output.html" class="doc-link">
+                            <span class="doc-title">Structured Output</span>
+                            <span class="doc-description">Pydantic schemas + automatic validation/retry</span>
+                        </a>
                         <a href="docs/api-reference.html" class="doc-link">
                             <span class="doc-title">Python API Reference</span>
                             <span class="doc-description">Complete API documentation</span>
@@ -1151,6 +1195,14 @@ response = client.chat.completions.create(
                         <a href="docs/tool-calling.html" class="doc-link">
                             <span class="doc-title">Tool Calling System</span>
                             <span class="doc-description">Universal tools across all providers</span>
+                        </a>
+                        <a href="docs/mcp.html" class="doc-link">
+                            <span class="doc-title">MCP Tools</span>
+                            <span class="doc-description">Discover external tools via Model Context Protocol</span>
+                        </a>
+                        <a href="docs/communication-tools.html" class="doc-link">
+                            <span class="doc-title">Communication Tools</span>
+                            <span class="doc-description">Email + WhatsApp tools (opt-in; safety-first)</span>
                         </a>
                         <a href="docs/session.html" class="doc-link">
                             <span class="doc-title">Session Management</span>
@@ -1170,7 +1222,11 @@ response = client.chat.completions.create(
                             <span class="doc-title">Token Management</span>
                             <span class="doc-description">Unified parameters and budget validation</span>
                         </a>
-                        <a href="docs/apps/basic-extractor.html" class="doc-link">
+                        <a href="docs/tool-syntax-rewriting.html" class="doc-link">
+                            <span class="doc-title">Tool Syntax Rewriting</span>
+                            <span class="doc-description">tool_call_tags (Python) + agent_format (server)</span>
+                        </a>
+                        <a href="docs/apps.html" class="doc-link">
                             <span class="doc-title">CLI Applications</span>
                             <span class="doc-description">Extractor, Judge, Summarizer with debug modes</span>
                         </a>
@@ -1217,10 +1273,10 @@ response = client.chat.completions.create(
                     </p>
                     <div class="example-code">
                         <pre><code class="language-python"># Development (free, local)
-llm_dev = create_llm("ollama", model="llama3.2:3b")
+llm_dev = create_llm("ollama", model="qwen3:4b-instruct")
 
 # Production (high quality, cloud)
-llm_prod = create_llm("openai", model="gpt-4o-mini")
+llm_prod = create_llm("openai", model="gpt-5-mini")
 
 # Same interface, different capabilities</code></pre>
                     </div>
@@ -1262,7 +1318,7 @@ uvicorn abstractcore.server.app:app --port 8000
 
 # Use with any OpenAI client
 curl -X POST http://localhost:8000/v1/chat/completions \
-  -d '{"model": "ollama/llama3.2:3b", ...}'</code></pre>
+  -d '{"model": "ollama/qwen3:4b-instruct", ...}'</code></pre>
                     </div>
                     <a href="docs/examples.html#api-server" class="example-link">View Full Example →</a>
                 </div>
@@ -1284,7 +1340,7 @@ judge README.md --focus "examples, completeness" --debug
 
 # Self-healing JSON handles truncated responses automatically</code></pre>
                     </div>
-                    <a href="docs/apps/basic-extractor.html" class="example-link">View CLI Docs →</a>
+                    <a href="docs/apps.html" class="example-link">View CLI Docs →</a>
                 </div>
             </div>
             
@@ -1313,7 +1369,7 @@ judge README.md --focus "examples, completeness" --debug
                         Unified LLM provider interface for Python. Write once, run everywhere.
                     </p>
                     <div class="footer-social">
-                        <a href="https://github.com/lpalbou/AbstractCore" class="social-link" target="_blank" aria-label="GitHub">
+                        <a href="https://github.com/lpalbou/abstractcore" class="social-link" target="_blank" aria-label="GitHub">
                             <svg viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                             </svg>
@@ -1334,9 +1390,9 @@ judge README.md --focus "examples, completeness" --debug
                 <div class="footer-section">
                     <h4 class="footer-title">Resources</h4>
                     <ul class="footer-links">
-                        <li><a href="https://github.com/lpalbou/AbstractCore" target="_blank">GitHub Repository</a></li>
-                        <li><a href="https://github.com/lpalbou/AbstractCore/issues" target="_blank">Report Issues</a></li>
-                        <li><a href="https://github.com/lpalbou/AbstractCore/discussions" target="_blank">Discussions</a></li>
+                        <li><a href="https://github.com/lpalbou/abstractcore" target="_blank">GitHub Repository</a></li>
+                        <li><a href="https://github.com/lpalbou/abstractcore/issues" target="_blank">Report Issues</a></li>
+                        <li><a href="https://github.com/lpalbou/abstractcore/discussions" target="_blank">Discussions</a></li>
                         <li><a href="https://www.abstractcore.ai/llms.txt">LLMs.txt</a></li>
                     </ul>
                 </div>
@@ -1344,10 +1400,10 @@ judge README.md --focus "examples, completeness" --debug
                 <div class="footer-section">
                     <h4 class="footer-title">Community</h4>
                     <ul class="footer-links">
-                        <li><a href="docs/contributing.html">Contributing</a></li>
-                        <li><a href="docs/changelog.html">Changelog</a></li>
-                        <li><a href="docs/acknowledgements.html">Acknowledgements</a></li>
-                        <li><a href="https://github.com/lpalbou/AbstractCore/blob/main/LICENSE" target="_blank">MIT License</a></li>
+                        <li><a href="https://github.com/lpalbou/abstractcore/blob/main/CONTRIBUTING.md" target="_blank">Contributing</a></li>
+                        <li><a href="https://github.com/lpalbou/abstractcore/blob/main/CHANGELOG.md" target="_blank">Changelog</a></li>
+                        <li><a href="https://github.com/lpalbou/abstractcore/blob/main/ACKNOWLEDGEMENTS.md" target="_blank">Acknowledgements</a></li>
+                        <li><a href="https://github.com/lpalbou/abstractcore/blob/main/LICENSE" target="_blank">MIT License</a></li>
                         <li><a href="mailto:contact@abstractcore.ai">Contact Us</a></li>
                     </ul>
                 </div>
@@ -1355,7 +1411,7 @@ judge README.md --focus "examples, completeness" --debug
             
             <div class="footer-bottom">
                 <div class="footer-copyright">
-                    <p>&copy; 2025 AbstractCore. Licensed under MIT License.</p>
+                    <p>&copy; 2026 AbstractCore (v2.10.1). Licensed under MIT License.</p>
                 </div>
                 <div class="footer-meta">
                     <span>Made with ❤️ for the AI community</span>

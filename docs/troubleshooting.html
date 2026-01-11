@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Troubleshooting Guide - AbstractCore</title>
     <meta name="description" content="Complete troubleshooting guide for AbstractCore with common issues, solutions, and best practices.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -98,7 +98,7 @@ def get_weather(city: str) -> str:
     """Get weather for a city."""
     return f"Weather in {city}: sunny, 72°F"
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate(
     "What's the weather in Paris?",
     tools=[get_weather]  # Pass as list
@@ -147,13 +147,13 @@ echo 'export OPENAI_API_KEY="sk-..."' >> ~/.bashrc
 source ~/.bashrc
 
 # Test authentication
-python -c "from abstractcore import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)"</code></pre>
+python -c "from abstractcore import create_llm; llm = create_llm('openai', model='gpt-5-mini'); print(llm.generate('test').content)"</code></pre>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
                         <h3 style="margin: 0 0 1rem 0;">Model Not Found</h3>
                         <p><strong>Symptoms:</strong></p>
                         <ul>
-                            <li><code>Error: Model 'llama3.2:3b' not found</code></li>
+                            <li><code>Error: Model 'qwen3:4b-instruct' not found</code></li>
                             <li><code>Error: Unsupported model</code></li>
                         </ul>
                         
@@ -163,7 +163,7 @@ python -c "from abstractcore import create_llm; llm = create_llm('openai', model
 ollama list
 
 # Pull missing model
-ollama pull llama3.2:3b
+ollama pull qwen3:4b-instruct
 
 # Verify Ollama is running
 ollama serve</code></pre>
@@ -171,10 +171,10 @@ ollama serve</code></pre>
                         <p><strong>For OpenAI/Anthropic:</strong></p>
                         <div class="code-block">
                             <pre><code class="language-python"># Use correct model names
-llm = create_llm("openai", model="gpt-4o-mini")  # ✓ Correct
+llm = create_llm("openai", model="gpt-5-mini")  # ✓ Correct
 llm = create_llm("openai", model="gpt4")  # ✗ Wrong
 
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # ✓ Correct
+llm = create_llm("anthropic", model="claude-haiku-4-5")  # ✓ Correct
 llm = create_llm("anthropic", model="claude-3")  # ✗ Wrong</code></pre>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
@@ -244,7 +244,7 @@ uvicorn abstractcore.server.app:app --port 3000</code></pre>
 logging.basicConfig(level=logging.DEBUG)
 
 from abstractcore import create_llm
-llm = create_llm("openai", model="gpt-4o-mini")</code></pre>
+llm = create_llm("openai", model="gpt-5-mini")</code></pre>
                     
                     <p><strong>Server:</strong></p>
                     <div class="code-block">
@@ -314,7 +314,7 @@ tail -f logs/abstractcore_*.log</code></pre>
                     <li style="margin-bottom: 0.5rem;"><strong>Enable Debug Mode:</strong> <code>export ABSTRACTCORE_DEBUG=true</code></li>
                     <li style="margin-bottom: 0.5rem;"><strong>Collect Information:</strong> Error messages, debug logs, system info</li>
                     <li style="margin-bottom: 0.5rem;"><strong>Check Documentation:</strong> <a href="getting-started.html" style="color: #e0e7ff;">Getting Started</a>, <a href="api-reference.html" style="color: #e0e7ff;">API Reference</a></li>
-                    <li><strong>Community Support:</strong> <a href="https://github.com/lpalbou/AbstractCore/issues" style="color: #e0e7ff;" target="_blank">GitHub Issues</a></li>
+                    <li><strong>Community Support:</strong> <a href="https://github.com/lpalbou/abstractcore/issues" style="color: #e0e7ff;" target="_blank">GitHub Issues</a></li>
                 </ol>
 
             <!-- Related Documentation -->
