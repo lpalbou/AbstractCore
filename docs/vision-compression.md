@@ -178,7 +178,7 @@ AbstractCore includes optimized profiles for major providers:
 | OpenAI | gpt-4o | 3.5x | 93% | Balanced for GPT-4 |
 | OpenAI | gpt-4o-mini | 4.0x | 90% | Aggressive for mini |
 | Anthropic | claude-3-5-sonnet | 3.0x | 94% | Conservative for quality |
-| Anthropic | claude-3-5-haiku | 3.5x | 91% | Balanced efficiency |
+| Anthropic | claude-haiku-4-5 | 3.5x | 91% | Balanced efficiency |
 | Ollama | llama3.2-vision | 4.5x | 88% | Maximum local compression |
 
 ### Using Provider Profiles

@@ -40,7 +40,10 @@ pip install abstractcore
 ### Option 3: Install Everything
 
 ```bash
-pip install abstractcore[all]
+# Pick the full install that matches your machine:
+pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 ```
 
 ## Your First Program

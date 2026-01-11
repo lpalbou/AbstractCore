@@ -26,11 +26,18 @@
 - [docs/tool-syntax-rewriting.md](docs/tool-syntax-rewriting.md) — `tool_call_tags` (Python) + `agent_format` (server)
 - [abstractcore/tools/parser.py](abstractcore/tools/parser.py) — tool-call detection/parsing (tags + JSON-ish)
 - [abstractcore/providers/streaming.py](abstractcore/providers/streaming.py) — unified streaming + incremental tool-call parsing
+- [docs/mcp.md](docs/mcp.md) — MCP tool servers (HTTP/stdio) as tool sources
 
 ## Media & Vision (Input)
 
 - [docs/media-handling-system.md](docs/media-handling-system.md) — universal file attachments + vision fallback
 - [docs/vision-capabilities.md](docs/vision-capabilities.md) — vision support overview
+
+## Observability
+
+- [docs/interaction-tracing.md](docs/interaction-tracing.md) — capture prompts/responses/timing/usage for debugging & compliance
+- [docs/api-reference.md](docs/api-reference.md) — events (`EventType`, `on_global`, `emit_global`)
+- [docs/architecture.md](docs/architecture.md) — high-level system overview
 
 ## Server (OpenAI-Compatible REST API)
 
@@ -45,4 +52,3 @@
 ## Full Context
 
 - [llms-full.txt](llms-full.txt) — standalone, copy/pasteable “full context” file (no required external doc fetches)
-

@@ -48,7 +48,7 @@ The `summarizer` CLI provides direct terminal access for document summarization 
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after pip install abstractcore[all])
+# Simple usage (after installing AbstractCore; add `abstractcore[media]` for PDFs)
 summarizer document.pdf
 
 # With specific style and length
@@ -256,7 +256,7 @@ llm_openai = create_llm("openai", model="gpt-4o-mini")
 summarizer_openai = BasicSummarizer(llm_openai)
 
 # Anthropic
-llm_claude = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm_claude = create_llm("anthropic", model="claude-haiku-4-5")
 summarizer_claude = BasicSummarizer(llm_claude)
 
 # Local models
