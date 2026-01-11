@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-01-11
+
+### Fixed
+- **Config CLI parity**: implemented missing `ConfigurationManager` methods used by `abstractcore` config commands (streaming defaults, embeddings config, cache dirs, logging controls, vision fallback chain).
+- **OpenAI-compatible auth**: `openai-compatible` provider now reads `OPENAI_COMPATIBLE_API_KEY` when set.
+- **CLI provider selection**: `abstractcore.utils.cli` now exposes `openrouter`, `openai-compatible`, and `vllm` in `--provider` choices (and updates usage examples).
+- **CLI token controls**: `abstractcore.utils.cli` now supports `--max-output-tokens` and interactive `/max-tokens` + `/max-output-tokens`.
+
+### Documentation
+- Updated provider/config/CLI/server docs to reflect OpenAI-compatible consolidation, OpenRouter usage, current Claude model naming, and `base_url` usage for OpenAI-compatible endpoints.
+
 ## [2.10.0] - 2026-01-10
 
 ### Added
@@ -19,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Test stability**: live-network and local-server provider tests are consistently opt-in via env flags; tracing tests no longer require a running Ollama server.
+- **Media validation**: `AnthropicMediaHandler.validate_media_for_model()` now relies on centralized vision capability detection for newer Claude naming (e.g. `claude-haiku-4-5`).
 
 ## [2.9.1] - 2026-01-07
 

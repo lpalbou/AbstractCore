@@ -436,6 +436,7 @@ if response.metadata and response.metadata.get('compression_used'):
 | Provider | Status | SEED Support | Hardware | Setup |
 |----------|--------|-------------|----------|-------|
 | **OpenAI** | Full | Native | Any | [Get API key](docs/prerequisites.md#openai-setup) |
+| **OpenRouter** | Full | Native | Any | Set `OPENROUTER_API_KEY` |
 | **Anthropic** | Full | Warning* | Any | [Get API key](docs/prerequisites.md#anthropic-setup) |
 | **Ollama** | Full | Native | Any | [Install guide](docs/prerequisites.md#ollama-setup) |
 | **LMStudio** | Full | Native | Any | [Install guide](docs/prerequisites.md#lmstudio-setup) |

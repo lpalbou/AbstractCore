@@ -40,7 +40,7 @@ from openai import OpenAI
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-haiku-latest",
+    model="anthropic/claude-haiku-4-5",
     messages=[{"role": "user", "content": "Explain quantum computing"}]
 )
 print(response.choices[0].message.content)
@@ -56,10 +56,12 @@ print(response.choices[0].message.content)
 # Provider API keys
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENROUTER_API_KEY="sk-or-..."
 
 # Local providers
-export OLLAMA_HOST="http://localhost:11434"
-export LMSTUDIO_HOST="http://localhost:1234"
+export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HOST)
+export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
+export VLLM_BASE_URL="http://localhost:8000/v1"
 
 # Default settings
 export ABSTRACTCORE_DEFAULT_PROVIDER=openai
@@ -113,6 +115,7 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 - `messages` (required): Array of message objects
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
+- `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
 
 **Example with streaming:**
@@ -131,6 +134,20 @@ stream = client.chat.completions.create(
 for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="", flush=True)
+```
+
+#### Provider `base_url` override (AbstractCore extension)
+
+Route a provider to a specific endpoint (useful for remote OpenAI-compatible servers):
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "lmstudio/qwen/qwen3-4b-2507",
+    "base_url": "http://localhost:1234/v1",
+    "messages": [{"role": "user", "content": "Hello from a remote LM Studio endpoint"}]
+  }'
 ```
 
 ### Multimodal Requests (Images, Documents, Files)
@@ -165,7 +182,7 @@ Standard OpenAI format for images:
 
 ```json
 {
-  "model": "anthropic/claude-3-5-sonnet",
+  "model": "anthropic/claude-haiku-4-5",
   "messages": [
     {
       "role": "user",
@@ -281,7 +298,7 @@ client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 
 # Method 1: @filename syntax
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-haiku-latest",
+    model="anthropic/claude-haiku-4-5",
     messages=[{"role": "user", "content": "Summarize @document.pdf"}]
 )
 
@@ -304,7 +321,7 @@ response = client.chat.completions.create(
 
 # Method 3: Local file path
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-sonnet",
+    model="anthropic/claude-haiku-4-5",
     messages=[{
         "role": "user",
         "content": [
@@ -345,7 +362,7 @@ response = client.chat.completions.create(
 # Same syntax works across all providers
 providers_models = [
     "openai/gpt-4o",
-    "anthropic/claude-3-5-sonnet",
+    "anthropic/claude-haiku-4-5",
     "ollama/qwen2.5vl:7b",
     "lmstudio/qwen/qwen2.5-vl-7b"
 ]
@@ -455,7 +472,7 @@ curl -X POST http://localhost:8000/v1/responses \
 curl -X POST http://localhost:8000/v1/responses \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "anthropic/claude-3.5-sonnet",
+    "model": "anthropic/claude-haiku-4-5",
     "input": [
       {
         "role": "user",
@@ -663,7 +680,7 @@ export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
 # Use
-crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"
+crush --model "anthropic/claude-haiku-4-5" "Explain this code"
 ```
 
 ### Gemini CLI (XML format)
@@ -825,7 +842,7 @@ import requests
 providers = [
     "ollama/qwen3-coder:30b",
     "openai/gpt-4o-mini",
-    "anthropic/claude-3-5-haiku-latest"
+    "anthropic/claude-haiku-4-5"
 ]
 
 def generate_with_fallback(prompt):

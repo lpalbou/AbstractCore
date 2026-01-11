@@ -19,18 +19,24 @@ graph TD
     C --> G[Provider Implementations]
 
     G --> H[OpenAI Provider]
+    G --> HH[OpenAI-Compatible Provider]
     G --> I[Anthropic Provider]
     G --> J[Ollama Provider]
     G --> K[MLX Provider]
     G --> L[LMStudio Provider]
     G --> M[HuggingFace Provider]
+    G --> MM[vLLM Provider]
+    G --> MN[OpenRouter Provider]
 
     H --> N[OpenAI API]
+    HH --> NN[OpenAI-Compatible /v1 Endpoint]
     I --> O[Anthropic API]
     J --> P[Ollama Server]
     K --> Q[MLX Models]
     L --> R[LMStudio Server]
     M --> S[HuggingFace Models]
+    MM --> RR[vLLM Server]
+    MN --> RO[OpenRouter API]
 
     style B fill:#e1f5fe
     style BB fill:#4caf50
@@ -88,6 +94,10 @@ from abstractcore import create_llm
 
 # Factory creates the right provider with proper configuration
 llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7)
+
+# OpenAI-compatible /v1 endpoints (LMStudio, vLLM, custom proxies)
+llm_local = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
+llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")  # requires OPENROUTER_API_KEY
 ```
 
 ### 2. Provider Interface

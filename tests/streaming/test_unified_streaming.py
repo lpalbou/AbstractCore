@@ -369,6 +369,33 @@ class TestUnifiedStreamProcessor:
         assert results[1].content == "world"
         assert results[2].content == "!"
 
+    def test_preserves_provider_emitted_tool_calls_with_content(self):
+        """Tool calls must not be dropped when a chunk also carries streamed content."""
+        processor = UnifiedStreamProcessor("test-model", execute_tools=False)
+
+        tool_calls = [
+            {
+                "name": "get_weather",
+                "arguments": {"city": "Paris"},
+                "call_id": "call_1",
+            }
+        ]
+
+        def stream():
+            yield GenerateResponse(
+                content="hello",
+                model="test-model",
+                finish_reason="tool_calls",
+                tool_calls=tool_calls,
+            )
+
+        results = list(processor.process_stream(stream()))
+
+        assert "".join([r.content or "" for r in results]) == "hello"
+        tool_chunks = [r for r in results if isinstance(getattr(r, "tool_calls", None), list) and r.tool_calls]
+        assert len(tool_chunks) == 1
+        assert tool_chunks[0].tool_calls == tool_calls
+
     def test_streaming_with_tool_detection(self):
         """Test streaming with tool call detection"""
         processor = UnifiedStreamProcessor("qwen3", execute_tools=False)

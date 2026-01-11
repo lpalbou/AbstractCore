@@ -70,6 +70,7 @@ class OpenAICompatibleProvider(BaseProvider):
     PROVIDER_ID = "openai-compatible"
     PROVIDER_DISPLAY_NAME = "OpenAI-compatible server"
     BASE_URL_ENV_VAR = "OPENAI_COMPATIBLE_BASE_URL"
+    API_KEY_ENV_VAR = "OPENAI_COMPATIBLE_API_KEY"
     DEFAULT_BASE_URL = "http://localhost:1234/v1"
 
     def __init__(self, model: str = "default", base_url: Optional[str] = None,

@@ -119,13 +119,13 @@ echo 'ANTHROPIC_API_KEY=sk-ant-your-actual-api-key-here' > .env
 ```python
 from abstractcore import create_llm
 
-# Test with Claude 3.5 Haiku (fast, cost-effective)
-llm = create_llm("anthropic", model="claude-3-5-haiku-20241022")
+# Test with Claude Haiku 4.5 (fast, cost-effective)
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate("Explain Python in one sentence")
 print(response.content)
 ```
 
-**Available Models**: `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`, `claude-3-opus-20240229`
+**Available Models**: `claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-opus-4-5`
 
 ## Local Provider Setup
 
@@ -630,9 +630,14 @@ def main():
         print("\n⚠️  Skipping OpenAI (no OPENAI_API_KEY)")
 
     if os.getenv("ANTHROPIC_API_KEY"):
-        results["Anthropic"] = test_provider("anthropic", "claude-3-5-haiku-20241022")
+        results["Anthropic"] = test_provider("anthropic", "claude-haiku-4-5")
     else:
         print("\n⚠️  Skipping Anthropic (no ANTHROPIC_API_KEY)")
+
+    if os.getenv("OPENROUTER_API_KEY"):
+        results["OpenRouter"] = test_provider("openrouter", "openai/gpt-4o-mini")
+    else:
+        print("\n⚠️  Skipping OpenRouter (no OPENROUTER_API_KEY)")
 
     # Test local providers
     results["Ollama"] = test_provider("ollama", "gemma3:1b")
@@ -643,7 +648,8 @@ def main():
         print("\n⚠️  Skipping MLX (not on Apple Silicon or model not available)")
 
     try:
-        results["LMStudio"] = test_provider("lmstudio", base_url="http://localhost:1234")
+        # Note: OpenAI-compatible servers expect `/v1` in the base URL (LM Studio default is http://localhost:1234/v1)
+        results["LMStudio"] = test_provider("lmstudio", "qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
     except:
         print("\n⚠️  Skipping LMStudio (server not running on localhost:1234)")
 
@@ -671,6 +677,17 @@ Run the test:
 python test_setup.py
 ```
 
+### Live API smoke tests (opt-in)
+
+Some tests are intentionally **real network calls** and are disabled by default. To enable them, set:
+- `ABSTRACTCORE_RUN_LIVE_API_TESTS=1`
+
+Example (OpenRouter):
+```bash
+ABSTRACTCORE_RUN_LIVE_API_TESTS=1 OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \\
+  .venv/bin/python -m pytest -q abstractcore/tests/test_graceful_fallback.py::test_openrouter_generation_smoke
+```
+
 ## Performance Recommendations
 
 ### For Development
@@ -678,7 +695,7 @@ python test_setup.py
 - **Cloud**: `openai` with `gpt-4o-mini` (fast, cheap)
 
 ### For Production
-- **High Quality**: `openai` with `gpt-4o` or `anthropic` with `claude-3-5-sonnet`
+- **High Quality**: `openai` with `gpt-4o` or `anthropic` with `claude-sonnet-4-5`
 - **Cost-Effective**: `openai` with `gpt-4o-mini`
 - **Privacy**: `ollama` with `qwen2.5:14b` (if you have the hardware)
 

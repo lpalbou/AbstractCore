@@ -560,7 +560,47 @@ class UnifiedStreamProcessor:
             GenerateResponse: Processed chunks with rewritten tags
         """
         try:
+            def _canonical_tool_call_key(call: Dict[str, Any]) -> Optional[tuple]:
+                """Best-effort key for deduplicating canonical tool-call payloads."""
+                name = call.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    return None
+
+                call_id = call.get("call_id") or call.get("id")
+                call_id_norm: Optional[str]
+                if isinstance(call_id, str) and call_id.strip():
+                    call_id_norm = call_id.strip()
+                else:
+                    call_id_norm = None
+
+                args = call.get("arguments")
+                if isinstance(args, dict):
+                    try:
+                        args_norm = json.dumps(args, sort_keys=True, separators=(",", ":"))
+                    except Exception:
+                        args_norm = str(args)
+                else:
+                    args_norm = str(args)
+
+                return (name.strip(), args_norm, call_id_norm)
+
             for chunk in response_stream:
+                # Preserve provider-emitted tool calls (native tools / server-side tool_calls).
+                incoming_tool_calls = (
+                    chunk.tool_calls
+                    if isinstance(getattr(chunk, "tool_calls", None), list) and chunk.tool_calls
+                    else None
+                )
+
+                incoming_tool_call_keys = set()
+                if incoming_tool_calls:
+                    for call in incoming_tool_calls:
+                        if not isinstance(call, dict):
+                            continue
+                        key = _canonical_tool_call_key(call)
+                        if key:
+                            incoming_tool_call_keys.add(key)
+
                 if not chunk.content:
                     yield chunk
                     continue
@@ -586,7 +626,25 @@ class UnifiedStreamProcessor:
                         model=chunk.model,
                         finish_reason=chunk.finish_reason,
                         usage=chunk.usage,
-                        raw_response=chunk.raw_response
+                        raw_response=chunk.raw_response,
+                        metadata=chunk.metadata,
+                        tool_calls=incoming_tool_calls,
+                    )
+
+                    # If we emitted content alongside provider-emitted tool calls, do not emit them again.
+                    incoming_tool_calls = None
+
+                # If the incoming chunk had tool_calls but we did not emit any content (buffering/tag parsing),
+                # still surface the tool_calls to downstream hosts.
+                if incoming_tool_calls:
+                    yield GenerateResponse(
+                        content="",
+                        tool_calls=incoming_tool_calls,
+                        model=chunk.model,
+                        finish_reason=chunk.finish_reason,
+                        usage=chunk.usage,
+                        raw_response=chunk.raw_response,
+                        metadata=chunk.metadata,
                     )
 
                 # Yield tool calls for server processing
@@ -601,14 +659,25 @@ class UnifiedStreamProcessor:
                         for tc in completed_tools
                         if getattr(tc, "name", None)
                     ]
-                    yield GenerateResponse(
-                        content="",
-                        tool_calls=tool_payload,
-                        model=chunk.model,
-                        finish_reason=chunk.finish_reason,
-                        usage=chunk.usage,
-                        raw_response=chunk.raw_response
-                    )
+                    if incoming_tool_call_keys:
+                        tool_payload = [
+                            call
+                            for call in tool_payload
+                            if (
+                                isinstance(call, dict)
+                                and _canonical_tool_call_key(call) not in incoming_tool_call_keys
+                            )
+                        ]
+                    if tool_payload:
+                        yield GenerateResponse(
+                            content="",
+                            tool_calls=tool_payload,
+                            model=chunk.model,
+                            finish_reason=chunk.finish_reason,
+                            usage=chunk.usage,
+                            raw_response=chunk.raw_response,
+                            metadata=chunk.metadata,
+                        )
 
             # Finalize - get any remaining tools and handle remaining content
             final_tools = self.detector.finalize()

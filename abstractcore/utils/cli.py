@@ -16,8 +16,10 @@ AbstractCore framework directly.
 
 Usage:
     python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
-    python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini --stream
-    python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-20241022 --prompt "What is Python?"
+    python -m abstractcore.utils.cli --provider openai --model gpt-5-mini --stream
+    python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5 --prompt "What is Python?"
+    python -m abstractcore.utils.cli --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
+    python -m abstractcore.utils.cli --provider openrouter --model openai/gpt-4o-mini
 """
 
 import argparse
@@ -46,7 +48,8 @@ class SimpleCLI:
     """Simplified CLI REPL for AbstractCore"""
 
     def __init__(self, provider: str, model: str, stream: bool = False,
-                 max_tokens: int = None, debug: bool = False, show_banner: bool = True, **kwargs):
+                 max_tokens: int = None, max_output_tokens: int = None,
+                 debug: bool = False, show_banner: bool = True, **kwargs):
         self.provider_name = provider
         self.model_name = model
         self.stream_mode = stream
@@ -55,6 +58,7 @@ class SimpleCLI:
         self.kwargs = kwargs
 
         # Auto-detect max_tokens from model capabilities if not specified
+        self.max_tokens_auto = max_tokens is None
         if max_tokens is None:
             try:
                 from ..architectures.detection import get_model_capabilities
@@ -68,12 +72,19 @@ class SimpleCLI:
                     print(f"⚠️ Failed to auto-detect max_tokens, using fallback: {max_tokens} ({e})")
 
         self.max_tokens = max_tokens
+        self.max_output_tokens_auto = max_output_tokens is None
 
         # Initialize command history with persistent storage
         self._setup_command_history()
 
         # Initialize provider and session with tools
-        self.provider = create_llm(provider, model=model, max_tokens=max_tokens, **kwargs)
+        provider_kwargs = dict(kwargs)
+        provider_kwargs["max_tokens"] = max_tokens
+        if max_output_tokens is not None:
+            provider_kwargs["max_output_tokens"] = max_output_tokens
+        self.provider = create_llm(provider, model=model, **provider_kwargs)
+        # Store the effective max_output_tokens (provider may auto-select based on model capabilities).
+        self.max_output_tokens = getattr(self.provider, "max_output_tokens", max_output_tokens or 2048)
         self.session = BasicSession(
             self.provider,
             system_prompt="You are a helpful AI assistant with vision capabilities. When users provide images or media files, analyze and describe them directly. You also have access to file operation tools.",
@@ -201,8 +212,11 @@ class SimpleCLI:
             print("\n⚙️  CONFIGURATION")
             print("─" * 50)
             print("  /model <provider:model>  Switch LLM provider/model")
-            print("                           • /model openai:gpt-4o-mini")
-            print("                           • /model anthropic:claude-3-5-haiku")
+            print("                           • /model openai:gpt-5-mini")
+            print("                           • /model anthropic:claude-haiku-4-5")
+            print("                           • /model openrouter:openai/gpt-4o-mini")
+            print("  /max-tokens <n|auto>     Set context token budget")
+            print("  /max-output-tokens <n|auto> Set max output tokens per response")
             print("  /stream                  Toggle streaming mode on/off")
             print("  /debug                   Toggle debug info (timing, detection)")
             
@@ -260,6 +274,86 @@ class SimpleCLI:
         elif cmd == 'status':
             self.handle_status()
 
+        elif cmd.startswith('max-tokens'):
+            parts = cmd.split()
+            if len(parts) == 1:
+                print(f"💾 max_tokens (context budget): {self.max_tokens:,} ({'auto' if self.max_tokens_auto else 'manual'})")
+                print("❓ Usage: /max-tokens <n|auto>")
+            else:
+                raw_value = parts[1].strip().lower()
+                if raw_value in {"auto", "-1"}:
+                    try:
+                        from ..architectures.detection import get_model_capabilities
+                        capabilities = get_model_capabilities(self.model_name)
+                        detected = capabilities.get('max_tokens', 16384)
+                    except Exception:
+                        detected = 16384
+                    self.max_tokens = int(detected)
+                    self.max_tokens_auto = True
+                else:
+                    try:
+                        new_max = int(raw_value)
+                        if new_max <= 0:
+                            raise ValueError
+                        self.max_tokens = new_max
+                        self.max_tokens_auto = False
+                    except ValueError:
+                        print("❓ Usage: /max-tokens <n|auto> (n must be a positive integer)")
+                        return True
+
+                # Apply to current provider (best-effort; mostly used for token budgeting/compaction).
+                try:
+                    setattr(self.provider, "max_tokens", self.max_tokens)
+                except Exception:
+                    pass
+
+                # Safety clamp: output should not exceed total budget.
+                if isinstance(self.max_output_tokens, int) and self.max_output_tokens > int(self.max_tokens):
+                    self.max_output_tokens = int(self.max_tokens)
+                    try:
+                        setattr(self.provider, "max_output_tokens", self.max_output_tokens)
+                    except Exception:
+                        pass
+
+                print(f"✅ max_tokens set to {self.max_tokens:,}")
+
+        elif cmd.startswith('max-output-tokens'):
+            parts = cmd.split()
+            if len(parts) == 1:
+                print(f"✍️ max_output_tokens (per response): {self.max_output_tokens:,} ({'auto' if self.max_output_tokens_auto else 'manual'})")
+                print("❓ Usage: /max-output-tokens <n|auto>")
+            else:
+                raw_value = parts[1].strip().lower()
+                if raw_value in {"auto", "-1"}:
+                    try:
+                        from ..architectures.detection import get_model_capabilities
+                        capabilities = get_model_capabilities(self.model_name)
+                        detected = capabilities.get('max_output_tokens', getattr(self.provider, "max_output_tokens", 2048))
+                    except Exception:
+                        detected = getattr(self.provider, "max_output_tokens", 2048)
+                    self.max_output_tokens = int(detected)
+                    self.max_output_tokens_auto = True
+                else:
+                    try:
+                        new_max = int(raw_value)
+                        if new_max <= 0:
+                            raise ValueError
+                        self.max_output_tokens = new_max
+                        self.max_output_tokens_auto = False
+                    except ValueError:
+                        print("❓ Usage: /max-output-tokens <n|auto> (n must be a positive integer)")
+                        return True
+
+                # Safety clamp: output should not exceed total budget.
+                if isinstance(self.max_tokens, int) and self.max_output_tokens > int(self.max_tokens):
+                    self.max_output_tokens = int(self.max_tokens)
+
+                try:
+                    setattr(self.provider, "max_output_tokens", self.max_output_tokens)
+                except Exception:
+                    pass
+                print(f"✅ max_output_tokens set to {self.max_output_tokens:,}")
+
         elif cmd.startswith('history'):
             # Parse /history [n] command
             parts = cmd.split()
@@ -282,8 +376,36 @@ class SimpleCLI:
                     self.model_name = model_spec
 
                 print(f"🔄 Switching to {self.provider_name}:{self.model_name}...")
+                # If token limits were auto-detected, re-detect them for the new model.
+                next_max_tokens = self.max_tokens
+                if self.max_tokens_auto:
+                    try:
+                        from ..architectures.detection import get_model_capabilities
+                        capabilities = get_model_capabilities(self.model_name)
+                        next_max_tokens = int(capabilities.get('max_tokens', 16384))
+                    except Exception:
+                        next_max_tokens = 16384
+
+                next_max_output_tokens = self.max_output_tokens
+                if self.max_output_tokens_auto:
+                    try:
+                        from ..architectures.detection import get_model_capabilities
+                        capabilities = get_model_capabilities(self.model_name)
+                        next_max_output_tokens = int(capabilities.get('max_output_tokens', self.max_output_tokens))
+                    except Exception:
+                        next_max_output_tokens = self.max_output_tokens
+
+                # Safety clamp: output should not exceed total budget.
+                if isinstance(next_max_tokens, int) and isinstance(next_max_output_tokens, int):
+                    if next_max_output_tokens > next_max_tokens:
+                        next_max_output_tokens = next_max_tokens
+
                 self.provider = create_llm(self.provider_name, model=self.model_name,
-                                         max_tokens=self.max_tokens, **self.kwargs)
+                                         max_tokens=next_max_tokens,
+                                         max_output_tokens=next_max_output_tokens,
+                                         **self.kwargs)
+                self.max_tokens = next_max_tokens
+                self.max_output_tokens = getattr(self.provider, "max_output_tokens", next_max_output_tokens)
                 self.session = BasicSession(
                     self.provider,
                     system_prompt="You are a helpful AI assistant with vision capabilities. When users provide images or media files, analyze and describe them directly. You also have access to file operation tools.",
@@ -1035,7 +1157,8 @@ class SimpleCLI:
 
         # Token usage
         current_tokens = self.session.get_token_estimate()
-        print(f"💾 Token Usage: {current_tokens:,} / {self.max_tokens:,} tokens ({(current_tokens/self.max_tokens*100):.1f}%)")
+        print(f"💾 Context Usage: {current_tokens:,} / {self.max_tokens:,} tokens ({(current_tokens/self.max_tokens*100):.1f}%)")
+        print(f"✍️ Max Output Tokens: {self.max_output_tokens:,}")
 
         # Model capabilities
         try:
@@ -1138,7 +1261,8 @@ class SimpleCLI:
             response = self.session.generate(
                 clean_input,
                 stream=self.stream_mode,
-                media=media_files if media_files else None
+                media=media_files if media_files else None,
+                max_output_tokens=self.max_output_tokens
             )
 
             if self.stream_mode:
@@ -1435,8 +1559,10 @@ def main():
         epilog="""
 Examples:
   python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
-  python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini --stream
-  python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-20241022
+  python -m abstractcore.utils.cli --provider openai --model gpt-5-mini --stream
+  python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
+  python -m abstractcore.utils.cli --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
+  python -m abstractcore.utils.cli --provider openrouter --model openai/gpt-4o-mini
   python -m abstractcore.utils.cli --prompt "What is Python?"  # Uses configured defaults
 
 Key Commands:
@@ -1471,18 +1597,19 @@ build custom solutions using the AbstractCore framework directly.
 
     # Optional arguments (no longer required - will use configured defaults)
     parser.add_argument('--provider',
-                       choices=['openai', 'anthropic', 'ollama', 'huggingface', 'mlx', 'lmstudio'],
+                       choices=['openai', 'anthropic', 'openrouter', 'openai-compatible', 'vllm', 'ollama', 'huggingface', 'mlx', 'lmstudio'],
                        help='LLM provider to use (optional - uses configured default)')
     parser.add_argument('--model', help='Model name to use (optional - uses configured default)')
 
     # Optional arguments
     parser.add_argument('--stream', action='store_true', help='Enable streaming mode')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--max-tokens', type=int, default=None, help='Maximum tokens (default: auto-detect from model capabilities)')
+    parser.add_argument('--max-tokens', type=int, default=None, help='Maximum total context tokens (default: auto-detect from model capabilities)')
+    parser.add_argument('--max-output-tokens', type=int, default=None, help='Maximum output tokens per response (default: provider/model default)')
     parser.add_argument('--prompt', help='Execute single prompt and exit')
 
     # Provider-specific
-    parser.add_argument('--base-url', help='Base URL (ollama, lmstudio)')
+    parser.add_argument('--base-url', help='Base URL override (OpenAI-compatible /v1 servers, proxies, Ollama)')
     parser.add_argument('--api-key', help='API key')
     parser.add_argument('--temperature', type=float, default=0.7, help='Temperature (default: 0.7)')
 
@@ -1554,6 +1681,7 @@ build custom solutions using the AbstractCore framework directly.
         model=model,
         stream=stream_mode,
         max_tokens=args.max_tokens,
+        max_output_tokens=args.max_output_tokens,
         debug=args.debug,
         show_banner=not args.prompt,  # Hide banner in single-prompt mode
         **kwargs

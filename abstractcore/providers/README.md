@@ -9,11 +9,13 @@ Unified LLM provider interface with support for commercial APIs (OpenAI, Anthrop
 | Use Case | Recommended Provider | Why |
 |----------|---------------------|-----|
 | Production APIs | OpenAI, Anthropic | Latest features, reliable uptime, enterprise support |
+| Gateway / aggregator APIs | OpenRouter | OpenAI-compatible gateway across many model vendors |
 | Cost optimization | Ollama, LMStudio | Free local inference, no API costs |
 | Privacy/offline | HuggingFace, MLX | Complete data control, air-gapped deployments |
 | Apple Silicon | MLX | Metal GPU acceleration, optimized performance |
 | Custom models | HuggingFace | Fine-tuned models, GGUF support |
 | Model testing | LMStudio | Easy model switching, UI-based management |
+| Custom OpenAI-compatible endpoint | OpenAI-compatible | Point to any `/v1` server or proxy |
 
 ### Feature Comparison at a Glance
 
@@ -24,6 +26,8 @@ Unified LLM provider interface with support for commercial APIs (OpenAI, Anthrop
 | Vision | ✅ | ✅ | ⚠️ | ⚠️ | ✅ | ❌ |
 | Structured Output | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
 | Cost | $$$ | $$$ | Free | Free | Free | Free |
+
+**Also supported**: `openai-compatible` (generic OpenAI-compatible `/v1`), `vllm` (OpenAI-compatible + extras), and `openrouter` (OpenAI-compatible gateway API).
 
 ## Common Tasks
 
@@ -51,10 +55,13 @@ providers/
 ├── base.py                    # BaseProvider abstract class with telemetry
 ├── registry.py                # Provider discovery and centralized factory
 ├── streaming.py               # Unified streaming with tool detection
-├── openai_provider.py         # OpenAI & compatible APIs
+├── openai_provider.py         # OpenAI (official SDK)
+├── openai_compatible_provider.py  # Shared HTTP for OpenAI-compatible /v1 endpoints
+├── openrouter_provider.py     # OpenRouter (OpenAI-compatible gateway)
 ├── anthropic_provider.py      # Anthropic Claude
 ├── ollama_provider.py         # Ollama local server
 ├── lmstudio_provider.py       # LMStudio local server
+├── vllm_provider.py           # vLLM OpenAI-compatible server (+ guided decoding, LoRA, etc.)
 ├── huggingface_provider.py    # HuggingFace transformers + GGUF
 └── mlx_provider.py            # Apple Silicon MLX
 ```
@@ -123,7 +130,7 @@ Controls visual-text compression for large documents (vision models only):
 | `"always"` | Force compression (raises error if model lacks vision) | When you know compression is needed |
 | `"never"` | Disable compression | When you want raw text processing |
 
-**Vision Model Requirement**: This feature **ONLY works with vision-capable models** (e.g., gpt-4o, claude-3-5-sonnet, llama3.2-vision).
+**Vision Model Requirement**: This feature **ONLY works with vision-capable models** (e.g., gpt-4o, claude-haiku-4-5, llama3.2-vision).
 
 **Error Handling**:
 - `glyph_compression="always"` with non-vision model → `UnsupportedFeatureError`
@@ -238,7 +245,7 @@ export OPENAI_API_KEY="sk-..."
 from abstractcore import create_llm
 
 # Basic generation
-llm = create_llm("openai", model="gpt-4o")
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate("Explain quantum computing")
 
 # Vision
@@ -266,9 +273,56 @@ for chunk in llm.generate("Search for AI news", tools=tools, stream=True):
 - Cached tokens: Prompt caching for repeated contexts
 - Seed support: Deterministic outputs via `seed` parameter
 
+### OpenAI-Compatible Provider (Generic)
+
+**Capabilities**: Any OpenAI-compatible `/v1` endpoint (chat, streaming, tools if supported, embeddings if supported)
+**Authentication**: Optional (depends on your server/proxy)
+**Installation**: `pip install abstractcore` (no extra deps)
+
+**Setup**:
+- Base URL: `base_url=...` or `OPENAI_COMPATIBLE_BASE_URL`
+- Optional key: `api_key=...` or `OPENAI_COMPATIBLE_API_KEY`
+
+**Usage**:
+```python
+llm = create_llm(
+    "openai-compatible",
+    base_url="http://localhost:1234/v1",
+    model="local-model",
+)
+response = llm.generate("Hello from a custom OpenAI-compatible endpoint")
+```
+
+**Notes**:
+- `OpenAICompatibleProvider` is the shared HTTP implementation used by `lmstudio`, `vllm`, and `openrouter`.
+- Prefer the specific provider (`lmstudio`/`vllm`/`openrouter`) when available for clearer intent + better defaults.
+
+### OpenRouter Provider
+
+**Capabilities**: OpenAI-compatible gateway API (multi-provider routing + unified billing)
+**Authentication**: API key required
+**Installation**: `pip install abstractcore` (no extra deps)
+
+**Setup**:
+```bash
+export OPENROUTER_API_KEY="sk-or-..."
+# Optional metadata headers:
+export OPENROUTER_SITE_URL="https://your-app.example"
+export OPENROUTER_APP_NAME="YourApp"
+```
+
+**Usage**:
+```python
+llm = create_llm("openrouter", model="openai/gpt-4o-mini")
+response = llm.generate("Hello from OpenRouter")
+```
+
+**Notes**:
+- Default endpoint is `https://openrouter.ai/api/v1` (override via `base_url=` or `OPENROUTER_BASE_URL`).
+
 ### Anthropic Provider
 
-**Capabilities**: Claude 3 (Haiku, Sonnet, Opus), Claude 3.5, native tools, structured outputs (via tool trick), vision
+**Capabilities**: Claude (Haiku, Sonnet, Opus), native tools, structured outputs (via tool trick), vision
 **Authentication**: API key required
 **Installation**: `pip install abstractcore[anthropic]`
 
@@ -279,7 +333,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 **Usage**:
 ```python
-llm = create_llm("anthropic", model="claude-3-5-sonnet-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate("Write a story", max_output_tokens=2048)
 
 # Vision
@@ -351,7 +405,7 @@ embedding_response = llm.embed("Hello world")
 
 **Usage**:
 ```python
-llm = create_llm("lmstudio", model="qwen3-4b-2507")
+llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507")
 response = llm.generate("What is AI?")
 
 # Custom base URL
@@ -372,6 +426,27 @@ task = llm.generate("Create task: Fix bug, priority 1", response_model=Task)
 - Vision model auto-detection: Automatically uses appropriate media handler based on model capabilities
 - Native structured outputs: Server-side JSON schema enforcement
 - Model normalization: Handles various model name formats (lmstudio/, qwen/, etc.)
+
+### vLLM Provider
+
+**Capabilities**: OpenAI-compatible API + guided decoding, beam search, Multi-LoRA management
+**Authentication**: Optional (depends on your deployment)
+**Installation**: `pip install abstractcore[vllm]` (plus a running vLLM server)
+
+**Setup**:
+- Base URL: `base_url=...` or `VLLM_BASE_URL` (default: `http://localhost:8000/v1`)
+- Optional key: `api_key=...` or `VLLM_API_KEY`
+
+**Usage**:
+```python
+llm = create_llm("vllm", model="Qwen/Qwen3-Coder-30B-A3B-Instruct", base_url="http://localhost:8000/v1")
+
+# Guided decoding (vLLM extension)
+response = llm.generate(
+    "Return a JSON object with {name: string, age: number}",
+    guided_json={"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "number"}}},
+)
+```
 
 ### HuggingFace Provider
 
@@ -696,10 +771,10 @@ llm = create_llm("openai", model="gpt-4o")
 # Method 2: Direct parameter
 llm = create_llm("openai", model="gpt-4o", api_key="sk-...")
 
-# Method 3: Configuration file
+# Method 3: Configuration file (centralized config)
 from abstractcore.config import get_config_manager
-config = get_config_manager()
-config.set("providers.openai.api_key", "sk-...")
+cfg = get_config_manager()
+cfg.set_api_key("openai", "sk-...")
 llm = create_llm("openai", model="gpt-4o")
 ```
 

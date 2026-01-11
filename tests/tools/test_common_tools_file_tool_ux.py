@@ -107,11 +107,11 @@ def test_read_file_entire_file_small_returns_all_lines(tmp_path) -> None:
 
 def test_read_file_entire_file_refuses_when_over_line_limit(tmp_path) -> None:
     path = tmp_path / "many-lines.txt"
-    path.write_text("\n".join(["x"] * 401) + "\n", encoding="utf-8")
+    path.write_text("\n".join(["x"] * 2001) + "\n", encoding="utf-8")
 
     out = read_file(file_path=str(path))
     assert out.startswith(f"Refused: File '{path}' is too large to read entirely")
-    assert "> 400 lines" in out
+    assert "> 2000 lines" in out
     assert "Next step:" in out
 
 
@@ -125,13 +125,13 @@ def test_read_file_entire_file_does_not_refuse_based_on_bytes_only(tmp_path) -> 
 
 def test_read_file_range_refuses_when_requested_lines_over_limit(tmp_path) -> None:
     path = tmp_path / "range-too-large.txt"
-    path.write_text("\n".join([str(i) for i in range(1, 1001)]) + "\n", encoding="utf-8")
+    path.write_text("\n".join([str(i) for i in range(1, 3001)]) + "\n", encoding="utf-8")
 
     out = read_file(
         file_path=str(path),
         start_line=1,
-        end_line=401,
+        end_line=2001,
     )
 
-    assert out.startswith("Refused: Requested range would return 401 lines")
-    assert "> 400 lines" in out
+    assert out.startswith("Refused: Requested range would return 2001 lines")
+    assert "> 2000 lines" in out

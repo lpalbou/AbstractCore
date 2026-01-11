@@ -511,7 +511,7 @@ class ChatCompletionRequest(BaseModel):
     base_url: Optional[str] = Field(
         default=None,
         description="Base URL for the provider API endpoint (AbstractCore-specific feature). "
-                    "Useful for openai-compatible provider to connect to custom endpoints. "
+                    "Useful for OpenAI-compatible providers (lmstudio, vllm, openrouter, openai-compatible) and custom/proxied endpoints. "
                     "Example: 'http://localhost:1234/v1' for LMStudio, 'http://localhost:8080/v1' for llama.cpp. "
                     "If not specified, uses provider's default or environment variable.",
         example="http://localhost:1234/v1"
