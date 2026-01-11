@@ -19,6 +19,7 @@ Complete navigation guide for AbstractCore documentation.
 - **[Getting Started](getting-started.md)** - Quick start, core concepts, common patterns
 - **[Prerequisites](prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
 - **[Async/Await Support](api-reference.md#agenerate)** - Concurrent requests for 3-10x faster batch operations
+- **[Interaction Tracing](interaction-tracing.md)** - Programmatic observability for prompts, responses, timing, and usage
 - **[Glyph Visual-Text Compression](glyphs.md)** - Revolutionary compression for 3-4x token reduction and faster inference
 - **[Structured Output](structured-output.md)** - Pydantic models, schema validation, native vs prompted strategies
 - **[Session Management](session.md)** - Persistent conversations, serialization, and analytics
@@ -40,6 +41,8 @@ Complete navigation guide for AbstractCore documentation.
 - **[Glyph Visual-Text Compression](glyphs.md)** - Advanced compression techniques for large documents
 - **[Vision Capabilities](vision-capabilities.md)** - Vision model integration and optimization
 - **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
+- **[Tool Syntax Rewriting](tool-syntax-rewriting.md)** - Convert tool-call syntax for different runtimes/clients
+- **[MCP (Model Context Protocol)](mcp.md)** - Discover tools from MCP servers (HTTP/stdio) and route tool calls
 - **[AbstractCore CLI](acore-cli.md)** - Built-in CLI tool for testing and exploration
 
 ## Server (Optional HTTP REST API)
@@ -58,16 +61,18 @@ Complete navigation guide for AbstractCore documentation.
 
 ## Built-in Applications (CLI Tools)
 
-**AbstractCore includes three production-ready command-line applications for common LLM tasks.**
+**AbstractCore includes five production-ready command-line applications for common LLM tasks.**
 
 ### Quick Start with Apps
 
 ```bash
-# Install and use immediately
-pip install abstractcore[all]
+# Install and use immediately (pick one)
+pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 # Direct terminal usage (no Python code needed)
-summarizer document.pdf --provider openai --model gpt-4o-mini
+summarizer document.pdf --provider openai --model gpt-5-mini
 extractor research_paper.pdf --format json-ld --provider anthropic  
 judge essay.txt --criteria clarity,accuracy --provider ollama
 ```
@@ -77,9 +82,11 @@ judge essay.txt --criteria clarity,accuracy --provider ollama
 - **[Summarizer Guide](apps/basic-summarizer.md)** - Document summarization with multiple strategies
 - **[Extractor Guide](apps/basic-extractor.md)** - Entity and relationship extraction from text
 - **[Judge Guide](apps/basic-judge.md)** - Text evaluation and scoring systems
+- **[Intent Guide](apps/basic-intent.md)** - Intent analysis & deception detection
+- **[DeepSearch Guide](apps/basic-deepsearch.md)** - Autonomous web-assisted research
 
 **Key Features:**
-- **Direct CLI usage**: `summarizer`, `extractor`, `judge` commands
+- **Direct CLI usage**: `summarizer`, `extractor`, `judge`, `intent`, `deepsearch`
 - **Provider agnostic**: Works with any configured LLM provider
 - **Multiple formats**: PDF, TXT, MD, DOCX support
 - **Batch processing**: Handle multiple files at once
@@ -120,6 +127,8 @@ docs/
 │   ├── embeddings.md           # Embeddings guide
 │   ├── examples.md             # Code examples
 │   ├── capabilities.md         # What AbstractCore can do
+│   ├── interaction-tracing.md  # Observability for prompts/responses/timing
+│   ├── mcp.md                  # MCP tool servers (HTTP/stdio)
 │   └── tool-syntax-rewriting.md  # Tool format conversion
 │
 ├── Server (Optional HTTP REST API)/
@@ -130,7 +139,8 @@ docs/
 │   │   ├── basic-summarizer.md     # Document summarization
 │   │   ├── basic-extractor.md      # Entity/relationship extraction
 │   │   ├── basic-judge.md          # Text evaluation and scoring
-│   │   └── basic-intent.md         # Intent analysis & deception detection
+│   │   ├── basic-intent.md         # Intent analysis & deception detection
+│   │   └── basic-deepsearch.md     # Multi-stage research with web search
 │
 ├── Specialized/
 │   ├── acore-cli.md           # Interactive CLI tool for development
@@ -159,7 +169,9 @@ docs/
 - Summarize documents → [Summarizer Guide](apps/basic-summarizer.md)
 - Extract entities → [Extractor Guide](apps/basic-extractor.md)  
 - Evaluate text → [Judge Guide](apps/basic-judge.md)
-- Quick start → `pip install abstractcore[all]` then `summarizer --help`
+- Analyze intent → [Intent Guide](apps/basic-intent.md)
+- Run deep research → [DeepSearch Guide](apps/basic-deepsearch.md)
+- Quick start → `pip install abstractcore[all-apple]` / `abstractcore[all-non-mlx]` / `abstractcore[all-gpu]` then `summarizer --help`
 
 **Use Core Library (Python):**
 - Switch between providers → [Getting Started](getting-started.md#providers-and-models)
@@ -259,4 +271,3 @@ docs/
 ---
 
 **Start your journey:** [Prerequisites](prerequisites.md) → [Getting Started](getting-started.md) → Build your applications!
-

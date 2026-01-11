@@ -21,8 +21,10 @@ relationships = [item for item in result['@graph'] if item.get('@id', '').starts
 ## Installation & Setup
 
 ```bash
-# Install AbstractCore with dependencies
-pip install abstractcore[all]
+# Install AbstractCore (pick one full install)
+pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
@@ -187,7 +189,7 @@ llm = create_llm("openai", model="gpt-4o-mini")  # Best for production
 extractor = BasicExtractor(llm)
 
 # OR use Anthropic Claude for high quality
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 extractor = BasicExtractor(llm)
 
 # LOCAL MODELS: Work well for simple extraction, may struggle with complex JSON-LD
@@ -206,7 +208,7 @@ The `extractor` CLI provides direct terminal access for knowledge graph extracti
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after pip install abstractcore[all])
+# Simple usage (after installing AbstractCore; add `abstractcore[media]` for PDFs)
 extractor document.pdf
 
 # With specific format and focus
@@ -421,7 +423,7 @@ llm = create_llm("openai", model="gpt-4o-mini")  # $0.001-0.01 per request
 extractor = BasicExtractor(llm)
 
 # Alternative: High-quality Claude
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Similar cost
+llm = create_llm("anthropic", model="claude-haiku-4-5")  # Similar cost
 extractor = BasicExtractor(llm)
 ```
 
@@ -699,7 +701,7 @@ def process_documents(file_paths):
 | `qwen3-coder:30b` | 1000 chars | 8-15 seconds | High quality |
 | `gpt-oss:120b` | 1000 chars | 10-20 seconds | Optimal |
 | `gpt-4o-mini` | 1000 chars | 3-8 seconds | Optimal |
-| `claude-3-5-haiku` | 1000 chars | 2-6 seconds | Optimal |
+| `claude-haiku-4-5` | 1000 chars | 2-6 seconds | Optimal |
 
 ### Memory Usage
 

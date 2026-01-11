@@ -43,8 +43,9 @@ AbstractCore is a comprehensive Python library designed primarily for open sourc
 - **Structured Output**: Native vs prompted strategies, schema validation, production deployment ([docs/structured-output.md](docs/structured-output.md))
 - **Embeddings**: SOTA embedding models for semantic search and RAG applications
 - **Event System**: Monitor costs, performance, tool executions, and media processing
-- **Built-in CLI Apps**: Ready-to-use terminal applications (`summarizer`, `extractor`, `judge`) for document processing
+- **Built-in CLI Apps**: Ready-to-use terminal applications (`summarizer`, `extractor`, `judge`, `intent`, `deepsearch`)
 - **HTTP Server**: OpenAI-compatible REST API with provider discovery and unified access
+- **MCP (Model Context Protocol)**: Discover tools from MCP servers (HTTP/stdio) and expose them as tool specs
 - **Production Ready**: Robust error handling, retries, circuit breakers, and graceful degradation
 - **Provider Health Checks**: `.health()` method for connectivity monitoring with timeout management (v2.4.4+)
 - **Centralized Token Counting**: Consistent input/output token tracking across all providers with unified TokenUtils infrastructure (v2.4.4+)
@@ -97,8 +98,8 @@ pip install abstractcore[huggingface]
 # vLLM (NVIDIA CUDA GPUs only)
 pip install abstractcore[vllm]
 
-# OpenAI-compatible (any endpoint)
-pip install abstractcore[openai-compatible]
+# OpenAI-compatible endpoints (llama.cpp, LocalAI, etc.)
+# No extra dependencies required (uses core httpx).
 
 # Media handling (images, basic documents)
 pip install abstractcore[media]
@@ -109,8 +110,12 @@ pip install abstractcore[server]
 # Embeddings
 pip install abstractcore[embeddings]
 
-# Everything (includes all features)
-pip install abstractcore[all]
+# Full installs (recommended; pick one)
+pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+
+# Note: `abstractcore[all]` exists, but includes both MLX and vLLM and may not install cleanly on all platforms.
 ```
 
 ---
@@ -3218,9 +3223,14 @@ judge README.md --focus "architectural diagrams, technical comparisons" --debug
 - **[Summarizer](docs/apps/basic-summarizer.md)**: Document summarization (`summarizer doc.pdf`)
 - **[Extractor](docs/apps/basic-extractor.md)**: Knowledge graph extraction (`extractor report.txt`)
 - **[Judge](docs/apps/basic-judge.md)**: Text evaluation (`judge essay.txt`)
+- **[Intent](docs/apps/basic-intent.md)**: Intent analysis & deception detection (`intent conversation.txt`)
+- **[DeepSearch](docs/apps/basic-deepsearch.md)**: Multi-stage web-assisted research (`deepsearch "query"`)
 
 ### Advanced Topics
 - **[Server Guide](docs/server.md)**: OpenAI-compatible HTTP API
+- **[Tool Syntax Rewriting](docs/tool-syntax-rewriting.md)**: `tool_call_tags` (Python) and `agent_format` (server)
+- **[Interaction Tracing](docs/interaction-tracing.md)**: Programmatic tracing for prompts/responses/timing/usage
+- **[MCP](docs/mcp.md)**: MCP tool servers (HTTP/stdio) as tool sources
 - **[Embeddings](docs/embeddings.md)**: Semantic search and RAG
 - **[Architecture](docs/architecture.md)**: System design overview with media processing
 - **Error Handling**: Comprehensive exception hierarchy for robust applications
@@ -3236,7 +3246,7 @@ judge README.md --focus "architectural diagrams, technical comparisons" --debug
 ## Quick Links
 
 - **GitHub**: https://github.com/lpalbou/AbstractCore
-- **PyPI**: `pip install abstractcore[all]`
+- **PyPI**: `pip install abstractcore` (or `abstractcore[all-apple]` / `all-non-mlx` / `all-gpu`)
 - **License**: MIT | **Python**: 3.9+ | **Status**: Production Ready
 
 **For Developers and Architects:**

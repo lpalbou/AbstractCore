@@ -32,8 +32,10 @@ print(f"Criteria Details: {result_with_criteria['evaluation_criteria_details']}"
 ## Installation & Setup
 
 ```bash
-# Install AbstractCore with dependencies
-pip install abstractcore[all]
+# Install AbstractCore (pick one full install)
+pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
@@ -205,7 +207,7 @@ llm = create_llm("openai", model="gpt-4o-mini", temperature=0.1)
 judge = BasicJudge(llm)
 
 # OR use create_judge helper
-judge = create_judge("anthropic", model="claude-3-5-haiku-latest", temperature=0.05)
+judge = create_judge("anthropic", model="claude-haiku-4-5", temperature=0.05)
 
 # LOCAL MODELS: Work well for basic evaluation
 judge = create_judge("ollama", model="qwen3-coder:30b", temperature=0.1)
@@ -300,7 +302,7 @@ The `judge` CLI provides comprehensive evaluation capabilities for files and dir
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after pip install abstractcore[all])
+# Simple usage (after installing AbstractCore)
 judge "This code is well-structured and efficient."
 
 # Evaluate single file with context
@@ -578,7 +580,7 @@ judge research_paper.pdf \
 judge = create_judge("openai", model="gpt-4o-mini", temperature=0.1)
 
 # Alternative: High-quality Claude
-judge = create_judge("anthropic", model="claude-3-5-haiku-latest", temperature=0.05)
+judge = create_judge("anthropic", model="claude-haiku-4-5", temperature=0.05)
 ```
 
 **For High-Volume Evaluation (Local):**
@@ -814,7 +816,7 @@ def grade_assignment(student_submission, rubric_reference):
 | `qwen3-coder:30b` | 500 chars | 60-90 seconds | High |
 | `gpt-oss:120b` | 500 chars | 90-120 seconds | Optimal |
 | `gpt-4o-mini` | 500 chars | 15-30 seconds | Optimal |
-| `claude-3-5-haiku` | 500 chars | 10-25 seconds | Optimal |
+| `claude-haiku-4-5` | 500 chars | 10-25 seconds | Optimal |
 
 ### Memory Usage
 

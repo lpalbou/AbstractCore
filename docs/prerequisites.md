@@ -19,30 +19,29 @@ This guide walks you through setting up AbstractCore with different LLM provider
 First, install AbstractCore with your preferred providers:
 
 ```bash
-# Option 1: Start with cloud providers (fastest setup)
+# Option 1: Cloud providers (API keys required)
 pip install abstractcore[openai,anthropic]
 
-# Option 2: Local models only (no API keys needed)
-pip install abstractcore[ollama,mlx]
+# Option 2: Local providers (no API keys needed)
+pip install abstractcore[ollama,lmstudio]
+pip install abstractcore[mlx]   # Apple Silicon only
+pip install abstractcore[vllm]  # NVIDIA CUDA only
 
-# Option 3: NVIDIA GPU inference (CUDA required)
-pip install abstractcore[vllm]
+# Option 3: Full installs (recommended; pick one)
+pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
-# Option 4: Everything (recommended for Apple Silicon)
-pip install abstractcore[all]
-
-# Option 5: Everything except hardware-specific (Linux/Windows/Intel Mac)
-pip install abstractcore[all-non-mlx]
-
-# Option 6: Minimal core only
+# Option 4: Minimal core only
 pip install abstractcore
 ```
 
 **Hardware Notes:**
 - `[mlx]` - Only works on Apple Silicon (M1/M2/M3/M4)
 - `[vllm]` - Only works with NVIDIA CUDA GPUs
-- `[all]` - Best for Apple Silicon (includes MLX, excludes vLLM)
+- `[all-apple]` - Best for Apple Silicon (includes MLX, excludes vLLM)
 - `[all-non-mlx]` - Best for Linux/Windows/Intel Mac (excludes MLX and vLLM)
+- `[all-gpu]` - Best for Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 ## Cloud Provider Setup
 

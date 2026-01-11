@@ -52,7 +52,7 @@ The `intent` CLI provides direct terminal access for intent analysis without any
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after pip install abstractcore[all])
+# Simple usage (after installing AbstractCore)
 intent "I need help with this problem"
 
 # Analyze a document with comprehensive depth
@@ -267,7 +267,7 @@ llm_openai = create_llm("openai", model="gpt-4o-mini")
 analyzer_openai = BasicIntentAnalyzer(llm_openai)
 
 # Anthropic for deep analytical insights
-llm_claude = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm_claude = create_llm("anthropic", model="claude-haiku-4-5")
 analyzer_claude = BasicIntentAnalyzer(llm_claude)
 
 # Local models for cost-effective analysis

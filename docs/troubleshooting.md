@@ -124,7 +124,7 @@ from abstractcore.exceptions import ProviderAPIError, RateLimitError
 
 providers = [
     ("openai", "gpt-4o-mini"),
-    ("anthropic", "claude-3-5-haiku-latest"),
+    ("anthropic", "claude-haiku-4-5"),
     ("ollama", "qwen3-coder:30b")
 ]
 
@@ -250,8 +250,10 @@ pip install abstractcore[openai]
 pip install abstractcore[anthropic]
 pip install abstractcore[ollama]
 
-# Install everything
-pip install abstractcore[all]
+# Install the full feature set (pick one)
+pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 # Verify installation
 pip list | grep abstract
@@ -274,7 +276,9 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install abstractcore[all]
+pip install abstractcore[all-apple]    # macOS/Apple Silicon
+# or: pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac
+# or: pip install abstractcore[all-gpu]      # Linux NVIDIA GPU
 
 # If still failing, try one provider at a time
 pip install abstractcore[openai]
@@ -355,7 +359,7 @@ curl http://localhost:1234/v1/models
 llm = create_llm("openai", model="gpt-4o-mini")  # ✓ Correct
 llm = create_llm("openai", model="gpt4")  # ✗ Wrong
 
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # ✓ Correct
+llm = create_llm("anthropic", model="claude-haiku-4-5")  # ✓ Correct
 llm = create_llm("anthropic", model="claude-3")  # ✗ Wrong
 ```
 
@@ -727,7 +731,7 @@ time python -c "from abstractcore import create_llm; llm = create_llm('ollama', 
 ```python
 # Faster cloud models
 llm = create_llm("openai", model="gpt-4o-mini")  # Fast
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")  # Fast
+llm = create_llm("anthropic", model="claude-haiku-4-5")  # Fast
 
 # Faster local models
 llm = create_llm("ollama", model="gemma3:1b")  # Very fast
@@ -891,7 +895,7 @@ cat debug_report.txt
 
 | Error | Meaning | Solution |
 |-------|---------|----------|
-| `ModuleNotFoundError` | Package not installed | `pip install abstractcore[all]` |
+| `ModuleNotFoundError` | Package not installed | `pip install abstractcore` (then add provider extras as needed) |
 | `Authentication Error` | Invalid API key | Check API key environment variable |
 | `Connection refused` | Service not running | Start Ollama/LMStudio/server |
 | `LM Studio connection failed` | LM Studio server not enabled | Enable "Status: Running" toggle in LM Studio GUI |

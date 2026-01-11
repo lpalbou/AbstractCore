@@ -92,7 +92,7 @@ Sessions are serialized as JSON with a versioned schema for future compatibility
 - **`id`**: Unique session identifier for tracking and correlation
 - **`created_at`**: ISO timestamp of session creation
 - **`provider`**: LLM provider used (openai, anthropic, ollama, etc.)
-- **`model`**: Specific model name (gpt-4o-mini, claude-3-5-haiku, etc.)
+- **`model`**: Specific model name (gpt-4o-mini, claude-haiku-4-5, etc.)
 - **`model_params`**: Model parameters used (temperature, max_tokens, etc.)
 - **`system_prompt`**: The system prompt that guides the assistant's behavior
 - **`tool_registry`**: Available tools with their schemas (declarative, no executable code)

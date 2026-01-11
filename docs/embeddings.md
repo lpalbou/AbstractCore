@@ -406,7 +406,7 @@ def smart_context_selection(query, documents, max_context_length=2000):
     return selected_context.strip()
 
 # Usage with LLM
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 documents = [
     "Long document about machine learning...",
