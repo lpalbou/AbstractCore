@@ -23,7 +23,7 @@ This guide shows real-world use cases for AbstractCore with complete, copy-paste
 from abstractcore import create_llm
 
 # Works with any provider
-llm = create_llm("openai", model="gpt-4o-mini")  # or "anthropic", "ollama"...
+llm = create_llm("openai", model="gpt-5-mini")  # or "anthropic", "ollama"...
 
 response = llm.generate("What is the difference between Python and JavaScript?")
 print(response.content)
@@ -35,9 +35,9 @@ print(response.content)
 from abstractcore import create_llm
 
 providers = [
-    ("openai", "gpt-4o-mini"),
-    ("anthropic", "claude-3-5-haiku-latest"),
-    ("ollama", "qwen2.5-coder:7b")
+    ("openai", "gpt-5-mini"),
+    ("anthropic", "claude-haiku-4-5"),
+    ("ollama", "qwen3:4b-instruct")
 ]
 
 question = "Explain Python list comprehensions with examples"
@@ -60,9 +60,9 @@ from abstractcore import create_llm
 def generate_with_fallback(prompt, **kwargs):
     """Try multiple providers until one works."""
     providers = [
-        ("openai", "gpt-4o-mini"),
-        ("anthropic", "claude-3-5-haiku-latest"),
-        ("ollama", "qwen2.5-coder:7b")
+        ("openai", "gpt-5-mini"),
+        ("anthropic", "claude-haiku-4-5"),
+        ("ollama", "qwen3:4b-instruct")
     ]
 
     for provider_name, model in providers:
@@ -307,7 +307,7 @@ weather_tool = {
 }
 
 # Works with any provider that supports tools
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 response = llm.generate(
     "What's the weather like in Paris and London?",
@@ -315,7 +315,7 @@ response = llm.generate(
 )
 
 print(response.content)
-# Output: The weather in Paris is currently 22°C and sunny, while London is 15°C and cloudy.
+print(response.tool_calls)  # Structured tool call requests (host/runtime executes them)
 ```
 
 ### Calculator Tool
@@ -372,7 +372,7 @@ tools = [
     }
 ]
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 response = llm.generate(
     "What is 25 * 4 + 12, and what's the square root of 144?",
@@ -380,7 +380,7 @@ response = llm.generate(
 )
 
 print(response.content)
-# Output: 25 * 4 + 12 equals 112, and the square root of 144 is 12.
+print(response.tool_calls)  # Structured tool call requests (host/runtime executes them)
 ```
 
 ### File Operations Tool
@@ -445,7 +445,7 @@ file_tools = [
     }
 ]
 
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 response = llm.generate(
     "List the files in the current directory and read the README.md file if it exists",
@@ -453,6 +453,7 @@ response = llm.generate(
 )
 
 print(response.content)
+print(response.tool_calls)  # Structured tool call requests (host/runtime executes them)
 ```
 
 ## Tool Call Syntax Rewriting Examples
@@ -463,7 +464,7 @@ Tool call syntax rewriting enables AbstractCore to work seamlessly with any agen
 
 > **Related**: [Tool Call Syntax Rewriting Guide](tool-syntax-rewriting.md)
 
-### Codex CLI Integration (Default Format)
+### Codex CLI Integration (Qwen3 Tags)
 
 ```python
 from abstractcore import create_llm
@@ -479,20 +480,23 @@ weather_tool = {
     }
 }
 
-# Codex CLI expects qwen3 format (default - no configuration needed)
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
-response = llm.generate("What's the weather in Tokyo?", tools=[weather_tool])
+# Codex CLI expects qwen3-style tool-call tags in assistant content.
+# By default, AbstractCore strips tool-call markup from `response.content`;
+# pass `tool_call_tags` to preserve/emit the tags for downstream parsers.
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+response = llm.generate("What's the weather in Tokyo?", tools=[weather_tool], tool_call_tags="qwen3")
 
 print(response.content)
-# Output includes: <|tool_call|>{"name": "get_weather", "arguments": {"city": "Tokyo"}}</|tool_call|>
+print(response.tool_calls)
+# Content includes: <|tool_call|>{"name": "get_weather", "arguments": {"city": "Tokyo"}}</|tool_call|>
 ```
 
 ### Crush CLI Integration
 
 ```python
 # Crush CLI expects LLaMA3 format - just specify the format
-llm = create_llm("ollama", model="qwen3-coder:30b", tool_call_tags="llama3")
-response = llm.generate("Get weather for London", tools=[weather_tool])
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+response = llm.generate("Get weather for London", tools=[weather_tool], tool_call_tags="llama3")
 
 print(response.content)
 # Output includes: <function_call>{"name": "get_weather", "arguments": {"city": "London"}}</function_call>
@@ -502,8 +506,8 @@ print(response.content)
 
 ```python
 # Your custom CLI expects: [TOOL]...JSON...[/TOOL]
-llm = create_llm("openai", model="gpt-4o-mini", tool_call_tags="[TOOL],[/TOOL]")
-response = llm.generate("Check weather in Paris", tools=[weather_tool])
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+response = llm.generate("Check weather in Paris", tools=[weather_tool], tool_call_tags="[TOOL],[/TOOL]")
 
 print(response.content)
 # Output includes: [TOOL]{"name": "get_weather", "arguments": {"city": "Paris"}}[/TOOL]
@@ -523,25 +527,25 @@ calculator_tool = {
     }
 }
 
-llm = create_llm("ollama", model="qwen3-coder:30b", tool_call_tags="llama3")
+llm = create_llm("ollama", model="qwen3-coder:30b")
 
 print("AI: ", end="", flush=True)
 for chunk in llm.generate(
     "Calculate 15 * 23 and explain the result",
     tools=[calculator_tool],
-    stream=True
+    stream=True,
+    tool_call_tags="llama3",
 ):
     print(chunk.content, end="", flush=True)
 
-    # Tool calls are detected and executed in real-time
+    # Tool calls are surfaced in real-time (execution is host/runtime-owned)
     if chunk.tool_calls:
         for tool_call in chunk.tool_calls:
-            result = tool_call.execute()
-            print(f"\n[TOOL] Executed: {result}")
+            print(f"\n[TOOL CALL] {tool_call}")
 
 print("\n")
 # Shows: <function_call>{"name": "calculate", "arguments": {"expression": "15 * 23"}}</function_call>
-# With immediate tool execution during streaming
+# Tool execution is owned by the host/runtime.
 ```
 
 ### Multiple Tools with Different Formats
@@ -579,13 +583,15 @@ tools = [
 ]
 
 # Test with XML format for Gemini CLI
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest", tool_call_tags="xml")
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 response = llm.generate(
     "What's 2+2, weather in NYC, and files in current directory?",
-    tools=tools
+    tools=tools,
+    tool_call_tags="xml",
 )
 
 print(response.content)
+print(response.tool_calls)
 # All tool calls converted to: <tool_call>{"name": "...", "arguments": {...}}</tool_call>
 ```
 
@@ -594,13 +600,14 @@ print(response.content)
 ```python
 from abstractcore import BasicSession
 
-# Configure format once for entire session
-llm = create_llm("openai", model="gpt-4o-mini", tool_call_tags="llama3")
+# Apply a consistent tool-call tag format across a session by reusing a variable
+tool_call_tags = "llama3"
+
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 session = BasicSession(provider=llm)
 
-# All tool calls in this session use LLaMA3 format
-session.generate("Calculate 10 * 5", tools=[calculator_tool])
-session.generate("What's the weather like?", tools=[weather_tool])
+session.generate("Calculate 10 * 5", tools=[calculator_tool], tool_call_tags=tool_call_tags)
+session.generate("What's the weather like?", tools=[weather_tool], tool_call_tags=tool_call_tags)
 session.generate("List files in documents", tools=[{
     "name": "list_files",
     "description": "List directory contents",
@@ -609,7 +616,7 @@ session.generate("List files in documents", tools=[{
         "properties": {"path": {"type": "string"}},
         "required": ["path"]
     }
-}])
+}], tool_call_tags=tool_call_tags)
 
 # All responses contain: <function_call>...JSON...</function_call>
 ```
@@ -621,23 +628,23 @@ from abstractcore.events import EventType, on_global
 
 # Monitor tool usage across different formats
 def log_tool_calls(event):
-    for call in event.data.get('tool_calls', []):
-        print(f"[TOOL] {call.name} executed for CLI format: {llm.tool_call_tags}")
+    # Tool execution events are emitted when tools are executed (e.g., via ToolRegistry
+    # or when using `execute_tools=True` (deprecated)).
+    print(f"[TOOL EVENT] {event.type}: {event.data}")
 
 on_global(EventType.TOOL_COMPLETED, log_tool_calls)
 
 # Test with different formats
 for format_name in ["qwen3", "llama3", "xml"]:
-    llm = create_llm("ollama", model="qwen3-coder:30b", tool_call_tags=format_name)
-    response = llm.generate("Calculate 5 * 5", tools=[calculator_tool])
+    llm = create_llm("ollama", model="qwen3:4b-instruct")
+    response = llm.generate("Calculate 5 * 5", tools=[calculator_tool], tool_call_tags=format_name)
     print(f"{format_name} format result: {response.content[:100]}...")
 ```
 
 **Key Benefits**:
-- Zero configuration: Default format works with most CLIs
+- Per-call configuration: pass `tool_call_tags=...` when you need tool-call markup preserved/rewritten in `response.content`
 - Real-time processing: No post-processing delays
 - Streaming compatible: Works with streaming mode
-- Universal support: All providers and models supported
 - Format flexibility: Predefined formats plus custom tags
 
 > **Related**: [Tool Call Syntax Rewriting Guide](tool-syntax-rewriting.md) | [Unified Streaming Architecture](architecture.md#unified-streaming-architecture)
@@ -674,7 +681,7 @@ class UserProfile(BaseModel):
             raise ValueError('Invalid email format')
         return v
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Text with user information
 user_text = """
@@ -736,7 +743,7 @@ class ProductCatalog(BaseModel):
             raise ValueError(f'Total count {v} does not match products length {len(products)}')
         return v
 
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 catalog_text = """
 Our store has these items:
@@ -784,7 +791,7 @@ class CodeReview(BaseModel):
     issues: List[CodeIssue]
     recommendations: List[str]
 
-llm = create_llm("ollama", model="qwen2.5-coder:7b")
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 
 code_to_review = '''
 def calculate_average(numbers):
@@ -828,7 +835,7 @@ for rec in review.recommendations:
 # Real-time streaming works identically across ALL providers
 from abstractcore import create_llm
 
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 print("AI Story Generator: ", end="", flush=True)
 for chunk in llm.generate(
@@ -847,7 +854,7 @@ import time
 
 def streaming_with_insights(prompt):
     # Supports any provider: OpenAI, Anthropic, Ollama, MLX
-    llm = create_llm("openai", model="gpt-4o-mini")
+    llm = create_llm("openai", model="gpt-5-mini")
 
     print("Generating response...")
 
@@ -916,7 +923,7 @@ weather_tool = {
 }
 
 # Works identically across providers
-llm = create_llm("ollama", model="qwen2.5-coder:7b")
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 
 print("AI Assistant: ", end="", flush=True)
 for chunk in llm.generate(
@@ -924,20 +931,17 @@ for chunk in llm.generate(
     tools=[time_tool, weather_tool],
     stream=True
 ):
-    # Real-time chunk processing and tool execution
+    # Real-time chunk processing and tool call detection
     print(chunk.content, end="", flush=True)
 
-    # Immediate tool call detection and execution
+    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
-        for tool_call in chunk.tool_calls:
-            result = tool_call.execute()
-            print(f"\n[TOOL] Result: {result}")
+        print(f"\n[TOOL] Tool calls: {chunk.tool_calls}")
 
 print("\n")  # Newline after streaming
 
 # Features:
 # - Real-time tool call detection
-# - Immediate mid-stream tool execution
 # - Zero buffering overhead
 # - Works with OpenAI, Anthropic, Ollama, MLX
 # - Consistent behavior across all providers
@@ -952,9 +956,9 @@ import time
 def compare_providers(prompt):
     """Compare streaming performance across providers."""
     providers = [
-        ("openai", "gpt-4o-mini"),
-        ("anthropic", "claude-3-5-haiku-latest"),
-        ("ollama", "qwen2.5-coder:7b")
+        ("openai", "gpt-5-mini"),
+        ("anthropic", "claude-haiku-4-5"),
+        ("ollama", "qwen3:4b-instruct")
     ]
 
     for provider, model in providers:
@@ -989,7 +993,6 @@ compare_providers("Write a creative short story about artificial intelligence")
 - First chunk in <10ms
 - Unified strategy across all providers
 - Real-time tool call detection
-- Mid-stream tool execution
 - Zero buffering overhead
 - Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - Robust error handling for malformed responses
@@ -1001,7 +1004,7 @@ compare_providers("Write a creative short story about artificial intelligence")
 ```python
 from abstractcore import create_llm, BasicSession
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 session = BasicSession(
     provider=llm,
     system_prompt="You are a helpful coding tutor. Always provide examples."
@@ -1032,7 +1035,7 @@ from abstractcore import create_llm, BasicSession
 from pathlib import Path
 
 # Create and use session
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 session = BasicSession(
     provider=llm,
     system_prompt="You are a travel advisor. Help plan trips."
@@ -1064,7 +1067,7 @@ from abstractcore import create_llm, BasicSession
 
 def create_coding_assistant():
     """Create a specialized coding assistant session."""
-    llm = create_llm("ollama", model="qwen2.5-coder:7b")
+    llm = create_llm("ollama", model="qwen3:4b-instruct")
 
     system_prompt = """
     You are an expert Python coding assistant. For each request:
@@ -1103,7 +1106,7 @@ from abstractcore import create_llm
 # Enable tracing on provider
 llm = create_llm(
     'openai',
-    model='gpt-4o-mini',
+    model='gpt-5-mini',
     enable_tracing=True,
     max_traces=100  # Keep last 100 interactions (ring buffer)
 )
@@ -1140,7 +1143,7 @@ Automatically track all interactions in a session with correlation:
 from abstractcore import create_llm
 from abstractcore.core.session import BasicSession
 
-llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+llm = create_llm('openai', model='gpt-5-mini', enable_tracing=True)
 session = BasicSession(provider=llm, enable_tracing=True)
 
 # All interactions automatically traced
@@ -1170,7 +1173,7 @@ Track code generation workflows with retry attempts:
 from abstractcore import create_llm
 from abstractcore.core.session import BasicSession
 
-llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+llm = create_llm('openai', model='gpt-5-mini', enable_tracing=True)
 session = BasicSession(provider=llm, enable_tracing=True)
 
 # Step 1: Generate code
@@ -1223,7 +1226,7 @@ Export traces to different formats for analysis:
 from abstractcore import create_llm
 from abstractcore.utils import export_traces, summarize_traces
 
-llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+llm = create_llm('openai', model='gpt-5-mini', enable_tracing=True)
 
 # Generate some interactions
 for i in range(5):
@@ -1259,7 +1262,7 @@ Different ways to retrieve traces:
 ```python
 from abstractcore import create_llm
 
-llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+llm = create_llm('openai', model='gpt-5-mini', enable_tracing=True)
 
 # Generate some interactions
 for i in range(10):
@@ -1308,7 +1311,7 @@ def create_production_llm():
 
     return create_llm(
         "openai",
-        model="gpt-4o-mini",
+        model="gpt-5-mini",
         retry_config=retry_config,
         timeout=30
     )
@@ -1391,7 +1394,7 @@ class CostMonitor:
 # Usage
 monitor = CostMonitor(budget_limit=1.0)  # $1 budget
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Make some requests
 for i in range(3):
@@ -1460,9 +1463,9 @@ class LoadBalancer:
 
 # Usage
 balancer = LoadBalancer([
-    ("openai", "gpt-4o-mini"),
-    ("anthropic", "claude-3-5-haiku-latest"),
-    ("ollama", "qwen2.5-coder:7b")
+    ("openai", "gpt-5-mini"),
+    ("anthropic", "claude-haiku-4-5"),
+    ("ollama", "qwen3:4b-instruct")
 ])
 
 # Make requests - they'll be distributed across available providers
@@ -1488,7 +1491,7 @@ import uuid
 app = FastAPI(title="AbstractCore API")
 
 # Global LLM instance
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Store sessions in memory (use Redis in production)
 sessions = {}
@@ -1549,7 +1552,7 @@ from typing import List, Tuple
 
 class ChatInterface:
     def __init__(self):
-        self.llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+        self.llm = create_llm("anthropic", model="claude-haiku-4-5")
         self.session = BasicSession(
             provider=self.llm,
             system_prompt="You are a helpful AI assistant."
@@ -1618,7 +1621,7 @@ from IPython.display import display, Markdown, HTML
 import json
 
 # Create LLM instance
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 def display_response(response, title="AI Response"):
     """Pretty display for Jupyter notebooks."""
@@ -1681,7 +1684,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # LLM setup
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 sessions = {}  # Store user sessions
 
 @bot.event

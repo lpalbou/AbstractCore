@@ -122,6 +122,25 @@ class TestIncrementalToolDetector:
         assert "Let me help with that." in combined_streamable
         assert " The answer is ready." in combined_streamable
 
+    def test_complete_tool_call_detection_qwen_format_jsonish(self):
+        """Streaming tool parsing should accept JSON-ish (Python-literal) payloads."""
+        detector = IncrementalToolDetector("qwen3-coder")
+
+        chunks = [
+            "Let me calculate. <|tool_call|>",
+            "{'name': 'calculate', 'arguments': {'expr': '2+2', 'precise': True}}",
+            "</|tool_call|> Done.",
+        ]
+
+        all_tools = []
+        for chunk in chunks:
+            _, tools = detector.process_chunk(chunk)
+            all_tools.extend(tools)
+
+        assert len(all_tools) == 1
+        assert all_tools[0].name == "calculate"
+        assert all_tools[0].arguments == {"expr": "2+2", "precise": True}
+
     def test_complete_tool_call_detection_harmony_format(self):
         """Test detecting a complete tool call in Harmony/ChatML transcript format."""
         detector = IncrementalToolDetector("openai/gpt-oss-20b")
@@ -337,6 +356,18 @@ class TestIncrementalToolDetector:
         assert len(tools) == 1
         assert tools[0].name == "pending"
 
+    def test_finalize_with_pending_tool_jsonish(self):
+        """Finalize should handle JSON-ish tool payloads (single quotes, Python literals)."""
+        detector = IncrementalToolDetector("qwen3")
+
+        detector.process_chunk("<|tool_call|>{'name': 'pending', 'arguments': {'x': 1, 'ok': True}}")
+
+        tools = detector.finalize()
+
+        assert len(tools) == 1
+        assert tools[0].name == "pending"
+        assert tools[0].arguments == {"x": 1, "ok": True}
+
 
 # ============================================================================
 # LAYER 2: INTEGRATION TESTS - UnifiedStreamProcessor
@@ -416,6 +447,26 @@ class TestUnifiedStreamProcessor:
         assert any("Let me calculate:" in r.content for r in results if r.content)
         # Content after tool should be streamed
         assert any("The result is ready." in r.content for r in results if r.content)
+
+    def test_streaming_with_tool_detection_jsonish(self):
+        """Streaming tool detection should accept JSON-ish tool payloads."""
+        processor = UnifiedStreamProcessor("qwen3", execute_tools=False)
+
+        chunks = [
+            "Let me calculate: <|tool_call|>",
+            "{'name': 'calc', 'arguments': {'expr': '5*5'}}",
+            "</|tool_call|> The result is ready.",
+        ]
+        stream = self.create_test_stream(chunks)
+
+        results = list(processor.process_stream(stream))
+
+        all_tool_calls = []
+        for result in results:
+            if isinstance(getattr(result, "tool_calls", None), list):
+                all_tool_calls.extend(result.tool_calls)
+
+        assert any(tc.get("name") == "calc" for tc in all_tool_calls if isinstance(tc, dict))
 
     def test_tool_execution_during_streaming(self):
         """Test that tool calls are surfaced during streaming (passthrough mode)."""

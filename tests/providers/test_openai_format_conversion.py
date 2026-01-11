@@ -54,6 +54,24 @@ class TestOpenAIFormatConversion:
         args = json.loads(result_json["function"]["arguments"])
         assert args["command"] == ["ls", "-la"]
 
+    def test_qwen3_jsonish_to_openai_conversion(self):
+        """Conversion should accept JSON-ish (Python-literal) tool payloads inside tags."""
+        processor = UnifiedStreamProcessor(
+            model_name="test-model",
+            tool_call_tags="openai"
+        )
+
+        qwen_input = "<|tool_call|>{'name': 'shell', 'arguments': {'command': ['ls', '-la']}}</|tool_call|>"
+
+        result = processor._convert_to_openai_format(qwen_input)
+        result_json = json.loads(result)
+
+        assert result_json["type"] == "function"
+        assert result_json["function"]["name"] == "shell"
+
+        args = json.loads(result_json["function"]["arguments"])
+        assert args["command"] == ["ls", "-la"]
+
     def test_llama_to_openai_conversion(self):
         """Test conversion from LLaMA format to OpenAI JSON."""
         processor = UnifiedStreamProcessor(

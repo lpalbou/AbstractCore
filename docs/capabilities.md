@@ -65,7 +65,8 @@ ollama_response = ollama_llm.generate("Weather in Paris?", tools=tools)
 
 ```python
 # Rewrite tool calls for different CLIs
-llm = create_llm("openai", model="gpt-4o-mini")
+# Use a prompted-tools provider (tool-call markup lives in assistant content)
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 
 # For Codex CLI (Qwen3 format)
 response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="qwen3")
@@ -87,15 +88,13 @@ response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
 **What it does**: Control whether AbstractCore executes tools automatically or lets the agent handle execution.
 
 ```python
-# AbstractCore executes tools automatically (default)
-llm = create_llm("openai", model="gpt-4o-mini", execute_tools=True)
+# Default (recommended): passthrough mode (tools are *not* executed in AbstractCore)
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate("Weather in Paris?", tools=tools)
-# Tools are executed and results are included in response
+# response.tool_calls contains structured tool call requests; host/runtime executes them
 
-# Let the agent handle tool execution (for API server mode)
-llm = create_llm("openai", model="gpt-4o-mini", execute_tools=False)
-response = llm.generate("Weather in Paris?", tools=tools)
-# Tools are generated but not executed - agent handles execution
+# Optional (deprecated): direct execution in AbstractCore for simple scripts only
+# llm = create_llm("openai", model="gpt-5-mini", execute_tools=True)
 ```
 
 **Why this helps**: Allows flexible tool execution control for different deployment scenarios.

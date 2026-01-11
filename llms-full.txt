@@ -22,13 +22,13 @@ This file contains the complete documentation for AbstractCore, a unified Python
 
 ## Project Overview
 
-AbstractCore is a comprehensive Python library designed primarily for open source LLMs with complete offline capability. Provides a unified interface to 8 LLM providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace, vLLM, openai-compatible) with production-grade features including universal media handling, vision capabilities, tool calling, streaming, centralized configuration, and session management.
+AbstractCore is a comprehensive Python library designed primarily for open source LLMs with complete offline capability. Provides a unified interface to 9 LLM providers (OpenAI, Anthropic, OpenRouter, Ollama, LMStudio, MLX, HuggingFace, vLLM, openai-compatible) with production-grade features including universal media handling, vision capabilities, tool calling, streaming, centralized configuration, and session management.
 
 ### Key Features
 
 - **Offline-First Design**: Built primarily for open source LLMs with complete offline operation. Download once, run forever without internet access
-- **Universal Provider Support**: OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace, vLLM, openai-compatible with identical syntax
-- **Async/Await Support** (v2.6.0): Native async support for concurrent requests with `asyncio.gather()` - works with all 8 providers for 3-10x faster batch operations ([docs/api-reference.md#agenerate](docs/api-reference.md#agenerate))
+- **Universal Provider Support**: OpenAI, Anthropic, OpenRouter, Ollama, LMStudio, MLX, HuggingFace, vLLM, openai-compatible with identical syntax
+- **Async/Await Support** (v2.6.0): Native async support for concurrent requests with `asyncio.gather()` - works across providers for 3-10x faster batch operations ([docs/api-reference.md#agenerate](docs/api-reference.md#agenerate))
 - **vLLM Provider** (v2.6.4): High-throughput GPU inference with guided decoding, Multi-LoRA, beam search for NVIDIA CUDA GPUs
 - **OpenAI-Compatible Provider** (v2.6.4): Generic provider for any OpenAI-compatible endpoint (llama.cpp, LocalAI, text-generation-webui)
 - **Dynamic Base URL** (v2.6.5): POST `base_url` parameter for runtime endpoint routing without environment variables
@@ -55,6 +55,7 @@ AbstractCore is a comprehensive Python library designed primarily for open sourc
 |----------|----------|----------|
 | **OpenAI** | Native tools, streaming, structured output, vision (GPT-4o) | Any |
 | **Anthropic** | Native tools, streaming, structured output, vision (Claude 4.5) | Any |
+| **OpenRouter** | OpenAI-compatible aggregator (multi-provider routing, unified billing) | Any |
 | **Ollama** | Prompted tools, streaming, structured output, local models | Any |
 | **LMStudio** | Prompted tools, streaming, structured output, local models | Any |
 | **MLX** | Prompted tools, streaming, Apple Silicon optimized | Apple Silicon only |
@@ -133,7 +134,7 @@ abstractcore-config --status                  # Same thing (alias for clarity)
 abstractcore --set-global-default ollama/llama3:8b
 
 # Set app-specific defaults for optimal performance
-abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default summarizer openai gpt-5-mini
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
 abstractcore --set-app-default judge anthropic claude-haiku-4-5
 abstractcore --set-app-default cli huggingface unsloth/Qwen3-4B-Instruct-2507-GGUF
@@ -141,6 +142,7 @@ abstractcore --set-app-default cli huggingface unsloth/Qwen3-4B-Instruct-2507-GG
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic your-anthropic-key
+abstractcore --set-api-key openrouter your-openrouter-key
 
 # Configure logging
 abstractcore --set-console-log-level WARNING  # Reduce console output
@@ -161,7 +163,7 @@ abstractcore-chat --provider ollama --model llama2
 abstractcore-chat --stream
 
 # Alternative (backwards compatible)
-python -m abstractcore.utils.cli --provider openai --model gpt-4o
+python -m abstractcore.utils.cli --provider openai --model gpt-5-mini
 python -m abstractcore.utils.cli --prompt "What is Python?"
 ```
 
@@ -175,17 +177,17 @@ AbstractCore uses a clear priority hierarchy:
 
 1. **Explicit Parameters** (highest priority)
    ```bash
-   summarizer document.txt --provider openai --model gpt-4o-mini
+   summarizer document.txt --provider openai --model gpt-5-mini
    ```
 
 2. **App-Specific Configuration**
    ```bash
-   abstractcore --set-app-default summarizer openai gpt-4o-mini
+   abstractcore --set-app-default summarizer openai gpt-5-mini
    ```
 
 3. **Global Configuration**
    ```bash
-   abstractcore --set-global-default openai/gpt-4o-mini
+   abstractcore --set-global-default openai/gpt-5-mini
    ```
 
 4. **Hardcoded Defaults** (lowest priority)
@@ -197,7 +199,7 @@ Set default providers and models for specific AbstractCore applications:
 
 ```bash
 # Set defaults for individual apps
-abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default summarizer openai gpt-5-mini
 abstractcore --set-app-default cli anthropic claude-haiku-4-5
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
 abstractcore --set-app-default judge anthropic claude-haiku-4-5
@@ -293,6 +295,7 @@ abstractcore --set-console-log-level WARNING
 # Add API keys when ready for cloud providers
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic your-anthropic-key
+abstractcore --set-api-key openrouter your-openrouter-key
 
 # Verify everything works
 abstractcore --status
@@ -309,17 +312,17 @@ abstractcore --set-app-default cli ollama qwen3:4b  # Fast model for CLI testing
 **Production Environment:**
 ```bash
 # Configure for production reliability and performance
-abstractcore --set-global-default openai/gpt-4o-mini  # Reliable cloud provider
+abstractcore --set-global-default openai/gpt-5-mini  # Reliable cloud provider
 abstractcore --set-console-log-level WARNING          # Reduce noise
 abstractcore --enable-file-logging                    # Persistent logs
-abstractcore --set-app-default summarizer openai gpt-4o-mini  # Optimize for quality
+abstractcore --set-app-default summarizer openai gpt-5-mini  # Optimize for quality
 ```
 
 **Multi-Environment Approach:**
 ```bash
 # Use different providers for different applications
 abstractcore --set-app-default cli ollama qwen3:4b           # Fast for development
-abstractcore --set-app-default summarizer openai gpt-4o-mini # Quality for documents
+abstractcore --set-app-default summarizer openai gpt-5-mini # Quality for documents
 abstractcore --set-app-default judge anthropic claude-haiku-4-5 # Detailed analysis
 ```
 
@@ -338,6 +341,15 @@ export OLLAMA_HOST="http://192.168.1.100:11434"       # Alternative (official Ol
 
 # LMStudio
 export LMSTUDIO_BASE_URL="http://localhost:1235/v1"   # Non-standard port
+
+# vLLM (OpenAI-compatible server)
+export VLLM_BASE_URL="http://localhost:8000/v1"
+
+# OpenAI-compatible (generic)
+export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+
+# OpenRouter
+export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 
 # OpenAI (for proxies and gateways)
 export OPENAI_BASE_URL="https://api.portkey.ai/v1"
@@ -384,7 +396,7 @@ llm = create_llm('lmstudio', model='qwen3-4b')
 # OpenAI-compatible proxy (Portkey, etc.)
 os.environ['OPENAI_BASE_URL'] = 'https://api.portkey.ai/v1'
 
-llm = create_llm('openai', model='gpt-4o-mini')
+llm = create_llm('openai', model='gpt-5-mini')
 # All requests route through Portkey for observability and caching
 ```
 
@@ -534,7 +546,7 @@ response = llm.generate(
 )
 
 # Same code works with any provider
-llm = create_llm("anthropic", model="claude-sonnet-4-5")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate(
     "Analyze these materials",
     media=["chart.png", "data.csv", "presentation.pptx"]
@@ -546,22 +558,17 @@ response = llm.generate(
 ```python
 from abstractcore import create_llm
 
-# Deterministic outputs with seed + temperature=0
-llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+# Best-effort deterministic sampling (when provider/model supports it)
+llm = create_llm("openai", model="gpt-5-mini", seed=42, temperature=0.0)
 
-# These will produce identical outputs
 response1 = llm.generate("Write exactly 3 words about coding")
 response2 = llm.generate("Write exactly 3 words about coding")
-print(f"Response 1: {response1.content}")  # "Innovative, challenging, rewarding."
-print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding."
+print(response1.content)
+print(response2.content)
 
-# Empirically verified deterministic behavior:
-# Verified: OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-# Verified: Ollama (gemma3:1b): Same seed → Identical outputs  
-# Verified: MLX (Qwen3-4B): Same seed → Identical outputs
-# Verified: HuggingFace: Same seed → Identical outputs (transformers + GGUF)
-# Verified: LMStudio: Same seed → Identical outputs (OpenAI-compatible)
-# ⚠️ Anthropic (claude-haiku-4-5): temperature=0 → Consistent outputs (issues warning for seed)
+# Notes:
+# - `seed` is best-effort and may not be supported by every provider/model.
+# - For maximum consistency, use `temperature=0.0`.
 ```
 
 ### CLI Integration
@@ -806,7 +813,7 @@ prompt = "Analyze the data in these files"
 
 # All work identically
 openai_response = create_llm("openai", model="gpt-4o").generate(prompt, media=image_files)
-anthropic_response = create_llm("anthropic", model="claude-3-5-sonnet").generate(prompt, media=image_files)
+anthropic_response = create_llm("anthropic", model="claude-haiku-4-5").generate(prompt, media=image_files)
 ollama_response = create_llm("ollama", model="qwen2.5vl:7b").generate(prompt, media=image_files)
 ```
 
@@ -825,7 +832,7 @@ abstractcore --set-vision-provider openai gpt-4o  # Use cloud API
 
 ```python
 # After configuration, text-only models can process images seamlessly
-text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No native vision
+text_llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507")  # No native vision
 
 response = text_llm.generate(
     "What's happening in this image?",
@@ -875,28 +882,37 @@ For complete vision capabilities documentation, see: [Vision Capabilities Guide]
 
 ### Create LLM with Any Provider
 
-AbstractCore supports 6 major providers with **identical syntax**. Choose your provider:
+AbstractCore supports 9 providers with **identical syntax**. Choose your provider:
 
 ```python
 from abstractcore import create_llm
 
 # OpenAI (requires OPENAI_API_KEY)
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Anthropic (requires ANTHROPIC_API_KEY)
 llm = create_llm("anthropic", model="claude-haiku-4-5")
 
+# OpenRouter (requires OPENROUTER_API_KEY)
+llm = create_llm("openrouter", model="openai/gpt-4o-mini")
+
 # Ollama (local - ensure Ollama is running)
-llm = create_llm("ollama", model="qwen3-coder:30b")
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 
 # LMStudio (local - ensure LMStudio server is running)
-llm = create_llm("lmstudio", model="llama-3.2-8b-instruct")
+llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507")
 
 # MLX (Apple Silicon only)
-llm = create_llm("mlx", model="qwen3-air-4bit")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 
-# HuggingFace (requires HUGGINGFACE_API_TOKEN for gated models)
-llm = create_llm("huggingface", model="microsoft/DialoGPT-large")
+# HuggingFace (local or downloaded; token only needed for gated models)
+llm = create_llm("huggingface", model="unsloth/Qwen3-4B-Instruct-2507-GGUF")
+
+# vLLM (local server - set VLLM_BASE_URL if not default http://localhost:8000/v1)
+llm = create_llm("vllm", model="Qwen/Qwen3-Coder-30B-A3B-Instruct")
+
+# OpenAI-compatible (any compatible endpoint; set OPENAI_COMPATIBLE_BASE_URL if needed)
+llm = create_llm("openai-compatible", model="default")
 
 # List available models for any provider
 available_models = llm.list_available_models()
@@ -915,7 +931,7 @@ from abstractcore.tools import tool
 from pydantic import BaseModel
 
 # 1. Basic Usage - Works with any provider
-llm = create_llm("openai", model="gpt-4o-mini")  # or any provider above
+llm = create_llm("openai", model="gpt-5-mini")  # or any provider above
 response = llm.generate("What is the capital of France?")
 print(response.content)
 
@@ -969,7 +985,7 @@ from abstractcore import create_llm
 dev_llm = create_llm("ollama", model="qwen3:4b")
 
 # Production (cloud APIs)
-prod_llm = create_llm("openai", model="gpt-4o-mini", api_key="your-key")
+prod_llm = create_llm("openai", model="gpt-5-mini", api_key="your-key")
 
 # Cost-sensitive applications (smaller models)
 cost_llm = create_llm("anthropic", model="claude-haiku-4-5")
@@ -1024,7 +1040,7 @@ from abstractcore import create_llm
 providers_to_try = [
     ("ollama", {"model": "llama2"}),
     ("lmstudio", {"model": "local-model"}),
-    ("openai", {"model": "gpt-4o-mini", "api_key": "sk-..."})
+    ("openai", {"model": "gpt-5-mini", "api_key": "sk-..."})
 ]
 
 provider = None
@@ -1178,11 +1194,11 @@ Access provider information through the HTTP API:
 # Get all providers
 curl http://localhost:8000/providers
 
-# Get specific provider
-curl http://localhost:8000/providers/openai
+# Include model lists (slower)
+curl "http://localhost:8000/providers?include_models=true"
 
-# Get models for provider
-curl http://localhost:8000/providers/ollama/models
+# Get models (optionally filtered by provider/capabilities)
+curl "http://localhost:8000/v1/models?provider=ollama"
 ```
 
 The response includes comprehensive metadata:
@@ -1197,7 +1213,7 @@ The response includes comprehensive metadata:
       "local_provider": false,
       "authentication_required": true,
       "supported_features": ["chat", "completion", "embeddings", "native_tools"],
-      "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]
+      "models": ["gpt-5-mini", "gpt-5-nano-2025-08-07", "gpt-4o"]
     }
   ]
 }
@@ -1224,7 +1240,7 @@ def calculate(expression: str) -> float:
     return eval(expression)  # Simplified for demo
 
 # Method 1: Direct provider usage
-llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 response = llm.generate(
     "What's the weather in Tokyo and what's 15 * 23?",
     tools=[get_weather, calculate]  # Pass tools directly
@@ -1305,9 +1321,9 @@ AbstractCore's tool system works across all providers through two mechanisms:
 
 AbstractCore automatically:
 - Detects the model architecture (Qwen3, LLaMA3, etc.)
-- Formats tools with examples into system prompt
-- Parses tool calls from response using appropriate format
-- Executes tools locally and returns results
+- Formats tools with examples into the system prompt
+- Parses tool calls into structured `GenerateResponse.tool_calls`
+- (Optional/legacy) can auto-execute tools with `execute_tools=True` (deprecated; prefer host/runtime execution)
 
 ### Architecture-Aware Tool Call Detection
 
@@ -1344,166 +1360,55 @@ response = llm.generate(
 
 ### Tool Syntax Rewriting
 
-**Cutting-edge solution to 2024-2025 tool call format fragmentation**
+AbstractCore can optionally preserve and rewrite *tool-call markup inside assistant content* so downstream runtimes can parse tool calls from plain text consistently.
 
-AbstractCore provides real-time tool call format conversion, solving the current ecosystem fragmentation where different agent frameworks expect incompatible tool call formats. This addresses a critical compatibility challenge in the modern LLM agent landscape.
+There are two related controls:
 
-#### The Format Fragmentation Problem (2024-2025)
+- Python API: `tool_call_tags` (per-call)
+- HTTP server: `agent_format` (per-request)
+
+#### Python API: `tool_call_tags` (per-call)
+
+Default (`tool_call_tags is None`):
+- `response.tool_calls` is populated when tool calls are detected (native tools or prompted tags).
+- Tool-call markup is stripped from `response.content` for clean UX/history.
+
+When set:
+- Tool-call markup is kept in `content` and rewritten to the requested format.
+- `response.tool_calls` remains the canonical machine-readable representation for execution.
+
+Supported values:
+- Predefined formats: `qwen3`, `llama3`, `xml`, `gemma`
+- Custom tags: `"START,END"` (exact strings) or `"MYTAG"` (auto `<MYTAG>...</MYTAG>`)
 
 ```python
-# Different models/frameworks expect different formats:
-# Qwen3: <|tool_call|>{"name": "func", "args": {...}}</|tool_call|>
-# LLaMA3: <function_call>{"name": "func", "args": {...}}</function_call>
-# XML-based: <tool_call>{"name": "func", "args": {...}}</tool_call>
-# Claude Code: [[tool_use]]{"name": "func", "args": {...}}[[/tool_use]]
-# OpenAI/Anthropic: Native JSON API calls
-
-# AbstractCore automatically handles ALL formats
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+response = llm.generate(
+    "What's the weather in Paris?",
+    tools=[get_weather],
+    tool_call_tags="llama3",
+)
+print(response.content)     # contains <function_call>...</function_call>
+print(response.tool_calls)  # structured list of {name, arguments, call_id}
 ```
 
-#### Dynamic Format Conversion
+Streaming works the same:
 
 ```python
-from abstractcore import create_llm
-from abstractcore.tools.tag_rewriter import ToolCallTagRewriter
-
-# Custom tag configuration for any framework
-llm = create_llm(
-    "ollama",
-    model="qwen3-coder:30b",
-    tool_call_tags="function_call"  # Converts to: <function_call>...JSON...</function_call>
-)
-
-# Multiple custom formats
-llm = create_llm(
-    "mlx",
-    model="qwen3-air-4bit",
-    tool_call_tags=("[[tool_use]]", "[[/tool_use]]")  # Start and end tags
-)
-
-# Real-time format detection and conversion
-llm = create_llm(
-    "lmstudio",
-    model="llama-3.2-8b-instruct",
-    auto_detect_format=True,  # Automatically detect model's preferred format
-    fallback_format="xml"     # Fallback if detection fails
-)
-```
-
-#### Predefined Agent Framework Configurations
-
-```python
-from abstractcore.tools.tag_rewriter import create_tag_rewriter
-
-# Pre-configured for popular agent frameworks
-formats = {
-    "codex": "qwen3",          # <|tool_call|>...JSON...</|tool_call|>
-    "crush": "llama3",         # <function_call>...JSON...</function_call>
-    "gemini": "xml",           # <tool_call>...JSON...</tool_call>
-    "claude_code": "claude",   # [[tool_use]]...JSON...[[/tool_use]]
-    "openai": "native",        # Native OpenAI API format
-    "anthropic": "native",     # Native Anthropic API format
-}
-
-# Apply framework-specific format
-rewriter = create_tag_rewriter("codex")  # For Codex CLI compatibility
-llm = create_llm("ollama", model="qwen3-coder:30b", tag_rewriter=rewriter)
-
-# Custom framework format
-custom_rewriter = create_tag_rewriter(
-    start_tag="<custom_tool>",
-    end_tag="</custom_tool>",
-    json_wrapper=True
-)
-```
-
-#### Streaming-Aware Rewriting
-
-Advanced streaming support with tool call detection across chunks:
-
-```python
-# Streaming with incremental tool detection
-llm = create_llm(
-    "ollama",
-    model="qwen3-coder:30b",
-    tool_call_tags="function_call",
-    streaming_buffer_size=512,    # Buffer size for partial tool calls
-    detect_partial_tools=True     # Detect tools split across chunks
-)
-
-# Stream with real-time rewriting
-for chunk in llm.generate("Use the calculator tool", tools=[calculate], stream=True):
-    # Tool calls are automatically detected and rewritten in real-time
-    if chunk.tool_calls:
-        print(f"Tool detected: {chunk.tool_calls[0].name}")
+for chunk in llm.generate(
+    "What's the weather in Paris?",
+    tools=[get_weather],
+    stream=True,
+    tool_call_tags="llama3",
+):
     print(chunk.content, end="", flush=True)
+    if chunk.tool_calls:
+        print(chunk.tool_calls)
 ```
 
-#### Advanced Format Management
-
-```python
-from abstractcore.tools.tag_rewriter import ToolCallTagRewriter
-
-# Create sophisticated rewriter
-rewriter = ToolCallTagRewriter(
-    input_format="qwen3",         # Expected input format
-    output_format="llama3",       # Desired output format
-    preserve_native=True,         # Keep native tool calls unchanged
-    validate_json=True,           # Validate JSON structure
-    repair_malformed=True,        # Attempt to repair broken JSON
-    streaming_compatible=True     # Enable streaming support
-)
-
-# Multi-format support in single session
-session = BasicSession(llm)
-session.set_tool_format("qwen3")    # Use Qwen3 format for this conversation
-
-# Format switching mid-conversation
-session.switch_tool_format("xml")   # Switch to XML format
-
-# Format compatibility checking
-compatible = rewriter.is_compatible("llama3", "qwen3")
-supported_formats = rewriter.supported_formats()
-```
-
-#### Production Integration Examples
-
-```python
-# Integration with different agent CLIs
-
-# For Codex CLI users
-codex_llm = create_llm(
-    "ollama",
-    model="qwen3-coder:30b",
-    tool_call_tags="tool_call",     # Codex expects <|tool_call|>
-    preserve_whitespace=False       # Codex prefers compact JSON
-)
-
-# For Crush CLI users
-crush_llm = create_llm(
-    "lmstudio",
-    model="llama-3.2-8b-instruct",
-    tool_call_tags="function_call", # Crush expects <function_call>
-    json_indent=2                   # Crush prefers formatted JSON
-)
-
-# For Claude Code users
-claude_code_llm = create_llm(
-    "anthropic",
-    model="claude-3-5-haiku-latest",
-    tool_call_tags=("[[tool_use]]", "[[/tool_use]]"),  # Claude Code format
-    include_reasoning=True          # Include reasoning in tool calls
-)
-```
-
-#### Benefits of Tool Syntax Rewriting
-
-- **Universal Compatibility**: Works with any agent framework without code changes
-- **Ecosystem Bridge**: Connects incompatible tool calling standards
-- **Future-Proof**: Easily add support for new formats as they emerge
-- **Performance Optimized**: Minimal overhead, streaming-compatible
-- **Zero Configuration**: Automatic format detection in most cases
-- **Developer Friendly**: Simple API for complex format transformations
+Notes:
+- Tool arguments are parsed using a tolerant JSON-ish loader (single quotes / Python literals) to handle common OSS outputs.
+- Tool execution is not automatic by default (`execute_tools=False`); execute `response.tool_calls` in your app/agent runtime.
 
 ---
 
@@ -1628,43 +1533,40 @@ for provider in providers:
 
 ### Session Management
 
-Comprehensive conversation management with memory, analytics, and auto-compaction:
+Comprehensive conversation management with message history, optional analytics, and optional auto-compaction:
 
 ```python
 from abstractcore import BasicSession, create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")
-session = BasicSession(llm, system_prompt="You are a helpful assistant.")
+llm = create_llm("openai", model="gpt-5-mini")
+session = BasicSession(
+    llm,
+    system_prompt="You are a helpful assistant.",
+    auto_compact=True,
+    auto_compact_threshold=6000,
+)
 
-# Basic conversation with memory
-response1 = session.generate("My name is Alice")
-response2 = session.generate("What's my name?")  # Remembers context
+session.generate("My name is Alice")
+response = session.generate("What's my name?")
+print(response.content)
 
-# Advanced analytics and insights
-summary = session.generate_summary()
-assessment = session.generate_assessment()
-facts = session.extract_facts()
+# Optional analytics (stored on the session object and included in `session.save(...)`)
+session.generate_summary(preserve_recent=6, focus="key facts")
+session.generate_assessment()
+session.extract_facts(output_format="triples")
 
-# Auto-compaction with SOTA chat history compression
-session.compact(target_tokens=8000)  # Compresses while preserving context
+# Force compaction (in-place) or create a compacted copy
+session.force_compact(preserve_recent=8, focus="technical decisions")
+# compacted = session.compact(preserve_recent=8, focus="technical decisions")
 
-# Timeout management
-session.set_timeout(30)  # 30 second default timeout
-session.set_tool_timeout(60)  # 60 second tool-specific timeout
-recovery_timeout = session.get_recovery_timeout()
+# Timeouts
+session.set_timeout(30)
+session.set_tool_timeout(60)
+session.set_recovery_timeout(60)
 
-# Session serialization with metadata
-session.save("conversation.json", summary=True, assessment=True, facts=True)
-session.save("conversation_archive.json", format="session-archive/v1")
-
-# Load with full context restoration
-loaded_session = BasicSession.load("conversation.json")
-loaded_session = BasicSession.from_archive("conversation_archive.json")
-
-# Session metadata and statistics
-print(f"Messages: {len(session.messages)}")
-print(f"Total tokens: {session.total_tokens}")
-print(f"Session age: {session.age_minutes} minutes")
+# Save / load (provider and tools are not serialized; pass them back in on load)
+session.save("conversation.json")
+loaded = BasicSession.load("conversation.json", provider=llm)
 ```
 
 #### Session Analytics
@@ -1672,29 +1574,9 @@ print(f"Session age: {session.age_minutes} minutes")
 Extract insights from conversation history:
 
 ```python
-# Generate conversation summary
-summary = session.generate_summary(
-    style="executive",  # executive, technical, conversational
-    length="brief"      # brief, standard, detailed
-)
-
-# Assess conversation quality and outcomes
-assessment = session.generate_assessment(
-    criteria=["clarity", "helpfulness", "accuracy"],
-    include_score=True
-)
-
-# Extract structured facts and entities
-facts = session.extract_facts(
-    entity_types=["person", "organization", "date", "location"],
-    confidence_threshold=0.8
-)
-
-# Custom analytics with focus areas
-insights = session.generate_insights(
-    focus="technical_decisions",
-    format="structured"
-)
+summary = session.generate_summary(preserve_recent=6, focus="decisions")
+assessment = session.generate_assessment(criteria={"clarity": True, "coherence": True})
+facts = session.extract_facts(output_format="jsonld")
 ```
 
 #### Auto-Compaction System
@@ -1702,23 +1584,8 @@ insights = session.generate_insights(
 Intelligent conversation history compression that preserves context:
 
 ```python
-# Automatic compaction when approaching token limits
-session = BasicSession(llm, auto_compact=True, max_tokens=32000)
-
-# Manual compaction with strategies
-session.compact(
-    target_tokens=8000,
-    strategy="semantic",       # semantic, chronological, importance
-    preserve_recent=10,        # Keep last 10 messages uncompacted
-    preserve_system=True       # Always preserve system prompt
-)
-
-# Compaction with custom criteria
-session.compact(
-    target_tokens=6000,
-    preserve_patterns=["@tool", "important:"],  # Preserve messages with these patterns
-    compression_ratio=0.7      # Target 70% size reduction
-)
+session = BasicSession(llm, auto_compact=True, auto_compact_threshold=6000)
+# When the session grows beyond the threshold, `session.generate(...)` auto-compacts before sending the next request.
 ```
 
 ### Async/Await for Concurrent Requests
@@ -1732,7 +1599,7 @@ from abstractcore.core.session import BasicSession
 
 # Basic concurrent execution
 async def main():
-    llm = create_llm("openai", model="gpt-4o-mini")
+    llm = create_llm("openai", model="gpt-5-mini")
 
     # Execute 3 requests concurrently
     tasks = [
@@ -1754,7 +1621,7 @@ Real-time token generation with async iterators:
 
 ```python
 async def stream_example():
-    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
 
     async for chunk in llm.agenerate("Tell me a story", stream=True):
         print(chunk.content, end='', flush=True)
@@ -1786,8 +1653,8 @@ Query multiple providers simultaneously:
 
 ```python
 async def compare_providers():
-    openai = create_llm("openai", model="gpt-4o-mini")
-    claude = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    openai = create_llm("openai", model="gpt-5-mini")
+    claude = create_llm("anthropic", model="claude-haiku-4-5")
     ollama = create_llm("ollama", model="qwen3:4b")
 
     # Get responses from 3 providers concurrently
@@ -1805,7 +1672,7 @@ asyncio.run(compare_providers())
 ```
 
 **Key Features:**
-- Works with all 6 providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- Works with all 9 providers (OpenAI, Anthropic, OpenRouter, Ollama, LMStudio, MLX, HuggingFace, vLLM, openai-compatible)
 - Full streaming support with AsyncIterator
 - Session async maintains conversation history
 - Zero breaking changes to sync API
@@ -1828,7 +1695,7 @@ from abstractcore import create_llm
 
 # Example: Invalid OpenAI API key
 try:
-    llm = create_llm("openai", model="gpt-4o-mini", api_key="invalid-key")
+    llm = create_llm("openai", model="gpt-5-mini", api_key="invalid-key")
     llm.generate("test")
 except Exception as e:
     print(e)
@@ -1868,7 +1735,7 @@ from abstractcore import create_llm
 # OpenAI-compatible proxy (e.g., Portkey)
 llm = create_llm(
     "openai",
-    model="gpt-4o-mini",
+    model="gpt-5-mini",
     base_url="https://api.portkey.ai/v1",
     api_key="your-portkey-key"
 )
@@ -1884,7 +1751,7 @@ llm = create_llm(
 # OpenAI-compatible proxy for Anthropic
 llm = create_llm(
     "anthropic",
-    model="claude-sonnet-4-5-20250929",
+    model="claude-haiku-4-5",
     base_url="https://custom-proxy.example.com/v1",
     api_key="your-proxy-key"
 )
@@ -2135,7 +2002,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 1. POST `base_url` parameter (highest) - for dynamic routing
 2. Environment variable (`OPENAI_COMPATIBLE_BASE_URL`)
 3. Constructor `base_url` parameter
-4. Default: `http://localhost:8080/v1`
+4. Default: `http://localhost:1234/v1`
 
 ---
 
@@ -2145,12 +2012,12 @@ AbstractCore provides **consistent token terminology** and **transparent token c
 
 ```python
 from abstractcore import create_llm
-from abstractcore.utils.token_utils import estimate_tokens, calculate_token_budget
+from abstractcore.utils.token_utils import estimate_tokens
 
 # Unified token parameters
 llm = create_llm(
     "openai",
-    model="gpt-4o-mini",
+    model="gpt-5-mini",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -2177,7 +2044,7 @@ print(f"Raw usage: {response.usage}")               # Provider-specific token da
 print(f"Metadata: {response.metadata}")             # Additional context
 
 # Comprehensive summary with timing
-print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-5-mini | Tokens: 117 | Time: 1234.5ms"
 ```
 
 **Token Count Sources:**
@@ -2189,20 +2056,18 @@ print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Toke
 
 # Token estimation and validation
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="gpt-4o-mini")
+estimated = estimate_tokens(text, model="gpt-5-mini")
 print(f"Estimated tokens: {estimated}")
 
-# Budget-based token management
-budget = calculate_token_budget(
-    context_window=32000,
-    output_tokens=8000,
-    system_prompt="You are a helpful assistant.",
-    reserve_ratio=0.1  # Reserve 10% for safety
+# Estimate required max_tokens for a specific input + desired output
+recommended_max_tokens, warnings = llm.calculate_token_budget(
+    input_text=text,
+    desired_output_tokens=8000,
+    safety_margin=0.1,
 )
-
-print(f"Available input tokens: {budget['available_input']}")
-print(f"Reserved tokens: {budget['reserved']}")
-print(f"System prompt tokens: {budget['system_tokens']}")
+print(f"Recommended max_tokens: {recommended_max_tokens}")
+for w in warnings:
+    print(f"Warning: {w}")
 ```
 
 #### Provider-Specific Parameter Mapping
@@ -2211,7 +2076,7 @@ AbstractCore automatically maps unified parameters to provider-specific formats:
 
 ```python
 # Unified parameters work across all providers
-providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface"]
+providers = ["openai", "anthropic", "openrouter", "ollama", "lmstudio", "mlx", "huggingface", "vllm", "openai-compatible"]
 
 for provider in providers:
     llm = create_llm(
@@ -2231,75 +2096,20 @@ for provider in providers:
     # HuggingFace: max_length, max_new_tokens
 ```
 
-#### Token Budget Validation
-
-Automatic validation and warnings for token limits:
+#### Token Configuration Checks
 
 ```python
-# Enable token validation
-llm = create_llm(
-    "anthropic",
-    model="claude-3-5-haiku-latest",
-    max_tokens=200000,
-    max_output_tokens=8000,
-    validate_tokens=True,  # Enable validation
-    warn_threshold=0.9     # Warn at 90% capacity
-)
+# Validate configured limits (returns human-readable warnings)
+warnings = llm.validate_token_constraints()
+for w in warnings:
+    print(w)
 
-# Token usage monitoring
-response = llm.generate("Write a detailed analysis...")
-
-print(f"Input tokens: {response.usage.input_tokens}")
-print(f"Output tokens: {response.usage.output_tokens}")
-print(f"Total tokens: {response.usage.total_tokens}")
-print(f"Cost estimate: ${response.usage.cost_usd:.4f}")
-
-# Budget warnings
-if response.usage.input_ratio > 0.9:
-    print("Warning: Approaching input token limit")
-if response.usage.output_ratio > 0.9:
-    print("Warning: Approaching output token limit")
+# Response-level token access (works across providers)
+response = llm.generate("Hello")
+print(f"Input: {response.input_tokens} | Output: {response.output_tokens} | Total: {response.total_tokens}")
 ```
 
-#### Advanced Token Management
-
-```python
-from abstractcore.utils.token_utils import TokenManager
-
-# Create token manager for complex scenarios
-manager = TokenManager(
-    context_window=128000,
-    target_output=8000,
-    safety_margin=1000
-)
-
-# Chunk management for large inputs
-large_text = "..." # Very large text
-chunks = manager.chunk_text(
-    large_text,
-    chunk_size=manager.max_input_tokens,
-    overlap=200,
-    preserve_sentences=True
-)
-
-# Process chunks with budget tracking
-results = []
-for i, chunk in enumerate(chunks):
-    print(f"Processing chunk {i+1}/{len(chunks)}")
-
-    # Validate chunk fits in budget
-    if manager.validate_input(chunk):
-        response = llm.generate(chunk)
-        results.append(response.content)
-
-        # Update budget tracking
-        manager.update_usage(response.usage)
-    else:
-        print(f"Chunk {i+1} exceeds token budget, skipping")
-
-# Combine results
-final_result = manager.combine_results(results)
-```
+Chunking very large inputs is application-specific; use `estimate_tokens(...)` to split inputs before calling the model.
 
 ### Embeddings
 
@@ -2574,8 +2384,8 @@ gunicorn abstractcore.server.app:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.
 # Chat completions (OpenAI-compatible)
 POST /v1/chat/completions
 
-# Text completions
-POST /v1/completions
+# Provider-specific chat completions (explicit routing)
+POST /{provider}/v1/chat/completions
 
 # Embeddings
 POST /v1/embeddings
@@ -2583,15 +2393,14 @@ POST /v1/embeddings
 # OpenAI Responses API (100% Compatible)
 POST /v1/responses
 
-# Provider management
-GET /providers
-GET /providers/{provider_name}
-GET /providers/{provider_name}/models
+# Models (OpenAI-compatible list)
+GET /v1/models
 
-# Health and status
+# Provider discovery
+GET /providers
+
+# Health
 GET /health
-GET /status
-GET /metrics
 ```
 
 #### Provider Discovery API
@@ -2600,14 +2409,15 @@ GET /metrics
 # Get all available providers with comprehensive metadata
 curl http://localhost:8000/providers
 
-# Get specific provider information
-curl http://localhost:8000/providers/openai
+# Include model lists (slower)
+curl "http://localhost:8000/providers?include_models=true"
 
-# Get models for specific provider
-curl http://localhost:8000/providers/ollama/models
+# List models (optionally filter by provider and capabilities)
+curl "http://localhost:8000/v1/models?provider=ollama"
+curl "http://localhost:8000/v1/models?provider=ollama&input_type=image"
 
-# Provider status with error details
-curl http://localhost:8000/providers/status
+# Health check
+curl http://localhost:8000/health
 ```
 
 ### OpenAI-Compatible Usage
@@ -2665,7 +2475,7 @@ response = client.chat.completions.create(
 
 # Works with any provider
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-sonnet",
+    model="anthropic/claude-haiku-4-5",
     messages=[{"role": "user", "content": "Summarize @document.docx"}]
 )
 ```
@@ -2707,7 +2517,7 @@ response = client.chat.completions.create(
 
 # Mixed media (images, documents, data files)
 response = client.chat.completions.create(
-    model="anthropic/claude-sonnet-4-5",
+    model="anthropic/claude-haiku-4-5",
     messages=[{
         "role": "user",
         "content": [
@@ -2723,7 +2533,7 @@ with open("report.pdf", "rb") as f:
     pdf_data = base64.b64encode(f.read()).decode()
 
 response = client.chat.completions.create(
-    model="lmstudio/qwen/qwen3-next-80b",
+    model="lmstudio/qwen/qwen3-4b-2507",
     messages=[{
         "role": "user",
         "content": [
@@ -2878,7 +2688,7 @@ response = requests.post(
 response = requests.post(
     "http://localhost:8000/v1/responses",
     json={
-        "model": "lmstudio/qwen/qwen3-next-80b",
+        "model": "lmstudio/qwen/qwen3-4b-2507",
         "input": [
             {
                 "role": "user",
@@ -2901,7 +2711,7 @@ response = requests.post(
 response = requests.post(
     "http://localhost:8000/v1/responses",
     json={
-        "model": "anthropic/claude-3.5-sonnet",
+        "model": "anthropic/claude-haiku-4-5",
         "input": [
             {
                 "role": "user",
@@ -3116,256 +2926,105 @@ for line in response.iter_lines():
 #### Environment Variables
 
 ```bash
-# Server configuration
-export ABSTRACTCORE_HOST=0.0.0.0
-export ABSTRACTCORE_PORT=8000
-export ABSTRACTCORE_WORKERS=4
+# Enable verbose HTTP logging (server-side)
+export ABSTRACTCORE_DEBUG=true
 
-# Provider configuration
+# Provider credentials (same env vars as Python usage)
 export OPENAI_API_KEY=your_openai_key
 export ANTHROPIC_API_KEY=your_anthropic_key
+export OPENROUTER_API_KEY=your_openrouter_key
 export HUGGINGFACE_API_TOKEN=your_hf_token
 
-# Server features
-export ABSTRACTCORE_ENABLE_CORS=true
-export ABSTRACTCORE_MAX_REQUEST_SIZE=10485760  # 10MB
-export ABSTRACTCORE_REQUEST_TIMEOUT=300        # 5 minutes
-export ABSTRACTCORE_ENABLE_METRICS=true
+# Optional provider endpoints (when using local/self-hosted providers)
+export OLLAMA_BASE_URL="http://localhost:11434"
+export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
+export VLLM_BASE_URL="http://localhost:8000/v1"
+export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
 ```
 
-#### Custom Configuration
+#### Customization
 
-```python
-# custom_server.py
-from abstractcore.server.app import app
-from abstractcore.server.config import ServerConfig
-
-# Custom server configuration
-config = ServerConfig(
-    host="0.0.0.0",
-    port=8000,
-    enable_cors=True,
-    max_request_size=10 * 1024 * 1024,  # 10MB
-    request_timeout=300,                 # 5 minutes
-    enable_metrics=True,
-    log_level="INFO",
-    provider_timeout=60,                 # Provider timeout
-    default_provider="ollama",           # Default provider
-    enable_tool_conversion=True          # Enable tool format conversion
-)
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host=config.host, port=config.port)
-```
+The server is a FastAPI app. Configure host/port/workers via your ASGI runner (uvicorn/gunicorn); there is no separate `ServerConfig` wrapper.
 
 ### Production Deployment
 
-#### Docker Deployment
+Use standard ASGI runners (uvicorn/gunicorn) and pass host/port/workers via CLI flags:
 
-```dockerfile
-# Dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-EXPOSE 8000
-
-CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+```bash
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-#### Kubernetes Deployment
+### Monitoring
 
-```yaml
-# k8s-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: abstractcore-server
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: abstractcore-server
-  template:
-    metadata:
-      labels:
-        app: abstractcore-server
-    spec:
-      containers:
-      - name: abstractcore-server
-        image: abstractcore:latest
-        ports:
-        - containerPort: 8000
-        env:
-        - name: ABSTRACTCORE_WORKERS
-          value: "4"
-        - name: ABSTRACTCORE_ENABLE_METRICS
-          value: "true"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: abstractcore-service
-spec:
-  selector:
-    app: abstractcore-server
-  ports:
-  - port: 80
-    targetPort: 8000
-  type: LoadBalancer
-```
-
-### Monitoring and Observability
-
-```python
-# Access server metrics
-response = requests.get("http://localhost:8000/metrics")
-metrics = response.json()
-
-print(f"Total requests: {metrics['total_requests']}")
-print(f"Active connections: {metrics['active_connections']}")
-print(f"Average response time: {metrics['avg_response_time_ms']}ms")
-print(f"Provider status: {metrics['providers']}")
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/providers
+curl "http://localhost:8000/v1/models?provider=ollama"
 ```
 
 ### Benefits
 
 - **Drop-in OpenAI Replacement**: Use any provider through familiar OpenAI API
 - **Agent CLI Compatible**: Automatic tool call format conversion
-- **Production Ready**: Request tracking, metrics, health checks
+- **Production Ready**: Health endpoint + provider discovery
 - **Multi-Provider Routing**: Route to any provider using model prefix
 - **Comprehensive Logging**: Structured logs with request tracing
-- **Scalable**: Supports horizontal scaling with load balancers
+- **Scalable**: Supports horizontal scaling with standard ASGI runners
 
 ## Production Resilience
 
 Enterprise-grade error handling, retries, and circuit breaker patterns for robust applications:
 
-### RetryManager and Circuit Breaker
+### Retries and Circuit Breaker
 
 ```python
 from abstractcore import create_llm
-from abstractcore.resilience import RetryManager, CircuitBreaker
+from abstractcore.core.retry import RetryConfig
 
-# Configure retry strategy
-retry_manager = RetryManager(
-    max_attempts=3,              # Maximum retry attempts
-    backoff_strategy="exponential",  # exponential, linear, fixed
-    base_delay=1.0,             # Base delay in seconds
-    max_delay=30.0,             # Maximum delay between retries
-    jitter=True,                # Add randomness to prevent thundering herd
-    retry_exceptions=[           # Which exceptions to retry
-        "ConnectionError",
-        "TimeoutError",
-        "RateLimitError"
-    ]
-)
-
-# Configure circuit breaker
-circuit_breaker = CircuitBreaker(
-    failure_threshold=5,         # Failures before opening circuit
-    success_threshold=3,         # Successes needed to close circuit
-    timeout=60,                  # Seconds to wait before trying again
-    monitor_window=300          # Time window for failure counting
-)
-
-# Create LLM with resilience features
 llm = create_llm(
     "openai",
-    model="gpt-4o-mini",
-    retry_manager=retry_manager,
-    circuit_breaker=circuit_breaker
+    model="gpt-5-mini",
+    retry_config=RetryConfig(
+        max_attempts=3,
+        initial_delay=1.0,
+        max_delay=30.0,
+        use_jitter=True,
+        failure_threshold=5,
+        recovery_timeout=60.0,
+    ),
 )
 
-# Resilient generation with automatic retries
 response = llm.generate("What is the capital of France?")
-# Automatically retries on transient failures
 ```
 
 ### Recovery Timeout Management
 
 ```python
-from abstractcore.resilience import TimeoutManager
+from abstractcore import BasicSession, create_llm
 
-# Configure comprehensive timeout strategy
-timeout_manager = TimeoutManager(
-    connection_timeout=10,       # Connection establishment timeout
-    read_timeout=60,            # Response read timeout
-    total_timeout=120,          # Total request timeout
-    recovery_timeout=30,        # Time to wait before retry after failure
-    adaptive_timeout=True,      # Adjust timeouts based on response patterns
-    timeout_multiplier=1.5      # Multiplier for progressive timeout increases
-)
-
-# Apply to LLM
-llm = create_llm(
-    "anthropic",
-    model="claude-3-5-haiku-latest",
-    timeout_manager=timeout_manager
-)
-
-# Session-level timeout management
-from abstractcore import BasicSession
+llm = create_llm("anthropic", model="claude-haiku-4-5", timeout=45.0, tool_timeout=120.0)
+llm.set_recovery_timeout(60.0)  # Circuit breaker recovery timeout (seconds)
 
 session = BasicSession(llm)
-session.set_timeout(45)              # Default timeout for all operations
-session.set_tool_timeout(120)        # Specific timeout for tool execution
-session.set_recovery_timeout(60)     # Recovery timeout after failures
+session.set_timeout(45.0)
+session.set_tool_timeout(120.0)
+session.set_recovery_timeout(60.0)
 
-# Get current timeout settings
-timeouts = session.get_timeout_config()
-print(f"Generation timeout: {timeouts['generation']}")
-print(f"Tool timeout: {timeouts['tool']}")
-print(f"Recovery timeout: {timeouts['recovery']}")
+print(llm.get_timeout(), llm.get_tool_timeout(), llm.get_recovery_timeout())
 ```
 
 ### Automatic Backoff Strategies
 
 ```python
-from abstractcore.resilience import BackoffStrategy
+from abstractcore.core.retry import RetryConfig
 
-# Exponential backoff with jitter
-exponential_backoff = BackoffStrategy(
-    strategy="exponential",
-    base_delay=1.0,
-    max_delay=60.0,
-    multiplier=2.0,
-    jitter=True,                # Adds ±25% randomness
-    jitter_range=0.25
-)
-
-# Linear backoff
-linear_backoff = BackoffStrategy(
-    strategy="linear",
-    base_delay=2.0,
-    increment=1.5,
-    max_delay=30.0
-)
-
-# Custom backoff function
-def custom_backoff(attempt, context):
-    """Custom backoff based on error type and provider load."""
-    if context.error_type == "RateLimitError":
-        return min(60, 2 ** attempt)  # Exponential for rate limits
-    elif context.provider_load > 0.8:
-        return 5 + attempt * 2        # Linear increase when provider busy
-    else:
-        return 1                      # Fast retry for other errors
-
-custom_backoff_strategy = BackoffStrategy(
-    strategy="custom",
-    custom_function=custom_backoff
-)
-
-# Apply backoff strategy
-llm = create_llm(
-    "ollama",
-    model="qwen3-coder:30b",
-    backoff_strategy=exponential_backoff
+# Backoff is configured via RetryConfig (exponential backoff + optional jitter).
+retry_config = RetryConfig(
+    max_attempts=5,
+    initial_delay=0.5,
+    max_delay=20.0,
+    exponential_base=2.0,
+    use_jitter=True,
 )
 ```
 
@@ -3373,172 +3032,90 @@ llm = create_llm(
 
 ```python
 from abstractcore.exceptions import (
-    AbstractCoreError,           # Base exception
-    ProviderAPIError,           # Provider-specific API errors
-    ModelNotFoundError,         # Model not available
-    AuthenticationError,        # Invalid credentials
-    RateLimitError,            # Rate limit exceeded
-    TimeoutError,              # Request timeout
-    ValidationError,           # Input validation failed
-    TokenLimitError,           # Token limit exceeded
-    CircuitBreakerError        # Circuit breaker open
+    AbstractCoreError,
+    ProviderAPIError,
+    ModelNotFoundError,
+    AuthenticationError,
+    RateLimitError,
+    InvalidRequestError,
+    UnsupportedFeatureError,
 )
 
 try:
     response = llm.generate("Complex request")
+except AuthenticationError as e:
+    print(f"Auth error: {e}")
+except ModelNotFoundError as e:
+    print(f"Model error: {e}")
 except RateLimitError as e:
-    print(f"Rate limited: {e.retry_after} seconds")
-    print(f"Provider: {e.provider}")
-    print(f"Current usage: {e.current_usage}")
-
-except TokenLimitError as e:
-    print(f"Token limit exceeded: {e.token_count}/{e.token_limit}")
-    print(f"Suggestion: {e.suggestion}")
-
-except CircuitBreakerError as e:
-    print(f"Service unavailable: {e.estimated_recovery_time}")
-    print(f"Failure count: {e.failure_count}")
-
+    print(f"Rate limit: {e}")
+except InvalidRequestError as e:
+    print(f"Invalid request: {e}")
+except UnsupportedFeatureError as e:
+    print(f"Unsupported feature: {e}")
 except ProviderAPIError as e:
-    print(f"Provider error: {e.provider_message}")
-    print(f"Error code: {e.error_code}")
-    print(f"Retryable: {e.is_retryable}")
-
+    print(f"Provider API error (includes circuit-breaker open): {e}")
 except AbstractCoreError as e:
     print(f"AbstractCore error: {e}")
-    print(f"Context: {e.context}")
 ```
 
 ### Health Checks and Monitoring
 
 ```python
-from abstractcore.resilience import HealthChecker
+from abstractcore import create_llm
 
-# Configure health monitoring
-health_checker = HealthChecker(
-    check_interval=30,          # Health check every 30 seconds
-    failure_threshold=3,        # Mark unhealthy after 3 failures
-    success_threshold=2,        # Mark healthy after 2 successes
-    check_timeout=10,          # Timeout for health checks
-    checks=[
-        "provider_connectivity",
-        "model_availability",
-        "token_limits",
-        "response_latency"
-    ]
-)
-
-# Monitor provider health
-llm = create_llm(
-    "openai",
-    model="gpt-4o-mini",
-    health_checker=health_checker
-)
-
-# Check current health status
-health_status = llm.get_health_status()
-print(f"Provider healthy: {health_status['healthy']}")
-print(f"Last check: {health_status['last_check']}")
-print(f"Response time: {health_status['avg_response_time']}ms")
-print(f"Success rate: {health_status['success_rate']}%")
-
-# Automatic failover based on health
-if not health_status['healthy']:
-    # Automatically switch to backup provider
-    backup_llm = create_llm("anthropic", model="claude-haiku-4-5")
-    response = backup_llm.generate("Fallback request")
+primary = create_llm("openai", model="gpt-5-mini")
+health = primary.health(timeout=2.0)
+if not health["status"]:
+    primary = create_llm("anthropic", model="claude-haiku-4-5")
 ```
 
 ### Production Configuration Patterns
 
 ```python
-# Production-ready configuration
 from abstractcore import create_llm
-from abstractcore.resilience import ProductionConfig
+from abstractcore.core.retry import RetryConfig
 
-# Pre-configured production settings
-production_config = ProductionConfig(
-    # Retry configuration
-    max_retries=3,
-    retry_delay=1.0,
-    retry_backoff=2.0,
-
-    # Circuit breaker
-    circuit_failure_threshold=5,
-    circuit_timeout=60,
-
-    # Timeouts
-    connection_timeout=10,
-    read_timeout=60,
-    total_timeout=120,
-
-    # Health monitoring
-    health_check_interval=30,
-    health_failure_threshold=3,
-
-    # Error handling
-    log_all_errors=True,
-    alert_on_circuit_open=True,
-    metrics_collection=True
-)
-
-# Apply production configuration
 llm = create_llm(
     "openai",
-    model="gpt-4o-mini",
-    production_config=production_config
-)
-
-# Session with production resilience
-session = BasicSession(
-    llm,
-    production_config=production_config,
-    auto_recovery=True,          # Automatically recover from failures
-    persistence_enabled=True,    # Persist conversation through failures
-    checkpoint_interval=10       # Save checkpoint every 10 messages
+    model="gpt-5-mini",
+    timeout=30.0,
+    tool_timeout=120.0,
+    retry_config=RetryConfig(max_attempts=3),
 )
 ```
 
 ### Graceful Degradation
 
 ```python
-from abstractcore.resilience import GracefulDegradation
+from abstractcore import create_llm
 
-# Configure fallback strategies
-degradation = GracefulDegradation(
-    fallback_providers=["anthropic", "ollama"],  # Fallback order
-    reduce_quality=True,         # Use faster/smaller models if needed
-    cache_responses=True,        # Cache for offline scenarios
-    offline_mode=True           # Enable offline capabilities
-)
+fallback_chain = [
+    ("openai", {"model": "gpt-5-mini"}),
+    ("anthropic", {"model": "claude-haiku-4-5"}),
+    ("ollama", {"model": "qwen3:4b-instruct"}),
+]
 
-# LLM with graceful degradation
-llm = create_llm(
-    "openai",
-    model="gpt-4o",
-    graceful_degradation=degradation
-)
+llm = None
+for provider_name, kwargs in fallback_chain:
+    try:
+        candidate = create_llm(provider_name, **kwargs)
+        if candidate.health(timeout=2.0)["status"]:
+            llm = candidate
+            break
+    except Exception:
+        continue
 
-# Automatically handles provider failures
-try:
-    response = llm.generate("Complex analysis task")
-    # Will automatically:
-    # 1. Retry with exponential backoff
-    # 2. Switch to Anthropic if OpenAI fails
-    # 3. Switch to Ollama if both cloud providers fail
-    # 4. Use cached response if all providers fail
-except Exception as e:
-    print(f"All fallback strategies exhausted: {e}")
+if llm is None:
+    raise RuntimeError("No healthy providers available")
 ```
 
 ### Benefits
 
-- **Enterprise Reliability**: Circuit breakers and retry mechanisms prevent cascading failures
-- **Intelligent Backoff**: Prevents overwhelming providers with failed requests
-- **Automatic Recovery**: Self-healing systems with minimal manual intervention
-- **Comprehensive Monitoring**: Health checks and metrics for proactive issue detection
-- **Graceful Degradation**: Maintains functionality even during partial system failures
-- **Production Ready**: Battle-tested patterns for high-availability applications
+- **Retries + Circuit Breaker**: Built-in via `RetryConfig` (exponential backoff + jitter)
+- **Timeout Controls**: `timeout`, `tool_timeout`, and `set_recovery_timeout()`
+- **Health Checks**: `llm.health(timeout=...)` for proactive routing/fallback
+- **Composable Fallback**: Implement provider chains in your orchestrator/runtime
 
 ## Debug Capabilities and Self-Healing JSON
 
@@ -3546,7 +3123,7 @@ Robust debugging and error recovery features:
 
 ```bash
 # Debug raw LLM responses for troubleshooting
-judge document.txt --debug --provider lmstudio --model qwen/qwen3-next-80b
+judge document.txt --debug --provider lmstudio --model qwen/qwen3-4b-2507
 
 # Automatic JSON self-repair handles truncated/malformed responses
 # Uses self_fixes.py for intelligent error recovery

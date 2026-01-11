@@ -38,7 +38,7 @@ def calculate(expression: str) -> float:
         return float('nan')
 
 # Works with ANY provider
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate(
     "What's the weather in Tokyo and what's 15 * 23?",
     tools=[get_weather, calculate]  # Pass functions directly
@@ -47,10 +47,16 @@ response = llm.generate(
 print(response.content)
 # Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
 
-# The response object contains rich information about tool execution
-print(f"Tools executed: {len(response.tool_calls) if response.tool_calls else 0}")
+# By default (`execute_tools=False`), AbstractCore does not execute tools.
+# Instead, it returns structured tool calls (if the model chose to call tools).
+print(f"Tool calls requested: {len(response.tool_calls) if response.tool_calls else 0}")
 print(f"Generation time: {response.gen_time}ms")
 print(f"Summary: {response.get_summary()}")  # Includes tool count
+
+# Inspect tool calls (host/runtime executes them)
+if response.tool_calls:
+    for call in response.tool_calls:
+        print(f"Tool: {call.get('name')} args={call.get('arguments')}")
 ```
 
 ## The @tool Decorator
@@ -297,7 +303,7 @@ For providers with native tool APIs (OpenAI, Anthropic):
 
 ```python
 # OpenAI with native tool support
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate("What's the weather?", tools=[get_weather])
 ```
 
@@ -307,13 +313,13 @@ For providers without native tool support (Ollama, MLX, LMStudio):
 
 ```python
 # Ollama without native tool support - AbstractCore handles this automatically
-llm = create_llm("ollama", model="qwen3-coder:30b")
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 response = llm.generate("What's the weather?", tools=[get_weather])
 # AbstractCore automatically:
 # 1. Detects the model architecture (Qwen3)
 # 2. Formats tools with examples into system prompt
 # 3. Parses tool calls from response using <|tool_call|> format
-# 4. Executes tools locally and returns results
+# 4. Returns structured tool call requests in response.tool_calls
 ```
 
 ## Tool Definition
@@ -364,15 +370,16 @@ def complex_tool(
 
 ## Tool Execution
 
-### Execution Flow
+### Execution Modes
 
-1. **LLM generates response** with tool calls
-2. **AbstractCore detects** tool calls in the response
-3. **Event system emits** `TOOL_STARTED` (preventable)
-4. **Tools execute locally** in AbstractCore (not by provider)
-5. **Results collected** and error handling applied
-6. **Event system emits** `TOOL_COMPLETED` with results
-7. **Results integrated** into the final response
+- **Passthrough mode (default)**: `execute_tools=False`
+  - AbstractCore returns structured tool calls in `GenerateResponse.tool_calls`.
+  - By default (`tool_call_tags is None`), tool-call markup is stripped from `GenerateResponse.content`.
+  - A host/runtime executes tools (recommended for servers and agent loops).
+
+- **Direct execution mode (deprecated)**: `execute_tools=True`
+  - AbstractCore parses and executes tools locally via the tool registry and appends results to `content`.
+  - Intended for simple scripts only; avoid in server/untrusted environments.
 
 ### Architecture-Aware Tool Call Detection
 
@@ -387,14 +394,9 @@ AbstractCore automatically detects model architecture and uses the appropriate t
 
 **Note:** AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.
 
-### Local Execution
+### Execution Responsibility (Recommended)
 
-All tools execute locally in AbstractCore, ensuring:
-
-- **Consistent behavior** across all providers
-- **Security control** through event system
-- **Error handling** and validation
-- **Performance monitoring**
+In passthrough mode, `response.tool_calls` are tool call *requests*. Execute them in your host/runtime (and apply your own safety policy) before sending tool results back to the model in a follow-up turn.
 
 ## Advanced Patterns
 
@@ -420,26 +422,36 @@ response = llm.generate(
     "What's the weather like for user123?",
     tools=[get_user_location, get_weather]
 )
-# LLM will first call get_user_location, then get_weather with the result
+# In an agent loop, your host/runtime can execute tool calls and feed tool results back into the model for multi-step chaining.
 ```
 
-### Conditional Tool Execution
+### Conditional Tool Execution (Recommended)
 
-Use the event system to control tool execution:
+In passthrough mode, your host/runtime decides which tool calls to execute:
 
 ```python
-from abstractcore.events import EventType, on_global
+from abstractcore.tools import ToolCall, ToolRegistry
 
-def security_check(event):
-    """Prevent execution of dangerous tools."""
-    dangerous_tools = ['delete_file', 'system_command', 'send_email']
-    
-    for tool_call in event.data.get('tool_calls', []):
-        if tool_call.name in dangerous_tools:
-            print(f"Blocking dangerous tool: {tool_call.name}")
-            event.prevent()  # Stop execution
+dangerous_tools = {"delete_file", "system_command", "send_email"}
 
-on_global(EventType.TOOL_STARTED, security_check)
+registry = ToolRegistry()
+registry.register(get_user_location)
+registry.register(get_weather)
+
+response = llm.generate("What's the weather like for user123?", tools=[get_user_location, get_weather])
+
+for call in response.tool_calls or []:
+    name = call.get("name")
+    if name in dangerous_tools:
+        continue
+    result = registry.execute_tool(
+        ToolCall(
+            name=name,
+            arguments=call.get("arguments") or {},
+            call_id=call.get("call_id") or call.get("id"),
+        )
+    )
+    print(result)
 ```
 
 ### Async Tool Support
@@ -598,202 +610,16 @@ def expensive_calculation(input_data: str) -> str:
 
 ## Tool Syntax Rewriting
 
-AbstractCore provides comprehensive tool call format conversion for compatibility with different agentic CLIs and environments. This system works at two levels:
+AbstractCore can rewrite tool-call syntax for downstream agents/clients:
 
-### Core Library (Python API) - Tag Rewriter
+- **Python API**: pass `tool_call_tags=...` to `generate()` / `agenerate()` / `BasicSession.generate()` to preserve and rewrite tool-call markup in `content`.
+- **HTTP server**: set the `agent_format` request field (or rely on auto-detection based on `User-Agent` + model name).
 
-Used when calling LLMs directly via Python. Handles real-time tag rewriting for streaming responses.
-
-#### Quick Start
-
-```python
-from abstractcore import create_llm
-
-# Automatic format detection and conversion
-llm = create_llm("ollama", model="qwen3-coder:30b")
-
-response = llm.generate(
-    "What's the weather in Paris?",
-    tools=[get_weather]
-)
-
-# Tool calls automatically normalized
-print(response.tool_calls)
-```
-
-#### Custom Tag Configuration
-
-For specific agentic CLI requirements:
-
-```python
-from abstractcore import create_llm
-
-# Option 1: Simple tag name (auto-formatted with angle brackets)
-llm = create_llm(
-    "ollama",
-    model="qwen3-coder:30b",
-    tool_call_tags="mytag"  # Becomes: <mytag>...JSON...</mytag>
-)
-
-# Option 2: Exact tag control (comma-separated, no auto-formatting)
-llm = create_llm(
-    "ollama", 
-    model="qwen3-coder:30b",
-    tool_call_tags="ojlk,dfsd"  # Becomes: ojlk...JSON...dfsd (exact)
-)
-
-# Option 3: ToolCallTags object for full control
-from abstractcore.tools.tag_rewriter import ToolCallTags
-
-custom_tags = ToolCallTags(
-    start_tag="<custom_tool>",
-    end_tag="</custom_tool>",
-    preserve_json=True,
-    auto_format=False  # Use tags exactly as specified
-)
-
-llm = create_llm(
-    "ollama",
-    model="qwen3-coder:30b",
-    tool_call_tags=custom_tags
-)
-```
-
-#### Predefined CLI Formats
-
-Built-in support for popular agentic CLIs:
-
-```python
-from abstractcore.tools.tag_rewriter import create_tag_rewriter
-
-# Codex CLI
-rewriter = create_tag_rewriter("codex")  # Qwen3 format
-
-# Crush CLI  
-rewriter = create_tag_rewriter("crush")  # LLaMA3 format
-
-# Gemini CLI
-rewriter = create_tag_rewriter("gemini")  # XML format
-
-# Available: "qwen3", "llama3", "xml", "gemma", "codex", "crush", "gemini", "openai", "anthropic"
-```
-
-#### Streaming Support
-
-Tag rewriting works seamlessly with streaming:
-
-```python
-for chunk in llm.generate(
-    "List files in my project",
-    tools=[list_files_tool],
-    stream=True
-):
-    print(chunk.content, end="")
-    
-    # Tool calls converted in real-time
-    if chunk.tool_calls:
-        for tool_call in chunk.tool_calls:
-            result = execute_tool(tool_call)
-```
-
-### Server (REST API) - Syntax Rewriter
-
-Used by the AbstractCore server to convert tool call formats for HTTP API clients.
-
-#### Agent Format Parameter
-
-Specify the target format explicitly:
-
-```bash
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "ollama/qwen3-coder:30b",
-    "messages": [{"role": "user", "content": "Get weather in Paris"}],
-    "tools": [...],
-    "agent_format": "codex"
-  }'
-```
-
-**Supported agent_format values:**
-- `"passthrough"` - No conversion (OpenAI models)
-- `"openai"` - OpenAI format
-- `"codex"` - Codex CLI format
-- `"qwen3"` - Qwen3 format
-- `"llama3"` - LLaMA3 format
-- `"gemma"` - Gemma format
-- `"xml"` - XML format
-
-#### Automatic Format Detection
-
-The server auto-detects format based on:
-
-1. **Custom Headers**: `X-Agent-Type: codex`
-2. **User Agent**: Detects Codex and other CLIs
-3. **Model Name**: Matches model patterns (qwen → qwen3, llama → llama3)
-4. **Default**: OpenAI format for maximum compatibility
-
-```bash
-# Using custom header
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "X-Agent-Type: codex" \
-  -H "Content-Type: application/json" \
-  -d '{...}'
-```
-
-#### OpenAI Format Conversion
-
-For OpenAI-compatible clients:
-
-```python
-import openai
-
-# Point to AbstractCore server
-client = openai.OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="not-needed"
-)
-
-# Works with any model via AbstractCore
-response = client.chat.completions.create(
-    model="ollama/qwen3-coder:30b",  # Non-OpenAI model
-    messages=[{"role": "user", "content": "What's the weather?"}],
-    tools=[...]
-)
-
-# Tool calls automatically in OpenAI format
-print(response.choices[0].message.tool_calls)
-```
-
-### Supported Input Formats
-
-Both systems detect and convert from these formats:
-
-| Model Family | Input Format | Example |
-|-------------|--------------|---------|
-| Qwen3 | `<|tool_call|>...JSON...</|tool_call|>` | Qwen3-Coder, Qwen3-Chat |
-| LLaMA3 | `<function_call>...JSON...</function_call>` | LLaMA3, Mistral |
-| Gemma | `` `tool_code...JSON...` `` | Gemma-2, CodeGemma |
-| XML | `<tool_call>...JSON...</tool_call>` | Claude, custom |
-| OpenAI | Structured API response | GPT-4, GPT-3.5 |
-
-### Performance Characteristics
-
-**Tag Rewriter (Core Library)**
-- **First Chunk Latency**: <5ms
-- **Conversion Overhead**: <1ms per chunk
-- **Memory**: Constant, O(1)
-- **Streaming**: Real-time, zero buffering for simple tags
-
-**Syntax Rewriter (Server)**
-- **Conversion Time**: <10ms per response
-- **Batch Support**: Handles multiple tool calls
-- **Memory**: O(n) where n = content length
-- **Caching**: Pattern compilation cached
+See: [Tool Call Syntax Rewriting](tool-syntax-rewriting.md)
 
 ## Event System Integration
 
-Monitor and control tool execution through events:
+Observe tool calling and (optional) tool execution through events:
 
 ### Cost Monitoring
 
@@ -802,10 +628,9 @@ from abstractcore.events import EventType, on_global
 
 def monitor_tool_costs(event):
     """Monitor costs of tool executions."""
-    tool_calls = event.data.get('tool_calls', [])
-    for tool_call in tool_calls:
-        if tool_call.name in ['expensive_api_call', 'premium_service']:
-            print(f"Warning: Using expensive tool {tool_call.name}")
+    for call in event.data.get("tool_calls", []) or []:
+        if call.get("name") in {"expensive_api_call", "premium_service"}:
+            print(f"Warning: Using expensive tool {call.get('name')}")
 
 on_global(EventType.TOOL_STARTED, monitor_tool_costs)
 ```
@@ -814,12 +639,10 @@ on_global(EventType.TOOL_STARTED, monitor_tool_costs)
 
 ```python
 def track_tool_performance(event):
-    """Track tool execution performance."""
-    duration = event.data.get('duration_ms', 0)
-    tool_name = event.data.get('tool_name', 'unknown')
-    
-    if duration > 5000:  # More than 5 seconds
-        print(f"Slow tool execution: {tool_name} took {duration}ms")
+    """Track tool execution outcomes (shape varies by emitter)."""
+    for result in event.data.get("tool_results", []) or []:
+        if result.get("success") is False:
+            print(f"Tool failed: {result.get('name')} error={result.get('error')}")
 
 on_global(EventType.TOOL_COMPLETED, track_tool_performance)
 ```
@@ -829,11 +652,10 @@ on_global(EventType.TOOL_COMPLETED, track_tool_performance)
 ```python
 def audit_tool_usage(event):
     """Audit all tool usage for security."""
-    tool_calls = event.data.get('tool_calls', [])
-    for tool_call in tool_calls:
-        print(f"Tool used: {tool_call.name} with args: {tool_call.arguments}")
+    for call in event.data.get("tool_calls", []) or []:
+        print(f"Tool requested: {call.get('name')} args={call.get('arguments')}")
         # Log to security audit system
-        security_log(tool_call.name, tool_call.arguments)
+        security_log(call.get("name"), call.get("arguments"))
 
 on_global(EventType.TOOL_STARTED, audit_tool_usage)
 ```

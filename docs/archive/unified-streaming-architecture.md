@@ -54,7 +54,8 @@ def process_stream(self, response_stream):
         # Tools can be processed separately by the client
         if completed_tools:
             for tool_call in completed_tools:
-                tool_call.execute()
+                # Execute in your host/runtime (e.g., via ToolRegistry or your own executor)
+                print(tool_call)
 ```
 
 ## Supported Tool Call Formats

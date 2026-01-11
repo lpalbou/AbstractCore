@@ -290,7 +290,7 @@ The CLI provides convenient commands for session management:
 
 - Sessions contain complete conversation history
 - Metadata may include sensitive information (usernames, locations)
-- Tool execution results are preserved (may contain file contents, etc.)
+- If your host/runtime appends tool results into the conversation, those results will be preserved (and may contain file contents, etc.)
 - Store sessions securely and consider data retention policies
 
 ## Migration and Compatibility
