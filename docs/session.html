@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Session Management - AbstractCore</title>
     <meta name="description" content="Comprehensive guide to AbstractCore's session management system with persistent conversations, analytics, and serialization.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -77,7 +77,7 @@
                         <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
 # Create LLM provider
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Create session with system prompt
 session = BasicSession(
@@ -293,7 +293,7 @@ for file_path in session_files:
   "created_at": "2025-01-14T10:30:00Z",
   "updated_at": "2025-01-14T10:45:00Z",
   "provider_name": "OpenAIProvider",
-  "model_name": "gpt-4o-mini",
+  "model_name": "gpt-5-mini",
   "system_prompt": "You are a helpful assistant.",
   "parameters": {
     "max_tokens": 16384,

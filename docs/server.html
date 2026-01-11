@@ -7,7 +7,7 @@
     <title>HTTP Server Guide - AbstractCore</title>
     <meta name="description"
         content="Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
         rel="stylesheet">
@@ -33,7 +33,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -83,7 +83,7 @@ curl http://localhost:8000/health
                                         <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "openai/gpt-4o-mini",
+	    "model": "openai/gpt-5-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'</code></pre>
 
@@ -99,7 +99,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="anthropic/claude-3-5-haiku-latest",
+    model="anthropic/claude-haiku-4-5",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 print(response.choices[0].message.content)</code></pre>
@@ -116,14 +116,13 @@ print(response.choices[0].message.content)</code></pre>
                             <pre><code class="language-bash"># Provider API keys
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENROUTER_API_KEY="sk-or-..."
 
-# Local providers
+# Local / self-hosted endpoints
 export OLLAMA_HOST="http://localhost:11434"
-export LMSTUDIO_HOST="http://localhost:1234"
-
-# Default settings
-export ABSTRACTCORE_DEFAULT_PROVIDER=openai
-export ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
+export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
+export VLLM_BASE_URL="http://localhost:8000/v1"
+export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
 
 # Debug mode
 export ABSTRACTCORE_DEBUG=true</code></pre>
@@ -167,7 +166,7 @@ uvicorn abstractcore.server.app:app --port 3000</code></pre>
                             <p><strong>Key Parameters:</strong></p>
                             <ul>
                                 <li><code>model</code> (required): Format <code>"provider/model-name"</code> (e.g.,
-                                    <code>"openai/gpt-4o-mini"</code>)</li>
+                                    <code>"openai/gpt-5-mini"</code>)</li>
                                 <li><code>messages</code> (required): Array of message objects</li>
                                 <li><code>stream</code> (optional): Enable streaming responses</li>
                                 <li><code>tools</code> (optional): Tools for function calling</li>
@@ -184,7 +183,7 @@ uvicorn abstractcore.server.app:app --port 3000</code></pre>
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 
 stream = client.chat.completions.create(
-    model="ollama/llama3.2:3b",
+    model="ollama/qwen3:4b-instruct",
     messages=[{"role": "user", "content": "Write a story"}],
     stream=True
 )
@@ -241,7 +240,7 @@ for chunk in stream:
 response = requests.post(
     "http://localhost:8000/v1/responses",
     json={
-        "model": "anthropic/claude-3.5-sonnet",
+        "model": "anthropic/claude-haiku-4-5",
         "input": [{
             "role": "user",
             "content": [
@@ -338,13 +337,13 @@ response = client.chat.completions.create(
 
 # Works with any provider
 response = client.chat.completions.create(
-    model="anthropic/claude-3.5-sonnet",
+    model="anthropic/claude-haiku-4-5",
     messages=[{"role": "user", "content": "Summarize @document.docx"}]
 )
 
 # Multiple files
 response = client.chat.completions.create(
-    model="ollama/llama3.2:3b",
+    model="ollama/qwen3:4b-instruct",
     messages=[{"role": "user", "content": "Compare @file1.pdf, @file2.pdf, and @data.csv"}]
 )</code></pre>
                                                 </div>
@@ -416,19 +415,18 @@ curl http://localhost:8000/v1/models?provider=ollama</code></pre>
                                                                             <div class="code-block">
                                                                                 <pre><code class="language-bash">curl http://localhost:8000/providers
 # Returns: Complete provider metadata including:
-# - Model counts (130+ models on our test instance - it will vary on yours depending of the providers and models you install)
+# - Model counts (varies by provider availability and local endpoints)
 # - Supported features (tools, streaming, etc.)
 # - Authentication requirements
 # - Local vs cloud provider status</code></pre>
                                                                             </div>
 
                                                                             <h4 style="margin: 1rem 0 0.5rem 0;">GET
-                                                                                /providers/{provider}/models</h4>
-                                                                            <p style="margin: 0 0 1rem 0;">Models for
-                                                                                specific provider with detailed
-                                                                                information.</p>
+                                                                                /providers?include_models=true</h4>
+                                                                            <p style="margin: 0 0 1rem 0;">Include model
+                                                                                lists per provider (slower).</p>
                                                                             <div class="code-block">
-                                                                                <pre><code class="language-bash">curl http://localhost:8000/providers/ollama/models</code></pre>
+                                                                                <pre><code class="language-bash">curl "http://localhost:8000/providers?include_models=true"</code></pre>
                                                                             </div>
 
                                                                             <div
@@ -446,67 +444,69 @@ curl http://localhost:8000/v1/models?provider=ollama</code></pre>
                 <!-- Agentic CLI Integration -->
                 <section style="margin-bottom: 3rem;">
                     <h2>🤖 Agentic CLI Integration</h2>
-                    <p>Use AbstractCore server with agentic CLI tools like Codex, Crush, and Gemini CLI.</p>
+                    <p>Use AbstractCore server as an OpenAI-compatible gateway for agentic CLIs (Codex, Crush, Gemini CLI, …).</p>
 
-                    <div
-                        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
-                        <div
-                            style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
-                            <h3 style="margin: 0 0 1rem 0;">Codex CLI (Qwen3 Format)</h3>
+                    <div style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--text-primary);">Start the server</h3>
+                        <div class="code-block">
+                            <pre><code class="language-bash">uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000</code></pre>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
+                        <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
+                            <h3 style="margin: 0 0 1rem 0;">Codex CLI (Codex/OpenAI format)</h3>
                             <div class="code-block">
-                                <pre><code class="language-bash"># Setup with tool syntax rewriting
-export OPENAI_BASE_URL="http://localhost:8000/v1"
-export OPENAI_API_KEY="unused"
-export ABSTRACTCORE_TOOL_FORMAT="qwen3"  # <|tool_call|>...JSON...</|tool_call|>
-
-# Use with any model
-codex --model "ollama/llama3.2:3b" "Write a factorial function"</code></pre>
-
-                                <div
-                                    style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
-                                    <h3 style="margin: 0 0 1rem 0;">Crush CLI (LLaMA3 format)</h3>
-                                    <div class="code-block">
-                                        <pre><code class="language-bash"># Configure server
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Configure CLI
+                                <pre><code class="language-bash"># Point Codex CLI to AbstractCore server (OpenAI-compatible)
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
-# Use
-crush --model "anthropic/claude-3-5-haiku-latest" "Explain this code"</code></pre>
+# Use any provider/model behind AbstractCore
+codex --model "ollama/qwen3:4b-instruct" "Write a factorial function"</code></pre>
+                            </div>
+                            <p style="margin: 1rem 0 0 0; color: var(--text-secondary); font-size: 0.9rem;">
+                                Tip: the server can auto-detect client formats from <code>User-Agent</code>; override via <code>agent_format</code> when using raw HTTP.
+                            </p>
+                        </div>
 
-                                        <div
-                                            style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
-                                            <h3 style="margin: 0 0 1rem 0;">Gemini CLI (XML format)</h3>
-                                            <div class="code-block">
-                                                <pre><code class="language-bash"># Configure server
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Configure CLI
-export OPENAI_BASE_URL="http://localhost:8000/v1"
+                        <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
+                            <h3 style="margin: 0 0 1rem 0;">Crush CLI (LLaMA3 tags)</h3>
+                            <div class="code-block">
+                                <pre><code class="language-bash">export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
 
-# Use
-gemini-cli --model "ollama/llama3.2:3b" "Review this project"</code></pre>
+crush --model "anthropic/claude-haiku-4-5" "Explain this code"</code></pre>
+                            </div>
+                        </div>
 
-                                                <div
-                                                    style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                                                    <h3 style="margin: 0 0 1rem 0; color: var(--text-primary);">🔧 Tool
-                                                        Call Format Configuration</h3>
-                                                    <div class="code-block">
-                                                        <pre><code class="language-bash"># Set format for your CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=qwen3    # Codex CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3   # Crush CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml      # Gemini CLI
+                        <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
+                            <h3 style="margin: 0 0 1rem 0;">Gemini CLI (XML tags)</h3>
+                            <div class="code-block">
+                                <pre><code class="language-bash">export OPENAI_BASE_URL="http://localhost:8000/v1"
+export OPENAI_API_KEY="unused"
 
-# Control tool execution
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=true   # Server executes
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client</code></pre>
+gemini-cli --model "ollama/qwen3:4b-instruct" "Review this project"</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--text-primary);">🔧 Tool Call Format Configuration</h3>
+                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary);">
+                            Force a target tool-call syntax per request using <code>agent_format</code> (AbstractCore-specific).
+                        </p>
+                        <div class="code-block">
+                            <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3:4b-instruct",
+    "messages": [{"role": "user", "content": "Call a tool"}],
+    "agent_format": "llama3"
+  }'
+
+# agent_format options: auto, openai, codex, qwen3, llama3, xml, gemma, passthrough</code></pre>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- Deployment -->
@@ -520,9 +520,6 @@ export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client</code></pre>
                                 <pre><code class="language-dockerfile">FROM python:3.9-slim
 
 RUN pip install abstractcore[server]
-
-ENV ABSTRACTCORE_DEFAULT_PROVIDER=openai
-ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 
 EXPOSE 8000
 
@@ -588,7 +585,7 @@ cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
   awk '{sum+=$1} END {print "Total:", sum}'
 
 # Monitor specific model
-grep '"model": "llama3.2:3b"' logs/verbatim_*.jsonl</code></pre>
+grep '"model": "qwen3:4b-instruct"' logs/verbatim_*.jsonl</code></pre>
 
                                     <div
                                         style="background: var(--info-bg); border: 2px solid var(--info-text); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -614,9 +611,10 @@ grep '"model": "llama3.2:3b"' logs/verbatim_*.jsonl</code></pre>
                             <pre><code class="language-python">import requests
 
 providers = [
-    "ollama/llama3.2:3b",
-    "openai/gpt-4o-mini",
-    "anthropic/claude-3-5-haiku-latest"
+    "ollama/qwen3:4b-instruct",
+    "openai/gpt-5-mini",
+    "openrouter/openai/gpt-4o-mini",
+    "anthropic/claude-haiku-4-5"
 ]
 
 def generate_with_fallback(prompt):
@@ -639,13 +637,13 @@ def generate_with_fallback(prompt):
                                 <div class="code-block">
                                     <pre><code class="language-bash"># Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.2:3b
+ollama pull qwen3:4b-instruct
 
 # Use via AbstractCore server
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "ollama/llama3.2:3b",
+    "model": "ollama/qwen3:4b-instruct",
     "messages": [{"role": "user", "content": "Write a Python function"}]
   }'</code></pre>
                 </section>

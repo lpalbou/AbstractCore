@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Capabilities - AbstractCore</title>
     <meta name="description" content="What AbstractCore can and cannot do. Understand when to use AbstractCore and when to look elsewhere.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -150,8 +150,8 @@ ollama_response = ollama_llm.generate("Weather in Paris?", tools=[get_weather])<
                         <div class="code-block">
                             <pre><code class="language-bash"># One-time configuration
 abstractcore --status
-abstractcore --set-global-default ollama/llama3:8b
-abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-global-default ollama/qwen3:4b-instruct
+abstractcore --set-app-default summarizer openai gpt-5-mini
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --download-vision-model
 
@@ -169,7 +169,7 @@ python -m abstractcore.utils.cli --prompt "Hello"  # Uses CLI default</code></pr
 
                         <div class="code-block">
                             <pre><code class="language-python"># Deterministic outputs with seed + temperature=0
-llm = create_llm("openai", model="gpt-3.5-turbo", seed=42, temperature=0.0)
+llm = create_llm("openai", model="gpt-5-mini", seed=42, temperature=0.0)
 
 # These will produce identical outputs
 response1 = llm.generate("Write exactly 3 words about coding")
@@ -177,8 +177,8 @@ response2 = llm.generate("Write exactly 3 words about coding")
 # response1.content == response2.content (identical outputs)
 
 # Works across providers with same interface
-ollama_llm = create_llm("ollama", model="llama3.2:3b", seed=42, temperature=0.0)
-mlx_llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit", seed=42, temperature=0.0)</code></pre>
+ollama_llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42, temperature=0.0)
+mlx_llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit", seed=42, temperature=0.0)</code></pre>
                         </div>
 
                         <p><strong>Provider Support</strong>:</p>
@@ -214,7 +214,7 @@ response = llm.generate(
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">6. Vision Capabilities with Intelligent Fallback</h3>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">7. Vision Capabilities with Intelligent Fallback</h3>
                         <p><strong>What it does</strong>: Image analysis across all providers with automatic resolution optimization. Text-only models can process images through transparent vision fallback.</p>
 
                         <div class="code-block">
@@ -238,27 +238,29 @@ response = text_llm.generate(
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">7. Tool Call Tag Rewriting for Agentic CLI Compatibility</h3>
-                        <p><strong>What it does</strong>: Automatically rewrites tool call tags to match different agentic CLI requirements in real-time.</p>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">7. Tool-Call Syntax Rewriting</h3>
+                        <p><strong>What it does</strong>: Preserve/rewrite tool-call markup in assistant content when a downstream consumer needs text-based tool parsing.</p>
                         
                         <div class="code-block">
-                            <pre><code class="language-python"># Rewrite tool calls for different CLIs
-llm = create_llm("openai", model="gpt-4o-mini")
+                            <pre><code class="language-python">llm = create_llm("openai", model="gpt-5-mini")
 
-# For Codex CLI (Qwen3 format)
+# Qwen3 tags
 response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="qwen3")
-# Output: <|tool_call|>{"name": "get_weather", "arguments": {"location": "Paris"}}</|tool_call|>
+# Output: <|tool_call|>{"name": "get_weather", ...}</|tool_call|>
 
-# For Crush CLI (LLaMA3 format)  
+# LLaMA3 tags
 response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="llama3")
-# Output: <function_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</function_call>
+# Output: <function_call>{"name": "get_weather", ...}</function_call>
 
-# For Gemini CLI (XML format)
+# XML tags
 response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
-# Output: <tool_call>{"name": "get_weather", "arguments": {"location": "Paris"}}</tool_call></code></pre>
+# Output: <tool_call>{"name": "get_weather", ...}</tool_call>
+
+# Default (recommended): tool markup is stripped from content; use response.tool_calls instead.</code></pre>
                         </div>
                         
-                        <p><strong>Key benefit</strong>: Compatible with existing agentic CLIs without code changes.</p>
+                        <p><strong>Key benefit</strong>: Lets you interop with systems that only parse tool calls from text without changing tool definitions.</p>
+                        <p><strong>HTTP server note</strong>: If you consume tool calls via the OpenAI-compatible server, prefer <code>agent_format</code> (see <a href="server.html">Server Guide</a>).</p>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -280,6 +282,42 @@ product = llm.generate(
                         </div>
                         
                         <p><strong>Key benefit</strong>: Automatic validation and retry reduces manual error handling.</p>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">9. MCP Tool Discovery (Model Context Protocol)</h3>
+                        <p><strong>What it does</strong>: Discover external tool schemas from an MCP server and inject them into any LLM call (MCP is a tool protocol, not a provider).</p>
+
+                        <div class="code-block">
+                            <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.mcp import McpClient, McpToolSource
+
+llm = create_llm("openai", model="gpt-5-mini")
+
+client = McpClient(url="http://localhost:3000/mcp")  # example MCP endpoint
+tool_specs = McpToolSource(server_id="local", client=client).list_tool_specs()
+
+response = llm.generate("Use an external tool if needed.", tools=tool_specs)
+print(response.tool_calls)  # names like: mcp::local::tool_name</code></pre>
+                        </div>
+
+                        <p><strong>Key benefit</strong>: Standardizes tool discovery across ecosystems while keeping execution explicit and host-owned.</p>
+                        <p><strong>Docs</strong>: <a href="mcp.html">MCP Tools</a></p>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">10. Communication Tools (Email + WhatsApp)</h3>
+                        <p><strong>What it does</strong>: Optional side-effecting tools for email (SMTP/IMAP) and WhatsApp (Twilio) that you can expose to agents behind an approval boundary.</p>
+
+                        <div class="code-block">
+                            <pre><code class="language-python">from abstractcore.tools.comms_tools import send_email, list_emails, read_email, send_whatsapp_message
+
+# Pass tools like any other tool set (execution remains host/runtime-owned by default)
+response = llm.generate("Send a daily digest email.", tools=[send_email])</code></pre>
+                        </div>
+
+                        <p><strong>Key benefit</strong>: Practical “real-world actions” with secrets resolved via env vars at execution time.</p>
+                        <p><strong>Docs</strong>: <a href="communication-tools.html">Communication Tools</a></p>
                     </div>
                 </section>
 

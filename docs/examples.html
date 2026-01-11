@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Examples - AbstractCore</title>
     <meta name="description" content="Real-world examples and use cases for AbstractCore. Learn from practical implementations.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -66,10 +66,10 @@
                     </p>
                     <div class="example-code">
                         <pre><code class="language-python"># Development (free, local) with deterministic outputs
-llm_dev = create_llm("ollama", model="llama3.2:3b", seed=42, temperature=0.0)
+llm_dev = create_llm("ollama", model="qwen3:4b-instruct", seed=42, temperature=0.0)
 
 # Production (high quality, cloud) with same seed
-llm_prod = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
+llm_prod = create_llm("openai", model="gpt-5-mini", seed=42, temperature=0.0)
 
 # Same interface, deterministic results
 def ask_question(llm, question):
@@ -97,7 +97,7 @@ from abstractcore import create_llm
 
 # Initialize components
 embedder = EmbeddingManager()
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Documents to search
 documents = [
@@ -164,7 +164,7 @@ def get_weather(city: str) -> str:
     return f"Weather in {city}: 72°F, sunny"
 
 # Create LLM with tools
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 # Complex multi-tool request
 response = llm.generate(
@@ -216,7 +216,7 @@ class Company(BaseModel):
     founded_year: int
     headquarters: Address
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 
 # Extract complex nested data
 company_data = """
@@ -263,7 +263,7 @@ def get_system_time() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 def interactive_chat():
-    llm = create_llm("openai", model="gpt-4o-mini")
+    llm = create_llm("openai", model="gpt-5-mini")
     
     print("🤖 AI Assistant (type 'quit' to exit)")
     print("=" * 40)
@@ -348,7 +348,7 @@ print(response.content)</code></pre>
                     <div class="example-code">
                         <pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("anthropic", model="claude-3.5-sonnet")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 # PDF analysis
 response = llm.generate(
@@ -440,7 +440,7 @@ print(response.content)</code></pre>
 import json
 
 def create_tutoring_session():
-    llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
     
     # Create session with system prompt
     session = BasicSession(
@@ -547,19 +547,19 @@ python -m abstractcore.utils.cli --prompt "Verify @chart.png matches @data.xlsx 
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
                         <h4 style="margin: 0 0 0.5rem 0;">🚀 Progressive Examples</h4>
                         <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Step-by-step learning path</p>
-                        <a href="https://github.com/lpalbou/AbstractCore/tree/main/examples/progressive" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
+                        <a href="https://github.com/lpalbou/abstractcore/tree/main/examples/progressive" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
                     </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
                         <h4 style="margin: 0 0 0.5rem 0;">🏭 Production Examples</h4>
                         <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Enterprise deployment patterns</p>
-                        <a href="https://github.com/lpalbou/AbstractCore/tree/main/examples/example_06_production" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
+                        <a href="https://github.com/lpalbou/abstractcore/tree/main/examples/example_06_production" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
                     </div>
                     
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
                         <h4 style="margin: 0 0 0.5rem 0;">🔧 Complete RAG</h4>
                         <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Full RAG implementation</p>
-                        <a href="https://github.com/lpalbou/AbstractCore/blob/main/examples/complete_rag_example.py" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
+                        <a href="https://github.com/lpalbou/abstractcore/blob/main/examples/complete_rag_example.py" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
                     </div>
                 </div>
             </div>
@@ -613,7 +613,7 @@ python -m abstractcore.utils.cli --prompt "Verify @chart.png matches @data.xlsx 
 from abstractcore.tools.common_tools import fetch_url, search_files, read_file
 
 # Use built-in tools with any provider
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 # Web content analysis
 response = llm.generate(

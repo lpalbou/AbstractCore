@@ -1,0 +1,7 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="40" height="40" rx="8" fill="#7c3aed"/>
+  <rect x="12" y="12" width="16" height="16" rx="2" stroke="white" stroke-width="2" fill="none" opacity="0.9"/>
+  <path d="M10 16h2M10 20h2M10 24h2" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+  <path d="M28 16h2M28 20h2M28 24h2" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+  <text x="20" y="25" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="7.5" font-weight="bold">vLLM</text>
+</svg>

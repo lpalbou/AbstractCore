@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Token Management - AbstractCore</title>
     <meta name="description" content="Unified token parameter vocabulary with budget validation across all LLM providers in AbstractCore.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -85,7 +85,7 @@
 # Unified token parameters work across ALL providers
 llm = create_llm(
     "anthropic",
-    model="claude-3-5-haiku-latest",
+    model="claude-haiku-4-5",
     max_tokens=32000,           # Context window (input + output)
     max_output_tokens=8000,     # Maximum output tokens
     max_input_tokens=24000      # Maximum input tokens (auto-calculated if not set)
@@ -94,7 +94,7 @@ llm = create_llm(
 # Same parameters work with any provider
 openai_llm = create_llm(
     "openai",
-    model="gpt-4o-mini",
+    model="gpt-5-mini",
     max_tokens=16384,           # Context window
     max_output_tokens=4000,     # Output limit
     max_input_tokens=12384      # Input limit (auto-calculated: 16384 - 4000)
@@ -103,7 +103,7 @@ openai_llm = create_llm(
 # Local providers too
 ollama_llm = create_llm(
     "ollama",
-    model="llama3.2:3b",
+    model="qwen3:4b-instruct",
     max_tokens=8192,            # Context window
     max_output_tokens=2048      # Output limit (input auto-calculated: 6144)
 )</code></pre>
@@ -128,7 +128,7 @@ ollama_llm = create_llm(
 
 # Estimate tokens for input text
 text = "Your input text here..."
-estimated = estimate_tokens(text, model="claude-3-5-haiku-latest")
+estimated = estimate_tokens(text, model="claude-haiku-4-5")
 print(f"Estimated tokens: {estimated}")
 
 # Calculate optimal token budget
@@ -154,7 +154,7 @@ if estimated > budget.max_input_tokens:
                     <div class="code-block">
                         <pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini", seed=42)
+llm = create_llm("openai", model="gpt-5-mini", seed=42)
 response = llm.generate("Explain quantum computing")
 
 # GenerateResponse object provides consistent structure across all providers
@@ -176,7 +176,7 @@ print(f"Raw usage: {response.usage}")               # Provider-specific token da
 print(f"Metadata: {response.metadata}")             # Additional context
 
 # Comprehensive summary with timing
-print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"</code></pre>
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-5-mini | Tokens: 117 | Time: 1234.5ms"</code></pre>
                     </div>
 
                     <h3>Token Count Sources</h3>
@@ -216,7 +216,7 @@ def cost_monitor(event):
 on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 
 # Generate with cost tracking
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate("Write a detailed analysis...")
 
 # Access usage information
@@ -293,7 +293,7 @@ print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
                                 <pre><code class="language-python"># Good: Reasonable limits
 llm = create_llm(
     "openai",
-    model="gpt-4o-mini",
+    model="gpt-5-mini",
     max_tokens=16384,       # Model's context window
     max_output_tokens=4000, # 25% for output
     max_input_tokens=12384  # 75% for input

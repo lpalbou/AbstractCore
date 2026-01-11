@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Async/Await Guide - AbstractCore</title>
+    <meta name="description" content="How to use AbstractCore with async/await: agenerate, async streaming, and concurrent requests across providers.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [
+                    { text: 'Features', href: '/docs/capabilities.html' },
+                    { text: 'Quick Start', href: '/docs/getting-started.html' },
+                    { text: 'Documentation', href: '/#docs' },
+                    { text: 'Examples', href: '/docs/examples.html' },
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/abstractcore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1300px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Async/Await Guide</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Use <code>agenerate()</code>, async streaming, and <code>asyncio.gather()</code> to run concurrent LLM calls with the same unified API across providers.
+                </p>
+            </div>
+
+            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
+                <h2 style="margin: 0 0 1rem 0;">What you get</h2>
+                <ul style="margin: 0; padding-left: 1.5rem; font-size: 1rem;">
+                    <li style="margin-bottom: 0.5rem;"><strong>Async generation</strong>: <code>await llm.agenerate(...)</code></li>
+                    <li style="margin-bottom: 0.5rem;"><strong>Async streaming</strong>: <code>await llm.agenerate(..., stream=True)</code> → <code>async for</code> chunks</li>
+                    <li style="margin-bottom: 0;"><strong>Async sessions</strong>: <code>await session.agenerate(...)</code> preserves history</li>
+                </ul>
+            </div>
+
+            <div class="doc-content">
+                <section id="single-async">
+                    <h2>Single async request</h2>
+                    <div class="code-block">
+                        <pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("openai", model="gpt-5-mini")
+    response = await llm.agenerate("Explain Python in one paragraph.")
+    print(response.content)
+
+asyncio.run(main())</code></pre>
+                    </div>
+                </section>
+
+                <section id="concurrent" style="margin-top: 3rem;">
+                    <h2>Concurrent requests with <code>asyncio.gather()</code></h2>
+                    <p>Run multiple calls concurrently (especially useful for local gateways or when doing many small prompts).</p>
+                    <div class="code-block">
+                        <pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("ollama", model="qwen3:4b-instruct")
+
+    tasks = [
+        llm.agenerate("Summarize Python in 1 sentence."),
+        llm.agenerate("Summarize JavaScript in 1 sentence."),
+        llm.agenerate("Summarize Rust in 1 sentence."),
+    ]
+
+    responses = await asyncio.gather(*tasks)
+    for r in responses:
+        print("-", r.content.strip())
+
+asyncio.run(main())</code></pre>
+                    </div>
+                </section>
+
+                <section id="async-streaming" style="margin-top: 3rem;">
+                    <h2>Async streaming</h2>
+                    <p>When <code>stream=True</code>, <code>agenerate()</code> returns an async iterator of chunks.</p>
+                    <div class="code-block">
+                        <pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
+
+    stream = await llm.agenerate("Write a haiku about coding.", stream=True)
+    async for chunk in stream:
+        if chunk.content:
+            print(chunk.content, end="", flush=True)
+    print()
+
+asyncio.run(main())</code></pre>
+                    </div>
+                </section>
+
+                <section id="async-session" style="margin-top: 3rem;">
+                    <h2>Async sessions</h2>
+                    <p><code>BasicSession</code> supports async while preserving conversation history.</p>
+                    <div class="code-block">
+                        <pre><code class="language-python">import asyncio
+from abstractcore import create_llm, BasicSession
+
+async def main():
+    llm = create_llm("openai", model="gpt-5-mini")
+    session = BasicSession(provider=llm, system_prompt="You are a helpful assistant.")
+
+    r1 = await session.agenerate("My name is Alice.")
+    r2 = await session.agenerate("What is my name?")
+    print(r2.content)
+
+asyncio.run(main())</code></pre>
+                    </div>
+                </section>
+
+                <section id="provider-support" style="margin-top: 3rem;">
+                    <h2>Provider support notes</h2>
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><strong>Native async HTTP</strong> is used where available (OpenAI, Anthropic, Ollama, LMStudio, OpenRouter, openai-compatible, vLLM).</li>
+                            <li><strong>Fallback async</strong> may use threads for local in-process providers (e.g., MLX, some HuggingFace backends) to keep the event loop responsive.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Sync/async API surface</p>
+                        </a>
+                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling System</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Tools + streaming patterns</p>
+                        </a>
+                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server Guide</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible gateway usage</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
+

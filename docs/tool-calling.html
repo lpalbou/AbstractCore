@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tool Calling System - AbstractCore</title>
     <meta name="description" content="Comprehensive guide to AbstractCore's universal tool calling system that works across all LLM providers.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -70,22 +70,21 @@
                     </div>
                     
                     <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
-                        <h3 style="margin: 0 0 1rem 0;">B) Real-Time Rewriting</h3>
-                        <p style="margin: 0; font-size: 0.9rem;">Convert tool calls to specific formats for agent compatibility:</p>
+                        <h3 style="margin: 0 0 1rem 0;">B) Syntax Rewriting</h3>
+                        <p style="margin: 0; font-size: 0.9rem;">Optionally preserve/rewrite tool-call syntax for downstream consumers:</p>
                         <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
-                            <li><code>tool_call_tags="qwen3"</code> → Codex CLI</li>
-                            <li><code>tool_call_tags="llama3"</code> → Crush CLI</li>
-                            <li><code>tool_call_tags="xml"</code> → Gemini CLI</li>
-                            <li>Auto-detection for optimal format</li>
+                            <li><strong>Python API:</strong> <code>tool_call_tags="qwen3|llama3|xml|gemma"</code> keeps tool markup in <code>response.content</code></li>
+                            <li><strong>HTTP server:</strong> request <code>agent_format="codex|llama3|xml|gemma|..."</code> (see Server docs)</li>
+                            <li><strong>Default:</strong> tool markup is stripped from <code>content</code>; canonical calls stay in <code>tool_calls</code></li>
                         </ul>
                     </div>
                     
                     <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
                         <h3 style="margin: 0 0 1rem 0;">C) Optional Execution</h3>
-                        <p style="margin: 0; font-size: 0.9rem;">Choose whether AbstractCore executes tools locally:</p>
+                        <p style="margin: 0; font-size: 0.9rem;">Define where tools execute (recommended: host/runtime boundary):</p>
                         <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
-                            <li><code>execute_tools=true</code> → Local execution</li>
-                            <li><code>execute_tools=false</code> → Agent handles it</li>
+                            <li><code>execute_tools=false</code> (default) → Return tool calls only (recommended)</li>
+                            <li><code>execute_tools=true</code> → Legacy local execution (deprecated)</li>
                             <li>Event system for security control</li>
                             <li>Error handling and validation</li>
                         </ul>
@@ -149,7 +148,7 @@ def calculate(expression: str) -> float:
         return float('nan')
 
 # Works with ANY provider
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate(
     "What's the weather in Tokyo and what's 15 * 23?",
     tools=[get_weather, calculate]  # Pass functions directly
@@ -165,7 +164,11 @@ print(response.content)
                     <p>AbstractCore includes a comprehensive set of ready-to-use tools in <code>abstractcore.tools.common_tools</code>:</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.tools.common_tools import fetch_url, search_files, read_file, list_files
+                        <pre><code class="language-python">from abstractcore.tools.common_tools import analyze_code, fetch_url, search_files, read_file, list_files
+
+# Code navigation (recommended before editing)
+outline = analyze_code("src/app.py")
+print(outline)
 
 # Intelligent web content fetching with automatic parsing
 result = fetch_url("https://api.github.com/repos/python/cpython")
@@ -177,7 +180,7 @@ content = read_file("config.json")  # Read file contents
 directory_listing = list_files(".", pattern="*.py", recursive=True)
 
 # Use with any LLM
-llm = create_llm("anthropic", model="claude-3-5-haiku-latest")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate(
     "Analyze this API response and summarize the key information",
     tools=[fetch_url]
@@ -197,6 +200,7 @@ response = llm.generate(
                         <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                             <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">📁 File Operations</h4>
                             <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li><code>analyze_code</code> - Structured outline of Python/JavaScript code (imports/classes/functions with line ranges)</li>
                                 <li><code>search_files</code> - Search for text patterns inside files using regex</li>
                                 <li><code>list_files</code> - Find and list files by names/paths using glob patterns</li>
                                 <li><code>read_file</code> - Read file contents with optional line range selection</li>
@@ -215,6 +219,9 @@ response = llm.generate(
 
                     <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
                         <p style="margin: 0; color: #1e40af;"><strong>Note:</strong> Built-in tools include error handling, security controls, and work with all providers and tool syntax rewriting.</p>
+                    </div>
+                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin: 1rem 0;">
+                        <p style="margin: 0; color: #92400e;"><strong>Side effects:</strong> For real email/WhatsApp sending, see <a href="communication-tools.html">Communication Tools</a>. Keep these behind an approval boundary.</p>
                     </div>
                 </section>
 
@@ -420,7 +427,7 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
                             <p style="margin: 0 0 1rem 0;">For providers with native tool APIs (OpenAI, Anthropic):</p>
                             <div class="code-block">
                                 <pre><code class="language-python"># OpenAI with native tool support
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("openai", model="gpt-5-mini")
 response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                             </div>
                         </div>
@@ -431,7 +438,7 @@ response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                             <div class="code-block">
                                 <pre><code class="language-python"># Ollama without native tool support
 # AbstractCore handles this automatically
-llm = create_llm("ollama", model="llama3.2:3b")
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                             </div>
                         </div>
@@ -528,7 +535,7 @@ response = llm.generate(
 
 def security_check(event):
     """Prevent execution of dangerous tools."""
-    dangerous_tools = ['delete_file', 'system_command', 'send_email']
+    dangerous_tools = ['execute_command', 'edit_file', 'send_email']
     
     for tool_call in event.data.get('tool_calls', []):
         if tool_call.name in dangerous_tools:
@@ -579,7 +586,7 @@ except ToolExecutionError as e:
                     
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
                         <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0;">Codex CLI (Qwen3 format)</h4>
+                            <h4 style="margin: 0 0 1rem 0;">Qwen3 tags (<code>qwen3</code>)</h4>
                             <div class="code-block">
                                 <pre><code class="language-python">response = llm.generate(
     "What's the weather?", 
@@ -591,7 +598,7 @@ except ToolExecutionError as e:
                         </div>
                         
                         <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0;">Crush CLI (LLaMA3 format)</h4>
+                            <h4 style="margin: 0 0 1rem 0;">LLaMA3 tags (<code>llama3</code>)</h4>
                             <div class="code-block">
                                 <pre><code class="language-python">response = llm.generate(
     "What's the weather?", 
@@ -603,7 +610,7 @@ except ToolExecutionError as e:
                         </div>
                         
                         <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0;">Gemini CLI (XML format)</h4>
+                            <h4 style="margin: 0 0 1rem 0;">XML tags (<code>xml</code>)</h4>
                             <div class="code-block">
                                 <pre><code class="language-python">response = llm.generate(
     "What's the weather?", 
@@ -613,6 +620,9 @@ except ToolExecutionError as e:
 # Output: <tool_call>{"name": "get_weather"}...</tool_call></code></pre>
                             </div>
                         </div>
+                    </div>
+                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
+                        <p style="margin: 0; color: #1e40af;"><strong>HTTP clients:</strong> When consuming tool calls through the OpenAI-compatible server, prefer <code>agent_format</code> on the request body (see <a href="server.html">Server Guide</a>).</p>
                     </div>
                 </section>
 
@@ -768,6 +778,16 @@ print(f"LLM result: {response.content}")</code></pre>
                         <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world tool usage examples</p>
+                        </a>
+
+                        <a href="mcp.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">MCP Tools</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Discover external tools via Model Context Protocol</p>
+                        </a>
+
+                        <a href="communication-tools.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Communication Tools</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Email + WhatsApp tools (opt-in; safety-first)</p>
                         </a>
                     </div>
                 </div>

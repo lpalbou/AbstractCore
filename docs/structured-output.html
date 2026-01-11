@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Structured Output - AbstractCore</title>
+    <meta name="description" content="Generate validated Pydantic objects from LLMs with automatic schema enforcement and retries across providers.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [
+                    { text: 'Features', href: '/docs/capabilities.html' },
+                    { text: 'Quick Start', href: '/docs/getting-started.html' },
+                    { text: 'Documentation', href: '/#docs' },
+                    { text: 'Examples', href: '/docs/examples.html' },
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/abstractcore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1300px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Structured Output</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Get <strong>typed Python objects</strong> from LLMs using Pydantic, with automatic schema enforcement and retries across providers.
+                </p>
+            </div>
+
+            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
+                <h2 style="margin: 0 0 1rem 0;">Core idea</h2>
+                <p style="margin: 0; font-size: 1rem;">
+                    Pass <code>response_model=YourPydanticModel</code> to <code>generate()</code> and receive a validated instance (or a validation error after retries).
+                </p>
+            </div>
+
+            <div class="doc-content">
+                <section id="basic-example">
+                    <h2>Basic example</h2>
+                    <div class="code-block">
+                        <pre><code class="language-python">from pydantic import BaseModel
+from abstractcore import create_llm
+
+class Person(BaseModel):
+    name: str
+    age: int
+    email: str
+
+llm = create_llm("openai", model="gpt-5-mini")
+person = llm.generate(
+    "Extract: John Doe, 35 years old, john@example.com",
+    response_model=Person,
+)
+
+assert isinstance(person, Person)
+print(person.name, person.age, person.email)</code></pre>
+                    </div>
+
+                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
+                        <p style="margin: 0; color: #1e40af;"><strong>Note:</strong> Structured output is designed for non-streaming calls (use <code>stream=False</code>, the default).</p>
+                    </div>
+                </section>
+
+                <section id="retry" style="margin-top: 3rem;">
+                    <h2>Automatic validation + retry</h2>
+                    <p>When a provider cannot enforce the schema natively, AbstractCore can retry with validation feedback.</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">from pydantic import BaseModel
+from abstractcore import create_llm
+from abstractcore.structured import FeedbackRetry
+
+class Company(BaseModel):
+    name: str
+    website: str
+
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+company = llm.generate(
+    "Extract: ACME Corp, https://acme.example",
+    response_model=Company,
+    retry_strategy=FeedbackRetry(max_attempts=3),
+)</code></pre>
+                    </div>
+                </section>
+
+                <section id="provider-notes" style="margin-top: 3rem;">
+                    <h2>Provider notes (native vs prompted)</h2>
+                    <p>AbstractCore selects a strategy automatically based on provider/model capabilities.</p>
+
+                    <div style="overflow-x: auto; margin: 1.5rem 0;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: var(--background-secondary);">
+                                    <th style="padding: 0.75rem; text-align: left; border: 1px solid var(--border-light);">Provider</th>
+                                    <th style="padding: 0.75rem; text-align: left; border: 1px solid var(--border-light);">Typical strategy</th>
+                                    <th style="padding: 0.75rem; text-align: left; border: 1px solid var(--border-light);">How</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">OpenAI</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Native</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Schema passed to API (<code>response_format</code>)</td>
+                                </tr>
+                                <tr style="background: var(--background-secondary);">
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Anthropic</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Native</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Schema enforced via tool-calling mechanism</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Ollama</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Native</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Schema passed via <code>format</code></td>
+                                </tr>
+                                <tr style="background: var(--background-secondary);">
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">LMStudio / OpenAI-compatible</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Native (when supported by backend)</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">OpenAI-style schema payload</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">MLX / HuggingFace</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Prompted + retry</td>
+                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Schema prompt + validation feedback loop (or native when available)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="tools-hybrid" style="margin-top: 3rem;">
+                    <h2>Tools + structured output (hybrid)</h2>
+                    <p>If you pass both <code>tools=[...]</code> and <code>response_model=...</code>, AbstractCore can use a hybrid flow (tool use, then structured follow-up).</p>
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
+                        <p style="margin: 0; color: var(--text-secondary);">
+                            For complex agent workflows, keep tool execution host-owned (<code>execute_tools=false</code>, default) and validate schemas at the boundary.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">response_model and retry_strategy parameters</p>
+                        </a>
+                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling System</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">How tool calls are surfaced and executed</p>
+                        </a>
+                        <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Copy/paste patterns (tools + structured output)</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
+

@@ -17,7 +17,7 @@ class AbstractCoreNavbar {
                 { text: 'Examples', href: '/docs/examples.html' },
                 {
                     text: 'GitHub',
-                    href: 'https://github.com/lpalbou/AbstractCore',
+                    href: 'https://github.com/lpalbou/abstractcore',
                     target: '_blank',
                     icon: 'github'
                 },
@@ -35,7 +35,7 @@ class AbstractCoreNavbar {
      * Generate the animated AbstractCore logo HTML
      */
     getLogoHTML() {
-        const logoHref = 'https://lpalbou.github.io/AbstractCore/';
+        const logoHref = '/';
         
         return `
             <a href="${logoHref}" class="brand-link">

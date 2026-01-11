@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Internal CLI - AbstractCore</title>
     <meta name="description" content="Built-in CLI tool for testing, demonstration, and interactive conversations with AbstractCore.">
-    <link rel="icon" type="image/x-icon" href="../assets/favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
@@ -28,7 +28,7 @@
                     { text: 'Examples', href: '/docs/examples.html' },
                     {
                         text: 'GitHub',
-                        href: 'https://github.com/lpalbou/AbstractCore',
+                        href: 'https://github.com/lpalbou/abstractcore',
                         target: '_blank',
                         icon: 'github'
                     },
@@ -60,14 +60,14 @@
                 
                 <div class="code-block">
                     <pre><code class="language-bash"># Start the internal CLI
-python -m abstractcore.utils.cli --provider ollama --model llama3.2:3b
+python -m abstractcore.utils.cli --provider ollama --model qwen3:4b-instruct
 
 # Or with any provider
-python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini
-python -m abstractcore.utils.cli --provider anthropic --model claude-3-5-haiku-latest
+python -m abstractcore.utils.cli --provider openai --model gpt-5-mini
+python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
 
 # With streaming enabled
-python -m abstractcore.utils.cli --provider ollama --model llama3.2:3b --stream</code></pre>
+python -m abstractcore.utils.cli --provider ollama --model qwen3:4b-instruct --stream</code></pre>
                 
                 <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <p style="margin: 0; color: var(--info-text);"><strong>💡 Note:</strong> Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)? See the <a href="server.html" style="color: var(--info-text); text-decoration: underline; font-weight: 600;">Server Documentation</a> for complete setup guides.</p>
@@ -161,7 +161,7 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</co
                 <!-- Compact Command -->
                 <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">🗜️ /compact - Chat History Compaction</h3>
-                    <p>Compacts your chat history using the fast local <code>llama3.2:3b</code> model to create a summary while preserving recent exchanges.</p>
+                    <p>Compacts your chat history using the fast local <code>qwen3:4b-instruct</code> model to create a summary while preserving recent exchanges.</p>
                     
                     <div class="code-block">
                         <pre><code class="language-bash"># In the CLI
@@ -170,7 +170,7 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</co
 # Output example:
 🗜️  Compacting chat history...
    Before: 15 messages (~450 tokens)
-   Using llama3.2:3b for compaction...
+   Using qwen3:4b-instruct for compaction...
 ✅ Compaction completed in 3.2s
    After: 5 messages (~280 tokens)
    Structure:
@@ -273,16 +273,16 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</co
                 <!-- Tool Tag Testing -->
                 <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">🏷️ /tooltag - Test Tool Call Tag Rewriting</h3>
-                    <p>Test tool call tag rewriting with custom tags to verify compatibility with different agentic CLIs.</p>
+                    <p>Test tool call tag rewriting with custom tags to verify compatibility with downstream parsers and clients.</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-bash"># Test LLaMA3 format (Crush CLI)
+                        <pre><code class="language-bash"># Test LLaMA3 tags
 /tooltag '<function_call>' '</function_call>'
 
-# Test XML format (Gemini CLI)
+# Test XML tags
 /tooltag '<tool_call>' '</tool_call>'
 
-# Test Qwen3 format (Codex CLI)
+# Test Qwen3 tags
 /tooltag '<|tool_call|>' '</|tool_call|>'
 
 # Test custom format
@@ -290,7 +290,7 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</co
                     
                     <p><strong>When to use:</strong></p>
                     <ul>
-                        <li>Test compatibility with specific agentic CLIs</li>
+                        <li>Test compatibility with specific tag formats</li>
                         <li>Verify tool call tag rewriting works correctly</li>
                         <li>Debug tool call format issues</li>
                         <li>Compare different tag formats side by side</li>
@@ -306,7 +306,7 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</co
                     
                     <div class="code-block">
                         <pre><code class="language-bash"># Start CLI with a model that supports auto-compaction
-python -m abstractcore.utils.cli --provider ollama --model llama3.2:3b
+python -m abstractcore.utils.cli --provider ollama --model qwen3:4b-instruct
 
 # Have a long conversation...
 👤 You: What is Python?
@@ -375,9 +375,9 @@ python -m abstractcore.utils.cli --provider ollama --model llama3.2:3b
                 
                 <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                     <ul>
-                        <li><strong>Compaction Model:</strong> Uses <code>llama3.2:3b</code> for fast, local processing</li>
+                        <li><strong>Compaction Model:</strong> Uses <code>qwen3:4b-instruct</code> for fast, local processing</li>
                         <li><strong>Preservation:</strong> Keeps last 6 messages (3 exchanges) by default</li>
-                        <li><strong>Fallback:</strong> If <code>llama3.2:3b</code> unavailable, uses current provider</li>
+                        <li><strong>Fallback:</strong> If <code>qwen3:4b-instruct</code> unavailable, uses current provider</li>
                         <li><strong>Token Estimation:</strong> Provides rough token count estimates</li>
                         <li><strong>Message Types:</strong> Distinguishes between system, user, and assistant messages</li>
                         <li><strong>Error Handling:</strong> Gracefully handles various scenarios with helpful messages</li>
