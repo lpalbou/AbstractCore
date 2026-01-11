@@ -87,6 +87,12 @@ class LoggingConfig:
 
 
 @dataclass
+class StreamingConfig:
+    """Streaming configuration settings."""
+    cli_stream_default: bool = False
+
+
+@dataclass
 class TimeoutConfig:
     """Timeout configuration settings."""
     # Default HTTP timeout for LLM providers (in seconds).
@@ -113,6 +119,7 @@ class AbstractCoreConfig:
     api_keys: ApiKeysConfig
     cache: CacheConfig
     logging: LoggingConfig
+    streaming: StreamingConfig
     timeouts: TimeoutConfig
     offline: OfflineConfig
 
@@ -127,6 +134,7 @@ class AbstractCoreConfig:
             api_keys=ApiKeysConfig(),
             cache=CacheConfig(),
             logging=LoggingConfig(),
+            streaming=StreamingConfig(),
             timeouts=TimeoutConfig(),
             offline=OfflineConfig()
         )
@@ -164,6 +172,7 @@ class ConfigurationManager:
         api_keys = ApiKeysConfig(**data.get('api_keys', {}))
         cache = CacheConfig(**data.get('cache', {}))
         logging = LoggingConfig(**data.get('logging', {}))
+        streaming = StreamingConfig(**data.get('streaming', {}))
         timeouts = TimeoutConfig(**data.get('timeouts', {}))
         offline = OfflineConfig(**data.get('offline', {}))
 
@@ -175,6 +184,7 @@ class ConfigurationManager:
             api_keys=api_keys,
             cache=cache,
             logging=logging,
+            streaming=streaming,
             timeouts=timeouts,
             offline=offline
         )
@@ -192,6 +202,7 @@ class ConfigurationManager:
             'api_keys': asdict(self.config.api_keys),
             'cache': asdict(self.config.cache),
             'logging': asdict(self.config.logging),
+            'streaming': asdict(self.config.streaming),
             'timeouts': asdict(self.config.timeouts),
             'offline': asdict(self.config.offline)
         }
@@ -277,7 +288,7 @@ class ConfigurationManager:
                 "model": self.config.embeddings.model
             },
             "streaming": {
-                "cli_stream_default": False  # Default value
+                "cli_stream_default": self.config.streaming.cli_stream_default
             },
             "logging": {
                 "console_level": self.config.logging.console_level,
@@ -289,7 +300,10 @@ class ConfigurationManager:
                 "tool_timeout": self.config.timeouts.tool_timeout
             },
             "cache": {
-                "default_cache_dir": self.config.cache.default_cache_dir
+                "default_cache_dir": self.config.cache.default_cache_dir,
+                "huggingface_cache_dir": self.config.cache.huggingface_cache_dir,
+                "local_models_cache_dir": self.config.cache.local_models_cache_dir,
+                "glyph_cache_dir": self.config.cache.glyph_cache_dir,
             },
             "api_keys": {
                 "openai": "✅ Set" if self.config.api_keys.openai else "❌ Not set",
@@ -303,6 +317,16 @@ class ConfigurationManager:
                 "status": "🔒 Offline-first" if self.config.offline.offline_first else "🌐 Network-enabled"
             }
         }
+
+    def reset_configuration(self) -> bool:
+        """Reset all configuration to built-in defaults."""
+        try:
+            self.config = AbstractCoreConfig.default()
+            self._provider_config.clear()
+            self._save_config()
+            return True
+        except Exception:
+            return False
 
     def set_global_default_model(self, provider_model: str) -> bool:
         """Set global default model in provider/model format."""
@@ -320,6 +344,243 @@ class ConfigurationManager:
             return True
         except Exception:
             return False
+
+    def set_default_model(self, provider_model: str) -> bool:
+        """Legacy alias for setting the global default model."""
+        return self.set_global_default_model(provider_model)
+
+    def set_global_default_provider(self, provider: str) -> bool:
+        """Set global default provider (legacy)."""
+        try:
+            provider = str(provider or "").strip()
+            if not provider:
+                raise ValueError("Provider cannot be empty")
+            self.config.default_models.global_provider = provider
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_chat_model(self, provider_model: str) -> bool:
+        """Set specialized chat model (provider/model string)."""
+        try:
+            model = str(provider_model or "").strip()
+            if not model:
+                raise ValueError("Model cannot be empty")
+            self.config.default_models.chat_model = model
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_code_model(self, provider_model: str) -> bool:
+        """Set specialized code model (provider/model string)."""
+        try:
+            model = str(provider_model or "").strip()
+            if not model:
+                raise ValueError("Model cannot be empty")
+            self.config.default_models.code_model = model
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_embeddings_model(self, provider_model: str) -> bool:
+        """Set embeddings provider/model from a provider/model string (preferred)."""
+        try:
+            value = str(provider_model or "").strip()
+            if not value:
+                raise ValueError("Embeddings model cannot be empty")
+
+            if "/" in value:
+                provider, model = value.split("/", 1)
+                self.config.embeddings.provider = provider.strip() or self.config.embeddings.provider
+                self.config.embeddings.model = model.strip()
+            else:
+                self.config.embeddings.model = value
+
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_embeddings_provider(self, provider: str) -> bool:
+        """Set embeddings provider."""
+        try:
+            value = str(provider or "").strip()
+            if not value:
+                raise ValueError("Embeddings provider cannot be empty")
+            self.config.embeddings.provider = value
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_default_cache_dir(self, path: str) -> bool:
+        """Set default cache directory for AbstractCore."""
+        try:
+            value = str(path or "").strip()
+            if not value:
+                raise ValueError("Cache directory cannot be empty")
+            self.config.cache.default_cache_dir = value
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_huggingface_cache_dir(self, path: str) -> bool:
+        """Set HuggingFace cache directory."""
+        try:
+            value = str(path or "").strip()
+            if not value:
+                raise ValueError("HuggingFace cache directory cannot be empty")
+            self.config.cache.huggingface_cache_dir = value
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_local_models_cache_dir(self, path: str) -> bool:
+        """Set local models cache directory."""
+        try:
+            value = str(path or "").strip()
+            if not value:
+                raise ValueError("Local models cache directory cannot be empty")
+            self.config.cache.local_models_cache_dir = value
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_log_base_dir(self, path: str) -> bool:
+        """Set log base directory."""
+        try:
+            value = str(path or "").strip()
+            if not value:
+                raise ValueError("Log base directory cannot be empty")
+            self.config.logging.log_base_dir = value
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_console_log_level(self, level: str) -> bool:
+        """Set console logging level."""
+        try:
+            value = str(level or "").strip().upper()
+            if not value:
+                raise ValueError("Console log level cannot be empty")
+            self.config.logging.console_level = value
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_file_log_level(self, level: str) -> bool:
+        """Set file logging level."""
+        try:
+            value = str(level or "").strip().upper()
+            if not value:
+                raise ValueError("File log level cannot be empty")
+            self.config.logging.file_level = value
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def enable_debug_logging(self) -> bool:
+        """Enable debug logging for both console and file."""
+        try:
+            self.config.logging.console_level = "DEBUG"
+            self.config.logging.file_level = "DEBUG"
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def disable_console_logging(self) -> bool:
+        """Disable console logging output."""
+        try:
+            self.config.logging.console_level = "NONE"
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def enable_file_logging(self) -> bool:
+        """Enable file logging."""
+        try:
+            self.config.logging.file_logging_enabled = True
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def disable_file_logging(self) -> bool:
+        """Disable file logging."""
+        try:
+            self.config.logging.file_logging_enabled = False
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_streaming_default(self, app_name: str, enabled: bool) -> bool:
+        """Set default streaming behavior for a given app (currently: cli)."""
+        try:
+            app = str(app_name or "").strip().lower()
+            if app != "cli":
+                return False
+            self.config.streaming.cli_stream_default = bool(enabled)
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def get_streaming_default(self, app_name: str) -> bool:
+        """Get default streaming behavior for a given app (currently: cli)."""
+        app = str(app_name or "").strip().lower()
+        if app == "cli":
+            return bool(self.config.streaming.cli_stream_default)
+        return False
+
+    def enable_cli_streaming(self) -> bool:
+        """Enable streaming by default for the CLI."""
+        return self.set_streaming_default("cli", True)
+
+    def disable_cli_streaming(self) -> bool:
+        """Disable streaming by default for the CLI."""
+        return self.set_streaming_default("cli", False)
+
+    def add_vision_fallback(self, provider: str, model: str) -> bool:
+        """Add a vision fallback provider/model to the chain."""
+        try:
+            provider_val = str(provider or "").strip()
+            model_val = str(model or "").strip()
+            if not provider_val or not model_val:
+                raise ValueError("Provider and model are required")
+
+            self.config.vision.fallback_chain.append({"provider": provider_val, "model": model_val})
+            # If vision is configured at all, assume two_stage (caption -> text model).
+            if not self.config.vision.strategy or self.config.vision.strategy == "disabled":
+                self.config.vision.strategy = "two_stage"
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def disable_vision(self) -> bool:
+        """Disable vision fallback for text-only models."""
+        try:
+            self.config.vision.strategy = "disabled"
+            self.config.vision.caption_provider = None
+            self.config.vision.caption_model = None
+            self.config.vision.fallback_chain = []
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
 
     def set_app_default(self, app_name: str, provider: str, model: str) -> bool:
         """Set app-specific default provider and model."""

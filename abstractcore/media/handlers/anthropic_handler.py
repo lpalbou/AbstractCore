@@ -192,7 +192,16 @@ class AnthropicMediaHandler(BaseProviderMediaHandler):
         if media_content.media_type == MediaType.IMAGE:
             # Check if model supports vision
             if not self.model_capabilities.get('vision_support', False):
-                return False
+                # Fallback: consult the centralized media capability database.
+                # This keeps validation in sync with `abstractcore.media.capabilities.is_vision_model`
+                # and avoids hard-coding model-name heuristics here.
+                try:
+                    from ..capabilities import is_vision_model
+
+                    if not is_vision_model(model):
+                        return False
+                except Exception:
+                    return False
 
             # Check image size
             if hasattr(media_content, 'metadata'):
@@ -200,13 +209,9 @@ class AnthropicMediaHandler(BaseProviderMediaHandler):
                 if file_size > self.max_image_size:
                     return False
 
-            # Model-specific checks
-            if 'claude-3' in model_lower:
-                return True  # All Claude 3 models support vision
-            elif 'claude-3.5' in model_lower:
-                return True  # All Claude 3.5 models support vision
-            elif 'claude-4' in model_lower:
-                return True  # Future Claude 4 models
+            # If vision is supported (either by injected model capabilities or the centralized lookup),
+            # accept the image.
+            return True
 
         # Text/document validation
         elif media_content.media_type in [MediaType.TEXT, MediaType.DOCUMENT]:

@@ -49,14 +49,39 @@ python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b 
 python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 
 # Or with any provider
-python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini
+python -m abstractcore.utils.cli --provider openai --model gpt-5-mini
 python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
+python -m abstractcore.utils.cli --provider openrouter --model openai/gpt-4o-mini
 
 # With streaming enabled (--stream flag)
 python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream
+
+# OpenAI-compatible /v1 endpoints (LM Studio, vLLM, custom proxies)
+# Note: include `/v1` in the base URL for OpenAI-compatible servers.
+python -m abstractcore.utils.cli --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
+python -m abstractcore.utils.cli --provider openai-compatible --model local-model --base-url http://localhost:1234/v1
+
+# Control token budgets
+python -m abstractcore.utils.cli --provider lmstudio --model qwen/qwen3-4b-2507 --max-tokens 16384 --max-output-tokens 1024
 ```
 
+Cloud providers require API keys:
+- OpenAI: `OPENAI_API_KEY`
+- Anthropic: `ANTHROPIC_API_KEY`
+- OpenRouter: `OPENROUTER_API_KEY`
+
 ## New Commands
+
+### Token Controls (`/max-tokens`, `/max-output-tokens`)
+
+Adjust token limits during a CLI session:
+
+```bash
+/max-tokens 16384
+/max-output-tokens 1024
+/max-tokens auto
+/max-output-tokens auto
+```
 
 ### `/compact` - Chat History Compaction
 

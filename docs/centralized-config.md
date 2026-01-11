@@ -15,9 +15,9 @@ Set default providers and models for specific AbstractCore applications:
 ```bash
 # Set defaults for individual apps
 abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli anthropic claude-3-5-haiku
+abstractcore --set-app-default cli anthropic claude-haiku-4-5
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
-abstractcore --set-app-default intent lmstudio qwen/qwen3-30b-a3b-2507
+abstractcore --set-app-default intent lmstudio qwen/qwen3-4b-2507
 
 # View current app defaults
 abstractcore --status
@@ -135,6 +135,7 @@ Manage API keys for different providers:
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic your-anthropic-key
+abstractcore --set-api-key openrouter your-openrouter-key
 
 # List API key status
 abstractcore --list-api-keys
@@ -242,10 +243,13 @@ abstractcore --set-global-default ollama/llama3:8b
 # 3. Configure specific apps for optimal performance
 abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-app-default extractor ollama qwen3:4b-instruct
-abstractcore --set-app-default judge anthropic claude-3-5-haiku
+abstractcore --set-app-default judge anthropic claude-haiku-4-5
 
 # 4. Set API keys as needed
 abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key
+# Optional (only if you plan to use the OpenRouter provider):
+abstractcore --set-api-key openrouter your-openrouter-key
 
 # 5. Configure logging for development
 abstractcore --enable-debug-logging
@@ -303,12 +307,9 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
     ],
     "local_models_path": "~/.abstractcore/models/"
   },
-  "defaults": {
-    "global_provider": "ollama",
-    "global_model": "llama3:8b",
-    "chat_model": null,
-    "instruct_model": null,
-    "code_model": null
+  "embeddings": {
+    "provider": "huggingface",
+    "model": "all-minilm-l6-v2"
   },
   "app_defaults": {
     "cli_provider": "huggingface",
@@ -318,39 +319,49 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
     "extractor_provider": "ollama",
     "extractor_model": "qwen3:4b-instruct",
     "judge_provider": "anthropic",
-    "judge_model": "claude-3-5-haiku"
+    "judge_model": "claude-haiku-4-5",
+    "intent_provider": "lmstudio",
+    "intent_model": "qwen/qwen3-4b-2507"
   },
-  "embeddings": {
-    "provider": "huggingface",
-    "model": "all-minilm-l6-v2",
-    "api_key": null,
-    "local_model_path": null
+  "default_models": {
+    "global_provider": "ollama",
+    "global_model": "llama3:8b",
+    "chat_model": null,
+    "code_model": null
   },
   "api_keys": {
     "openai": null,
     "anthropic": null,
-    "google": null,
-    "cohere": null,
-    "huggingface": null
+    "openrouter": null,
+    "google": null
   },
   "cache": {
     "default_cache_dir": "~/.cache/abstractcore",
     "huggingface_cache_dir": "~/.cache/huggingface",
-    "local_models_cache_dir": "~/.abstractcore/models"
+    "local_models_cache_dir": "~/.abstractcore/models",
+    "glyph_cache_dir": "~/.abstractcore/glyph_cache"
   },
   "logging": {
     "console_level": "WARNING",
     "file_level": "DEBUG",
-    "log_base_dir": "~/.abstractcore/logs",
     "file_logging_enabled": false,
+    "log_base_dir": null,
     "verbatim_enabled": true,
     "console_json": false,
     "file_json": true
   },
+  "timeouts": {
+    "default_timeout": 7200.0,
+    "tool_timeout": 600.0
+  },
+  "offline": {
+    "offline_first": true,
+    "allow_network": false,
+    "force_local_files_only": true
+  },
   "streaming": {
     "cli_stream_default": false
-  },
-  "provider_preferences": {}
+  }
 }
 ```
 
@@ -363,36 +374,33 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **fallback_chain**: Array of backup vision models to try if primary fails
 - **local_models_path**: Directory for local vision model storage
 
-### Defaults Section (Global Fallbacks)
-- **global_provider**: Default provider when app-specific not set (e.g., `"ollama"`)
-- **global_model**: Default model when app-specific not set (e.g., `"llama3:8b"`)
-- **chat_model**: Specialized model for chat applications (optional)
-- **instruct_model**: Specialized model for instruction-following (optional)
-- **code_model**: Specialized model for code generation (optional)
+### Default Models Section (Global Fallbacks)
+- **global_provider** / **global_model**: Default provider/model when app-specific not set (e.g., `"ollama"` / `"llama3:8b"`)
+- **chat_model**: Specialized model for chat applications (optional, `provider/model`)
+- **code_model**: Specialized model for code generation (optional, `provider/model`)
 
 ### App Defaults Section (Per-Application)
 - **cli_provider** / **cli_model**: Default for CLI utility
 - **summarizer_provider** / **summarizer_model**: Default for document summarization
 - **extractor_provider** / **extractor_model**: Default for entity extraction
 - **judge_provider** / **judge_model**: Default for text evaluation
+- **intent_provider** / **intent_model**: Default for intent analysis
 
 ### Embeddings Section
 - **provider**: Embeddings provider (`"huggingface"`, `"openai"`, etc.)
 - **model**: Embeddings model name (e.g., `"all-minilm-l6-v2"`)
-- **api_key**: API key for embeddings provider (if required)
-- **local_model_path**: Path to local embeddings model (if applicable)
 
 ### API Keys Section
 - **openai**: OpenAI API key
 - **anthropic**: Anthropic API key
+- **openrouter**: OpenRouter API key
 - **google**: Google API key
-- **cohere**: Cohere API key
-- **huggingface**: HuggingFace API key
 
 ### Cache Section
 - **default_cache_dir**: General cache directory for AbstractCore (`~/.cache/abstractcore`)
 - **huggingface_cache_dir**: HuggingFace models cache (`~/.cache/huggingface`)
 - **local_models_cache_dir**: Local models storage (`~/.abstractcore/models`)
+- **glyph_cache_dir**: Glyph cache directory (`~/.abstractcore/glyph_cache`)
 
 ### Logging Section
 - **console_level**: Console log level (`"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, `"CRITICAL"`, `"NONE"`)
@@ -406,7 +414,14 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 ### Streaming Section
 - **cli_stream_default**: Default streaming mode for CLI (`true`/`false`)
 
-### Provider Preferences Section
+### Timeouts Section
+- **default_timeout**: Default HTTP timeout for provider calls (seconds)
+- **tool_timeout**: Default tool execution timeout (seconds)
+
+### Offline Section
+- **offline_first**: Default to offline-first behavior
+- **allow_network**: Allow network access when offline-first is enabled (for API providers)
+- **force_local_files_only**: Force HuggingFace `local_files_only` mode
 - **provider_preferences**: Additional provider-specific settings (key-value pairs)
 
 ## Common Configuration Tasks

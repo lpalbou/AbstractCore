@@ -9,6 +9,9 @@ additional management endpoints and request extensions:
 
 This provider subclasses `OpenAICompatibleProvider` and injects vLLM-specific request
 extensions via `payload["extra_body"]`.
+
+TODO(vllm): Add an opt-in integration test that exercises streaming + LoRA management endpoints
+once a reachable vLLM server is available in the test environment.
 """
 
 from typing import Any, Dict, List, Optional
@@ -127,4 +130,3 @@ class VLLMProvider(OpenAICompatibleProvider):
         capabilities = ["streaming", "chat", "tools", "structured_output"]
         capabilities.extend(["guided_decoding", "multi_lora", "beam_search"])
         return capabilities
-
