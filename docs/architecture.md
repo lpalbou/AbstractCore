@@ -551,7 +551,7 @@ graph TD
 
 2. **Incremental Tool Detection**
    - Real-time tool call detection during streaming
-   - Immediate tool execution without buffering
+   - Emits `chunk.tool_calls` as soon as a full tool call is detected
    - Handles partial tool calls across chunk boundaries
 
 3. **Character-by-Character Streaming**
@@ -576,11 +576,9 @@ for chunk in llm.generate(
     # Immediate character-by-character output
     print(chunk.content, end="", flush=True)
 
-    # Tool calls detected and executed mid-stream
+    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
-        for tool_call in chunk.tool_calls:
-            result = tool_call.execute()
-            print(f"\n🛠️ Tool executed: {result}")
+        print(f"\nTool calls: {chunk.tool_calls}")
 
 # Output format: <function_call>{"name": "analyze_code"}...</function_call>
 ```

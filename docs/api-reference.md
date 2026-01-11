@@ -170,18 +170,15 @@ for chunk in llm.generate(
     # Real-time chunk processing
     print(chunk.content, end="", flush=True)
 
-    # Real-time tool call detection and execution
+    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
-        for tool_call in chunk.tool_calls:
-            result = tool_call.execute()
-            print(f"\nTool Result: {result}")
+        print(f"\nTool calls: {chunk.tool_calls}")
 ```
 
 **Streaming Features**:
 - First chunk in <10ms
 - 🔧 Unified strategy across providers
 - 🛠️ Real-time tool call detection
-- Mid-stream tool execution
 - 💨 Zero buffering overhead
 - Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - 🔒 Robust error handling for malformed responses

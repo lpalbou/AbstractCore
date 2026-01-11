@@ -420,26 +420,54 @@ class IncrementalToolDetector:
         if not json_content or not json_content.strip():
             return None
 
+        cleaned = json_content.strip()
+
+        # Handle missing braces (best-effort).
+        if cleaned.count("{") > cleaned.count("}"):
+            missing = cleaned.count("{") - cleaned.count("}")
+            cleaned += "}" * missing
+
+        tool_data: Optional[Dict[str, Any]] = None
         try:
-            cleaned_json = json_content.strip()
+            tool_data = loads_dict_like(cleaned)
+        except Exception as e:
+            logger.debug(f"Tool JSON-ish parse error: {e}, content: {repr(json_content)}")
+            tool_data = None
 
-            # Handle missing braces
-            if cleaned_json.count('{') > cleaned_json.count('}'):
-                missing_braces = cleaned_json.count('{') - cleaned_json.count('}')
-                cleaned_json += '}' * missing_braces
+        if not isinstance(tool_data, dict):
+            return None
 
-            tool_data = json.loads(cleaned_json)
+        name: Any = tool_data.get("name")
+        arguments: Any = tool_data.get("arguments")
+        call_id: Any = tool_data.get("call_id") or tool_data.get("id")
 
-            if isinstance(tool_data, dict) and "name" in tool_data:
-                return ToolCall(
-                    name=tool_data["name"],
-                    arguments=tool_data.get("arguments", {}),
-                    call_id=tool_data.get("id")
-                )
-        except json.JSONDecodeError as e:
-            logger.debug(f"JSON parse error: {e}, content: {repr(json_content)}")
+        # OpenAI-style wrapper payload: {"id":"...","type":"function","function":{"name":...,"arguments":"{...}"}}
+        function = tool_data.get("function") if isinstance(tool_data.get("function"), dict) else None
+        if function:
+            if not isinstance(name, str) or not name.strip():
+                name = function.get("name")
+            if arguments is None:
+                arguments = function.get("arguments")
 
-        return None
+        # Anthropic-ish key used by some tool payloads.
+        if arguments is None and "input" in tool_data:
+            arguments = tool_data.get("input")
+
+        # Normalize arguments to a dict.
+        if isinstance(arguments, str):
+            parsed_args = loads_dict_like(arguments)
+            arguments = parsed_args if isinstance(parsed_args, dict) else {}
+        if not isinstance(arguments, dict):
+            arguments = {}
+
+        if not isinstance(name, str) or not name.strip():
+            return None
+
+        call_id_str: Optional[str] = None
+        if isinstance(call_id, str) and call_id.strip():
+            call_id_str = call_id.strip()
+
+        return ToolCall(name=name.strip(), arguments=arguments, call_id=call_id_str)
 
     def finalize(self) -> List[ToolCall]:
         """Finalize and return any remaining tool calls."""
@@ -900,8 +928,8 @@ class UnifiedStreamProcessor:
                         # Extract JSON content
                         json_content = match.group(1).strip()
 
-                        # Parse the JSON to validate and extract fields
-                        tool_data = json.loads(json_content)
+                        # Parse the JSON-ish payload to validate and extract fields.
+                        tool_data = loads_dict_like(json_content)
 
                         if not isinstance(tool_data, dict) or "name" not in tool_data:
                             logger.warning(f"Invalid tool call JSON: {json_content[:100]}")
@@ -916,7 +944,15 @@ class UnifiedStreamProcessor:
                             "type": "function",
                             "function": {
                                 "name": tool_data["name"],
-                                "arguments": json.dumps(tool_data.get("arguments", {}))
+                                "arguments": json.dumps(
+                                    (tool_data.get("arguments") if isinstance(tool_data.get("arguments"), dict) else None)
+                                    or (
+                                        loads_dict_like(tool_data.get("arguments"))
+                                        if isinstance(tool_data.get("arguments"), str)
+                                        else None
+                                    )
+                                    or {}
+                                ),
                             }
                         }
 
@@ -926,9 +962,6 @@ class UnifiedStreamProcessor:
 
                         logger.debug(f"Converted {format_type} tool call to OpenAI format: {openai_json[:100]}")
 
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Failed to parse tool call JSON: {e}")
-                        continue
                     except Exception as e:
                         logger.error(f"Error converting tool call to OpenAI format: {e}")
                         continue

@@ -789,11 +789,11 @@ The implementation offers a single streaming path that handles multiple scenario
 # Default streaming with Qwen3 format
 llm = create_llm("ollama", model="qwen3")
 
-# Custom tag format
-llm = create_llm("ollama", model="qwen3", tool_call_tags="START,END")
+# Custom tag format (per-call)
+llm.generate("...", tools=[...], stream=True, tool_call_tags="START,END")
 
-# Exact tag matching (no auto-format)
-llm = create_llm("ollama", model="qwen3", tool_call_tags="ojlk,dfsd")
+# Exact tag matching (no auto-format, per-call)
+llm.generate("...", tools=[...], stream=True, tool_call_tags="ojlk,dfsd")
 ```
 
 ### Performance Benchmarks
