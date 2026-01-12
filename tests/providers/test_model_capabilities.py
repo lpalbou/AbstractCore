@@ -17,6 +17,7 @@ from abstractcore.providers.model_capabilities import (
     filter_models_by_capabilities,
     get_capability_summary
 )
+from abstractcore.architectures.detection import get_model_capabilities, supports_embeddings
 
 
 class TestModelCapabilityEnums:
@@ -381,6 +382,29 @@ class TestBackwardCompatibility:
         assert ModelInputCapability.TEXT.value == "text"
         assert ModelOutputCapability.TEXT.value == "text"
         assert callable(filter_models_by_capabilities)
+
+
+class TestCapabilitiesJsonIntegration:
+    """
+    Integration checks against the real `assets/model_capabilities.json`.
+
+    These tests ensure we recognize known model IDs (including provider-specific aliases)
+    without relying on mocks.
+    """
+
+    def test_lmstudio_nomic_embed_v1_5_alias_is_embedding_model(self):
+        model_name = "text-embedding-nomic-embed-text-v1.5@q6_k"
+
+        caps = get_model_capabilities(model_name)
+        assert caps.get("model_type") == "embedding"
+        assert caps.get("max_tokens") == 8192
+        assert caps.get("max_output_tokens") == 0
+
+        # Helper should respect `model_type: "embedding"` (and not rely only on legacy flags)
+        assert supports_embeddings(model_name) is True
+
+        # Provider-side capability utilities should also treat it as an embedding model.
+        assert get_model_output_capabilities(model_name) == [ModelOutputCapability.EMBEDDINGS]
 
 
 if __name__ == "__main__":
