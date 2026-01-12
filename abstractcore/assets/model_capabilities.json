@@ -1732,6 +1732,30 @@
       "max_tokens": 8192,
       "model_type": "embedding"
     },
+    "nomic-embed-text-v1.5": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Nomic Embed v1.5 text embedding model (Matryoshka). Embedding dims commonly used: 768 (and truncation-friendly sizes like 512/256/128/64). Not a text-generative model.",
+      "source": "Nomic AI documentation + HuggingFace model card",
+      "canonical_name": "nomic-embed-text-v1.5",
+      "aliases": [
+        "nomic-ai/nomic-embed-text-v1.5",
+        "nomic-embed-text-v1.5",
+        "text-embedding-nomic-embed-text-v1.5",
+        "text-embedding-nomic-embed-text-v1.5@q6_k",
+        "nomic-embed-text-v1.5@q6_k",
+        "text-embedding-nomic-embed-text-v1.5@q6_k"
+      ],
+      "max_tokens": 8192,
+      "model_type": "embedding",
+      "embedding_dimension": 768,
+      "matryoshka_dims": [768, 512, 256, 128, 64],
+      "embedding_support": true
+    },
     "blip-image-captioning-base": {
       "max_output_tokens": 512,
       "tool_support": "none",

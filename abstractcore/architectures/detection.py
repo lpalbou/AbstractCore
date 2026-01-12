@@ -456,6 +456,11 @@ def supports_audio(model_name: str) -> bool:
 def supports_embeddings(model_name: str) -> bool:
     """Check if model supports embeddings."""
     capabilities = get_model_capabilities(model_name)
+    # Prefer explicit model metadata over name heuristics:
+    # - `model_type: "embedding"` is the canonical signal in `assets/model_capabilities.json`.
+    # - `embedding_support` is a legacy boolean (kept for backwards compatibility).
+    if capabilities.get("model_type") == "embedding":
+        return True
     return capabilities.get("embedding_support", False)
 
 
