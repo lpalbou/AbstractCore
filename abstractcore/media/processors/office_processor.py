@@ -132,11 +132,11 @@ class OfficeProcessor(BaseMediaHandler):
             # Create MediaContent object
             return self._create_media_content(
                 content=content,
+                file_path=file_path,
                 media_type=MediaType.DOCUMENT,
                 content_format=ContentFormat.TEXT,
                 mime_type=self._get_mime_type(file_extension),
-                file_path=file_path,
-                metadata=metadata
+                **metadata
             )
 
         except Exception as e:
