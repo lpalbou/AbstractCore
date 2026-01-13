@@ -1236,7 +1236,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
     def validate_token_constraints(self) -> List[str]:
         """Validate token configuration and return warnings/suggestions"""
-        return super().validate_token_constraints()
+        warnings_list = super().validate_token_constraints()
+
+        # Embedding models are not text-generative: output token limits are irrelevant and can
+        # legitimately be 0 (e.g. Nomic Embed). Suppress misleading output-token warnings.
+        try:
+            caps = getattr(self, "model_capabilities", None)
+            model_type = caps.get("model_type") if isinstance(caps, dict) else None
+            if isinstance(model_type, str) and model_type.strip().lower() == "embedding":
+                warnings_list = [w for w in warnings_list if "max_output_tokens" not in str(w)]
+        except Exception:
+            pass
+
+        return warnings_list
 
     def calculate_token_budget(self, input_text: str, desired_output_tokens: int,
                               safety_margin: float = 0.1) -> tuple[int, List[str]]:
