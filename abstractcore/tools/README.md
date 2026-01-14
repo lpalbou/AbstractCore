@@ -597,11 +597,13 @@ def fetch_url(
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
     data: Optional[Union[Dict[str, Any], str]] = None,
-    timeout: int = 30,
+    timeout: int = 45,
     max_content_length: int = 10485760,
     follow_redirects: bool = True,
     include_binary_preview: bool = False,
     extract_links: bool = False,
+    convert_html_to_markdown: bool = True,
+    keep_links: bool = False,
     user_agent: str = "AbstractCore-FetchTool/1.0",
     include_full_content: bool = True
 ) -> str:
