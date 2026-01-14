@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
 
+
+@pytest.mark.basic
 def test_parse_html_extracts_clean_text_with_bs4() -> None:
     from abstractcore.tools import common_tools
 
@@ -26,8 +29,8 @@ def test_parse_html_extracts_clean_text_with_bs4() -> None:
     assert "🌐 HTML Document Analysis" in out
     assert "📰 Title: R-Type" in out
     assert "📝 Description: A classic shmup." in out
-    assert "Text Content Preview" in out
+    assert "Markdown Content Preview" in out
+    assert "# Main" in out
     assert "Force pod, wave cannon." in out
     assert "<html" not in out
     assert "Links (first 20)" not in out
-
