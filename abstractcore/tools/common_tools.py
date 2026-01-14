@@ -19,10 +19,11 @@ import json
 import base64
 import ast
 from datetime import datetime
-from urllib.parse import urlparse, urljoin
+from urllib.parse import parse_qs, parse_qsl, urlencode, unquote, urljoin, urlparse, urlunparse
 import mimetypes
 
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+from bs4.element import NavigableString, Tag
 
 try:
     import lxml  # noqa: F401
@@ -1778,6 +1779,12 @@ def web_search(
                 if i > int(num_results or 0):
                     break
                 href = html_lib.unescape((m.group(1) or "").strip())
+                
+                # Normalize protocol-relative URLs for programmatic use.
+                # DuckDuckGo uses // for browser contexts, but we need full URLs for Python requests.
+                if href.startswith("//"):
+                    href = "https:" + href
+                
                 title_html = m.group(2) or ""
                 title = html_lib.unescape(tag_re.sub("", title_html)).strip()
 
@@ -1870,11 +1877,13 @@ def fetch_url(
     method: str = "GET",
     headers: Optional[Dict[str, str]] = None,
     data: Optional[Union[Dict[str, Any], str]] = None,
-    timeout: int = 30,
+    timeout: int = 45,
     max_content_length: int = 10485760,  # 10MB default
     follow_redirects: bool = True,
     include_binary_preview: bool = False,
     extract_links: bool = False,
+    convert_html_to_markdown: bool = True,
+    keep_links: bool = False,
     user_agent: str = "AbstractCore-FetchTool/1.0",
     include_full_content: bool = True,
 ) -> Dict[str, Any]:
@@ -1894,6 +1903,8 @@ def fetch_url(
         follow_redirects: Whether to follow HTTP redirects (default: True)
         include_binary_preview: Whether to include base64 preview for binary content (default: False)
         extract_links: Whether to extract links from HTML content (default: False)
+        convert_html_to_markdown: Whether to convert HTML main content into Markdown (default: True)
+        keep_links: Whether to preserve links when converting HTML to Markdown (default: False)
         user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
         include_full_content: Whether to include full text/JSON/XML content (no preview truncation) (default: True)
     
@@ -1969,32 +1980,6 @@ def fetch_url(
                 except (UnicodeDecodeError, LookupError):
                     continue
             return content.decode("utf-8", errors="replace")
-
-        def _normalize_text_for_evidence(*, raw_text: str, content_type_header: str, url: str) -> str:
-            """Extract a readable text representation for evidence storage."""
-            text = str(raw_text or "")
-            if not text.strip():
-                return ""
-
-            main_type = str(content_type_header or "").split(";")[0].strip().lower()
-            try:
-                if main_type.startswith(("text/html", "application/xhtml+xml", "application/xhtml")):
-                    # HTML: strip tags and normalize whitespace.
-                    parser = _get_appropriate_parser(text)
-                    import warnings
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
-                        soup = BeautifulSoup(text, parser)
-                    return _normalize_text(soup.get_text(" ", strip=True))
-
-                if main_type == "application/json":
-                    data = json.loads(text)
-                    return json.dumps(data, ensure_ascii=False, indent=2, separators=(",", ": "))
-            except Exception:
-                # Fall back to raw text on parse failures.
-                pass
-
-            return text
         
         # Make the request with session for connection reuse and keep it open while streaming
         with requests.Session() as session:
@@ -2086,14 +2071,49 @@ def fetch_url(
                 content_bytes = b''.join(content_chunks)
                 actual_size = len(content_bytes)
 
+                # Detect and follow meta-refresh redirects (used by privacy-focused services)
+                meta_refresh_url = _detect_meta_refresh(content_bytes, content_type)
+                if meta_refresh_url and follow_redirects:
+                    # Resolve relative URLs
+                    if not meta_refresh_url.startswith(("http://", "https://")):
+                        meta_refresh_url = urljoin(str(response.url), meta_refresh_url)
+                    
+                    # Follow the meta-refresh redirect (recursive call with same session)
+                    try:
+                        with session.request(
+                            method="GET",
+                            url=meta_refresh_url,
+                            timeout=timeout,
+                            allow_redirects=follow_redirects,
+                            stream=True,
+                        ) as redirect_response:
+                            if not redirect_response.ok:
+                                # If redirect fails, continue with original content
+                                pass
+                            else:
+                                # Update response to the redirected content
+                                response = redirect_response
+                                content_type = response.headers.get('content-type', '').lower()
+                                content_chunks = []
+                                for chunk in response.iter_content(chunk_size=16384):
+                                    if chunk:
+                                        content_chunks.append(chunk)
+                                content_bytes = b''.join(content_chunks)
+                                actual_size = len(content_bytes)
+                    except Exception:
+                        # If redirect fails, continue with original content
+                        pass
+
                 # Detect content type and parse accordingly
                 parsed_content = _parse_content_by_type(
                     content_bytes,
                     content_type,
-                    url,
+                    str(response.url),
                     extract_links=extract_links,
                     include_binary_preview=include_binary_preview,
                     include_full_content=include_full_content,
+                    convert_html_to_markdown=convert_html_to_markdown,
+                    keep_links=keep_links,
                 )
 
                 # Build comprehensive response
@@ -2141,7 +2161,11 @@ def fetch_url(
                     is_text_based = any(main_type.startswith(t) for t in text_based_types)
                     if is_text_based:
                         raw_text = _decode_text_bytes(content_bytes, content_type)
-                        normalized_text = _normalize_text_for_evidence(raw_text=raw_text, content_type_header=content_type, url=url)
+                        normalized_text = _normalize_text_for_evidence(
+                            raw_text=raw_text,
+                            content_type_header=content_type,
+                            url=str(response.url),
+                        )
                 except Exception:
                     raw_text = None
                     normalized_text = None
@@ -2213,6 +2237,31 @@ def fetch_url(
         return {"success": False, "error": str(e), "url": str(url), "rendered": rendered}
 
 
+def _detect_meta_refresh(content_bytes: bytes, content_type: str) -> Optional[str]:
+    """Detect meta-refresh redirect in HTML content (used by privacy-focused services like DuckDuckGo)."""
+    # Only check HTML content
+    main_type = str(content_type or "").split(";")[0].strip().lower()
+    if not main_type.startswith(("text/html", "application/xhtml")):
+        return None
+    
+    # Only check small pages (> 2KB suggests real content, not a redirect stub)
+    if len(content_bytes) > 2000:
+        return None
+    
+    try:
+        html = content_bytes.decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+    
+    # Look for meta refresh tag: <meta http-equiv="refresh" content="0;URL=https://example.com">
+    import re
+    meta_refresh = re.search(r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+content=["\']?\d+;\s*URL=([^"\'\s>]+)', html, re.IGNORECASE)
+    if meta_refresh:
+        return meta_refresh.group(1).strip()
+    
+    return None
+
+
 def _parse_content_by_type(
     content_bytes: bytes,
     content_type: str,
@@ -2220,6 +2269,8 @@ def _parse_content_by_type(
     extract_links: bool = True,
     include_binary_preview: bool = False,
     include_full_content: bool = False,
+    convert_html_to_markdown: bool = True,
+    keep_links: bool = False,
 ) -> str:
     """
     Parse content based on detected content type with intelligent fallbacks.
@@ -2264,7 +2315,14 @@ def _parse_content_by_type(
         
         # Parse based on content type with fallback content detection
         if main_type.startswith('text/html') or main_type.startswith('application/xhtml'):
-            return _parse_html_content(text_content, url, extract_links, include_full_content)
+            return _parse_html_content(
+                text_content,
+                url,
+                extract_links=extract_links,
+                include_full_content=include_full_content,
+                convert_html_to_markdown=convert_html_to_markdown,
+                keep_links=keep_links,
+            )
         
         elif main_type == 'application/json':
             return _parse_json_content(text_content, include_full_content)
@@ -2273,9 +2331,18 @@ def _parse_content_by_type(
             return _parse_xml_content(text_content, include_full_content)
         
         elif main_type.startswith('text/'):
-            # For generic text types, check if it's actually XML or JSON
+            # For generic text types, check if it's actually HTML/XML/JSON
             if text_content and text_content.strip():
-                if _is_xml_content(text_content):
+                if _is_html_content(text_content):
+                    return _parse_html_content(
+                        text_content,
+                        url,
+                        extract_links=extract_links,
+                        include_full_content=include_full_content,
+                        convert_html_to_markdown=convert_html_to_markdown,
+                        keep_links=keep_links,
+                    )
+                elif _is_xml_content(text_content):
                     return _parse_xml_content(text_content, include_full_content)
                 elif _is_json_content(text_content):
                     return _parse_json_content(text_content, include_full_content)
@@ -2355,6 +2422,723 @@ def _is_json_content(content: str) -> bool:
     return False
 
 
+def _is_html_content(content: str) -> bool:
+    """Detect if content is HTML (vs plain text)."""
+    if not content:
+        return False
+
+    # If it looks like XML, treat it as XML (RSS/Atom/sitemaps) rather than HTML.
+    try:
+        if _is_xml_content(content):
+            return False
+    except Exception:
+        pass
+
+    sample = content.lstrip()[:2000].lower()
+    if not sample:
+        return False
+
+    if "<!doctype html" in sample or "<html" in sample:
+        return True
+    if "<head" in sample and "<body" in sample:
+        return True
+
+    # Heuristic: presence of common HTML tags near the beginning of the document.
+    if re.search(r"<(div|span|p|a|section|article|main|nav|header|footer|h[1-6]|ul|ol|li)\b", sample):
+        return True
+
+    return False
+
+
+def _normalize_extracted_text(text: str) -> str:
+    """Normalize extracted human text while preserving basic paragraph breaks."""
+    if not text:
+        return ""
+
+    raw = str(text).replace("\u00a0", " ").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"\s+", " ", line).strip() for line in raw.split("\n")]
+
+    def _is_boilerplate_line(line: str) -> bool:
+        lower = line.lower().strip()
+        if not lower:
+            return True
+        if lower in {"menu", "search", "skip to content", "skip to main content"}:
+            return True
+        if lower.startswith("skip directly to") and len(lower) <= 80:
+            return True
+
+        if len(lower) <= 220:
+            cookie_phrases = [
+                "we use cookies",
+                "cookie policy",
+                "cookie preferences",
+                "manage cookies",
+                "accept cookies",
+                "reject cookies",
+                "privacy policy",
+                "terms of use",
+            ]
+            if any(p in lower for p in cookie_phrases) and ("cookie" in lower or "privacy" in lower):
+                return True
+
+        if len(lower) <= 120:
+            auth_phrases = ["sign in", "log in", "login", "sign up", "subscribe", "newsletter"]
+            if any(p in lower for p in auth_phrases):
+                return True
+
+        # Menu-y separators ("Home | About | Contact").
+        if len(lower) <= 120 and ("|" in lower or "•" in lower) and len(lower.split()) <= 12:
+            nav_words = {"home", "about", "contact", "topics", "news", "latest", "help", "support"}
+            if any(w in nav_words for w in lower.split()):
+                return True
+
+        return False
+
+    cleaned: list[str] = []
+    prev: Optional[str] = None
+    for line in lines:
+        if not line:
+            continue
+        if _is_boilerplate_line(line):
+            continue
+        if prev == line:
+            continue
+        cleaned.append(line)
+        prev = line
+
+    return "\n".join(cleaned).strip()
+
+
+def _prune_html_soup_for_text(soup: BeautifulSoup) -> None:
+    """Remove common non-content elements from an HTML soup."""
+    # Always remove script/style payloads and embedded media elements.
+    noise_tags = [
+        "script",
+        "style",
+        "noscript",
+        "svg",
+        "canvas",
+        "iframe",
+        "object",
+        "embed",
+        "picture",
+        "source",
+        "track",
+        "video",
+        "audio",
+        "img",
+        "form",
+        "input",
+        "button",
+        "select",
+        "option",
+        "textarea",
+        "link",
+    ]
+    for element in soup(noise_tags):
+        element.decompose()
+
+    # Remove hidden elements.
+    try:
+        for element in soup.select('[aria-hidden="true"], [hidden]'):
+            element.decompose()
+    except Exception:
+        pass
+
+    # Remove common layout containers, but keep those inside main/article when possible.
+    protected_parents = {"article", "main"}
+    layout_tags = ["nav", "aside", "footer", "header"]
+    for element in soup.find_all(layout_tags):
+        if element.find_parent(list(protected_parents)) is not None:
+            continue
+        element.decompose()
+
+    # Remove boilerplate containers by role/id/class heuristics.
+    boilerplate_keywords = [
+        "cookie",
+        "consent",
+        "banner",
+        "modal",
+        "popup",
+        "subscribe",
+        "newsletter",
+        "signup",
+        "signin",
+        "login",
+        "register",
+        "breadcrumb",
+        "pagination",
+        "social",
+        "share",
+        "comment",
+        "comments",
+        "related",
+        "recommend",
+        "promo",
+        "advert",
+        "ads",
+        "sponsored",
+        "masthead",
+    ]
+    boilerplate_roles = {
+        "navigation",
+        "banner",
+        "contentinfo",
+        "complementary",
+        "search",
+        "dialog",
+        "alert",
+    }
+
+    candidates = soup.find_all(["div", "section"], limit=2500)
+    for element in list(candidates):
+        # If a parent container was decomposed earlier, descendants can remain in this
+        # precomputed list but become invalid (attrs set to None).
+        if getattr(element, "attrs", None) is None:
+            continue
+        if element.find_parent(list(protected_parents)) is not None:
+            continue
+
+        role = element.get("role")
+        if isinstance(role, str) and role.strip().lower() in boilerplate_roles:
+            element.decompose()
+            continue
+
+        id_part = str(element.get("id") or "").lower()
+        class_part = " ".join([str(c).lower() for c in (element.get("class") or []) if c])
+        combined = f"{id_part} {class_part}".strip()
+        if not combined:
+            continue
+
+        if any(k in combined for k in boilerplate_keywords):
+            element.decompose()
+
+
+def _score_html_container(container: Any) -> float:
+    """Score a candidate HTML container for main content selection."""
+    try:
+        text = container.get_text(" ", strip=True)
+    except Exception:
+        return -1.0
+
+    text_len = len(text)
+    if text_len < 200:
+        return -1.0
+
+    try:
+        link_text_len = sum(len(a.get_text(" ", strip=True)) for a in container.find_all("a"))
+    except Exception:
+        link_text_len = 0
+
+    link_density = float(link_text_len) / float(max(text_len, 1))
+
+    try:
+        p_count = len(container.find_all("p"))
+        li_count = len(container.find_all("li"))
+        heading_count = len(container.find_all(re.compile(r"^h[1-6]$")))
+    except Exception:
+        p_count = 0
+        li_count = 0
+        heading_count = 0
+
+    score = float(text_len)
+    score += float(p_count) * 120.0
+    score += float(li_count) * 30.0
+    score += float(heading_count) * 50.0
+    score -= float(text_len) * link_density * 0.8
+    return score
+
+
+def _select_html_main_container(soup: BeautifulSoup, url: str) -> Any:
+    """Select the best main content container from an HTML soup."""
+    content_candidates: list[Any] = []
+    content_selectors = [
+        "main",
+        "article",
+        "[role='main']",
+        "#mw-content-text",
+        "#bodyContent",
+        "#content",
+        "#main",
+        ".mw-parser-output",
+        ".entry-content",
+        ".post-content",
+        ".article-content",
+        ".page-content",
+        ".content",
+        ".article-body",
+        ".post-body",
+        ".story-body",
+        ".main-content",
+    ]
+    try:
+        selector_query = ", ".join(content_selectors)
+        content_candidates.extend(soup.select(selector_query)[:50])
+    except Exception:
+        pass
+
+    if soup.body:
+        content_candidates.append(soup.body)
+    content_candidates.append(soup)
+
+    # Deduplicate while preserving order.
+    seen: set[int] = set()
+    unique_candidates: list[Any] = []
+    for c in content_candidates:
+        cid = id(c)
+        if cid in seen:
+            continue
+        seen.add(cid)
+        unique_candidates.append(c)
+
+    best_container: Any = None
+    best_score = -1.0
+    for candidate in unique_candidates:
+        score = _score_html_container(candidate)
+        if score > best_score:
+            best_score = score
+            best_container = candidate
+
+    return best_container or soup
+
+
+def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str, str]:
+    """Extract (title, description, main text) from an HTML document."""
+    if not html_content:
+        return "", "", ""
+
+    parser = _get_appropriate_parser(html_content)
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+        soup = BeautifulSoup(html_content, parser)
+
+    title = ""
+    try:
+        title_tag = soup.find("title")
+        if title_tag:
+            title = str(title_tag.get_text() or "").strip()
+    except Exception:
+        title = ""
+
+    description = ""
+    try:
+        meta_desc = soup.find("meta", attrs={"name": "description"})
+        if meta_desc and meta_desc.get("content"):
+            description = str(meta_desc["content"] or "").strip()
+    except Exception:
+        description = ""
+
+    _prune_html_soup_for_text(soup)
+    container = _select_html_main_container(soup, url)
+    try:
+        extracted_raw = container.get_text("\n", strip=True)
+    except Exception:
+        extracted_raw = soup.get_text("\n", strip=True)
+
+    extracted = _normalize_extracted_text(extracted_raw)
+    return title, description, extracted
+
+
+_TRACKING_QUERY_PARAMS: set[str] = {
+    "fbclid",
+    "gclid",
+    "igshid",
+    "mc_cid",
+    "mc_eid",
+    "mkt_tok",
+    "yclid",
+}
+
+
+def _is_tracking_query_param(name: str) -> bool:
+    lower = str(name or "").strip().lower()
+    if not lower:
+        return False
+    if lower.startswith("utm_"):
+        return True
+    if lower in _TRACKING_QUERY_PARAMS:
+        return True
+    return False
+
+
+def _unwrap_duckduckgo_redirect(url: str) -> str:
+    """Unwrap DuckDuckGo redirect URLs like https://duckduckgo.com/l/?uddg=<encoded>."""
+    try:
+        parsed = urlparse(str(url or ""))
+        if not parsed.netloc.endswith("duckduckgo.com"):
+            return url
+        if not parsed.path.startswith("/l"):
+            return url
+        qs = parse_qs(parsed.query or "")
+        target = qs.get("uddg")
+        if not target:
+            return url
+        decoded = unquote(str(target[0] or ""))
+        if decoded.startswith(("http://", "https://")):
+            return decoded
+    except Exception:
+        return url
+    return url
+
+
+def _canonicalize_link_url(href: str, base_url: str) -> Optional[str]:
+    """Resolve and sanitize a link URL for LLM readability/token efficiency."""
+    raw = str(href or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("#"):
+        return None
+    if raw.startswith(("javascript:", "mailto:", "tel:")):
+        return None
+
+    absolute = urljoin(str(base_url or ""), raw)
+    absolute = _unwrap_duckduckgo_redirect(absolute)
+
+    try:
+        parsed = urlparse(absolute)
+        if parsed.query:
+            filtered = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if not _is_tracking_query_param(k)]
+            absolute = urlunparse(parsed._replace(query=urlencode(filtered, doseq=True)))
+    except Exception:
+        pass
+
+    return absolute
+
+
+def _prune_html_container_for_readability(container: Any) -> None:
+    """Remove common boilerplate within a chosen main container (ToC, share, related, etc.)."""
+    if container is None:
+        return
+
+    try:
+        for element in container.find_all(["nav", "aside", "footer"], limit=2500):
+            element.decompose()
+    except Exception:
+        pass
+
+    keywords = {
+        "toc",
+        "table-of-contents",
+        "breadcrumbs",
+        "breadcrumb",
+        "share",
+        "social",
+        "related",
+        "recommend",
+        "promo",
+        "advert",
+        "ads",
+        "sponsored",
+        "subscribe",
+        "newsletter",
+        "signup",
+        "signin",
+        "login",
+        "register",
+        "cookie",
+        "consent",
+        "banner",
+        "modal",
+        "popup",
+        "comments",
+        "comment",
+        "tags",
+    }
+
+    try:
+        for element in container.find_all(True, limit=8000):
+            if getattr(element, "attrs", None) is None:
+                continue
+            if element is container:
+                continue
+            if element.name in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li"}:
+                continue
+
+            combined = " ".join(
+                [
+                    str(element.get("id") or "").lower(),
+                    " ".join([str(c).lower() for c in (element.get("class") or []) if c]),
+                    str(element.get("role") or "").lower(),
+                    str(element.get("aria-label") or "").lower(),
+                ]
+            ).strip()
+            if not combined:
+                continue
+            if any(k in combined for k in keywords):
+                element.decompose()
+    except Exception:
+        pass
+
+
+def _normalize_inline_markdown(text: str) -> str:
+    if not text:
+        return ""
+    parts = [re.sub(r"\s+", " ", p).strip() for p in str(text).split("\n")]
+    return "\n".join([p for p in parts if p]).strip()
+
+
+def _inline_markdown_from_node(node: Any, *, base_url: str, keep_links: bool) -> str:
+    if node is None:
+        return ""
+
+    if isinstance(node, NavigableString):
+        if type(node).__name__ == "Doctype":
+            return ""
+        return str(node)
+
+    if not isinstance(node, Tag):
+        return ""
+
+    name = str(node.name or "").lower()
+    if name in {"script", "style", "noscript"}:
+        return ""
+
+    if name == "br":
+        return "\n"
+
+    if name == "a":
+        inner = "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
+        label = _normalize_inline_markdown(inner)
+        href = node.get("href")
+        resolved = _canonicalize_link_url(str(href or ""), base_url)
+        if keep_links and resolved:
+            if not label:
+                return resolved
+            return f"[{label}]({resolved})"
+        return label
+
+    if name in {"strong", "b"}:
+        inner = _normalize_inline_markdown(
+            "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
+        )
+        return f"**{inner}**" if inner else ""
+
+    if name in {"em", "i"}:
+        inner = _normalize_inline_markdown(
+            "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
+        )
+        return f"*{inner}*" if inner else ""
+
+    if name == "code":
+        inner = _normalize_inline_markdown(
+            "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
+        )
+        if not inner:
+            return ""
+        # Best-effort: avoid breaking inline code spans that contain backticks.
+        fence = "``" if "`" in inner else "`"
+        return f"{fence}{inner}{fence}"
+
+    return "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
+
+
+def _list_to_markdown_lines(tag: Tag, *, base_url: str, keep_links: bool, indent_level: int, ordered: bool) -> list[str]:
+    lines: list[str] = []
+    index = 1
+
+    for li in tag.find_all("li", recursive=False):
+        prefix = f"{index}. " if ordered else "- "
+        index += 1
+
+        text_chunks: list[str] = []
+        nested_lines: list[str] = []
+        for child in li.children:
+            if isinstance(child, Tag) and str(child.name or "").lower() in {"ul", "ol"}:
+                nested_lines.extend(
+                    _list_to_markdown_lines(
+                        child,
+                        base_url=base_url,
+                        keep_links=keep_links,
+                        indent_level=indent_level + 1,
+                        ordered=str(child.name or "").lower() == "ol",
+                    )
+                )
+                continue
+            text_chunks.append(_inline_markdown_from_node(child, base_url=base_url, keep_links=keep_links))
+
+        item_text = _normalize_inline_markdown("".join(text_chunks)).replace("\n", " ").strip()
+        indent = "  " * max(indent_level, 0)
+        lines.append(f"{indent}{prefix}{item_text}".rstrip())
+        lines.extend([l.rstrip() for l in nested_lines])
+
+    lines.append("")
+    return lines
+
+
+def _block_markdown_lines_from_node(node: Any, *, base_url: str, keep_links: bool, indent_level: int = 0) -> list[str]:
+    if node is None:
+        return []
+
+    if isinstance(node, NavigableString):
+        if type(node).__name__ == "Doctype":
+            return []
+        raw = str(node)
+        if not raw.strip():
+            return []
+        text = _normalize_inline_markdown(raw)
+        return [text, ""] if text else []
+
+    if not isinstance(node, Tag):
+        return []
+
+    name = str(node.name or "").lower()
+    if name in {"script", "style", "noscript"}:
+        return []
+
+    if name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+        level = int(name[1])
+        inner = _normalize_inline_markdown(
+            "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
+        )
+        if not inner:
+            return []
+        return [f"{'#' * level} {inner}", ""]
+
+    if name == "p":
+        inner = _normalize_inline_markdown(
+            "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
+        )
+        return [inner, ""] if inner else []
+
+    if name in {"ul", "ol"}:
+        return _list_to_markdown_lines(
+            node,
+            base_url=base_url,
+            keep_links=keep_links,
+            indent_level=indent_level,
+            ordered=name == "ol",
+        )
+
+    if name == "pre":
+        code = str(node.get_text("\n", strip=False) or "").strip("\n")
+        if not code.strip():
+            return []
+        return ["```", code, "```", ""]
+
+    if name == "blockquote":
+        inner_lines: list[str] = []
+        for child in node.children:
+            inner_lines.extend(_block_markdown_lines_from_node(child, base_url=base_url, keep_links=keep_links, indent_level=indent_level))
+        quoted: list[str] = []
+        for line in inner_lines:
+            if not line.strip():
+                quoted.append(">")
+            else:
+                quoted.append(f"> {line}")
+        quoted.append("")
+        return quoted
+
+    # Default: treat as a container and emit its children.
+    lines: list[str] = []
+    for child in node.children:
+        lines.extend(_block_markdown_lines_from_node(child, base_url=base_url, keep_links=keep_links, indent_level=indent_level))
+    return lines
+
+
+def _normalize_markdown(markdown: str) -> str:
+    if not markdown:
+        return ""
+    text = str(markdown).replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line.rstrip() for line in text.split("\n")]
+
+    boilerplate_lines = {
+        "menu",
+        "search",
+        "skip to content",
+        "skip to main content",
+        "skip directly to content",
+        "skip directly to main content",
+    }
+
+    out: list[str] = []
+    prev_blank = False
+    prev_line: Optional[str] = None
+    in_code_fence = False
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith("```"):
+            in_code_fence = not in_code_fence
+            out.append(line)
+            prev_blank = False
+            prev_line = stripped
+            continue
+
+        if in_code_fence:
+            out.append(line)
+            continue
+
+        if not stripped:
+            if prev_blank:
+                continue
+            out.append("")
+            prev_blank = True
+            prev_line = ""
+            continue
+
+        if stripped.lower() in boilerplate_lines:
+            continue
+
+        if prev_line == stripped:
+            continue
+
+        out.append(line)
+        prev_blank = False
+        prev_line = stripped
+
+    return "\n".join(out).strip()
+
+
+def _html_to_markdown(container: Any, *, base_url: str, keep_links: bool) -> str:
+    if container is None:
+        return ""
+
+    lines: list[str] = []
+    try:
+        for child in container.children:
+            lines.extend(_block_markdown_lines_from_node(child, base_url=base_url, keep_links=keep_links))
+    except Exception:
+        # Fall back to a plain-text extraction if markdown rendering fails.
+        try:
+            return _normalize_extracted_text(container.get_text("\n", strip=True))
+        except Exception:
+            return ""
+
+    return _normalize_markdown("\n".join(lines))
+
+
+def _normalize_text_for_evidence(*, raw_text: str, content_type_header: str, url: str) -> str:
+    """Extract a readable text representation for evidence storage."""
+    text = str(raw_text or "")
+    if not text.strip():
+        return ""
+
+    main_type = str(content_type_header or "").split(";")[0].strip().lower()
+
+    try:
+        is_html = main_type.startswith(("text/html", "application/xhtml+xml", "application/xhtml"))
+        if not is_html and main_type.startswith("text/") and _is_html_content(text):
+            is_html = True
+
+        if is_html:
+            title, description, extracted = _extract_clean_text_from_html(text, url)
+            parts = [p for p in [title, description, extracted] if p]
+            return "\n\n".join(parts).strip()
+
+        if main_type == "application/json" or (main_type.startswith("text/") and _is_json_content(text)):
+            data = json.loads(text)
+            return json.dumps(data, ensure_ascii=False, indent=2, separators=(",", ": "))
+    except Exception:
+        # HTML parsing can fail on malformed markup; do best-effort stripping but never return raw tags.
+        if _is_html_content(text):
+            stripped = re.sub(r"<[^>]+>", " ", text)
+            return _normalize_extracted_text(stripped)
+
+    return _normalize_extracted_text(text) if main_type.startswith("text/") else text
+
+
 def _get_appropriate_parser(content: str) -> str:
     """Get the appropriate BeautifulSoup parser for the content."""
     # If lxml is available and content looks like XML, use xml parser
@@ -2365,7 +3149,14 @@ def _get_appropriate_parser(content: str) -> str:
     return BS4_PARSER
 
 
-def _parse_html_content(html_content: str, url: str, extract_links: bool = True, include_full_content: bool = False) -> str:
+def _parse_html_content(
+    html_content: str,
+    url: str,
+    extract_links: bool = True,
+    include_full_content: bool = False,
+    convert_html_to_markdown: bool = True,
+    keep_links: bool = False,
+) -> str:
     """Parse HTML content and extract meaningful information."""
     if not html_content:
         return "❌ No HTML content to parse"
@@ -2389,9 +3180,12 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True,
             soup = BeautifulSoup(html_content, parser)
 
         # Extract title
+        title_text = ""
         title = soup.find("title")
         if title:
-            result_parts.append(f"📰 Title: {title.get_text().strip()}")
+            title_text = title.get_text().strip()
+            if title_text:
+                result_parts.append(f"📰 Title: {title_text}")
 
         # Extract meta description
         meta_desc = soup.find("meta", attrs={"name": "description"})
@@ -2401,98 +3195,92 @@ def _parse_html_content(html_content: str, url: str, extract_links: bool = True,
                 desc = desc[:200] + "..."
             result_parts.append(f"📝 Description: {desc}")
 
-        # Extract headings
-        headings = []
-        for i in range(1, 7):
-            h_tags = soup.find_all(f"h{i}")
-            for h in h_tags[:5]:  # Limit to first 5 of each level
-                headings.append(f"H{i}: {h.get_text().strip()[:100]}")
+        # Remove common layout/script noise and select the most content-dense container.
+        _prune_html_soup_for_text(soup)
+        content_soup = _select_html_main_container(soup, url)
+        _prune_html_container_for_readability(content_soup)
 
-        if headings:
-            result_parts.append("📋 Headings (first 5 per level):")
-            for heading in headings[:10]:  # Limit total headings
-                result_parts.append(f"  • {heading}")
-
-        # Extract links if requested
+        # Extract links (main-content only) if requested.
         if extract_links:
-            links = []
-            for a in soup.find_all("a", href=True)[:20]:  # Limit to first 20 links
-                href = a["href"]
-                text = a.get_text().strip()[:50]
-                # Convert relative URLs to absolute
-                if href.startswith("/"):
-                    href = urljoin(url, href)
-                elif not href.startswith(("http://", "https://")):
-                    href = urljoin(url, href)
-                links.append(f"{text} → {href}")
+            links: list[str] = []
+            seen: set[str] = set()
+            for a in content_soup.find_all("a", href=True):
+                resolved = _canonicalize_link_url(str(a.get("href") or ""), url)
+                if not resolved:
+                    continue
+
+                parsed_resolved = urlparse(resolved)
+                parsed_base = urlparse(url)
+                # Drop same-page anchors and other navigation noise.
+                if (
+                    parsed_resolved.scheme in {"http", "https"}
+                    and parsed_resolved.netloc == parsed_base.netloc
+                    and parsed_resolved.path == parsed_base.path
+                    and parsed_resolved.fragment
+                ):
+                    continue
+
+                label = str(a.get_text(" ", strip=True) or "").strip()
+                if not label:
+                    continue
+                label_lower = label.lower()
+                if label_lower.startswith("share on") or label_lower in {"share", "tags", "table of contents"}:
+                    continue
+
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+
+                label = re.sub(r"\s+", " ", label)[:80]
+                links.append(f"{label} → {resolved}")
+                if len(links) >= 20:
+                    break
 
             if links:
                 result_parts.append("🔗 Links (first 20):")
                 for link in links:
                     result_parts.append(f"  • {link}")
 
-        # Extract main text content with better cleaning
-        # Remove script, style, nav, footer, header elements for cleaner content
-        for element in soup(
-            ["script", "style", "nav", "footer", "header", "aside", "noscript", "svg"]
-        ):
-            element.decompose()
+        if convert_html_to_markdown:
+            markdown = _html_to_markdown(content_soup, base_url=url, keep_links=keep_links)
+            # Drop duplicate title lines if the first content line matches <title>.
+            if title_text and markdown:
+                md_lines = markdown.splitlines()
+                while md_lines and not md_lines[0].strip():
+                    md_lines.pop(0)
+                if md_lines and md_lines[0].strip() == title_text:
+                    md_lines.pop(0)
+                    while md_lines and not md_lines[0].strip():
+                        md_lines.pop(0)
+                    markdown = "\n".join(md_lines).strip()
+            if markdown:
+                preview_length = None if include_full_content else 2000
+                md_preview = markdown if preview_length is None else markdown[:preview_length]
+                if preview_length is not None and len(markdown) > preview_length:
+                    md_preview += "\n\n... (truncated)"
+                result_parts.append("📄 Markdown Content:" if include_full_content else "📄 Markdown Content Preview:")
+                result_parts.append(md_preview)
+                result_parts.append(f"📊 Total markdown length: {len(markdown):,} characters")
+        else:
+            text = _normalize_extracted_text(content_soup.get_text("\n", strip=True))
 
-        def _normalize_text(raw_text: str) -> str:
-            return " ".join(str(raw_text or "").split())
-
-        # Pick the most content-dense container (helps avoid menus/boilerplate).
-        content_candidates = []
-        content_selectors = [
-            "main",
-            "article",
-            "[role='main']",
-            "#mw-content-text",
-            "#bodyContent",
-            "#content",
-            "#main",
-            ".mw-parser-output",
-            ".entry-content",
-            ".post-content",
-            ".article-content",
-            ".page-content",
-            ".content",
-        ]
-        try:
-            selector_query = ", ".join(content_selectors)
-            content_candidates.extend(soup.select(selector_query)[:25])
-        except Exception:
-            pass
-        if soup.body:
-            content_candidates.append(soup.body)
-        content_candidates.append(soup)
-
-        content_soup = None
-        best_text_len = -1
-        for candidate in content_candidates:
-            candidate_text = _normalize_text(candidate.get_text(" ", strip=True))
-            if len(candidate_text) > best_text_len:
-                best_text_len = len(candidate_text)
-                content_soup = candidate
-
-        text = _normalize_text((content_soup or soup).get_text(" ", strip=True))
-
-        if text:
-            preview_length = None if include_full_content else 1000
-            text_preview = text if preview_length is None else text[:preview_length]
-            if preview_length is not None and len(text) > preview_length:
-                text_preview += "..."
-            result_parts.append("📄 Text Content:" if include_full_content else "📄 Text Content Preview:")
-            result_parts.append(f"{text_preview}")
-            result_parts.append(f"📊 Total text length: {len(text):,} characters")
+            if text:
+                preview_length = None if include_full_content else 1000
+                text_preview = text if preview_length is None else text[:preview_length]
+                if preview_length is not None and len(text) > preview_length:
+                    text_preview += "\n... (truncated)"
+                result_parts.append("📄 Text Content:" if include_full_content else "📄 Text Content Preview:")
+                result_parts.append(f"{text_preview}")
+                result_parts.append(f"📊 Total text length: {len(text):,} characters")
 
     except Exception as e:
         result_parts.append(f"⚠️  BeautifulSoup parsing error: {str(e)}")
-        result_parts.append("📄 Raw HTML Preview (first 1000 chars):")
-        if include_full_content:
-            result_parts.append(html_content)
-        else:
-            result_parts.append(html_content[:1000] + ("..." if len(html_content) > 1000 else ""))
+        result_parts.append("📄 Text-only Fallback Preview:")
+        fallback = _normalize_extracted_text(re.sub(r"<[^>]+>", " ", str(html_content or "")))
+        preview = fallback if include_full_content else fallback[:1000]
+        if not include_full_content and len(fallback) > 1000:
+            preview += "\n... (truncated)"
+        result_parts.append(preview)
     
     return "\n".join(result_parts)
 
