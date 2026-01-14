@@ -2294,7 +2294,10 @@
       "canonical_name": "devstral-small-2-24b",
       "aliases": [
         "mistralai/Devstral-Small-2-24B-Instruct-2512",
+        "mistralai/devstral-small-2-2512",
+        "mistralai/devstral-small-2",
         "devstral-small-2",
+        "devstral-small-2-2512",
         "devstral-small-2-24b-instruct"
       ],
       "max_tokens": 262144,
@@ -2319,6 +2322,7 @@
       "canonical_name": "devstral-2-123b",
       "aliases": [
         "mistralai/Devstral-2-123B-Instruct-2512",
+        "mistralai/devstral-2",
         "devstral-2",
         "devstral-2-123b-instruct"
       ],
