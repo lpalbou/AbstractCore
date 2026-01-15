@@ -33,6 +33,7 @@ import urllib.parse
 import argparse
 import sys
 import logging
+import threading
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
 from fastapi import FastAPI, HTTPException, Request, Query, Body
@@ -526,6 +527,14 @@ class ChatCompletionRequest(BaseModel):
                     "Values <= 0 are treated as unlimited.",
         example=7200.0,
     )
+    unload_after: bool = Field(
+        default=False,
+        description="If true, call `llm.unload_model(model)` after the request completes (AbstractCore-specific feature). "
+                    "This is useful for explicit memory hygiene in single-tenant or batch scenarios. "
+                    "WARNING: for providers that unload shared server state (e.g. Ollama), this can disrupt other "
+                    "clients and is disabled by default unless explicitly enabled by the server operator.",
+        example=False,
+    )
 
     class Config:
         schema_extra = {
@@ -895,6 +904,80 @@ def convert_openai_responses_to_chat_completion(openai_request: OpenAIResponsesR
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+def _parse_bool_env(var_name: str) -> bool:
+    """Parse a boolean environment variable (1/true/yes/on)."""
+    val = os.getenv(var_name)
+    if val is None:
+        return False
+    return str(val).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_boolish(value: Any) -> bool:
+    """Parse a request-supplied bool-ish value (bool/int/str/None)."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    raise ValueError(f"Expected boolean, got {type(value).__name__}: {value!r}")
+
+
+_OLLAMA_INFLIGHT_LOCK = threading.Lock()
+_OLLAMA_INFLIGHT_COUNTS: Dict[Tuple[str, str, str], int] = {}
+_OLLAMA_UNLOAD_REQUESTED: Dict[Tuple[str, str, str], bool] = {}
+
+
+def _ollama_inflight_key(provider: str, base_url: Optional[str], model: str) -> Tuple[str, str, str]:
+    """Build a stable key for tracking in-flight Ollama requests."""
+    return (provider.strip().lower(), (base_url or "").strip(), model)
+
+
+def _ollama_inflight_enter(key: Tuple[str, str, str]) -> None:
+    """Increment in-flight counter for an Ollama (provider/base_url/model) key."""
+    with _OLLAMA_INFLIGHT_LOCK:
+        _OLLAMA_INFLIGHT_COUNTS[key] = _OLLAMA_INFLIGHT_COUNTS.get(key, 0) + 1
+
+
+def _ollama_inflight_exit(key: Tuple[str, str, str], *, unload_after_requested: bool) -> bool:
+    """Decrement in-flight counter and return True if an unload should happen now."""
+    with _OLLAMA_INFLIGHT_LOCK:
+        if unload_after_requested:
+            _OLLAMA_UNLOAD_REQUESTED[key] = True
+
+        current = _OLLAMA_INFLIGHT_COUNTS.get(key, 0)
+        if current <= 1:
+            _OLLAMA_INFLIGHT_COUNTS.pop(key, None)
+            return bool(_OLLAMA_UNLOAD_REQUESTED.pop(key, False))
+
+        _OLLAMA_INFLIGHT_COUNTS[key] = current - 1
+        return False
+
+
+def _best_effort_unload(llm: Any, *, request_id: str, provider: str, model: str) -> None:
+    """Unload provider resources without failing the request lifecycle."""
+    try:
+        if not hasattr(llm, "unload_model"):
+            raise AttributeError("Provider does not implement unload_model(model_name)")
+        llm.unload_model(model)
+        logger.info("🧹 Provider Unloaded", request_id=request_id, provider=provider, model=model)
+    except Exception as e:
+        logger.warning(
+            "⚠️ Provider unload failed",
+            request_id=request_id,
+            provider=provider,
+            model=model,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
 
 def parse_model_string(model_string: str) -> tuple[str, str]:
     """Parse model string to extract provider and model."""
@@ -1315,6 +1398,16 @@ async def create_response(
                 status_code=400,
                 detail={"error": {"message": "Request must contain either 'input' (OpenAI format) or 'messages' (legacy format)", "type": "invalid_request"}}
             )
+
+        # AbstractCore extension: allow opt-in unload-after-request even for OpenAI Responses format.
+        if "unload_after" in request_data:
+            try:
+                chat_request = chat_request.model_copy(update={"unload_after": _parse_boolish(request_data.get("unload_after"))})
+            except Exception as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"error": {"message": f"Invalid unload_after value: {e}", "type": "validation_error"}},
+                )
 
         # Respect user's streaming preference (defaults to False)
 
@@ -2079,7 +2172,28 @@ async def process_chat_completion(
             # Note: BaseProvider treats non-positive values as "unlimited".
             provider_kwargs["timeout"] = request.timeout_s
 
+        provider_normalized = provider.strip().lower()
+        unload_after_requested = bool(getattr(request, "unload_after", False))
+        allow_unsafe_unload_after = _parse_bool_env("ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER")
+        if unload_after_requested and provider_normalized == "ollama" and not allow_unsafe_unload_after:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": {
+                        "message": (
+                            "unload_after=true is disabled for provider 'ollama' because it can unload shared server "
+                            "state and disrupt other clients. Set ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1 to enable."
+                        ),
+                        "type": "forbidden",
+                    }
+                },
+            )
+
         llm = create_llm(provider, model=model, **provider_kwargs)
+        ollama_key: Optional[Tuple[str, str, str]] = None
+        if provider_normalized == "ollama":
+            ollama_key = _ollama_inflight_key(provider, request.base_url, model)
+            _ollama_inflight_enter(ollama_key)
 
         # Convert messages
         messages = convert_to_abstractcore_messages(processed_messages)
@@ -2128,7 +2242,16 @@ async def process_chat_completion(
             if request.stream:
                 return StreamingResponse(
                     generate_streaming_response(
-                        llm, gen_kwargs, provider, model, syntax_rewriter, request_id, temp_files_to_cleanup
+                        llm,
+                        gen_kwargs,
+                        provider,
+                        model,
+                        syntax_rewriter,
+                        request_id,
+                        temp_files_to_cleanup,
+                        unload_after=unload_after_requested,
+                        ollama_key=ollama_key,
+                        allow_unsafe_unload_after=allow_unsafe_unload_after,
                     ),
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
@@ -2148,9 +2271,22 @@ async def process_chat_completion(
                     )
                 return openai_response
         finally:
-            # Cleanup temporary files (base64 and downloaded images) with delay to avoid race conditions
-            import threading
+            if not request.stream:
+                if provider_normalized == "ollama" and ollama_key is not None:
+                    should_unload = _ollama_inflight_exit(ollama_key, unload_after_requested=unload_after_requested)
+                    if should_unload and allow_unsafe_unload_after:
+                        _best_effort_unload(llm, request_id=request_id, provider=provider, model=model)
+                    elif should_unload:
+                        logger.warning(
+                            "⚠️ Unload requested but disabled by server policy",
+                            request_id=request_id,
+                            provider=provider,
+                            model=model,
+                        )
+                elif unload_after_requested:
+                    _best_effort_unload(llm, request_id=request_id, provider=provider, model=model)
 
+            # Cleanup temporary files (base64 and downloaded images) with delay to avoid race conditions
             def delayed_cleanup():
                 """Cleanup temporary files after a short delay to avoid race conditions"""
                 time.sleep(1)  # Short delay to ensure generation is complete
@@ -2170,6 +2306,8 @@ async def process_chat_completion(
             cleanup_thread = threading.Thread(target=delayed_cleanup, daemon=True)
             cleanup_thread.start()
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
             "❌ Chat completion failed",
@@ -2189,9 +2327,14 @@ def generate_streaming_response(
     model: str,
     syntax_rewriter: ToolCallSyntaxRewriter,
     request_id: str,
-    temp_files_to_cleanup: List[str] = None
+    temp_files_to_cleanup: List[str] = None,
+    *,
+    unload_after: bool = False,
+    ollama_key: Optional[Tuple[str, str, str]] = None,
+    allow_unsafe_unload_after: bool = False,
 ) -> Iterator[str]:
     """Generate OpenAI-compatible streaming response with syntax rewriting."""
+    provider_normalized = provider.strip().lower()
     try:
         chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created_time = int(time.time())
@@ -2324,6 +2467,32 @@ def generate_streaming_response(
         )
         error_chunk = {"error": {"message": str(e), "type": "server_error"}}
         yield f"data: {json.dumps(error_chunk)}\n\n"
+    finally:
+        if provider_normalized == "ollama" and ollama_key is not None:
+            try:
+                should_unload = _ollama_inflight_exit(ollama_key, unload_after_requested=unload_after)
+            except Exception as e:
+                logger.warning(
+                    "⚠️ Failed to update in-flight unload state",
+                    request_id=request_id,
+                    provider=provider,
+                    model=model,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                should_unload = False
+
+            if should_unload and allow_unsafe_unload_after:
+                _best_effort_unload(llm, request_id=request_id, provider=provider, model=model)
+            elif should_unload:
+                logger.warning(
+                    "⚠️ Unload requested but disabled by server policy",
+                    request_id=request_id,
+                    provider=provider,
+                    model=model,
+                )
+        elif unload_after:
+            _best_effort_unload(llm, request_id=request_id, provider=provider, model=model)
 
 def convert_to_openai_response(
     response,

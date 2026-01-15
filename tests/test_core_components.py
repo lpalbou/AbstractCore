@@ -8,7 +8,7 @@ import os
 import json
 import tempfile
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from abstractcore import create_llm, BasicSession, GenerateResponse, Message
 from abstractcore.core.enums import MessageRole, ModelParameter, ModelCapability
@@ -251,6 +251,15 @@ class TestToolDefinition:
         assert "text" in tool.parameters
         assert "count" in tool.parameters
         assert tool.function == sample_function
+
+    def test_tool_from_function_infers_optional_int(self):
+        def sample_optional(path: str, end_line: Optional[int] = None) -> str:
+            """Sample function with Optional[int]"""
+            return f"{path}:{end_line}"
+
+        tool = ToolDefinition.from_function(sample_optional)
+        assert tool.parameters["end_line"]["type"] == "integer"
+        assert tool.parameters["end_line"]["default"] is None
 
     def test_tool_to_dict(self):
         """Test converting tool to dict"""

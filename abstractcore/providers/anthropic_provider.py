@@ -455,7 +455,7 @@ class AnthropicProvider(BaseProvider):
         except Exception as e:
             raise
 
-    def unload(self) -> None:
+    def unload_model(self, model_name: str) -> None:
         """Close async client if it was created."""
         if self._async_client is not None:
             import asyncio

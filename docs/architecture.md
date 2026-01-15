@@ -114,8 +114,8 @@ class AbstractCoreInterface(ABC):
     def get_capabilities(self) -> List[str]:
         """Get provider capabilities"""
 
-    def unload(self) -> None:
-        """Unload model from memory (local providers)"""
+    def unload_model(self, model_name: str) -> None:
+        """Unload/cleanup resources for a specific model (best-effort)"""
 ```
 
 This ensures:
@@ -126,19 +126,23 @@ This ensures:
 
 #### Memory Management
 
-The `unload()` method is a **best-effort resource cleanup hook**.
+The `unload_model(model_name)` method is a **best-effort resource cleanup hook**.
 
 - **API providers** (OpenAI, Anthropic): typically a no-op (safe to call).
 - **Local / self-hosted providers**: behavior is provider-specific:
   - some can actively release memory (or request server-side eviction),
   - others can only close client connections and rely on server-side TTL/auto-eviction.
-  - Example: **LMStudio** does not expose an explicit “unload model” API; `unload()` closes HTTP clients and relies on LMStudio TTL/auto-evict.
+  - Example: **LMStudio** does not expose an explicit “unload model” API; `unload_model()` closes HTTP clients and relies on LMStudio TTL/auto-evict.
+
+In the OpenAI-compatible AbstractCore server (`abstractcore.server.app`), requests can set `unload_after` (default `false`)
+to call `llm.unload_model(model)` after the request completes. For providers that can unload shared server state (e.g. Ollama),
+this is disabled by default and must be explicitly enabled by the server operator.
 
 ```python
 # Load model, use it, then free memory
 llm = create_llm("ollama", model="large-model")
 response = llm.generate("Hello")
-llm.unload()  # Explicitly free memory
+llm.unload_model(llm.model)  # Explicitly free memory
 del llm
 ```
 

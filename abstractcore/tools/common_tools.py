@@ -4203,6 +4203,18 @@ def edit_file(
             lines = content.splitlines(keepends=True)
             total_lines = len(lines)
 
+            # Robustness: some models/providers may emit numeric fields as strings.
+            if start_line is not None and not isinstance(start_line, int):
+                try:
+                    start_line = int(str(start_line).strip())
+                except Exception:
+                    return f"❌ Invalid start_line {start_line}. Must be an integer (1-indexed)."
+            if end_line is not None and not isinstance(end_line, int):
+                try:
+                    end_line = int(str(end_line).strip())
+                except Exception:
+                    return f"❌ Invalid end_line {end_line}. Must be an integer (1-indexed)."
+
             # Validate line range parameters
             if start_line is not None and (start_line < 1 or start_line > total_lines):
                 return f"❌ Invalid start_line {start_line}. Must be between 1 and {total_lines}"

@@ -154,7 +154,7 @@ class HuggingFaceProvider(BaseProvider):
             self._setup_device_transformers()
             self._load_transformers_model()
 
-    def unload(self) -> None:
+    def unload_model(self, model_name: str) -> None:
         """
         Unload the model from memory.
 
@@ -186,14 +186,6 @@ class HuggingFaceProvider(BaseProvider):
             # Log but don't raise - unload should be best-effort
             if hasattr(self, 'logger'):
                 self.logger.warning(f"Error during unload: {e}")
-
-    def __del__(self):
-        """Properly clean up resources to minimize garbage collection issues"""
-        try:
-            self.unload()
-        except Exception:
-            # Silently handle any cleanup errors - this is expected during shutdown
-            pass
 
     def _is_gguf_model(self, model: str) -> bool:
         """Detect if the model is a GGUF model"""

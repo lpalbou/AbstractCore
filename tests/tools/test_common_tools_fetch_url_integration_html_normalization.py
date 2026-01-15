@@ -46,7 +46,10 @@ def test_fetch_url_local_html_normalization_strips_tags_and_scripts() -> None:
             # Silence noisy test output.
             return
 
-    server = HTTPServer(("127.0.0.1", 0), Handler)
+    try:
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+    except PermissionError:
+        pytest.skip("Environment does not permit binding a local HTTP server (PermissionError).")
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     base_url = f"http://127.0.0.1:{server.server_address[1]}"
@@ -71,4 +74,3 @@ def test_fetch_url_local_html_normalization_strips_tags_and_scripts() -> None:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-

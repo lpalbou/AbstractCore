@@ -142,6 +142,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Set default token limits if not provided
         self._initialize_token_limits()
 
+    def __init_subclass__(cls, **kwargs):  # pragma: no cover
+        super().__init_subclass__(**kwargs)
+        # Enforce a single unload path: providers must implement `unload_model()` and must not define `unload()`.
+        if "unload" in cls.__dict__:
+            raise TypeError(
+                f"{cls.__name__} defines unload(). "
+                "Providers must implement unload_model(model_name) and must not provide any other unload entrypoint."
+            )
+
     def _track_generation(self, prompt: str, response: Optional[GenerateResponse],
                          start_time: float, success: bool = True,
                          error: Optional[Exception] = None, stream: bool = False):
@@ -1209,25 +1218,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
         pass
 
     # Memory management methods
-    def unload(self) -> None:
+    @abstractmethod
+    def unload_model(self, model_name: str) -> None:
         """
-        Unload the model from memory.
+        Unload/cleanup resources for a specific model.
 
-        For local providers (MLX, HuggingFace), this explicitly frees model memory.
-        For server-based providers (Ollama, LMStudio), this requests server unload.
-        For API providers (OpenAI, Anthropic), this is a no-op.
+        This is the single canonical unload entrypoint across providers.
+        Providers must implement this as a best-effort cleanup hook:
 
-        After calling unload(), the provider instance should not be used for generation.
-        Create a new provider instance if you need to generate again.
-
-        Usage:
-            provider = create_llm("mlx", model="...")
-            response = provider.generate("Hello")
-            provider.unload()  # Free memory
-            del provider  # Remove reference
+        - In-process providers (e.g. MLX, HuggingFace): free local model resources.
+        - Some self-hosted servers (e.g. Ollama): may request server-side eviction/unload.
+        - OpenAI-compatible servers (e.g. LMStudio, vLLM, openai-compatible): typically only close client
+          connections; server-side model unloading may not be available and is controlled by the server (TTL/eviction).
+        - Cloud APIs (e.g. OpenAI, Anthropic): usually a no-op (safe to call).
         """
-        # Default implementation does nothing (suitable for API providers)
-        pass
 
     # Token configuration helpers - expose interface methods for user convenience
     def get_token_configuration_summary(self) -> str:

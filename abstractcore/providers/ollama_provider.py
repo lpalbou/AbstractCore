@@ -51,7 +51,7 @@ class OllamaProvider(BaseProvider):
             )
         return self._async_client
 
-    def unload(self) -> None:
+    def unload_model(self, model_name: str) -> None:
         """
         Unload the model from Ollama server memory.
 
@@ -59,9 +59,11 @@ class OllamaProvider(BaseProvider):
         from the Ollama server, freeing server-side memory.
         """
         try:
+            target_model = model_name.strip() if isinstance(model_name, str) and model_name.strip() else self.model
+
             # Send a minimal generate request with keep_alive=0 to unload
             payload = {
-                "model": self.model,
+                "model": target_model,
                 "prompt": "",  # Minimal prompt
                 "stream": False,
                 "keep_alive": 0  # Immediately unload after this request

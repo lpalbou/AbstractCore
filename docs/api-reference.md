@@ -284,15 +284,15 @@ capabilities = llm.get_capabilities()
 print(capabilities)  # ['text_generation', 'tool_calling', 'streaming', 'vision']
 ```
 
-#### unload()
+#### unload_model(model_name)
 
-Unload the model from memory (local providers only).
+Unload/cleanup resources for a specific model (best-effort).
 
 ```python
-def unload(self) -> None
+def unload_model(self, model_name: str) -> None
 ```
 
-For local providers (Ollama, MLX, HuggingFace, LMStudio), this explicitly frees model memory. For API providers (OpenAI, Anthropic), this is a no-op but safe to call.
+For local providers (Ollama, MLX, HuggingFace, LMStudio), this explicitly frees model memory or releases client resources. For API providers (OpenAI, Anthropic), this is typically a no-op but safe to call.
 
 **Provider-specific behavior:**
 - **Ollama**: Sends `keep_alive=0` to immediately unload from server
@@ -308,7 +308,7 @@ llm = create_llm("ollama", model="qwen3-coder:30b")
 response = llm.generate("Hello world")
 
 # Explicitly free memory when done
-llm.unload()
+llm.unload_model(llm.model)
 del llm
 
 # Now safe to load another large model

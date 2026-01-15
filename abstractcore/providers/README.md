@@ -81,7 +81,7 @@ Comprehensive base class with integrated telemetry, events, error handling, and 
 - **Structured outputs**: Pydantic model support with validation
 - **Token management**: Unified max_tokens/max_output_tokens handling
 - **Health checks**: Provider availability monitoring via `health()` method
-- **Memory management**: `unload()` for explicit memory cleanup
+- **Memory management**: `unload_model(model_name)` for explicit memory cleanup
 
 **Abstract Methods**:
 ```python
@@ -117,7 +117,7 @@ response = provider.generate(
 health = provider.health(timeout=5.0)  # {"status": True, "model_count": 10, ...}
 
 # Memory cleanup
-provider.unload()  # Free model memory
+provider.unload_model(provider.model)  # Free model memory / cleanup resources
 ```
 
 #### glyph_compression Parameter (⚠️ EXPERIMENTAL)
@@ -390,7 +390,7 @@ embedding_response = llm.embed("Hello world")
 **Special Features**:
 - Native structured outputs: Server-side JSON schema validation (100% compliance)
 - Message conversion: Automatically converts unsupported `tool` role to `user` role with markers
-- Model unloading: `llm.unload()` with `keep_alive=0` to free server memory
+- Model unloading: `llm.unload_model(llm.model)` with `keep_alive=0` to free server memory
 
 ### LMStudio Provider
 
@@ -811,18 +811,18 @@ except ProviderAPIError as e:
 # Local models (HuggingFace, MLX)
 llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
 response = llm.generate("Hello")
-llm.unload()  # Free model from memory immediately
+llm.unload_model(llm.model)  # Free model from memory immediately
 del llm       # Remove reference
 
 # Ollama (server-side)
 llm = create_llm("ollama", model="qwen3:4b")
 response = llm.generate("Hello")
-llm.unload()  # Request server to unload model (keep_alive=0)
+llm.unload_model(llm.model)  # Request server to unload model (keep_alive=0)
 
 # Cloud APIs (no memory management needed)
 llm = create_llm("openai", model="gpt-4o")
 response = llm.generate("Hello")
-# No unload() needed - server manages memory
+# No unload_model() needed - provider manages resources
 ```
 
 ### Performance Optimization

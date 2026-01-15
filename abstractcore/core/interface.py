@@ -149,6 +149,11 @@ class AbstractCoreInterface(ABC):
         """Get list of capabilities supported by this provider"""
         pass
 
+    @abstractmethod
+    def unload_model(self, model_name: str) -> None:
+        """Unload/cleanup resources for a specific model (best-effort)."""
+        pass
+
     def validate_config(self) -> bool:
         """Validate provider configuration"""
         return True
