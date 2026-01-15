@@ -69,6 +69,9 @@ export ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 
 # Debug mode
 export ABSTRACTCORE_DEBUG=true
+
+# Dangerous (multi-tenant hazard): allow unload_after for providers that can unload shared server state (e.g. Ollama)
+export ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1
 ```
 
 ### Startup Options
@@ -116,6 +119,7 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
+- `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
 
 **Example with streaming:**

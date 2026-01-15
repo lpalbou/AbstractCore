@@ -492,7 +492,7 @@ class TestGGUFCleanup:
         assert response.content is not None
 
         # Test explicit unload method
-        llm.unload()
+        llm.unload_model(llm.model)
 
         # Explicitly delete and garbage collect
         del llm
@@ -525,7 +525,7 @@ class TestGGUFCleanup:
 
         # Clean up all - demonstrate explicit unload in loop
         for llm in models:
-            llm.unload()  # Explicitly free memory
+            llm.unload_model(llm.model)  # Explicitly free memory
             del llm
 
         gc.collect()

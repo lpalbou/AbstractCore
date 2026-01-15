@@ -274,7 +274,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 self.logger.debug(f"Model validation failed with error: {e} - continuing anyway")
             pass
 
-    def unload(self) -> None:
+    def unload_model(self, model_name: str) -> None:
         """
         Close HTTP client connection.
 

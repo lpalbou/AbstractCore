@@ -2,7 +2,7 @@
 Core tool definitions and abstractions.
 """
 
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, Union, get_args, get_origin
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 
@@ -75,6 +75,7 @@ class ToolDefinition:
     def from_function(cls, func: Callable) -> 'ToolDefinition':
         """Create tool definition from a function"""
         import inspect
+        import types
 
         # Extract function name and docstring
         name = func.__name__
@@ -88,17 +89,44 @@ class ToolDefinition:
         sig = inspect.signature(func)
         parameters = {}
 
+        def _schema_for_annotation(annotation: Any) -> Dict[str, Any]:
+            if annotation in {inspect._empty, None}:
+                return {"type": "string"}
+
+            if annotation is str:
+                return {"type": "string"}
+            if annotation is int:
+                return {"type": "integer"}
+            if annotation is float:
+                return {"type": "number"}
+            if annotation is bool:
+                return {"type": "boolean"}
+
+            origin = get_origin(annotation)
+            args = get_args(annotation)
+
+            # Optional[T] (Union[T, None]) => schema(T)
+            if origin in {Union, getattr(types, "UnionType", object())}:
+                non_none = [a for a in args if a is not type(None)]
+                if len(non_none) == 1:
+                    return _schema_for_annotation(non_none[0])
+
+            if origin in {list, List, tuple, set}:
+                item_schema = _schema_for_annotation(args[0]) if args else {"type": "string"}
+                return {"type": "array", "items": item_schema}
+
+            if origin in {dict, Dict}:
+                return {"type": "object"}
+
+            # Fall back to string for unknown / complex annotations.
+            return {"type": "string"}
+
         for param_name, param in sig.parameters.items():
             param_info = {"type": "string"}  # Default type
 
             # Try to infer type from annotation
             if param.annotation != param.empty:
-                if param.annotation == int:
-                    param_info["type"] = "integer"
-                elif param.annotation == float:
-                    param_info["type"] = "number"
-                elif param.annotation == bool:
-                    param_info["type"] = "boolean"
+                param_info = _schema_for_annotation(param.annotation)
 
             if param.default != param.empty:
                 param_info["default"] = param.default

@@ -401,7 +401,7 @@ def main():
         # This is critical for test suites that test multiple providers sequentially
         try:
             provider = create_llm(config["provider"], model=config["model"], **config["config"])
-            provider.unload()
+            provider.unload_model(provider.model)
             del provider
             print(f"✓ Unloaded {config['provider']} model from memory")
         except Exception as e:

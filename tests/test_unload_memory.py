@@ -29,7 +29,7 @@ class TestModelUnloading:
         assert llm.llm is not None
 
         # Unload the model
-        llm.unload()
+        llm.unload_model(llm.model)
 
         # Verify model is unloaded
         assert llm.llm is None
@@ -44,7 +44,7 @@ class TestModelUnloading:
             llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434", timeout=10.0)
 
             # Unload the model (sends keep_alive=0 to server)
-            llm.unload()
+            llm.unload_model(llm.model)
 
             # Verify HTTP client is closed
             # (Model is unloaded on server side)
@@ -69,7 +69,7 @@ class TestModelUnloading:
             assert llm.tokenizer is not None
 
             # Unload the model
-            llm.unload()
+            llm.unload_model(llm.model)
 
             # Verify model is unloaded
             assert llm.llm is None
@@ -92,7 +92,7 @@ class TestModelUnloading:
             llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1", timeout=10.0)
 
             # Unload (closes HTTP client)
-            llm.unload()
+            llm.unload_model(llm.model)
 
             # Cleanup
             del llm
@@ -112,7 +112,7 @@ class TestModelUnloading:
         llm = create_llm("openai", model="gpt-4o-mini", timeout=5.0)
 
         # Should not raise error (is a no-op for API providers)
-        llm.unload()
+        llm.unload_model(llm.model)
 
         # Cleanup
         del llm
@@ -131,14 +131,14 @@ class TestModelUnloading:
         assert response1.content is not None
 
         # Unload first model before loading second
-        llm1.unload()
+        llm1.unload_model(llm1.model)
         del llm1
         gc.collect()
 
         # Load second model (should succeed without OOM)
         try:
             llm2 = create_llm("ollama", model="qwen3:4b-instruct", timeout=10.0)
-            llm2.unload()
+            llm2.unload_model(llm2.model)
             del llm2
         except Exception as e:
             if any(keyword in str(e).lower() for keyword in ["connection", "refused", "operation not permitted"]):

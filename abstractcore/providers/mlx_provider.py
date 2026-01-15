@@ -80,7 +80,7 @@ class MLXProvider(BaseProvider):
             else:
                 raise Exception(f"Failed to load MLX model {self.model}: {str(e)}")
 
-    def unload(self) -> None:
+    def unload_model(self, model_name: str) -> None:
         """
         Unload the MLX model from memory.
 

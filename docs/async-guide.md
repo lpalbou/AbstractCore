@@ -586,7 +586,7 @@ llm = create_llm("openai", model="gpt-4o-mini")
 try:
     response = await llm.agenerate("Test")
 finally:
-    llm.unload()  # Closes async client
+    llm.unload_model(llm.model)  # Closes async client
 ```
 
 ### 4. Handle Errors in Concurrent Operations
