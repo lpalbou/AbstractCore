@@ -1907,19 +1907,12 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
                 suffix = "/" if not display_path.endswith("/") else ""
                 output.append(f"  {display_path}{suffix}")
 
-        # Add helpful hint when results are truncated
+        # Add a compact truncation note (avoid embedding a full "rerun" signature).
         if is_truncated:
             remaining = total_files - head_limit
-            hint_args = [f'directory_path="{directory_display}"', f'pattern="{pattern}"']
-            if recursive:
-                hint_args.append("recursive=True")
-            if include_hidden:
-                hint_args.append("include_hidden=True")
-            hint_args.append("head_limit=None")
             output.append(
                 "\n"
-                f"Note: {remaining} more entries available. "
-                f"Next step: use list_files({', '.join(hint_args)}) to see all."
+                f"Note: {remaining} more entries available (set head_limit=None to show all)."
             )
 
         return "\n".join(output)
@@ -2331,15 +2324,11 @@ def search_files(
 
                     formatted_results.append(f"{file_path} ({line_info})")
 
-                # Add helpful hint when results are truncated
+                # Add a compact truncation note (avoid embedding a full "rerun" signature).
                 if is_truncated:
                     remaining = total_files_with_matches - head_limit
-                    case_hint = "" if case_sensitive else ", case_sensitive=False"
-                    multiline_hint = ", multiline=True" if multiline else ""
-                    file_pattern_hint = f", file_pattern='{file_pattern}'" if file_pattern != "*" else ""
                     formatted_results.append(
-                        f"\n💡 {remaining} more files with matches available. "
-                        f"Use search_files('{pattern}', '{search_path_display}', head_limit=None{case_hint}{multiline_hint}{file_pattern_hint}) to see all."
+                        f"\nNote: {remaining} more files match (set head_limit=None to show all)."
                     )
 
                 return "\n".join(formatted_results)
@@ -2363,15 +2352,11 @@ def search_files(
                     count_results.append(f"{count:3d} {file_path}")
                 count_results.append(f"\nTotal: {total_matches} matches in {len(files_with_matches)} files")
 
-                # Add helpful hint when results are truncated
+                # Add a compact truncation note (avoid embedding a full "rerun" signature).
                 if is_count_truncated:
                     remaining = len(all_count_items) - head_limit
-                    case_hint = "" if case_sensitive else ", case_sensitive=False"
-                    multiline_hint = ", multiline=True" if multiline else ""
-                    file_pattern_hint = f", file_pattern='{file_pattern}'" if file_pattern != "*" else ""
                     count_results.append(
-                        f"\n💡 {remaining} more files with matches available. "
-                        f"Use search_files('{pattern}', '{search_path_display}', 'count', head_limit=None{case_hint}{multiline_hint}{file_pattern_hint}) to see all."
+                        f"\nNote: {remaining} more files match (set head_limit=None to show all)."
                     )
 
                 return "\n".join(count_results)
@@ -2525,11 +2510,16 @@ def read_file(
                 raw_lines: list[str] = []
                 for idx, line in enumerate(f, 1):
                     if idx > MAX_LINES_PER_CALL:
+                        preview_limit = 60
+                        preview_lines = raw_lines[: min(len(raw_lines), preview_limit)]
+                        num_width = max(1, len(str(len(preview_lines) or 1)))
+                        preview = "\n".join([f"{i:>{num_width}}: {line}" for i, line in enumerate(preview_lines, 1)])
                         return (
                             f"Refused: File '{display_path}' is too large to read entirely "
                             f"(> {MAX_LINES_PER_CALL} lines).\n"
                             "Next step: use search_files(..., output_mode='context') to find the relevant line number(s), "
                             "then call read_file with start_line/end_line for a smaller range."
+                            + ("\n\nPreview (first 60 lines):\n\n" + preview if preview_lines else "")
                         )
                     raw_lines.append(line.rstrip("\r\n"))
 
@@ -4764,6 +4754,24 @@ def _format_edit_file_no_match_diagnostics(*, content: str, pattern: str) -> str
     for ln, text, _score in candidates:
         out.append(f"  {ln}: {_truncate(text)}")
 
+    # Include a small excerpt to reduce follow-up read_file calls.
+    try:
+        lines = (content or "").splitlines()
+        total = len(lines)
+        if total > 0:
+            context = 2
+            ranges = [(max(1, ln - context), min(total, ln + context)) for (ln, _text, _score) in candidates[:3]]
+            merged = _merge_line_ranges(ranges, gap=2)
+            total_excerpt_lines = sum((e - s + 1) for (s, e) in merged)
+            if merged and total_excerpt_lines <= 60:
+                out.append("Excerpt:")
+                for start, end in merged:
+                    out.append(f"  lines {start}-{end}:")
+                    excerpt = _format_line_numbered_excerpt(lines=lines, start_line=start, end_line=end)
+                    out.extend([f"    {ln}" for ln in excerpt.splitlines()])
+    except Exception:
+        pass
+
     return "\n" + "\n".join(out)
 
 
@@ -4804,8 +4812,9 @@ def _flexible_whitespace_match(
             # Empty line or whitespace-only - match any whitespace
             regex_parts.append(r'[ \t]*')
 
-    # Join with flexible newline matching (handles \n or \r\n)
-    flexible_pattern = r'\r?\n'.join(regex_parts)
+    # Join with flexible newline matching (handles \n or \r\n).
+    # Anchor to the start of the first line (MULTILINE) to avoid mid-line false positives.
+    flexible_pattern = r'^' + r'\r?\n'.join(regex_parts)
 
     try:
         regex = re.compile(flexible_pattern, re.MULTILINE)
@@ -5245,7 +5254,7 @@ def _append_edit_file_post_edit_excerpt(*, rendered: str, path: Path, after: str
 )
 def edit_file(
     file_path: str,
-    pattern: str,
+    pattern: str = "",
     replacement: Optional[str] = None,
     use_regex: bool = False,
     max_replacements: int = -1,
@@ -5363,11 +5372,8 @@ def edit_file(
         original_content = content
 
         # Normalize escape sequences - handles LLMs sending \\n instead of actual newlines
-        pattern = _normalize_escape_sequences(pattern)
+        pattern = _normalize_escape_sequences("" if pattern is None else str(pattern))
         replacement = _normalize_escape_sequences(replacement)
-
-        if not isinstance(pattern, str) or not pattern:
-            return _with_lint("❌ Invalid pattern: pattern must be a non-empty string.")
 
         # Handle line range targeting if specified
         search_content = content
@@ -5409,6 +5415,31 @@ def edit_file(
             search_content = ''.join(target_lines)
             line_offset = start_idx  # Track where our search content starts in the original file
 
+        # Range-replace mode: allow omitting `pattern` when replacing a known line slice.
+        #
+        # This is intentionally conservative:
+        # - requires both start_line and end_line (so we don't "accidentally" replace the whole file)
+        # - keeps `pattern` required in the tool schema (see post-definition adjustment below)
+        # - uses the existing diff output + post-edit excerpt for verification
+        if not pattern.strip():
+            if start_line is None and end_line is None:
+                return _with_lint(
+                    "❌ Invalid pattern: pattern must be a non-empty string.\n"
+                    "To replace a specific block by line numbers, provide start_line + end_line + replacement."
+                )
+            if start_line is None or end_line is None:
+                return _with_lint(
+                    "❌ Invalid range replace: start_line and end_line are both required when pattern is empty."
+                )
+
+            # Keep file newline style when possible (Windows CRLF).
+            if "\r\n" in content:
+                replacement = replacement.replace("\r\n", "\n").replace("\n", "\r\n")
+            # Replace the entire targeted block in one shot.
+            pattern = search_content
+            use_regex = False
+            max_replacements = 1
+
 
         # Perform pattern matching and replacement on targeted content
         matches_total: Optional[int] = None
@@ -5442,10 +5473,12 @@ def edit_file(
             matches_total = count
 
             # If exact match fails and flexible_whitespace is enabled, try flexible matching
-            if count == 0 and flexible_whitespace and '\n' in pattern:
-                # Convert pattern to regex with flexible leading whitespace per line
-                # Strategy: Replace each newline + whitespace with a regex that matches
-                # any amount of leading whitespace
+            if count == 0 and flexible_whitespace and (
+                "\n" in pattern or (pattern != pattern.lstrip() and bool(pattern.lstrip()))
+            ):
+                # Flexible whitespace mode:
+                # - multi-line patterns: allow indentation differences per line
+                # - single-line patterns with leading indentation: allow indentation differences
                 flexible_result = _flexible_whitespace_match(
                     pattern, replacement, search_content, max_replacements
                 )
@@ -5610,6 +5643,18 @@ def edit_file(
 
     except Exception as e:
         return f"❌ Error editing file: {str(e)}"
+
+
+# Keep `pattern` required in the exported tool schema for guidance, while allowing
+# omission in Python calls for robust range-replace mode (start_line/end_line + replacement).
+try:  # pragma: no cover
+    _def = getattr(edit_file, "_tool_definition", None)
+    if _def and isinstance(getattr(_def, "parameters", None), dict):
+        meta = _def.parameters.get("pattern")
+        if isinstance(meta, dict):
+            meta.pop("default", None)
+except Exception:
+    pass
 
 
 @tool(
