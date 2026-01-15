@@ -5088,6 +5088,125 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
     return (rendered, added, removed)
 
 
+def _parse_unified_diff_new_ranges(rendered_diff: str) -> list[tuple[int, int]]:
+    """Extract new-file line ranges from unified diff hunk headers.
+
+    Returns a list of (start_line, end_line) pairs (1-indexed, inclusive).
+    """
+    import re
+
+    hunk_re = re.compile(r"^@@ -(?P<o>\d+)(?:,(?P<oc>\d+))? \+(?P<n>\d+)(?:,(?P<nc>\d+))? @@")
+    ranges: list[tuple[int, int]] = []
+    for line in str(rendered_diff or "").splitlines():
+        if not line.startswith("@@"):
+            continue
+        m = hunk_re.match(line)
+        if not m:
+            continue
+        try:
+            start = int(m.group("n"))
+        except Exception:
+            continue
+        nc_raw = m.group("nc")
+        try:
+            count = int(nc_raw) if nc_raw is not None else 1
+        except Exception:
+            count = 1
+        if count <= 0:
+            end = start
+        else:
+            end = start + count - 1
+        if start < 1:
+            start = 1
+        if end < start:
+            end = start
+        ranges.append((start, end))
+    return ranges
+
+
+def _merge_line_ranges(ranges: list[tuple[int, int]], *, gap: int) -> list[tuple[int, int]]:
+    """Merge inclusive ranges when separated by <= gap lines."""
+    cleaned: list[tuple[int, int]] = []
+    for a, b in ranges or []:
+        try:
+            start = int(a)
+            end = int(b)
+        except Exception:
+            continue
+        if start < 1:
+            start = 1
+        if end < start:
+            end = start
+        cleaned.append((start, end))
+    cleaned.sort(key=lambda x: (x[0], x[1]))
+
+    merged: list[list[int]] = []
+    for start, end in cleaned:
+        if not merged:
+            merged.append([start, end])
+            continue
+        prev = merged[-1]
+        if start <= prev[1] + int(gap) + 1:
+            prev[1] = max(prev[1], end)
+        else:
+            merged.append([start, end])
+
+    return [(s, e) for s, e in merged]
+
+
+def _format_line_numbered_excerpt(*, lines: list[str], start_line: int, end_line: int) -> str:
+    """Render a numbered excerpt using the same style as read_file()."""
+    total = len(lines)
+    start = max(1, int(start_line))
+    end = min(total, int(end_line)) if total > 0 else max(1, int(end_line))
+    if end < start:
+        end = start
+    num_width = max(1, len(str(end)))
+    out: list[str] = []
+    for i in range(start, end + 1):
+        idx = i - 1
+        text = lines[idx] if 0 <= idx < total else ""
+        out.append(f"{i:>{num_width}}: {text}")
+    return "\n".join(out)
+
+
+def _append_edit_file_post_edit_excerpt(*, rendered: str, path: Path, after: str) -> str:
+    """Append a small post-edit excerpt around modified hunks.
+
+    This reduces follow-up `read_file(...)` calls for simple verification.
+    """
+    ranges = _parse_unified_diff_new_ranges(rendered)
+    if not ranges:
+        return rendered
+
+    lines = (after or "").splitlines()
+    total = len(lines)
+    if total <= 0:
+        return rendered
+
+    context = 3
+    expanded = [(max(1, s - context), min(total, e + context)) for (s, e) in ranges]
+    merged = _merge_line_ranges(expanded, gap=20)
+    if not merged:
+        return rendered
+
+    total_excerpt_lines = sum((e - s + 1) for (s, e) in merged)
+    # Keep tool outputs bounded; diffs already provide the minimal audit trail.
+    if total_excerpt_lines > 220:
+        return rendered
+
+    blocks: list[str] = []
+    blocks.append("Post-edit excerpt (to avoid an extra read_file):")
+    for start, end in merged:
+        blocks.append(f"File: {_path_for_display(path)} (lines {start}-{end})")
+        blocks.append("")
+        blocks.append(_format_line_numbered_excerpt(lines=lines, start_line=start, end_line=end))
+        blocks.append("")
+    if blocks and not blocks[-1].strip():
+        blocks.pop()
+
+    return f"{rendered.rstrip()}\n\n" + "\n".join(blocks).rstrip()
+
 @tool(
     description="Surgically edit a text file via small find/replace (literal/regex) or a single-file unified diff patch.",
     when_to_use="Use for small, precise edits. Prefer search_files → read_file → edit_file with a small unique pattern; for whole-file rewrites, use write_file().",
@@ -5232,6 +5351,7 @@ def edit_file(
                 return _with_lint("No changes applied (patch resulted in identical content).")
 
             rendered, _, _ = _render_edit_file_diff(path=path, before=content, after=updated)
+            rendered = _append_edit_file_post_edit_excerpt(rendered=rendered, path=path, after=updated)
             if preview_only:
                 return _with_lint(rendered.replace("Edited ", "Preview ", 1), lint_content=updated)
 
@@ -5460,6 +5580,7 @@ def edit_file(
                 rendered_lines[0] = f"{rendered_lines[0]} replacements={replacements_made}"
         rendered = "\n".join(rendered_lines).rstrip()
 
+        rendered = _append_edit_file_post_edit_excerpt(rendered=rendered, path=path, after=updated_content)
         if (
             isinstance(matches_total, int)
             and matches_total > 0
