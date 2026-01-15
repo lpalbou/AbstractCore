@@ -21,9 +21,9 @@ def test_parse_html_extracts_clean_text_with_bs4() -> None:
         html,
         "text/html; charset=utf-8",
         "https://example.com/",
-        extract_links=False,
         include_binary_preview=False,
         include_full_content=False,
+        keep_links=False,
     )
 
     assert "🌐 HTML Document Analysis" in out

@@ -32,18 +32,11 @@ Examples:
     )
     
     parser.add_argument(
-        "--extract-links",
-        dest="extract_links",
-        action="store_true",
-        default=True,
-        help="Extract links from HTML (default: True)"
-    )
-    
-    parser.add_argument(
         "--no-links",
-        dest="extract_links",
+        dest="keep_links",
         action="store_false",
-        help="Don't extract links from HTML"
+        default=True,
+        help="Strip links from HTML/Markdown output (default: keep links)"
     )
     
     parser.add_argument(
@@ -54,22 +47,6 @@ Examples:
         help="Show preview only (truncate content)"
     )
 
-    parser.add_argument(
-        "--no-md",
-        dest="convert_html_to_markdown",
-        action="store_false",
-        default=True,
-        help="Disable HTML→Markdown conversion (default: enabled)"
-    )
-
-    parser.add_argument(
-        "--keep-links",
-        dest="keep_links",
-        action="store_true",
-        default=False,
-        help="Preserve links when converting HTML→Markdown (default: False)"
-    )
-    
     parser.add_argument(
         "--timeout",
         type=int,
@@ -87,10 +64,8 @@ Examples:
     # Call the fetch_url tool
     result = fetch_url(
         url=args.url,
-        extract_links=args.extract_links,
         include_full_content=args.include_full_content,
         timeout=args.timeout,
-        convert_html_to_markdown=args.convert_html_to_markdown,
         keep_links=args.keep_links,
     )
     
