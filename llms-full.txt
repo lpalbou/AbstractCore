@@ -2286,7 +2286,7 @@ For local providers, explicit memory management:
 # Explicit memory management for local models
 llm = create_llm("ollama", model="large-model")
 response = llm.generate("Hello")
-llm.unload()  # Free memory
+llm.unload_model(llm.model)  # Free memory
 del llm
 ```
 

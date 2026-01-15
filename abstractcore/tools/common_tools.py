@@ -10,6 +10,7 @@ Migrated from legacy system with enhanced decorator support.
 import os
 import subprocess
 import requests
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, Union
 import platform
@@ -64,6 +65,10 @@ def _detect_code_language(path: Path, language: Optional[str]) -> Optional[str]:
             return "javascript"
         if raw in {"ts", "typescript"}:
             return "javascript"  # treat TS as JS for now (heuristic outline)
+        if raw in {"html", "htm"}:
+            return "html"
+        if raw in {"r", "rstats", "r-lang"}:
+            return "r"
         return None
 
     ext = path.suffix.lower()
@@ -71,6 +76,10 @@ def _detect_code_language(path: Path, language: Optional[str]) -> Optional[str]:
         return "python"
     if ext in {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}:
         return "javascript"
+    if ext in {".html", ".htm", ".xhtml"}:
+        return "html"
+    if ext in {".r", ".rmd"}:
+        return "r"
     return None
 
 
@@ -285,29 +294,372 @@ def _brace_match_end_line(lines: list[str], *, start_line_index: int, start_col:
     return None
 
 
+def _brace_match_end_line_r(lines: list[str], *, start_line_index: int, start_col: int) -> Optional[int]:
+    """Return 1-indexed end line for an R block starting at the given '{' position."""
+    depth = 0
+    in_single = False
+    in_double = False
+    in_backtick = False
+
+    for i in range(start_line_index, len(lines)):
+        line = lines[i]
+        j = start_col if i == start_line_index else 0
+        while j < len(line):
+            ch = line[j]
+
+            if in_single:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == "'":
+                    in_single = False
+                j += 1
+                continue
+
+            if in_double:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == '"':
+                    in_double = False
+                j += 1
+                continue
+
+            if in_backtick:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == "`":
+                    in_backtick = False
+                j += 1
+                continue
+
+            # Not in string.
+            if ch == "#":
+                break
+            if ch == "'":
+                in_single = True
+                j += 1
+                continue
+            if ch == '"':
+                in_double = True
+                j += 1
+                continue
+            if ch == "`":
+                in_backtick = True
+                j += 1
+                continue
+
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+            j += 1
+
+    return None
+
+
+def _scan_js_delimiter_issues(lines: list[str], *, max_issues: int = 10) -> list[str]:
+    """Best-effort delimiter balance checks for JS/TS (strings/comments-aware)."""
+    stack: list[tuple[str, int, int]] = []
+    issues: list[str] = []
+
+    in_single = False
+    in_double = False
+    in_template = False
+    in_block_comment = False
+
+    closer_to_opener = {"}": "{", ")": "(", "]": "["}
+
+    for i, line in enumerate(lines, 1):
+        j = 0
+        while j < len(line):
+            ch = line[j]
+            pair = line[j : j + 2]
+
+            if in_block_comment:
+                if pair == "*/":
+                    in_block_comment = False
+                    j += 2
+                    continue
+                j += 1
+                continue
+
+            if in_single:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == "'":
+                    in_single = False
+                j += 1
+                continue
+
+            if in_double:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == '"':
+                    in_double = False
+                j += 1
+                continue
+
+            if in_template:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == "`":
+                    in_template = False
+                j += 1
+                continue
+
+            # Not in string/comment.
+            if pair == "/*":
+                in_block_comment = True
+                j += 2
+                continue
+            if pair == "//":
+                break
+            if ch == "'":
+                in_single = True
+                j += 1
+                continue
+            if ch == '"':
+                in_double = True
+                j += 1
+                continue
+            if ch == "`":
+                in_template = True
+                j += 1
+                continue
+
+            if ch in "{([":
+                stack.append((ch, i, j + 1))
+            elif ch in "})]":
+                expected = closer_to_opener.get(ch)
+                if not stack:
+                    issues.append(f"  - unmatched_closing {ch!r} at {i}:{j + 1}")
+                else:
+                    opener, oi, oj = stack.pop()
+                    if expected and opener != expected:
+                        issues.append(
+                            f"  - mismatched_delimiter: opened {opener!r} at {oi}:{oj}, closed {ch!r} at {i}:{j + 1}"
+                        )
+            if len(issues) >= max_issues:
+                return issues
+            j += 1
+
+    for opener, oi, oj in reversed(stack):
+        issues.append(f"  - unclosed_delimiter: opened {opener!r} at {oi}:{oj} (reached EOF)")
+        if len(issues) >= max_issues:
+            break
+
+    return issues
+
+
+def _scan_r_delimiter_issues(lines: list[str], *, max_issues: int = 10) -> list[str]:
+    """Best-effort delimiter balance checks for R (strings/comments-aware)."""
+    stack: list[tuple[str, int, int]] = []
+    issues: list[str] = []
+
+    in_single = False
+    in_double = False
+    in_backtick = False
+
+    closer_to_opener = {"}": "{", ")": "(", "]": "["}
+
+    for i, line in enumerate(lines, 1):
+        j = 0
+        while j < len(line):
+            ch = line[j]
+
+            if in_single:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == "'":
+                    in_single = False
+                j += 1
+                continue
+
+            if in_double:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == '"':
+                    in_double = False
+                j += 1
+                continue
+
+            if in_backtick:
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == "`":
+                    in_backtick = False
+                j += 1
+                continue
+
+            # Not in string.
+            if ch == "#":
+                break
+            if ch == "'":
+                in_single = True
+                j += 1
+                continue
+            if ch == '"':
+                in_double = True
+                j += 1
+                continue
+            if ch == "`":
+                in_backtick = True
+                j += 1
+                continue
+
+            if ch in "{([":
+                stack.append((ch, i, j + 1))
+            elif ch in "})]":
+                expected = closer_to_opener.get(ch)
+                if not stack:
+                    issues.append(f"  - unmatched_closing {ch!r} at {i}:{j + 1}")
+                else:
+                    opener, oi, oj = stack.pop()
+                    if expected and opener != expected:
+                        issues.append(
+                            f"  - mismatched_delimiter: opened {opener!r} at {oi}:{oj}, closed {ch!r} at {i}:{j + 1}"
+                        )
+            if len(issues) >= max_issues:
+                return issues
+            j += 1
+
+    for opener, oi, oj in reversed(stack):
+        issues.append(f"  - unclosed_delimiter: opened {opener!r} at {oi}:{oj} (reached EOF)")
+        if len(issues) >= max_issues:
+            break
+
+    return issues
+
+
+def _run_ruff_check(path: Path, *, max_messages: int = 20, timeout_s: int = 10) -> dict[str, Any]:
+    """
+    Run `ruff check` (if available) and return a compact report.
+
+    The return dict intentionally uses plain `dict[str, Any]` so this helper can
+    degrade gracefully without importing ruff internals.
+    """
+    cmd = [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json", str(path)]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(path.parent),
+            timeout=timeout_s,
+        )
+    except FileNotFoundError as e:
+        return {"available": False, "error": str(e), "total": 0, "fixable": 0, "codes": [], "messages": []}
+    except subprocess.TimeoutExpired:
+        return {"available": True, "error": "ruff timed out", "total": 0, "fixable": 0, "codes": [], "messages": []}
+    except Exception as e:
+        return {"available": True, "error": str(e), "total": 0, "fixable": 0, "codes": [], "messages": []}
+
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+
+    if "No module named ruff" in stderr:
+        return {"available": False, "error": "ruff not installed", "total": 0, "fixable": 0, "codes": [], "messages": []}
+
+    if not stdout:
+        # Ruff can exit 0 with no output, or exit 2 with an error on stderr.
+        if proc.returncode not in (0, 1):
+            return {
+                "available": True,
+                "error": (stderr or f"ruff failed (exit {proc.returncode})").strip(),
+                "total": 0,
+                "fixable": 0,
+                "codes": [],
+                "messages": [],
+            }
+        return {"available": True, "error": None, "total": 0, "fixable": 0, "codes": [], "messages": []}
+
+    try:
+        data = json.loads(stdout)
+    except Exception:
+        return {
+            "available": True,
+            "error": (stderr or "ruff returned non-JSON output").strip(),
+            "total": 0,
+            "fixable": 0,
+            "codes": [],
+            "messages": [],
+        }
+
+    if not isinstance(data, list):
+        return {
+            "available": True,
+            "error": (stderr or "ruff returned unexpected JSON shape").strip(),
+            "total": 0,
+            "fixable": 0,
+            "codes": [],
+            "messages": [],
+        }
+
+    total = len(data)
+    fixable = 0
+    codes: list[str] = []
+    seen_codes: set[str] = set()
+    for item in data:
+        code = str(item.get("code") or "").strip()
+        if code and code not in seen_codes:
+            seen_codes.add(code)
+            codes.append(code)
+        fixable += 1 if item.get("fix") else 0
+
+    messages: list[str] = []
+    for item in data[:max_messages]:
+        code = str(item.get("code") or "").strip()
+        msg = str(item.get("message") or "").strip()
+        loc = item.get("location") or {}
+        row = int(loc.get("row") or 0)
+        col = int(loc.get("column") or 0)
+        has_fix = bool(item.get("fix"))
+        fix = " (fixable)" if has_fix else ""
+        where = f"{row}:{col}" if row and col else (f"{row}" if row else "?")
+        messages.append(f"  - {where} {code}: {msg}{fix}".rstrip())
+
+    return {
+        "available": True,
+        "error": None,
+        "total": total,
+        "fixable": fixable,
+        "codes": codes,
+        "messages": messages,
+    }
+
 @tool(
-    description="Return a structured outline of a Python/JavaScript file (imports/classes/functions with line ranges) to guide precise edits.",
+    description="Return a compact outline + diagnostics for a code file (Python/JavaScript/HTML/R) to guide precise edits.",
     when_to_use="Use before editing to locate the right block quickly; then read_file(start_line/end_line) around that block instead of re-reading the whole file.",
     examples=[
         {"description": "Outline a Python file", "arguments": {"file_path": "src/app.py"}},
         {"description": "Outline a JavaScript file", "arguments": {"file_path": "web/app.js"}},
-        {"description": "Force language mode", "arguments": {"file_path": "script.txt", "language": "python"}},
+        {"description": "Outline an HTML file", "arguments": {"file_path": "templates/index.html"}},
     ],
 )
 def analyze_code(file_path: str, language: Optional[str] = None) -> str:
     """
-    Return a structured outline of a Python/JavaScript code file with line ranges.
+    Return a structured outline of a code file with line ranges + basic diagnostics.
 
     IMPORTANT: Use this tool first for code navigation. Then use `read_file(start_line/end_line)`
     around the specific block you want to change, followed by `edit_file(...)` for bounded edits.
 
     Args:
         file_path: required; Path to the file to analyze (required; relative or absolute)
-        language: Optional override for language detection ("python" or "javascript")
+        language: Optional override for language detection ("python", "javascript", "html", "r")
 
     Returns:
-        A formatted outline including imports, classes, functions/methods, and (for JavaScript)
-        resolved references to local modules.
+        A formatted outline including imports/classes/functions (where relevant), references, and
+        basic lint-like diagnostics (e.g., Python ruff, JS/R delimiter balance, HTML sanity checks).
 
     Examples:
         analyze_code(file_path="src/app.py")
@@ -329,7 +681,7 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
 
     lang = _detect_code_language(path, language)
     if not lang:
-        return f"Error: Unsupported code language for '{display_path}'. Supported: python, javascript"
+        return f"Error: Unsupported code language for '{display_path}'. Supported: python, javascript, html, r"
 
     try:
         text = path.read_text(encoding="utf-8")
@@ -440,7 +792,54 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
             for name, ln in rel["calls"]:
                 relationships.append(f"  - calls: {f['name']} -> {name} (line {ln})")
 
+        ruff = _run_ruff_check(path)
+        diagnostics: list[str] = ["parse=ok"]
+        if not bool(ruff.get("available")):
+            diagnostics.append("ruff=unavailable")
+        elif ruff.get("error"):
+            diagnostics.append("ruff=error")
+        else:
+            total_issues = int(ruff.get("total") or 0)
+            diagnostics.append(f"ruff={total_issues}")
+            codes = [str(c) for c in (ruff.get("codes") or []) if str(c).strip()]
+            if codes:
+                diagnostics.append(f"ruff_codes={','.join(codes[:8])}{'…' if len(codes) > 8 else ''}")
+            fixable = int(ruff.get("fixable") or 0)
+            if fixable:
+                diagnostics.append(f"ruff_fixable={fixable}")
+
         out.append("language: python")
+        out.append("diagnostics: " + "; ".join(diagnostics))
+        out.append(
+            "summary: "
+            + "; ".join(
+                [
+                    f"imports={len(imports)}",
+                    f"classes={len(classes)}",
+                    f"functions={len(functions)}",
+                    f"relationships={len(relationships)}",
+                ]
+            )
+        )
+
+        if not bool(ruff.get("available")):
+            out.append("lint: ruff unavailable")
+        elif ruff.get("error"):
+            out.append("lint: ruff error")
+            out.append(f"  - {str(ruff.get('error')).strip()}")
+        else:
+            total_issues = int(ruff.get("total") or 0)
+            msgs = [str(m) for m in (ruff.get("messages") or []) if str(m).strip()]
+            if total_issues <= 0:
+                out.append("lint: []")
+            else:
+                out.append("lint:")
+                out.extend(msgs)
+                if total_issues > len(msgs) and len(msgs) > 0:
+                    out.append(f"  - ... ({total_issues - len(msgs)} more)")
+                if int(ruff.get("fixable") or 0) > 0:
+                    out.append(f"lint_hint: ruff check --fix {display_path}")
+
         out.append("imports:" if imports else "imports: []")
         out.extend(imports)
         out.append("module_assignments:" if module_assigns else "module_assignments: []")
@@ -466,9 +865,14 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
         if len(relationships) > 50:
             out.append(f"  - ... ({len(relationships) - 50} more)")
 
-    else:
+    elif lang == "javascript":
         # JavaScript/TypeScript (best-effort heuristic parsing).
+        delimiter_issues = _scan_js_delimiter_issues(lines)
         out.append("language: javascript")
+        out.append(
+            "diagnostics: "
+            + ("delimiters=ok" if not delimiter_issues else f"delimiters={len(delimiter_issues)} issues")
+        )
         imports: list[str] = []
         classes: list[dict[str, Any]] = []
         functions: list[dict[str, Any]] = []
@@ -587,6 +991,24 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
             if m:
                 module_assigns.append(f"  - {line_no}: {m.group('name')}")
 
+        out.append(
+            "summary: "
+            + "; ".join(
+                [
+                    f"imports={len(imports)}",
+                    f"classes={len(classes)}",
+                    f"functions={len(functions)}",
+                    f"module_assignments={len(module_assigns)}",
+                    f"references={len(refs)}",
+                ]
+            )
+        )
+        if delimiter_issues:
+            out.append("lint:")
+            out.extend(delimiter_issues)
+        else:
+            out.append("lint: []")
+
         out.append("imports:" if imports else "imports: []")
         out.extend(imports)
         out.append("module_assignments:" if module_assigns else "module_assignments: []")
@@ -608,6 +1030,373 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
         if len(refs) > 50:
             out.append(f"  - ... ({len(refs) - 50} more)")
         out.append("notes: JavaScript parsing is best-effort (heuristic, not a full AST).")
+
+    elif lang == "html":
+        out.append("language: html")
+
+        doctype_present = bool(re.search(r"(?is)<!doctype\b", text))
+        title_match = re.search(r"(?is)<title\b[^>]*>(?P<title>.*?)</title>", text)
+        title = (
+            re.sub(r"\s+", " ", title_match.group("title")).strip() if title_match is not None else ""
+        )
+
+        file_dir = path.parent.absolute()
+
+        ids: dict[str, list[int]] = {}
+        scripts: list[str] = []
+        links: list[str] = []
+        refs: list[str] = []
+        lint: list[str] = []
+        assets: list[tuple[int, str, str]] = []
+
+        id_re = re.compile(r"\bid\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+        src_re = re.compile(r"\bsrc\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+        href_re = re.compile(r"\bhref\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+        rel_re = re.compile(r"\brel\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+        alt_re = re.compile(r"\balt\s*=\s*(?P<q>[\"'])(?P<val>[^\"']*)(?P=q)", re.IGNORECASE)
+        target_re = re.compile(r"\btarget\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+        lang_re = re.compile(r"\blang\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+
+        in_comment = False
+        in_script = False
+        in_style = False
+        saw_html_tag = False
+
+        for i, raw in enumerate(lines, 1):
+            if not raw.strip():
+                continue
+
+            # Skip HTML comments (best-effort).
+            if in_comment:
+                if "-->" in raw:
+                    in_comment = False
+                continue
+            if "<!--" in raw:
+                if "-->" not in raw:
+                    in_comment = True
+                continue
+
+            # Skip script/style bodies (avoid false positives from embedded code).
+            if in_script:
+                if re.search(r"</script\b", raw, flags=re.IGNORECASE):
+                    in_script = False
+                continue
+            if in_style:
+                if re.search(r"</style\b", raw, flags=re.IGNORECASE):
+                    in_style = False
+                continue
+
+            if not saw_html_tag and re.search(r"<html\b", raw, flags=re.IGNORECASE):
+                saw_html_tag = True
+                if not lang_re.search(raw):
+                    lint.append(f"  - html_missing_lang at line {i}")
+
+            for m in id_re.finditer(raw):
+                ids.setdefault(m.group("val"), []).append(i)
+
+            if re.search(r"<script\b", raw, flags=re.IGNORECASE):
+                src_m = src_re.search(raw)
+                src = (src_m.group("val").strip() if src_m else "")
+                if src:
+                    scripts.append(f"  - {i}: src={src}")
+                    assets.append((i, "script", src))
+                else:
+                    scripts.append(f"  - {i}: inline")
+                if not re.search(r"</script\b", raw, flags=re.IGNORECASE):
+                    in_script = True
+                continue
+
+            if re.search(r"<style\b", raw, flags=re.IGNORECASE):
+                if not re.search(r"</style\b", raw, flags=re.IGNORECASE):
+                    in_style = True
+                continue
+
+            if re.search(r"<link\b", raw, flags=re.IGNORECASE):
+                href_m = href_re.search(raw)
+                href = (href_m.group("val").strip() if href_m else "")
+                if href:
+                    rel_m = rel_re.search(raw)
+                    rel = (rel_m.group("val").strip() if rel_m else "")
+                    links.append(f"  - {i}: rel={rel or '?'} href={href}")
+                    assets.append((i, "link", href))
+                continue
+
+            if re.search(r"<img\b", raw, flags=re.IGNORECASE):
+                src_m = src_re.search(raw)
+                src = (src_m.group("val").strip() if src_m else "")
+                if src:
+                    assets.append((i, "img", src))
+                if not alt_re.search(raw):
+                    lint.append(f"  - img_missing_alt at line {i}")
+                continue
+
+            if re.search(r"<a\b", raw, flags=re.IGNORECASE):
+                target_m = target_re.search(raw)
+                if target_m and target_m.group("val").strip().lower() == "_blank":
+                    rel_m = rel_re.search(raw)
+                    rel_val = (rel_m.group("val") if rel_m else "").lower()
+                    if "noopener" not in rel_val and "noreferrer" not in rel_val:
+                        lint.append(f"  - target_blank_missing_noopener at line {i}")
+                continue
+
+        # Duplicate id checks.
+        for id_val, locs in sorted(ids.items(), key=lambda kv: kv[0].lower()):
+            if len(locs) > 1:
+                loc_str = ", ".join(str(n) for n in locs[:10])
+                more = f", …(+{len(locs) - 10})" if len(locs) > 10 else ""
+                lint.append(f"  - duplicate_id {id_val!r} at lines {loc_str}{more}")
+
+        if not doctype_present:
+            lint.insert(0, "  - missing_doctype")
+
+        def _is_remote_ref(ref: str) -> bool:
+            r = ref.strip().lower()
+            return r.startswith(("http://", "https://", "//", "data:", "mailto:", "tel:", "javascript:"))
+
+        def _resolve_asset_ref(ref: str) -> Optional[str]:
+            ref = ref.strip()
+            if not ref or _is_remote_ref(ref) or ref.startswith("#"):
+                return None
+            clean = ref.split("#", 1)[0].split("?", 1)[0].strip()
+            if not clean or clean.startswith("/"):
+                return None
+            p = Path(clean)
+            try:
+                return str((file_dir / p).absolute())
+            except Exception:
+                return None
+
+        for line_no, kind, ref in assets:
+            resolved = _resolve_asset_ref(ref)
+            if resolved:
+                suffix = " (exists)" if Path(resolved).exists() else " (missing)"
+                refs.append(f"  - {kind} {ref} -> {resolved}{suffix}")
+
+        out.append(
+            "diagnostics: "
+            + "; ".join(
+                [
+                    f"doctype={'present' if doctype_present else 'missing'}",
+                    f"lint_issues={len(lint)}",
+                ]
+            )
+        )
+        out.append(
+            "summary: "
+            + "; ".join(
+                [
+                    f"ids={len(ids)}",
+                    f"scripts={len(scripts)}",
+                    f"links={len(links)}",
+                    f"references={len(refs)}",
+                ]
+            )
+        )
+
+        if lint:
+            out.append("lint:")
+            out.extend(lint[:20])
+            if len(lint) > 20:
+                out.append(f"  - ... ({len(lint) - 20} more)")
+        else:
+            out.append("lint: []")
+
+        if title:
+            out.append(f"title: {title}")
+
+        out.append("ids:" if ids else "ids: []")
+        for id_val, locs in list(sorted(ids.items(), key=lambda kv: kv[0].lower()))[:50]:
+            loc_str = ", ".join(str(n) for n in locs[:8])
+            out.append(f"  - {id_val}: {loc_str}{'…' if len(locs) > 8 else ''}")
+        if len(ids) > 50:
+            out.append(f"  - ... ({len(ids) - 50} more)")
+
+        out.append("scripts:" if scripts else "scripts: []")
+        out.extend(scripts[:50])
+        if len(scripts) > 50:
+            out.append(f"  - ... ({len(scripts) - 50} more)")
+
+        out.append("links:" if links else "links: []")
+        out.extend(links[:50])
+        if len(links) > 50:
+            out.append(f"  - ... ({len(links) - 50} more)")
+
+        out.append("references:" if refs else "references: []")
+        out.extend(refs[:50])
+        if len(refs) > 50:
+            out.append(f"  - ... ({len(refs) - 50} more)")
+
+        out.append("notes: HTML analysis is best-effort (regex; multi-line tags may have approximate line numbers).")
+
+    elif lang == "r":
+        out.append("language: r")
+
+        delimiter_issues = _scan_r_delimiter_issues(lines)
+        out.append(
+            "diagnostics: "
+            + ("delimiters=ok" if not delimiter_issues else f"delimiters={len(delimiter_issues)} issues")
+        )
+
+        file_dir = path.parent.absolute()
+
+        libraries: list[str] = []
+        sources: list[str] = []
+        functions: list[dict[str, Any]] = []
+        module_assigns: list[str] = []
+
+        lib_re = re.compile(r"^\s*(?:library|require)\(\s*(?:['\"])?(?P<name>[A-Za-z][\w.]*)", re.IGNORECASE)
+        source_re = re.compile(r"^\s*source\(\s*(?P<q>[\"'])(?P<src>[^\"']+)(?P=q)", re.IGNORECASE)
+        func_re = re.compile(
+            r"^\s*(?P<name>[A-Za-z.][\w.]*)\s*(?:<-|=)\s*function\s*\((?P<params>[^)]*)\)",
+            re.IGNORECASE,
+        )
+        assign_re = re.compile(r"^\s*(?P<name>[A-Za-z.][\w.]*)\s*(?:<-|=)\s*(?P<rhs>.+)$")
+
+        brace_depth = 0
+        in_single = False
+        in_double = False
+        in_backtick = False
+
+        for idx, raw in enumerate(lines):
+            line_no = idx + 1
+            stripped = raw.strip()
+
+            if brace_depth == 0 and stripped and not stripped.startswith("#"):
+                m = lib_re.match(raw)
+                if m:
+                    libraries.append(f"  - {line_no}: {m.group('name')}")
+
+                m = source_re.match(raw)
+                if m:
+                    src = m.group("src").strip()
+                    resolved = str((file_dir / src).absolute()) if not Path(src).is_absolute() else src
+                    suffix = " (exists)" if Path(resolved).exists() else " (missing)"
+                    sources.append(f"  - {line_no}: source {src} -> {resolved}{suffix}")
+
+                m = func_re.match(raw)
+                if m:
+                    name = m.group("name")
+                    params = (m.group("params") or "").strip()
+                    open_pos = raw.find("{")
+                    idx_open = idx
+                    if open_pos == -1:
+                        for j in range(idx + 1, min(idx + 10, len(lines))):
+                            pos = lines[j].find("{")
+                            if pos != -1:
+                                idx_open = j
+                                open_pos = pos
+                                break
+                    end_line = (
+                        _brace_match_end_line_r(lines, start_line_index=idx_open, start_col=open_pos)
+                        if open_pos != -1
+                        else None
+                    )
+                    functions.append(
+                        {
+                            "name": name,
+                            "sig": f"{name}({params})",
+                            "start": line_no,
+                            "end": end_line or line_no,
+                        }
+                    )
+                else:
+                    m = assign_re.match(raw)
+                    if m:
+                        lhs = m.group("name")
+                        rhs = m.group("rhs").strip()
+                        if rhs and not rhs.lower().startswith("function"):
+                            module_assigns.append(f"  - {line_no}: {lhs}")
+
+            # Track brace depth for top-level extraction (strings/comments-aware).
+            j = 0
+            while j < len(raw):
+                ch = raw[j]
+                if in_single:
+                    if ch == "\\":
+                        j += 2
+                        continue
+                    if ch == "'":
+                        in_single = False
+                    j += 1
+                    continue
+                if in_double:
+                    if ch == "\\":
+                        j += 2
+                        continue
+                    if ch == '"':
+                        in_double = False
+                    j += 1
+                    continue
+                if in_backtick:
+                    if ch == "\\":
+                        j += 2
+                        continue
+                    if ch == "`":
+                        in_backtick = False
+                    j += 1
+                    continue
+
+                if ch == "#":
+                    break
+                if ch == "'":
+                    in_single = True
+                    j += 1
+                    continue
+                if ch == '"':
+                    in_double = True
+                    j += 1
+                    continue
+                if ch == "`":
+                    in_backtick = True
+                    j += 1
+                    continue
+
+                if ch == "{":
+                    brace_depth += 1
+                elif ch == "}":
+                    brace_depth = max(0, brace_depth - 1)
+                j += 1
+
+        out.append(
+            "summary: "
+            + "; ".join(
+                [
+                    f"libraries={len(libraries)}",
+                    f"sources={len(sources)}",
+                    f"functions={len(functions)}",
+                    f"module_assignments={len(module_assigns)}",
+                ]
+            )
+        )
+
+        if delimiter_issues:
+            out.append("lint:")
+            out.extend(delimiter_issues)
+        else:
+            out.append("lint: []")
+
+        out.append("libraries:" if libraries else "libraries: []")
+        out.extend(libraries[:50])
+        if len(libraries) > 50:
+            out.append(f"  - ... ({len(libraries) - 50} more)")
+
+        out.append("sources:" if sources else "sources: []")
+        out.extend(sources[:50])
+        if len(sources) > 50:
+            out.append(f"  - ... ({len(sources) - 50} more)")
+
+        out.append("functions:" if functions else "functions: []")
+        for f in functions[:100]:
+            out.append(f"  - {_format_line_range(f['start'], f['end'])}: {f['sig']}")
+        if len(functions) > 100:
+            out.append(f"  - ... ({len(functions) - 100} more)")
+
+        out.append("module_assignments:" if module_assigns else "module_assignments: []")
+        out.extend(module_assigns[:50])
+        if len(module_assigns) > 50:
+            out.append(f"  - ... ({len(module_assigns) - 50} more)")
+
+        out.append("notes: R analysis is best-effort (regex; delimiter-based ranges).")
 
     return "\n".join(out).rstrip()
 
@@ -1848,7 +2637,7 @@ def web_search(
 
 @tool(
     description="Fetch a URL and parse common content types (HTML/JSON/text); supports previews and basic metadata.",
-    when_to_use="Use to retrieve and analyze content from a specific URL (web page, API, document).",
+    when_to_use="Use to retrieve and analyze content from a URL. For shorter outputs, set include_full_content=False (preview). max_content_length is a byte cap on download (default 10MB; clamped to ≥2MB).",
     examples=[
         {
             "description": "Fetch and parse HTML webpage",
@@ -1898,8 +2687,8 @@ def fetch_url(
         method: HTTP method to use (default: "GET")
         headers: Optional custom headers to send with the request
         data: Optional data to send with POST/PUT requests (dict or string)
-        timeout: Request timeout in seconds (default: 30)
-        max_content_length: Maximum content length to fetch in bytes (default: 10MB)
+        timeout: Request timeout in seconds (default: 45)
+        max_content_length: Maximum content length to fetch in bytes (default: 10MB; clamped to >= 2MB)
         follow_redirects: Whether to follow HTTP redirects (default: True)
         include_binary_preview: Whether to include base64 preview for binary content (default: False)
         extract_links: Whether to extract links from HTML content (default: False)
@@ -1933,7 +2722,18 @@ def fetch_url(
                 "scheme": str(parsed_url.scheme),
                 "rendered": rendered,
             }
-        
+
+        # Enforce a practical minimum cap: some callers mistakenly treat this as a "max output chars" knob and
+        # pass very small values (e.g., 5,000). We clamp to keep fetch_url usable for normal webpages.
+        MIN_MAX_CONTENT_LENGTH = 2 * 1024 * 1024  # 2MB
+        requested_max_content_length = max_content_length
+        try:
+            max_content_length = int(max_content_length)  # type: ignore[arg-type]
+        except Exception:
+            max_content_length = 10485760  # 10MB default fallback
+        if max_content_length < MIN_MAX_CONTENT_LENGTH:
+            max_content_length = MIN_MAX_CONTENT_LENGTH
+
         # Prepare request headers
         request_headers = {
             'User-Agent': user_agent,
@@ -1980,6 +2780,35 @@ def fetch_url(
                 except (UnicodeDecodeError, LookupError):
                     continue
             return content.decode("utf-8", errors="replace")
+
+        def _download_streamed_content(resp: requests.Response, *, ctype: str) -> tuple[bytes, int, bool]:
+            """Download up to `max_content_length` bytes (hard cap), returning (bytes, downloaded_size, truncated)."""
+            content_chunks: list[bytes] = []
+            downloaded_size = 0
+            truncated = False
+
+            # Use larger chunks for better performance.
+            chunk_size = 32768 if 'image/' in ctype or 'video/' in ctype else 16384
+
+            for chunk in resp.iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    continue
+
+                remaining = max_content_length - downloaded_size
+                if remaining <= 0:
+                    truncated = True
+                    break
+
+                if len(chunk) > remaining:
+                    content_chunks.append(chunk[:remaining])
+                    downloaded_size += remaining
+                    truncated = True
+                    break
+
+                content_chunks.append(chunk)
+                downloaded_size += len(chunk)
+
+            return b''.join(content_chunks), int(downloaded_size), bool(truncated)
         
         # Make the request with session for connection reuse and keep it open while streaming
         with requests.Session() as session:
@@ -2017,58 +2846,13 @@ def fetch_url(
                 content_type = response.headers.get('content-type', '').lower()
                 content_length = response.headers.get('content-length')
                 if content_length:
-                    content_length = int(content_length)
+                    try:
+                        content_length = int(content_length)
+                    except Exception:
+                        content_length = None
 
-                # Check content length before downloading
-                if content_length and content_length > max_content_length:
-                    rendered = (
-                        f"⚠️  Content too large: {content_length:,} bytes (max: {max_content_length:,})\n"
-                        f"URL: {url}\n"
-                        f"Content-Type: {content_type}\n"
-                        f"Timestamp: {fetch_timestamp}\n"
-                        "Use max_content_length parameter to increase limit if needed"
-                    )
-                    return {
-                        "success": False,
-                        "error": "Content too large",
-                        "url": url,
-                        "timestamp": fetch_timestamp,
-                        "content_type": str(content_type or ""),
-                        "content_length": int(content_length),
-                        "max_content_length": int(max_content_length),
-                        "rendered": rendered,
-                    }
-
-                # Download content with optimized chunking
-                content_chunks = []
-                downloaded_size = 0
-
-                # Use larger chunks for better performance
-                chunk_size = 32768 if 'image/' in content_type or 'video/' in content_type else 16384
-
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    if chunk:
-                        downloaded_size += len(chunk)
-                        if downloaded_size > max_content_length:
-                            rendered = (
-                                f"⚠️  Content exceeded size limit during download: {downloaded_size:,} bytes (max: {max_content_length:,})\n"
-                                f"URL: {url}\n"
-                                f"Content-Type: {content_type}\n"
-                                f"Timestamp: {fetch_timestamp}"
-                            )
-                            return {
-                                "success": False,
-                                "error": "Content exceeded size limit during download",
-                                "url": url,
-                                "timestamp": fetch_timestamp,
-                                "content_type": str(content_type or ""),
-                                "downloaded_size": int(downloaded_size),
-                                "max_content_length": int(max_content_length),
-                                "rendered": rendered,
-                            }
-                        content_chunks.append(chunk)
-
-                content_bytes = b''.join(content_chunks)
+                # Download content (bounded). If the response is bigger than the cap, we truncate rather than fail.
+                content_bytes, downloaded_size, truncated = _download_streamed_content(response, ctype=str(content_type))
                 actual_size = len(content_bytes)
 
                 # Detect and follow meta-refresh redirects (used by privacy-focused services)
@@ -2093,12 +2877,18 @@ def fetch_url(
                             else:
                                 # Update response to the redirected content
                                 response = redirect_response
-                                content_type = response.headers.get('content-type', '').lower()
-                                content_chunks = []
-                                for chunk in response.iter_content(chunk_size=16384):
-                                    if chunk:
-                                        content_chunks.append(chunk)
-                                content_bytes = b''.join(content_chunks)
+                                content_type = redirect_response.headers.get('content-type', '').lower()
+                                content_length = redirect_response.headers.get('content-length')
+                                if content_length:
+                                    try:
+                                        content_length = int(content_length)
+                                    except Exception:
+                                        content_length = None
+
+                                content_bytes, downloaded_size, truncated = _download_streamed_content(
+                                    redirect_response,
+                                    ctype=str(content_type),
+                                )
                                 actual_size = len(content_bytes)
                     except Exception:
                         # If redirect fails, continue with original content
@@ -2126,6 +2916,22 @@ def fetch_url(
                 result_parts.append(f"✅ Status: {response.status_code} {response.reason}")
                 result_parts.append(f"📊 Content-Type: {content_type}")
                 result_parts.append(f"📏 Size: {actual_size:,} bytes")
+                if content_length:
+                    result_parts.append(f"📏 Content-Length: {int(content_length):,} bytes")
+                if truncated:
+                    result_parts.append(
+                        f"⚠️  Download truncated at {actual_size:,} bytes (cap: {int(max_content_length):,}). "
+                        "Increase max_content_length if needed."
+                    )
+                try:
+                    requested_int = int(requested_max_content_length)  # type: ignore[arg-type]
+                except Exception:
+                    requested_int = None
+                if requested_int is not None and requested_int != int(max_content_length):
+                    result_parts.append(
+                        f"ℹ️  Requested max_content_length={requested_int:,}; "
+                        f"effective cap={int(max_content_length):,} (minimum)."
+                    )
 
                 # Add important response headers
                 important_headers = ['server', 'last-modified', 'etag', 'cache-control', 'expires', 'location']
@@ -2180,6 +2986,10 @@ def fetch_url(
                     "reason": str(response.reason),
                     "content_type": str(content_type or ""),
                     "size_bytes": int(actual_size),
+                    "content_length": int(content_length) if content_length else None,
+                    "truncated": bool(truncated),
+                    "max_content_length": int(max_content_length),
+                    "requested_max_content_length": int(requested_int) if requested_int is not None else None,
                     # Evidence-only fields (large). Higher layers should persist these as artifacts and drop them from
                     # tool outputs to keep run state/prompt size bounded.
                     "raw_text": raw_text,

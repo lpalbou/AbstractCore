@@ -15,6 +15,9 @@ class _TTFTProvider(BaseProvider):
     def list_available_models(self, **kwargs) -> list[str]:
         return [self.model]
 
+    def unload_model(self, model_name: str) -> None:
+        return None
+
     def _generate_internal(
         self,
         prompt: str,

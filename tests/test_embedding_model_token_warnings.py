@@ -17,6 +17,9 @@ class _DummyProvider(BaseProvider):
     def list_available_models(self, **kwargs):  # type: ignore[no-untyped-def]
         return []
 
+    def unload_model(self, model_name: str) -> None:
+        return None
+
 
 def test_embedding_models_do_not_warn_about_max_output_tokens() -> None:
     # Embedding models legitimately use max_output_tokens=0. That should not trigger

@@ -19,6 +19,9 @@ class _DummyProvider(BaseProvider):
     def list_available_models(self, api_key: Optional[str] = None) -> List[str]:
         return [self.model]
 
+    def unload_model(self, model_name: str) -> None:
+        return None
+
     def _generate_internal(
         self,
         prompt: str,
@@ -43,5 +46,4 @@ def test_base_provider_maps_max_tokens_to_max_output_tokens_when_unified_key_mis
     assert provider.last_kwargs is not None
     assert provider.last_kwargs.get("max_output_tokens") == 123
     assert "max_tokens" not in provider.last_kwargs
-
 

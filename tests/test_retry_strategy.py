@@ -455,6 +455,9 @@ class MockProvider(BaseProvider):
             "supports_tools": True,
             "supports_structured_output": True
         }
+
+    def unload_model(self, model_name: str) -> None:
+        return None
     
     def set_failure_mode(self, should_fail: bool, fail_count: int = 1):
         """Configure the provider to fail for testing."""
@@ -484,6 +487,9 @@ class TestRetryProvider(BaseProvider):
 
     def get_capabilities(self):
         return ["chat", "streaming", "tools"]
+
+    def unload_model(self, model_name: str) -> None:
+        return None
 
 
 class TestBaseProviderIntegration:
