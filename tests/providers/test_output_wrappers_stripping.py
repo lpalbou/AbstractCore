@@ -18,6 +18,9 @@ class _DummyProvider(BaseProvider):
     def list_available_models(self, **kwargs) -> List[str]:
         return []
 
+    def unload_model(self, model_name: str) -> None:
+        return None
+
     def _generate_internal(
         self,
         prompt: str,

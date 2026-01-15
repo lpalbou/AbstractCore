@@ -28,6 +28,9 @@ def test_empty_tools_does_not_trigger_hybrid_structured_flow() -> None:
         def list_available_models(self, **kwargs):
             return [self.model]
 
+        def unload_model(self, model_name: str) -> None:
+            return None
+
         def _generate_internal(self, prompt: str, **kwargs):
             self.calls.append(dict(kwargs))
             response_model = kwargs.get("response_model")

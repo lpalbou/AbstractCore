@@ -43,6 +43,9 @@ class TracingProviderStub(BaseProvider):
     def get_capabilities(self):
         return ["chat", "streaming", "tools"]
 
+    def unload_model(self, model_name: str) -> None:
+        return None
+
 
 class TestProviderTracing:
     """Tests for provider-level interaction tracing."""

@@ -49,6 +49,9 @@ class DummyProvider(BaseProvider):
     def list_available_models(self, **kwargs) -> List[str]:
         return [self.model]
 
+    def unload_model(self, model_name: str) -> None:
+        return None
+
 
 class TestSeedTemperatureParameters:
     """Test seed and temperature parameter handling"""

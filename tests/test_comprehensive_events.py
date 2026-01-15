@@ -235,6 +235,9 @@ class TestProviderEvents:
             def get_capabilities(self):
                 return ["chat", "streaming", "tools"]
 
+            def unload_model(self, model_name: str) -> None:
+                return None
+
         llm = OpenAIProviderStub()
         _ = llm.generate("Test prompt")
 

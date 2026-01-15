@@ -21,6 +21,9 @@ class _DummyProvider(BaseProvider):
     def list_available_models(self, **kwargs) -> List[str]:
         return [self.model]
 
+    def unload_model(self, model_name: str) -> None:
+        return None
+
     def generate(self, *args, **kwargs):
         return self.generate_with_telemetry(*args, **kwargs)
 

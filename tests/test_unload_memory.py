@@ -1,7 +1,7 @@
 """
 Test model unloading functionality for memory management.
 
-These tests verify that the unload() method works correctly for all local providers,
+These tests verify that the unload_model(model_name) method works correctly for all local providers,
 enabling explicit memory management in long-running tests and applications.
 """
 
@@ -13,7 +13,7 @@ from abstractcore import create_llm
 
 
 class TestModelUnloading:
-    """Test unload() method for local providers"""
+    """Test unload_model() for local providers"""
 
     def test_huggingface_unload(self):
         """Test HuggingFace GGUF model unloading"""
