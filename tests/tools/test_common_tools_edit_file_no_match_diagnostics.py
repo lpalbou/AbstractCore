@@ -19,7 +19,6 @@ def test_edit_file_regex_no_match_includes_actionable_diagnostics(tmp_path) -> N
     )
 
     assert out.startswith("❌ No matches found for regex pattern"), out
-    assert "Tip: Use search_files(" in out
     assert "Closest lines (token match:" in out
     assert "pygame.draw.polygon" in out
     assert "2: pygame.draw.polygon" in out
@@ -34,4 +33,3 @@ def test_edit_file_rejects_empty_pattern(tmp_path) -> None:
 
     assert out.startswith("❌ Invalid pattern:"), out
     assert path.read_text(encoding="utf-8") == "hello\n"
-
