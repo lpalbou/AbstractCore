@@ -543,6 +543,97 @@ def _scan_r_delimiter_issues(lines: list[str], *, max_issues: int = 10) -> list[
     return issues
 
 
+def _scan_html_lint_issues(lines: list[str], *, max_issues: int = 10) -> list[str]:
+    """Best-effort HTML lint checks (line-based, avoids embedded script/style bodies)."""
+    lint: list[str] = []
+    ids: dict[str, list[int]] = {}
+
+    id_re = re.compile(r"\bid\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+    alt_re = re.compile(r"\balt\s*=\s*(?P<q>[\"'])(?P<val>[^\"']*)(?P=q)", re.IGNORECASE)
+    target_re = re.compile(r"\btarget\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+    rel_re = re.compile(r"\brel\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+    lang_re = re.compile(r"\blang\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
+
+    in_comment = False
+    in_script = False
+    in_style = False
+    saw_html_tag = False
+
+    for i, raw in enumerate(lines, 1):
+        if not raw.strip():
+            continue
+
+        # Skip HTML comments (best-effort).
+        if in_comment:
+            if "-->" in raw:
+                in_comment = False
+            continue
+        if "<!--" in raw:
+            if "-->" not in raw:
+                in_comment = True
+            continue
+
+        # Skip script/style bodies (avoid false positives from embedded code).
+        if in_script:
+            if re.search(r"</script\b", raw, flags=re.IGNORECASE):
+                in_script = False
+            continue
+        if in_style:
+            if re.search(r"</style\b", raw, flags=re.IGNORECASE):
+                in_style = False
+            continue
+
+        if not saw_html_tag and re.search(r"<html\b", raw, flags=re.IGNORECASE):
+            saw_html_tag = True
+            if not lang_re.search(raw):
+                lint.append(f"  - html_missing_lang at line {i}")
+                if len(lint) >= max_issues:
+                    return lint
+
+        for m in id_re.finditer(raw):
+            ids.setdefault(m.group("val"), []).append(i)
+
+        if re.search(r"<script\b", raw, flags=re.IGNORECASE):
+            if not re.search(r"</script\b", raw, flags=re.IGNORECASE):
+                in_script = True
+            continue
+
+        if re.search(r"<style\b", raw, flags=re.IGNORECASE):
+            if not re.search(r"</style\b", raw, flags=re.IGNORECASE):
+                in_style = True
+            continue
+
+        if re.search(r"<img\b", raw, flags=re.IGNORECASE):
+            if not alt_re.search(raw):
+                lint.append(f"  - img_missing_alt at line {i}")
+                if len(lint) >= max_issues:
+                    return lint
+            continue
+
+        if re.search(r"<a\b", raw, flags=re.IGNORECASE):
+            target_m = target_re.search(raw)
+            if target_m and target_m.group("val").strip().lower() == "_blank":
+                rel_m = rel_re.search(raw)
+                rel_val = (rel_m.group("val") if rel_m else "").lower()
+                if "noopener" not in rel_val and "noreferrer" not in rel_val:
+                    lint.append(f"  - target_blank_missing_noopener at line {i}")
+                    if len(lint) >= max_issues:
+                        return lint
+            continue
+
+    # Duplicate id checks.
+    for id_val, locs in sorted(ids.items(), key=lambda kv: kv[0].lower()):
+        if len(locs) <= 1:
+            continue
+        loc_str = ", ".join(str(n) for n in locs[:10])
+        more = f", …(+{len(locs) - 10})" if len(locs) > 10 else ""
+        lint.append(f"  - duplicate_id {id_val!r} at lines {loc_str}{more}")
+        if len(lint) >= max_issues:
+            break
+
+    return lint
+
+
 def _run_ruff_check(path: Path, *, max_messages: int = 20, timeout_s: int = 10) -> dict[str, Any]:
     """
     Run `ruff check` (if available) and return a compact report.
@@ -638,6 +729,200 @@ def _run_ruff_check(path: Path, *, max_messages: int = 20, timeout_s: int = 10) 
         "codes": codes,
         "messages": messages,
     }
+
+
+def _run_ruff_check_content(content: str, filename: Path, *, max_messages: int = 20, timeout_s: int = 10) -> dict[str, Any]:
+    """Run `ruff check` (if available) against in-memory content via stdin."""
+    cmd = [
+        sys.executable,
+        "-m",
+        "ruff",
+        "check",
+        "--no-cache",
+        "--output-format",
+        "json",
+        "--stdin-filename",
+        str(filename),
+        "-",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            input=str(content or ""),
+            capture_output=True,
+            text=True,
+            cwd=str(filename.parent),
+            timeout=timeout_s,
+        )
+    except FileNotFoundError as e:
+        return {"available": False, "error": str(e), "total": 0, "fixable": 0, "codes": [], "messages": []}
+    except subprocess.TimeoutExpired:
+        return {"available": True, "error": "ruff timed out", "total": 0, "fixable": 0, "codes": [], "messages": []}
+    except Exception as e:
+        return {"available": True, "error": str(e), "total": 0, "fixable": 0, "codes": [], "messages": []}
+
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+
+    if "No module named ruff" in stderr:
+        return {"available": False, "error": "ruff not installed", "total": 0, "fixable": 0, "codes": [], "messages": []}
+
+    if not stdout:
+        if proc.returncode not in (0, 1):
+            return {
+                "available": True,
+                "error": (stderr or f"ruff failed (exit {proc.returncode})").strip(),
+                "total": 0,
+                "fixable": 0,
+                "codes": [],
+                "messages": [],
+            }
+        return {"available": True, "error": None, "total": 0, "fixable": 0, "codes": [], "messages": []}
+
+    try:
+        data = json.loads(stdout)
+    except Exception:
+        return {
+            "available": True,
+            "error": (stderr or "ruff returned non-JSON output").strip(),
+            "total": 0,
+            "fixable": 0,
+            "codes": [],
+            "messages": [],
+        }
+
+    if not isinstance(data, list):
+        return {
+            "available": True,
+            "error": (stderr or "ruff returned unexpected JSON shape").strip(),
+            "total": 0,
+            "fixable": 0,
+            "codes": [],
+            "messages": [],
+        }
+
+    total = len(data)
+    fixable = 0
+    codes: list[str] = []
+    seen_codes: set[str] = set()
+    for item in data:
+        code = str(item.get("code") or "").strip()
+        if code and code not in seen_codes:
+            seen_codes.add(code)
+            codes.append(code)
+        fixable += 1 if item.get("fix") else 0
+
+    messages: list[str] = []
+    for item in data[:max_messages]:
+        code = str(item.get("code") or "").strip()
+        msg = str(item.get("message") or "").strip()
+        loc = item.get("location") or {}
+        row = int(loc.get("row") or 0)
+        col = int(loc.get("column") or 0)
+        has_fix = bool(item.get("fix"))
+        fix = " (fixable)" if has_fix else ""
+        where = f"{row}:{col}" if row and col else (f"{row}" if row else "?")
+        messages.append(f"  - {where} {code}: {msg}{fix}".rstrip())
+
+    return {
+        "available": True,
+        "error": None,
+        "total": total,
+        "fixable": fixable,
+        "codes": codes,
+        "messages": messages,
+    }
+
+
+def _lint_notice_for_content(path: Path, content: str) -> Optional[str]:
+    """Return a compact lint notice for a code file's content, or None."""
+    lang = _detect_code_language(path, None)
+    if not lang:
+        return None
+
+    if lang == "python":
+        ruff = _run_ruff_check_content(content, path)
+        if not bool(ruff.get("available")):
+            err = str(ruff.get("error") or "ruff unavailable").strip()
+            return f"Notice: lint (python/ruff) unavailable: {err}"
+        if ruff.get("error"):
+            err = str(ruff.get("error") or "").strip()
+            return f"Notice: lint (python/ruff) error: {err}" if err else "Notice: lint (python/ruff) error"
+
+        total = int(ruff.get("total") or 0)
+        if total <= 0:
+            return None
+
+        fixable = int(ruff.get("fixable") or 0)
+        header = f"Notice: lint (python/ruff) found {total} issue(s)"
+        if fixable > 0:
+            header += f" ({fixable} fixable)"
+
+        messages = [str(m) for m in (ruff.get("messages") or []) if str(m).strip()]
+        body = "\n".join(messages).rstrip() if messages else ""
+        if total > len(messages) and len(messages) > 0:
+            body = (body + "\n" if body else "") + f"  - ... ({total - len(messages)} more)"
+        return f"{header}\n{body}".rstrip() if body else header
+
+    lines = str(content or "").splitlines()
+    if lang == "javascript":
+        issues = _scan_js_delimiter_issues(lines, max_issues=10)
+        if not issues:
+            return None
+        return "Notice: lint (javascript) delimiter issues:\n" + "\n".join(issues)
+
+    if lang == "r":
+        issues = _scan_r_delimiter_issues(lines, max_issues=10)
+        if not issues:
+            return None
+        return "Notice: lint (r) delimiter issues:\n" + "\n".join(issues)
+
+    if lang == "html":
+        issues = _scan_html_lint_issues(lines, max_issues=10)
+        if not issues:
+            return None
+        return "Notice: lint (html) issues:\n" + "\n".join(issues)
+
+    return None
+
+
+def _lint_notice_for_path(path: Path) -> Optional[str]:
+    """Return a compact lint notice for a code file on disk, or None."""
+    lang = _detect_code_language(path, None)
+    if not lang:
+        return None
+
+    if lang == "python":
+        ruff = _run_ruff_check(path)
+        if not bool(ruff.get("available")):
+            err = str(ruff.get("error") or "ruff unavailable").strip()
+            return f"Notice: lint (python/ruff) unavailable: {err}"
+        if ruff.get("error"):
+            err = str(ruff.get("error") or "").strip()
+            return f"Notice: lint (python/ruff) error: {err}" if err else "Notice: lint (python/ruff) error"
+
+        total = int(ruff.get("total") or 0)
+        if total <= 0:
+            return None
+
+        fixable = int(ruff.get("fixable") or 0)
+        header = f"Notice: lint (python/ruff) found {total} issue(s)"
+        if fixable > 0:
+            header += f" ({fixable} fixable)"
+
+        messages = [str(m) for m in (ruff.get("messages") or []) if str(m).strip()]
+        body = "\n".join(messages).rstrip() if messages else ""
+        if total > len(messages) and len(messages) > 0:
+            body = (body + "\n" if body else "") + f"  - ... ({total - len(messages)} more)"
+        return f"{header}\n{body}".rstrip() if body else header
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except Exception:
+        return None
+
+    return _lint_notice_for_content(path, content)
+
 
 @tool(
     description="Return a compact outline + diagnostics for a code file (Python/JavaScript/HTML/R) to guide precise edits.",
@@ -2403,11 +2688,17 @@ def write_file(file_path: str, content: str, mode: str = "w", create_dirs: bool 
         # Enhanced success message with emoji and formatting
         action = "appended to" if mode == "a" else "written to"
         if mode == "a":
-            return (
+            rendered = (
                 f"✅ Successfully {action} '{display_path}' "
                 f"(+{bytes_written:,} bytes, +{lines_written:,} lines; file now {file_size:,} bytes)"
             )
-        return f"✅ Successfully {action} '{display_path}' ({file_size:,} bytes, {lines_written:,} lines)"
+        else:
+            rendered = f"✅ Successfully {action} '{display_path}' ({file_size:,} bytes, {lines_written:,} lines)"
+
+        notice = _lint_notice_for_path(path)
+        if notice:
+            return f"{rendered}\n\n{notice}"
+        return rendered
 
     except PermissionError:
         return f"❌ Permission denied: Cannot write to '{_path_for_display(Path(file_path).expanduser())}'"
@@ -4417,21 +4708,6 @@ def _extract_pattern_tokens_for_diagnostics(pattern: str, *, max_tokens: int = 6
     return [t for _, t in ranked[: max(1, int(max_tokens or 6))]]
 
 
-def _pick_search_anchor_for_diagnostics(pattern: str) -> str:
-    """Pick a concise anchor string for search_files() suggestions."""
-    raw = str(pattern or "").strip()
-    if not raw:
-        return ""
-    # Prefer dotted identifiers if present (common in Python/JS), else fall back to a token.
-    dotted = re.findall(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+", raw)
-    if dotted:
-        return max(dotted, key=len)
-    tokens = _extract_pattern_tokens_for_diagnostics(raw, max_tokens=1)
-    if tokens:
-        return tokens[0]
-    return raw[:40]
-
-
 def _find_candidate_lines_for_diagnostics(
     *,
     content: str,
@@ -4464,7 +4740,7 @@ def _find_candidate_lines_for_diagnostics(
     return scored[: max(1, int(max_results or 5))]
 
 
-def _format_edit_file_no_match_diagnostics(*, content: str, pattern: str, file_path: str) -> str:
+def _format_edit_file_no_match_diagnostics(*, content: str, pattern: str) -> str:
     """Format compact diagnostics appended to edit_file no-match errors."""
     tokens = _extract_pattern_tokens_for_diagnostics(pattern)
     if not tokens:
@@ -4474,7 +4750,6 @@ def _format_edit_file_no_match_diagnostics(*, content: str, pattern: str, file_p
     if not candidates:
         return ""
 
-    anchor = _pick_search_anchor_for_diagnostics(pattern)
     token_list = ", ".join(tokens[:3])
 
     def _truncate(line: str, limit: int = 200) -> str:
@@ -4485,8 +4760,6 @@ def _format_edit_file_no_match_diagnostics(*, content: str, pattern: str, file_p
         return s[: max(0, limit - 1)] + "…"
 
     out: list[str] = []
-    if anchor:
-        out.append(f"Tip: Use search_files(pattern=\"{anchor}\", path=\"{file_path}\") to locate the exact line(s).")
     out.append(f"Closest lines (token match: {token_list}):")
     for ln, text, _score in candidates:
         out.append(f"  {ln}: {_truncate(text)}")
@@ -4765,19 +5038,11 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
     old_no: int | None = None
     new_no: int | None = None
     hunk_re = re.compile(r"^@@ -(?P<o>\d+)(?:,(?P<oc>\d+))? \+(?P<n>\d+)(?:,(?P<nc>\d+))? @@")
-    # Track per-hunk new-file line ranges to suggest bounded verification reads.
-    hunk_ranges: list[tuple[int, int]] = []
-    current_min_new: int | None = None
-    current_max_new: int | None = None
 
     for line in diff_lines:
         if line.startswith(("---", "+++")):
             continue
         if line.startswith("@@"):
-            if current_min_new is not None and current_max_new is not None:
-                hunk_ranges.append((current_min_new, current_max_new))
-            current_min_new = None
-            current_max_new = None
             kept.append(line)
             m = hunk_re.match(line)
             if m:
@@ -4800,25 +5065,15 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
 
         if prefix == " ":
             # Context line: advances both old and new counters.
-            if new_no is not None:
-                current_min_new = new_no if current_min_new is None else min(current_min_new, new_no)
-                current_max_new = new_no if current_max_new is None else max(current_max_new, new_no)
             kept.append(f" {old_no:>{width}} {new_no:>{width}} | {text}")
             old_no += 1
             new_no += 1
             continue
         if prefix == "-":
-            # Deletion-only hunks still have a position in the new file; use the current new_no.
-            if new_no is not None:
-                current_min_new = new_no if current_min_new is None else min(current_min_new, new_no)
-                current_max_new = new_no if current_max_new is None else max(current_max_new, new_no)
             kept.append(f"-{old_no:>{width}} {blank} | {text}")
             old_no += 1
             continue
         if prefix == "+":
-            if new_no is not None:
-                current_min_new = new_no if current_min_new is None else min(current_min_new, new_no)
-                current_max_new = new_no if current_max_new is None else max(current_max_new, new_no)
             kept.append(f"+{blank} {new_no:>{width}} | {text}")
             new_no += 1
             continue
@@ -4826,34 +5081,9 @@ def _render_edit_file_diff(*, path: Path, before: str, after: str) -> tuple[str,
         # Fallback (rare): keep any other lines as-is (e.g. "\ No newline at end of file").
         kept.append(line)
 
-    if current_min_new is not None and current_max_new is not None:
-        hunk_ranges.append((current_min_new, current_max_new))
-
     body = "\n".join(kept).rstrip("\n")
     header = f"{_path_for_display(path)} (+{added} -{removed})"
     rendered = (f"Edited {header}\n{body}").rstrip()
-
-    # Add a short, bounded verification hint so agents don't re-read entire files after small edits.
-    if hunk_ranges:
-        unique = []
-        for start, end in hunk_ranges:
-            if start <= 0 or end <= 0:
-                continue
-            unique.append((start, end))
-        if unique:
-            unique = sorted(set(unique))
-            tips: list[str] = []
-            abs_path = _path_for_display(path)
-            for idx, (start, end) in enumerate(unique[:3], 1):
-                a = max(1, start - 3)
-                b = end + 3
-                prefix = "Tip" if len(unique) == 1 else f"Tip (hunk {idx})"
-                tips.append(
-                    f"{prefix}: verify with read_file(file_path=\"{abs_path}\", start_line={a}, end_line={b})"
-                )
-            if len(unique) > 3:
-                tips.append(f"Tip: {len(unique) - 3} more hunks not shown; use the diff above to choose ranges.")
-            rendered = rendered + "\n\n" + "\n".join(tips)
 
     return (rendered, added, removed)
 
@@ -4974,13 +5204,19 @@ def edit_file(
         except Exception as e:
             return f"❌ Error reading file: {str(e)}"
 
+        def _with_lint(message: str, *, lint_content: Optional[str] = None) -> str:
+            notice = _lint_notice_for_content(path, content if lint_content is None else lint_content)
+            if notice:
+                return f"{message}\n\n{notice}"
+            return message
+
         # Unified diff mode: treat `pattern` as a patch when `replacement` is omitted.
         if replacement is None:
             header_path, hunks, err = _parse_unified_diff(pattern)
             if err:
-                return f"❌ Error: {err}"
+                return _with_lint(f"❌ Error: {err}")
             if header_path and not _is_suffix_path(header_path, path.resolve()):
-                return (
+                return _with_lint(
                     "❌ Error: Patch file header does not match the provided path.\n"
                     f"Patch header: {header_path}\n"
                     f"Target path:  {path.resolve()}\n"
@@ -4989,20 +5225,20 @@ def edit_file(
 
             updated, apply_err = _apply_unified_diff(content, hunks)
             if apply_err:
-                return f"❌ Error: Patch did not apply cleanly: {apply_err}"
+                return _with_lint(f"❌ Error: Patch did not apply cleanly: {apply_err}")
 
             assert updated is not None
             if updated == content:
-                return "No changes applied (patch resulted in identical content)."
+                return _with_lint("No changes applied (patch resulted in identical content).")
 
             rendered, _, _ = _render_edit_file_diff(path=path, before=content, after=updated)
             if preview_only:
-                return rendered.replace("Edited ", "Preview ", 1)
+                return _with_lint(rendered.replace("Edited ", "Preview ", 1), lint_content=updated)
 
             with open(path, "w", encoding=encoding) as f:
                 f.write(updated)
 
-            return rendered
+            return _with_lint(rendered, lint_content=updated)
 
         original_content = content
 
@@ -5011,7 +5247,7 @@ def edit_file(
         replacement = _normalize_escape_sequences(replacement)
 
         if not isinstance(pattern, str) or not pattern:
-            return "❌ Invalid pattern: pattern must be a non-empty string."
+            return _with_lint("❌ Invalid pattern: pattern must be a non-empty string.")
 
         # Handle line range targeting if specified
         search_content = content
@@ -5025,22 +5261,24 @@ def edit_file(
                 try:
                     start_line = int(str(start_line).strip())
                 except Exception:
-                    return f"❌ Invalid start_line {start_line}. Must be an integer (1-indexed)."
+                    return _with_lint(f"❌ Invalid start_line {start_line}. Must be an integer (1-indexed).")
             if end_line is not None and not isinstance(end_line, int):
                 try:
                     end_line = int(str(end_line).strip())
                 except Exception:
-                    return f"❌ Invalid end_line {end_line}. Must be an integer (1-indexed)."
+                    return _with_lint(f"❌ Invalid end_line {end_line}. Must be an integer (1-indexed).")
 
             # Validate line range parameters
             if start_line is not None and (start_line < 1 or start_line > total_lines):
-                return f"❌ Invalid start_line {start_line}. Must be between 1 and {total_lines}"
+                return _with_lint(f"❌ Invalid start_line {start_line}. Must be between 1 and {total_lines}")
 
             if end_line is not None and (end_line < 1 or end_line > total_lines):
-                return f"❌ Invalid end_line {end_line}. Must be between 1 and {total_lines}"
+                return _with_lint(f"❌ Invalid end_line {end_line}. Must be between 1 and {total_lines}")
 
             if start_line is not None and end_line is not None and start_line > end_line:
-                return f"❌ Invalid line range: start_line ({start_line}) cannot be greater than end_line ({end_line})"
+                return _with_lint(
+                    f"❌ Invalid line range: start_line ({start_line}) cannot be greater than end_line ({end_line})"
+                )
 
             # Calculate actual line range (convert to 0-indexed)
             start_idx = (start_line - 1) if start_line is not None else 0
@@ -5058,7 +5296,7 @@ def edit_file(
             try:
                 regex_pattern = re.compile(pattern, re.MULTILINE | re.DOTALL)
             except re.error as e:
-                return f"❌ Invalid regex pattern '{pattern}': {str(e)}"
+                return _with_lint(f"❌ Invalid regex pattern '{pattern}': {str(e)}")
 
             # Count matches first
             matches = list(regex_pattern.finditer(search_content))
@@ -5068,8 +5306,8 @@ def edit_file(
                 hint = ""
                 if start_line is not None or end_line is not None:
                     hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
-                diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern, file_path=display_path)
-                return f"❌ No matches found for regex pattern '{pattern}' in '{display_path}'{range_info}{hint}{diag}"
+                diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern)
+                return _with_lint(f"❌ No matches found for regex pattern '{pattern}' in '{display_path}'{range_info}{hint}{diag}")
 
             # Apply replacements to search content
             if max_replacements == -1:
@@ -5098,15 +5336,15 @@ def edit_file(
                     hint = ""
                     if start_line is not None or end_line is not None:
                         hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
-                    diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern, file_path=display_path)
-                    return f"❌ No occurrences of '{pattern}' found in '{display_path}'{range_info}{hint}{diag}"
+                    diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern)
+                    return _with_lint(f"❌ No occurrences of '{pattern}' found in '{display_path}'{range_info}{hint}{diag}")
             elif count == 0:
                 range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
                 hint = ""
                 if start_line is not None or end_line is not None:
                     hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
-                diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern, file_path=display_path)
-                return f"❌ No occurrences of '{pattern}' found in '{display_path}'{range_info}{hint}{diag}"
+                diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern)
+                return _with_lint(f"❌ No occurrences of '{pattern}' found in '{display_path}'{range_info}{hint}{diag}")
             else:
                 # Exact match found
                 def _idempotent_insert_replace_exact(
@@ -5210,7 +5448,8 @@ def edit_file(
             updated_content = updated_search_content
 
         if updated_content == original_content:
-            return "No changes would be applied." if preview_only else "No changes applied (resulted in identical content)."
+            rendered = "No changes would be applied." if preview_only else "No changes applied (resulted in identical content)."
+            return _with_lint(rendered)
 
         rendered, _, _ = _render_edit_file_diff(path=path, before=original_content, after=updated_content)
         rendered_lines = rendered.splitlines()
@@ -5237,16 +5476,16 @@ def edit_file(
             )
 
         if preview_only:
-            return rendered.replace("Edited ", "Preview ", 1)
+            return _with_lint(rendered.replace("Edited ", "Preview ", 1), lint_content=updated_content)
 
         # Apply changes to file
         try:
             with open(path, "w", encoding=encoding) as f:
                 f.write(updated_content)
         except Exception as e:
-            return f"❌ Write failed: {str(e)}"
+            return _with_lint(f"❌ Write failed: {str(e)}", lint_content=updated_content)
 
-        return rendered
+        return _with_lint(rendered, lint_content=updated_content)
 
     except Exception as e:
         return f"❌ Error editing file: {str(e)}"
