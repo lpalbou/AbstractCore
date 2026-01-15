@@ -39,10 +39,11 @@ class _FakeSession:
 
 
 @pytest.mark.basic
-def test_fetch_url_clamps_too_small_max_content_length(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_url_respects_max_content_length_via_content_length_check(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.common_tools import fetch_url
     import abstractcore.tools.common_tools as common_tools
 
+    monkeypatch.setattr(common_tools, "FETCH_URL_MAX_CONTENT_LENGTH_BYTES", 5000)
     body = b"a" * 10_000
 
     fake = _FakeResponse(
@@ -59,31 +60,29 @@ def test_fetch_url_clamps_too_small_max_content_length(monkeypatch: pytest.Monke
         "http://example.com/small",
         timeout=10,
         include_full_content=False,
-        max_content_length=5000,
     )
-    assert out.get("success") is True
-    assert out.get("requested_max_content_length") == 5000
-    assert out.get("max_content_length") == 2 * 1024 * 1024
-    assert out.get("truncated") is False
-    assert out.get("size_bytes") == len(body)
+    assert out.get("success") is False
+    assert out.get("error") == "Content too large"
+    assert out.get("content_length") == len(body)
+    assert out.get("max_content_length") == 5000
     rendered = str(out.get("rendered") or "")
-    assert "Requested max_content_length=5,000" in rendered
-    assert "effective cap=2,097,152" in rendered
+    assert "Content too large" in rendered
+    assert "max: 5,000" in rendered
 
 
 @pytest.mark.basic
-def test_fetch_url_truncates_instead_of_error_when_content_exceeds_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_url_respects_max_content_length_via_streaming_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.common_tools import fetch_url
     import abstractcore.tools.common_tools as common_tools
 
-    cap = 2 * 1024 * 1024
+    cap = 5000
+    monkeypatch.setattr(common_tools, "FETCH_URL_MAX_CONTENT_LENGTH_BYTES", cap)
     body = b"b" * (cap + 123)
 
     fake = _FakeResponse(
         url="http://example.com/bin",
         headers={
             "content-type": "application/octet-stream",
-            "content-length": str(len(body)),
         },
         body=body,
     )
@@ -93,12 +92,10 @@ def test_fetch_url_truncates_instead_of_error_when_content_exceeds_cap(monkeypat
         "http://example.com/bin",
         timeout=10,
         include_full_content=False,
-        max_content_length=cap,
     )
-    assert out.get("success") is True
+    assert out.get("success") is False
+    assert out.get("error") == "Content exceeded size limit during download"
     assert out.get("max_content_length") == cap
-    assert out.get("truncated") is True
-    assert out.get("size_bytes") == cap
-    assert out.get("content_length") == len(body)
+    assert out.get("downloaded_size") == len(body)
     rendered = str(out.get("rendered") or "")
-    assert "Download truncated" in rendered
+    assert "Content exceeded size limit during download" in rendered

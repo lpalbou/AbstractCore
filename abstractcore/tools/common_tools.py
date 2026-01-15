@@ -44,6 +44,8 @@ from abstractcore.utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
+FETCH_URL_MAX_CONTENT_LENGTH_BYTES = 10 * 1024 * 1024  # 10MB
+
 
 def _path_for_display(path: Path) -> str:
     """Best-effort absolute path for tool outputs (avoid CWD ambiguity)."""
@@ -2637,7 +2639,7 @@ def web_search(
 
 @tool(
     description="Fetch a URL and parse common content types (HTML/JSON/text); supports previews and basic metadata.",
-    when_to_use="Use to retrieve and analyze content from a URL. For shorter outputs, set include_full_content=False (preview). max_content_length is a byte cap on download (default 10MB; clamped to ≥2MB).",
+    when_to_use="Use to retrieve and analyze content from a URL (HTML→Markdown). Redirects are always followed. For shorter outputs, set include_full_content=False; set keep_links=False to strip links.",
     examples=[
         {
             "description": "Fetch and parse HTML webpage",
@@ -2667,12 +2669,8 @@ def fetch_url(
     headers: Optional[Dict[str, str]] = None,
     data: Optional[Union[Dict[str, Any], str]] = None,
     timeout: int = 45,
-    max_content_length: int = 10485760,  # 10MB default
-    follow_redirects: bool = True,
     include_binary_preview: bool = False,
-    extract_links: bool = False,
-    convert_html_to_markdown: bool = True,
-    keep_links: bool = False,
+    keep_links: bool = True,
     user_agent: str = "AbstractCore-FetchTool/1.0",
     include_full_content: bool = True,
 ) -> Dict[str, Any]:
@@ -2688,12 +2686,8 @@ def fetch_url(
         headers: Optional custom headers to send with the request
         data: Optional data to send with POST/PUT requests (dict or string)
         timeout: Request timeout in seconds (default: 45)
-        max_content_length: Maximum content length to fetch in bytes (default: 10MB; clamped to >= 2MB)
-        follow_redirects: Whether to follow HTTP redirects (default: True)
         include_binary_preview: Whether to include base64 preview for binary content (default: False)
-        extract_links: Whether to extract links from HTML content (default: False)
-        convert_html_to_markdown: Whether to convert HTML main content into Markdown (default: True)
-        keep_links: Whether to preserve links when converting HTML to Markdown (default: False)
+        keep_links: Whether to preserve and extract links from HTML content (default: True)
         user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
         include_full_content: Whether to include full text/JSON/XML content (no preview truncation) (default: True)
     
@@ -2722,17 +2716,6 @@ def fetch_url(
                 "scheme": str(parsed_url.scheme),
                 "rendered": rendered,
             }
-
-        # Enforce a practical minimum cap: some callers mistakenly treat this as a "max output chars" knob and
-        # pass very small values (e.g., 5,000). We clamp to keep fetch_url usable for normal webpages.
-        MIN_MAX_CONTENT_LENGTH = 2 * 1024 * 1024  # 2MB
-        requested_max_content_length = max_content_length
-        try:
-            max_content_length = int(max_content_length)  # type: ignore[arg-type]
-        except Exception:
-            max_content_length = 10485760  # 10MB default fallback
-        if max_content_length < MIN_MAX_CONTENT_LENGTH:
-            max_content_length = MIN_MAX_CONTENT_LENGTH
 
         # Prepare request headers
         request_headers = {
@@ -2764,6 +2747,7 @@ def fetch_url(
         
         # Record fetch timestamp
         fetch_timestamp = datetime.now().isoformat()
+        max_content_length = int(FETCH_URL_MAX_CONTENT_LENGTH_BYTES)
 
         def _decode_text_bytes(content: bytes, content_type_header: str) -> str:
             """Best-effort decode of text-based HTTP responses."""
@@ -2780,35 +2764,6 @@ def fetch_url(
                 except (UnicodeDecodeError, LookupError):
                     continue
             return content.decode("utf-8", errors="replace")
-
-        def _download_streamed_content(resp: requests.Response, *, ctype: str) -> tuple[bytes, int, bool]:
-            """Download up to `max_content_length` bytes (hard cap), returning (bytes, downloaded_size, truncated)."""
-            content_chunks: list[bytes] = []
-            downloaded_size = 0
-            truncated = False
-
-            # Use larger chunks for better performance.
-            chunk_size = 32768 if 'image/' in ctype or 'video/' in ctype else 16384
-
-            for chunk in resp.iter_content(chunk_size=chunk_size):
-                if not chunk:
-                    continue
-
-                remaining = max_content_length - downloaded_size
-                if remaining <= 0:
-                    truncated = True
-                    break
-
-                if len(chunk) > remaining:
-                    content_chunks.append(chunk[:remaining])
-                    downloaded_size += remaining
-                    truncated = True
-                    break
-
-                content_chunks.append(chunk)
-                downloaded_size += len(chunk)
-
-            return b''.join(content_chunks), int(downloaded_size), bool(truncated)
         
         # Make the request with session for connection reuse and keep it open while streaming
         with requests.Session() as session:
@@ -2817,7 +2772,7 @@ def fetch_url(
                 method=method.upper(),
                 url=url,
                 timeout=timeout,
-                allow_redirects=follow_redirects,
+                allow_redirects=True,
                 stream=True,
                 json=request_json,
                 data=request_data,
@@ -2846,29 +2801,74 @@ def fetch_url(
                 content_type = response.headers.get('content-type', '').lower()
                 content_length = response.headers.get('content-length')
                 if content_length:
-                    try:
-                        content_length = int(content_length)
-                    except Exception:
-                        content_length = None
+                    content_length = int(content_length)
 
-                # Download content (bounded). If the response is bigger than the cap, we truncate rather than fail.
-                content_bytes, downloaded_size, truncated = _download_streamed_content(response, ctype=str(content_type))
+                # Check content length before downloading
+                if content_length and content_length > max_content_length:
+                    rendered = (
+                        f"⚠️  Content too large: {content_length:,} bytes (max: {max_content_length:,})\n"
+                        f"URL: {url}\n"
+                        f"Content-Type: {content_type}\n"
+                        f"Timestamp: {fetch_timestamp}\n"
+                        "Increase the fetch_url max download cap if needed."
+                    )
+                    return {
+                        "success": False,
+                        "error": "Content too large",
+                        "url": url,
+                        "timestamp": fetch_timestamp,
+                        "content_type": str(content_type or ""),
+                        "content_length": int(content_length),
+                        "max_content_length": int(max_content_length),
+                        "rendered": rendered,
+                    }
+
+                # Download content with optimized chunking
+                content_chunks = []
+                downloaded_size = 0
+
+                # Use larger chunks for better performance
+                chunk_size = 32768 if 'image/' in content_type or 'video/' in content_type else 16384
+
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        downloaded_size += len(chunk)
+                        if downloaded_size > max_content_length:
+                            rendered = (
+                                f"⚠️  Content exceeded size limit during download: {downloaded_size:,} bytes (max: {max_content_length:,})\n"
+                                f"URL: {url}\n"
+                                f"Content-Type: {content_type}\n"
+                                f"Timestamp: {fetch_timestamp}"
+                            )
+                            return {
+                                "success": False,
+                                "error": "Content exceeded size limit during download",
+                                "url": url,
+                                "timestamp": fetch_timestamp,
+                                "content_type": str(content_type or ""),
+                                "downloaded_size": int(downloaded_size),
+                                "max_content_length": int(max_content_length),
+                                "rendered": rendered,
+                            }
+                        content_chunks.append(chunk)
+
+                content_bytes = b''.join(content_chunks)
                 actual_size = len(content_bytes)
 
                 # Detect and follow meta-refresh redirects (used by privacy-focused services)
                 meta_refresh_url = _detect_meta_refresh(content_bytes, content_type)
-                if meta_refresh_url and follow_redirects:
+                if meta_refresh_url:
                     # Resolve relative URLs
                     if not meta_refresh_url.startswith(("http://", "https://")):
                         meta_refresh_url = urljoin(str(response.url), meta_refresh_url)
-                    
+
                     # Follow the meta-refresh redirect (recursive call with same session)
                     try:
                         with session.request(
                             method="GET",
                             url=meta_refresh_url,
                             timeout=timeout,
-                            allow_redirects=follow_redirects,
+                            allow_redirects=True,
                             stream=True,
                         ) as redirect_response:
                             if not redirect_response.ok:
@@ -2877,18 +2877,55 @@ def fetch_url(
                             else:
                                 # Update response to the redirected content
                                 response = redirect_response
-                                content_type = redirect_response.headers.get('content-type', '').lower()
-                                content_length = redirect_response.headers.get('content-length')
+                                content_type = response.headers.get("content-type", "").lower()
+                                content_length = response.headers.get("content-length")
                                 if content_length:
-                                    try:
-                                        content_length = int(content_length)
-                                    except Exception:
-                                        content_length = None
+                                    content_length = int(content_length)
 
-                                content_bytes, downloaded_size, truncated = _download_streamed_content(
-                                    redirect_response,
-                                    ctype=str(content_type),
-                                )
+                                # Enforce max_content_length for meta-refresh targets as well.
+                                if content_length and content_length > max_content_length:
+                                    rendered = (
+                                        f"⚠️  Content too large: {content_length:,} bytes (max: {max_content_length:,})\n"
+                                        f"URL: {meta_refresh_url}\n"
+                                        f"Content-Type: {content_type}\n"
+                                        f"Timestamp: {fetch_timestamp}\n"
+                                        "Increase the fetch_url max download cap if needed."
+                                    )
+                                    return {
+                                        "success": False,
+                                        "error": "Content too large",
+                                        "url": url,
+                                        "timestamp": fetch_timestamp,
+                                        "content_type": str(content_type or ""),
+                                        "content_length": int(content_length),
+                                        "max_content_length": int(max_content_length),
+                                        "rendered": rendered,
+                                    }
+
+                                content_chunks = []
+                                downloaded_size = 0
+                                for chunk in response.iter_content(chunk_size=16384):
+                                    if chunk:
+                                        downloaded_size += len(chunk)
+                                        if downloaded_size > max_content_length:
+                                            rendered = (
+                                                f"⚠️  Content exceeded size limit during download: {downloaded_size:,} bytes (max: {max_content_length:,})\n"
+                                                f"URL: {meta_refresh_url}\n"
+                                                f"Content-Type: {content_type}\n"
+                                                f"Timestamp: {fetch_timestamp}"
+                                            )
+                                            return {
+                                                "success": False,
+                                                "error": "Content exceeded size limit during download",
+                                                "url": url,
+                                                "timestamp": fetch_timestamp,
+                                                "content_type": str(content_type or ""),
+                                                "downloaded_size": int(downloaded_size),
+                                                "max_content_length": int(max_content_length),
+                                                "rendered": rendered,
+                                            }
+                                        content_chunks.append(chunk)
+                                content_bytes = b"".join(content_chunks)
                                 actual_size = len(content_bytes)
                     except Exception:
                         # If redirect fails, continue with original content
@@ -2899,10 +2936,8 @@ def fetch_url(
                     content_bytes,
                     content_type,
                     str(response.url),
-                    extract_links=extract_links,
                     include_binary_preview=include_binary_preview,
                     include_full_content=include_full_content,
-                    convert_html_to_markdown=convert_html_to_markdown,
                     keep_links=keep_links,
                 )
 
@@ -2916,22 +2951,6 @@ def fetch_url(
                 result_parts.append(f"✅ Status: {response.status_code} {response.reason}")
                 result_parts.append(f"📊 Content-Type: {content_type}")
                 result_parts.append(f"📏 Size: {actual_size:,} bytes")
-                if content_length:
-                    result_parts.append(f"📏 Content-Length: {int(content_length):,} bytes")
-                if truncated:
-                    result_parts.append(
-                        f"⚠️  Download truncated at {actual_size:,} bytes (cap: {int(max_content_length):,}). "
-                        "Increase max_content_length if needed."
-                    )
-                try:
-                    requested_int = int(requested_max_content_length)  # type: ignore[arg-type]
-                except Exception:
-                    requested_int = None
-                if requested_int is not None and requested_int != int(max_content_length):
-                    result_parts.append(
-                        f"ℹ️  Requested max_content_length={requested_int:,}; "
-                        f"effective cap={int(max_content_length):,} (minimum)."
-                    )
 
                 # Add important response headers
                 important_headers = ['server', 'last-modified', 'etag', 'cache-control', 'expires', 'location']
@@ -2986,10 +3005,6 @@ def fetch_url(
                     "reason": str(response.reason),
                     "content_type": str(content_type or ""),
                     "size_bytes": int(actual_size),
-                    "content_length": int(content_length) if content_length else None,
-                    "truncated": bool(truncated),
-                    "max_content_length": int(max_content_length),
-                    "requested_max_content_length": int(requested_int) if requested_int is not None else None,
                     # Evidence-only fields (large). Higher layers should persist these as artifacts and drop them from
                     # tool outputs to keep run state/prompt size bounded.
                     "raw_text": raw_text,
@@ -3029,7 +3044,7 @@ def fetch_url(
         rendered = (
             "🔄 Too many redirects\n"
             f"URL: {url}\n"
-            "Try setting follow_redirects=False to see redirect chain"
+            "Note: fetch_url always follows redirects; check for redirect loops."
         )
         return {
             "success": False,
@@ -3076,11 +3091,9 @@ def _parse_content_by_type(
     content_bytes: bytes,
     content_type: str,
     url: str,
-    extract_links: bool = True,
     include_binary_preview: bool = False,
     include_full_content: bool = False,
-    convert_html_to_markdown: bool = True,
-    keep_links: bool = False,
+    keep_links: bool = True,
 ) -> str:
     """
     Parse content based on detected content type with intelligent fallbacks.
@@ -3128,9 +3141,7 @@ def _parse_content_by_type(
             return _parse_html_content(
                 text_content,
                 url,
-                extract_links=extract_links,
                 include_full_content=include_full_content,
-                convert_html_to_markdown=convert_html_to_markdown,
                 keep_links=keep_links,
             )
         
@@ -3147,9 +3158,7 @@ def _parse_content_by_type(
                     return _parse_html_content(
                         text_content,
                         url,
-                        extract_links=extract_links,
                         include_full_content=include_full_content,
-                        convert_html_to_markdown=convert_html_to_markdown,
                         keep_links=keep_links,
                     )
                 elif _is_xml_content(text_content):
@@ -3962,10 +3971,8 @@ def _get_appropriate_parser(content: str) -> str:
 def _parse_html_content(
     html_content: str,
     url: str,
-    extract_links: bool = True,
     include_full_content: bool = False,
-    convert_html_to_markdown: bool = True,
-    keep_links: bool = False,
+    keep_links: bool = True,
 ) -> str:
     """Parse HTML content and extract meaningful information."""
     if not html_content:
@@ -4010,8 +4017,8 @@ def _parse_html_content(
         content_soup = _select_html_main_container(soup, url)
         _prune_html_container_for_readability(content_soup)
 
-        # Extract links (main-content only) if requested.
-        if extract_links:
+        # Extract links (main-content only) when links are preserved.
+        if keep_links:
             links: list[str] = []
             seen: set[str] = set()
             for a in content_soup.find_all("a", href=True):
@@ -4051,26 +4058,26 @@ def _parse_html_content(
                 for link in links:
                     result_parts.append(f"  • {link}")
 
-        if convert_html_to_markdown:
-            markdown = _html_to_markdown(content_soup, base_url=url, keep_links=keep_links)
-            # Drop duplicate title lines if the first content line matches <title>.
-            if title_text and markdown:
-                md_lines = markdown.splitlines()
+        markdown = _html_to_markdown(content_soup, base_url=url, keep_links=keep_links)
+        # Drop duplicate title lines if the first content line matches <title>.
+        if title_text and markdown:
+            md_lines = markdown.splitlines()
+            while md_lines and not md_lines[0].strip():
+                md_lines.pop(0)
+            if md_lines and md_lines[0].strip() == title_text:
+                md_lines.pop(0)
                 while md_lines and not md_lines[0].strip():
                     md_lines.pop(0)
-                if md_lines and md_lines[0].strip() == title_text:
-                    md_lines.pop(0)
-                    while md_lines and not md_lines[0].strip():
-                        md_lines.pop(0)
-                    markdown = "\n".join(md_lines).strip()
-            if markdown:
-                preview_length = None if include_full_content else 2000
-                md_preview = markdown if preview_length is None else markdown[:preview_length]
-                if preview_length is not None and len(markdown) > preview_length:
-                    md_preview += "\n\n... (truncated)"
-                result_parts.append("📄 Markdown Content:" if include_full_content else "📄 Markdown Content Preview:")
-                result_parts.append(md_preview)
-                result_parts.append(f"📊 Total markdown length: {len(markdown):,} characters")
+                markdown = "\n".join(md_lines).strip()
+
+        if markdown:
+            preview_length = None if include_full_content else 2000
+            md_preview = markdown if preview_length is None else markdown[:preview_length]
+            if preview_length is not None and len(markdown) > preview_length:
+                md_preview += "\n\n... (truncated)"
+            result_parts.append("📄 Markdown Content:" if include_full_content else "📄 Markdown Content Preview:")
+            result_parts.append(md_preview)
+            result_parts.append(f"📊 Total markdown length: {len(markdown):,} characters")
         else:
             text = _normalize_extracted_text(content_soup.get_text("\n", strip=True))
 
