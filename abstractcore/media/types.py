@@ -63,6 +63,98 @@ class MediaContent:
         elif self.content_format == ContentFormat.TEXT and isinstance(self.content, bytes):
             self.content = self.content.decode('utf-8')
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-safe dict representation (best-effort)."""
+        content: Any = self.content
+        if isinstance(content, (bytes, bytearray)):
+            content = base64.b64encode(bytes(content)).decode("utf-8")
+        return {
+            "media_type": self.media_type.value if isinstance(self.media_type, MediaType) else str(self.media_type),
+            "content": content,
+            "content_format": self.content_format.value
+            if isinstance(self.content_format, ContentFormat)
+            else str(self.content_format),
+            "mime_type": str(self.mime_type or "application/octet-stream"),
+            "file_path": self.file_path,
+            "metadata": dict(self.metadata or {}),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "MediaContent":
+        """Parse a dict into a MediaContent (best-effort, tolerant of common aliases)."""
+        if not isinstance(data, dict):
+            raise TypeError("MediaContent.from_dict expects a dict")
+
+        media_type_raw = data.get("media_type")
+        if media_type_raw is None:
+            media_type_raw = data.get("mediaType")
+
+        mime_type_raw = data.get("mime_type")
+        if mime_type_raw is None:
+            mime_type_raw = data.get("mimeType")
+        if mime_type_raw is None:
+            mime_type_raw = data.get("mime")
+
+        mime_type = str(mime_type_raw or "application/octet-stream")
+
+        if isinstance(media_type_raw, MediaType):
+            media_type = media_type_raw
+        elif isinstance(media_type_raw, str) and media_type_raw.strip():
+            media_type = MediaType(media_type_raw.strip())
+        else:
+            # Infer from MIME type when missing.
+            mt = mime_type.lower()
+            if mt.startswith("image/"):
+                media_type = MediaType.IMAGE
+            elif mt.startswith("audio/"):
+                media_type = MediaType.AUDIO
+            elif mt.startswith("video/"):
+                media_type = MediaType.VIDEO
+            elif mt.startswith("text/"):
+                media_type = MediaType.TEXT
+            else:
+                media_type = MediaType.DOCUMENT
+
+        content_format_raw = data.get("content_format")
+        if content_format_raw is None:
+            content_format_raw = data.get("contentFormat")
+        if content_format_raw is None:
+            content_format_raw = data.get("format")
+
+        file_path_raw = data.get("file_path")
+        if file_path_raw is None:
+            file_path_raw = data.get("filePath")
+
+        content = data.get("content")
+
+        if isinstance(content_format_raw, ContentFormat):
+            content_format = content_format_raw
+        elif isinstance(content_format_raw, str) and content_format_raw.strip():
+            content_format = ContentFormat(content_format_raw.strip())
+        else:
+            if isinstance(file_path_raw, str) and file_path_raw.strip():
+                content_format = ContentFormat.FILE_PATH
+            elif isinstance(content, (bytes, bytearray)):
+                content_format = ContentFormat.BINARY
+            elif isinstance(content, str):
+                content_format = ContentFormat.TEXT
+            else:
+                content_format = ContentFormat.AUTO
+
+        metadata_raw = data.get("metadata")
+        metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+
+        file_path = str(file_path_raw).strip() if isinstance(file_path_raw, str) and file_path_raw.strip() else None
+
+        return cls(
+            media_type=media_type,
+            content=content,
+            content_format=content_format,
+            mime_type=mime_type,
+            file_path=file_path,
+            metadata=metadata,
+        )
+
 
 class MultimodalMessage(BaseModel):
     """
