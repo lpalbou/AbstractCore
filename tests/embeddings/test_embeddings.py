@@ -380,6 +380,18 @@ class TestErrorHandling:
         assert len(embedding) == 768
         assert all(x == 0.0 for x in embedding)
 
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
+    def test_encoding_failure_strict_raises(self, mock_st):
+        """Test strict mode raises on encoding failure (no zero-vector fallback)."""
+        mock_model = MagicMock()
+        mock_model.get_sentence_embedding_dimension.return_value = 768
+        mock_model.encode.side_effect = Exception("Encoding failed")
+        mock_st.SentenceTransformer.return_value = mock_model
+
+        manager = EmbeddingManager(cache_dir=self.cache_dir, strict=True)
+        with pytest.raises(Exception, match="Encoding failed"):
+            manager.embed("Test text")
+
     def test_missing_sentence_transformers(self):
         """Test error when sentence-transformers is not available."""
         with patch('abstractcore.embeddings.manager.sentence_transformers', None):

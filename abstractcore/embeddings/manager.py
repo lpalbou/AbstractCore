@@ -8,6 +8,7 @@ Production-ready embedding generation with SOTA models and efficient serving.
 import hashlib
 import pickle
 import atexit
+import os
 import sys
 import builtins
 import warnings
@@ -124,7 +125,8 @@ class EmbeddingManager:
         cache_dir: Optional[Path] = None,
         cache_size: int = 1000,
         output_dims: Optional[int] = None,
-        trust_remote_code: bool = False
+        trust_remote_code: bool = False,
+        strict: Optional[bool] = None,
     ):
         """Initialize the embedding manager.
 
@@ -138,7 +140,13 @@ class EmbeddingManager:
             cache_size: Maximum number of embeddings to cache in memory
             output_dims: Output dimensions for Matryoshka truncation (if supported by provider)
             trust_remote_code: Whether to trust remote code (HuggingFace only)
+            strict: If true, raise on provider/model failures instead of returning zero vectors.
         """
+        if strict is None:
+            strict_raw = str(os.environ.get("ABSTRACTCORE_EMBEDDINGS_STRICT", "") or "").strip().lower()
+            strict = strict_raw in {"1", "true", "yes", "on"}
+        self.strict = bool(strict)
+
         # Load configuration defaults, but ONLY if parameters weren't explicitly provided
         self._load_config_defaults(model, provider)
 
@@ -676,7 +684,8 @@ class EmbeddingManager:
 
         except Exception as e:
             logger.error(f"Failed to embed text with {self.provider}: {e}")
-            # Return zero vector as fallback
+            if self.strict:
+                raise
             dim = self.output_dims or self.get_dimension()
             return [0.0] * dim
 
@@ -759,7 +768,8 @@ class EmbeddingManager:
 
             except Exception as e:
                 logger.error(f"Failed to embed batch with {self.provider}: {e}")
-                # Fill with zero vectors as fallback
+                if self.strict:
+                    raise
                 dim = self.output_dims or self.get_dimension()
                 zero_embedding = [0.0] * dim
                 for idx in uncached_indices:
