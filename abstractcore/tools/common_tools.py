@@ -5421,12 +5421,12 @@ def edit_file(
         # - requires both start_line and end_line (so we don't "accidentally" replace the whole file)
         # - keeps `pattern` required in the tool schema (see post-definition adjustment below)
         # - uses the existing diff output + post-edit excerpt for verification
-        if not pattern.strip():
-            if start_line is None and end_line is None:
-                return _with_lint(
-                    "❌ Invalid pattern: pattern must be a non-empty string.\n"
-                    "To replace a specific block by line numbers, provide start_line + end_line + replacement."
-                )
+	        if not pattern.strip():
+	            if start_line is None and end_line is None:
+	                return _with_lint(
+	                    "❌ Invalid pattern: pattern must be a non-empty string.\n"
+	                    "To replace a specific block by line numbers, provide start_line + end_line + replacement."
+	                )
             if start_line is None or end_line is None:
                 return _with_lint(
                     "❌ Invalid range replace: start_line and end_line are both required when pattern is empty."
@@ -5436,14 +5436,36 @@ def edit_file(
             if "\r\n" in content:
                 replacement = replacement.replace("\r\n", "\n").replace("\n", "\r\n")
             # Replace the entire targeted block in one shot.
-            pattern = search_content
-            use_regex = False
-            max_replacements = 1
+	            pattern = search_content
+	            use_regex = False
+	            max_replacements = 1
+
+	        if not use_regex and pattern == replacement:
+	            def _preview(text: str, *, limit: int = 200) -> str:
+	                s = ("" if text is None else str(text)).replace("\r\n", "\n")
+	                s = s.replace("\n", "\\n")
+	                if len(s) <= limit:
+	                    return s
+	                return f"{s[:limit]}… ({len(s)} chars)"
+
+	            snippet = _preview(pattern)
+	            return _with_lint(
+	                "❌ Error: `edit_file` called with identical `pattern` and `replacement` (no-op).\n"
+	                "Set `replacement` to the new text you want to write.\n\n"
+	                f"`pattern`/`replacement` preview: {snippet}\n\n"
+	                "How to use `edit_file`:\n"
+	                "- Find/replace: provide `pattern` + `replacement`.\n"
+	                "- Regex replace: set `use_regex=True`.\n"
+	                "- Range replace: set `start_line` + `end_line` + `replacement` with `pattern=\"\"`.\n"
+	                "- Unified diff mode: set `replacement=None` and pass a single-file unified diff in `pattern`.\n\n"
+	                "Common args: `file_path`, `pattern`, `replacement`, `use_regex`, `max_replacements`, "
+	                "`start_line`, `end_line`, `preview_only`."
+	            )
 
 
-        # Perform pattern matching and replacement on targeted content
-        matches_total: Optional[int] = None
-        if use_regex:
+	        # Perform pattern matching and replacement on targeted content
+	        matches_total: Optional[int] = None
+	        if use_regex:
             try:
                 regex_pattern = re.compile(pattern, re.MULTILINE | re.DOTALL)
             except re.error as e:
