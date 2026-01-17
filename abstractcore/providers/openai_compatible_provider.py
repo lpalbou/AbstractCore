@@ -23,6 +23,58 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
+
+
+def _inline_json_schema_refs(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Inline local $defs/$ref references in a JSON Schema dict.
+
+    Some OpenAI-compatible servers only partially support `$defs`/`$ref` inside
+    `response_format: {type:'json_schema'}`. Inlining keeps schemas simple and
+    improves compatibility for structured outputs.
+    """
+
+    defs = schema.get("$defs")
+    if not isinstance(defs, dict) or not defs:
+        return schema
+
+    def _resolve(node: Any, *, seen: set[str]) -> Any:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                key = ref[len("#/$defs/"):]
+                target = defs.get(key)
+                if isinstance(key, str) and key and isinstance(target, dict):
+                    if key in seen:
+                        return node
+                    seen.add(key)
+                    resolved_target = _resolve(dict(target), seen=seen)
+                    seen.remove(key)
+                    if isinstance(resolved_target, dict):
+                        merged: Dict[str, Any] = dict(resolved_target)
+                        for k, v in node.items():
+                            if k == "$ref":
+                                continue
+                            merged[k] = _resolve(v, seen=seen)
+                        return merged
+
+            out: Dict[str, Any] = {}
+            for k, v in node.items():
+                if k == "$defs":
+                    continue
+                out[k] = _resolve(v, seen=seen)
+            return out
+
+        if isinstance(node, list):
+            return [_resolve(x, seen=seen) for x in node]
+
+        return node
+
+    try:
+        base = {k: v for k, v in schema.items() if k != "$defs"}
+        inlined = _resolve(base, seen=set())
+        return inlined if isinstance(inlined, dict) and inlined else schema
+    except Exception:
+        return schema
 from .base import BaseProvider
 from ..core.types import GenerateResponse
 from ..exceptions import (
@@ -441,6 +493,8 @@ class OpenAICompatibleProvider(BaseProvider):
         # Many servers support native structured outputs using the response_format parameter
         if response_model and PYDANTIC_AVAILABLE:
             json_schema = response_model.model_json_schema()
+            if isinstance(json_schema, dict) and json_schema:
+                json_schema = _inline_json_schema_refs(json_schema)
             payload["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
@@ -710,6 +764,8 @@ class OpenAICompatibleProvider(BaseProvider):
         # Add structured output support
         if response_model and PYDANTIC_AVAILABLE:
             json_schema = response_model.model_json_schema()
+            if isinstance(json_schema, dict) and json_schema:
+                json_schema = _inline_json_schema_refs(json_schema)
             payload["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {

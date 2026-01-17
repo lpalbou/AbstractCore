@@ -5,7 +5,7 @@ Structured output handler for managing schema-based LLM responses.
 import json
 import re
 import time
-from typing import Type, Dict, Any, Optional
+from typing import Type, Dict, Any, Optional, get_args, get_origin
 from enum import Enum
 from pydantic import BaseModel, ValidationError
 
@@ -13,6 +13,64 @@ from .retry import FeedbackRetry
 from ..utils.structured_logging import get_logger
 from ..utils.self_fixes import fix_json
 from ..events import EventType, emit_global, create_structured_output_event
+
+
+def _coerce_single_list_wrapper(data: Any, *, response_model: Type[BaseModel]) -> Any:
+    """Repair common wrapper-shape drift for list-centric schemas.
+
+    Some servers/models will emit either:
+    - the list itself (instead of the object wrapper)
+    - a single list item (instead of the wrapper with a 1-element list)
+
+    When the response model is an object with exactly one list field, we can safely
+    coerce these shapes back into the expected wrapper.
+    """
+
+    try:
+        fields = getattr(response_model, "model_fields", None)
+        if not isinstance(fields, dict) or len(fields) != 1:
+            return data
+
+        (field_name, field_info), = list(fields.items())
+        if not isinstance(field_name, str) or not field_name:
+            return data
+
+        # If the model already returned the expected wrapper field, keep as-is.
+        if isinstance(data, dict) and field_name in data:
+            return data
+
+        annotation = getattr(field_info, "annotation", None)
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        if origin is not list or not args:
+            return data
+
+        item_type = args[0]
+        item_model_fields = getattr(item_type, "model_fields", None) if isinstance(item_type, type) else None
+        required: set[str] = set()
+        if isinstance(item_model_fields, dict) and item_model_fields:
+            for k, v in item_model_fields.items():
+                if isinstance(k, str) and k and hasattr(v, "is_required") and v.is_required():
+                    required.add(k)
+
+        # If we got a list of items, wrap it.
+        if isinstance(data, list):
+            return {field_name: data}
+
+        # If we got a single item-like object, wrap it.
+        if isinstance(data, dict):
+            # When the item type is a BaseModel, only coerce if required fields match.
+            if required:
+                if required.issubset(set(data.keys())):
+                    return {field_name: [data]}
+                return data
+            # Otherwise (e.g. list[dict]), we can't validate shape here; still, this is a
+            # safe coercion when the response model is a 1-field list wrapper.
+            return {field_name: [data]}
+    except Exception:
+        return data
+
+    return data
 
 
 class StructuredOutputHandler:
@@ -199,12 +257,25 @@ class StructuredOutputHandler:
 
         # For native support, the response content should already be structured
         if isinstance(response.content, dict):
-            return response_model.model_validate(response.content)
+            try:
+                return response_model.model_validate(
+                    _coerce_single_list_wrapper(response.content, response_model=response_model)
+                )
+            except ValidationError as e:
+                # Some servers return JSON objects but do not fully enforce the provided schema.
+                # Fall back to prompted structured output with retries so we still return a
+                # validated object to callers.
+                self.logger.debug(
+                    "Native structured output validation failed for dict response; falling back to prompted mode",
+                    error=str(e),
+                    response_keys=list(response.content.keys())[:20],
+                )
+                return self._generate_prompted(provider, prompt, response_model, **kwargs)
         else:
             # Parse JSON string
             try:
                 data = json.loads(response.content)
-                return response_model.model_validate(data)
+                return response_model.model_validate(_coerce_single_list_wrapper(data, response_model=response_model))
             except (json.JSONDecodeError, ValidationError) as e:
                 # Try to fix the JSON before falling back
                 self.logger.debug("Native JSON parsing failed, attempting self-fix", 
@@ -215,7 +286,9 @@ class StructuredOutputHandler:
                 if fixed_json:
                     try:
                         data = json.loads(fixed_json)
-                        result = response_model.model_validate(data)
+                        result = response_model.model_validate(
+                            _coerce_single_list_wrapper(data, response_model=response_model)
+                        )
                         self.logger.info("JSON self-fix successful for native response")
                         return result
                     except (json.JSONDecodeError, ValidationError) as fix_error:
@@ -281,7 +354,7 @@ class StructuredOutputHandler:
                     # Preprocess enum responses if we have mappings
                     if hasattr(self, '_enum_mappings') and self._enum_mappings:
                         data = self._preprocess_enum_response(data, self._enum_mappings)
-                    result = response_model.model_validate(data)
+                    result = response_model.model_validate(_coerce_single_list_wrapper(data, response_model=response_model))
                 except (json.JSONDecodeError, ValidationError) as parse_error:
                     # Try to fix the JSON
                     self.logger.debug("JSON parsing failed, attempting self-fix", 
@@ -296,7 +369,9 @@ class StructuredOutputHandler:
                             # Preprocess enum responses if we have mappings
                             if hasattr(self, '_enum_mappings') and self._enum_mappings:
                                 data = self._preprocess_enum_response(data, self._enum_mappings)
-                            result = response_model.model_validate(data)
+                            result = response_model.model_validate(
+                                _coerce_single_list_wrapper(data, response_model=response_model)
+                            )
                             self.logger.info("JSON self-fix successful", attempt=attempt + 1)
                         except (json.JSONDecodeError, ValidationError) as fix_error:
                             self.logger.debug("Self-fix failed", error=str(fix_error), attempt=attempt + 1)
