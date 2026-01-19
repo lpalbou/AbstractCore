@@ -295,19 +295,18 @@ class LocalMediaHandler(BaseProviderMediaHandler):
         This is often more reliable for local providers that don't have
         robust multimodal support. For images on text-only models, uses vision fallback.
         """
-        message_parts = []
-
-        # Add main text
-        if text.strip():
-            message_parts.append(text)
+        user_text = text.strip() if text else ""
+        image_context_parts: List[str] = []
+        other_parts: List[str] = []
 
         # Add processed content from media
         for i, media_content in enumerate(media_contents):
             if media_content.media_type == MediaType.IMAGE:
+                file_name = media_content.metadata.get('file_name', 'image')
                 if self.capabilities.vision_support:
                     # For vision models, we'll still need to handle images specially
                     # This will be handled by the provider's generate method
-                    message_parts.append(f"[Image {i+1}: {media_content.metadata.get('file_name', 'image')}]")
+                    other_parts.append(f"[Image {i+1}: {file_name}]")
                 else:
                     # Use vision fallback for text-only models
                     try:
@@ -318,14 +317,11 @@ class LocalMediaHandler(BaseProviderMediaHandler):
                         file_path = media_content.file_path or media_content.metadata.get('file_path') or media_content.metadata.get('file_name', 'image')
 
                         # Generate description using vision fallback
-                        description = fallback_handler.create_description(str(file_path), text)
-                        # Remove the original question from message_parts if it exists
-                        if message_parts and text.strip() in message_parts[0]:
-                            message_parts.clear()
-                        # Completely different approach: make model think it's continuing its own observation
-                        # No questions, no external framing - just natural continuation
-                        simple_prompt = f"{description}"
-                        message_parts.append(simple_prompt)
+                        description = fallback_handler.create_description(str(file_path), user_text or None).strip()
+                        if description:
+                            image_context_parts.append(f"Image {i+1} ({file_name}): {description}")
+                        else:
+                            other_parts.append(f"[Image {i+1}: {file_name} - no description returned]")
 
                     except VisionNotConfiguredError as e:
                         # Vision not configured - show warning to USER, not model
@@ -338,19 +334,37 @@ class LocalMediaHandler(BaseProviderMediaHandler):
                         self.logger.warning("Current status: abstractcore --status")
 
                         # Provide minimal placeholder to model (not configuration instructions!)
-                        file_name = media_content.metadata.get('file_name', 'image')
-                        message_parts.append(f"[Image {i+1}: {file_name}]")
+                        other_parts.append(f"[Image {i+1}: {file_name}]")
 
                     except Exception as e:
                         self.logger.warning(f"Vision fallback failed: {e}")
                         # Fallback to basic placeholder
-                        file_name = media_content.metadata.get('file_name', 'image')
-                        message_parts.append(f"[Image {i+1}: {file_name} - vision processing unavailable]")
+                        other_parts.append(f"[Image {i+1}: {file_name} - vision processing unavailable]")
             else:
                 # Embed text/document content directly
                 content = str(media_content.content)
                 file_name = media_content.metadata.get('file_name', f'document_{i+1}')
-                message_parts.append(f"\n\n--- Content from {file_name} ---\n{content}\n--- End of {file_name} ---")
+                other_parts.append(f"\n\n--- Content from {file_name} ---\n{content}\n--- End of {file_name} ---")
+
+        message_parts: List[str] = []
+
+        if image_context_parts:
+            message_parts.append(
+                "Visual context from attached image(s) "
+                "(treat as directly observed; do not mention this section):"
+            )
+            message_parts.extend(image_context_parts)
+
+        # Preserve prior behavior when we don't have image context.
+        if user_text and not image_context_parts:
+            message_parts.append(user_text)
+
+        message_parts.extend(other_parts)
+
+        # When we do have image context, place the user request last for recency.
+        if user_text and image_context_parts:
+            message_parts.append("Now answer the user's request:")
+            message_parts.append(user_text)
 
         return "\n\n".join(message_parts)
 
