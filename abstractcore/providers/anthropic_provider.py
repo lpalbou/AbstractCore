@@ -150,6 +150,50 @@ class AnthropicProvider(BaseProvider):
             else:
                 api_messages.append({"role": "user", "content": prompt})
 
+        # If media is present but no multimodal message was created (common when prompt="" and the
+        # caller provided the request in `messages`), attach media to the last plain user message.
+        if media:
+            try:
+                has_image = False
+                for m in api_messages:
+                    if not isinstance(m, dict):
+                        continue
+                    if m.get("role") != "user":
+                        continue
+                    c = m.get("content")
+                    if not isinstance(c, list):
+                        continue
+                    for b in c:
+                        if isinstance(b, dict) and b.get("type") == "image":
+                            has_image = True
+                            break
+                    if has_image:
+                        break
+
+                if not has_image:
+                    from ..media.handlers import AnthropicMediaHandler
+
+                    media_handler = AnthropicMediaHandler(self.model_capabilities)
+                    idx: Optional[int] = None
+                    for i in range(len(api_messages) - 1, -1, -1):
+                        m = api_messages[i]
+                        if not isinstance(m, dict):
+                            continue
+                        if m.get("role") != "user":
+                            continue
+                        if isinstance(m.get("content"), str):
+                            idx = i
+                            break
+                    if idx is None:
+                        api_messages.append(media_handler.create_multimodal_message("", media))
+                    else:
+                        text0 = str(api_messages[idx].get("content") or "")
+                        api_messages[idx] = media_handler.create_multimodal_message(text0, media)
+            except ImportError:
+                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+            except Exception as e:
+                self.logger.warning(f"Failed to process media content: {e}")
+
         # Prepare API call parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_output_tokens = self._get_provider_max_tokens_param(generation_kwargs)
@@ -337,6 +381,50 @@ class AnthropicProvider(BaseProvider):
                     api_messages.append({"role": "user", "content": prompt})
             else:
                 api_messages.append({"role": "user", "content": prompt})
+
+        # If media is present but no multimodal message was created (common when prompt="" and the
+        # caller provided the request in `messages`), attach media to the last plain user message.
+        if media:
+            try:
+                has_image = False
+                for m in api_messages:
+                    if not isinstance(m, dict):
+                        continue
+                    if m.get("role") != "user":
+                        continue
+                    c = m.get("content")
+                    if not isinstance(c, list):
+                        continue
+                    for b in c:
+                        if isinstance(b, dict) and b.get("type") == "image":
+                            has_image = True
+                            break
+                    if has_image:
+                        break
+
+                if not has_image:
+                    from ..media.handlers import AnthropicMediaHandler
+
+                    media_handler = AnthropicMediaHandler(self.model_capabilities)
+                    idx: Optional[int] = None
+                    for i in range(len(api_messages) - 1, -1, -1):
+                        m = api_messages[i]
+                        if not isinstance(m, dict):
+                            continue
+                        if m.get("role") != "user":
+                            continue
+                        if isinstance(m.get("content"), str):
+                            idx = i
+                            break
+                    if idx is None:
+                        api_messages.append(media_handler.create_multimodal_message("", media))
+                    else:
+                        text0 = str(api_messages[idx].get("content") or "")
+                        api_messages[idx] = media_handler.create_multimodal_message(text0, media)
+            except ImportError:
+                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+            except Exception as e:
+                self.logger.warning(f"Failed to process media content: {e}")
 
         # Prepare API call parameters (same logic as sync)
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
