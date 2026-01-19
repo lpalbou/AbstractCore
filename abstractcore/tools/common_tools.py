@@ -1907,14 +1907,29 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
                 suffix = "/" if not display_path.endswith("/") else ""
                 output.append(f"  {display_path}{suffix}")
 
-        # Add a compact truncation note (avoid embedding a full "rerun" signature).
+        # Add a compact truncation note + an explicit “rerun” example. Some models
+        # will otherwise call the same tool again with identical parameters.
         if is_truncated:
             remaining = total_files - head_limit
-            suggested = min(total_files, int(head_limit) * 3) if head_limit else total_files
             output.append(
                 "\n"
-                f"Note: {remaining} more entries available (increase head_limit to {suggested} or set head_limit=None to show all)."
+                f"Note: {remaining} more entries available (increase head_limit to see more results or set head_limit=None to show all results)."
             )
+            try:
+                suggested = min(total_files, int(head_limit) * 2) if head_limit else total_files
+            except Exception:
+                suggested = None
+            if suggested and head_limit and suggested != head_limit:
+                rerun = (
+                    "If you want to see more results, re-run: "
+                    f"list_files(directory_path={json.dumps(directory_path)}, pattern={json.dumps(pattern)}, head_limit={int(suggested)}"
+                )
+                if recursive:
+                    rerun += ", recursive=True"
+                if include_hidden:
+                    rerun += ", include_hidden=True"
+                rerun += ")"
+                output.append(rerun)
 
         return "\n".join(output)
 
@@ -2541,23 +2556,48 @@ def search_files(
 
         out = header + "\n" + "\n".join(results)
 
-        # Truncation hint (align with list_files): make it explicit when max_hits caps results.
+        # Truncation hint: make it explicit when max_hits caps results (and include a concrete re-run example).
         if stopped_at_max_hits and max_hits_files is not None:
-            suggested = int(max_hits_files) * 3
+            suggested = int(max_hits_files) * 2
+            head_limit_repr = "None" if head_limit_per_file is None else str(int(head_limit_per_file))
             if total_matching_files is not None:
                 remaining = max(0, int(total_matching_files) - int(matching_files))
                 if remaining:
+                    rerun = (
+                        "If you want to see more results, re-run: "
+                        f"search_files(pattern={json.dumps(pattern)}, path={json.dumps(path)}, file_pattern={json.dumps(file_pattern)}, "
+                        f"head_limit={head_limit_repr}, max_hits={int(suggested)}"
+                    )
+                    if multiline:
+                        rerun += ", multiline=True"
+                    if include_hidden:
+                        rerun += ", include_hidden=True"
+                    rerun += ")"
                     out += (
                         "\n\n"
-                        f"Note: {remaining} more matching files available (increase max_hits to {suggested} or set max_hits=None to show all)."
+                        f"Note: {remaining} more matching files available (increase max_hits to see more results or set max_hits=None to show all results)."
+                        "\n"
+                        + rerun
                     )
             else:
                 unsearched = max(0, len(files_to_search) - int(stop_index or 0))
                 if unsearched:
+                    rerun = (
+                        "If you want to see more results, re-run: "
+                        f"search_files(pattern={json.dumps(pattern)}, path={json.dumps(path)}, file_pattern={json.dumps(file_pattern)}, "
+                        f"head_limit={head_limit_repr}, max_hits={int(suggested)}"
+                    )
+                    if multiline:
+                        rerun += ", multiline=True"
+                    if include_hidden:
+                        rerun += ", include_hidden=True"
+                    rerun += ")"
                     out += (
                         "\n\n"
                         f"Note: search stopped after reaching max_hits={max_hits_files}; {unsearched} more files were not searched "
-                        f"(increase max_hits to {suggested} or set max_hits=None to search all)."
+                        f"(increase max_hits to see more results or set max_hits=None to show all results)."
+                        "\n"
+                        + rerun
                     )
 
         return out
@@ -2984,22 +3024,30 @@ def skim_files(
     out_blocks: list[str] = []
 
     for raw_path in requested_paths:
-        path = Path(raw_path).expanduser()
+        raw_path_text = str(raw_path or "").strip()
+        path = Path(raw_path_text).expanduser()
         display_path = _path_for_display(path)
+        show_input = False
+        try:
+            show_input = bool(raw_path_text) and not path.is_absolute()
+        except Exception:
+            show_input = bool(raw_path_text)
+        input_line = f"Input: {raw_path_text}" if show_input else ""
+        header_prefix = f"File: {display_path}" + (f"\n{input_line}" if input_line else "")
 
         # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
         from .abstractignore import AbstractIgnore
 
         ignore = AbstractIgnore.for_path(path)
         if ignore.is_ignored(path, is_dir=False):
-            out_blocks.append(f"File: {display_path}\n\nError: File is ignored by .abstractignore policy")
+            out_blocks.append(f"{header_prefix}\n\nError: File is ignored by .abstractignore policy")
             continue
 
         if not path.exists():
-            out_blocks.append(f"File: {display_path}\n\nError: File does not exist")
+            out_blocks.append(f"{header_prefix}\n\nError: File does not exist")
             continue
         if not path.is_file():
-            out_blocks.append(f"File: {display_path}\n\nError: Path is not a file")
+            out_blocks.append(f"{header_prefix}\n\nError: Path is not a file")
             continue
 
         # Pass 1: count lines and collect candidate anchors.
@@ -3036,17 +3084,20 @@ def skim_files(
                     if len(marker_lines) < 20000 and _is_structure_marker(text):
                         marker_lines.append(line_no)
         except UnicodeDecodeError:
-            out_blocks.append(f"File: {display_path}\n\nError: File appears to be binary (cannot decode as UTF-8)")
+            out_blocks.append(f"{header_prefix}\n\nError: File appears to be binary (cannot decode as UTF-8)")
             continue
         except PermissionError:
-            out_blocks.append(f"File: {display_path}\n\nError: Permission denied")
+            out_blocks.append(f"{header_prefix}\n\nError: Permission denied")
             continue
         except Exception as e:
-            out_blocks.append(f"File: {display_path}\n\nError: Failed to read file: {e}")
+            out_blocks.append(f"{header_prefix}\n\nError: Failed to read file: {e}")
             continue
 
         if total_lines <= 0:
-            out_blocks.append(f"File: {display_path} (0 lines)\n\n(empty)")
+            header = f"File: {display_path} (0 lines)"
+            if input_line:
+                header += "\n" + input_line
+            out_blocks.append(header + "\n\n(empty)")
             continue
 
         # Compute per-file sampling budget.
@@ -3170,10 +3221,10 @@ def skim_files(
                     if len(excerpts) >= MAX_OUTPUT_LINES_PER_FILE:
                         break
         except UnicodeDecodeError:
-            out_blocks.append(f"File: {display_path}\n\nError: File appears to be binary (cannot decode as UTF-8)")
+            out_blocks.append(f"{header_prefix}\n\nError: File appears to be binary (cannot decode as UTF-8)")
             continue
         except Exception as e:
-            out_blocks.append(f"File: {display_path}\n\nError: Failed to read file: {e}")
+            out_blocks.append(f"{header_prefix}\n\nError: Failed to read file: {e}")
             continue
 
         # Render in original order, with explicit skipped-line markers.
@@ -3191,6 +3242,8 @@ def skim_files(
         header = (
             f"File: {display_path} ({total_lines} lines) — skim {emitted} lines (target {pct:.1f}%)"
         )
+        if input_line:
+            header += "\n" + input_line
         if rendered_lines:
             out_blocks.append(header + "\n\n" + "\n".join(rendered_lines))
         else:

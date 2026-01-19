@@ -93,3 +93,13 @@ def test_skim_files_refuses_binary(tmp_path: Path) -> None:
 
     out = skim_files(paths=[str(p)])
     assert "appears to be binary" in out.lower()
+
+
+def test_skim_files_relative_path_shows_input_and_resolved_path(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / "rel.md"
+    p.write_text("# Title\n\nIntro.\n", encoding="utf-8")
+
+    out = skim_files(paths=["rel.md"], target_percent=8.0)
+    assert str(p) in out  # resolved absolute path
+    assert "Input: rel.md" in out
