@@ -2601,7 +2601,7 @@ def read_file(
 
 
 @tool(
-    description="Get the quick general idea and content of one or more files (by paths) as line-numbered excerpts; adjust how much is sampled with target_percent (default 8%).",
+    description="Rapidly get the general idea and content of one or more files (by paths) as line-numbered excerpts; adjust how much is sampled with target_percent (default 8%).",
     when_to_use="Use before search_files/read_file to decide relevance; follow up with read_file(start_line/end_line) using the emitted line numbers.",
     examples=[
         {
@@ -2758,9 +2758,9 @@ def skim_files(
         stripped = s.strip()
         if not stripped:
             return False
-        # Markdown headings / underlines
-        if re.match(r"^#{1,6}\\s+\\S", stripped):
+        if _is_heading_line(stripped):
             return True
+        # Markdown headings / underlines
         if re.match(r"^[-=]{3,}\\s*$", stripped):
             return True
         # Lists / checkboxes
@@ -2784,6 +2784,12 @@ def skim_files(
         if stripped.endswith(":") and len(stripped) <= 120:
             return True
         return False
+
+    def _is_heading_line(text: str) -> bool:
+        s = str(text or "").strip()
+        if not s:
+            return False
+        return bool(re.match(r"^#{1,6}\\s+\\S", s))
 
     _SENTENCE_END_RE = re.compile(r"([.!?])(\\s+|$)")
 
@@ -2847,6 +2853,9 @@ def skim_files(
         total_lines = 0
         marker_lines: list[int] = []
         paragraph_starts: list[int] = []
+        heading_lines: set[int] = set()
+        heading_followup: dict[int, int] = {}
+        pending_headings: list[int] = []
         prev_blank = True
 
         try:
@@ -2860,6 +2869,15 @@ def skim_files(
                     if prev_blank and not blank:
                         paragraph_starts.append(line_no)
                     prev_blank = blank
+
+                    if _is_heading_line(stripped):
+                        heading_lines.add(line_no)
+                        pending_headings.append(line_no)
+                    elif pending_headings and not blank:
+                        # First non-empty line after one or more headings (skip blank lines and ignore subsequent headings).
+                        for h in pending_headings:
+                            heading_followup.setdefault(h, line_no)
+                        pending_headings.clear()
 
                     # Avoid collecting unbounded marker lists on pathological files.
                     if len(marker_lines) < 20000 and _is_structure_marker(text):
@@ -2945,13 +2963,35 @@ def skim_files(
                             break
                         selected.add(ln)
 
+        # If we include a markdown heading, also include the first content line that follows it.
+        for ln in list(selected):
+            if ln not in heading_lines:
+                continue
+            follow = heading_followup.get(ln)
+            if follow is None:
+                continue
+            if 1 <= follow <= total_lines:
+                selected.add(follow)
+
         # Enforce hard cap while keeping bookends.
         if len(selected) > MAX_OUTPUT_LINES_PER_FILE:
             mandatory = set()
             mandatory |= head_range
             mandatory |= tail_range
-            picked = _pick_evenly_spaced(sorted(selected - mandatory), MAX_OUTPUT_LINES_PER_FILE - len(mandatory))
-            selected = set(picked) | mandatory
+            for ln in list(selected):
+                if ln not in heading_lines:
+                    continue
+                mandatory.add(ln)
+                follow = heading_followup.get(ln)
+                if follow is not None and 1 <= follow <= total_lines:
+                    mandatory.add(follow)
+
+            if len(mandatory) >= MAX_OUTPUT_LINES_PER_FILE:
+                # Pathological case: too many mandatory lines. Keep deterministic coverage.
+                selected = set(_pick_evenly_spaced(sorted(mandatory), MAX_OUTPUT_LINES_PER_FILE))
+            else:
+                picked = _pick_evenly_spaced(sorted(selected - mandatory), MAX_OUTPUT_LINES_PER_FILE - len(mandatory))
+                selected = set(picked) | mandatory
 
         selected_sorted = sorted(selected)
         num_width = max(1, len(str(total_lines)))
@@ -2984,17 +3024,12 @@ def skim_files(
 
         # Render in original order, with explicit skipped-line markers.
         rendered_lines: list[str] = []
-        prev_line_no: Optional[int] = None
         emitted = 0
         for ln in selected_sorted:
             text = excerpts.get(ln)
             if not text:
                 continue
-            if prev_line_no is not None and ln > prev_line_no + 1:
-                skipped = ln - prev_line_no - 1
-                rendered_lines.append(f"… skipped {skipped} lines …")
             rendered_lines.append(f"{ln:>{num_width}}: {text}")
-            prev_line_no = ln
             emitted += 1
             if emitted >= MAX_OUTPUT_LINES_PER_FILE:
                 break

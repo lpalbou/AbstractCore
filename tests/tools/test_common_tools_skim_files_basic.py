@@ -39,7 +39,18 @@ def test_skim_files_returns_line_numbered_excerpts_and_gaps(tmp_path: Path) -> N
     assert "1: # Title" in out
     assert "5: ## Section One" in out
     assert "12: END." in out
-    assert "… skipped " in out
+    assert "skipped" not in out.lower()
+
+
+def test_skim_files_heading_includes_followup_sentence(tmp_path: Path) -> None:
+    p = tmp_path / "demo2.md"
+    p.write_text("# Title\n\nThis is the intro sentence. Second sentence.\n\n## Next\nBody.\n", encoding="utf-8")
+
+    # Force a tiny head window so the follow-up line must be pulled in by the heading rule.
+    out = skim_files(paths=[str(p)], head_lines=1, tail_lines=0, target_percent=1.0)
+    assert "1: # Title" in out
+    assert "3: This is the intro sentence." in out
+    assert "skipped" not in out.lower()
 
 
 def test_skim_files_accepts_multiple_paths_and_legacy_separators(tmp_path: Path) -> None:
