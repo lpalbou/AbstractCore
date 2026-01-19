@@ -29,8 +29,10 @@ def test_list_files_truncation_note_suggests_increase_and_none(tmp_path) -> None
     out = list_files(directory_path=str(many), pattern="*.txt", head_limit=10)
     assert "(showing 10 of 40 entries)" in out
     assert "Note: 30 more entries available" in out
-    assert "increase head_limit to 30" in out
-    assert "set head_limit=None" in out
+    assert "increase head_limit to see more results" in out
+    assert "set head_limit=None to show all results" in out
+    assert "If you want to see more results, re-run: list_files(" in out
+    assert "head_limit=20" in out
 
 
 def test_read_file_inclusive_single_line_range_returns_line_number(tmp_path) -> None:
@@ -119,8 +121,10 @@ def test_search_files_truncation_note_suggests_increase_and_none(tmp_path) -> No
     out = search_files("match", path=str(tmp_path), file_pattern="*.txt", head_limit=1, max_hits=3)
     assert "(showing 3 of 12 matching files)" in out
     assert "Note: 9 more matching files available" in out
-    assert "increase max_hits to 9" in out
-    assert "set max_hits=None" in out
+    assert "increase max_hits to see more results" in out
+    assert "set max_hits=None to show all results" in out
+    assert "If you want to see more results, re-run: search_files(" in out
+    assert "max_hits=6" in out
 
 
 def test_read_file_entire_file_small_returns_all_lines(tmp_path) -> None:
