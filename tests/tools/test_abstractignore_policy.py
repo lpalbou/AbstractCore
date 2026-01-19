@@ -17,7 +17,7 @@ def test_search_files_ignores_runtime_store_dot_d_by_default(tmp_path: Path) -> 
     store.mkdir()
     (store / "run_123.json").write_text('{"content": "pygame should not be matched"}\n', encoding="utf-8")
 
-    out = search_files("pygame", path=str(tmp_path), file_pattern="*.py|*.json", output_mode="files_with_matches", head_limit=None)
+    out = search_files("pygame", path=str(tmp_path), file_pattern="*.py|*.json", head_limit=None, max_hits=None)
     assert str(good) in out
     assert "rt-80bc.d" not in out
     assert "run_123.json" not in out
@@ -42,7 +42,7 @@ def test_abstractignore_excludes_paths_for_search_and_write(tmp_path: Path) -> N
     ignored.mkdir()
     (ignored / "note.txt").write_text("pygame\n", encoding="utf-8")
 
-    out = search_files("pygame", path=str(tmp_path), file_pattern="*.txt", output_mode="files_with_matches", head_limit=None)
+    out = search_files("pygame", path=str(tmp_path), file_pattern="*.txt", head_limit=None, max_hits=None)
     assert "ignored" not in out
 
     w = write_file(file_path=str(ignored / "new.txt"), content="x\n")
@@ -70,5 +70,4 @@ def test_analyze_and_edit_refuse_when_ignored(tmp_path: Path) -> None:
 
     out2 = edit_file(file_path=str(p), pattern="x", replacement="y")
     assert "ignored by .abstractignore policy" in out2
-
 

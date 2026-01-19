@@ -53,6 +53,15 @@ def test_skim_files_heading_includes_followup_sentence(tmp_path: Path) -> None:
     assert "skipped" not in out.lower()
 
 
+def test_skim_files_minimum_20_lines_when_possible(tmp_path: Path) -> None:
+    p = tmp_path / "many_lines.md"
+    p.write_text("\n".join([f"Line {i}. Second sentence." for i in range(1, 81)]) + "\n", encoding="utf-8")
+
+    out = skim_files(paths=[str(p)], target_percent=1.0)
+    excerpt_lines = [line for line in out.splitlines() if line.lstrip().split(":", 1)[0].isdigit()]
+    assert len(excerpt_lines) >= 20
+
+
 def test_skim_files_accepts_multiple_paths_and_legacy_separators(tmp_path: Path) -> None:
     a = tmp_path / "a.md"
     b = tmp_path / "b.md"

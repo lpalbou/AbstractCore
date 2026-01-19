@@ -62,38 +62,41 @@ def test_search_files_content_mode_line_prefix_is_line_number(tmp_path) -> None:
     path = tmp_path / "code.py"
     path.write_text("print('x')\n# TODO: fix\n# TODO: later\n", encoding="utf-8")
 
-    out = search_files("TODO", path=str(tmp_path), file_pattern="*.py", output_mode="content", head_limit=None)
+    out = search_files("TODO", path=str(tmp_path), file_pattern="*.py", head_limit=None)
     assert f"\n📄 {path}:\n" in out
     assert "    2: # TODO: fix" in out
     assert "    3: # TODO: later" in out
 
 
-def test_search_files_context_mode_defaults_to_five_lines_and_marks_match(tmp_path) -> None:
-    path = tmp_path / "code.py"
-    lines = [f"line {i}" for i in range(1, 21)]
-    lines[9] = "line 10: TODO match"
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+def test_search_files_head_limit_is_per_file_not_global(tmp_path) -> None:
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("TODO a1\nTODO a2\nTODO a3\n", encoding="utf-8")
+    b.write_text("TODO b1\nTODO b2\nTODO b3\n", encoding="utf-8")
 
-    out = search_files("TODO", path=str(tmp_path), file_pattern="*.py", output_mode="context", head_limit=None)
-    assert "Search context for pattern 'TODO'" in out
-    assert "(±5 lines)" in out
-    assert f"\n📄 {path}:\n" in out
-    assert "    5: line 5" in out
-    assert "  > 10: line 10: TODO match" in out
-    assert "    15: line 15" in out
+    out = search_files("TODO", path=str(tmp_path), file_pattern="*.txt", head_limit=2, max_hits=None)
+
+    assert f"\n📄 {a}:\n" in out
+    assert f"\n📄 {b}:\n" in out
+    assert "    1: TODO a1" in out
+    assert "    2: TODO a2" in out
+    assert "TODO a3" not in out
+    assert "    1: TODO b1" in out
+    assert "    2: TODO b2" in out
+    assert "TODO b3" not in out
 
 
-def test_search_files_context_mode_respects_head_limit_matches(tmp_path) -> None:
-    path = tmp_path / "code.py"
-    lines = [f"line {i}" for i in range(1, 41)]
-    lines[9] = "line 10: TODO match"
-    lines[29] = "line 30: TODO match"
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+def test_search_files_max_hits_limits_number_of_files(tmp_path) -> None:
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    c = tmp_path / "c.txt"
+    a.write_text("TODO a\n", encoding="utf-8")
+    b.write_text("TODO b\n", encoding="utf-8")
+    c.write_text("TODO c\n", encoding="utf-8")
 
-    out = search_files("TODO", path=str(tmp_path), file_pattern="*.py", output_mode="context", head_limit=1)
-    assert "  > 10: line 10: TODO match" in out
-    assert "  > 30: line 30: TODO match" not in out
-    assert "... (showing context for first 1 matches)" in out
+    out = search_files("TODO", path=str(tmp_path), file_pattern="*.txt", head_limit=1, max_hits=2)
+    assert out.count("\n📄 ") == 2
+    assert sum(int(str(p) in out) for p in (a, b, c)) == 2
 
 
 def test_read_file_entire_file_small_returns_all_lines(tmp_path) -> None:
