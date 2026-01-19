@@ -1922,32 +1922,39 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
 
 
 @tool(
-    description="Search INSIDE file contents for a text/code pattern (regex) and return matches with line numbers.",
-    when_to_use="Use to find which files contain some text/code and where (line numbers). For filenames/paths, use list_files().",
+    description="Search inside file contents for a regex pattern (case-insensitive) and return matching lines with line numbers.",
+    when_to_use="Use to locate where something appears across files; returns up to max_hits matching files, each capped at head_limit matching lines; set multiline=true for cross-line regex (slower).",
+    hide_args=["output_mode", "context_lines", "case_sensitive", "ignore_dirs"],
     examples=[
         {
-            "description": "Find files with function definitions containing 'search'",
+            "description": "Find TODO/FIXME across Python files (up to 8 files, 10 lines per file)",
             "arguments": {
-                "pattern": "def.*search",
+                "pattern": "TODO|FIXME",
                 "path": ".",
-                "file_pattern": "*.py"
+                "file_pattern": "*.py",
+                "head_limit": 10,
+                "max_hits": 8,
             }
         },
         {
-            "description": "Count import statements with 're' module",
+            "description": "Search docs with multiple file patterns, limiting to 5 matching files",
             "arguments": {
-                "pattern": "import.*re",
-                "path": ".",
-                "output_mode": "count"
+                "pattern": "architecture|design|decision",
+                "path": "docs",
+                "file_pattern": "*.md|*.txt",
+                "head_limit": 6,
+                "max_hits": 5,
             }
         },
         {
-            "description": "Show line-numbered context (±5 lines) around matches for precise editing",
+            "description": "Enable multiline regex (slower; reads whole files)",
             "arguments": {
-                "pattern": "K_SPACE",
-                "path": "game.py",
-                "output_mode": "context",
-                "context_lines": 5
+                "pattern": "class\\s+\\w+.*?def\\s+\\w+",
+                "path": ".",
+                "file_pattern": "*.py",
+                "multiline": True,
+                "head_limit": 3,
+                "max_hits": 3,
             }
         }
     ]
@@ -1955,54 +1962,39 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
 def search_files(
     pattern: str,
     path: str = ".",
-    output_mode: str = "content",
-    context_lines: int = 0,
-    head_limit: Optional[int] = 20,
     file_pattern: str = "*",
-    case_sensitive: bool = False,
+    head_limit: Optional[int] = 10,
+    max_hits: Optional[int] = 8,
     multiline: bool = False,
     include_hidden: bool = False,
+    # Deprecated/hidden (kept for backwards compatibility with older callers).
+    output_mode: str = "content",
+    context_lines: int = 0,
+    case_sensitive: bool = False,
     ignore_dirs: Optional[str] = None,
 ) -> str:
     """
-    Enhanced search tool with regex support and flexible output modes.
+    Search inside file contents for a regex pattern and return matching lines with line numbers.
 
-    Similar to grep functionality, this tool can search for patterns in files
-    with various output formats and options.
+    This tool is always case-insensitive and always returns "content mode" output:
+    matching lines prefixed by their line number, grouped by file.
 
     Args:
-        pattern: required; Regular expression pattern to search for
-        path: File or directory path to search in (default: current directory)
-        output_mode: Output format - "content" (show matching lines), "context" (show ±N lines around matches), "files_with_matches" (show file paths with line numbers), "count" (show match counts) (default: "content")
-        context_lines: When output_mode="context", show this many lines before/after each match (default: 5 when output_mode="context" and context_lines=0)
-        head_limit: Limit output to first N entries (default: 20)
-        file_pattern: Glob pattern(s) for files to search. Use "|" to separate multiple patterns (default: "*" for all files)
-        case_sensitive: Whether search should be case sensitive (default: False)
-        multiline: Enable multiline matching where pattern can span lines (default: False)
+        pattern: required; Regular expression pattern to search for (case-insensitive).
+        path: File or directory path to search in (default: current directory).
+        file_pattern: Glob pattern(s) for files to search. Use "|" to separate multiple patterns (default: "*" for all files).
+        head_limit: Max matching lines returned per file (default: 10). Use None for no per-file limit.
+        max_hits: Max number of matching files to return (default: 8). Use None for no file limit.
+        multiline: Enable multiline matching where pattern can span lines (default: False). Trade-off: reads whole files; slower on large trees.
+        include_hidden: Include hidden files/directories (default: False).
 
     Returns:
-        Search results in the specified format or error message
-
-    Examples:
-        search_files("generate.*react|create_react_cycle", "abstractcore/session.py")  # Returns matching lines with content (default)
-        search_files("def.*search", ".", file_pattern="*.py")  # Search Python files only, show content
-        search_files("import.*re", ".", file_pattern="*.py|*.js")  # Search Python and JavaScript files, show content
-        search_files("TODO|FIXME", ".", file_pattern="*.py|*.md|*.txt")  # Find TODO/FIXME in multiple file types, show content
-        search_files("K_SPACE", "game.py", output_mode="context", context_lines=5)  # Show context for editing
-        search_files("import.*re", ".", "files_with_matches")  # Show file paths with line numbers instead of content
-        search_files("pattern", ".", "count")  # Count matches per file
+        Search results with line numbers, or an error message.
     """
     try:
-        output_mode = str(output_mode or "content").strip().lower()
+        # Deprecated args are accepted but ignored (tool is always case-insensitive and always returns content-mode output).
+        _ = (output_mode, context_lines, case_sensitive, ignore_dirs)
 
-        # Normalize head_limit (treat <= 0 as "no limit").
-        if head_limit is not None:
-            try:
-                head_limit_int = int(head_limit)
-            except (TypeError, ValueError):
-                head_limit_int = 20  # fallback to default
-            head_limit = head_limit_int if head_limit_int > 0 else None
-        
         # Expand home directory shortcuts like ~
         search_path_input = Path(path).expanduser()
         search_path = search_path_input.absolute()
@@ -2019,8 +2011,8 @@ def search_files(
             # Best-effort; continue without policy if filesystem queries fail.
             ignore = AbstractIgnore.for_path(Path.cwd())
 
-        # Compile regex pattern
-        flags = 0 if case_sensitive else re.IGNORECASE
+        # Compile regex pattern (case-insensitive).
+        flags = re.IGNORECASE
         if multiline:
             flags |= re.MULTILINE | re.DOTALL
 
@@ -2029,47 +2021,18 @@ def search_files(
         except re.error as e:
             return f"Error: Invalid regex pattern '{pattern}': {str(e)}"
 
-        # Context output defaults to ±5 lines unless explicitly set.
-        try:
-            ctx = int(context_lines or 0)
-        except Exception:
-            ctx = 0
-        if ctx < 0:
-            ctx = 0
-        if output_mode == "context" and ctx == 0:
-            ctx = 5
+        # Normalize limits.
+        def _coerce_int(value: Any, default: Optional[int]) -> Optional[int]:
+            if value is None:
+                return None
+            try:
+                i = int(value)
+            except Exception:
+                i = int(default) if default is not None else 0
+            return i if i > 0 else None
 
-        def _append_context_blocks(file_path_for_display: Path, line_texts: list, match_lines: list) -> None:
-            if not match_lines:
-                return
-            results.append(f"\n📄 {file_path_for_display}:")
-
-            total_lines = len(line_texts)
-            ranges = []
-            for ln in match_lines:
-                start = max(1, ln - ctx)
-                end = min(total_lines, ln + ctx)
-                ranges.append((start, end))
-            ranges.sort()
-
-            merged = []
-            for start, end in ranges:
-                if not merged:
-                    merged.append([start, end])
-                    continue
-                if start <= merged[-1][1] + 1:
-                    merged[-1][1] = max(merged[-1][1], end)
-                else:
-                    merged.append([start, end])
-
-            selected_set = set(match_lines)
-            for block_index, (start, end) in enumerate(merged, 1):
-                if block_index > 1:
-                    results.append("    …")
-                for ln in range(start, end + 1):
-                    text = line_texts[ln - 1]
-                    prefix = "  >" if ln in selected_set else "   "
-                    results.append(f"{prefix} {ln}: {text}")
+        head_limit_per_file = _coerce_int(head_limit, 10)
+        max_hits_files = _coerce_int(max_hits, 8)
 
         # Determine if path is a file or directory
         if search_path.is_file():
@@ -2077,17 +2040,14 @@ def search_files(
                 return f"Error: File '{search_path_display}' is ignored by .abstractignore policy"
             files_to_search = [search_path]
         elif search_path.is_dir():
-            # Find files matching pattern in directory
-            # Default directories to ignore for safety/performance (user home and projects)
+            # Find files matching pattern in directory.
+            # Default directories to ignore for safety/performance.
             default_ignores = {
                 ".git", ".hg", ".svn", "__pycache__", "node_modules", "dist", "build",
                 ".DS_Store", ".Trash", ".cache", ".venv", "venv", "env", ".env",
                 ".cursor", "Library", "Applications", "System", "Volumes"
             }
-            extra_ignores = set()
-            if ignore_dirs:
-                extra_ignores = {d.strip() for d in ignore_dirs.split('|') if d.strip()}
-            ignore_set = default_ignores | extra_ignores
+            ignore_set = set(default_ignores)
 
             if file_pattern == "*":
                 # Search all files recursively
@@ -2170,244 +2130,76 @@ def search_files(
         if not files_to_search:
             return f"No files found to search in '{search_path_display}'"
 
-        # Search through files
-        results = []
-        files_with_matches = []  # Will store (file_path, [line_numbers]) tuples
-        match_counts = {}
-        total_matches = 0
-        global_content_lines_added = 0  # Track content lines across all files
-        global_context_matches_added = 0  # Count match LINES rendered in context mode (not output lines)
+        import bisect
+
+        # Search through files (content mode only).
+        results: list[str] = []
+        matching_files = 0
 
         for file_path in files_to_search:
-            if output_mode == "context" and head_limit is not None and global_context_matches_added >= head_limit:
+            if max_hits_files is not None and matching_files >= max_hits_files:
                 break
 
+            display_path = _path_for_display(file_path)
             try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                per_file_added = 0
+                file_header_added = False
+
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     if multiline:
-                        # For multiline mode, we need to read the full content
-                        # But we'll be more efficient about extracting matching lines
                         content = f.read()
-                        matches = list(regex_pattern.finditer(content))
+                        if not regex_pattern.search(content):
+                            continue
 
-                        if matches:
-                            # Pre-split content into lines for efficiency
-                            lines = content.splitlines()
-                            
-                            # Collect line numbers and prepare content efficiently
-                            line_numbers = []
-                            file_header_added = False
-                            context_match_lines = []
-                            context_seen = set()
-                            remaining_context = None
-                            if output_mode == "context" and head_limit is not None:
-                                remaining_context = max(0, head_limit - global_context_matches_added)
+                        newline_positions = [m.start() for m in re.finditer("\n", content)]
+                        lines = content.splitlines()
 
-                            for match in matches:
-                                line_num = content.count('\n', 0, match.start()) + 1
-                                line_numbers.append(line_num)
-                                
-                                if output_mode == "content":
-                                    # Check global head_limit before adding any content
-                                    if head_limit and global_content_lines_added >= head_limit:
-                                        break
-                                        
-                                    # Add file header only once and only if we're showing content
-                                    if not file_header_added:
-                                        results.append(f"\n📄 {file_path}:")
-                                        file_header_added = True
-                                    
-                                    # Get only the specific matching line (efficient)
-                                    if line_num <= len(lines):
-                                        full_line = lines[line_num - 1]
-                                        results.append(f"    {line_num}: {full_line}")
-                                        global_content_lines_added += 1
-                                        
-                                        # Check global head_limit after adding content
-                                        if head_limit and global_content_lines_added >= head_limit:
-                                            break
-                                elif output_mode == "context":
-                                    if line_num not in context_seen:
-                                        context_seen.add(line_num)
-                                        context_match_lines.append(line_num)
-                                        if remaining_context is not None and len(context_match_lines) >= remaining_context:
-                                            break
+                        selected_lines: list[int] = []
+                        seen_lines: set[int] = set()
+                        for match in regex_pattern.finditer(content):
+                            line_num = bisect.bisect_right(newline_positions, match.start()) + 1
+                            if line_num in seen_lines:
+                                continue
+                            seen_lines.add(line_num)
+                            selected_lines.append(line_num)
+                            if head_limit_per_file is not None and len(selected_lines) >= head_limit_per_file:
+                                break
 
-                            file_display = _path_for_display(file_path)
-                            files_with_matches.append((file_display, line_numbers))
-                            match_counts[file_display] = len(matches)
-                            total_matches += len(matches)
+                        if not selected_lines:
+                            continue
 
-                            if output_mode == "context":
-                                _append_context_blocks(Path(file_display), lines, context_match_lines)
-                                global_context_matches_added += len(context_match_lines)
+                        results.append(f"\n📄 {display_path}:")
+                        file_header_added = True
+                        for line_num in selected_lines:
+                            if not (1 <= line_num <= len(lines)):
+                                continue
+                            results.append(f"    {line_num}: {lines[line_num - 1].rstrip()}")
+                            per_file_added += 1
+                            if head_limit_per_file is not None and per_file_added >= head_limit_per_file:
+                                break
                     else:
-                        # Non-multiline mode: process line by line (more efficient)
-                        lines = f.readlines()
-                        matching_lines = []
-                        line_numbers = []
-                        file_header_added = False
-                        context_match_lines = []
-                        remaining_context = None
-                        if output_mode == "context" and head_limit is not None:
-                            remaining_context = max(0, head_limit - global_context_matches_added)
-                        
-                        for line_num, line in enumerate(lines, 1):
-                            line_content = line.rstrip()
-                            matches = list(regex_pattern.finditer(line_content))
+                        for line_num, line in enumerate(f, 1):
+                            if head_limit_per_file is not None and per_file_added >= head_limit_per_file:
+                                break
+                            if not regex_pattern.search(line):
+                                continue
+                            if not file_header_added:
+                                results.append(f"\n📄 {display_path}:")
+                                file_header_added = True
+                            results.append(f"    {line_num}: {line.rstrip()}")
+                            per_file_added += 1
 
-                            if matches:
-                                line_numbers.append(line_num)
-                                matching_lines.extend(matches)
-                                
-                                # For content mode, add lines as we find them (more efficient)
-                                if output_mode == "content":
-                                    # Check global head_limit before adding any content
-                                    if head_limit and global_content_lines_added >= head_limit:
-                                        break
-                                        
-                                    # Add file header only once when we find the first match
-                                    if not file_header_added:
-                                        results.append(f"\n📄 {_path_for_display(file_path)}:")
-                                        file_header_added = True
-                                    
-                                    results.append(f"    {line_num}: {line_content}")
-                                    global_content_lines_added += 1
-                                    
-                                    # Check global head_limit after adding content
-                                    if head_limit and global_content_lines_added >= head_limit:
-                                        break
-                                elif output_mode == "context":
-                                    context_match_lines.append(line_num)
-                                    if remaining_context is not None and len(context_match_lines) >= remaining_context:
-                                        break
-
-                        if matching_lines:
-                            file_display = _path_for_display(file_path)
-                            files_with_matches.append((file_display, line_numbers))
-                            match_counts[file_display] = len(matching_lines)
-                            total_matches += len(matching_lines)
-                            if output_mode == "context":
-                                line_texts = [l.rstrip("\n").rstrip("\r") for l in lines]
-                                _append_context_blocks(Path(file_display), line_texts, context_match_lines)
-                                global_context_matches_added += len(context_match_lines)
+                if file_header_added:
+                    matching_files += 1
 
             except Exception as e:
-                if output_mode == "content":
-                    results.append(f"\n⚠️  Error reading {file_path}: {str(e)}")
-            
-            # Break out of file loop if we've reached the global head_limit
-            if head_limit and output_mode == "content" and global_content_lines_added >= head_limit:
-                break
-            if head_limit and output_mode == "context" and global_context_matches_added >= head_limit:
-                break
+                results.append(f"\n⚠️  Error reading {display_path}: {str(e)}")
 
-        # Format output based on mode
-        if output_mode == "files_with_matches":
-            total_files_with_matches = len(files_with_matches)
-            is_truncated = False
+        if not results:
+            return f"No matches found for pattern '{pattern}'"
 
-            if head_limit and len(files_with_matches) > head_limit:
-                files_with_matches = files_with_matches[:head_limit]
-                is_truncated = True
-
-            if files_with_matches:
-                header = f"Files matching pattern '{pattern}':"
-                formatted_results = [header]
-
-                for file_path, line_numbers in files_with_matches:
-                    # Format line numbers - show ALL line numbers since that's the main value of this mode
-                    if len(line_numbers) == 1:
-                        line_info = f"line {line_numbers[0]}"
-                    else:
-                        line_info = f"lines {', '.join(map(str, line_numbers))}"
-
-                    formatted_results.append(f"{file_path} ({line_info})")
-
-                # Add a compact truncation note (avoid embedding a full "rerun" signature).
-                if is_truncated:
-                    remaining = total_files_with_matches - head_limit
-                    formatted_results.append(
-                        f"\nNote: {remaining} more files match (set head_limit=None to show all)."
-                    )
-
-                return "\n".join(formatted_results)
-            else:
-                return f"No files found matching pattern '{pattern}'"
-
-        elif output_mode == "count":
-            all_count_items = list(match_counts.items())
-            is_count_truncated = False
-
-            if head_limit and len(all_count_items) > head_limit:
-                count_items = all_count_items[:head_limit]
-                is_count_truncated = True
-            else:
-                count_items = all_count_items
-
-            if count_items:
-                header = f"Match counts for pattern '{pattern}':"
-                count_results = [header]
-                for file_path, count in count_items:
-                    count_results.append(f"{count:3d} {file_path}")
-                count_results.append(f"\nTotal: {total_matches} matches in {len(files_with_matches)} files")
-
-                # Add a compact truncation note (avoid embedding a full "rerun" signature).
-                if is_count_truncated:
-                    remaining = len(all_count_items) - head_limit
-                    count_results.append(
-                        f"\nNote: {remaining} more files match (set head_limit=None to show all)."
-                    )
-
-                return "\n".join(count_results)
-            else:
-                return f"No matches found for pattern '{pattern}'"
-
-        elif output_mode == "context":
-            if not results:
-                return f"No matches found for pattern '{pattern}'"
-
-            file_count = len([r for r in results if r.startswith("\n📄")])
-            header = f"Search context for pattern '{pattern}' under '{search_path_display}' in {file_count} files (±{ctx} lines):"
-
-            # Head-limit note (cap is on number of matches, not output lines).
-            result_text = header + "\n" + "\n".join(results)
-            if head_limit and global_context_matches_added >= head_limit:
-                result_text += f"\n\n... (showing context for first {head_limit} matches)"
-            return result_text
-
-        else:  # content mode
-            if not results:
-                return f"No matches found for pattern '{pattern}'"
-
-            # Count files with matches for header
-            file_count = len([r for r in results if r.startswith("\n📄")])
-            header = f"Search results for pattern '{pattern}' under '{search_path_display}' in {file_count} files:"
-
-            # Apply head_limit to final output if specified
-            final_results = results
-            if head_limit:
-                content_lines = [r for r in results if re.match("^\\s+\\d+:", r)]
-                if len(content_lines) > head_limit:
-                    # Keep file headers and trim content lines
-                    trimmed_results = []
-                    content_count = 0
-                    for line in results:
-                        if re.match("^\\s+\\d+:", line):
-                            if content_count < head_limit:
-                                trimmed_results.append(line)
-                                content_count += 1
-                        else:
-                            trimmed_results.append(line)
-                    final_results = trimmed_results
-                    final_results.append(f"\n... (showing first {head_limit} matches)")
-
-            # Add truncation notice if we hit the head_limit
-            result_text = header + "\n" + "\n".join(final_results)
-            if head_limit and global_content_lines_added >= head_limit:
-                result_text += f"\n\n... (showing first {head_limit} matches)"
-            
-            return result_text
+        header = f"Search results for pattern '{pattern}' under '{search_path_display}' in {matching_files} files:"
+        return header + "\n" + "\n".join(results)
 
     except Exception as e:
         return f"Error performing search: {str(e)}"
@@ -2415,7 +2207,7 @@ def search_files(
 
 @tool(
     description="Read a text file (line-numbered). Prefer analyze_code for code, then read_file(start_line/end_line); full reads may be refused if too large.",
-    when_to_use="Use to inspect exact file contents. For code, prefer analyze_code first. Prefer bounded reads; if line numbers are unknown, use search_files(output_mode='context') first.",
+    when_to_use="Use to inspect exact file contents. For code, prefer analyze_code first. Prefer bounded reads; if line numbers are unknown, use search_files() first.",
     hide_args=["should_read_entire_file"],
     examples=[
         {
@@ -2517,7 +2309,7 @@ def read_file(
                         return (
                             f"Refused: File '{display_path}' is too large to read entirely "
                             f"(> {MAX_LINES_PER_CALL} lines).\n"
-                            "Next step: use search_files(..., output_mode='context') to find the relevant line number(s), "
+                            "Next step: use search_files(...) to find the relevant line number(s), "
                             "then call read_file with start_line/end_line for a smaller range."
                             + ("\n\nPreview (first 60 lines):\n\n" + preview if preview_lines else "")
                         )
@@ -2556,7 +2348,7 @@ def read_file(
                             f"Refused: Requested range would return {requested_lines} lines "
                             f"(> {MAX_LINES_PER_CALL} lines).\n"
                             "Next step: request a smaller range by narrowing end_line, "
-                            "or use search_files(..., output_mode='context') to target the exact region."
+                            "or use search_files(...) to target the exact region."
                         )
 
                 # Stream the file; collect only the requested lines.
@@ -2601,8 +2393,8 @@ def read_file(
 
 
 @tool(
-    description="Rapidly get the general idea and content of one or more files (by paths) as line-numbered excerpts; adjust how much is sampled with target_percent (default 8%).",
-    when_to_use="Use before search_files/read_file to decide relevance; follow up with read_file(start_line/end_line) using the emitted line numbers.",
+    description="Get the quick general idea and content of one or more text files (by paths) as line-numbered excerpts; control sampling with target_percent (default 8%).",
+    when_to_use="Use to judge relevance without reading full files; pass paths as a JSON array of strings; then follow up with read_file(start_line/end_line) using the emitted line numbers.",
     examples=[
         {
             "description": "Skim a single file (defaults: target_percent=8, head_lines=25, tail_lines=25)",
@@ -2632,7 +2424,7 @@ def skim_files(
     agent can follow up with precise `read_file(start_line/end_line)` calls.
 
     Args:
-        paths: required; List of file paths to skim. Legacy string formats are also accepted (see Notes).
+        paths: required; List of file paths to skim (recommended: JSON array like ["a.md", "b.md"]). For backwards compatibility, a single string is also accepted with paths separated by '|' or newlines (and commas if no other separators are present).
         target_percent: Desired percent of lines to sample (default: 8.0). Clamped for safety.
         head_lines: Max lines to sample from the start (default: 25).
         tail_lines: Max lines to sample from the end (default: 25).
@@ -2898,7 +2690,8 @@ def skim_files(
 
         # Compute per-file sampling budget.
         target_lines = int((total_lines * pct) / 100.0 + 0.9999)  # ceil
-        min_lines = 12
+        # Minimum output size: for small files, percentages can yield too few excerpts to be actionable.
+        min_lines = 20
         budget = max(min_lines, target_lines)
         budget = min(budget, MAX_OUTPUT_LINES_PER_FILE)
 
