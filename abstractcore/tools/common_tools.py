@@ -5961,19 +5961,26 @@ def edit_file(
     """
     try:
         # Validate file exists and expand home directory shortcuts like ~
-        path = Path(file_path).expanduser()
+        raw_file_path = str(file_path or "").strip()
+        path = Path(raw_file_path).expanduser()
         display_path = _path_for_display(path)
+        show_input = False
+        try:
+            show_input = bool(raw_file_path) and not path.is_absolute()
+        except Exception:
+            show_input = bool(raw_file_path)
+        input_line = f"\nInput: {raw_file_path}" if show_input else ""
         # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
         from .abstractignore import AbstractIgnore
 
         ignore = AbstractIgnore.for_path(path)
         if ignore.is_ignored(path, is_dir=False) or ignore.is_ignored(path.parent, is_dir=True):
-            return f"❌ Refused: Path '{display_path}' is ignored by .abstractignore policy"
+            return f"❌ Refused: Path '{display_path}' is ignored by .abstractignore policy{input_line}"
         if not path.exists():
-            return f"❌ File not found: {display_path}"
+            return f"❌ File not found: {display_path}{input_line}"
 
         if not path.is_file():
-            return f"❌ Path is not a file: {display_path}"
+            return f"❌ Path is not a file: {display_path}{input_line}"
 
         # Read current content
         try:
