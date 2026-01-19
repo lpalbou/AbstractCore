@@ -1910,15 +1910,320 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         # Add a compact truncation note (avoid embedding a full "rerun" signature).
         if is_truncated:
             remaining = total_files - head_limit
+            suggested = min(total_files, int(head_limit) * 3) if head_limit else total_files
             output.append(
                 "\n"
-                f"Note: {remaining} more entries available (set head_limit=None to show all)."
+                f"Note: {remaining} more entries available (increase head_limit to {suggested} or set head_limit=None to show all)."
             )
 
         return "\n".join(output)
 
     except Exception as e:
         return f"Error listing files: {str(e)}"
+
+
+@tool(
+    description="Get a quick directory map (tree + counts + notable files) for one or more folders; use max_depth to control how much is shown.",
+    when_to_use="Use to understand how a folder is organized before calling skim_files/read_file; returns a bounded tree view plus notable index-like files (README/architecture/ADR/backlog).",
+    examples=[
+        {"description": "Skim a single folder (defaults: max_depth=4)", "arguments": {"paths": ["docs"]}},
+        {"description": "Skim deeper into a project folder", "arguments": {"paths": ["abstractcore"], "max_depth": 6}},
+        {"description": "Show only documentation-like files in the map", "arguments": {"paths": ["."], "file_pattern": "*.md|*.txt", "max_depth": 5}},
+    ],
+)
+def skim_folders(
+    paths: list[str],
+    max_depth: int = 4,
+    file_pattern: str = "*",
+    include_hidden: bool = False,
+) -> str:
+    """
+    Skim one or more folders by producing a compact, bounded directory map.
+
+    The goal is “lecture diagonale” for directory structures: get the high-level
+    organization (tree + counts + file type distribution) without listing every file.
+
+    Args:
+        paths: required; List of folder paths to skim (recommended: JSON array like ["docs", "src"]). For backwards compatibility, a single string is also accepted with paths separated by '|' or newlines (and commas if no other separators are present).
+        max_depth: Maximum directory depth to traverse (default: 4).
+        file_pattern: Glob pattern(s) for files to consider when counting/types/notables. Use "|" to separate multiple patterns (default: "*" for all files).
+        include_hidden: Include hidden files/directories (default: False).
+
+    Returns:
+        A directory map per folder, or an error message per folder.
+    """
+    MAX_OUTPUT_LINES_PER_FOLDER = 220
+    MAX_NOTABLE_FILES_PER_FOLDER = 40
+
+    def _parse_paths(raw: Any) -> list[str]:
+        if raw is None:
+            return []
+
+        parts: list[str] = []
+
+        if isinstance(raw, (list, tuple, set)):
+            for x in raw:
+                s = str(x or "").strip()
+                if s:
+                    parts.append(s)
+        else:
+            text = str(raw or "").strip()
+            if not text:
+                return []
+
+            if text.startswith("[") and text.endswith("]"):
+                parsed_list: Optional[list[Any]] = None
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, list):
+                        parsed_list = parsed
+                except Exception:
+                    parsed_list = None
+                if parsed_list is None:
+                    try:
+                        parsed2 = ast.literal_eval(text)
+                        if isinstance(parsed2, (list, tuple)):
+                            parsed_list = list(parsed2)
+                    except Exception:
+                        parsed_list = None
+                if parsed_list is not None:
+                    for x in parsed_list:
+                        s = str(x or "").strip()
+                        if s:
+                            parts.append(s)
+
+            if not parts:
+                normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+                if "|" not in normalized and "\n" not in normalized and "," in normalized:
+                    tokens = normalized.split(",")
+                    for tok in tokens:
+                        s = str(tok or "").strip()
+                        if s:
+                            parts.append(s)
+                else:
+                    for chunk in normalized.split("\n"):
+                        for p in chunk.split("|"):
+                            s = str(p or "").strip()
+                            if s:
+                                parts.append(s)
+
+        seen: set[str] = set()
+        out: list[str] = []
+        for p in parts:
+            if p in seen:
+                continue
+            seen.add(p)
+            out.append(p)
+        return out
+
+    def _coerce_int(value: Any, default: int, *, min_value: int = 0, max_value: int = 50) -> int:
+        try:
+            i = int(value)
+        except Exception:
+            i = int(default)
+        if i < min_value:
+            i = min_value
+        if i > max_value:
+            i = max_value
+        return i
+
+    def _compile_file_patterns(raw: Any) -> list[str]:
+        text = str(raw or "*").strip()
+        parts = [p.strip() for p in text.split("|") if p.strip()]
+        return parts or ["*"]
+
+    import fnmatch
+
+    def _matches_any(filename: str, patterns: list[str]) -> bool:
+        low = str(filename or "").lower()
+        for pat in patterns:
+            if fnmatch.fnmatch(low, pat.lower()):
+                return True
+        return False
+
+    def _is_notable(name: str, *, rel_dir: str) -> bool:
+        n = str(name or "").strip().lower()
+        if not n:
+            return False
+
+        rel_norm = str(rel_dir or "").replace("\\", "/").strip().lower()
+        parts = [p for p in rel_norm.split("/") if p and p != "."]
+        in_adr_dir = any(p == "adr" or p.startswith("adr") for p in parts)
+        in_backlog_dir = "backlog" in parts
+
+        if n in {"readme.md", "readme.txt", "readme", "index.md", "index.txt"}:
+            return True
+        if "architecture" in n:
+            return True
+        if in_adr_dir and n.endswith((".md", ".txt")):
+            return True
+        if in_backlog_dir and n.endswith((".md", ".txt")):
+            return True
+        if "backlog" in n or "changelog" in n:
+            return True
+        if n.endswith(".puml") or n.endswith(".plantuml"):
+            return True
+        return False
+
+    requested_paths = _parse_paths(paths)
+    if not requested_paths:
+        return (
+            "Error: 'paths' is required (provide one or more folder paths).\n"
+            "Example: {\"paths\": [\"docs\", \"abstractcore\"], \"max_depth\": 4}"
+        )
+
+    depth_limit = _coerce_int(max_depth, 4, min_value=0, max_value=50)
+    patterns = _compile_file_patterns(file_pattern)
+
+    out_blocks: list[str] = []
+    for raw_path in requested_paths:
+        root = Path(raw_path).expanduser()
+        display_root = _path_for_display(root)
+
+        from .abstractignore import AbstractIgnore
+
+        ignore = AbstractIgnore.for_path(root)
+        if ignore.is_ignored(root, is_dir=True):
+            out_blocks.append(f"Folder: {display_root}\n\nError: Folder is ignored by .abstractignore policy")
+            continue
+
+        if not root.exists():
+            out_blocks.append(f"Folder: {display_root}\n\nError: Folder does not exist")
+            continue
+        if not root.is_dir():
+            out_blocks.append(f"Folder: {display_root}\n\nError: Path is not a directory")
+            continue
+
+        lines: list[str] = []
+        notable: list[str] = []
+        truncated = False
+
+        dirs_shown = 0
+        try:
+            for current_root, dirs, files in os.walk(root, topdown=True, followlinks=False):
+                cur_path = Path(current_root)
+                try:
+                    rel = cur_path.relative_to(root)
+                    depth = 0 if str(rel) == "." else len(rel.parts)
+                except Exception:
+                    depth = 0
+
+                if depth > depth_limit:
+                    dirs[:] = []
+                    continue
+
+                # Prune directories in-place (hidden + ignore policy + symlinks).
+                pruned_dirs: list[str] = []
+                for d in dirs:
+                    if not include_hidden and str(d).startswith("."):
+                        continue
+                    p = cur_path / d
+                    try:
+                        if p.is_symlink() or not p.is_dir():
+                            continue
+                    except Exception:
+                        continue
+                    if ignore.is_ignored(p, is_dir=True):
+                        continue
+                    pruned_dirs.append(d)
+                pruned_dirs.sort(key=lambda s: str(s).lower())
+                dirs[:] = pruned_dirs
+
+                # Filter files (hidden + ignore policy + symlinks + file_pattern).
+                kept_files: list[str] = []
+                ext_counts: Dict[str, int] = {}
+                notable_names: list[str] = []
+                sample_names: list[str] = []
+
+                for f in files:
+                    if not include_hidden and str(f).startswith("."):
+                        continue
+                    if not _matches_any(f, patterns):
+                        continue
+                    p = cur_path / f
+                    try:
+                        if p.is_symlink() or not p.is_file():
+                            continue
+                    except Exception:
+                        continue
+                    if ignore.is_ignored(p, is_dir=False):
+                        continue
+                    kept_files.append(f)
+
+                kept_files.sort(key=lambda s: str(s).lower())
+
+                for f in kept_files:
+                    ext = Path(f).suffix.lower() or "(noext)"
+                    ext_counts[ext] = ext_counts.get(ext, 0) + 1
+                    rel_dir = "." if depth == 0 else rel.as_posix()
+                    if _is_notable(f, rel_dir=rel_dir):
+                        notable_names.append(f)
+                    elif len(sample_names) < 3:
+                        sample_names.append(f)
+
+                # Directory line
+                label = "." if depth == 0 else rel.as_posix()
+                indent = "  " * depth
+                child_dirs = len(dirs)
+                child_files = len(kept_files)
+                type_top = sorted(ext_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+                type_str = ", ".join([f"{k}:{v}" for k, v in type_top])
+
+                line = f"{indent}{label}/ ({child_dirs} dirs, {child_files} files"
+                if type_str:
+                    line += f"; types {type_str}"
+                line += ")"
+
+                if notable_names:
+                    show_notables = ", ".join(notable_names[:3])
+                    line += f" — notable: {show_notables}"
+                elif sample_names:
+                    line += f" — samples: {', '.join(sample_names)}"
+
+                lines.append(line)
+                dirs_shown += 1
+
+                # Accumulate notable file paths (bounded).
+                if notable_names and len(notable) < MAX_NOTABLE_FILES_PER_FOLDER:
+                    for name in notable_names:
+                        if len(notable) >= MAX_NOTABLE_FILES_PER_FOLDER:
+                            break
+                        try:
+                            rel_file = (cur_path / name).relative_to(root).as_posix()
+                        except Exception:
+                            rel_file = str(cur_path / name)
+                        notable.append(rel_file)
+
+                if len(lines) >= MAX_OUTPUT_LINES_PER_FOLDER:
+                    truncated = True
+                    dirs[:] = []
+                    break
+        except Exception as e:
+            out_blocks.append(f"Folder: {display_root}\n\nError: Failed to walk folder: {e}")
+            continue
+
+        header = f"Folder: {display_root} — depth≤{depth_limit} (showing {dirs_shown} dirs)"
+        body = header + "\n\n" + "\n".join(lines) if lines else header + "\n\n(empty)"
+
+        if notable:
+            uniq_notable = []
+            seen_n: set[str] = set()
+            for p in notable:
+                if p in seen_n:
+                    continue
+                seen_n.add(p)
+                uniq_notable.append(p)
+            body += "\n\nNotable files:\n" + "\n".join([f"- {p}" for p in uniq_notable])
+
+        if truncated:
+            body += (
+                "\n\nNote: output was truncated (hit internal limit). "
+                "Next step: call skim_folders on a subfolder path to expand."
+            )
+
+        out_blocks.append(body)
+
+    return "\n\n---\n\n".join(out_blocks)
 
 
 @tool(
@@ -2134,12 +2439,21 @@ def search_files(
 
         # Search through files (content mode only).
         results: list[str] = []
-        matching_files = 0
+        matching_files = 0  # number of matching files returned/shown
+        scanned_files = 0  # number of candidate files processed before early stop
+        stopped_at_max_hits = False
+        stop_index = None
+        total_matching_files: Optional[int] = None  # filled when we can cheaply compute it
 
-        for file_path in files_to_search:
+        COUNT_REMAINDER_CANDIDATES_LIMIT = 500  # safeguard: avoid scanning huge trees just to compute a total
+
+        for idx, file_path in enumerate(files_to_search):
             if max_hits_files is not None and matching_files >= max_hits_files:
+                stopped_at_max_hits = True
+                stop_index = idx
                 break
 
+            scanned_files += 1
             display_path = _path_for_display(file_path)
             try:
                 per_file_added = 0
@@ -2195,11 +2509,58 @@ def search_files(
             except Exception as e:
                 results.append(f"\n⚠️  Error reading {display_path}: {str(e)}")
 
+        # If we stopped early due to max_hits and the candidate set is small enough, compute
+        # how many additional matching files exist (for better agent UX).
+        if stopped_at_max_hits and stop_index is not None:
+            remaining_candidates = len(files_to_search) - int(stop_index)
+            if (not multiline) and len(files_to_search) <= COUNT_REMAINDER_CANDIDATES_LIMIT:
+                more_matching = 0
+                for file_path in files_to_search[int(stop_index):]:
+                    try:
+                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            for line in f:
+                                if regex_pattern.search(line):
+                                    more_matching += 1
+                                    break
+                    except Exception:
+                        continue
+                total_matching_files = matching_files + more_matching
+            else:
+                total_matching_files = None
+
         if not results:
             return f"No matches found for pattern '{pattern}'"
 
-        header = f"Search results for pattern '{pattern}' under '{search_path_display}' in {matching_files} files:"
-        return header + "\n" + "\n".join(results)
+        if total_matching_files is not None and total_matching_files != matching_files:
+            header = (
+                f"Search results for pattern '{pattern}' under '{search_path_display}' "
+                f"(showing {matching_files} of {total_matching_files} matching files):"
+            )
+        else:
+            header = f"Search results for pattern '{pattern}' under '{search_path_display}' in {matching_files} files:"
+
+        out = header + "\n" + "\n".join(results)
+
+        # Truncation hint (align with list_files): make it explicit when max_hits caps results.
+        if stopped_at_max_hits and max_hits_files is not None:
+            suggested = int(max_hits_files) * 3
+            if total_matching_files is not None:
+                remaining = max(0, int(total_matching_files) - int(matching_files))
+                if remaining:
+                    out += (
+                        "\n\n"
+                        f"Note: {remaining} more matching files available (increase max_hits to {suggested} or set max_hits=None to show all)."
+                    )
+            else:
+                unsearched = max(0, len(files_to_search) - int(stop_index or 0))
+                if unsearched:
+                    out += (
+                        "\n\n"
+                        f"Note: search stopped after reaching max_hits={max_hits_files}; {unsearched} more files were not searched "
+                        f"(increase max_hits to {suggested} or set max_hits=None to search all)."
+                    )
+
+        return out
 
     except Exception as e:
         return f"Error performing search: {str(e)}"

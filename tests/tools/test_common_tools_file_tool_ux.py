@@ -20,6 +20,19 @@ def test_list_files_hidden_only_directory_reports_hidden_entries(tmp_path) -> No
     assert out == f"Directory '{hidden_dir}' exists but contains only hidden entries (use include_hidden=True)"
 
 
+def test_list_files_truncation_note_suggests_increase_and_none(tmp_path) -> None:
+    many = tmp_path / "many"
+    many.mkdir()
+    for i in range(40):
+        (many / f"f{i:02d}.txt").write_text("x\n", encoding="utf-8")
+
+    out = list_files(directory_path=str(many), pattern="*.txt", head_limit=10)
+    assert "(showing 10 of 40 entries)" in out
+    assert "Note: 30 more entries available" in out
+    assert "increase head_limit to 30" in out
+    assert "set head_limit=None" in out
+
+
 def test_read_file_inclusive_single_line_range_returns_line_number(tmp_path) -> None:
     path = tmp_path / "demo.txt"
     path.write_text("one\ntwo\nthree\n", encoding="utf-8")
@@ -97,6 +110,17 @@ def test_search_files_max_hits_limits_number_of_files(tmp_path) -> None:
     out = search_files("TODO", path=str(tmp_path), file_pattern="*.txt", head_limit=1, max_hits=2)
     assert out.count("\n📄 ") == 2
     assert sum(int(str(p) in out) for p in (a, b, c)) == 2
+
+
+def test_search_files_truncation_note_suggests_increase_and_none(tmp_path) -> None:
+    for i in range(12):
+        (tmp_path / f"m{i:02d}.txt").write_text("match\n", encoding="utf-8")
+
+    out = search_files("match", path=str(tmp_path), file_pattern="*.txt", head_limit=1, max_hits=3)
+    assert "(showing 3 of 12 matching files)" in out
+    assert "Note: 9 more matching files available" in out
+    assert "increase max_hits to 9" in out
+    assert "set max_hits=None" in out
 
 
 def test_read_file_entire_file_small_returns_all_lines(tmp_path) -> None:
