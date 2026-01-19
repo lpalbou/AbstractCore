@@ -2601,6 +2601,416 @@ def read_file(
 
 
 @tool(
+    description="Get the quick general idea and content of one or more files (by paths) as line-numbered excerpts; adjust how much is sampled with target_percent (default 8%).",
+    when_to_use="Use before search_files/read_file to decide relevance; follow up with read_file(start_line/end_line) using the emitted line numbers.",
+    examples=[
+        {
+            "description": "Skim a single file (defaults: target_percent=8, head_lines=25, tail_lines=25)",
+            "arguments": {"paths": ["docs/architecture.md"]},
+        },
+        {
+            "description": "Skim multiple files at a lower percentage (more selective)",
+            "arguments": {"paths": ["docs/architecture.md", "abstractcore/docs/architecture.md"], "target_percent": 6.0},
+        },
+        {
+            "description": "Bias toward intro/conclusion with wider bookends",
+            "arguments": {"paths": ["README.md"], "target_percent": 8.0, "head_lines": 60, "tail_lines": 60},
+        },
+    ],
+)
+def skim_files(
+    paths: list[str],
+    target_percent: float = 8.0,
+    head_lines: int = 25,
+    tail_lines: int = 25,
+) -> str:
+    """
+    Skim one or more text files by sampling short, line-numbered excerpts.
+
+    This tool is designed for "lecture diagonale": reveal structure and gist
+    without returning the full document. Output includes line numbers so an
+    agent can follow up with precise `read_file(start_line/end_line)` calls.
+
+    Args:
+        paths: required; List of file paths to skim. Legacy string formats are also accepted (see Notes).
+        target_percent: Desired percent of lines to sample (default: 8.0). Clamped for safety.
+        head_lines: Max lines to sample from the start (default: 25).
+        tail_lines: Max lines to sample from the end (default: 25).
+
+    Returns:
+        A line-numbered skim of each file, or an error message per file.
+    """
+    # Guardrails: even when target_percent is large and files are huge, keep outputs bounded.
+    MAX_OUTPUT_LINES_PER_FILE = 200
+    MAX_CHARS_PER_EXCERPT = 240
+
+    def _parse_paths(raw: Any) -> list[str]:
+        if raw is None:
+            return []
+
+        parts: list[str] = []
+
+        # Preferred/native shape: ["a", "b"]
+        if isinstance(raw, (list, tuple, set)):
+            for x in raw:
+                s = str(x or "").strip()
+                if s:
+                    parts.append(s)
+        else:
+            text = str(raw or "").strip()
+            if not text:
+                return []
+
+            # Accept bracketed list strings: JSON ("[\"a\", \"b\"]") and Python ("['a', 'b']").
+            if text.startswith("[") and text.endswith("]"):
+                parsed_list: Optional[list[Any]] = None
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, list):
+                        parsed_list = parsed
+                except Exception:
+                    parsed_list = None
+                if parsed_list is None:
+                    try:
+                        parsed2 = ast.literal_eval(text)
+                        if isinstance(parsed2, (list, tuple)):
+                            parsed_list = list(parsed2)
+                    except Exception:
+                        parsed_list = None
+                if parsed_list is not None:
+                    for x in parsed_list:
+                        s = str(x or "").strip()
+                        if s:
+                            parts.append(s)
+                else:
+                    # Fall through to separator parsing.
+                    pass
+
+            if not parts:
+                # Default: split on newlines or '|'. If the user gives "a,b" with no other separators,
+                # treat comma as a convenience separator.
+                normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+                if "|" not in normalized and "\n" not in normalized and "," in normalized:
+                    tokens = normalized.split(",")
+                    for tok in tokens:
+                        s = str(tok or "").strip()
+                        if s:
+                            parts.append(s)
+                else:
+                    for chunk in normalized.split("\n"):
+                        for p in chunk.split("|"):
+                            s = str(p or "").strip()
+                            if s:
+                                parts.append(s)
+
+        # Preserve order, drop duplicates
+        seen: set[str] = set()
+        out: list[str] = []
+        for p in parts:
+            if p in seen:
+                continue
+            seen.add(p)
+            out.append(p)
+        return out
+
+    def _coerce_int(value: Any, default: int, *, min_value: int = 0) -> int:
+        try:
+            i = int(value)
+        except Exception:
+            i = int(default)
+        if i < min_value:
+            i = min_value
+        return i
+
+    def _coerce_float(value: Any, default: float) -> float:
+        try:
+            return float(value)
+        except Exception:
+            return float(default)
+
+    def _pick_evenly_spaced(items: list[int], k: int) -> list[int]:
+        if k <= 0 or not items:
+            return []
+        if k >= len(items):
+            return list(items)
+        if k == 1:
+            return [items[len(items) // 2]]
+        # Deterministic even spacing across the list
+        out: list[int] = []
+        n = len(items) - 1
+        for i in range(k):
+            idx = int(round(i * n / (k - 1)))
+            out.append(items[idx])
+        # Deduplicate while preserving order
+        seen: set[int] = set()
+        uniq: list[int] = []
+        for x in out:
+            if x in seen:
+                continue
+            seen.add(x)
+            uniq.append(x)
+        return uniq
+
+    def _is_structure_marker(line: str) -> bool:
+        s = str(line or "")
+        if not s:
+            return False
+        stripped = s.strip()
+        if not stripped:
+            return False
+        # Markdown headings / underlines
+        if re.match(r"^#{1,6}\\s+\\S", stripped):
+            return True
+        if re.match(r"^[-=]{3,}\\s*$", stripped):
+            return True
+        # Lists / checkboxes
+        # NOTE: use a non-charclass form for checkboxes to avoid regex "nested set" warnings on `[[`.
+        if re.match(r"^([-*+]\\s+|\\d+\\.\\s+|\\[(?: |x|X)\\]\\s+)\\S", stripped):
+            return True
+        # Markdown tables / blockquote / code fences
+        if stripped.startswith("|") or stripped.startswith(">"):
+            return True
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            return True
+        # Code-ish structure (useful even in mixed docs)
+        if re.match(r"^(class|def)\\s+\\w+", stripped):
+            return True
+        if stripped.startswith("@") and len(stripped) <= 120:
+            return True
+        # Visual anchors: ALL CAPS headings, or trailing colon (common in outlines)
+        letters = re.sub(r"[^A-Za-z]+", "", stripped)
+        if letters and letters.isupper() and len(letters) >= 8 and len(stripped.split()) <= 8:
+            return True
+        if stripped.endswith(":") and len(stripped) <= 120:
+            return True
+        return False
+
+    _SENTENCE_END_RE = re.compile(r"([.!?])(\\s+|$)")
+
+    def _first_sentence(text: str) -> str:
+        s = " ".join(str(text or "").strip().split())
+        if not s:
+            return ""
+        m = _SENTENCE_END_RE.search(s)
+        if not m:
+            return s
+        end = m.end(1)
+        return s[:end].strip()
+
+    def _truncate(text: str, limit: int) -> str:
+        s = str(text or "").strip()
+        if limit <= 0:
+            return s
+        if len(s) <= limit:
+            return s
+        cut = max(1, int(limit) - 1)
+        return s[:cut].rstrip() + "…"
+
+    requested_paths = _parse_paths(paths)
+    if not requested_paths:
+        return (
+            "Error: 'paths' is required (provide one or more file paths).\n"
+            "Example: {\"paths\": [\"docs/architecture.md\", \"README.md\"], \"target_percent\": 8.0}"
+        )
+
+    pct = _coerce_float(target_percent, 8.0)
+    # Clamp to a sane range (avoid accidental full-file dumps).
+    if pct <= 0:
+        pct = 8.0
+    pct = max(1.0, min(25.0, pct))
+
+    head_lines = _coerce_int(head_lines, 25, min_value=0)
+    tail_lines = _coerce_int(tail_lines, 25, min_value=0)
+
+    out_blocks: list[str] = []
+
+    for raw_path in requested_paths:
+        path = Path(raw_path).expanduser()
+        display_path = _path_for_display(path)
+
+        # Runtime-enforced filesystem ignore policy (.abstractignore + defaults).
+        from .abstractignore import AbstractIgnore
+
+        ignore = AbstractIgnore.for_path(path)
+        if ignore.is_ignored(path, is_dir=False):
+            out_blocks.append(f"File: {display_path}\n\nError: File is ignored by .abstractignore policy")
+            continue
+
+        if not path.exists():
+            out_blocks.append(f"File: {display_path}\n\nError: File does not exist")
+            continue
+        if not path.is_file():
+            out_blocks.append(f"File: {display_path}\n\nError: Path is not a file")
+            continue
+
+        # Pass 1: count lines and collect candidate anchors.
+        total_lines = 0
+        marker_lines: list[int] = []
+        paragraph_starts: list[int] = []
+        prev_blank = True
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line_no, line in enumerate(f, 1):
+                    total_lines = line_no
+                    text = line.rstrip("\r\n")
+
+                    stripped = text.strip()
+                    blank = not stripped
+                    if prev_blank and not blank:
+                        paragraph_starts.append(line_no)
+                    prev_blank = blank
+
+                    # Avoid collecting unbounded marker lists on pathological files.
+                    if len(marker_lines) < 20000 and _is_structure_marker(text):
+                        marker_lines.append(line_no)
+        except UnicodeDecodeError:
+            out_blocks.append(f"File: {display_path}\n\nError: File appears to be binary (cannot decode as UTF-8)")
+            continue
+        except PermissionError:
+            out_blocks.append(f"File: {display_path}\n\nError: Permission denied")
+            continue
+        except Exception as e:
+            out_blocks.append(f"File: {display_path}\n\nError: Failed to read file: {e}")
+            continue
+
+        if total_lines <= 0:
+            out_blocks.append(f"File: {display_path} (0 lines)\n\n(empty)")
+            continue
+
+        # Compute per-file sampling budget.
+        target_lines = int((total_lines * pct) / 100.0 + 0.9999)  # ceil
+        min_lines = 12
+        budget = max(min_lines, target_lines)
+        budget = min(budget, MAX_OUTPUT_LINES_PER_FILE)
+
+        # Allocate bookends (biased toward structure); keep some budget for the middle.
+        max_bookends = max(2, int(round(budget * 0.6)))
+        bookend_budget = min(head_lines + tail_lines, max_bookends)
+        if bookend_budget <= 0:
+            bookend_budget = min(2, budget)
+        head_take = min(head_lines, (bookend_budget + 1) // 2)
+        tail_take = min(tail_lines, bookend_budget - head_take)
+        if tail_take <= 0 and total_lines > head_take:
+            tail_take = 1
+            if head_take + tail_take > bookend_budget and head_take > 1:
+                head_take -= 1
+
+        head_range = set(range(1, min(total_lines, head_take) + 1))
+        tail_start = max(1, total_lines - tail_take + 1)
+        tail_range = set(range(tail_start, total_lines + 1))
+
+        selected: set[int] = set()
+        selected |= head_range
+        selected |= tail_range
+
+        # Middle sampling: structure markers + topic sentences from paragraph starts.
+        middle_start = max(1, (max(head_range) + 1) if head_range else 1)
+        middle_end = min(total_lines, (min(tail_range) - 1) if tail_range else total_lines)
+        remaining_budget = max(0, budget - len(selected))
+
+        if remaining_budget > 0 and middle_start <= middle_end:
+            markers_mid = sorted({ln for ln in marker_lines if middle_start <= ln <= middle_end})
+            paras_mid = sorted({ln for ln in paragraph_starts if middle_start <= ln <= middle_end})
+
+            # Prefer including some structure markers.
+            marker_budget = int(round(remaining_budget * 0.4))
+            marker_budget = max(0, min(marker_budget, remaining_budget))
+            chosen_markers = _pick_evenly_spaced(markers_mid, marker_budget) if marker_budget else []
+
+            # Optional "context padding": include the line immediately after each marker when budget allows.
+            for ln in chosen_markers:
+                selected.add(ln)
+            remaining_after_markers = max(0, budget - len(selected))
+            if remaining_after_markers > 0:
+                for ln in chosen_markers:
+                    if len(selected) >= budget:
+                        break
+                    nxt = ln + 1
+                    if nxt <= middle_end and nxt >= middle_start:
+                        selected.add(nxt)
+
+            # Fill the rest with evenly spaced paragraph starts (topic lines).
+            remaining_after_markers = max(0, budget - len(selected))
+            if remaining_after_markers > 0:
+                if paras_mid:
+                    for ln in _pick_evenly_spaced(paras_mid, remaining_after_markers):
+                        selected.add(ln)
+                else:
+                    # Fallback: interval sampling over line numbers.
+                    span = max(1, middle_end - middle_start + 1)
+                    step = max(1, int(round(span / max(1, remaining_after_markers))))
+                    for ln in range(middle_start, middle_end + 1, step):
+                        if len(selected) >= budget:
+                            break
+                        selected.add(ln)
+
+        # Enforce hard cap while keeping bookends.
+        if len(selected) > MAX_OUTPUT_LINES_PER_FILE:
+            mandatory = set()
+            mandatory |= head_range
+            mandatory |= tail_range
+            picked = _pick_evenly_spaced(sorted(selected - mandatory), MAX_OUTPUT_LINES_PER_FILE - len(mandatory))
+            selected = set(picked) | mandatory
+
+        selected_sorted = sorted(selected)
+        num_width = max(1, len(str(total_lines)))
+
+        # Pass 2: read only the selected lines and render with gap markers.
+        excerpts: Dict[int, str] = {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line_no, line in enumerate(f, 1):
+                    if line_no not in selected:
+                        continue
+                    raw_line = line.rstrip("\r\n")
+                    stripped = raw_line.strip()
+                    if not stripped:
+                        # Skip blank lines; gap markers still convey separation.
+                        continue
+                    if _is_structure_marker(raw_line):
+                        excerpt = stripped
+                    else:
+                        excerpt = _first_sentence(raw_line)
+                    excerpts[line_no] = _truncate(excerpt, MAX_CHARS_PER_EXCERPT)
+                    if len(excerpts) >= MAX_OUTPUT_LINES_PER_FILE:
+                        break
+        except UnicodeDecodeError:
+            out_blocks.append(f"File: {display_path}\n\nError: File appears to be binary (cannot decode as UTF-8)")
+            continue
+        except Exception as e:
+            out_blocks.append(f"File: {display_path}\n\nError: Failed to read file: {e}")
+            continue
+
+        # Render in original order, with explicit skipped-line markers.
+        rendered_lines: list[str] = []
+        prev_line_no: Optional[int] = None
+        emitted = 0
+        for ln in selected_sorted:
+            text = excerpts.get(ln)
+            if not text:
+                continue
+            if prev_line_no is not None and ln > prev_line_no + 1:
+                skipped = ln - prev_line_no - 1
+                rendered_lines.append(f"… skipped {skipped} lines …")
+            rendered_lines.append(f"{ln:>{num_width}}: {text}")
+            prev_line_no = ln
+            emitted += 1
+            if emitted >= MAX_OUTPUT_LINES_PER_FILE:
+                break
+
+        header = (
+            f"File: {display_path} ({total_lines} lines) — skim {emitted} lines (target {pct:.1f}%)"
+        )
+        if rendered_lines:
+            out_blocks.append(header + "\n\n" + "\n".join(rendered_lines))
+        else:
+            out_blocks.append(header + "\n\n(no non-empty excerpts selected)")
+
+    return "\n\n---\n\n".join(out_blocks)
+
+
+@tool(
     description="Write full file content (create/overwrite/append). WARNING: mode='w' overwrites the entire file; for small edits, use edit_file().",
     when_to_use="Use to create new files or intentionally overwrite/append full content. For small edits, use edit_file().",
     hide_args=["create_dirs"],

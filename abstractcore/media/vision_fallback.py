@@ -7,6 +7,8 @@ Uses unified AbstractCore configuration system.
 
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+from ..utils.jsonish import loads_dict_like
 from ..utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -76,7 +78,7 @@ class VisionFallbackHandler:
             raise VisionNotConfiguredError("No vision capability configured")
 
         try:
-            return self._generate_with_fallback(image_path)
+            return self._generate_with_fallback(image_path, user_prompt=user_prompt)
         except Exception as e:
             logger.debug(f"Vision fallback failed: {e}")
             raise VisionNotConfiguredError(f"Vision fallback generation failed: {e}")
@@ -92,10 +94,14 @@ class VisionFallbackHandler:
 
     def _has_local_models(self) -> bool:
         """Check if any local vision models are available."""
-        models_dir = Path(self.vision_config.local_models_path).expanduser()
+        local_models_path = getattr(self.vision_config, "local_models_path", None)
+        if not isinstance(local_models_path, str) or not local_models_path.strip():
+            return False
+
+        models_dir = Path(local_models_path).expanduser()
         return models_dir.exists() and any(models_dir.iterdir())
 
-    def _generate_with_fallback(self, image_path: str) -> str:
+    def _generate_with_fallback(self, image_path: str, user_prompt: Optional[str] = None) -> str:
         """Try vision models in fallback chain order."""
         # Try primary provider first
         if self.vision_config.caption_provider and self.vision_config.caption_model:
@@ -103,7 +109,8 @@ class VisionFallbackHandler:
                 description = self._generate_description(
                     self.vision_config.caption_provider,
                     self.vision_config.caption_model,
-                    image_path
+                    image_path,
+                    user_prompt=user_prompt,
                 )
                 return description
             except Exception as e:
@@ -115,7 +122,8 @@ class VisionFallbackHandler:
                 description = self._generate_description(
                     provider_config["provider"],
                     provider_config["model"],
-                    image_path
+                    image_path,
+                    user_prompt=user_prompt,
                 )
                 return description
             except Exception as e:
@@ -132,26 +140,76 @@ class VisionFallbackHandler:
 
         raise Exception("All vision fallback providers failed")
 
-    def _generate_description(self, provider: str, model: str, image_path: str) -> str:
+    def _generate_description(self, provider: str, model: str, image_path: str, user_prompt: Optional[str] = None) -> str:
         """Generate description using specified provider and model."""
         try:
             # Import here to avoid circular imports
             from abstractcore import create_llm
 
             vision_llm = create_llm(provider, model=model)
+            prompt = self._build_caption_prompt(user_prompt=user_prompt)
             response = vision_llm.generate(
-                "Provide a detailed description of this image in 3-4 sentences. Be precise about specific landmarks, buildings, objects, and details. If you recognize specific places or things, name them accurately. Describe naturally without phrases like 'this image shows'.",
+                prompt,
                 media=[image_path]
             )
-            return response.content.strip()
+            return self._extract_caption_text(response.content)
         except Exception as e:
             logger.debug(f"Failed to generate description with {provider}/{model}: {e}")
             raise
 
+    def _build_caption_prompt(self, user_prompt: Optional[str] = None) -> str:
+        """
+        Build the prompt sent to the vision model.
+
+        Design goals:
+        - "Perception only": provide grounded visual observations, not a full answer.
+        - Context-aware: bias observations toward what's useful for the user's request.
+        - Seamless: avoid meta phrases that make the parent model "comment on a caption".
+        """
+        cleaned_user_prompt = (user_prompt or "").strip()
+
+        base = (
+            "Provide grounded visual observations that will help answer the user's request.\n"
+            "- Write 3–4 natural sentences.\n"
+            "- Be precise about objects, people, settings, and notable details.\n"
+            "- If there is readable text, include it verbatim in quotes.\n"
+            "- If you recognize specific places/people/brands with high confidence, name them; otherwise say \"unclear\".\n"
+            "- Avoid meta phrasing like \"this image shows\", \"the image depicts\", \"image analysis\", or apologies.\n"
+            "- Return only the description text.\n"
+        )
+
+        if not cleaned_user_prompt:
+            return base
+
+        return f"{base}\nUser request (for context): {cleaned_user_prompt}"
+
+    def _extract_caption_text(self, raw: Any) -> str:
+        """
+        Extract a plain caption string from the vision model output.
+
+        Some vision models (or wrappers) may return JSON-ish objects; accept both.
+        """
+        text = str(raw or "").strip()
+        if not text:
+            return ""
+
+        parsed = loads_dict_like(text)
+        if isinstance(parsed, dict):
+            for key in ("description", "caption", "text", "content"):
+                val = parsed.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+
+        return text
+
     def _generate_local_description(self, image_path: str) -> str:
         """Generate description using local vision model."""
         try:
-            models_dir = Path(self.vision_config.local_models_path).expanduser()
+            local_models_path = getattr(self.vision_config, "local_models_path", None)
+            if not isinstance(local_models_path, str) or not local_models_path.strip():
+                raise Exception("No local_models_path configured")
+
+            models_dir = Path(local_models_path).expanduser()
 
             # Look for downloaded vision models
             for model_dir in models_dir.iterdir():
