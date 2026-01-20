@@ -83,6 +83,19 @@ def test_search_files_content_mode_line_prefix_is_line_number(tmp_path) -> None:
     assert "    3: # TODO: later" in out
 
 
+def test_search_files_truncates_very_long_lines_and_keeps_match_visible(tmp_path) -> None:
+    p = tmp_path / "one_line.txt"
+    p.write_text("a" * 500 + "Maintenance Mode" + "b" * 600, encoding="utf-8")
+
+    out = search_files("Maintenance Mode", path=str(tmp_path), file_pattern="*.txt", head_limit=1, max_hits=1)
+    excerpt_lines = [ln for ln in out.splitlines() if ln.lstrip().startswith("1:")]
+    assert excerpt_lines, f"expected a matching line excerpt, got:\n{out}"
+    content = excerpt_lines[0].split(":", 1)[1].lstrip()
+    assert len(content) <= 400
+    assert "Maintenance Mode" in content
+    assert "…" in content
+
+
 def test_search_files_head_limit_is_per_file_not_global(tmp_path) -> None:
     a = tmp_path / "a.txt"
     b = tmp_path / "b.txt"

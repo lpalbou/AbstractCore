@@ -2452,6 +2452,54 @@ def search_files(
 
         import bisect
 
+        MAX_MATCH_LINE_CHARS = 400
+
+        def _bounded_excerpt(text: str, *, match_start: Optional[int] = None) -> str:
+            """Return a bounded excerpt (≤400 chars) that keeps the match visible when possible."""
+            s = ("" if text is None else str(text)).rstrip()
+            if len(s) <= MAX_MATCH_LINE_CHARS:
+                return s
+
+            limit = int(MAX_MATCH_LINE_CHARS)
+            if limit < 4:
+                return s[: max(1, limit)]
+
+            if match_start is None:
+                cut = max(1, limit - 1)
+                return s[:cut].rstrip() + "…"
+
+            try:
+                ms = int(match_start)
+            except Exception:
+                ms = 0
+            if ms < 0:
+                ms = 0
+            if ms >= len(s):
+                ms = max(0, len(s) - 1)
+
+            # Pessimistically allocate space for both a leading and trailing ellipsis.
+            content_limit = max(1, limit - 2)
+
+            start = max(0, ms - content_limit // 2)
+            end = min(len(s), start + content_limit)
+            start = max(0, end - content_limit)
+
+            prefix = "…" if start > 0 else ""
+            suffix = "…" if end < len(s) else ""
+
+            # Recompute once to use the freed char when only one side is trimmed.
+            ell_len = (1 if prefix else 0) + (1 if suffix else 0)
+            content_limit2 = max(1, limit - ell_len)
+            if content_limit2 != content_limit:
+                content_limit = content_limit2
+                start = max(0, ms - content_limit // 2)
+                end = min(len(s), start + content_limit)
+                start = max(0, end - content_limit)
+                prefix = "…" if start > 0 else ""
+                suffix = "…" if end < len(s) else ""
+
+            return f"{prefix}{s[start:end]}{suffix}"
+
         # Search through files (content mode only).
         results: list[str] = []
         matching_files = 0  # number of matching files returned/shown
@@ -2485,12 +2533,14 @@ def search_files(
 
                         selected_lines: list[int] = []
                         seen_lines: set[int] = set()
+                        line_match_starts: dict[int, int] = {}
                         for match in regex_pattern.finditer(content):
                             line_num = bisect.bisect_right(newline_positions, match.start()) + 1
                             if line_num in seen_lines:
                                 continue
                             seen_lines.add(line_num)
                             selected_lines.append(line_num)
+                            line_match_starts.setdefault(line_num, match.start())
                             if head_limit_per_file is not None and len(selected_lines) >= head_limit_per_file:
                                 break
 
@@ -2502,7 +2552,20 @@ def search_files(
                         for line_num in selected_lines:
                             if not (1 <= line_num <= len(lines)):
                                 continue
-                            results.append(f"    {line_num}: {lines[line_num - 1].rstrip()}")
+                            match_start_in_line: Optional[int] = None
+                            match_start_in_content = line_match_starts.get(line_num)
+                            if match_start_in_content is not None:
+                                if line_num <= 1:
+                                    line_start = 0
+                                else:
+                                    try:
+                                        line_start = int(newline_positions[line_num - 2]) + 1
+                                    except Exception:
+                                        line_start = 0
+                                match_start_in_line = max(0, int(match_start_in_content) - int(line_start))
+                            results.append(
+                                f"    {line_num}: {_bounded_excerpt(lines[line_num - 1], match_start=match_start_in_line)}"
+                            )
                             per_file_added += 1
                             if head_limit_per_file is not None and per_file_added >= head_limit_per_file:
                                 break
@@ -2510,12 +2573,13 @@ def search_files(
                         for line_num, line in enumerate(f, 1):
                             if head_limit_per_file is not None and per_file_added >= head_limit_per_file:
                                 break
-                            if not regex_pattern.search(line):
+                            m = regex_pattern.search(line)
+                            if not m:
                                 continue
                             if not file_header_added:
                                 results.append(f"\n📄 {display_path}:")
                                 file_header_added = True
-                            results.append(f"    {line_num}: {line.rstrip()}")
+                            results.append(f"    {line_num}: {_bounded_excerpt(line, match_start=m.start())}")
                             per_file_added += 1
 
                 if file_header_added:
