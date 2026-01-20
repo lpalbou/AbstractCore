@@ -19,6 +19,7 @@ import time
 import json
 import base64
 import ast
+import textwrap
 from datetime import datetime
 from urllib.parse import parse_qs, parse_qsl, urlencode, unquote, urljoin, urlparse, urlunparse
 import mimetypes
@@ -6055,11 +6056,46 @@ def edit_file(
         except Exception as e:
             return f"❌ Error reading file: {str(e)}"
 
+        lang = _detect_code_language(path, None)
+
         def _with_lint(message: str, *, lint_content: Optional[str] = None) -> str:
             notice = _lint_notice_for_content(path, content if lint_content is None else lint_content)
             if notice:
                 return f"{message}\n\n{notice}"
             return message
+
+        def _python_parse_error(text: str) -> Optional[SyntaxError]:
+            if lang != "python":
+                return None
+            try:
+                ast.parse(str(text or ""))
+            except SyntaxError as e:
+                return e
+            return None
+
+        def _format_python_parse_error(err: SyntaxError) -> str:
+            msg = str(getattr(err, "msg", None) or str(err) or "syntax error").strip()
+            try:
+                lineno = int(getattr(err, "lineno", 0) or 0)
+            except Exception:
+                lineno = 0
+            try:
+                offset = int(getattr(err, "offset", 0) or 0)
+            except Exception:
+                offset = 0
+            where = f"{lineno}:{offset}" if lineno and offset else (f"{lineno}" if lineno else "?")
+            line = getattr(err, "text", None)
+            line_text = (str(line) if isinstance(line, str) else "").rstrip("\n")
+            if not line_text:
+                return f"{where} {msg}".strip()
+            caret = ""
+            if offset > 0:
+                caret = (" " * max(0, offset - 1)) + "^"
+            if caret:
+                return f"{where} {msg}\n{line_text}\n{caret}".rstrip()
+            return f"{where} {msg}\n{line_text}".rstrip()
+
+        before_py_ok = _python_parse_error(content) is None
 
         # Unified diff mode: treat `pattern` as a patch when `replacement` is omitted.
         if replacement is None:
@@ -6082,6 +6118,19 @@ def edit_file(
             if updated == content:
                 return _with_lint("No changes applied (patch resulted in identical content).")
 
+            if before_py_ok:
+                py_err = _python_parse_error(updated)
+                if py_err is not None:
+                    rendered, _, _ = _render_edit_file_diff(path=path, before=content, after=updated)
+                    rendered = _append_edit_file_post_edit_excerpt(rendered=rendered, path=path, after=updated)
+                    rendered = rendered.replace("Edited ", "Preview ", 1)
+                    detail = _format_python_parse_error(py_err)
+                    return _with_lint(
+                        "❌ Refused: edit would introduce a Python syntax error.\n"
+                        f"{detail}\n\n{rendered}".rstrip(),
+                        lint_content=updated,
+                    )
+
             rendered, _, _ = _render_edit_file_diff(path=path, before=content, after=updated)
             rendered = _append_edit_file_post_edit_excerpt(rendered=rendered, path=path, after=updated)
             if preview_only:
@@ -6093,6 +6142,7 @@ def edit_file(
             return _with_lint(rendered, lint_content=updated)
 
         original_content = content
+        range_replace_meta: Optional[dict[str, Any]] = None
 
         # Normalize escape sequences - handles LLMs sending \\n instead of actual newlines
         pattern = _normalize_escape_sequences("" if pattern is None else str(pattern))
@@ -6154,10 +6204,36 @@ def edit_file(
                 return _with_lint(
                     "❌ Invalid range replace: start_line and end_line are both required when pattern is empty."
                 )
+            if replacement is None:
+                return _with_lint("❌ Invalid range replace: replacement is required when pattern is empty.")
 
             # Keep file newline style when possible (Windows CRLF).
             if "\r\n" in content:
                 replacement = replacement.replace("\r\n", "\n").replace("\n", "\r\n")
+
+            # Preserve the replaced slice's trailing newline boundary so we don't accidentally
+            # join the next line onto the last replacement line (common model mistake).
+            try:
+                expected_eol = "\r\n" if search_content.endswith("\r\n") else ("\n" if search_content.endswith("\n") else "")
+                if expected_eol and replacement and not replacement.endswith(expected_eol):
+                    lines_for_range = content.splitlines(keepends=True)
+                    start_idx = int(start_line) - 1
+                    end_idx = int(end_line)
+                    has_suffix = end_idx < len(lines_for_range)
+                    if has_suffix or content.endswith(expected_eol):
+                        replacement = replacement + expected_eol
+            except Exception:
+                pass
+
+            try:
+                range_replace_meta = {
+                    "start_idx": int(start_line) - 1,
+                    "end_idx": int(end_line),
+                    "original_slice": str(search_content),
+                    "replacement": str(replacement),
+                }
+            except Exception:
+                range_replace_meta = None
             # Replace the entire targeted block in one shot.
             pattern = search_content
             use_regex = False
@@ -6344,6 +6420,59 @@ def edit_file(
             updated_content = ''.join(lines[:start_idx]) + updated_search_content + ''.join(lines[end_idx:])
         else:
             updated_content = updated_search_content
+
+        if before_py_ok:
+            py_err = _python_parse_error(updated_content)
+            if py_err is not None and isinstance(range_replace_meta, dict):
+                # Cheap repair attempt for indentation-related failures: rebase replacement
+                # indentation to match the original slice, then retry parsing.
+                msg = str(getattr(py_err, "msg", "") or "").lower()
+                if isinstance(py_err, IndentationError) or "indent" in msg:
+                    try:
+                        start_idx = int(range_replace_meta.get("start_idx"))
+                        end_idx = int(range_replace_meta.get("end_idx"))
+                        orig_slice = str(range_replace_meta.get("original_slice") or "")
+                        repl = str(range_replace_meta.get("replacement") or "")
+
+                        base_indent = ""
+                        for ln in orig_slice.replace("\r\n", "\n").split("\n"):
+                            if ln.strip():
+                                m = re.match(r"[ \t]*", ln)
+                                base_indent = m.group(0) if m else ""
+                                break
+
+                        if base_indent:
+                            normalized = repl.replace("\r\n", "\n")
+                            dedented = textwrap.dedent(normalized)
+                            adjusted = "\n".join([(base_indent + ln if ln.strip() else ln) for ln in dedented.split("\n")])
+                            if "\r\n" in content and "\r\n" not in adjusted:
+                                adjusted = adjusted.replace("\n", "\r\n")
+
+                            expected_eol = "\r\n" if orig_slice.endswith("\r\n") else ("\n" if orig_slice.endswith("\n") else "")
+                            if expected_eol and adjusted and not adjusted.endswith(expected_eol):
+                                lines_for_range = content.splitlines(keepends=True)
+                                has_suffix = end_idx < len(lines_for_range)
+                                if has_suffix or content.endswith(expected_eol):
+                                    adjusted = adjusted + expected_eol
+
+                            lines_for_range = content.splitlines(keepends=True)
+                            updated_candidate = "".join(lines_for_range[:start_idx]) + adjusted + "".join(lines_for_range[end_idx:])
+                            if _python_parse_error(updated_candidate) is None:
+                                updated_content = updated_candidate
+                                py_err = None
+                    except Exception:
+                        pass
+
+            if py_err is not None:
+                rendered, _, _ = _render_edit_file_diff(path=path, before=original_content, after=updated_content)
+                rendered = _append_edit_file_post_edit_excerpt(rendered=rendered, path=path, after=updated_content)
+                rendered = rendered.replace("Edited ", "Preview ", 1)
+                detail = _format_python_parse_error(py_err)
+                return _with_lint(
+                    "❌ Refused: edit would introduce a Python syntax error.\n"
+                    f"{detail}\n\n{rendered}".rstrip(),
+                    lint_content=updated_content,
+                )
 
         if updated_content == original_content:
             rendered = "No changes would be applied." if preview_only else "No changes applied (resulted in identical content)."
