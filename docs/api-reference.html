@@ -253,19 +253,19 @@ asyncio.run(main())</code></pre>
                             <p style="margin: 0; color: #1e40af;"><strong>See also:</strong> <a href="async-guide.html">Async Guide</a> for patterns like <code>asyncio.gather()</code> and async streaming loops.</p>
                         </div>
 
-                        <h4>unload()</h4>
-                        <p>Unload model from memory (local providers only).</p>
+                        <h4>unload_model(model_name)</h4>
+                        <p>Unload/cleanup resources for a specific model (best-effort).</p>
                         
                         <div class="code-block">
                             <pre><code class="language-python"># Local providers support memory management
 llm = create_llm("ollama", model="large-model")
 response = llm.generate("Hello")
-llm.unload()  # Explicitly free memory
+llm.unload_model(llm.model)  # Explicitly free memory
 del llm
 
-# API providers (OpenAI, Anthropic) - unload() is safe but no-op
+# API providers (OpenAI, Anthropic) - unload_model() is safe but usually no-op
 api_llm = create_llm("openai", model="gpt-5-mini")
-api_llm.unload()  # Safe to call, but has no effect</code></pre>
+api_llm.unload_model(api_llm.model)  # Safe to call, but has no effect</code></pre>
                         </div>
                     </div>
 
@@ -531,7 +531,7 @@ on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 # Memory management for local models
 local_llm = create_llm("ollama", model="large-model")
 response = local_llm.generate("Hello")
-local_llm.unload()  # Free memory</code></pre>
+local_llm.unload_model(local_llm.model)  # Free memory</code></pre>
                     </div>
                 </section>
 
