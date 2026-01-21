@@ -1565,6 +1565,44 @@
       "aliases": [],
       "max_tokens": 128000
     },
+    "glm-4.7-flash": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_modes": ["interleaved_thinking", "preserved_thinking", "turn_level_thinking"],
+      "architecture": "mixture_of_experts",
+      "total_parameters": "30B",
+      "active_parameters": "3B",
+      "experts": 64,
+      "shared_experts": 1,
+      "experts_activated": 4,
+      "tensor_type": "BF16",
+      "attention_mechanism": "grouped_query_attention",
+      "positional_encoding": "rope",
+      "transformer_layers": 47,
+      "agentic_coding": true,
+      "ui_generation": true,
+      "notes": "GLM-4.7-Flash lightweight MoE model (30B total/3B active, 64 routed experts + 1 shared/4 activated) optimized for high-speed agentic coding and complex reasoning. Features Interleaved Thinking (reasoning before actions), Preserved Thinking (cross-turn consistency), and Turn-level Thinking (per-turn toggle). BF16 precision (~62.5GB). Compatible with vLLM, SGLang, and Hugging Face Transformers. Strong performance on SWE-bench Verified (59.2%), AIME 25 (91.6%), τ²-Bench (79.5%), GPQA (75.2%), HLE (14.4%). MIT license. Recommended: temp 0.7 for coding, 0 for tool tasks.",
+      "source": "HuggingFace zai-org/GLM-4.7-Flash official model card",
+      "canonical_name": "glm-4.7-flash",
+      "aliases": [
+        "zai-org/glm-4.7-flash",
+        "z-ai/glm-4.7-flash"
+      ],
+      "max_tokens": 128000,
+      "license": "MIT",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "max_new_tokens": 131072,
+        "coding_temp": 0.7,
+        "agentic_temp": 0.0
+      }
+    },
     "llama-4-109b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
