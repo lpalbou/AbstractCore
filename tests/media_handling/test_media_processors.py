@@ -128,6 +128,23 @@ class TestTextProcessor:
         assert "John" in result.media_content.content
         assert "25" in result.media_content.content
 
+    def test_csv_includes_full_content_no_truncation(self):
+        """CSV files should include all rows without truncation."""
+        processor = TextProcessor()
+
+        many = Path(self.temp_dir) / "many.csv"
+        rows = ["name,age,city"]
+        for i in range(1, 16):
+            rows.append(f"Person{i},{20 + i},City{i}")
+        many.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+        result = processor.process_file(many)
+
+        assert result.success
+        # All rows must be present - no truncation
+        assert "Person15" in result.media_content.content
+        assert "... and" not in result.media_content.content
+
     def test_markdown_processing(self):
         """Test markdown file processing."""
         processor = TextProcessor()
