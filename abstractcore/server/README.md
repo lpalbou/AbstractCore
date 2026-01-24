@@ -18,6 +18,8 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/v1/chat/completions` | POST | Chat completions | `model`, `messages`, `stream` |
 | `/v1/embeddings` | POST | Generate embeddings | `model`, `input` |
 | `/v1/responses` | POST | OpenAI Responses API | `model`, `input` |
+| `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model` |
+| `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `mask` |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
 
 ### Common Request Patterns
@@ -27,6 +29,8 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | **Simple Chat** | `/v1/chat/completions` | `model`, `messages` | Text conversation |
 | **Streaming** | `/v1/chat/completions` | `stream: true` | Real-time responses |
 | **Vision** | `/v1/chat/completions` | `content: [text, image_url]` | Image analysis |
+| **Image Generation** | `/v1/images/generations` | `prompt` | Create images (optional) |
+| **Image Editing** | `/v1/images/edits` | `prompt`, `image` | Edit images (optional) |
 | **Documents** | `/v1/chat/completions` | `content: [text, file_url]` | PDF/CSV processing |
 | **Tools** | `/v1/chat/completions` | `tools`, `tool_choice` | Function calling |
 | **Embeddings** | `/v1/embeddings` | `model`, `input` | Text embeddings |
@@ -47,6 +51,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 - **How do I make a chat request?** → See [Chat Completions](#4-chat-completions)
 - **How do I process images?** → See [Vision API](#5-vision-api-image-analysis)
 - **How do I process documents?** → See [Document Processing](#6-document-processing)
+- **How do I generate images?** → See [Image Generation](#image-generation-optional)
 - **How do I enable streaming?** → See [Streaming Response](#streaming-response)
 - **How do I use function calling?** → See [With Function Calling](#with-function-calling)
 - **How do I deploy to production?** → See [Production Deployment](#production-deployment)
@@ -519,6 +524,55 @@ response = requests.post(
 
 print(response.json()["choices"][0]["message"]["content"])
 ```
+
+---
+
+### Image Generation (optional)
+
+AbstractCore Server can optionally expose OpenAI-compatible image endpoints:
+- `POST /v1/images/generations`
+- `POST /v1/images/edits`
+
+These return `501` until you configure a backend.
+
+**Backends (env vars)**:
+
+- **Default**: `openai_compatible_proxy` (proxy to an upstream OpenAI-compatible image server)
+  - `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL` (required) — base URL (include `/v1`)
+  - `ABSTRACTCORE_VISION_UPSTREAM_API_KEY` (optional)
+  - `ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID` (optional)
+
+- **Local Diffusers**: set `ABSTRACTCORE_VISION_BACKEND=diffusers`
+  - `ABSTRACTCORE_VISION_MODEL_ID` (required) — local model id/path (Diffusers)
+  - `ABSTRACTCORE_VISION_DEVICE` (optional, default `cpu`)
+  - `ABSTRACTCORE_VISION_TORCH_DTYPE` (optional, e.g. `float16`)
+  - `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD` (optional, default false; cache-only by default)
+
+- **Local stable-diffusion.cpp (`sd-cli`)**: set `ABSTRACTCORE_VISION_BACKEND=sdcpp`
+  - Install `sd-cli`: https://github.com/leejet/stable-diffusion.cpp/releases
+  - `ABSTRACTCORE_VISION_SDCPP_BIN` (optional, default `sd-cli`)
+  - Configure either:
+    - **Full model**: `ABSTRACTCORE_VISION_SDCPP_MODEL`
+    - **Component mode**: `ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL` (and optional components like `ABSTRACTCORE_VISION_SDCPP_VAE`, `ABSTRACTCORE_VISION_SDCPP_LLM`, ...)
+  - `ABSTRACTCORE_VISION_SDCPP_EXTRA_ARGS` (optional) — extra `sd-cli` flags (e.g. `--diffusion-fa --sampling-method euler --flow-shift 3`)
+
+**Text-to-image (JSON)**:
+```bash
+curl http://localhost:8000/v1/images/generations \\
+  -H "Content-Type: application/json" \\
+  -d '{"prompt":"a red fox in snow","response_format":"b64_json"}'
+```
+
+**Image edit (multipart/form-data)**:
+```bash
+curl http://localhost:8000/v1/images/edits \\
+  -F "prompt=make it watercolor" \\
+  -F "image=@./input.png"
+```
+
+Notes:
+- The server returns `b64_json` outputs, matching the OpenAI image API shape.
+- Endpoints delegate to AbstractVision internally; install it if needed: `pip install abstractvision`
 
 ---
 

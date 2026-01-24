@@ -118,6 +118,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Optional: OpenAI-compatible vision generation endpoints (/v1/images/*).
+# These are safe-by-default and require explicit configuration; see `vision_endpoints.py`.
+try:
+    from .vision_endpoints import router as _vision_router
+
+    app.include_router(_vision_router, prefix="/v1")
+    logger.info("🖼️ Vision endpoints enabled at /v1/images/*")
+except Exception as e:
+    logger.debug(f"Vision endpoints not loaded: {e}")
+
 # ============================================================================
 # Enhanced Error Handling and Logging Middleware
 # ============================================================================

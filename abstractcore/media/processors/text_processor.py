@@ -19,6 +19,7 @@ except ImportError:
 
 from ..base import BaseMediaHandler, MediaProcessingError
 from ..types import MediaContent, MediaType, ContentFormat
+from ...utils.token_utils import estimate_tokens
 
 
 class TextProcessor(BaseMediaHandler):
@@ -129,6 +130,10 @@ class TextProcessor(BaseMediaHandler):
             # Determine appropriate MIME type
             mime_type = self._get_mime_type_for_extension(extension)
 
+            # Add token estimation to metadata (no truncation, just informational)
+            metadata['estimated_tokens'] = estimate_tokens(content)
+            metadata['content_length'] = len(content)
+
             return self._create_media_content(
                 content=content,
                 file_path=file_path,
@@ -181,11 +186,9 @@ class TextProcessor(BaseMediaHandler):
                     null_count = df[col].isnull().sum()
                     content_parts.append(f"- {col} ({dtype}, {null_count} null values)")
 
-                content_parts.append("\n## Sample Data:")
-                content_parts.append(df.head(10).to_string(index=False))
-
-                if len(df) > 10:
-                    content_parts.append(f"\n... and {len(df) - 10} more rows")
+                # Always include full data - no truncation
+                content_parts.append("\n## Data:")
+                content_parts.append(df.to_csv(index=False, sep=delimiter))
 
                 content = "\n".join(content_parts)
 
@@ -196,7 +199,7 @@ class TextProcessor(BaseMediaHandler):
                     'data_types': {col: str(dtype) for col, dtype in df.dtypes.items()},
                     'delimiter': delimiter,
                     'has_header': True,
-                    'null_values': df.isnull().sum().to_dict()
+                    'null_values': df.isnull().sum().to_dict(),
                 }
 
             else:
@@ -221,12 +224,10 @@ class TextProcessor(BaseMediaHandler):
                     for col in header:
                         content_parts.append(f"- {col}")
 
-                    content_parts.append("\n## Sample Data:")
-                    for i, row in enumerate(data_rows[:10]):
-                        content_parts.append(f"Row {i+1}: {', '.join(row)}")
-
-                    if len(data_rows) > 10:
-                        content_parts.append(f"... and {len(data_rows) - 10} more rows")
+                    # Always include full data - no truncation
+                    content_parts.append("\n## Data:")
+                    for row in data_rows:
+                        content_parts.append(delimiter.join(row))
 
                     content = "\n".join(content_parts)
 
@@ -235,7 +236,7 @@ class TextProcessor(BaseMediaHandler):
                         'column_count': len(header),
                         'columns': header,
                         'delimiter': delimiter,
-                        'has_header': True
+                        'has_header': True,
                     }
 
             return content, metadata
@@ -273,20 +274,16 @@ class TextProcessor(BaseMediaHandler):
             content_parts = []
             content_parts.append(f"# {file_path.name}")
 
+            # Always include full JSON content - no truncation
             if isinstance(data, dict):
                 content_parts.append(f"JSON object with {len(data)} keys\n")
-                content_parts.append("## Structure:")
-                content_parts.append(json.dumps(data, indent=2, ensure_ascii=False))
             elif isinstance(data, list):
                 content_parts.append(f"JSON array with {len(data)} items\n")
-                content_parts.append("## Sample items:")
-                for i, item in enumerate(data[:5]):
-                    content_parts.append(f"Item {i+1}: {json.dumps(item, ensure_ascii=False)}")
-                if len(data) > 5:
-                    content_parts.append(f"... and {len(data) - 5} more items")
             else:
-                content_parts.append("JSON primitive value:")
-                content_parts.append(json.dumps(data, indent=2, ensure_ascii=False))
+                content_parts.append("JSON primitive value\n")
+
+            content_parts.append("## Content:")
+            content_parts.append(json.dumps(data, indent=2, ensure_ascii=False))
 
             content = "\n".join(content_parts)
 
