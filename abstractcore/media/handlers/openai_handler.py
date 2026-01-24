@@ -271,44 +271,32 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
 
         return False
 
-    def estimate_tokens_for_media(self, media_content: MediaContent) -> int:
+    def _estimate_image_tokens(self, media_content: MediaContent) -> int:
         """
-        Estimate token usage for media content.
+        OpenAI-specific image token estimation.
 
-        Args:
-            media_content: MediaContent to estimate
-
-        Returns:
-            Estimated token count
+        Uses tile-based calculation for high detail images, with special
+        handling for Qwen models via OpenAI-compatible API.
         """
-        if media_content.media_type == MediaType.IMAGE:
-            # Image token estimation varies by model
-            detail_level = media_content.metadata.get('detail_level', 'auto')
+        detail_level = media_content.metadata.get('detail_level', 'auto')
 
-            if detail_level == 'low':
-                # Qwen models use 256 tokens for low detail, OpenAI uses 85
-                if self._is_qwen_model():
-                    return 256  # Qwen low detail token count
-                else:
-                    return 85   # OpenAI low detail token count
+        if detail_level == 'low':
+            # Qwen models use 256 tokens for low detail, OpenAI uses 85
+            if self._is_qwen_model():
+                return 256
             else:
-                # High detail calculation based on image dimensions
-                width = media_content.metadata.get('final_size', [512, 512])[0]
-                height = media_content.metadata.get('final_size', [512, 512])[1]
+                return 85
+        else:
+            # High detail: tile-based calculation
+            width = media_content.metadata.get('final_size', [512, 512])[0]
+            height = media_content.metadata.get('final_size', [512, 512])[1]
 
-                # OpenAI's tile-based calculation (simplified)
-                tiles_width = (width + 511) // 512
-                tiles_height = (height + 511) // 512
-                total_tiles = tiles_width * tiles_height
+            # OpenAI's tile-based calculation (simplified)
+            tiles_width = (width + 511) // 512
+            tiles_height = (height + 511) // 512
+            total_tiles = tiles_width * tiles_height
 
-                return 85 + (170 * total_tiles)
-
-        elif media_content.media_type in [MediaType.TEXT, MediaType.DOCUMENT]:
-            # Rough estimation: 4 characters per token
-            content_length = len(str(media_content.content))
-            return content_length // 4
-
-        return 0
+            return 85 + (170 * total_tiles)
 
     def get_model_media_limits(self, model: str) -> Dict[str, Any]:
         """

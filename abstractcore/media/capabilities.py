@@ -159,37 +159,9 @@ class MediaCapabilities:
             'text_embedding_preferred': self.text_embedding_preferred
         }
 
-    def estimate_media_tokens(self, media_type: MediaType, content_size: int = 0) -> int:
-        """
-        Estimate token usage for media content.
-
-        Args:
-            media_type: Type of media
-            content_size: Size of content in bytes (optional)
-
-        Returns:
-            Estimated token count
-        """
-        if not self.media_token_estimation:
-            return 0
-
-        if media_type == MediaType.IMAGE and self.vision_support:
-            # Base token cost for images varies by model
-            model_lower = self.model_name.lower()
-            if 'gpt-4o' in model_lower:
-                return 85 + (170 * 4)  # Simplified GPT-4o calculation
-            elif 'claude' in model_lower:
-                return 1600  # Anthropic standard
-            else:
-                return 512  # Conservative estimate for local models
-
-        elif media_type in [MediaType.TEXT, MediaType.DOCUMENT]:
-            # Text content token estimation
-            if content_size > 0:
-                return content_size // 4  # ~4 chars per token
-            return 100  # Default estimate
-
-        return 0
+    # Note: Token estimation is now handled by processors (TextProcessor, PDFProcessor, etc.)
+    # which add 'estimated_tokens' to MediaContent.metadata using TokenUtils.
+    # Handlers use BaseProviderMediaHandler.estimate_tokens_for_media() to retrieve it.
 
     def validate_media_content(self, media_type: MediaType, file_size: int = 0,
                               format: str = None) -> tuple[bool, Optional[str]]:

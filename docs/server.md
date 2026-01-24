@@ -118,6 +118,7 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 - `messages` (required): Array of message objects
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
+- `api_key` (optional, AbstractCore extension): Provider API key for per-request authentication. Falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`)
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
@@ -153,6 +154,33 @@ curl -X POST http://localhost:8000/v1/chat/completions \
     "messages": [{"role": "user", "content": "Hello from a remote LM Studio endpoint"}]
   }'
 ```
+
+#### Per-request `api_key` (AbstractCore extension)
+
+Pass API keys directly in requests (useful for multi-tenant scenarios or OpenRouter):
+
+```bash
+# OpenRouter with per-request API key
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openrouter/anthropic/claude-3.5-sonnet",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "api_key": "sk-or-v1-your-openrouter-key"
+  }'
+
+# OpenAI-compatible endpoint with custom auth
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai-compatible/my-model",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "api_key": "your-api-key",
+    "base_url": "https://my-custom-endpoint.com/v1"
+  }'
+```
+
+If `api_key` is not provided, AbstractCore falls back to environment variables.
 
 ### Multimodal Requests (Images, Documents, Files)
 

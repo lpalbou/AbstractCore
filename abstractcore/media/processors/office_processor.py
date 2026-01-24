@@ -13,6 +13,7 @@ import json
 from ..base import BaseMediaHandler, MediaProcessingError
 from ..types import MediaContent, MediaType, ContentFormat, MediaProcessingResult
 from ...utils.structured_logging import get_logger
+from ...utils.token_utils import estimate_tokens
 
 
 class OfficeProcessor(BaseMediaHandler):
@@ -128,6 +129,10 @@ class OfficeProcessor(BaseMediaHandler):
                 content, metadata = self._process_pptx(file_path, **kwargs)
             else:
                 raise MediaProcessingError(f"Unsupported Office file type: {file_extension}")
+
+            # Add token estimation to metadata (no truncation, just informational)
+            metadata['estimated_tokens'] = estimate_tokens(content)
+            metadata['content_length'] = len(content)
 
             # Create MediaContent object
             return self._create_media_content(

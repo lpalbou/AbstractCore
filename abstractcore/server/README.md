@@ -271,7 +271,9 @@ curl http://localhost:8000/providers
   "seed": 12345,
   "frequency_penalty": 0.0,
   "presence_penalty": 0.0,
-  "agent_format": "auto"
+  "agent_format": "auto",
+  "api_key": null,
+  "base_url": null
 }
 ```
 
@@ -288,6 +290,8 @@ curl http://localhost:8000/providers
 | `tools` | array | null | Available function tools |
 | `tool_choice` | string/object | "auto" | Tool calling strategy |
 | `agent_format` | string | null | Tool syntax format |
+| `api_key` | string | null | Provider API key (falls back to env vars) |
+| `base_url` | string | null | Custom API endpoint URL |
 
 **Response (Non-Streaming)**:
 ```json
@@ -420,6 +424,34 @@ response = client.chat.completions.create(
 
 print(response.choices[0].message.content)
 ```
+
+**With Per-Request API Key** (OpenRouter, OpenAI-compatible, etc.):
+```bash
+# Pass API key directly in request (useful for multi-tenant scenarios)
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openrouter/anthropic/claude-3.5-sonnet",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "api_key": "sk-or-v1-your-openrouter-key",
+    "temperature": 0.7
+  }'
+```
+
+```python
+# Python example with per-request API key
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "openai-compatible/my-model",
+        "messages": [{"role": "user", "content": "Hello!"}],
+        "api_key": "your-api-key",
+        "base_url": "https://my-custom-endpoint.com/v1"
+    }
+)
+```
+
+Note: If `api_key` is not provided, AbstractCore falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`).
 
 ---
 

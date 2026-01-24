@@ -454,3 +454,46 @@ class BaseProviderMediaHandler(BaseMediaHandler):
             True if provider can handle this content
         """
         return self.supports_media_type(media_content.media_type)
+
+    def estimate_tokens_for_media(self, media_content: MediaContent) -> int:
+        """
+        Estimate token usage for media content.
+
+        Base implementation that uses pre-computed estimates when available.
+        Subclasses can override _estimate_image_tokens() for provider-specific
+        image token calculations.
+
+        Args:
+            media_content: MediaContent to estimate
+
+        Returns:
+            Estimated token count
+        """
+        if media_content.media_type == MediaType.IMAGE:
+            return self._estimate_image_tokens(media_content)
+
+        elif media_content.media_type in [MediaType.TEXT, MediaType.DOCUMENT]:
+            # Use pre-computed estimate from processor if available (uses TokenUtils)
+            if 'estimated_tokens' in media_content.metadata:
+                return media_content.metadata['estimated_tokens']
+            # Fallback: rough estimation (~4 chars per token)
+            content_length = len(str(media_content.content))
+            return content_length // 4
+
+        return 0
+
+    def _estimate_image_tokens(self, media_content: MediaContent) -> int:
+        """
+        Estimate token usage for image content.
+
+        Override in subclasses for provider-specific image token calculations.
+        Default implementation returns a conservative estimate.
+
+        Args:
+            media_content: Image MediaContent to estimate
+
+        Returns:
+            Estimated token count for the image
+        """
+        # Conservative default - subclasses should override with provider-specific logic
+        return 512
