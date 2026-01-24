@@ -224,28 +224,14 @@ class AnthropicMediaHandler(BaseProviderMediaHandler):
 
         return False
 
-    def estimate_tokens_for_media(self, media_content: MediaContent) -> int:
+    def _estimate_image_tokens(self, media_content: MediaContent) -> int:
         """
-        Estimate token usage for media content.
+        Anthropic-specific image token estimation.
 
-        Args:
-            media_content: MediaContent to estimate
-
-        Returns:
-            Estimated token count
+        Anthropic uses roughly ~1600 tokens per image for most cases.
+        This varies based on image content and complexity.
         """
-        if media_content.media_type == MediaType.IMAGE:
-            # Anthropic image token estimation
-            # Roughly ~1600 tokens per image for most cases
-            # This varies based on image content and complexity
-            return 1600
-
-        elif media_content.media_type in [MediaType.TEXT, MediaType.DOCUMENT]:
-            # Rough estimation: 3.5 characters per token (slightly better than GPT)
-            content_length = len(str(media_content.content))
-            return int(content_length / 3.5)
-
-        return 0
+        return 1600
 
     def get_model_media_limits(self, model: str) -> Dict[str, Any]:
         """

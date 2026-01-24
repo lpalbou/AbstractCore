@@ -198,6 +198,30 @@ except PDFProcessingError:
 - **Performance Optimized**: Lazy loading and efficient memory usage
 - **Production Tested**: All file types tested and working in CLI and Python API
 
+### Token Estimation & No Truncation Policy
+
+AbstractCore processors **do not silently truncate content**. This design decision ensures:
+
+1. **No data loss**: Full file content is always preserved
+2. **User control**: Callers decide how to handle large files (summarize, chunk, error)
+3. **Model flexibility**: Works correctly across models with different context limits (8K to 200K+)
+
+**Token estimation** is automatically added to `MediaContent.metadata`:
+```python
+result = processor.process_file("data.csv")
+print(result.media_content.metadata['estimated_tokens'])  # e.g., 1500
+print(result.media_content.metadata['content_length'])    # e.g., 6000 chars
+```
+
+**Handlers use this for validation**:
+```python
+handler = OpenAIMediaHandler()
+tokens = handler.estimate_tokens_for_media(media_content)
+# Uses metadata['estimated_tokens'] if available, falls back to heuristic
+```
+
+For large files that exceed model context limits, use `BasicSummarizer` or implement custom chunking at the application layer.
+
 ## Provider Compatibility
 
 ### Vision-Enabled Providers

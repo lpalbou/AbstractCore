@@ -516,27 +516,8 @@ class LocalMediaHandler(BaseProviderMediaHandler):
 
         return False
 
-    def estimate_tokens_for_media(self, media_content: MediaContent) -> int:
-        """
-        Estimate token usage for media content with local models.
-
-        Args:
-            media_content: MediaContent to estimate
-
-        Returns:
-            Estimated token count
-        """
-        if media_content.media_type == MediaType.IMAGE:
-            # Local vision models typically use fewer tokens than cloud models
-            # but this varies significantly by model architecture
-            return 512  # Conservative estimate
-
-        elif media_content.media_type in [MediaType.TEXT, MediaType.DOCUMENT]:
-            # Local models typically use similar tokenization to their base models
-            content_length = len(str(media_content.content))
-            return content_length // 4  # Rough estimate
-
-        return 0
+    # Note: Uses base class estimate_tokens_for_media() with default _estimate_image_tokens()
+    # Local models use ~512 tokens per image (conservative estimate), which matches base default
 
     def get_model_media_limits(self, model: str) -> Dict[str, Any]:
         """

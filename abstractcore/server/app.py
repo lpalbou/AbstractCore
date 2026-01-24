@@ -519,6 +519,14 @@ class ChatCompletionRequest(BaseModel):
     )
 
     # Provider-specific parameters (AbstractCore-specific feature)
+    api_key: Optional[str] = Field(
+        default=None,
+        description="API key for the provider (AbstractCore-specific feature). "
+                    "Supports all providers requiring authentication: openai, anthropic, openrouter, openai-compatible, huggingface. "
+                    "If not specified, falls back to provider-specific environment variables "
+                    "(e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY).",
+        example=None
+    )
     base_url: Optional[str] = Field(
         default=None,
         description="Base URL for the provider API endpoint (AbstractCore-specific feature). "
@@ -748,7 +756,25 @@ class ChatCompletionRequest(BaseModel):
                         "seed": 12345,
                         "frequency_penalty": 0.0,
                         "presence_penalty": 0.0,
-                        "agent_format": "auto"
+                        "agent_format": "auto",
+                        "api_key": None,
+                        "base_url": None
+                    }
+                },
+                "openrouter_with_api_key": {
+                    "summary": "OpenRouter with Per-Request API Key",
+                    "description": "Use OpenRouter with a per-request API key (useful for multi-tenant scenarios)",
+                    "value": {
+                        "model": "openrouter/anthropic/claude-3.5-sonnet",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": "Explain quantum computing in simple terms"
+                            }
+                        ],
+                        "api_key": "sk-or-v1-your-openrouter-key",
+                        "temperature": 0.7,
+                        "max_tokens": 500
                     }
                 }
             }
@@ -2170,6 +2196,13 @@ async def process_chat_completion(
             # Enable trace capture (trace_id) without retaining full trace buffers by default.
             provider_kwargs["enable_tracing"] = True
             provider_kwargs.setdefault("max_traces", 0)
+        if request.api_key:
+            provider_kwargs["api_key"] = request.api_key
+            logger.debug(
+                "🔑 Custom API Key Provided",
+                request_id=request_id,
+                provider=provider
+            )
         if request.base_url:
             provider_kwargs["base_url"] = request.base_url
             logger.info(

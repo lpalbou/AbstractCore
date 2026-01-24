@@ -24,6 +24,7 @@ except ImportError:
 
 from ..base import BaseMediaHandler, MediaProcessingError
 from ..types import MediaContent, MediaType, ContentFormat
+from ...utils.token_utils import estimate_tokens
 
 
 class PDFProcessor(BaseMediaHandler):
@@ -118,6 +119,10 @@ class PDFProcessor(BaseMediaHandler):
                 mime_type = 'application/json'
             else:
                 mime_type = 'text/plain'
+
+            # Add token estimation to metadata (no truncation, just informational)
+            metadata['estimated_tokens'] = estimate_tokens(content)
+            metadata['content_length'] = len(content)
 
             return self._create_media_content(
                 content=content,
