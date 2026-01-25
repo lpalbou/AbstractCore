@@ -2,6 +2,7 @@
 MLX provider implementation for Apple Silicon.
 """
 
+import json
 import time
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
 
@@ -52,6 +53,210 @@ class MLXProvider(BaseProvider):
 
     def supports_prompt_cache(self) -> bool:
         """MLX supports KV prompt caches via `mlx_lm.models.cache`."""
+        return True
+
+    def _prompt_cache_backend_create(self) -> Optional[Any]:
+        try:
+            from mlx_lm.models.cache import make_prompt_cache
+        except Exception:
+            return None
+        try:
+            return make_prompt_cache(self.llm)
+        except Exception:
+            return None
+
+    def _prompt_cache_backend_clone(self, cache_value: Any) -> Optional[Any]:
+        """Best-effort deep clone of an MLX prompt cache."""
+        if cache_value is None:
+            return None
+
+        def _clone_layer(layer: Any) -> Any:
+            if hasattr(layer, "state") and hasattr(layer.__class__, "from_state"):
+                try:
+                    return layer.__class__.from_state(layer.state())
+                except Exception:
+                    return None
+            if hasattr(layer, "copy"):
+                try:
+                    return layer.copy()
+                except Exception:
+                    return None
+            return None
+
+        # MLX-LM prompt caches are typically a list of per-layer KVCache objects.
+        if isinstance(cache_value, list):
+            cloned: List[Any] = []
+            for layer in cache_value:
+                c = _clone_layer(layer)
+                if c is None:
+                    return None
+                cloned.append(c)
+            return cloned
+
+        if isinstance(cache_value, tuple):
+            cloned_layers: List[Any] = []
+            for layer in cache_value:
+                c = _clone_layer(layer)
+                if c is None:
+                    return None
+                cloned_layers.append(c)
+            return tuple(cloned_layers)
+
+        # Fallback: single cache object.
+        return _clone_layer(cache_value)
+
+    def _prompt_cache_backend_token_count(self, cache_value: Any) -> Optional[int]:
+        if cache_value is None:
+            return 0
+        try:
+            if isinstance(cache_value, (list, tuple)):
+                for layer in cache_value:
+                    if hasattr(layer, "size"):
+                        try:
+                            s = int(layer.size())
+                        except Exception:
+                            s = None
+                        if isinstance(s, int) and s > 0:
+                            return s
+                    if hasattr(layer, "offset"):
+                        try:
+                            off = int(getattr(layer, "offset", 0))
+                        except Exception:
+                            off = 0
+                        if off > 0:
+                            return off
+                return 0
+        except Exception:
+            pass
+        return None
+
+    def _build_prompt_fragment(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+    ) -> str:
+        """Build a prompt fragment intended to be appended to an existing prompt_cache."""
+
+        final_system_prompt = system_prompt
+        if tools and self.tool_handler.supports_prompted:
+            include_tool_list = True
+            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+                include_tool_list = False
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if final_system_prompt:
+                final_system_prompt += f"\n\n{tool_prompt}"
+            else:
+                final_system_prompt = tool_prompt
+
+        def _as_text(val: Any) -> str:
+            if val is None:
+                return ""
+            if isinstance(val, str):
+                return val
+            try:
+                return json.dumps(val, ensure_ascii=False)
+            except Exception:
+                return str(val)
+
+        is_qwen = "qwen" in self.model.lower()
+        parts: List[str] = []
+
+        if final_system_prompt:
+            if is_qwen:
+                parts.append(f"<|im_start|>system\n{final_system_prompt}<|im_end|>\n")
+            else:
+                parts.append(f"{final_system_prompt.strip()}\n\n")
+
+        if messages:
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
+                role = str(msg.get("role") or "user")
+                content = _as_text(msg.get("content"))
+                if is_qwen:
+                    parts.append(f"<|im_start|>{role}\n{content}<|im_end|>\n")
+                else:
+                    parts.append(f"{role}: {content}\n")
+
+        if isinstance(prompt, str) and prompt:
+            if is_qwen:
+                parts.append(f"<|im_start|>user\n{prompt}<|im_end|>\n")
+            else:
+                parts.append(f"user: {prompt}\n")
+
+        if add_generation_prompt:
+            parts.append("<|im_start|>assistant\n" if is_qwen else "assistant:")
+
+        return "".join(parts)
+
+    def _prompt_cache_backend_append(
+        self,
+        cache_value: Any,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        **kwargs,
+    ) -> bool:
+        _ = kwargs
+        if cache_value is None:
+            return False
+
+        fragment = self._build_prompt_fragment(
+            prompt=str(prompt or ""),
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            add_generation_prompt=bool(add_generation_prompt),
+        )
+        if not fragment:
+            return True
+
+        try:
+            from mlx_lm.models.cache import trim_prompt_cache
+        except Exception:
+            trim_prompt_cache = None
+
+        # Best-effort prefill: MLX-LM generates at least one token; trim it to end exactly at the fragment boundary.
+        generated = 0
+        try:
+            gen = self.stream_generate_fn(
+                self.llm,
+                self.tokenizer,
+                prompt=fragment,
+                prompt_cache=cache_value,
+                max_tokens=1,
+            )
+            for _chunk in gen:
+                generated += 1
+        except TypeError:
+            try:
+                gen = self.stream_generate_fn(
+                    self.llm,
+                    self.tokenizer,
+                    fragment,
+                    prompt_cache=cache_value,
+                    max_tokens=1,
+                )
+                for _chunk in gen:
+                    generated += 1
+            except Exception:
+                return False
+        except Exception:
+            return False
+
+        if trim_prompt_cache is not None and generated > 0:
+            try:
+                trim_prompt_cache(cache_value, generated)
+            except Exception:
+                pass
+
         return True
 
     def prompt_cache_set(

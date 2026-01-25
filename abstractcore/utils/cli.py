@@ -23,9 +23,13 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import time
-from typing import Optional
+import uuid
+import locale
+from datetime import datetime
+from typing import Optional, Any, Dict, Iterator
 
 # Enable command history and arrow key navigation
 try:
@@ -90,6 +94,13 @@ class SimpleCLI:
             system_prompt="You are a helpful AI assistant with vision capabilities. When users provide images or media files, analyze and describe them directly. You also have access to file operation tools.",
             tools=[list_files, read_file, write_file, execute_command, search_files]
         )
+
+        # Prompt caching (best-effort; provider-dependent).
+        self.country_code = self._get_country_code()
+        self.prompt_cache_mode = "off"  # off | key | kv
+        self.prompt_cache_key: Optional[str] = None
+        self.prompt_cache_file: Optional[str] = None
+        self._init_prompt_caching(show_banner=show_banner)
 
         # Only show banner in interactive mode
         if show_banner:
@@ -169,7 +180,8 @@ class SimpleCLI:
             print("─" * 50)
             print("  /help                    Show this comprehensive help")
             print("  /quit                    Exit the CLI")
-            print("  /clear                   Clear the screen (like unix terminal)")
+            print("  /clear                   Clear prompt cache + context (like mlx-chat)")
+            print("  /cls                     Clear the screen (like unix terminal)")
             print("  /reset                   Reset conversation history")
             print("  /status                  Show system status and capabilities")
             
@@ -191,12 +203,16 @@ class SimpleCLI:
             print("  /save <file> [options]   Save session with optional analytics")
             print("                           • /save chat.json")
             print("                           • /save analyzed --summary --assessment --facts")
+            print("  /save <file>.safetensors Save MLX KV prompt cache (fast resume)")
+            print("                           • /save chat_cache.safetensors")
             print("                           Options:")
             print("                             --summary     Generate conversation summary")
             print("                             --assessment  Evaluate conversation quality")
             print("                             --facts       Extract knowledge as facts")
             print("  /load <file>             Load saved session (replaces current)")
             print("                           • /load chat.json")
+            print("  /load <file>.safetensors Load MLX KV prompt cache (model-locked)")
+            print("                           • /load chat_cache.safetensors")
             
             print("\n📊 ANALYTICS & INSIGHTS")
             print("─" * 50)
@@ -254,13 +270,17 @@ class SimpleCLI:
             print("=" * 70 + "\n")
 
         elif cmd == 'clear':
-            # Clear the screen like in unix terminal
-            import os
-            os.system('cls' if os.name == 'nt' else 'clear')
+            self.handle_clear()
+
+        elif cmd == 'cls':
+            self._clear_screen()
 
         elif cmd == 'reset':
-            self.session.clear_history(keep_system=True)
-            print("🧹 Chat history reset")
+            if self.prompt_cache_mode == "kv":
+                self.handle_clear()
+            else:
+                self.session.clear_history(keep_system=True)
+                print("🧹 Chat history reset")
 
         elif cmd == 'stream':
             self.stream_mode = not self.stream_mode
@@ -411,6 +431,11 @@ class SimpleCLI:
                     system_prompt="You are a helpful AI assistant with vision capabilities. When users provide images or media files, analyze and describe them directly. You also have access to file operation tools.",
                     tools=[list_files, read_file, write_file, execute_command, search_files]
                 )
+                # Reset caching state for the new provider+model.
+                self.prompt_cache_key = None
+                self.prompt_cache_file = None
+                self.prompt_cache_mode = "off"
+                self._init_prompt_caching(show_banner=False)
                 print("✅ Model switched")
             except Exception as e:
                 print(f"❌ Failed to switch: {e}")
@@ -473,9 +498,13 @@ class SimpleCLI:
             if len(parts) < 2:
                 print("❓ Usage: /save <filename> [--summary] [--assessment] [--facts]")
                 print("   Example: /save my_conversation.json")
+                print("   Example: /save chat_cache.safetensors")
                 print("   Example: /save analyzed_session --summary --assessment --facts")
             else:
                 filename = parts[1]
+                if filename.endswith(".safetensors") or filename.endswith(".safetensor"):
+                    self.handle_save_prompt_cache(filename, q8=("--q8" in parts))
+                    return True
                 options = {
                     'summary': '--summary' in parts,
                     'assessment': '--assessment' in parts,
@@ -489,8 +518,12 @@ class SimpleCLI:
             if len(parts) != 2:
                 print("❓ Usage: /load <filename>")
                 print("   Example: /load my_conversation.json")
+                print("   Example: /load chat_cache.safetensors")
             else:
                 filename = parts[1]
+                if filename.endswith(".safetensors") or filename.endswith(".safetensor"):
+                    self.handle_load_prompt_cache(filename)
+                    return True
                 self.handle_load(filename)
 
         elif cmd.startswith('tooltag'):
@@ -511,6 +544,240 @@ class SimpleCLI:
             print(f"❓ Unknown command: /{cmd}. Type /help for help.")
 
         return True
+
+    def _clear_screen(self) -> None:
+        os.system('cls' if os.name == 'nt' else 'clear')
+
+    def _print_error(self, msg: str) -> None:
+        red = "\033[31m"
+        reset = "\033[0m"
+        print(f"{red}{msg}{reset}")
+
+    def _print_warn(self, msg: str) -> None:
+        yellow = "\033[33m"
+        reset = "\033[0m"
+        print(f"{yellow}{msg}{reset}")
+
+    def _get_country_code(self) -> str:
+        val = os.getenv("ABSTRACTCORE_CLI_COUNTRY")
+        if isinstance(val, str) and val.strip():
+            cc = val.strip().upper()
+            return cc if len(cc) == 2 else cc[:2]
+
+        # Best-effort locale fallback (e.g. "en_US" -> "US")
+        try:
+            loc = locale.getlocale()[0] or ""
+        except Exception:
+            loc = ""
+        if isinstance(loc, str) and "_" in loc:
+            cc = loc.split("_", 1)[1].strip().upper()
+            if cc:
+                return cc[:2]
+
+        return "FR"
+
+    def _timestamp_user_message(self, text: str) -> str:
+        ts = datetime.now().strftime("%Y/%m/%d %H:%M")
+        return f"[{ts} {self.country_code}] {text}"
+
+    def _supports_prompt_cache(self) -> bool:
+        try:
+            fn = getattr(self.provider, "supports_prompt_cache", None)
+            return bool(fn and fn())
+        except Exception:
+            return False
+
+    def _is_mlx_provider(self) -> bool:
+        return str(self.provider_name or "").strip().lower() == "mlx"
+
+    def _init_prompt_caching(self, *, show_banner: bool) -> None:
+        if not self._supports_prompt_cache():
+            self.prompt_cache_mode = "off"
+            return
+
+        # Default policy:
+        # - MLX: local KV cache (append-only) with explicit prefill (system+tools).
+        # - Other providers: key-only hint (pass-through / best-effort).
+        if self._is_mlx_provider():
+            self.prompt_cache_mode = "kv"
+        else:
+            self.prompt_cache_mode = "key"
+
+        self.prompt_cache_key = f"cli:{uuid.uuid4().hex[:12]}"
+        try:
+            ok = bool(getattr(self.provider, "prompt_cache_set")(self.prompt_cache_key, make_default=True))
+        except Exception:
+            ok = False
+
+        if not ok:
+            self.prompt_cache_mode = "off"
+            self.prompt_cache_key = None
+            return
+
+        if self.prompt_cache_mode == "kv":
+            # Prefill stable modules once so each turn can be appended safely.
+            try:
+                getattr(self.provider, "prompt_cache_update")(
+                    self.prompt_cache_key,
+                    system_prompt=self.session.system_prompt,
+                    tools=self.session.tools,
+                    add_generation_prompt=False,
+                )
+            except Exception as e:
+                self._print_warn(f"⚠️ Prompt cache prefill failed; falling back to key-only mode: {e}")
+                self.prompt_cache_mode = "key"
+
+        if show_banner:
+            if self.prompt_cache_mode == "kv":
+                print(f"🧠 Prompt caching: ON (KV local)  key={self.prompt_cache_key}")
+            elif self.prompt_cache_mode == "key":
+                print(f"🧠 Prompt caching: ON (key hint)  key={self.prompt_cache_key}")
+
+    def handle_clear(self) -> None:
+        """Clear prompt cache and context (best-effort)."""
+        # Clear session transcript (keep system prompt for user visibility).
+        self.session.clear_history(keep_system=True)
+
+        if not self._supports_prompt_cache():
+            print("🧹 Context cleared (prompt caching unsupported)")
+            return
+
+        # Clear provider-side in-process caches (best-effort).
+        try:
+            getattr(self.provider, "prompt_cache_clear")(None)
+        except Exception:
+            pass
+
+        # Re-init caching for this run.
+        self.prompt_cache_key = None
+        self.prompt_cache_file = None
+        self._init_prompt_caching(show_banner=False)
+
+        if self.prompt_cache_mode == "off":
+            print("🧹 Context cleared (prompt caching disabled)")
+        else:
+            print("🧹 Context + prompt cache cleared")
+
+    def handle_save_prompt_cache(self, filename: str, *, q8: bool = False) -> None:
+        """Save MLX prompt cache to a safetensors file (model-locked)."""
+        if not self._is_mlx_provider():
+            self._print_error("❌ KV cache save is only supported for provider 'mlx' (file: .safetensors)")
+            return
+        if not self._supports_prompt_cache():
+            self._print_error("❌ This provider does not support prompt caching")
+            return
+
+        key = self.prompt_cache_key
+        if not isinstance(key, str) or not key.strip():
+            self._print_error("❌ No active prompt cache key; start chatting first or /clear to re-init caching")
+            return
+
+        try:
+            cache_obj = getattr(self.provider, "_prompt_cache_store").get(key)
+        except Exception:
+            cache_obj = None
+
+        if cache_obj is None:
+            self._print_error("❌ Prompt cache is empty; nothing to save yet")
+            return
+
+        try:
+            from mlx_lm.models.cache import save_prompt_cache
+        except Exception:
+            self._print_error("❌ MLX cache saving requires mlx-lm (install: `pip install abstractcore[mlx]`)")
+            return
+
+        meta: Dict[str, str] = {
+            "format": "abstractcore-cli-prompt-cache/v1",
+            "provider": str(self.provider_name),
+            "model": str(getattr(self.provider, "model", self.model_name)),
+            "saved_at": datetime.now().isoformat(),
+        }
+
+        cache_to_save = cache_obj
+        if q8:
+            try:
+                cache_to_save = [layer.to_quantized(group_size=64, bits=8) for layer in cache_obj]
+                meta["quantized"] = "q8"
+            except Exception as e:
+                self._print_warn(f"⚠️ q8 quantization failed; saving full-precision cache: {e}")
+
+        try:
+            save_prompt_cache(filename, cache_to_save, metadata=meta)
+            self.prompt_cache_file = filename
+            print(f"💾 Cache saved to {filename}")
+        except Exception as e:
+            self._print_error(f"❌ Failed to save prompt cache: {e}")
+
+    def handle_load_prompt_cache(self, filename: str) -> None:
+        """Load MLX prompt cache from a safetensors file (model-locked)."""
+        if not self._is_mlx_provider():
+            self._print_error("❌ KV cache load is only supported for provider 'mlx' (file: .safetensors)")
+            return
+        if not self._supports_prompt_cache():
+            self._print_error("❌ This provider does not support prompt caching")
+            return
+        if not os.path.exists(filename):
+            self._print_error(f"❌ File not found: {filename}")
+            return
+
+        try:
+            from mlx_lm.models.cache import load_prompt_cache
+        except Exception:
+            self._print_error("❌ MLX cache loading requires mlx-lm (install: `pip install abstractcore[mlx]`)")
+            return
+
+        try:
+            loaded_cache, meta = load_prompt_cache(filename, return_metadata=True)
+        except Exception as e:
+            self._print_error(f"❌ Failed to load prompt cache: {e}")
+            return
+
+        required_model = None
+        if isinstance(meta, dict):
+            required_model = meta.get("model") or meta.get("model_id")
+        current_model = str(getattr(self.provider, "model", self.model_name))
+
+        if isinstance(required_model, str) and required_model.strip() and required_model.strip() != current_model:
+            self._print_error(
+                "❌ Prompt cache model mismatch:\n"
+                f"   cache expects: {required_model}\n"
+                f"   current model: {current_model}\n"
+                f"   hint: run `/model mlx:{required_model}` then `/load {filename}`"
+            )
+            return
+        if not isinstance(required_model, str) or not required_model.strip():
+            self._print_warn("⚠️ Cache metadata has no model id; cannot verify compatibility (proceeding best-effort)")
+
+        # Clear existing caches and install the loaded cache under a fresh key.
+        try:
+            getattr(self.provider, "prompt_cache_clear")(None)
+        except Exception:
+            pass
+
+        new_key = f"cli:{uuid.uuid4().hex[:12]}"
+        try:
+            getattr(self.provider, "prompt_cache_set")(new_key, make_default=True)
+        except Exception:
+            pass
+
+        try:
+            getattr(self.provider, "_prompt_cache_store").set(
+                new_key,
+                loaded_cache,
+                meta={"backend": "mlx", "loaded_from": filename, **(meta if isinstance(meta, dict) else {})},
+            )
+        except Exception as e:
+            self._print_error(f"❌ Failed to install loaded cache into provider store: {e}")
+            return
+
+        self.prompt_cache_mode = "kv"
+        self.prompt_cache_key = new_key
+        self.prompt_cache_file = filename
+
+        # Reset transcript; the cache becomes the source of truth for context.
+        self.session.clear_history(keep_system=False)
+        print(f"📂 Cache loaded from {filename} (key={new_key})")
 
     def handle_compact(self, focus: Optional[str] = None):
         """Handle /compact [focus] command - compact chat history with optional focus"""
@@ -989,6 +1256,10 @@ class SimpleCLI:
         print(f"📝 Old: {old_prompt[:100]}{'...' if len(old_prompt) > 100 else ''}")
         print(f"📝 New: {new_prompt[:100]}{'...' if len(new_prompt) > 100 else ''}")
 
+        if self.prompt_cache_mode == "kv":
+            self._print_warn("⚠️ KV prompt cache invalidated by system prompt change; clearing cache and context")
+            self.handle_clear()
+
     def handle_save(self, filename: str, summary: bool = False, assessment: bool = False, facts: bool = False):
         """Handle /save <file> command - save current session to file with optional analytics"""
         try:
@@ -1252,18 +1523,26 @@ class SimpleCLI:
             if not clean_input and media_files:
                 clean_input = "Please analyze the attached file(s)."
 
+            clean_input = self._timestamp_user_message(clean_input)
+
             if self.debug_mode:
                 print(f"🔍 Sending to {self.provider_name}:{self.model_name}")
                 if media_files:
                     print(f"🔍 Media files: {media_files}")
 
-            # Generate response with media support
-            response = self.session.generate(
-                clean_input,
-                stream=self.stream_mode,
-                media=media_files if media_files else None,
-                max_output_tokens=self.max_output_tokens
-            )
+            if self.prompt_cache_mode == "kv":
+                response = self._generate_response_kv(
+                    clean_input,
+                    media=media_files if media_files else None,
+                )
+            else:
+                # Generate response with media support (session-managed history)
+                response = self.session.generate(
+                    clean_input,
+                    stream=self.stream_mode,
+                    media=media_files if media_files else None,
+                    max_output_tokens=self.max_output_tokens
+                )
 
             if self.stream_mode:
                 if not self.single_prompt_mode:
@@ -1305,6 +1584,12 @@ class SimpleCLI:
                 
                 # Parse and execute tool calls from full content
                 clean_content, tool_calls = self._parse_and_strip_tool_calls(full_content)
+                if self.prompt_cache_mode == "kv":
+                    # Maintain transcript for UX; model context lives in KV cache.
+                    try:
+                        self.session.add_message("assistant", clean_content.strip() or full_content)
+                    except Exception:
+                        pass
                 
                 # If we buffered tool call content, we should have shown clean content
                 # For now, if there's significant difference, show the clean version
@@ -1318,6 +1603,11 @@ class SimpleCLI:
             else:
                 # Non-streaming: parse content, display clean version, execute tools
                 clean_content, tool_calls = self._parse_and_strip_tool_calls(response.content)
+                if self.prompt_cache_mode == "kv":
+                    try:
+                        self.session.add_message("assistant", clean_content.strip() or response.content)
+                    except Exception:
+                        pass
                 
                 # Display only the clean content (without tool call syntax)
                 if clean_content.strip():
@@ -1350,6 +1640,26 @@ class SimpleCLI:
             if self.debug_mode:
                 import traceback
                 traceback.print_exc()
+
+    def _generate_response_kv(self, prompt: str, *, media: Optional[list] = None):
+        """Generate response using append-only KV cache mode (local providers only)."""
+        # Maintain a local transcript for UX, but do not send it to the model; the KV cache is source-of-truth.
+        try:
+            self.session.add_message("user", prompt)
+        except Exception:
+            pass
+
+        gen_kwargs: Dict[str, Any] = {
+            "prompt": prompt,
+            "messages": None,
+            "system_prompt": None,
+            "tools": None,  # tools were prefixed into the cache during prefill
+            "media": media,
+            "stream": bool(self.stream_mode),
+            "max_output_tokens": self.max_output_tokens,
+        }
+
+        return self.provider.generate(**gen_kwargs)
 
     def _parse_and_strip_tool_calls(self, content: str):
         """

@@ -9,9 +9,10 @@ import warnings
 import json
 import re
 import socket
+import hashlib
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING, Tuple
 from abc import ABC, abstractmethod
 
 try:
@@ -134,6 +135,85 @@ class PromptCacheStore:
             "max_entries": self._max_entries,
             "default_ttl_s": self._default_ttl_s,
         }
+
+    def keys(self) -> List[str]:
+        return list(self._entries.keys())
+
+    def meta(self, key: str) -> Optional[Dict[str, Any]]:
+        if not isinstance(key, str) or not key.strip():
+            return None
+        entry = self._entries.get(key.strip())
+        if entry is None:
+            return None
+        return dict(entry.meta or {})
+
+
+@dataclass(frozen=True)
+class PromptCacheModule:
+    """A single cacheable module of prompt context.
+
+    This is intentionally generic and JSON-serializable so higher-level layers (runtime/agent/memory)
+    can express cache intent without hard-coding provider-specific prompt formats.
+    """
+
+    module_id: str
+    system_prompt: Optional[str] = None
+    prompt: Optional[str] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+    tools: Optional[List[Dict[str, Any]]] = None
+    add_generation_prompt: bool = False
+    scope: str = "private"  # "private" | "shared" (advisory; enforcement is host-dependent)
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+    def normalized(self) -> "PromptCacheModule":
+        module_id = str(self.module_id or "").strip()
+        system_prompt = str(self.system_prompt).strip() if isinstance(self.system_prompt, str) and self.system_prompt else None
+        prompt = str(self.prompt).strip() if isinstance(self.prompt, str) and self.prompt else None
+        messages = None
+        if isinstance(self.messages, list) and self.messages:
+            out: List[Dict[str, Any]] = []
+            for m in self.messages:
+                if isinstance(m, dict):
+                    out.append(dict(m))
+            messages = out or None
+        tools = None
+        if isinstance(self.tools, list) and self.tools:
+            out_tools: List[Dict[str, Any]] = []
+            for t in self.tools:
+                if isinstance(t, dict):
+                    out_tools.append(dict(t))
+            tools = out_tools or None
+        add_generation_prompt = bool(self.add_generation_prompt)
+        scope = str(self.scope or "private").strip().lower() or "private"
+        if scope not in {"private", "shared"}:
+            scope = "private"
+        meta = dict(self.meta or {})
+        return PromptCacheModule(
+            module_id=module_id,
+            system_prompt=system_prompt,
+            prompt=prompt,
+            messages=messages,
+            tools=tools,
+            add_generation_prompt=add_generation_prompt,
+            scope=scope,
+            meta=meta,
+        )
+
+    def fingerprint(self, *, version: int = 1) -> str:
+        """Stable module fingerprint for hierarchical cache keys (hex sha256)."""
+        mod = self.normalized()
+        payload = {
+            "v": int(version),
+            "module_id": mod.module_id,
+            "system_prompt": mod.system_prompt,
+            "prompt": mod.prompt,
+            "messages": mod.messages,
+            "tools": mod.tools,
+            "add_generation_prompt": bool(mod.add_generation_prompt),
+            "scope": mod.scope,
+        }
+        raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 class BaseProvider(AbstractCoreInterface, ABC):
@@ -1336,6 +1416,35 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """
         return False
 
+    # Provider-specific prompt cache backend hooks (optional)
+    #
+    # Providers that implement in-process KV caching (MLX, llama.cpp, etc.) can override these to enable
+    # `prompt_cache_update`, `prompt_cache_fork`, and `prompt_cache_prepare_modules`.
+    def _prompt_cache_backend_create(self) -> Optional[Any]:
+        return None
+
+    def _prompt_cache_backend_clone(self, cache_value: Any) -> Optional[Any]:
+        _ = cache_value
+        return None
+
+    def _prompt_cache_backend_append(
+        self,
+        cache_value: Any,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        **kwargs,
+    ) -> bool:
+        _ = (cache_value, prompt, messages, system_prompt, tools, add_generation_prompt, kwargs)
+        return False
+
+    def _prompt_cache_backend_token_count(self, cache_value: Any) -> Optional[int]:
+        _ = cache_value
+        return None
+
     def _normalize_prompt_cache_key(self, key: Any) -> Optional[str]:
         if not isinstance(key, str):
             return None
@@ -1353,32 +1462,240 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
     def get_prompt_cache_stats(self) -> Dict[str, Any]:
         """Return basic prompt cache stats (in-process store only)."""
-        return self._prompt_cache_store.stats()
+        stats = self._prompt_cache_store.stats()
+        stats["default_key"] = self._default_prompt_cache_key
+        return stats
 
     def prompt_cache_set(self, key: str, *, make_default: bool = True, **kwargs) -> bool:
         """Set the default prompt cache key for this provider instance.
 
         Provider-specific cache allocation/warming is implemented by subclasses when applicable.
         """
-        _ = kwargs
         normalized = self._normalize_prompt_cache_key(key)
         if normalized is None:
             return False
         if not self.supports_prompt_cache():
             return False
+        _ = kwargs
+        # Best-effort: allocate backend cache if the provider supports it.
+        if self._prompt_cache_store.get(normalized) is None:
+            created = self._prompt_cache_backend_create()
+            if created is not None:
+                try:
+                    self._prompt_cache_store.set(normalized, created, meta={"backend": "provider"})
+                except Exception:
+                    pass
         if make_default:
             self._default_prompt_cache_key = normalized
         return True
 
-    def prompt_cache_update(self, key: str, **kwargs) -> bool:
-        """Provider-specific prompt cache update hook (default: unsupported)."""
-        _ = kwargs
+    def prompt_cache_update(
+        self,
+        key: str,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        ttl_s: Optional[float] = None,
+        **kwargs,
+    ) -> bool:
+        """Append new prompt context into an existing cache key (best-effort).
+
+        Semantics:
+        - Local runtimes can implement true KV prefill updates (append-only).
+        - Remote providers typically cannot be “pre-filled” explicitly; they may ignore this.
+
+        Arguments are intentionally similar to `generate()` so higher-level code can reuse its own
+        prompt/module construction logic.
+        """
         normalized = self._normalize_prompt_cache_key(key)
         if normalized is None:
             return False
         if not self.supports_prompt_cache():
             return False
-        return False
+
+        # Ensure the cache exists if the provider can allocate a backend cache object.
+        cache_value = self._prompt_cache_store.get(normalized)
+        if cache_value is None:
+            if not self.prompt_cache_set(normalized, make_default=False):
+                return False
+            cache_value = self._prompt_cache_store.get(normalized)
+            if cache_value is None:
+                return False
+
+        ok = self._prompt_cache_backend_append(
+            cache_value,
+            prompt=str(prompt or ""),
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            add_generation_prompt=bool(add_generation_prompt),
+            **kwargs,
+        )
+        if not ok:
+            return False
+
+        # Update TTL/metadata best-effort.
+        if ttl_s is not None:
+            try:
+                meta = self._prompt_cache_store.meta(normalized) or {}
+                self._prompt_cache_store.set(normalized, cache_value, ttl_s=ttl_s, meta=meta)
+            except Exception:
+                pass
+        return True
+
+    def prompt_cache_fork(
+        self,
+        from_key: str,
+        to_key: str,
+        *,
+        make_default: bool = False,
+        ttl_s: Optional[float] = None,
+        **kwargs,
+    ) -> bool:
+        """Create a new cache key by cloning another cache (best-effort).
+
+        This is the primitive needed for hierarchical/module caches:
+        - build stable shared prefixes (persona, memory blueprints, tool schemas)
+        - fork them into per-session caches that can be appended/mutated safely.
+        """
+        _ = kwargs
+        src = self._normalize_prompt_cache_key(from_key)
+        dst = self._normalize_prompt_cache_key(to_key)
+        if src is None or dst is None:
+            return False
+        if not self.supports_prompt_cache():
+            return False
+
+        src_value = self._prompt_cache_store.get(src)
+        if src_value is None:
+            return False
+
+        cloned = self._prompt_cache_backend_clone(src_value)
+        if cloned is None:
+            return False
+
+        try:
+            meta = self._prompt_cache_store.meta(src) or {}
+            meta = dict(meta)
+            meta.setdefault("forked_from", src)
+            self._prompt_cache_store.set(dst, cloned, ttl_s=ttl_s, meta=meta)
+        except Exception:
+            return False
+
+        if make_default:
+            self._default_prompt_cache_key = dst
+        return True
+
+    def prompt_cache_prepare_modules(
+        self,
+        *,
+        namespace: str,
+        modules: List[Union[PromptCacheModule, Dict[str, Any]]],
+        make_default: bool = False,
+        ttl_s: Optional[float] = None,
+        version: int = 1,
+    ) -> Dict[str, Any]:
+        """Ensure hierarchical prefix caches exist for an ordered module list (best-effort).
+
+        This builds immutable prefix caches (by derived keys) so callers can:
+        - reuse stable sub-prefixes (persona, memory blueprints, etc.)
+        - fork the final prefix into a per-session cache for incremental chat
+
+        Returns a JSON-serializable dict containing per-module derived keys.
+        """
+        ns = str(namespace or "").strip()
+        if not ns:
+            return {"supported": False, "error": "namespace required"}
+        if not self.supports_prompt_cache():
+            return {"supported": False, "error": "provider does not support prompt caching"}
+
+        normalized_modules: List[PromptCacheModule] = []
+        for m in modules or []:
+            if isinstance(m, PromptCacheModule):
+                normalized_modules.append(m.normalized())
+            elif isinstance(m, dict):
+                try:
+                    normalized_modules.append(PromptCacheModule(**m).normalized())
+                except Exception:
+                    continue
+
+        if not normalized_modules:
+            return {"supported": False, "error": "no modules provided"}
+
+        # Derive deterministic prefix keys per module boundary.
+        prefix_hash = hashlib.sha256(f"acore-prompt-cache:{int(version)}".encode("utf-8")).hexdigest()
+        derived: List[Dict[str, Any]] = []
+        keys: List[str] = []
+        for mod in normalized_modules:
+            prefix_hash = hashlib.sha256((prefix_hash + mod.fingerprint(version=version)).encode("utf-8")).hexdigest()
+            key = f"{ns}:{prefix_hash[:16]}"
+            keys.append(key)
+            derived.append({"module_id": mod.module_id, "cache_key": key, "module_hash": mod.fingerprint(version=version)})
+
+        # Find the longest existing prefix cache.
+        start_idx = -1
+        for i, key in enumerate(keys):
+            if self._prompt_cache_store.get(key) is None:
+                break
+            start_idx = i
+
+        # Start from existing prefix (clone to avoid mutating the stored snapshot).
+        current_cache: Optional[Any] = None
+        if start_idx >= 0:
+            existing = self._prompt_cache_store.get(keys[start_idx])
+            if existing is not None:
+                current_cache = self._prompt_cache_backend_clone(existing) or None
+
+        # If we have no starting cache, start from empty backend cache.
+        if current_cache is None:
+            current_cache = self._prompt_cache_backend_create()
+            if current_cache is None:
+                return {"supported": False, "error": "provider does not implement in-process cache backend"}
+
+        # Build missing caches.
+        for j in range(start_idx + 1, len(keys)):
+            mod = normalized_modules[j]
+            ok = self._prompt_cache_backend_append(
+                current_cache,
+                prompt=str(mod.prompt or ""),
+                messages=mod.messages,
+                system_prompt=mod.system_prompt,
+                tools=mod.tools,
+                add_generation_prompt=bool(mod.add_generation_prompt),
+            )
+            if not ok:
+                return {"supported": False, "error": f"failed to append module '{mod.module_id}'"}
+
+            snapshot = self._prompt_cache_backend_clone(current_cache) or None
+            if snapshot is None:
+                return {"supported": False, "error": "provider does not support cache cloning"}
+
+            meta = {
+                "namespace": ns,
+                "module_id": mod.module_id,
+                "module_hash": mod.fingerprint(version=version),
+                "index": j,
+                "backend": "provider",
+            }
+            tok = self._prompt_cache_backend_token_count(snapshot)
+            if isinstance(tok, int) and tok >= 0:
+                meta["token_count"] = tok
+
+            self._prompt_cache_store.set(keys[j], snapshot, ttl_s=ttl_s, meta=meta)
+
+        if make_default:
+            self._default_prompt_cache_key = keys[-1]
+
+        return {
+            "supported": True,
+            "namespace": ns,
+            "version": int(version),
+            "modules": derived,
+            "final_cache_key": keys[-1],
+        }
 
     def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
         """Clear prompt caches for this provider instance (best-effort)."""

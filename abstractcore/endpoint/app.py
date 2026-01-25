@@ -62,6 +62,41 @@ class ChatCompletionRequest(BaseModel):
     prompt_cache_key: Optional[str] = None
 
 
+class PromptCacheSetRequest(BaseModel):
+    key: str = Field(description="Prompt cache key to create/select")
+    make_default: bool = Field(default=True, description="Set this key as the default for subsequent calls")
+    ttl_s: Optional[float] = Field(default=None, description="Optional in-process TTL (seconds) for this key")
+
+
+class PromptCacheUpdateRequest(BaseModel):
+    key: str = Field(description="Prompt cache key to update/append into")
+    prompt: Optional[str] = Field(default=None, description="Raw prompt text (treated as a user message for chat templates)")
+    messages: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional message list to append (provider-dependent)")
+    system_prompt: Optional[str] = Field(default=None, description="Optional system prompt to append")
+    tools: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional tool definitions to append")
+    add_generation_prompt: bool = Field(default=False, description="If true, append an assistant preamble (backend-dependent)")
+    ttl_s: Optional[float] = Field(default=None, description="Optional TTL update (seconds)")
+
+
+class PromptCacheForkRequest(BaseModel):
+    from_key: str = Field(description="Source prompt cache key")
+    to_key: str = Field(description="Destination prompt cache key")
+    make_default: bool = Field(default=False, description="Set the new key as default")
+    ttl_s: Optional[float] = Field(default=None, description="Optional TTL for the new key (seconds)")
+
+
+class PromptCacheClearRequest(BaseModel):
+    key: Optional[str] = Field(default=None, description="If omitted, clears all in-process caches for this worker")
+
+
+class PromptCachePrepareModulesRequest(BaseModel):
+    namespace: str = Field(description="Namespace used as a stable prefix for derived keys (e.g. tenant_id:model_id)")
+    modules: List[Dict[str, Any]] = Field(description="Ordered list of cache modules (see abstractcore.providers.base.PromptCacheModule)")
+    make_default: bool = Field(default=False, description="Set the final derived key as default")
+    ttl_s: Optional[float] = Field(default=None, description="Optional TTL for derived keys (seconds)")
+    version: int = Field(default=1, description="Hash version for key derivation (bump on formatting changes)")
+
+
 def _extract_system_prompt(messages: List[ChatMessage]) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     system_parts: List[str] = []
     out: List[Dict[str, Any]] = []
@@ -160,6 +195,9 @@ def create_app(
     created_at = int(time.time())
     model_id = getattr(provider, "model", model or "unknown")
 
+    def _has_cache_api() -> bool:
+        return bool(getattr(provider, "supports_prompt_cache", lambda: False)())
+
     @app.get("/health")
     def health():
         return {"status": "healthy", "model": model_id}
@@ -177,6 +215,90 @@ def create_app(
                 }
             ],
         }
+
+    @app.get("/acore/prompt_cache/stats")
+    def prompt_cache_stats():
+        if not _has_cache_api() or not hasattr(provider, "get_prompt_cache_stats"):
+            return {"supported": False, "error": "provider does not expose prompt cache stats"}
+        with lock:
+            try:
+                return {"supported": True, "stats": provider.get_prompt_cache_stats()}  # type: ignore[no-any-return]
+            except Exception as e:
+                return {"supported": False, "error": str(e)}
+
+    @app.post("/acore/prompt_cache/set")
+    def prompt_cache_set(req: PromptCacheSetRequest):
+        if not _has_cache_api() or not hasattr(provider, "prompt_cache_set"):
+            return {"supported": False, "error": "provider does not support prompt cache control plane"}
+        with lock:
+            try:
+                ok = provider.prompt_cache_set(req.key, make_default=req.make_default, ttl_s=req.ttl_s)  # type: ignore[arg-type]
+                return {"supported": True, "ok": bool(ok)}
+            except Exception as e:
+                return {"supported": False, "error": str(e)}
+
+    @app.post("/acore/prompt_cache/update")
+    def prompt_cache_update(req: PromptCacheUpdateRequest):
+        if not _has_cache_api() or not hasattr(provider, "prompt_cache_update"):
+            return {"supported": False, "error": "provider does not support prompt cache control plane"}
+        with lock:
+            try:
+                ok = provider.prompt_cache_update(  # type: ignore[arg-type]
+                    req.key,
+                    prompt=req.prompt or "",
+                    messages=req.messages,
+                    system_prompt=req.system_prompt,
+                    tools=req.tools,
+                    add_generation_prompt=bool(req.add_generation_prompt),
+                    ttl_s=req.ttl_s,
+                )
+                return {"supported": True, "ok": bool(ok)}
+            except Exception as e:
+                return {"supported": False, "error": str(e)}
+
+    @app.post("/acore/prompt_cache/fork")
+    def prompt_cache_fork(req: PromptCacheForkRequest):
+        if not _has_cache_api() or not hasattr(provider, "prompt_cache_fork"):
+            return {"supported": False, "error": "provider does not support prompt cache control plane"}
+        with lock:
+            try:
+                ok = provider.prompt_cache_fork(  # type: ignore[arg-type]
+                    req.from_key,
+                    req.to_key,
+                    make_default=bool(req.make_default),
+                    ttl_s=req.ttl_s,
+                )
+                return {"supported": True, "ok": bool(ok)}
+            except Exception as e:
+                return {"supported": False, "error": str(e)}
+
+    @app.post("/acore/prompt_cache/clear")
+    def prompt_cache_clear(req: PromptCacheClearRequest):
+        if not _has_cache_api() or not hasattr(provider, "prompt_cache_clear"):
+            return {"supported": False, "error": "provider does not support prompt cache control plane"}
+        with lock:
+            try:
+                ok = provider.prompt_cache_clear(req.key)  # type: ignore[arg-type]
+                return {"supported": True, "ok": bool(ok)}
+            except Exception as e:
+                return {"supported": False, "error": str(e)}
+
+    @app.post("/acore/prompt_cache/prepare_modules")
+    def prompt_cache_prepare_modules(req: PromptCachePrepareModulesRequest):
+        if not _has_cache_api() or not hasattr(provider, "prompt_cache_prepare_modules"):
+            return {"supported": False, "error": "provider does not support prompt cache module preparation"}
+        with lock:
+            try:
+                result = provider.prompt_cache_prepare_modules(  # type: ignore[arg-type]
+                    namespace=req.namespace,
+                    modules=req.modules,
+                    make_default=bool(req.make_default),
+                    ttl_s=req.ttl_s,
+                    version=int(req.version),
+                )
+                return result
+            except Exception as e:
+                return {"supported": False, "error": str(e)}
 
     @app.post("/v1/chat/completions")
     def chat_completions(request: ChatCompletionRequest):
@@ -334,4 +456,3 @@ def main(argv: Optional[List[str]] = None) -> None:
 
 if __name__ == "__main__":  # pragma: no cover
     main()
-

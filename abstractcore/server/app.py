@@ -34,6 +34,7 @@ import argparse
 import sys
 import logging
 import threading
+import httpx
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
 from fastapi import FastAPI, HTTPException, Request, Query, Body
@@ -507,6 +508,13 @@ class ChatCompletionRequest(BaseModel):
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, "
                     "increasing the model's likelihood to talk about new topics.",
         example=0.0
+    )
+
+    # OpenAI prompt caching (2025+): forwarded best-effort by providers that support it.
+    prompt_cache_key: Optional[str] = Field(
+        default=None,
+        description="Provider-specific prompt cache key for prefix caching (best-effort).",
+        example="tenantA:session123"
     )
 
     # Agent format control (AppV2 feature)
@@ -1115,6 +1123,199 @@ async def health_check():
             "abstractcore-integration"
         ]
     }
+
+
+class PromptCacheProxyBase(BaseModel):
+    """Proxy configuration for forwarding AbstractCore prompt-cache control-plane calls."""
+
+    base_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Upstream base URL for an AbstractEndpoint instance. Can include an OpenAI-style `/v1` suffix "
+            "(it will be stripped when proxying `/acore/prompt_cache/*`)."
+        ),
+        example="http://localhost:8001/v1",
+    )
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Optional upstream API key (sent as Authorization: Bearer ...).",
+        example=None,
+    )
+
+
+class PromptCacheSetProxyRequest(PromptCacheProxyBase):
+    key: str
+    make_default: bool = True
+    ttl_s: Optional[float] = None
+
+
+class PromptCacheUpdateProxyRequest(PromptCacheProxyBase):
+    key: str
+    prompt: Optional[str] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+    system_prompt: Optional[str] = None
+    tools: Optional[List[Dict[str, Any]]] = None
+    add_generation_prompt: bool = False
+    ttl_s: Optional[float] = None
+
+
+class PromptCacheForkProxyRequest(PromptCacheProxyBase):
+    from_key: str
+    to_key: str
+    make_default: bool = False
+    ttl_s: Optional[float] = None
+
+
+class PromptCacheClearProxyRequest(PromptCacheProxyBase):
+    key: Optional[str] = None
+
+
+class PromptCachePrepareModulesProxyRequest(PromptCacheProxyBase):
+    namespace: str
+    modules: List[Dict[str, Any]]
+    make_default: bool = False
+    ttl_s: Optional[float] = None
+    version: int = 1
+
+
+def _normalize_control_plane_base_url(base_url: str) -> str:
+    u = str(base_url or "").strip().rstrip("/")
+    if u.endswith("/v1"):
+        u = u[:-3]
+    return u.rstrip("/")
+
+
+def _proxy_prompt_cache_request(
+    *,
+    base_url: Optional[str],
+    api_key: Optional[str],
+    method: str,
+    path: str,
+    json_body: Optional[Dict[str, Any]] = None,
+    timeout_s: float = 30.0,
+) -> Dict[str, Any]:
+    if not isinstance(base_url, str) or not base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url is required to proxy prompt cache control plane calls (use AbstractEndpoint)",
+        }
+
+    upstream_root = _normalize_control_plane_base_url(base_url)
+    url = f"{upstream_root}{path}"
+
+    headers: Dict[str, str] = {}
+    if isinstance(api_key, str) and api_key.strip():
+        headers["Authorization"] = f"Bearer {api_key.strip()}"
+
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            if method.upper() == "GET":
+                resp = client.get(url, headers=headers)
+            else:
+                resp = client.post(url, headers=headers, json=json_body or {})
+    except Exception as e:
+        return {"supported": False, "error": str(e)}
+
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = {"error": resp.text}
+
+    if resp.status_code >= 400:
+        return {
+            "supported": False,
+            "status_code": int(resp.status_code),
+            "error": payload,
+            "upstream": url,
+        }
+
+    if isinstance(payload, dict):
+        return payload
+    return {"supported": True, "data": payload}
+
+
+@app.get("/acore/prompt_cache/stats")
+def acore_prompt_cache_stats(
+    base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
+    api_key: Optional[str] = Query(None, description="Optional upstream API key"),
+):
+    return _proxy_prompt_cache_request(
+        base_url=base_url,
+        api_key=api_key,
+        method="GET",
+        path="/acore/prompt_cache/stats",
+        json_body=None,
+    )
+
+
+@app.post("/acore/prompt_cache/set")
+def acore_prompt_cache_set(req: PromptCacheSetProxyRequest):
+    body = req.model_dump(exclude_none=True)
+    base_url = body.pop("base_url", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_prompt_cache_request(
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/prompt_cache/set",
+        json_body=body,
+    )
+
+
+@app.post("/acore/prompt_cache/update")
+def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest):
+    body = req.model_dump(exclude_none=True)
+    base_url = body.pop("base_url", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_prompt_cache_request(
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/prompt_cache/update",
+        json_body=body,
+    )
+
+
+@app.post("/acore/prompt_cache/fork")
+def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest):
+    body = req.model_dump(exclude_none=True)
+    base_url = body.pop("base_url", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_prompt_cache_request(
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/prompt_cache/fork",
+        json_body=body,
+    )
+
+
+@app.post("/acore/prompt_cache/clear")
+def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest):
+    body = req.model_dump(exclude_none=True)
+    base_url = body.pop("base_url", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_prompt_cache_request(
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/prompt_cache/clear",
+        json_body=body,
+    )
+
+
+@app.post("/acore/prompt_cache/prepare_modules")
+def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyRequest):
+    body = req.model_dump(exclude_none=True)
+    base_url = body.pop("base_url", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_prompt_cache_request(
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/prompt_cache/prepare_modules",
+        json_body=body,
+    )
 
 @app.get("/v1/models")
 async def list_models(
@@ -2268,6 +2469,8 @@ async def process_chat_completion(
             gen_kwargs["frequency_penalty"] = request.frequency_penalty
         if request.presence_penalty:
             gen_kwargs["presence_penalty"] = request.presence_penalty
+        if isinstance(request.prompt_cache_key, str) and request.prompt_cache_key.strip():
+            gen_kwargs["prompt_cache_key"] = request.prompt_cache_key.strip()
 
         # Generate response
         # Only cleanup files created by this request (with our specific prefixes)
