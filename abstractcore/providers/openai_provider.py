@@ -137,6 +137,11 @@ class OpenAIProvider(BaseProvider):
             "stream": stream
         }
 
+        # Prompt caching (OpenAI): best-effort pass-through via `prompt_cache_key`.
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+            call_params["prompt_cache_key"] = prompt_cache_key.strip()
+
         # Add parameters that are supported by this model
         if not self._is_reasoning_model():
             # Reasoning models (o1, gpt-5) don't support many parameters
@@ -282,6 +287,11 @@ class OpenAIProvider(BaseProvider):
             "messages": api_messages,
             "stream": stream
         }
+
+        # Prompt caching (OpenAI): best-effort pass-through via `prompt_cache_key`.
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+            call_params["prompt_cache_key"] = prompt_cache_key.strip()
 
         # Add parameters that are supported by this model
         if not self._is_reasoning_model():
@@ -638,6 +648,10 @@ class OpenAIProvider(BaseProvider):
                     )
             else:
                 yield chunk_response
+
+    def supports_prompt_cache(self) -> bool:
+        """OpenAI supports prompt caching via `prompt_cache_key` (server-managed)."""
+        return True
 
     def get_capabilities(self) -> List[str]:
         """Get list of capabilities supported by this provider"""

@@ -9,7 +9,8 @@ import warnings
 import json
 import re
 import socket
-from collections import deque
+from collections import deque, OrderedDict
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
 from abc import ABC, abstractmethod
 
@@ -40,6 +41,99 @@ from ..core.retry import RetryManager, RetryConfig
 if TYPE_CHECKING:  # pragma: no cover
     # Imported for type checking only to avoid hard dependencies in minimal installs.
     from ..media.types import MediaContent
+
+
+@dataclass
+class _PromptCacheEntry:
+    value: Any
+    created_at_s: float
+    last_accessed_at_s: float
+    ttl_s: Optional[float] = None
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+class PromptCacheStore:
+    """Best-effort in-process prompt cache store (LRU + optional TTL).
+
+    Providers can store arbitrary backend-specific cache objects keyed by a caller-provided string
+    (`prompt_cache_key`). This is primarily useful for local inference backends (MLX, llama.cpp).
+
+    Notes:
+    - This store is intentionally simple and in-process only.
+    - Callers should treat prompt caches as potentially sensitive (they contain user prompt state).
+    """
+
+    def __init__(self, *, max_entries: int = 32, default_ttl_s: Optional[float] = None):
+        self._max_entries = int(max_entries) if max_entries and int(max_entries) > 0 else 32
+        self._default_ttl_s = default_ttl_s if default_ttl_s is None else float(default_ttl_s)
+        self._entries: "OrderedDict[str, _PromptCacheEntry]" = OrderedDict()
+
+    def _is_expired(self, entry: _PromptCacheEntry) -> bool:
+        ttl_s = entry.ttl_s if entry.ttl_s is not None else self._default_ttl_s
+        if ttl_s is None:
+            return False
+        return (time.time() - entry.last_accessed_at_s) > float(ttl_s)
+
+    def get(self, key: str) -> Optional[Any]:
+        if not isinstance(key, str) or not key.strip():
+            return None
+        key = key.strip()
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        if self._is_expired(entry):
+            self.delete(key)
+            return None
+        entry.last_accessed_at_s = time.time()
+        self._entries.move_to_end(key)
+        return entry.value
+
+    def set(
+        self,
+        key: str,
+        value: Any,
+        *,
+        ttl_s: Optional[float] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("prompt cache key must be a non-empty string")
+        key = key.strip()
+        now = time.time()
+        self._entries[key] = _PromptCacheEntry(
+            value=value,
+            created_at_s=now,
+            last_accessed_at_s=now,
+            ttl_s=ttl_s,
+            meta=dict(meta or {}),
+        )
+        self._entries.move_to_end(key)
+        while len(self._entries) > self._max_entries:
+            self._entries.popitem(last=False)
+
+    def delete(self, key: str) -> bool:
+        if not isinstance(key, str) or not key.strip():
+            return False
+        key = key.strip()
+        return self._entries.pop(key, None) is not None
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+    def stats(self) -> Dict[str, Any]:
+        # Opportunistically purge expired entries.
+        expired = []
+        for k, v in self._entries.items():
+            if self._is_expired(v):
+                expired.append(k)
+        for k in expired:
+            self.delete(k)
+
+        return {
+            "entries": len(self._entries),
+            "max_entries": self._max_entries,
+            "default_ttl_s": self._default_ttl_s,
+        }
 
 
 class BaseProvider(AbstractCoreInterface, ABC):
@@ -135,6 +229,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Setup interaction tracing
         self.enable_tracing = kwargs.get('enable_tracing', False)
         self._traces = deque(maxlen=kwargs.get('max_traces', 100))  # Ring buffer for memory efficiency
+
+        # Prompt caching (best-effort; provider-specific behavior).
+        #
+        # - Remote providers (OpenAI): supports `prompt_cache_key` pass-through (server-managed caching).
+        # - Local runtimes (MLX / llama.cpp): can store KV/prefix caches in-process keyed by `prompt_cache_key`.
+        self._default_prompt_cache_key: Optional[str] = None
+        prompt_cache_max_entries = kwargs.get("prompt_cache_max_entries", kwargs.get("prompt_cache_max_items", 32))
+        prompt_cache_ttl_s = kwargs.get("prompt_cache_ttl_s", None)
+        self._prompt_cache_store = PromptCacheStore(
+            max_entries=int(prompt_cache_max_entries) if prompt_cache_max_entries is not None else 32,
+            default_ttl_s=prompt_cache_ttl_s,
+        )
 
         # Provider created successfully - no event emission needed
         # (The simplified event system focuses on generation and tool events only)
@@ -468,6 +574,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # That translation is a provider integration concern, so keep it in AbstractCore.
         if "max_output_tokens" not in kwargs and "max_tokens" in kwargs and kwargs.get("max_tokens") is not None:
             kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
+
+        # Prompt caching: apply a default `prompt_cache_key` if configured.
+        self._apply_default_prompt_cache_key(kwargs)
 
         # Handle structured output request
         if response_model is not None:
@@ -1216,6 +1325,76 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def _update_http_client_timeout(self) -> None:
         """Update HTTP client timeout if the provider has one. Override in subclasses."""
         pass
+
+    # Prompt cache management methods
+    def supports_prompt_cache(self) -> bool:
+        """Return True if this provider supports best-effort prompt caching.
+
+        Semantics differ by provider:
+        - Remote providers (OpenAI): `prompt_cache_key` is forwarded; cache is managed server-side.
+        - Local providers (MLX / llama.cpp): in-process KV/prefix caches can be retained across calls.
+        """
+        return False
+
+    def _normalize_prompt_cache_key(self, key: Any) -> Optional[str]:
+        if not isinstance(key, str):
+            return None
+        key = key.strip()
+        return key if key else None
+
+    def _apply_default_prompt_cache_key(self, kwargs: Dict[str, Any]) -> None:
+        # Explicit caller override wins (even if None / empty to disable).
+        if "prompt_cache_key" in kwargs:
+            kwargs["prompt_cache_key"] = self._normalize_prompt_cache_key(kwargs.get("prompt_cache_key"))
+            return
+
+        if self._default_prompt_cache_key and self.supports_prompt_cache():
+            kwargs["prompt_cache_key"] = self._default_prompt_cache_key
+
+    def get_prompt_cache_stats(self) -> Dict[str, Any]:
+        """Return basic prompt cache stats (in-process store only)."""
+        return self._prompt_cache_store.stats()
+
+    def prompt_cache_set(self, key: str, *, make_default: bool = True, **kwargs) -> bool:
+        """Set the default prompt cache key for this provider instance.
+
+        Provider-specific cache allocation/warming is implemented by subclasses when applicable.
+        """
+        _ = kwargs
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            return False
+        if not self.supports_prompt_cache():
+            return False
+        if make_default:
+            self._default_prompt_cache_key = normalized
+        return True
+
+    def prompt_cache_update(self, key: str, **kwargs) -> bool:
+        """Provider-specific prompt cache update hook (default: unsupported)."""
+        _ = kwargs
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            return False
+        if not self.supports_prompt_cache():
+            return False
+        return False
+
+    def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
+        """Clear prompt caches for this provider instance (best-effort)."""
+        normalized = self._normalize_prompt_cache_key(key) if key is not None else None
+        if not self.supports_prompt_cache():
+            return False
+
+        if normalized is None:
+            self._default_prompt_cache_key = None
+            self._prompt_cache_store.clear()
+            return True
+
+        cleared = self._prompt_cache_store.delete(normalized)
+        if self._default_prompt_cache_key == normalized:
+            self._default_prompt_cache_key = None
+        return cleared
 
     # Memory management methods
     @abstractmethod
@@ -2064,6 +2243,7 @@ Please provide a structured response."""
         Returns:
             GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
         """
+        self._apply_default_prompt_cache_key(kwargs)
         response = await self._agenerate_internal(
             prompt, messages, system_prompt, tools, media, stream, **kwargs
         )

@@ -187,6 +187,61 @@ class HuggingFaceProvider(BaseProvider):
             if hasattr(self, 'logger'):
                 self.logger.warning(f"Error during unload: {e}")
 
+    def supports_prompt_cache(self) -> bool:
+        """GGUF backends can use llama.cpp prompt caching (prefix state cache)."""
+        return getattr(self, "model_type", None) == "gguf"
+
+    def prompt_cache_set(
+        self,
+        key: str,
+        *,
+        make_default: bool = True,
+        ttl_s: Optional[float] = None,
+        capacity_bytes: Optional[int] = None,
+        **kwargs,
+    ) -> bool:
+        """Create/reset a llama.cpp prompt cache for the given key (GGUF only)."""
+        _ = kwargs
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            return False
+        if not self.supports_prompt_cache():
+            return False
+        if not super().prompt_cache_set(normalized, make_default=make_default):
+            return False
+
+        try:
+            from llama_cpp.llama_cache import LlamaRAMCache
+        except Exception:
+            return False
+
+        cap = int(capacity_bytes) if isinstance(capacity_bytes, int) and capacity_bytes > 0 else (512 << 20)
+        cache_obj = LlamaRAMCache(capacity_bytes=cap)
+
+        try:
+            self._prompt_cache_store.set(normalized, cache_obj, ttl_s=ttl_s, meta={"backend": "llama_cpp"})
+        except Exception:
+            return False
+
+        # Best-effort: activate this cache on the shared llama instance.
+        try:
+            if getattr(self, "llm", None) is not None and hasattr(self.llm, "set_cache"):
+                self.llm.set_cache(cache_obj)
+        except Exception:
+            pass
+
+        return True
+
+    def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
+        """Clear llama.cpp prompt caches (GGUF only; best-effort)."""
+        cleared = super().prompt_cache_clear(key)
+        try:
+            if getattr(self, "llm", None) is not None and hasattr(self.llm, "set_cache"):
+                self.llm.set_cache(None)
+        except Exception:
+            pass
+        return cleared
+
     def _is_gguf_model(self, model: str) -> bool:
         """Detect if the model is a GGUF model"""
         # Check if it's a .gguf file path
@@ -1229,6 +1284,27 @@ class HuggingFaceProvider(BaseProvider):
             user_message_content = prompt
 
         chat_messages.append({"role": "user", "content": user_message_content})
+
+        # Prompt caching (GGUF/llama.cpp): best-effort per-key cache selection.
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+            key = prompt_cache_key.strip()
+            cache_obj = self._prompt_cache_store.get(key)
+            if cache_obj is None:
+                self.prompt_cache_set(key, make_default=False)
+                cache_obj = self._prompt_cache_store.get(key)
+            try:
+                if cache_obj is not None and hasattr(self.llm, "set_cache"):
+                    self.llm.set_cache(cache_obj)
+            except Exception:
+                pass
+        else:
+            # Disable cache for this request when no key is provided.
+            try:
+                if hasattr(self.llm, "set_cache"):
+                    self.llm.set_cache(None)
+            except Exception:
+                pass
 
         # Prepare parameters using unified system
         unified_kwargs = self._prepare_generation_kwargs(**kwargs)

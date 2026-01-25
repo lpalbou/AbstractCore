@@ -70,6 +70,9 @@ abstractcore-config = "abstractcore.config.main:main"
 # Interactive Chat CLI (REPL for LLM interaction)
 abstractcore-chat = "abstractcore.utils.cli:main"
 
+# Single-model OpenAI-compatible endpoint (local inference hosting)
+abstractcore-endpoint = "abstractcore.endpoint.app:main"
+
 # Built-in Applications
 summarizer = "abstractcore.apps.summarizer:main"
 abstractcore-summarizer = "abstractcore.apps.summarizer:main"
@@ -287,6 +290,7 @@ packages = [
     "abstractcore.assets",
     "abstractcore.mcp",
     "abstractcore.server",
+    "abstractcore.endpoint",
     "abstractcore.apps",
     "abstractcore.processing",
     "abstractcore.exceptions",

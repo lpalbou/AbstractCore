@@ -4,6 +4,18 @@ Test script for AbstractCore server media integration.
 Tests OpenAI-compatible endpoints with media attachments.
 """
 
+import os
+
+import pytest
+
+# This module exercises a *running* AbstractCore server + a real provider backend.
+# Keep it opt-in to avoid hanging CI/dev runs.
+if os.getenv("ABSTRACTCORE_E2E") != "1":  # pragma: no cover
+    pytest.skip(
+        "Server media integration tests are opt-in (set ABSTRACTCORE_E2E=1).",
+        allow_module_level=True,
+    )
+
 import json
 import base64
 import requests
@@ -59,7 +71,7 @@ def test_openai_content_array():
     }
 
     try:
-        response = requests.post(f"{BASE_URL}/v1/chat/completions", json=payload)
+        response = requests.post(f"{BASE_URL}/v1/chat/completions", json=payload, timeout=30)
 
         if response.status_code == 200:
             result = response.json()
@@ -96,7 +108,7 @@ def test_abstractcore_filename_syntax():
     }
 
     try:
-        response = requests.post(f"{BASE_URL}/v1/chat/completions", json=payload)
+        response = requests.post(f"{BASE_URL}/v1/chat/completions", json=payload, timeout=30)
 
         if response.status_code == 200:
             result = response.json()
@@ -149,7 +161,9 @@ def test_streaming_with_media():
     }
 
     try:
-        response = requests.post(f"{BASE_URL}/v1/chat/completions", json=payload, stream=True)
+        response = requests.post(
+            f"{BASE_URL}/v1/chat/completions", json=payload, stream=True, timeout=30
+        )
 
         if response.status_code == 200:
             print("✅ Streaming with media: SUCCESS")
@@ -207,7 +221,7 @@ def test_error_handling():
     }
 
     try:
-        response = requests.post(f"{BASE_URL}/v1/chat/completions", json=payload)
+        response = requests.post(f"{BASE_URL}/v1/chat/completions", json=payload, timeout=30)
 
         if response.status_code == 400:
             error_data = response.json()

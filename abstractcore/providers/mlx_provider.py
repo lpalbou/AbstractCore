@@ -50,6 +50,59 @@ class MLXProvider(BaseProvider):
         self.tokenizer = None
         self._load_model()
 
+    def supports_prompt_cache(self) -> bool:
+        """MLX supports KV prompt caches via `mlx_lm.models.cache`."""
+        return True
+
+    def prompt_cache_set(
+        self,
+        key: str,
+        *,
+        make_default: bool = True,
+        warm_prompt: Optional[str] = None,
+        ttl_s: Optional[float] = None,
+        **kwargs,
+    ) -> bool:
+        """Create/reset a prompt cache for the given key (best-effort)."""
+        _ = kwargs
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            return False
+        if not super().prompt_cache_set(normalized, make_default=make_default):
+            return False
+
+        try:
+            from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
+        except Exception:
+            return False
+
+        cache_obj = make_prompt_cache(self.llm)
+
+        # Best-effort warm: MLX-LM always generates at least 1 token, so we trim it back.
+        if isinstance(warm_prompt, str) and warm_prompt.strip():
+            try:
+                gen = self.stream_generate_fn(
+                    self.llm,
+                    self.tokenizer,
+                    prompt=warm_prompt,
+                    prompt_cache=cache_obj,
+                    max_tokens=1,
+                )
+                for _ in gen:
+                    break
+                try:
+                    trim_prompt_cache(cache_obj, 1)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        try:
+            self._prompt_cache_store.set(normalized, cache_obj, ttl_s=ttl_s, meta={"backend": "mlx"})
+        except Exception:
+            return False
+        return True
+
     def _load_model(self):
         """Load MLX model and tokenizer"""
         try:
@@ -266,12 +319,30 @@ class MLXProvider(BaseProvider):
         temperature = generation_kwargs.get("temperature", self.temperature)
         top_p = kwargs.get("top_p", 0.9)
         seed_value = generation_kwargs.get("seed")
+        prompt_cache = None
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+            prompt_cache = self._prompt_cache_store.get(prompt_cache_key.strip())
+            if prompt_cache is None:
+                self.prompt_cache_set(prompt_cache_key.strip(), make_default=False)
+                prompt_cache = self._prompt_cache_store.get(prompt_cache_key.strip())
 
         try:
             if stream:
-                return self._stream_generate_with_tools(full_prompt, max_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'), seed_value)
+                return self._stream_generate_with_tools(
+                    full_prompt,
+                    max_tokens,
+                    temperature,
+                    top_p,
+                    tools,
+                    kwargs.get('tool_call_tags'),
+                    seed_value,
+                    prompt_cache,
+                )
             else:
-                response = self._single_generate(full_prompt, max_tokens, temperature, top_p, seed_value)
+                response = self._single_generate(
+                    full_prompt, max_tokens, temperature, top_p, seed_value, prompt_cache
+                )
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:
@@ -334,7 +405,15 @@ class MLXProvider(BaseProvider):
 
         return full_prompt
 
-    def _single_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float, seed: Optional[int] = None) -> GenerateResponse:
+    def _single_generate(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        seed: Optional[int] = None,
+        prompt_cache: Optional[Any] = None,
+    ) -> GenerateResponse:
         """Generate single response"""
 
         # Handle seed parameter (MLX supports seed via mx.random.seed)
@@ -354,7 +433,8 @@ class MLXProvider(BaseProvider):
                 self.tokenizer,
                 prompt=prompt,
                 max_tokens=max_tokens,
-                verbose=False
+                verbose=False,
+                prompt_cache=prompt_cache,
             )
         except TypeError:
             try:
@@ -398,7 +478,16 @@ class MLXProvider(BaseProvider):
             "completion_tokens": output_tokens
         }
 
-    def _stream_generate(self, prompt: str, max_tokens: int, temperature: float, top_p: float, tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
+    def _stream_generate(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        tool_call_tags: Optional[str] = None,
+        seed: Optional[int] = None,
+        prompt_cache: Optional[Any] = None,
+    ) -> Iterator[GenerateResponse]:
         """Generate real streaming response using MLX stream_generate with tool tag rewriting support"""
         try:
             # Handle seed parameter (MLX supports seed via mx.random.seed)
@@ -422,7 +511,8 @@ class MLXProvider(BaseProvider):
                 self.llm,
                 self.tokenizer,
                 prompt,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                prompt_cache=prompt_cache,
             ):
                 # Each response has a .text attribute with the new token(s)
                 content = response.text
@@ -462,16 +552,25 @@ class MLXProvider(BaseProvider):
         return kwargs.get("max_output_tokens", self.max_output_tokens)
 
 
-    def _stream_generate_with_tools(self, full_prompt: str, max_tokens: int,
-                                   temperature: float, top_p: float,
-                                   tools: Optional[List[Dict[str, Any]]] = None,
-                                   tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
+    def _stream_generate_with_tools(
+        self,
+        full_prompt: str,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_call_tags: Optional[str] = None,
+        seed: Optional[int] = None,
+        prompt_cache: Optional[Any] = None,
+    ) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end"""
         collected_content = ""
 
         # Stream the response content
-        for chunk in self._stream_generate(full_prompt, max_tokens, temperature, top_p, tool_call_tags, seed):
-            collected_content += chunk.content
+        for chunk in self._stream_generate(
+            full_prompt, max_tokens, temperature, top_p, tool_call_tags, seed, prompt_cache
+        ):
+            collected_content += chunk.content or ""
             yield chunk
 
         # Handle tool execution if we have tools and content
