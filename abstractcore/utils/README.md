@@ -176,7 +176,7 @@ python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 python -m abstractcore.utils.cli --prompt "Question" --provider openai --model gpt-4o-mini
 ```
 
-**Commands**: `/save`, `/load`, `/facts`, `/judge`, `/intent`, `/history`, `/compact`, `/model`, `/system`, `/stream`, `/debug`, `/status`
+**Commands**: `/session`, `/cache`, `/save` (alias), `/load` (alias), `/facts`, `/judge`, `/intent`, `/history`, `/compact`, `/model`, `/system`, `/stream`, `/debug`, `/status`
 **Tools**: `list_files()`, `search_files()`, `read_file()`, `write_file()`, `execute_command()`
 **Attachments**: `"Analyze @screenshot.png"` (vision models), `"Read @file.txt"` (text processing)
 

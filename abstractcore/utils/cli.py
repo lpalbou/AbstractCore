@@ -29,7 +29,8 @@ import time
 import uuid
 import locale
 from datetime import datetime
-from typing import Optional, Any, Dict, Iterator
+from pathlib import Path
+from typing import Optional, Any, Dict, Iterator, List
 
 # Enable command history and arrow key navigation
 try:
@@ -46,6 +47,24 @@ except ImportError:
 from .. import create_llm, BasicSession
 from ..tools.common_tools import list_files, read_file, write_file, execute_command, search_files
 from ..processing import BasicExtractor, BasicJudge, BasicIntentAnalyzer
+
+
+class _NoPromptCacheProvider:
+    """Proxy that forces `prompt_cache_key=None` for every call (to avoid polluting KV caches)."""
+
+    def __init__(self, provider: Any):
+        self._provider = provider
+
+    def generate(self, *args: Any, **kwargs: Any):
+        kwargs["prompt_cache_key"] = None
+        return self._provider.generate(*args, **kwargs)
+
+    async def agenerate(self, *args: Any, **kwargs: Any):
+        kwargs["prompt_cache_key"] = None
+        return await self._provider.agenerate(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._provider, name)
 
 
 class SimpleCLI:
@@ -111,7 +130,7 @@ class SimpleCLI:
             print(f"📝 Model: {model}")
             print(f"🌊 Streaming: {'ON' if stream else 'OFF'} | 🐛 Debug: {'ON' if debug else 'OFF'}")
             print()
-            print("💬 Quick Commands: /help /save /load /status /history /quit")
+            print("💬 Quick Commands: /help /session /cache /status /history /quit")
             print("🛠️  Available Tools: list_files, search_files, read_file, write_file, execute_command")
             print()
             print("💡 Type '/help' for comprehensive command guide")
@@ -198,21 +217,25 @@ class SimpleCLI:
             print("                           • /system         - Show current prompt")
             print("                           • /system <text>  - Set new prompt")
             
-            print("\n💾 SESSION PERSISTENCE")
+            print("\n💾 SESSION & CACHE")
             print("─" * 50)
-            print("  /save <file> [options]   Save session with optional analytics")
-            print("                           • /save chat.json")
-            print("                           • /save analyzed --summary --assessment --facts")
-            print("  /save <file>.safetensors Save MLX KV prompt cache (fast resume)")
-            print("                           • /save chat_cache.safetensors")
+            print("  /session save <name> [options]  Save session to <name>.json with optional analytics")
+            print("                           • /session save chat")
+            print("                           • /session save analyzed --summary --assessment --facts")
             print("                           Options:")
             print("                             --summary     Generate conversation summary")
             print("                             --assessment  Evaluate conversation quality")
             print("                             --facts       Extract knowledge as facts")
-            print("  /load <file>             Load saved session (replaces current)")
-            print("                           • /load chat.json")
-            print("  /load <file>.safetensors Load MLX KV prompt cache (model-locked)")
-            print("                           • /load chat_cache.safetensors")
+            print("  /session load <name>            Load session from <name>.json (replaces current)")
+            print("                           • /session load chat")
+            print("  /session clear                  Clear session + cache (same as /clear)")
+            print("  /save /load                     Aliases for /session save|load (sessions only)")
+            print("  /cache save <name>              Save prompt/KV cache to <name>.safetensors (MLX only, model-locked)")
+            print("                           • /cache save chat_cache")
+            print("                             --q8          Quantize cache before saving (smaller, lossy)")
+            print("  /cache load <name>              Load prompt/KV cache from <name>.safetensors (MLX only, model-locked)")
+            print("                           • /cache load chat_cache")
+            print("  /cache clear                    Clear prompt cache only (KV mode rebuilds from transcript)")
             
             print("\n📊 ANALYTICS & INSIGHTS")
             print("─" * 50)
@@ -261,7 +284,7 @@ class SimpleCLI:
             print("  • Search inside files: 'Find all TODO comments in Python files'")
             print("  • Request file operations: 'Read the README.md file'")
             print("  • Attach files: 'What's in this image? @photo.jpg'")
-            print("  • Save important conversations: '/save project_discussion --summary'")
+            print("  • Save important conversations: '/session save project_discussion --summary'")
             print("  • Switch models for different tasks: '/model ollama:qwen3-coder:30b'")
             print("  • Use /status to check token usage and model capabilities")
             
@@ -492,19 +515,90 @@ class SimpleCLI:
                 else:
                     self.handle_system_show()
 
+        elif cmd.startswith('session'):
+            # /session save|load|clear ...
+            parts = cmd.split()
+            if len(parts) < 2:
+                print("❓ Usage: /session <save|load|clear> ...")
+                print("   Examples:")
+                print("     /session save my_conversation")
+                print("     /session save analyzed_session --summary --assessment --facts")
+                print("     /session load my_conversation")
+                print("     /session clear")
+                return True
+
+            action = parts[1].strip().lower()
+            if action == "save":
+                if len(parts) < 3:
+                    print("❓ Usage: /session save <name> [--summary] [--assessment] [--facts]")
+                    return True
+                filename = parts[2]
+                options = {
+                    'summary': '--summary' in parts[3:],
+                    'assessment': '--assessment' in parts[3:],
+                    'facts': '--facts' in parts[3:],
+                }
+                self.handle_save(filename, **options)
+                return True
+
+            if action == "load":
+                if len(parts) != 3:
+                    print("❓ Usage: /session load <name>")
+                    return True
+                self.handle_load(parts[2])
+                return True
+
+            if action == "clear":
+                self.handle_clear()
+                return True
+
+            print("❓ Usage: /session <save|load|clear> ...")
+            return True
+
+        elif cmd.startswith('cache'):
+            # /cache save|load|clear ...
+            parts = cmd.split()
+            if len(parts) < 2:
+                print("❓ Usage: /cache <save|load|clear> ...")
+                print("   Examples:")
+                print("     /cache save chat_cache")
+                print("     /cache load chat_cache")
+                print("     /cache clear")
+                return True
+
+            action = parts[1].strip().lower()
+            if action == "save":
+                if len(parts) < 3:
+                    print("❓ Usage: /cache save <name> [--q8]")
+                    return True
+                filename = parts[2]
+                self.handle_save_prompt_cache(filename, q8=("--q8" in parts[3:]))
+                return True
+
+            if action == "load":
+                if len(parts) != 3:
+                    print("❓ Usage: /cache load <name>")
+                    return True
+                self.handle_load_prompt_cache(parts[2])
+                return True
+
+            if action == "clear":
+                self.handle_cache_clear()
+                return True
+
+            print("❓ Usage: /cache <save|load|clear> ...")
+            return True
+
         elif cmd.startswith('save'):
             # Parse /save <file> [--summary] [--assessment] [--facts] command
             parts = cmd.split()
             if len(parts) < 2:
                 print("❓ Usage: /save <filename> [--summary] [--assessment] [--facts]")
-                print("   Example: /save my_conversation.json")
-                print("   Example: /save chat_cache.safetensors")
+                print("   Example: /save my_conversation")
+                print("   Hint: use /cache save <name> for prompt caches")
                 print("   Example: /save analyzed_session --summary --assessment --facts")
             else:
                 filename = parts[1]
-                if filename.endswith(".safetensors") or filename.endswith(".safetensor"):
-                    self.handle_save_prompt_cache(filename, q8=("--q8" in parts))
-                    return True
                 options = {
                     'summary': '--summary' in parts,
                     'assessment': '--assessment' in parts,
@@ -517,13 +611,10 @@ class SimpleCLI:
             parts = cmd.split()
             if len(parts) != 2:
                 print("❓ Usage: /load <filename>")
-                print("   Example: /load my_conversation.json")
-                print("   Example: /load chat_cache.safetensors")
+                print("   Example: /load my_conversation")
+                print("   Hint: use /cache load <name> for prompt caches")
             else:
                 filename = parts[1]
-                if filename.endswith(".safetensors") or filename.endswith(".safetensor"):
-                    self.handle_load_prompt_cache(filename)
-                    return True
                 self.handle_load(filename)
 
         elif cmd.startswith('tooltag'):
@@ -558,6 +649,113 @@ class SimpleCLI:
         reset = "\033[0m"
         print(f"{yellow}{msg}{reset}")
 
+    def _force_extension(self, filename: str, ext: str) -> str:
+        """Ensure `filename` ends with `ext` by replacing any existing suffix (best-effort)."""
+        ext = str(ext or "").strip()
+        if not ext:
+            return filename
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        try:
+            p = Path(filename)
+        except Exception:
+            return f"{filename}{ext}"
+        if p.suffix:
+            return str(p.with_suffix(ext))
+        return f"{p}{ext}"
+
+    def _resolve_session_path(self, filename: str) -> Optional[str]:
+        """Resolve a session file path (prefers exact match, then `.json`)."""
+        if not isinstance(filename, str) or not filename.strip():
+            return None
+        raw = filename.strip()
+        candidates = [raw]
+        forced = self._force_extension(raw, ".json")
+        if forced != raw:
+            candidates.append(forced)
+        for cand in candidates:
+            if os.path.exists(cand):
+                return cand
+        return None
+
+    def _resolve_cache_path(self, filename: str) -> Optional[str]:
+        """Resolve a cache file path (prefers exact match, then `.safetensors` / `.safetensor`)."""
+        if not isinstance(filename, str) or not filename.strip():
+            return None
+        raw = filename.strip()
+        candidates = [raw]
+        forced = self._force_extension(raw, ".safetensors")
+        if forced != raw:
+            candidates.append(forced)
+        forced_alt = self._force_extension(raw, ".safetensor")
+        if forced_alt not in candidates:
+            candidates.append(forced_alt)
+        for cand in candidates:
+            if os.path.exists(cand):
+                return cand
+        return None
+
+    def _kv_cache_token_count(self, key: str) -> Optional[int]:
+        """Best-effort token count for the active KV cache key (MLX)."""
+        if not isinstance(key, str) or not key.strip():
+            return None
+        try:
+            cache_obj = getattr(self.provider, "_prompt_cache_store").get(key.strip())
+        except Exception:
+            cache_obj = None
+        if cache_obj is None:
+            return None
+        try:
+            tok = getattr(self.provider, "_prompt_cache_backend_token_count")(cache_obj)
+            return int(tok) if isinstance(tok, int) else None
+        except Exception:
+            return None
+
+    def _kv_refresh_tools_if_needed(self, *, reason: str, force: bool = False) -> bool:
+        """Re-inject tool specs into the active KV cache when recency or origin requires it."""
+        if self.prompt_cache_mode != "kv":
+            return False
+        if not self._is_mlx_provider():
+            return False
+        if not self._supports_prompt_cache():
+            return False
+        if not getattr(self.session, "tools", None):
+            return False
+
+        key = self.prompt_cache_key
+        if not isinstance(key, str) or not key.strip():
+            return False
+
+        # Long-context models can “forget” early tool specs; re-inject near the end when the cache is very large.
+        threshold_default = 50_000
+        try:
+            threshold = int(os.getenv("ABSTRACTCORE_CLI_KV_REFRESH_TOOLS_AT", str(threshold_default)))
+        except Exception:
+            threshold = threshold_default
+        if threshold < 0:
+            threshold = threshold_default
+
+        tok = self._kv_cache_token_count(key)
+        should = bool(force) or (isinstance(tok, int) and tok >= threshold)
+        if not should:
+            return False
+
+        try:
+            getattr(self.provider, "prompt_cache_update")(
+                key,
+                system_prompt=None,  # tools-only system message for recency
+                tools=self.session.tools,
+                add_generation_prompt=False,
+            )
+        except Exception as e:
+            self._print_warn(f"⚠️ Could not refresh tools into KV cache ({reason}): {e}")
+            return False
+
+        if not self.single_prompt_mode:
+            extra = f" (~{tok:,} tokens)" if isinstance(tok, int) and tok > 0 else ""
+            print(f"🧰 Tools refreshed into KV cache ({reason}){extra}")
+        return True
+
     def _get_country_code(self) -> str:
         val = os.getenv("ABSTRACTCORE_CLI_COUNTRY")
         if isinstance(val, str) and val.strip():
@@ -589,6 +787,12 @@ class SimpleCLI:
 
     def _is_mlx_provider(self) -> bool:
         return str(self.provider_name or "").strip().lower() == "mlx"
+
+    def _analysis_provider(self) -> Any:
+        """Provider to use for internal CLI analytics (never mutates KV prompt cache)."""
+        if self.prompt_cache_mode != "kv":
+            return self.provider
+        return _NoPromptCacheProvider(self.provider)
 
     def _init_prompt_caching(self, *, show_banner: bool) -> None:
         if not self._supports_prompt_cache():
@@ -658,14 +862,48 @@ class SimpleCLI:
         else:
             print("🧹 Context + prompt cache cleared")
 
+    def handle_cache_clear(self) -> None:
+        """Clear prompt cache only (best-effort)."""
+        if not self._supports_prompt_cache():
+            print("🧹 Prompt cache cleared (prompt caching unsupported)")
+            return
+
+        # In KV mode the cache is the source-of-truth for model context; clearing it without clearing
+        # or resending history would desync the model and the transcript. Rebuild from transcript.
+        if self.prompt_cache_mode == "kv":
+            self._print_warn("⚠️ KV cache cleared; rebuilding from current session transcript")
+            try:
+                self._rebuild_kv_cache_from_session()
+                return
+            except Exception as e:
+                self._print_error(f"❌ KV cache rebuild failed: {e}")
+                self._print_warn("⚠️ Falling back to session-managed mode (no KV)")
+                self.prompt_cache_mode = "key"
+
+        # Key-only / remote mode: clear provider-side caches (best-effort) and rotate key.
+        try:
+            getattr(self.provider, "prompt_cache_clear")(None)
+        except Exception:
+            pass
+
+        self.prompt_cache_key = None
+        self.prompt_cache_file = None
+        self._init_prompt_caching(show_banner=False)
+
+        if self.prompt_cache_mode == "off":
+            print("🧹 Prompt cache cleared (prompt caching disabled)")
+        else:
+            print("🧹 Prompt cache cleared")
+
     def handle_save_prompt_cache(self, filename: str, *, q8: bool = False) -> None:
-        """Save MLX prompt cache to a safetensors file (model-locked)."""
+        """Save MLX prompt cache to disk (writes a `.safetensors` file; model-locked)."""
         if not self._is_mlx_provider():
-            self._print_error("❌ KV cache save is only supported for provider 'mlx' (file: .safetensors)")
+            self._print_error("❌ KV cache save is only supported for provider 'mlx'")
             return
         if not self._supports_prompt_cache():
             self._print_error("❌ This provider does not support prompt caching")
             return
+        filename = self._force_extension(filename, ".safetensors")
 
         key = self.prompt_cache_key
         if not isinstance(key, str) or not key.strip():
@@ -693,6 +931,12 @@ class SimpleCLI:
             "model": str(getattr(self.provider, "model", self.model_name)),
             "saved_at": datetime.now().isoformat(),
         }
+        try:
+            tok = getattr(self.provider, "_prompt_cache_backend_token_count")(cache_obj)
+            if isinstance(tok, int) and tok >= 0:
+                meta["token_count"] = str(tok)
+        except Exception:
+            pass
 
         cache_to_save = cache_obj
         if q8:
@@ -705,20 +949,24 @@ class SimpleCLI:
         try:
             save_prompt_cache(filename, cache_to_save, metadata=meta)
             self.prompt_cache_file = filename
-            print(f"💾 Cache saved to {filename}")
+            extra = ""
+            if "token_count" in meta:
+                extra = f" ({meta['token_count']} tokens)"
+            print(f"💾 Cache saved to {filename}{extra}")
         except Exception as e:
             self._print_error(f"❌ Failed to save prompt cache: {e}")
 
     def handle_load_prompt_cache(self, filename: str) -> None:
-        """Load MLX prompt cache from a safetensors file (model-locked)."""
+        """Load MLX prompt cache from disk (reads a `.safetensors` file; model-locked)."""
         if not self._is_mlx_provider():
-            self._print_error("❌ KV cache load is only supported for provider 'mlx' (file: .safetensors)")
+            self._print_error("❌ KV cache load is only supported for provider 'mlx'")
             return
         if not self._supports_prompt_cache():
             self._print_error("❌ This provider does not support prompt caching")
             return
-        if not os.path.exists(filename):
-            self._print_error(f"❌ File not found: {filename}")
+        resolved = self._resolve_cache_path(filename)
+        if not resolved:
+            self._print_error(f"❌ File not found: {self._force_extension(filename, '.safetensors')}")
             return
 
         try:
@@ -728,7 +976,7 @@ class SimpleCLI:
             return
 
         try:
-            loaded_cache, meta = load_prompt_cache(filename, return_metadata=True)
+            loaded_cache, meta = load_prompt_cache(resolved, return_metadata=True)
         except Exception as e:
             self._print_error(f"❌ Failed to load prompt cache: {e}")
             return
@@ -743,11 +991,25 @@ class SimpleCLI:
                 "❌ Prompt cache model mismatch:\n"
                 f"   cache expects: {required_model}\n"
                 f"   current model: {current_model}\n"
-                f"   hint: run `/model mlx:{required_model}` then `/load {filename}`"
+                f"   hint: run `/model mlx:{required_model}` then `/cache load {self._force_extension(filename, '.safetensors')}`"
             )
             return
         if not isinstance(required_model, str) or not required_model.strip():
-            self._print_warn("⚠️ Cache metadata has no model id; cannot verify compatibility (proceeding best-effort)")
+            # Best-effort structural check: layer count mismatch is a strong signal of wrong model.
+            try:
+                expected = getattr(self.provider, "_prompt_cache_backend_create")()
+                if isinstance(expected, (list, tuple)) and isinstance(loaded_cache, (list, tuple)):
+                    if len(expected) != len(loaded_cache):
+                        self._print_error(
+                            "❌ Prompt cache appears incompatible with the current model (layer count mismatch).\n"
+                            f"   cache layers:   {len(loaded_cache)}\n"
+                            f"   model layers:   {len(expected)}\n"
+                            f"   hint: regenerate the cache with this model, or switch model and retry"
+                        )
+                        return
+            except Exception:
+                pass
+            self._print_warn("⚠️ Cache metadata has no model id; cannot fully verify compatibility (proceeding best-effort)")
 
         # Clear existing caches and install the loaded cache under a fresh key.
         try:
@@ -765,7 +1027,7 @@ class SimpleCLI:
             getattr(self.provider, "_prompt_cache_store").set(
                 new_key,
                 loaded_cache,
-                meta={"backend": "mlx", "loaded_from": filename, **(meta if isinstance(meta, dict) else {})},
+                meta={"backend": "mlx", "loaded_from": resolved, **(meta if isinstance(meta, dict) else {})},
             )
         except Exception as e:
             self._print_error(f"❌ Failed to install loaded cache into provider store: {e}")
@@ -773,11 +1035,23 @@ class SimpleCLI:
 
         self.prompt_cache_mode = "kv"
         self.prompt_cache_key = new_key
-        self.prompt_cache_file = filename
+        self.prompt_cache_file = resolved
 
         # Reset transcript; the cache becomes the source of truth for context.
         self.session.clear_history(keep_system=False)
-        print(f"📂 Cache loaded from {filename} (key={new_key})")
+        token_note = ""
+        if isinstance(meta, dict) and isinstance(meta.get("token_count"), str) and meta.get("token_count"):
+            token_note = f" ({meta.get('token_count')} tokens)"
+        print(f"📂 Cache loaded from {resolved}{token_note} (key={new_key})")
+
+        cache_format = meta.get("format") if isinstance(meta, dict) else None
+        force_refresh = cache_format != "abstractcore-cli-prompt-cache/v1"
+        if force_refresh and not self.single_prompt_mode:
+            self._print_warn(
+                "⚠️ Loaded cache has no AbstractCore CLI metadata; it may not include tool specs.\n"
+                "   Injecting current CLI tool definitions into the KV cache for recency."
+            )
+        self._kv_refresh_tools_if_needed(reason="cache load", force=force_refresh)
 
     def handle_compact(self, focus: Optional[str] = None):
         """Handle /compact [focus] command - compact chat history with optional focus"""
@@ -808,10 +1082,17 @@ class SimpleCLI:
             start_time = time.time()
 
             # Perform in-place compaction with optional focus
-            self.session.force_compact(
-                preserve_recent=4,  # Keep last 6 messages (3 exchanges)
-                focus=focus or "key information and ongoing context"
+            compacted = self.session.compact(
+                preserve_recent=4,  # Keep last 4 messages (2 exchanges)
+                focus=focus or "key information and ongoing context",
+                compact_provider=compact_provider,
+                reason="user_requested",
             )
+            # Replace current session with compacted version (in-place).
+            try:
+                self.session._replace_with_compacted(compacted)
+            except Exception:
+                self.session = compacted
 
             duration = time.time() - start_time
 
@@ -852,7 +1133,7 @@ class SimpleCLI:
             print("🔍 Extracting facts from conversation history...")
 
             # Create fact extractor using current provider for consistency
-            extractor = BasicExtractor(self.provider)
+            extractor = BasicExtractor(self._analysis_provider())
 
             # Format conversation history as text
             conversation_text = self._format_conversation_for_extraction(messages)
@@ -928,7 +1209,7 @@ class SimpleCLI:
             print("⚖️  Evaluating conversation quality...")
 
             # Create judge using current provider for consistency
-            judge = BasicJudge(self.provider)
+            judge = BasicJudge(self._analysis_provider())
 
             # Format conversation history as text
             conversation_text = self._format_conversation_for_extraction(messages)
@@ -1042,7 +1323,7 @@ class SimpleCLI:
                 print("🎯 Analyzing conversation intents for all participants...")
 
             # Create intent analyzer using current provider for consistency
-            analyzer = BasicIntentAnalyzer(self.provider)
+            analyzer = BasicIntentAnalyzer(self._analysis_provider())
 
             # Convert session messages to the format expected by intent analyzer
             conversation_messages = [msg for msg in messages if msg.role != 'system']
@@ -1250,7 +1531,13 @@ class SimpleCLI:
                 break
         else:
             # No existing system message, add one at the beginning
-            self.session.messages.insert(0, self.session.add_message('system', new_prompt))
+            created = self.session.add_message('system', new_prompt)
+            # add_message appends; move the created system message to the front for correct ordering.
+            try:
+                self.session.messages.remove(created)
+            except Exception:
+                pass
+            self.session.messages.insert(0, created)
 
         print("✅ System prompt updated!")
         print(f"📝 Old: {old_prompt[:100]}{'...' if len(old_prompt) > 100 else ''}")
@@ -1263,9 +1550,7 @@ class SimpleCLI:
     def handle_save(self, filename: str, summary: bool = False, assessment: bool = False, facts: bool = False):
         """Handle /save <file> command - save current session to file with optional analytics"""
         try:
-            # Ensure .json extension for consistency
-            if not filename.endswith('.json'):
-                filename = f"{filename}.json"
+            filename = self._force_extension(filename, ".json")
             
             print(f"💾 Saving session to {filename}...")
             
@@ -1275,11 +1560,12 @@ class SimpleCLI:
             
             # Generate optional analytics if requested
             analytics_generated = []
+            analysis_provider = self._analysis_provider()
             
             if summary:
                 print("   🔄 Generating summary...")
                 try:
-                    self.session.generate_summary(focus="key discussion points")
+                    self.session.generate_summary(focus="key discussion points", compact_provider=analysis_provider)
                     analytics_generated.append("summary")
                     print("   ✅ Summary generated")
                 except Exception as e:
@@ -1287,20 +1573,38 @@ class SimpleCLI:
             
             if assessment:
                 print("   🔄 Generating assessment...")
+                original_provider = None
                 try:
+                    original_provider = self.session.provider
+                    self.session.provider = analysis_provider
                     self.session.generate_assessment()
+                    self.session.provider = original_provider
                     analytics_generated.append("assessment")
                     print("   ✅ Assessment generated")
                 except Exception as e:
+                    try:
+                        if original_provider is not None:
+                            self.session.provider = original_provider
+                    except Exception:
+                        pass
                     print(f"   ⚠️  Assessment generation failed: {e}")
             
             if facts:
                 print("   🔄 Extracting facts...")
+                original_provider = None
                 try:
+                    original_provider = self.session.provider
+                    self.session.provider = analysis_provider
                     self.session.extract_facts()
+                    self.session.provider = original_provider
                     analytics_generated.append("facts")
                     print("   ✅ Facts extracted")
                 except Exception as e:
+                    try:
+                        if original_provider is not None:
+                            self.session.provider = original_provider
+                    except Exception:
+                        pass
                     print(f"   ⚠️  Fact extraction failed: {e}")
             
             # Save using enhanced serialization
@@ -1328,17 +1632,15 @@ class SimpleCLI:
     def handle_load(self, filename: str):
         """Handle /load <file> command - load session from file"""
         try:
-            # Ensure .json extension for consistency
-            if not filename.endswith('.json'):
-                filename = f"{filename}.json"
+            resolved = self._resolve_session_path(filename) or self._force_extension(filename, ".json")
             
             # Check if file exists
             import os
-            if not os.path.exists(filename):
-                print(f"❌ File not found: {filename}")
+            if not os.path.exists(resolved):
+                print(f"❌ File not found: {resolved}")
                 return
             
-            print(f"📂 Loading session from {filename}...")
+            print(f"📂 Loading session from {resolved}...")
             
             # Store current session info for comparison
             old_messages = len(self.session.get_messages())
@@ -1348,17 +1650,27 @@ class SimpleCLI:
             from ..tools.common_tools import list_files, read_file, write_file, execute_command, search_files
             tools = [list_files, read_file, write_file, execute_command, search_files]
             
-            loaded_session = BasicSession.load(filename, provider=self.provider, tools=tools)
+            loaded_session = BasicSession.load(resolved, provider=self.provider, tools=tools)
             
             # Replace current session
             self.session = loaded_session
-            
+
+            # If we're in local KV cache mode (MLX), rebuild the cache from the loaded transcript so
+            # the model context matches what the user sees.
+            if self._is_mlx_provider() and self._supports_prompt_cache():
+                try:
+                    self.prompt_cache_mode = "kv"
+                    self._rebuild_kv_cache_from_session()
+                except Exception as e:
+                    self._print_warn(f"⚠️ KV cache rebuild from session failed; continuing without KV mode: {e}")
+                    self.prompt_cache_mode = "key"
+
             # Get new session info
             new_messages = len(self.session.get_messages())
             new_tokens = self.session.get_token_estimate()
             
             print(f"✅ Session loaded successfully!")
-            print(f"   📁 File: {filename}")
+            print(f"   📁 File: {resolved}")
             print(f"   📝 Messages: {old_messages} → {new_messages}")
             print(f"   🔢 Tokens: ~{old_tokens:,} → ~{new_tokens:,}")
             print(f"   🤖 Provider: {self.provider_name}:{self.model_name} (current)")
@@ -1387,6 +1699,69 @@ class SimpleCLI:
                 import traceback
                 traceback.print_exc()
 
+    def _rebuild_kv_cache_from_session(self) -> None:
+        """Best-effort rebuild of the local KV prompt cache from the current session transcript."""
+        if not self._is_mlx_provider():
+            return
+        if not self._supports_prompt_cache():
+            return
+
+        # Fresh cache key for the rebuilt state.
+        try:
+            getattr(self.provider, "prompt_cache_clear")(None)
+        except Exception:
+            pass
+
+        key = f"cli:{uuid.uuid4().hex[:12]}"
+        ok = False
+        try:
+            ok = bool(getattr(self.provider, "prompt_cache_set")(key, make_default=True))
+        except Exception:
+            ok = False
+
+        if not ok:
+            self.prompt_cache_mode = "off"
+            self.prompt_cache_key = None
+            raise RuntimeError("provider failed to create a prompt cache")
+
+        # Prefill stable modules.
+        try:
+            getattr(self.provider, "prompt_cache_update")(
+                key,
+                system_prompt=self.session.system_prompt,
+                tools=self.session.tools,
+                add_generation_prompt=False,
+            )
+        except Exception as e:
+            raise RuntimeError(f"failed to prefill system/tools: {e}") from e
+
+        # Append any additional transcript messages (excluding the main system prompt we just prefixed).
+        messages_to_append: List[Dict[str, Any]] = []
+        for msg in self.session.get_messages():
+            role = getattr(msg, "role", None)
+            content = getattr(msg, "content", None)
+            if role == "system":
+                if isinstance(self.session.system_prompt, str) and content == self.session.system_prompt and not str(content).startswith("[CONVERSATION HISTORY]"):
+                    continue
+            if role and content is not None:
+                messages_to_append.append({"role": role, "content": content})
+
+        if messages_to_append:
+            try:
+                getattr(self.provider, "prompt_cache_update")(
+                    key,
+                    messages=messages_to_append,
+                    add_generation_prompt=False,
+                )
+            except Exception as e:
+                raise RuntimeError(f"failed to append transcript messages: {e}") from e
+
+        self.prompt_cache_key = key
+        self.prompt_cache_file = None
+        self.prompt_cache_mode = "kv"
+        print(f"🧠 KV prompt cache rebuilt from session (key={key}, messages={len(messages_to_append)})")
+        self._kv_refresh_tools_if_needed(reason="session rebuild", force=False)
+
     def handle_tooltag_test(self, opening_tag: str, closing_tag: str):
         """Handle /tooltag command - demonstrate tool call format handling"""
         print(f"🏷️ Tool call format testing: {opening_tag}...{closing_tag}")
@@ -1403,6 +1778,25 @@ class SimpleCLI:
         print(f"🔧 Provider: {self.provider_name}")
         print(f"🤖 Model: {self.model_name}")
         print(f"🌊 Streaming: {'Enabled' if self.stream_mode else 'Disabled'}")
+        if self.prompt_cache_mode != "off":
+            cache_details = f"mode={self.prompt_cache_mode}"
+            if self.prompt_cache_key:
+                cache_details += f" key={self.prompt_cache_key}"
+            if self.prompt_cache_file:
+                cache_details += f" file={self.prompt_cache_file}"
+            print(f"🧠 Prompt caching: {cache_details}")
+            try:
+                if hasattr(self.provider, "get_prompt_cache_stats"):
+                    stats = self.provider.get_prompt_cache_stats()
+                    if isinstance(stats, dict):
+                        entries = stats.get("entries")
+                        max_entries = stats.get("max_entries")
+                        if entries is not None and max_entries is not None:
+                            print(f"   Cache store: {entries}/{max_entries} entries")
+            except Exception:
+                pass
+        else:
+            print("🧠 Prompt caching: off")
 
         # Debug status - show both CLI and system logging
         print(f"🐛 CLI Debug: {'Enabled' if self.debug_mode else 'Disabled'}")
@@ -1658,6 +2052,14 @@ class SimpleCLI:
             "stream": bool(self.stream_mode),
             "max_output_tokens": self.max_output_tokens,
         }
+        # Preserve session-level generation parameters for consistency.
+        try:
+            if getattr(self.session, "temperature", None) is not None:
+                gen_kwargs["temperature"] = self.session.temperature
+            if isinstance(getattr(self.session, "seed", None), int) and self.session.seed >= 0:
+                gen_kwargs["seed"] = self.session.seed
+        except Exception:
+            pass
 
         return self.provider.generate(**gen_kwargs)
 
@@ -1877,8 +2279,10 @@ Examples:
 
 Key Commands:
   /help                           Show comprehensive command guide
-  /save <file> [--summary --assessment --facts]  Save session with analytics
-  /load <file>                    Load saved session
+  /session save <name> [--summary --assessment --facts]  Save session JSON (writes .json)
+  /session load <name>            Load saved session JSON (reads .json)
+  /cache save <name>              Save MLX prompt/KV cache (writes .safetensors)
+  /cache load <name>              Load MLX prompt/KV cache (reads .safetensors)
   /status                         Show system status and capabilities
   /history [n]                    Show conversation history
   /model <provider:model>         Switch LLM provider/model

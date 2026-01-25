@@ -257,18 +257,21 @@ The CLI provides convenient commands for session management:
 
 ```bash
 # Save session with basic serialization
-/save my_conversation
+/session save my_conversation
 
 # Save with optional analytics
-/save analyzed_session --summary --assessment --facts
+/session save analyzed_session --summary --assessment --facts
 
 # Load session
-/load my_conversation
+/session load my_conversation
 
-# View session analytics
-/summary
-/assessment  
+# Generate analytics on demand
 /facts
+/judge
+
+# Optional: persist local prompt/KV cache (MLX only)
+/cache save chat_cache
+/cache load chat_cache
 ```
 
 ## Best Practices
