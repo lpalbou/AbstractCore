@@ -470,6 +470,11 @@ class OpenAICompatibleProvider(BaseProvider):
             "top_p": kwargs.get("top_p", 0.9),
         }
 
+        # Prompt caching (best-effort): pass through `prompt_cache_key` when provided.
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+            payload["prompt_cache_key"] = prompt_cache_key.strip()
+
         # Native tools (OpenAI-compatible): send structured tools/tool_choice when supported.
         if tools and self.tool_handler.supports_native:
             payload["tools"] = self.tool_handler.prepare_tools_for_native(tools)
@@ -910,6 +915,10 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         except json.JSONDecodeError:
                             continue
+
+    def supports_prompt_cache(self) -> bool:
+        """Best-effort: forward `prompt_cache_key` to OpenAI-compatible servers that support it."""
+        return True
 
     def get_capabilities(self) -> List[str]:
         """Get OpenAI-compatible server capabilities"""
