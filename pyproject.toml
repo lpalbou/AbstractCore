@@ -155,6 +155,8 @@ tool = [
 media = [
     "Pillow>=10.0.0,<12.0.0",
     "pymupdf4llm>=0.0.20,<1.0.0",
+    # Enables `pymupdf.layout` (improves reading order / tables) and prevents PyMuPDF's startup recommendation print.
+    "pymupdf-layout>=1.26.6,<2.0.0",
     # NOTE: unstructured does not provide an "office" extra. Use the specific
     # format extras so DOCX/XLSX/PPTX parsing works out-of-the-box when users
     # install `abstractcore[media]`.

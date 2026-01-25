@@ -247,55 +247,78 @@ class StructuredOutputHandler:
         Returns:
             Validated instance of response_model
         """
-        # The provider will handle structured output natively
-        # This is implemented in each provider's _generate_internal method
-        response = provider._generate_internal(
-            prompt=prompt,
-            response_model=response_model,
-            **kwargs
-        )
+        def _is_truncated(resp: Any) -> bool:
+            fr = getattr(resp, "finish_reason", None)
+            fr_str = str(fr or "").strip().lower()
+            return fr_str in {"length", "max_tokens"}
 
-        # For native support, the response content should already be structured
-        if isinstance(response.content, dict):
+        def _bump_max_output_tokens(current_kwargs: dict) -> dict:
+            updated = dict(current_kwargs)
+            raw = updated.get("max_output_tokens")
+            if raw is None:
+                raw = updated.get("max_tokens")
+            cur = 0
+            if raw is not None and not isinstance(raw, bool):
+                try:
+                    cur = int(raw)
+                except Exception:
+                    cur = 0
+            if cur <= 0:
+                cur = 512
+
+            # Prefer geometric growth; also add a fixed floor so small values ramp quickly.
+            bumped = max(cur * 2, cur + 500)
+            cap = 8192
+            updated["max_output_tokens"] = min(bumped, cap)
+            # Avoid ambiguity when both keys are present.
+            updated.pop("max_tokens", None)
+            return updated
+
+        last_error: Exception | None = None
+        attempt_kwargs = dict(kwargs)
+        max_attempts = int(getattr(self.retry_strategy, "max_attempts", 3) or 3)
+        for attempt in range(1, max_attempts + 1):
+            response = provider._generate_internal(
+                prompt=prompt,
+                response_model=response_model,
+                **attempt_kwargs,
+            )
+
             try:
-                return response_model.model_validate(
-                    _coerce_single_list_wrapper(response.content, response_model=response_model)
-                )
-            except ValidationError as e:
-                # Some servers return JSON objects but do not fully enforce the provided schema.
-                # Fall back to prompted structured output with retries so we still return a
-                # validated object to callers.
-                self.logger.debug(
-                    "Native structured output validation failed for dict response; falling back to prompted mode",
-                    error=str(e),
-                    response_keys=list(response.content.keys())[:20],
-                )
-                return self._generate_prompted(provider, prompt, response_model, **kwargs)
-        else:
-            # Parse JSON string
-            try:
+                if isinstance(response.content, dict):
+                    return response_model.model_validate(
+                        _coerce_single_list_wrapper(response.content, response_model=response_model)
+                    )
+
                 data = json.loads(response.content)
                 return response_model.model_validate(_coerce_single_list_wrapper(data, response_model=response_model))
             except (json.JSONDecodeError, ValidationError) as e:
-                # Try to fix the JSON before falling back
-                self.logger.debug("Native JSON parsing failed, attempting self-fix", 
-                                error=str(e), 
-                                response_length=len(response.content))
-                
-                fixed_json = fix_json(response.content)
+                last_error = e
+
+                if _is_truncated(response) and attempt < max_attempts:
+                    attempt_kwargs = _bump_max_output_tokens(attempt_kwargs)
+                    continue
+
+                fixed_json = None
+                try:
+                    fixed_json = fix_json(response.content)
+                except Exception:
+                    fixed_json = None
+
                 if fixed_json:
                     try:
                         data = json.loads(fixed_json)
-                        result = response_model.model_validate(
+                        return response_model.model_validate(
                             _coerce_single_list_wrapper(data, response_model=response_model)
                         )
-                        self.logger.info("JSON self-fix successful for native response")
-                        return result
-                    except (json.JSONDecodeError, ValidationError) as fix_error:
-                        self.logger.debug("Self-fix failed", error=str(fix_error))
-                
-                # Even native support can fail, fallback to prompted
+                    except (json.JSONDecodeError, ValidationError):
+                        pass
+
+                # Non-truncation failures can still happen even in native mode; fall back to prompted.
                 return self._generate_prompted(provider, prompt, response_model, **kwargs)
+
+        assert last_error is not None
+        raise last_error
 
     def _generate_prompted(
         self,
@@ -326,6 +349,7 @@ class StructuredOutputHandler:
 
         last_error = None
         current_prompt = enhanced_prompt
+        current_kwargs = dict(kwargs)
 
         for attempt in range(1, self.retry_strategy.max_attempts + 1):
             attempt_start_time = time.time()
@@ -342,7 +366,7 @@ class StructuredOutputHandler:
                 # Generate response
                 response = provider._generate_internal(
                     prompt=current_prompt,
-                    **kwargs
+                    **current_kwargs
                 )
 
                 # Extract and validate JSON
@@ -427,6 +451,28 @@ class StructuredOutputHandler:
                                   validation_success=False)
 
                 # Check if we should retry
+                finish_reason = str(getattr(response, "finish_reason", "") or "").strip().lower()
+                is_truncated = finish_reason in {"length", "max_tokens"}
+                if is_truncated and attempt < self.retry_strategy.max_attempts:
+                    raw = current_kwargs.get("max_output_tokens")
+                    if raw is None:
+                        raw = current_kwargs.get("max_tokens")
+                    cur = 0
+                    if raw is not None and not isinstance(raw, bool):
+                        try:
+                            cur = int(raw)
+                        except Exception:
+                            cur = 0
+                    if cur <= 0:
+                        cur = 512
+                    bumped = max(cur * 2, cur + 500)
+                    cap = 8192
+                    current_kwargs["max_output_tokens"] = min(bumped, cap)
+                    current_kwargs.pop("max_tokens", None)
+                    # Keep the base prompt stable: appending more text makes truncation more likely.
+                    current_prompt = enhanced_prompt
+                    continue
+
                 if self.retry_strategy.should_retry(attempt, e):
                     # Note: RETRY_ATTEMPTED event removed in simplification
                     # Retry logic tracked through VALIDATION_FAILED event with attempt number
