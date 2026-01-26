@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Embedding model detection**: added `nomic-embed-text-v1.5` (and LMStudio alias `text-embedding-nomic-embed-text-v1.5@q6_k`) to `assets/model_capabilities.json`, and aligned `supports_embeddings()` to treat `model_type: "embedding"` as the canonical signal.
+- **MLX model discovery**: `MLXProvider.list_available_models()` now also scans LM Studio's local cache (`~/.lmstudio/models`) (including all models under `lmstudio-community/*` and `mlx-community/*`) and `MLXProvider` loads from those local directories when present.
 
 ## [2.10.1] - 2026-01-11
 

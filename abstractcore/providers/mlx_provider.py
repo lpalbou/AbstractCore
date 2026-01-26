@@ -312,17 +312,27 @@ class MLXProvider(BaseProvider):
         """Load MLX model and tokenizer"""
         try:
             from mlx_lm import load, generate, stream_generate
-            import sys
             import os
             from contextlib import redirect_stdout, redirect_stderr
+            from pathlib import Path
 
             # Clean model name - remove trailing slashes that cause HuggingFace validation errors
             clean_model_name = self.model.rstrip('/')
 
+            # Prefer an existing local directory (including LM Studio's cache) over a remote HF repo id.
+            load_target: str = clean_model_name
+            explicit_path = Path(clean_model_name).expanduser()
+            if explicit_path.is_dir():
+                load_target = str(explicit_path)
+            else:
+                lmstudio_path = Path.home() / ".lmstudio" / "models" / clean_model_name
+                if lmstudio_path.is_dir():
+                    load_target = str(lmstudio_path)
+
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, 'w') as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
-                    self.llm, self.tokenizer = load(clean_model_name)
+                    self.llm, self.tokenizer = load(load_target)
             
             self.generate_fn = generate
             self.stream_generate_fn = stream_generate
@@ -802,7 +812,11 @@ class MLXProvider(BaseProvider):
     @classmethod
     def list_available_models(cls, **kwargs) -> List[str]:
         """
-        List available MLX models from HuggingFace cache.
+        List available MLX models from local caches.
+
+        This includes:
+        - HuggingFace hub cache (~/.cache/huggingface/hub) for any repo containing "mlx"
+        - LM Studio cache (~/.lmstudio/models) for any org/model containing "mlx"
 
         Args:
             **kwargs: Optional parameters including:
@@ -816,22 +830,36 @@ class MLXProvider(BaseProvider):
         from .model_capabilities import filter_models_by_capabilities
 
         try:
+            model_set = set()
+
             hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
-            if not hf_cache.exists():
-                return []
+            if hf_cache.exists():
+                for item in hf_cache.iterdir():
+                    if item.is_dir() and item.name.startswith("models--"):
+                        # Convert models--mlx-community--Qwen3-Coder-30B-A3B-Instruct-4bit to mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
+                        model_name = item.name.replace("models--", "").replace("--", "/")
 
-            models = []
-            for item in hf_cache.iterdir():
-                if item.is_dir() and item.name.startswith("models--"):
-                    # Convert models--mlx-community--Qwen3-Coder-30B-A3B-Instruct-4bit to mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
-                    model_name = item.name.replace("models--", "").replace("--", "/")
+                        # Include ANY model with "mlx" in the name (case-insensitive)
+                        # This captures: mlx-community/*, */mlx-*, *-mlx-*, etc.
+                        if "mlx" in model_name.lower():
+                            model_set.add(model_name)
 
-                    # Include ANY model with "mlx" in the name (case-insensitive)
-                    # This captures: mlx-community/*, */mlx-*, *-mlx-*, etc.
-                    if "mlx" in model_name.lower():
-                        models.append(model_name)
+            lmstudio_models = Path.home() / ".lmstudio" / "models"
+            if lmstudio_models.exists():
+                # LM Studio stores models under: ~/.lmstudio/models/<org>/<model>/*
+                for org_dir in lmstudio_models.iterdir():
+                    if not org_dir.is_dir():
+                        continue
+                    # These org folders are MLX by design (model names may not include "mlx")
+                    include_all_in_org = org_dir.name.lower() in {"mlx-community", "lmstudio-community"}
+                    for model_dir in org_dir.iterdir():
+                        if not model_dir.is_dir():
+                            continue
+                        model_name = f"{org_dir.name}/{model_dir.name}"
+                        if include_all_in_org or "mlx" in model_name.lower():
+                            model_set.add(model_name)
 
-            models = sorted(models)
+            models = sorted(model_set)
 
             # Apply new capability filtering if provided
             input_capabilities = kwargs.get('input_capabilities')

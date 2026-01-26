@@ -680,18 +680,18 @@ class StructuredOutputHandler:
         # Create example from schema
         example = self._create_example_from_schema(schema)
 
-        enhanced_prompt = f"""{prompt}
+        schema_block = (
+            f"Please respond with valid JSON that matches this exact schema for {model_name}:\n\n"
+            f"{json.dumps(schema, indent=2)}\n\n"
+            f"Example format:\n{json.dumps(example, indent=2)}\n\n"
+            "Important: Return ONLY the JSON object, no additional text or formatting."
+        )
 
-Please respond with valid JSON that matches this exact schema for {model_name}:
+        marker = "<<STRUCTURED_OUTPUT_SCHEMA>>"
+        if marker in prompt:
+            return prompt.replace(marker, schema_block, 1)
 
-{json.dumps(schema, indent=2)}
-
-Example format:
-{json.dumps(example, indent=2)}
-
-Important: Return ONLY the JSON object, no additional text or formatting."""
-
-        return enhanced_prompt
+        return f"{prompt}\n\n{schema_block}"
 
     def _create_example_from_schema(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """
