@@ -1463,6 +1463,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """Return basic prompt cache stats (in-process store only)."""
         stats = self._prompt_cache_store.stats()
         stats["default_key"] = self._default_prompt_cache_key
+        try:
+            keys = self._prompt_cache_store.keys()
+            if isinstance(keys, list):
+                stats["keys"] = list(keys)
+                meta_by_key: Dict[str, Any] = {}
+                for k in keys:
+                    meta = self._prompt_cache_store.meta(k)
+                    if isinstance(meta, dict) and meta:
+                        meta_by_key[str(k)] = dict(meta)
+                if meta_by_key:
+                    stats["meta_by_key"] = meta_by_key
+        except Exception:
+            pass
         return stats
 
     def prompt_cache_set(self, key: str, *, make_default: bool = True, **kwargs) -> bool:
