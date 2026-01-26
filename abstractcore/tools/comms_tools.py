@@ -21,6 +21,7 @@ import smtplib
 from typing import Any, Dict, List, Optional, Tuple
 
 from abstractcore.tools.core import tool
+from abstractcore.utils.truncation import preview_text
 
 
 _MONTH_ABBR = (
@@ -880,8 +881,7 @@ def list_whatsapp_messages(
             continue
 
         body_text = str(m.get("body") or "")
-        if len(body_text) > 500:
-            body_text = body_text[:500] + "…"
+        body_text = preview_text(body_text, max_chars=500)
 
         out.append(
             {

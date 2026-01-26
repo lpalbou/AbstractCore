@@ -28,6 +28,7 @@ from ..events import EventType, Event
 from datetime import datetime
 from ..utils.structured_logging import get_logger
 from ..utils.jsonish import loads_dict_like
+from ..utils.truncation import preview_text
 from ..exceptions import (
     ProviderAPIError,
     AuthenticationError,
@@ -369,7 +370,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Emit comprehensive event with all data in one dict
         event_data = {
-            "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+            "prompt": preview_text(prompt, max_chars=100),
             "success": success,
             "error": str(error) if error else None,
             "response_length": len(response.content) if response and response.content else 0,
@@ -417,7 +418,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         event_data = {
             "tool_name": tool_name,
             "arguments": arguments,
-            "result": str(result)[:100] if result else None,
+            "result": preview_text(result, max_chars=100) if result else None,
             "error": str(error) if error else None,
             "success": success
         }
@@ -758,7 +759,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
             # Emit generation started event (covers request received)
             event_data = {
-                "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                "prompt": preview_text(prompt, max_chars=100),
                 "has_tools": bool(tools),
                 "stream": stream,
                 "model": self.model,
@@ -893,7 +894,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             emit_global(EventType.ERROR, {
                 "error": str(e),
                 "error_type": type(e).__name__,
-                "prompt": prompt[:100] + "..." if len(prompt) > 100 else prompt,
+                "prompt": preview_text(prompt, max_chars=100),
                 "model": self.model,
                 "provider": self.__class__.__name__
             }, source=self.__class__.__name__)
@@ -1338,9 +1339,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         results_text = "\n\nTool Results:\n"
         for call, result in zip(tool_calls, tool_results):
             # Format parameters for display (limit size)
-            params_str = str(call.arguments) if call.arguments else "{}"
-            if len(params_str) > 100:
-                params_str = params_str[:97] + "..."
+            params_str = preview_text(str(call.arguments) if call.arguments else "{}", max_chars=100)
 
             # Show tool name and parameters for transparency
             results_text += f"🔧 Tool: {call.name}({params_str})\n"

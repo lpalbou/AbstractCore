@@ -24,6 +24,7 @@ from ..core.interface import AbstractCoreInterface
 from ..core.factory import create_llm
 from ..structured.retry import FeedbackRetry
 from ..utils.structured_logging import get_logger
+from ..utils.truncation import preview_text
 from ..tools.common_tools import web_search, fetch_url
 
 logger = get_logger(__name__)
@@ -697,7 +698,7 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
             logger.info(f"🔍 Executing search for: {query}")
             search_results = web_search(query, num_results=5)
             logger.debug(f"📄 Search results length: {len(search_results)}")
-            logger.debug(f"📄 Search results preview: {search_results[:500]}")
+            logger.debug(f"📄 Search results preview: {preview_text(search_results, max_chars=500)}")
             
             # Parse search results to extract URLs and content
             urls = self._extract_urls_from_search(search_results)
@@ -739,7 +740,7 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                     synthetic_finding = ResearchFinding(
                         source_url="https://duckduckgo.com/?q=" + query.replace(" ", "+"),
                         title=f"Search results for: {query}",
-                        content=search_results[:500] + "...",
+                        content=preview_text(search_results, max_chars=500),
                         relevance_score=0.3,
                         timestamp=timestamp,
                         sub_task_id=sub_task_id
@@ -940,7 +941,7 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
             }
         
         # Limit content for efficient assessment
-        assessment_content = content[:1500] + "..." if len(content) > 1500 else content
+        assessment_content = preview_text(content, max_chars=1500)
         
         assessment_prompt = f"""
 Assess if this content contains meaningful information related to the research query.
@@ -1386,7 +1387,7 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
                     content_parts.append(f"**Content:** {text_preview}")
             else:
                 # Standard mode: use longer preview (up to 1000 chars)
-                preview = text_preview[:1000] + "..." if len(text_preview) > 1000 else text_preview
+                preview = preview_text(text_preview, max_chars=1000)
                 content_parts.append(f"**Content:** {preview}")
         
         if not content_parts:
@@ -1536,8 +1537,7 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
         """Fallback LLM-based extraction for unstructured content"""
         
         # Limit content length for processing
-        if len(content) > 8000:
-            content = content[:8000] + "..."
+        content = preview_text(content, max_chars=8000)
         
         extraction_prompt = f"""
 Extract the most relevant information from this content for the research query.
@@ -1944,7 +1944,7 @@ Guidelines:
         sources = []
         
         for finding in findings[:10]:  # Limit to top 10 findings
-            key_findings.append(finding.content[:200] + "..." if len(finding.content) > 200 else finding.content)
+            key_findings.append(preview_text(finding.content, max_chars=200))
             sources.append({
                 "title": finding.title,
                 "url": finding.source_url,
@@ -1964,6 +1964,11 @@ Guidelines:
 
     def _verify_report(self, report: ResearchReport, findings: List[ResearchFinding]) -> ResearchReport:
         """Stage 5: Verify report accuracy and add fact-checking"""
+
+        sources_preview = "\n".join(
+            f"- {preview_text(f.content, max_chars=200)}"
+            for f in findings[:10]
+        )
         
         verification_prompt = f"""
 Review this research report for accuracy and consistency with the source findings.
@@ -1973,7 +1978,7 @@ EXECUTIVE SUMMARY: {report.executive_summary}
 KEY FINDINGS: {report.key_findings}
 
 SOURCE FINDINGS:
-{[f"- {f.content[:200]}..." for f in findings[:10]]}
+{sources_preview}
 
 Identify any potential issues:
 1. Claims not supported by the source findings

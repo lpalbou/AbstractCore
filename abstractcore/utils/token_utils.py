@@ -230,12 +230,14 @@ class TokenUtils:
             return ContentType.NATURAL_LANGUAGE
             
         # Sample first 1000 chars for efficiency
+        #[WARNING:TRUNCATION] bounded sample for heuristic detection (performance)
         sample = text[:1000]
         
         # JSON detection
         if sample.strip().startswith(('{', '[')):
             try:
                 import json
+                #[WARNING:TRUNCATION] bounded JSON probe for heuristic detection (performance)
                 json.loads(sample[:500])  # Try to parse a portion
                 return ContentType.JSON
             except:

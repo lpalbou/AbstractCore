@@ -205,9 +205,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                         body=body_json
                     )
                 except json.JSONDecodeError:
+                    raw = body.decode("utf-8", errors="replace")
+                    body_text = raw
+                    if len(body_text) > 1000:
+                        #[WARNING:TRUNCATION] bounded request-body preview for debug logs
+                        body_text = body_text[:980].rstrip() + "\n… (truncated)"
                     logger.debug(
                         "📋 Request Body (Validation Error)",
-                        body_text=body.decode('utf-8', errors='replace')[:1000]  # Limit to 1000 chars
+                        body_text=body_text,
                     )
         except Exception as e:
             logger.debug(f"Could not read request body for debugging: {e}")
@@ -2353,11 +2358,16 @@ async def process_chat_completion(
 
         # Detect target format for tool call syntax
         target_format = detect_target_format(f"{provider}/{model}", request, http_request)
+        user_agent_raw = http_request.headers.get("user-agent", "")
+        user_agent = str(user_agent_raw or "")
+        if len(user_agent) > 50:
+            #[WARNING:TRUNCATION] bounded user-agent capture for request logs
+            user_agent = user_agent[:50].rstrip() + "…"
         logger.info(
             "🎯 Target Format Detected",
             request_id=request_id,
             target_format=target_format.value,
-            user_agent=http_request.headers.get("user-agent", "")[:50]
+            user_agent=user_agent,
         )
 
         # Process media from messages
@@ -2382,11 +2392,14 @@ async def process_chat_completion(
         # Validate media files if any were found
         if all_media_files:
             validate_media_files(all_media_files)
+            #[WARNING:TRUNCATION] bounded filename preview for request logs
+            files_preview = [os.path.basename(f) for f in all_media_files[:5]]
             logger.info(
                 "📎 Media Files Processed",
                 request_id=request_id,
                 file_count=len(all_media_files),
-                files=[os.path.basename(f) for f in all_media_files[:5]]  # Log first 5 filenames
+                files=files_preview,
+                files_truncated=len(all_media_files) > 5,
             )
 
         # Create LLM instance

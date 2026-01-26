@@ -20,6 +20,7 @@ except ImportError:
 from ..base import BaseMediaHandler, MediaProcessingError
 from ..types import MediaContent, MediaType, ContentFormat
 from ...utils.token_utils import estimate_tokens
+from ...utils.truncation import preview_text
 
 
 class TextProcessor(BaseMediaHandler):
@@ -501,7 +502,7 @@ class TextProcessor(BaseMediaHandler):
             summary_parts.append(f"Text document with {metadata.get('word_count', 0)} words and {metadata.get('line_count', 0)} lines")
 
             # Add content preview
-            preview = content[:500] + "..." if len(content) > 500 else content
+            preview = preview_text(content, max_chars=500)
             summary_parts.append(f"\nContent preview:\n{preview}")
 
         return "\n".join(summary_parts)

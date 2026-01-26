@@ -86,6 +86,7 @@ from ..exceptions import (
     format_model_error,
 )
 from ..tools import UniversalToolHandler
+from ..utils.truncation import preview_text
 
 
 class OpenAICompatibleProvider(BaseProvider):
@@ -250,7 +251,8 @@ class OpenAICompatibleProvider(BaseProvider):
             text = response.text
             if isinstance(text, str) and text.strip():
                 # Bound size to avoid dumping huge error bodies.
-                return text.strip()[:2000]
+                body = text.strip()
+                return preview_text(body, max_chars=2000)
         except Exception:
             pass
 

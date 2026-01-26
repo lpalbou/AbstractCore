@@ -32,6 +32,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any, Dict, Iterator, List
 
+from .truncation import preview_text
+
 # Enable command history and arrow key navigation
 try:
     import readline
@@ -1109,10 +1111,10 @@ class SimpleCLI:
                     else:
                         print(f"   {i+1}. ⚙️  System prompt")
                 elif msg.role == 'user':
-                    preview = msg.content[:50] + "..." if len(msg.content) > 50 else msg.content
+                    preview = preview_text(msg.content, max_chars=50)
                     print(f"   {i+1}. 👤 {preview}")
                 elif msg.role == 'assistant':
-                    preview = msg.content[:50] + "..." if len(msg.content) > 50 else msg.content
+                    preview = preview_text(msg.content, max_chars=50)
                     print(f"   {i+1}. 🤖 {preview}")
 
             print("   💡 Note: Token count may increase initially due to detailed summary")
@@ -1387,7 +1389,7 @@ class SimpleCLI:
                 # Truncate long response approaches for readability
                 response_approach = analysis.suggested_response_approach
                 if len(response_approach) > 200:
-                    response_approach = response_approach[:197] + "..."
+                    response_approach = preview_text(response_approach, max_chars=200)
                 print(f"   {response_approach}")
                 
                 # Analysis metadata
@@ -2173,7 +2175,7 @@ class SimpleCLI:
                 if not self.single_prompt_mode:
                     args_str = str(tool_args) if tool_args else "{}"
                     if len(args_str) > 100:
-                        args_str = args_str[:97] + "..."
+                        args_str = preview_text(args_str, max_chars=100)
                     print(f"**{tool_name}({args_str})**")
                 
                 # Execute the tool
