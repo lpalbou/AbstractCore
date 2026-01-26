@@ -19,6 +19,7 @@ from ..core.interface import AbstractCoreInterface
 from ..core.factory import create_llm
 from ..structured.retry import FeedbackRetry
 from ..utils.structured_logging import get_logger
+from ..utils.truncation import preview_text
 
 logger = get_logger(__name__)
 
@@ -657,7 +658,7 @@ These criteria form the foundation of this assessment. Each criterion is evaluat
         # Determine source reference
         source_ref = f"Content evaluation in context: {context}"
         if len(content) > 50:
-            content_preview = content[:50] + "..."
+            content_preview = preview_text(content, max_chars=50)
             source_ref = f"Content: '{content_preview}' (context: {context})"
         else:
             source_ref = f"Content: '{content}' (context: {context})"

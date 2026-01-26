@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from ..utils.truncation import preview_text
+
 
 _DEFAULT_ACCEPT = "application/json, text/event-stream"
 
@@ -143,7 +145,7 @@ class McpClient:
 
         if resp.status_code < 200 or resp.status_code >= 300:
             body = (resp.text or "").strip()
-            raise McpHttpError(f"MCP HTTP {resp.status_code}: {body[:500]}")
+            raise McpHttpError(f"MCP HTTP {resp.status_code}: {preview_text(body, max_chars=500)}")
 
         try:
             data = resp.json()

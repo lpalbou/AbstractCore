@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
 from ..utils.structured_logging import get_logger
 from ..utils.jsonish import loads_dict_like as _loads_dict_like
+from ..utils.truncation import preview_text
 
 logger = get_logger(__name__)
 
@@ -165,7 +166,7 @@ class ToolCallTagRewriter:
         Returns:
             Text with rewritten tool call tags
         """
-        logger.debug(f"rewrite_text called with text: {text[:100] if text else None}")
+        logger.debug(f"rewrite_text called with text: {preview_text(text, max_chars=100) if text else None}")
         logger.debug(f"Target output tags: start='{self._output_start_tag}', end='{self._output_end_tag}'")
 
         if not text or not self.target_tags.preserve_json:

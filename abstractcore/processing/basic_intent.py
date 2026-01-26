@@ -13,6 +13,7 @@ from ..core.interface import AbstractCoreInterface
 from ..core.factory import create_llm
 from ..structured.retry import FeedbackRetry
 from ..utils.structured_logging import get_logger
+from ..utils.truncation import preview_text
 
 logger = get_logger(__name__)
 
@@ -275,7 +276,7 @@ class BasicIntentAnalyzer:
             # Debug information for troubleshooting
             error_msg = f"Failed to generate structured intent analysis output. Response type: {type(response)}"
             if hasattr(response, 'content'):
-                error_msg += f", Content: {response.content[:200]}..."
+                error_msg += f", Content: {preview_text(response.content, max_chars=200)}"
             if hasattr(response, 'structured_output'):
                 error_msg += f", Structured output: {response.structured_output}"
             raise ValueError(error_msg)
@@ -375,7 +376,7 @@ class BasicIntentAnalyzer:
             # Debug information for troubleshooting
             error_msg = f"Failed to generate final structured intent analysis output. Response type: {type(response)}"
             if hasattr(response, 'content'):
-                error_msg += f", Content: {response.content[:200]}..."
+                error_msg += f", Content: {preview_text(response.content, max_chars=200)}"
             if hasattr(response, 'structured_output'):
                 error_msg += f", Structured output: {response.structured_output}"
             raise ValueError(error_msg)

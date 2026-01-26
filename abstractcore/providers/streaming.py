@@ -15,6 +15,7 @@ from ..core.types import GenerateResponse
 from ..tools.core import ToolCall
 from ..utils.jsonish import loads_dict_like
 from ..utils.structured_logging import get_logger
+from ..utils.truncation import preview_text
 
 logger = get_logger(__name__)
 
@@ -883,9 +884,13 @@ class UnifiedStreamProcessor:
             # Use direct text rewriting since we have complete tool calls
             rewritten = self.tag_rewriter.rewrite_text(content)
             if rewritten != content:
-                logger.debug(f"Tag rewriting successful: {content[:50]} -> {rewritten[:50]}")
+                logger.debug(
+                    "Tag rewriting successful: %s -> %s",
+                    preview_text(content, max_chars=50),
+                    preview_text(rewritten, max_chars=50),
+                )
             else:
-                logger.debug(f"Tag rewriting had no effect on: {content[:50]}")
+                logger.debug("Tag rewriting had no effect on: %s", preview_text(content, max_chars=50))
             return rewritten
         except Exception as e:
             logger.debug(f"Tag rewriting failed: {e}")

@@ -250,7 +250,7 @@ class StructuredOutputHandler:
         def _is_truncated(resp: Any) -> bool:
             fr = getattr(resp, "finish_reason", None)
             fr_str = str(fr or "").strip().lower()
-            return fr_str in {"length", "max_tokens"}
+            return fr_str in {"length", "max_tokens", "max_output_tokens"}
 
         def _bump_max_output_tokens(current_kwargs: dict) -> dict:
             updated = dict(current_kwargs)
@@ -264,11 +264,27 @@ class StructuredOutputHandler:
                 except Exception:
                     cur = 0
             if cur <= 0:
-                cur = 512
+                try:
+                    cur = int(getattr(provider, "max_output_tokens", 0) or 0)
+                except Exception:
+                    cur = 0
+                if cur <= 0:
+                    cur = 512
 
             # Prefer geometric growth; also add a fixed floor so small values ramp quickly.
             bumped = max(cur * 2, cur + 500)
-            cap = 8192
+            cap = 0
+            try:
+                # Use model capabilities (not provider defaults) to avoid accidental hard caps.
+                from ..architectures.detection import get_context_limits
+
+                model_name = getattr(provider, "model", None)
+                limits = get_context_limits(str(model_name or ""))
+                cap = int(limits.get("max_output_tokens") or 0)
+            except Exception:
+                cap = 0
+            if cap <= 0:
+                cap = 1_000_000
             updated["max_output_tokens"] = min(bumped, cap)
             # Avoid ambiguity when both keys are present.
             updated.pop("max_tokens", None)
@@ -276,6 +292,20 @@ class StructuredOutputHandler:
 
         last_error: Exception | None = None
         attempt_kwargs = dict(kwargs)
+        def _coerce_boolish(value: Any) -> bool:
+            if isinstance(value, bool):
+                return bool(value)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value) != 0.0
+            if isinstance(value, str):
+                return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+            return False
+
+        allow_truncation_raw = attempt_kwargs.pop("allow_truncation", None)
+        if allow_truncation_raw is None:
+            allow_truncation_raw = attempt_kwargs.pop("allow_truncated", None)
+        allow_truncation = _coerce_boolish(allow_truncation_raw) if allow_truncation_raw is not None else False
+
         max_attempts = int(getattr(self.retry_strategy, "max_attempts", 3) or 3)
         for attempt in range(1, max_attempts + 1):
             response = provider._generate_internal(
@@ -286,17 +316,53 @@ class StructuredOutputHandler:
 
             try:
                 if isinstance(response.content, dict):
-                    return response_model.model_validate(
+                    validated = response_model.model_validate(
                         _coerce_single_list_wrapper(response.content, response_model=response_model)
                     )
+                    if _is_truncated(response) and not allow_truncation:
+                        if attempt < max_attempts:
+                            bumped = _bump_max_output_tokens(attempt_kwargs)
+                            self.logger.warning(
+                                "Structured output truncated; retrying with higher max_output_tokens",
+                                finish_reason=str(getattr(response, "finish_reason", None)),
+                                attempt=attempt,
+                                max_output_tokens=attempt_kwargs.get("max_output_tokens") or attempt_kwargs.get("max_tokens"),
+                                next_max_output_tokens=bumped.get("max_output_tokens"),
+                            )
+                            attempt_kwargs = bumped
+                            continue
+                        raise RuntimeError("Structured output was truncated (finish_reason=length). Increase max_output_tokens.")
+                    return validated
 
                 data = json.loads(response.content)
-                return response_model.model_validate(_coerce_single_list_wrapper(data, response_model=response_model))
+                validated = response_model.model_validate(_coerce_single_list_wrapper(data, response_model=response_model))
+                if _is_truncated(response) and not allow_truncation:
+                    if attempt < max_attempts:
+                        bumped = _bump_max_output_tokens(attempt_kwargs)
+                        self.logger.warning(
+                            "Structured output truncated; retrying with higher max_output_tokens",
+                            finish_reason=str(getattr(response, "finish_reason", None)),
+                            attempt=attempt,
+                            max_output_tokens=attempt_kwargs.get("max_output_tokens") or attempt_kwargs.get("max_tokens"),
+                            next_max_output_tokens=bumped.get("max_output_tokens"),
+                        )
+                        attempt_kwargs = bumped
+                        continue
+                    raise RuntimeError("Structured output was truncated (finish_reason=length). Increase max_output_tokens.")
+                return validated
             except (json.JSONDecodeError, ValidationError) as e:
                 last_error = e
 
                 if _is_truncated(response) and attempt < max_attempts:
-                    attempt_kwargs = _bump_max_output_tokens(attempt_kwargs)
+                    bumped = _bump_max_output_tokens(attempt_kwargs)
+                    self.logger.warning(
+                        "Structured output truncated; retrying with higher max_output_tokens",
+                        finish_reason=str(getattr(response, "finish_reason", None)),
+                        attempt=attempt,
+                        max_output_tokens=attempt_kwargs.get("max_output_tokens") or attempt_kwargs.get("max_tokens"),
+                        next_max_output_tokens=bumped.get("max_output_tokens"),
+                    )
+                    attempt_kwargs = bumped
                     continue
 
                 fixed_json = None
@@ -308,9 +374,15 @@ class StructuredOutputHandler:
                 if fixed_json:
                     try:
                         data = json.loads(fixed_json)
-                        return response_model.model_validate(
+                        validated = response_model.model_validate(
                             _coerce_single_list_wrapper(data, response_model=response_model)
                         )
+                        if _is_truncated(response) and not allow_truncation:
+                            raise RuntimeError(
+                                "Structured output was truncated (finish_reason=length) and only repaired via JSON self-fix. "
+                                "Increase max_output_tokens."
+                            )
+                        return validated
                     except (json.JSONDecodeError, ValidationError):
                         pass
 
@@ -350,6 +422,19 @@ class StructuredOutputHandler:
         last_error = None
         current_prompt = enhanced_prompt
         current_kwargs = dict(kwargs)
+        def _coerce_boolish(value: Any) -> bool:
+            if isinstance(value, bool):
+                return bool(value)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value) != 0.0
+            if isinstance(value, str):
+                return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+            return False
+
+        allow_truncation_raw = current_kwargs.pop("allow_truncation", None)
+        if allow_truncation_raw is None:
+            allow_truncation_raw = current_kwargs.pop("allow_truncated", None)
+        allow_truncation = _coerce_boolish(allow_truncation_raw) if allow_truncation_raw is not None else False
 
         for attempt in range(1, self.retry_strategy.max_attempts + 1):
             attempt_start_time = time.time()
@@ -408,6 +493,52 @@ class StructuredOutputHandler:
                 # Note: VALIDATION_SUCCEEDED event removed in simplification
                 # Success is indicated by successfully parsing the response
 
+                finish_reason = str(getattr(response, "finish_reason", "") or "").strip().lower()
+                is_truncated = finish_reason in {"length", "max_tokens", "max_output_tokens"}
+                if is_truncated and not allow_truncation:
+                    if attempt < self.retry_strategy.max_attempts:
+                        raw = current_kwargs.get("max_output_tokens")
+                        if raw is None:
+                            raw = current_kwargs.get("max_tokens")
+                        cur = 0
+                        if raw is not None and not isinstance(raw, bool):
+                            try:
+                                cur = int(raw)
+                            except Exception:
+                                cur = 0
+                        if cur <= 0:
+                            try:
+                                cur = int(getattr(provider, "max_output_tokens", 0) or 0)
+                            except Exception:
+                                cur = 0
+                            if cur <= 0:
+                                cur = 512
+                        bumped = max(cur * 2, cur + 500)
+                        cap = 0
+                        try:
+                            from ..architectures.detection import get_context_limits
+
+                            model_name = getattr(provider, "model", None)
+                            limits = get_context_limits(str(model_name or ""))
+                            cap = int(limits.get("max_output_tokens") or 0)
+                        except Exception:
+                            cap = 0
+                        if cap <= 0:
+                            cap = 1_000_000
+                        next_budget = min(bumped, cap)
+                        self.logger.warning(
+                            "Structured output truncated; retrying with higher max_output_tokens",
+                            finish_reason=finish_reason,
+                            attempt=attempt,
+                            max_output_tokens=current_kwargs.get("max_output_tokens") or current_kwargs.get("max_tokens"),
+                            next_max_output_tokens=next_budget,
+                        )
+                        current_kwargs["max_output_tokens"] = next_budget
+                        current_kwargs.pop("max_tokens", None)
+                        current_prompt = enhanced_prompt
+                        continue
+                    raise RuntimeError("Structured output was truncated (finish_reason=length). Increase max_output_tokens.")
+
                 # Log successful validation
                 self.logger.info("Validation attempt succeeded",
                                provider=provider_name,
@@ -452,7 +583,7 @@ class StructuredOutputHandler:
 
                 # Check if we should retry
                 finish_reason = str(getattr(response, "finish_reason", "") or "").strip().lower()
-                is_truncated = finish_reason in {"length", "max_tokens"}
+                is_truncated = finish_reason in {"length", "max_tokens", "max_output_tokens"}
                 if is_truncated and attempt < self.retry_strategy.max_attempts:
                     raw = current_kwargs.get("max_output_tokens")
                     if raw is None:
@@ -464,10 +595,33 @@ class StructuredOutputHandler:
                         except Exception:
                             cur = 0
                     if cur <= 0:
-                        cur = 512
+                        try:
+                            cur = int(getattr(provider, "max_output_tokens", 0) or 0)
+                        except Exception:
+                            cur = 0
+                        if cur <= 0:
+                            cur = 512
                     bumped = max(cur * 2, cur + 500)
-                    cap = 8192
-                    current_kwargs["max_output_tokens"] = min(bumped, cap)
+                    cap = 0
+                    try:
+                        from ..architectures.detection import get_context_limits
+
+                        model_name = getattr(provider, "model", None)
+                        limits = get_context_limits(str(model_name or ""))
+                        cap = int(limits.get("max_output_tokens") or 0)
+                    except Exception:
+                        cap = 0
+                    if cap <= 0:
+                        cap = 1_000_000
+                    next_budget = min(bumped, cap)
+                    self.logger.warning(
+                        "Structured output truncated; retrying with higher max_output_tokens",
+                        finish_reason=finish_reason,
+                        attempt=attempt,
+                        max_output_tokens=current_kwargs.get("max_output_tokens") or current_kwargs.get("max_tokens"),
+                        next_max_output_tokens=next_budget,
+                    )
+                    current_kwargs["max_output_tokens"] = next_budget
                     current_kwargs.pop("max_tokens", None)
                     # Keep the base prompt stable: appending more text makes truncation more likely.
                     current_prompt = enhanced_prompt

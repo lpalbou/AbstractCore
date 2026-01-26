@@ -42,6 +42,7 @@ except ImportError:
 # Import our enhanced tool decorator
 from abstractcore.tools.core import tool
 from abstractcore.utils.structured_logging import get_logger
+from abstractcore.utils.truncation import preview_text
 
 logger = get_logger(__name__)
 
@@ -4196,6 +4197,7 @@ def _is_xml_content(content: str) -> bool:
     html_indicators = ['<!doctype html', '<html', '<head>', '<body>', '<div', '<span', '<p>', '<a ']
     
     # Look at the first 1000 characters for indicators
+    #[WARNING:TRUNCATION] bounded sample for heuristic detection (performance)
     sample = content_lower[:1000]
     
     # If we find HTML indicators, it's likely HTML
@@ -5006,8 +5008,8 @@ def _parse_html_content(
         meta_desc = soup.find("meta", attrs={"name": "description"})
         if meta_desc and meta_desc.get("content"):
             desc = meta_desc["content"].strip()
-            if not include_full_content and len(desc) > 200:
-                desc = desc[:200] + "..."
+            if not include_full_content:
+                desc = preview_text(desc, max_chars=200)
             result_parts.append(f"📝 Description: {desc}")
 
         # Remove common layout/script noise and select the most content-dense container.
