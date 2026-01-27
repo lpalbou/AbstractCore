@@ -885,12 +885,10 @@ class UnifiedStreamProcessor:
             rewritten = self.tag_rewriter.rewrite_text(content)
             if rewritten != content:
                 logger.debug(
-                    "Tag rewriting successful: %s -> %s",
-                    preview_text(content, max_chars=50),
-                    preview_text(rewritten, max_chars=50),
+                    f"Tag rewriting successful: {preview_text(content, max_chars=50)} -> {preview_text(rewritten, max_chars=50)}"
                 )
             else:
-                logger.debug("Tag rewriting had no effect on: %s", preview_text(content, max_chars=50))
+                logger.debug(f"Tag rewriting had no effect on: {preview_text(content, max_chars=50)}")
             return rewritten
         except Exception as e:
             logger.debug(f"Tag rewriting failed: {e}")
