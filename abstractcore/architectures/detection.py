@@ -213,6 +213,30 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
             return s
         return s.split("/")[-1].strip()
 
+    def _colon_variants(name: str) -> List[str]:
+        """Generate best-effort candidates for Ollama-style `name:tag` ids."""
+        s = str(name or "").strip()
+        if not s or ":" not in s:
+            return []
+        head, rest = s.split(":", 1)
+        head = head.strip()
+        rest = rest.strip()
+        if not head or not rest:
+            return []
+        first = rest.split("-", 1)[0].strip()
+        out: List[str] = []
+        # Avoid over-mapping specialized Ollama names (e.g., `qwen3-coder:30b`) onto
+        # upstream base-model capability entries which may advertise much larger context
+        # windows than the local runtime is configured to support by default.
+        if "-" in head:
+            out.append(head)
+            return out
+        if first:
+            out.append(f"{head}:{first}")
+            out.append(f"{head}-{first}")
+        out.append(head)
+        return out
+
     def _candidates(*names: str) -> List[str]:
         out: List[str] = []
         for n in names:
@@ -220,9 +244,11 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
             if not s:
                 continue
             out.append(s)
+            out.extend(_colon_variants(s))
             t = _tail(s)
             if t and t != s:
                 out.append(t)
+                out.extend(_colon_variants(t))
         # Deduplicate while preserving order
         uniq: List[str] = []
         seen: set[str] = set()

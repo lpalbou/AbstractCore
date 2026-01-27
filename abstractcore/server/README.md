@@ -577,11 +577,14 @@ These return `501` until you configure a backend.
 - **Local Diffusers**: set `ABSTRACTCORE_VISION_BACKEND=diffusers`
   - `ABSTRACTCORE_VISION_MODEL_ID` (required) — local model id/path (Diffusers)
   - `ABSTRACTCORE_VISION_DEVICE` (optional, default `cpu`)
-  - `ABSTRACTCORE_VISION_TORCH_DTYPE` (optional, e.g. `float16`)
+  - `ABSTRACTCORE_VISION_TORCH_DTYPE` (optional, e.g. `float16`; for very large models you typically need `float16` or you may run out of memory)
   - `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD` (optional, default false; cache-only by default)
+  - Note: if you set `ABSTRACTCORE_VISION_DEVICE=mps` or `cuda`, your PyTorch must actually support it (`torch.backends.mps.is_available()` / `torch.cuda.is_available()`).
+  - Install: `pip install "abstractcore[server,vision-diffusers]"`
 
-- **Local stable-diffusion.cpp (`sd-cli`)**: set `ABSTRACTCORE_VISION_BACKEND=sdcpp`
-  - Install `sd-cli`: https://github.com/leejet/stable-diffusion.cpp/releases
+- **Local stable-diffusion.cpp**: set `ABSTRACTCORE_VISION_BACKEND=sdcpp`
+  - Recommended (pip-only): `pip install "abstractcore[server,vision-sdcpp]"` (installs `abstractvision[sdcpp]`)
+  - Alternative (external executable): install `sd-cli`: https://github.com/leejet/stable-diffusion.cpp/releases
   - `ABSTRACTCORE_VISION_SDCPP_BIN` (optional, default `sd-cli`)
   - Configure either:
     - **Full model**: `ABSTRACTCORE_VISION_SDCPP_MODEL`
@@ -604,7 +607,9 @@ curl http://localhost:8000/v1/images/edits \\
 
 Notes:
 - The server returns `b64_json` outputs, matching the OpenAI image API shape.
-- Endpoints delegate to AbstractVision internally; install it if needed: `pip install abstractvision`
+- Endpoints delegate to AbstractVision internally; install it in the same env as the server (and prefer `python -m uvicorn ...`):
+  - `pip install "abstractcore[server,vision]"`
+  - or manage it directly: `pip install abstractvision`
 
 ---
 

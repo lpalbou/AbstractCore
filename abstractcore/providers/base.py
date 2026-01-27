@@ -38,7 +38,7 @@ from ..exceptions import (
 )
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
 from ..architectures.response_postprocessing import (
-    maybe_extract_harmony_final_text,
+    normalize_assistant_text,
     strip_output_wrappers,
 )
 from ..tools import execute_tools
@@ -627,6 +627,233 @@ class BaseProvider(AbstractCoreInterface, ABC):
         else:
             return ProviderAPIError(f"API error: {error}")
 
+    @staticmethod
+    def _normalize_thinking_request(thinking: Optional[Union[bool, str]]) -> Tuple[Optional[bool], Optional[str]]:
+        """Normalize `thinking=` into (enabled, level).
+
+        - enabled: True/False/None (None == "auto")
+        - level: Optional[str] in {"low","medium","high"} when requested
+        """
+        if thinking is None:
+            return None, None
+
+        if isinstance(thinking, bool):
+            return thinking, None
+
+        if isinstance(thinking, str):
+            s = thinking.strip().lower()
+            if not s or s == "auto":
+                return None, None
+            if s in {"on", "true", "yes"}:
+                return True, None
+            if s in {"off", "false", "no"}:
+                return False, None
+            if s in {"low", "medium", "high"}:
+                return True, s
+
+        raise ValueError('thinking must be one of: None, bool, "auto", "on", "off", "low", "medium", "high"')
+
+    def _model_reasoning_levels(self) -> List[str]:
+        levels = None
+        for src in (self.model_capabilities, self.architecture_config):
+            if not isinstance(src, dict):
+                continue
+            value = src.get("reasoning_levels")
+            if isinstance(value, list) and value:
+                levels = value
+                break
+        if not isinstance(levels, list):
+            return []
+        out: List[str] = []
+        for x in levels:
+            if isinstance(x, str) and x.strip():
+                out.append(x.strip().lower())
+        # Deduplicate while preserving order.
+        seen: set[str] = set()
+        uniq: List[str] = []
+        for x in out:
+            if x in seen:
+                continue
+            seen.add(x)
+            uniq.append(x)
+        return uniq
+
+    def _model_supports_thinking_control(self) -> bool:
+        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
+        arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
+
+        if caps.get("thinking_support") is True:
+            return True
+        if isinstance(caps.get("thinking_tags"), (list, tuple)) and len(caps.get("thinking_tags")) == 2:
+            return True
+        if isinstance(caps.get("thinking_output_field"), str) and caps.get("thinking_output_field").strip():
+            return True
+        if self._model_reasoning_levels():
+            return True
+
+        if isinstance(arch.get("thinking_tags"), (list, tuple)) and len(arch.get("thinking_tags")) == 2:
+            return True
+        if isinstance(arch.get("thinking_control"), str) and arch.get("thinking_control").strip():
+            return True
+        if arch.get("reasoning_support") is True:
+            return True
+        if isinstance(arch.get("reasoning_levels"), list) and arch.get("reasoning_levels"):
+            return True
+
+        return False
+
+    def _apply_thinking_request(
+        self,
+        *,
+        thinking: Optional[Union[bool, str]],
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]],
+        system_prompt: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> Tuple[str, Optional[List[Dict[str, str]]], Optional[str], Dict[str, Any]]:
+        """Apply unified thinking controls to the request."""
+        enabled, level = self._normalize_thinking_request(thinking)
+        if enabled is None and level is None:
+            return prompt, messages, system_prompt, kwargs
+
+        supports_control = self._model_supports_thinking_control()
+        reasoning_levels = self._model_reasoning_levels()
+
+        if level is not None and reasoning_levels and level not in reasoning_levels:
+            warnings.warn(
+                f"thinking level '{level}' requested but not supported for model '{self.model}' "
+                f"(supported: {reasoning_levels}); falling back to thinking='on'.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            level = None
+            enabled = True
+
+        if level is not None and not reasoning_levels:
+            warnings.warn(
+                f"thinking level '{level}' requested but model '{self.model}' has no configured reasoning_levels; "
+                "falling back to thinking='on'.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            level = None
+            enabled = True
+
+        handled_by_model_prompt = False
+
+        # Harmony (GPT-OSS): control via system message `Reasoning: low|medium|high`.
+        msg_fmt = str((self.architecture_config or {}).get("message_format") or "").strip().lower()
+        resp_fmt = str((self.model_capabilities or {}).get("response_format") or "").strip().lower()
+        is_harmony = msg_fmt == "harmony" or resp_fmt == "harmony"
+        if is_harmony:
+            target_level: Optional[str] = None
+            if level is not None:
+                target_level = level
+            elif enabled is False:
+                warnings.warn(
+                    f"thinking='off' requested for Harmony model '{self.model}', but GPT-OSS reasoning traces "
+                    "cannot be fully disabled; using Reasoning: low.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                target_level = "low"
+            elif enabled is True:
+                # Make the default explicit when the caller opts-in.
+                target_level = "medium"
+
+            if target_level:
+                line = f"Reasoning: {target_level}"
+                if isinstance(system_prompt, str) and system_prompt.strip():
+                    # Replace any existing Reasoning line; otherwise prepend.
+                    if re.search(r"(?mi)^\\s*Reasoning\\s*:\\s*(low|medium|high)\\s*$", system_prompt):
+                        system_prompt = re.sub(
+                            r"(?mi)^\\s*Reasoning\\s*:\\s*(low|medium|high)\\s*$",
+                            line,
+                            system_prompt,
+                            count=1,
+                        )
+                    else:
+                        system_prompt = f"{line}\n{system_prompt}"
+                else:
+                    system_prompt = line
+                handled_by_model_prompt = True
+
+        # Model-level control token for disabling thinking (e.g., GLM `/nothink`).
+        thinking_control = None
+        for src in (self.model_capabilities, self.architecture_config):
+            if not isinstance(src, dict):
+                continue
+            token = src.get("thinking_control")
+            if isinstance(token, str) and token.strip():
+                thinking_control = token.strip()
+
+        if enabled is False and thinking_control:
+            handled_by_model_prompt = True
+
+            def _append_control(text: str) -> str:
+                if thinking_control in text:
+                    return text
+                return f"{text.rstrip()}\n{thinking_control}".strip()
+
+            if isinstance(prompt, str) and prompt.strip():
+                prompt = _append_control(prompt)
+            elif isinstance(messages, list) and messages:
+                # Append to the most recent user turn, if possible.
+                new_messages: List[Dict[str, str]] = []
+                appended = False
+                for m in messages:
+                    if not isinstance(m, dict):
+                        continue
+                    new_messages.append(dict(m))
+                for m in reversed(new_messages):
+                    if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].strip():
+                        m["content"] = _append_control(m["content"])
+                        appended = True
+                        break
+                messages = new_messages
+                if not appended:
+                    warnings.warn(
+                        f"thinking='off' requested for model '{self.model}', but no user prompt was available "
+                        f"to append thinking_control='{thinking_control}'.",
+                        RuntimeWarning,
+                        stacklevel=3,
+                    )
+
+        kwargs, handled_by_provider = self._apply_provider_thinking_kwargs(
+            enabled=enabled,
+            level=level,
+            kwargs=kwargs,
+        )
+
+        if not supports_control and thinking is not None:
+            warnings.warn(
+                f"thinking={thinking!r} requested but model '{self.model}' is not marked as thinking-capable "
+                "in model_capabilities.json; the request may be ignored.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+
+        if not handled_by_model_prompt and not handled_by_provider and (enabled is False or level is not None):
+            warnings.warn(
+                f"thinking={thinking!r} requested but provider '{self.provider or self.__class__.__name__}' "
+                "does not implement a thinking control mapping for this model; the request may be ignored.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+
+        return prompt, messages, system_prompt, kwargs
+
+    def _apply_provider_thinking_kwargs(
+        self,
+        *,
+        enabled: Optional[bool],
+        level: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], bool]:
+        """Provider-specific thinking knob hook (default: unsupported)."""
+        _ = (enabled, level)
+        return kwargs, False
+
     def generate_with_telemetry(self,
                                prompt: str,
                                messages: Optional[List[Dict[str, str]]] = None,
@@ -639,6 +866,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                tool_call_tags: Optional[str] = None,  # Tool call tag rewriting
                                execute_tools: Optional[bool] = None,  # Tool execution control
                                glyph_compression: Optional[str] = None,  # Glyph compression preference
+                               thinking: Optional[Union[bool, str]] = None,  # Unified reasoning/thinking control
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate with integrated telemetry and error handling.
@@ -656,6 +884,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             tool_call_tags: Optional tool call tag format for rewriting
             execute_tools: Whether to execute tools automatically (True) or let agent handle execution (False)
             glyph_compression: Glyph compression preference ("auto", "always", "never")
+            thinking: Unified reasoning/thinking control (auto/on/off or low/medium/high when supported)
         """
         # Normalize token limit naming at the provider boundary.
         #
@@ -669,6 +898,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Prompt caching: apply a default `prompt_cache_key` if configured.
         self._apply_default_prompt_cache_key(kwargs)
+
+        # Apply unified thinking controls (provider-agnostic + provider-specific mappings).
+        prompt, messages, system_prompt, kwargs = self._apply_thinking_request(
+            thinking=thinking,
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            kwargs=kwargs,
+        )
 
         # Handle structured output request
         if response_model is not None:
@@ -871,23 +1109,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if tool_call_tags and response.content and not self._should_clean_tool_call_markup(tool_call_tags):
                         response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
 
-                # Strip model-specific output wrappers (e.g. GLM <|begin_of_box|>…<|end_of_box|>).
+                # Normalize provider output (wrapper tokens, Harmony transcripts, think tags).
                 if response and isinstance(response.content, str) and response.content:
-                    response.content = strip_output_wrappers(
+                    cleaned, reasoning = normalize_assistant_text(
                         response.content,
                         architecture_format=self.architecture_config,
                         model_capabilities=self.model_capabilities,
                     )
-                    cleaned, reasoning = maybe_extract_harmony_final_text(
-                        response.content,
-                        architecture_format=self.architecture_config,
-                        model_capabilities=self.model_capabilities,
-                    )
+                    response.content = cleaned
                     if isinstance(reasoning, str) and reasoning.strip():
                         if response.metadata is None or not isinstance(response.metadata, dict):
                             response.metadata = {}
-                        response.metadata.setdefault("reasoning", reasoning.strip())
-                    response.content = cleaned
+                        existing = response.metadata.get("reasoning")
+                        if isinstance(existing, str) and existing.strip():
+                            if reasoning.strip() not in existing:
+                                response.metadata["reasoning"] = f"{existing.strip()}\n\n{reasoning.strip()}"
+                        else:
+                            response.metadata["reasoning"] = reasoning.strip()
 
                 # Add visual token calculation if media metadata is available
                 if media_metadata and response:

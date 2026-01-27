@@ -39,6 +39,11 @@
 - [docs/api-reference.md](docs/api-reference.md) — events (`EventType`, `on_global`, `emit_global`)
 - [docs/architecture.md](docs/architecture.md) — high-level system overview
 
+## Thinking / Reasoning
+
+- `thinking`: `None|"auto"|"on"|"off"|True|False|"low"|"medium"|"high"` (best-effort; warns when unsupported)
+- Reasoning capture: normalized into `GenerateResponse.metadata["reasoning"]` and stripped from `content` when needed (Harmony transcripts, `<think>` tags, wrapper tokens, and `</think>`-only outputs) via `abstractcore/architectures/response_postprocessing.py`
+
 ## Server (OpenAI-Compatible REST API)
 
 - [docs/server.md](docs/server.md) — endpoints + request fields (`base_url`, `agent_format`)
@@ -47,7 +52,7 @@
 ## CLI
 
 - [docs/acore-cli.md](docs/acore-cli.md) — interactive CLI usage
-- [abstractcore/utils/cli.py](abstractcore/utils/cli.py) — CLI entrypoint + flags (`--base-url`, `--max-output-tokens`, `/max-tokens`)
+- [abstractcore/utils/cli.py](abstractcore/utils/cli.py) — CLI entrypoint + flags (`--base-url`, `--max-output-tokens`, `/max-tokens`, `/thinking`, `/show-reasoning`)
 
 ## Full Context
 

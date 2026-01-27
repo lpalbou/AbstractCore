@@ -80,8 +80,18 @@ Comprehensive base class with integrated telemetry, events, error handling, and 
 - **Media processing**: Multi-modal content handling (images, PDFs, audio)
 - **Structured outputs**: Pydantic model support with validation
 - **Token management**: Unified max_tokens/max_output_tokens handling
+- **Output normalization**: Strips model-specific wrappers / transcripts (GLM box wrappers, GPT-OSS Harmony, `<think>...</think>`) into clean `content` + `metadata["reasoning"]`
+- **Thinking control**: Provider-agnostic `thinking=` knob (best-effort) mapped to supported backends/models
 - **Health checks**: Provider availability monitoring via `health()` method
 - **Memory management**: `unload_model(model_name)` for explicit memory cleanup
+
+**Why output normalization lives in BaseProvider (even for streaming)**:
+- It’s primarily **model/template-dependent** (architecture formats + model capabilities), not provider-dependent.
+- Centralizing it avoids duplicate fixes across providers and ensures consistent behavior across **Ollama / OpenAI-compatible / HF / MLX**.
+- The logic is **data-driven and gated** (only runs when `assets/architecture_formats.json` / `assets/model_capabilities.json` indicate wrappers/transcripts), so OpenAI/Anthropic-style outputs are unaffected.
+- Streaming is included so clients don’t see raw wrapper tokens mid-stream; the streaming path applies lightweight per-chunk normalization and the non-streaming path runs the full post-processing pipeline.
+
+See: `abstractcore/architectures/response_postprocessing.py` and the post-processing step inside `abstractcore/providers/base.py`.
 
 **Abstract Methods**:
 ```python
@@ -349,7 +359,6 @@ report = llm.generate("Analyze sales data", response_model=Report)
 **Special Features**:
 - Structured outputs via "tool trick": Uses native tools under the hood for guaranteed schema compliance
 - No seed support: Use `temperature=0` for more consistent outputs (warning issued)
-- Extended thinking: Supports extended reasoning with `thinking` parameter
 
 ### Ollama Provider
 

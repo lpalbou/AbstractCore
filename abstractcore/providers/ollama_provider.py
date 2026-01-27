@@ -99,6 +99,47 @@ class OllamaProvider(BaseProvider):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)
 
+    def _apply_provider_thinking_kwargs(
+        self,
+        *,
+        enabled: Optional[bool],
+        level: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], bool]:
+        # Ollama exposes "thinking" via the request field `think`.
+        # Most models accept a boolean; GPT-OSS uses "low|medium|high" and cannot fully disable traces.
+        if enabled is None and level is None:
+            return kwargs, False
+
+        new_kwargs = dict(kwargs)
+
+        reasoning_levels = self._model_reasoning_levels()
+        wants_levels = bool(reasoning_levels)
+
+        if wants_levels:
+            # Prefer explicit level; otherwise map off->low, on->medium.
+            if level is not None:
+                new_kwargs["think"] = level
+                return new_kwargs, True
+            if enabled is False:
+                new_kwargs["think"] = "low"
+                return new_kwargs, True
+            if enabled is True:
+                new_kwargs["think"] = "medium"
+                return new_kwargs, True
+            return kwargs, False
+
+        # Boolean mode.
+        if level is not None:
+            # Best-effort fallback.
+            new_kwargs["think"] = True
+            return new_kwargs, True
+        if enabled is not None:
+            new_kwargs["think"] = bool(enabled)
+            return new_kwargs, True
+
+        return kwargs, False
+
     def _convert_messages_for_ollama(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Convert OpenAI messages to Ollama-compatible format
 
@@ -178,6 +219,11 @@ class OllamaProvider(BaseProvider):
         seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
             payload["options"]["seed"] = seed_value
+
+        # Unified thinking/reasoning control (Ollama-native).
+        think_value = generation_kwargs.get("think")
+        if think_value is not None:
+            payload["think"] = think_value
 
         # Add structured output support (Ollama native JSON schema)
         # Ollama accepts the full JSON schema in the "format" parameter
@@ -305,6 +351,20 @@ class OllamaProvider(BaseProvider):
                 "url": f"{self.base_url}{endpoint}",
                 "payload": payload,
             }
+
+            # Capture Ollama thinking output (if present) into canonical metadata["reasoning"].
+            thinking_text = None
+            try:
+                if endpoint == "/api/chat":
+                    msg = result.get("message") if isinstance(result, dict) else None
+                    msg = msg if isinstance(msg, dict) else {}
+                    thinking_text = msg.get("thinking") or msg.get("reasoning")
+                else:
+                    thinking_text = result.get("thinking") or result.get("reasoning")
+            except Exception:
+                thinking_text = None
+            if isinstance(thinking_text, str) and thinking_text.strip():
+                generate_response.metadata.setdefault("reasoning", thinking_text.strip())
             
             # Attach media metadata if available
             if media_metadata:
@@ -372,17 +432,31 @@ class OllamaProvider(BaseProvider):
                                 rewritten_content, buffer = rewriter.rewrite_streaming_chunk(content, buffer)
                                 content = rewritten_content
 
+                            metadata: Dict[str, Any] = {
+                                "_provider_request": {
+                                    "url": f"{self.base_url}{endpoint}",
+                                    "payload": payload,
+                                }
+                            }
+                            # Capture incremental thinking output when present.
+                            try:
+                                if endpoint == "/api/chat":
+                                    msg = chunk.get("message") if isinstance(chunk, dict) else None
+                                    msg = msg if isinstance(msg, dict) else {}
+                                    thinking_text = msg.get("thinking") or msg.get("reasoning")
+                                else:
+                                    thinking_text = chunk.get("thinking") or chunk.get("reasoning")
+                            except Exception:
+                                thinking_text = None
+                            if isinstance(thinking_text, str) and thinking_text.strip():
+                                metadata.setdefault("reasoning", thinking_text.strip())
+
                             chunk_response = GenerateResponse(
                                 content=content,
                                 model=self.model,
                                 finish_reason="stop" if done else None,
                                 raw_response=chunk,
-                                metadata={
-                                    "_provider_request": {
-                                        "url": f"{self.base_url}{endpoint}",
-                                        "payload": payload,
-                                    }
-                                },
+                                metadata=metadata,
                             )
 
                             yield chunk_response

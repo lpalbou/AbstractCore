@@ -467,6 +467,14 @@ class ChatCompletionRequest(BaseModel):
         example=False
     )
 
+    # Unified thinking/reasoning control (AbstractCore-specific feature)
+    thinking: Optional[Union[bool, str]] = Field(
+        default=None,
+        description="Unified thinking/reasoning control (best-effort across providers/models). "
+                    "Accepted values: null/'auto'/'on'/'off' or 'low'/'medium'/'high' when supported.",
+        example="off",
+    )
+
     # Tool calling
     tools: Optional[List[Dict[str, Any]]] = Field(
         default=None,
@@ -568,7 +576,7 @@ class ChatCompletionRequest(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "examples": {
                 "basic_text": {
                     "summary": "Basic Text Chat",
@@ -829,7 +837,7 @@ class EmbeddingRequest(BaseModel):
     )
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "input": "this is the story of starship lost in space",
                 "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
@@ -850,7 +858,7 @@ class ResponsesAPIRequest(BaseModel):
     The endpoint automatically detects the format based on the presence of 'input' vs 'messages' field.
     """
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "oneOf": [
                 {
                     "title": "OpenAI Responses API Format",
@@ -1322,12 +1330,12 @@ def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyReques
         json_body=body,
     )
 
+
 @app.get("/v1/models")
 async def list_models(
     provider: Optional[str] = Query(
         None,
         description="Filter by provider (e.g., 'ollama', 'openai', 'anthropic', 'lmstudio')",
-        example=""
     ),
     input_type: Optional[ModelInputCapability] = Query(
         None,
@@ -2474,6 +2482,8 @@ async def process_chat_completion(
             gen_kwargs["trace_metadata"] = trace_metadata
 
         # Add optional parameters
+        if request.thinking is not None:
+            gen_kwargs["thinking"] = request.thinking
         if request.stop:
             gen_kwargs["stop"] = request.stop
         if request.seed:

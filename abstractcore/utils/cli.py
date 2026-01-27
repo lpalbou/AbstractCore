@@ -30,7 +30,7 @@ import uuid
 import locale
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Any, Dict, Iterator, List
+from typing import Optional, Any, Dict, Iterator, List, Union
 
 from .truncation import preview_text
 
@@ -98,6 +98,15 @@ class SimpleCLI:
 
         self.max_tokens = max_tokens
         self.max_output_tokens_auto = max_output_tokens is None
+        # Unified thinking/reasoning control (best-effort, provider/model dependent).
+        # - None: auto (provider/model default)
+        # - bool: on/off
+        # - str: "low"|"medium"|"high" when supported
+        self.thinking: Optional[Union[bool, str]] = None
+        # Whether to display model-supplied reasoning/thinking separately.
+        # - None: auto (show when thinking != off)
+        # - bool: force on/off
+        self.show_reasoning: Optional[bool] = None
 
         # Initialize command history with persistent storage
         self._setup_command_history()
@@ -258,6 +267,10 @@ class SimpleCLI:
             print("                           • /model openrouter:openai/gpt-4o-mini")
             print("  /max-tokens <n|auto>     Set context token budget")
             print("  /max-output-tokens <n|auto> Set max output tokens per response")
+            print("  /thinking <mode>         Set thinking/reasoning mode (best-effort)")
+            print("                           • /thinking auto|on|off|low|medium|high")
+            print("  /show-reasoning <mode>   Display reasoning separately (auto/on/off)")
+            print("                           • /show-reasoning auto|on|off")
             print("  /stream                  Toggle streaming mode on/off")
             print("  /debug                   Toggle debug info (timing, detection)")
             
@@ -318,6 +331,54 @@ class SimpleCLI:
 
         elif cmd == 'status':
             self.handle_status()
+
+        elif cmd.startswith('thinking'):
+            parts = cmd.split(maxsplit=1)
+            if len(parts) == 1:
+                current = "auto" if self.thinking is None else ("on" if self.thinking is True else "off" if self.thinking is False else str(self.thinking))
+                print(f"🧠 thinking: {current}")
+                print("❓ Usage: /thinking <auto|on|off|low|medium|high>")
+                return True
+
+            raw = parts[1].strip().lower()
+            if raw in {"auto", "none", "null"}:
+                self.thinking = None
+            elif raw in {"on", "true", "1", "yes"}:
+                self.thinking = True
+            elif raw in {"off", "false", "0", "no"}:
+                self.thinking = False
+            elif raw in {"low", "medium", "high"}:
+                self.thinking = raw
+            else:
+                print("❓ Usage: /thinking <auto|on|off|low|medium|high>")
+                return True
+
+            current = "auto" if self.thinking is None else ("on" if self.thinking is True else "off" if self.thinking is False else str(self.thinking))
+            print(f"✅ thinking set to: {current}")
+            return True
+
+        elif cmd.startswith('show-reasoning') or cmd.startswith('reasoning'):
+            parts = cmd.split(maxsplit=1)
+            if len(parts) == 1:
+                current = "auto" if self.show_reasoning is None else ("on" if self.show_reasoning else "off")
+                print(f"🧠 show-reasoning: {current}")
+                print("❓ Usage: /show-reasoning <auto|on|off>")
+                return True
+
+            raw = parts[1].strip().lower()
+            if raw in {"auto", "none", "null"}:
+                self.show_reasoning = None
+            elif raw in {"on", "true", "1", "yes"}:
+                self.show_reasoning = True
+            elif raw in {"off", "false", "0", "no"}:
+                self.show_reasoning = False
+            else:
+                print("❓ Usage: /show-reasoning <auto|on|off>")
+                return True
+
+            current = "auto" if self.show_reasoning is None else ("on" if self.show_reasoning else "off")
+            print(f"✅ show-reasoning set to: {current}")
+            return True
 
         elif cmd.startswith('max-tokens'):
             parts = cmd.split()
@@ -1780,6 +1841,10 @@ class SimpleCLI:
         print(f"🔧 Provider: {self.provider_name}")
         print(f"🤖 Model: {self.model_name}")
         print(f"🌊 Streaming: {'Enabled' if self.stream_mode else 'Disabled'}")
+        thinking_label = "auto" if self.thinking is None else ("on" if self.thinking is True else "off" if self.thinking is False else str(self.thinking))
+        print(f"🧠 Thinking: {thinking_label}")
+        show_reasoning_label = "auto" if self.show_reasoning is None else ("on" if self.show_reasoning else "off")
+        print(f"🧠 Show reasoning: {show_reasoning_label}")
         if self.prompt_cache_mode != "off":
             cache_details = f"mode={self.prompt_cache_mode}"
             if self.prompt_cache_key:
@@ -1840,6 +1905,11 @@ class SimpleCLI:
             print(f"   Vision Support: {'Yes' if capabilities.get('vision_support', False) else 'No'}")
             print(f"   Audio Support: {'Yes' if capabilities.get('audio_support', False) else 'No'}")
             print(f"   Thinking Support: {'Yes' if capabilities.get('thinking_support', False) else 'No'}")
+            reasoning_levels = capabilities.get("reasoning_levels")
+            if isinstance(reasoning_levels, list) and reasoning_levels:
+                levels_str = ", ".join([str(x) for x in reasoning_levels if isinstance(x, str) and x.strip()])
+                if levels_str:
+                    print(f"   Reasoning Levels: {levels_str}")
 
             # Show aliases if any
             aliases = capabilities.get('aliases', [])
@@ -1933,18 +2003,23 @@ class SimpleCLI:
                 )
             else:
                 # Generate response with media support (session-managed history)
-                response = self.session.generate(
-                    clean_input,
-                    stream=self.stream_mode,
-                    media=media_files if media_files else None,
-                    max_output_tokens=self.max_output_tokens
-                )
+                gen_kwargs: Dict[str, Any] = {
+                    "stream": self.stream_mode,
+                    "media": media_files if media_files else None,
+                    "max_output_tokens": self.max_output_tokens,
+                }
+                if self.thinking is not None:
+                    gen_kwargs["thinking"] = self.thinking
+                response = self.session.generate(clean_input, **gen_kwargs)
 
             if self.stream_mode:
-                if not self.single_prompt_mode:
+                show_reasoning = self._should_show_reasoning() and not self.single_prompt_mode
+                buffer_for_reasoning_first = self._should_buffer_stream_for_reasoning_first()
+                if not self.single_prompt_mode and not buffer_for_reasoning_first:
                     print("🤖 Assistant: ", end="", flush=True)
                 full_content = ""
                 display_buffer = ""  # Buffer for cleaned display content
+                reasoning_parts: List[str] = []
                 
                 for chunk in response:
                     if hasattr(chunk, 'content') and chunk.content:
@@ -1969,14 +2044,25 @@ class SimpleCLI:
                             '```tool_code'
                         ])
                         
-                        if not has_tool_marker:
-                            print(chunk_text, end="", flush=True)
+                        # If we want reasoning-first display, buffer output (no live streaming).
+                        if buffer_for_reasoning_first:
                             display_buffer += chunk_text
                         else:
-                            # Buffer the chunk, we'll process after streaming
-                            display_buffer += chunk_text
+                            if not has_tool_marker:
+                                print(chunk_text, end="", flush=True)
+                                display_buffer += chunk_text
+                            else:
+                                # Buffer the chunk, we'll process after streaming
+                                display_buffer += chunk_text
+
+                    # Best-effort: capture streamed reasoning metadata (OpenAI-compatible deltas, etc.).
+                    if hasattr(chunk, "metadata") and isinstance(getattr(chunk, "metadata"), dict):
+                        r = chunk.metadata.get("reasoning")
+                        if isinstance(r, str) and r.strip():
+                            reasoning_parts.append(r.strip())
                 
-                print()  # New line after streaming
+                if not buffer_for_reasoning_first:
+                    print()  # New line after streaming
                 
                 # Parse and execute tool calls from full content
                 clean_content, tool_calls = self._parse_and_strip_tool_calls(full_content)
@@ -1994,7 +2080,22 @@ class SimpleCLI:
                     # This happens when tool calls appear mid-stream
                     if self.debug_mode:
                         print(f"\n🔍 Cleaned content differs from streamed content")
-                
+
+                combined = "\n\n".join(reasoning_parts).strip() if reasoning_parts else ""
+                if show_reasoning and combined:
+                    self._print_reasoning_block(combined)
+
+                # Reasoning-first UX: show the final answer after reasoning (buffered).
+                if buffer_for_reasoning_first:
+                    if clean_content.strip():
+                        print(f"🤖 Assistant: {clean_content}")
+                    elif tool_calls and not self.single_prompt_mode:
+                        print("🤖 Assistant: ", end="")
+                    elif self.single_prompt_mode:
+                        print(clean_content or full_content)
+                    else:
+                        print(f"🤖 Assistant: {clean_content or full_content}")
+
                 self._execute_tool_calls(tool_calls)
             else:
                 # Non-streaming: parse content, display clean version, execute tools
@@ -2005,6 +2106,12 @@ class SimpleCLI:
                     except Exception:
                         pass
                 
+                meta = getattr(response, "metadata", None)
+                if self._should_show_reasoning() and not self.single_prompt_mode and isinstance(meta, dict):
+                    r = meta.get("reasoning")
+                    if isinstance(r, str) and r.strip():
+                        self._print_reasoning_block(r.strip())
+
                 # Display only the clean content (without tool call syntax)
                 if clean_content.strip():
                     if self.single_prompt_mode:
@@ -2014,14 +2121,14 @@ class SimpleCLI:
                 elif tool_calls:
                     # Only tool calls, no text response
                     if not self.single_prompt_mode:
-                        print(f"🤖 Assistant: ", end="")
+                        print("🤖 Assistant: ", end="")
                 else:
                     # Empty response
                     if self.single_prompt_mode:
                         print(response.content)
                     else:
                         print(f"🤖 Assistant: {response.content}")
-                
+
                 # Execute tool calls
                 self._execute_tool_calls(tool_calls)
 
@@ -2036,6 +2143,66 @@ class SimpleCLI:
             if self.debug_mode:
                 import traceback
                 traceback.print_exc()
+
+    def _should_show_reasoning(self) -> bool:
+        """Decide whether to display reasoning in the CLI output."""
+        if self.show_reasoning is not None:
+            return bool(self.show_reasoning)
+        # Auto: show when present unless explicitly disabled.
+        if self.thinking is False:
+            return False
+        return True
+
+    def _should_buffer_stream_for_reasoning_first(self) -> bool:
+        """Decide whether to buffer streaming output to show reasoning before the answer."""
+        if self.single_prompt_mode:
+            return False
+        if not self._should_show_reasoning():
+            return False
+
+        # If the user explicitly enabled reasoning display or requested thinking, honor reasoning-first UX.
+        if self.show_reasoning is True:
+            return True
+        if self.thinking is not None and self.thinking is not False:
+            return True
+
+        # Auto mode: only buffer when the model is expected to emit a separate reasoning channel.
+        try:
+            from ..architectures.detection import detect_architecture, get_architecture_format, get_model_capabilities
+
+            caps = get_model_capabilities(self.model_name)
+            arch = detect_architecture(self.model_name)
+            arch_fmt = get_architecture_format(arch)
+        except Exception:
+            caps = {}
+            arch_fmt = {}
+
+        resp_fmt = str((caps or {}).get("response_format") or "").strip().lower()
+        if resp_fmt == "harmony":
+            return True
+
+        for src in (caps, arch_fmt):
+            if isinstance(src, dict):
+                f = src.get("thinking_output_field")
+                if isinstance(f, str) and f.strip():
+                    return True
+
+        return False
+
+    def _print_reasoning_block(self, reasoning: str) -> None:
+        """Print reasoning in a visually distinct style (best-effort)."""
+        import sys
+
+        text = reasoning.strip()
+        if not text:
+            return
+
+        print("🧠 Reasoning:")
+        if sys.stdout.isatty():
+            # Grey + italic (best-effort; not all terminals support italics).
+            print(f"\x1b[90m\x1b[3m{text}\x1b[0m")
+        else:
+            print(text)
 
     def _generate_response_kv(self, prompt: str, *, media: Optional[list] = None):
         """Generate response using append-only KV cache mode (local providers only)."""
@@ -2054,6 +2221,8 @@ class SimpleCLI:
             "stream": bool(self.stream_mode),
             "max_output_tokens": self.max_output_tokens,
         }
+        if self.thinking is not None:
+            gen_kwargs["thinking"] = self.thinking
         # Preserve session-level generation parameters for consistency.
         try:
             if getattr(self.session, "temperature", None) is not None:

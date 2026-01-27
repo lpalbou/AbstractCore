@@ -39,6 +39,7 @@ AbstractCore is a comprehensive Python library designed primarily for open sourc
 - **Vision Capabilities**: Image analysis across all providers with automatic resolution optimization and vision fallback for text-only models
 - **Tool Calling**: Universal @tool decorator works across ALL providers with intelligent format conversion
 - **Streaming**: Real-time responses for interactive applications with tool call detection
+- **Thinking/Reasoning Control**: Unified `thinking=` knob (best-effort) + normalized `metadata["reasoning"]` extraction (Harmony, `<think>` tags, `</think>`-only outputs, provider fields)
 - **Session Management**: Persistent conversations with metadata and automatic context management
 - **Structured Output**: Native vs prompted strategies, schema validation, production deployment ([docs/structured-output.md](docs/structured-output.md))
 - **Embeddings**: SOTA embedding models for semantic search and RAG applications
@@ -171,6 +172,10 @@ abstractcore-chat --stream
 python -m abstractcore.utils.cli --provider openai --model gpt-5-mini
 python -m abstractcore.utils.cli --prompt "What is Python?"
 ```
+
+Useful interactive commands:
+- `/thinking auto|on|off|low|medium|high` — request-side thinking/reasoning control (best-effort)
+- `/show-reasoning auto|on|off` — display captured reasoning separately (auto shows when thinking is explicitly enabled)
 
 **Note**: AbstractCore has two separate CLI tools:
 - **Configuration CLI** (`abstractcore` or `abstractcore-config`): Manage settings, API keys, models
@@ -961,6 +966,17 @@ print(f"{person.name}, age {person.age}")
 # - Prompted with validation (MLX, HuggingFace Transformers)
 # - 100% validation success rate across 23 comprehensive tests
 # - Schema design patterns and production deployment
+
+# 4. Thinking / reasoning control (best-effort, unified)
+# - Accepted: None/"auto"/"on"/"off"|True|False|"low"|"medium"|"high" (levels only when supported)
+# - Where supported, `thinking=` maps to provider/model knobs (Ollama `think`, vLLM `extra_body.chat_template_kwargs.enable_thinking`,
+#   GPT-OSS (Harmony) system line `Reasoning: low|medium|high`).
+# - If a model exposes reasoning, it is captured in `response.metadata["reasoning"]` and cleaned from `response.content` when needed.
+response = llm.generate("Solve this step by step", thinking="off")   # try to disable thinking
+response = llm.generate("Solve this step by step", thinking="on")    # enable thinking
+response = llm.generate("Solve this step by step", thinking="high")  # (GPT-OSS) set reasoning effort
+print(response.content)
+print(response.metadata.get("reasoning"))
 ```
 
 ### Common Development Patterns

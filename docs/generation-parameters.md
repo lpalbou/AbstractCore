@@ -1,6 +1,6 @@
 # Generation Parameters Architecture
 
-This document explains the design and implementation of unified generation parameters (temperature, seed) across all AbstractCore providers.
+This document explains the design and implementation of unified generation parameters (temperature, seed, thinking/reasoning) across all AbstractCore providers.
 
 ## Design Principles
 
@@ -29,11 +29,13 @@ Providers that don't support certain parameters:
 AbstractCoreInterface (interface.py)
 ├── temperature: float = 0.7        # Interface-level default
 ├── seed: Optional[int] = None       # Interface-level default
+├── thinking: Optional[bool|str] = None  # Unified thinking/reasoning control (best-effort)
 └── _validate_parameters()           # Validation logic
 
 BaseProvider (base.py)
 ├── _prepare_generation_kwargs()     # Unified parameter processing
 ├── _extract_generation_params()     # Parameter extraction helper
+├── _apply_thinking_request()        # Provider-agnostic + provider-specific thinking mapping
 └── Parameter fallback hierarchy     # kwargs → instance → defaults
 
 Individual Providers
@@ -77,6 +79,34 @@ if "seed" in params:
 if "seed" in params:
     self.logger.debug(f"Seed {params['seed']} requested but not supported - logged for debugging")
 ```
+
+## Thinking / Reasoning Control (Unified)
+
+Modern models may expose “thinking”/“reasoning effort” as either:
+- a **request-side control** (enable/disable or low/medium/high), and/or
+- a **separate output channel** (provider fields or inline tags).
+
+AbstractCore exposes a single best-effort parameter:
+
+```python
+response = llm.generate("Solve this", thinking=None)      # auto (provider/model default)
+response = llm.generate("Solve this", thinking="off")     # try to reduce/disable thinking
+response = llm.generate("Solve this", thinking="on")      # enable thinking
+response = llm.generate("Solve this", thinking="high")    # set reasoning effort (when supported)
+print(response.metadata.get("reasoning"))
+```
+
+**Accepted values**: `None|"auto"|"on"|"off"|True|False|"low"|"medium"|"high"`.
+
+**Best-effort mappings (as of Jan 2026):**
+- **vLLM**: `extra_body.chat_template_kwargs.enable_thinking` (commonly used by Qwen3 templates)
+- **Ollama**: request field `think` (bool for most models; `"low"|"medium"|"high"` for GPT‑OSS)
+- **GPT‑OSS (Harmony)**: inject system line `Reasoning: low|medium|high` (traces can’t be fully disabled; `"off"` maps to `"low"` with a warning)
+- **LMStudio**: reasoning is typically exposed as response fields (e.g., `message.reasoning` for GPT‑OSS) but LM Studio’s OpenAI-style **chat completions** API does not consistently expose request-side “reasoning effort” knobs; use `/v1/responses` or model-level prompt controls when available.
+
+**Output semantics**: when a provider/model exposes reasoning, AbstractCore normalizes it into `GenerateResponse.metadata["reasoning"]` and keeps `GenerateResponse.content` clean using `abstractcore/architectures/response_postprocessing.py` (asset-driven via `assets/model_capabilities.json` + `assets/architecture_formats.json`).
+
+When a requested thinking mode is not supported by a model/provider, AbstractCore emits a `RuntimeWarning` (request may be ignored).
 
 ## Session Integration
 

@@ -73,6 +73,29 @@ class VLLMProvider(OpenAICompatibleProvider):
 
         return payload
 
+    def _apply_provider_thinking_kwargs(
+        self,
+        *,
+        enabled: Optional[bool],
+        level: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], bool]:
+        # vLLM exposes reasoning controls via `extra_body.chat_template_kwargs`.
+        # For Qwen3 templates specifically, the variable is commonly named `enable_thinking`.
+        _ = level
+        if enabled is None:
+            return kwargs, False
+
+        new_kwargs = dict(kwargs)
+        extra_body = new_kwargs.get("extra_body")
+        extra_body_dict: Dict[str, Any] = dict(extra_body) if isinstance(extra_body, dict) else {}
+        ctk = extra_body_dict.get("chat_template_kwargs")
+        ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
+        ctk_dict["enable_thinking"] = bool(enabled)
+        extra_body_dict["chat_template_kwargs"] = ctk_dict
+        new_kwargs["extra_body"] = extra_body_dict
+        return new_kwargs, True
+
     # vLLM-specific methods
 
     def load_adapter(self, adapter_name: str, adapter_path: str) -> str:

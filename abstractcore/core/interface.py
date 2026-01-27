@@ -126,6 +126,7 @@ class AbstractCoreInterface(ABC):
                 tools: Optional[List[Dict[str, Any]]] = None,
                 media: Optional[List[Union[str, Dict[str, Any], 'MediaContent']]] = None,
                 stream: bool = False,
+                thinking: Optional[Union[bool, str]] = None,
                 **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
         Generate response from the LLM.
@@ -137,6 +138,7 @@ class AbstractCoreInterface(ABC):
             tools: Optional list of available tools
             media: Optional list of media files (file paths, MediaContent objects, or dicts)
             stream: Whether to stream the response
+            thinking: Unified thinking/reasoning control (best-effort across providers/models)
             **kwargs: Additional provider-specific parameters
 
         Returns:
