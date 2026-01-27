@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Union, Dict, Any, Optional, List, Literal
 from enum import Enum
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class MediaType(Enum):
@@ -170,8 +170,9 @@ class MultimodalMessage(BaseModel):
     )
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    @validator('role')
-    def validate_role(cls, v):
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
         valid_roles = {'user', 'assistant', 'system', 'tool'}
         if v not in valid_roles:
             raise ValueError(f"Role must be one of {valid_roles}")

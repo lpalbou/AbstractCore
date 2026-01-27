@@ -18,12 +18,37 @@ import json
 import os
 import shlex
 import time
+import threading
 from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 
+try:  # Optional dependency (needed only for multipart parsing).
+    import multipart  # type: ignore  # noqa: F401
+
+    _HAS_MULTIPART = True
+except Exception:  # pragma: no cover
+    _HAS_MULTIPART = False
+
 
 router = APIRouter(tags=["vision"])
+
+_BACKEND_CACHE_LOCK = threading.Lock()
+_BACKEND_CACHE_KEY: Optional[Tuple[Any, ...]] = None
+_BACKEND_CACHE_BACKEND: Any = None
+_BACKEND_CACHE_CALL_LOCK: Optional[threading.Lock] = None
+
+
+def _get_or_create_cached_backend(key: Tuple[Any, ...], factory):
+    global _BACKEND_CACHE_KEY, _BACKEND_CACHE_BACKEND, _BACKEND_CACHE_CALL_LOCK
+    with _BACKEND_CACHE_LOCK:
+        if _BACKEND_CACHE_BACKEND is not None and _BACKEND_CACHE_KEY == key and _BACKEND_CACHE_CALL_LOCK is not None:
+            return _BACKEND_CACHE_BACKEND, _BACKEND_CACHE_CALL_LOCK
+        backend = factory()
+        _BACKEND_CACHE_KEY = key
+        _BACKEND_CACHE_BACKEND = backend
+        _BACKEND_CACHE_CALL_LOCK = threading.Lock()
+        return backend, _BACKEND_CACHE_CALL_LOCK
 
 
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -94,7 +119,8 @@ def _require_sdcpp_model_or_diffusion_model(request_model: Any) -> Tuple[Optiona
             detail=(
                 "Vision image endpoints are not configured for sdcpp mode. "
                 "Set ABSTRACTCORE_VISION_SDCPP_MODEL (full model) or "
-                "ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL (component mode), and ensure `sd-cli` is installed."
+                "ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL (component mode), and ensure stable-diffusion.cpp is "
+                "available (`sd-cli` in PATH or install `abstractvision[sdcpp]`)."
             ),
         )
     return None, diffusion_model
@@ -113,9 +139,16 @@ def _import_abstractvision() -> Tuple[Any, ...]:
         from abstractvision.errors import OptionalDependencyMissingError  # type: ignore
         from abstractvision.types import ImageEditRequest, ImageGenerationRequest  # type: ignore
     except Exception as e:  # pragma: no cover
+        import sys
+
         raise HTTPException(
             status_code=501,
-            detail="AbstractVision is required for vision generation endpoints. Install it via: pip install abstractvision",
+            detail=(
+                "AbstractVision is required for vision generation endpoints. "
+                "Install it into the same environment running the server (and use `python -m uvicorn ...` "
+                "to ensure you are using the same interpreter). "
+                f"(python={sys.executable})"
+            ),
         ) from e
     return (
         OpenAICompatibleBackendConfig,
@@ -225,7 +258,17 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
             or "/images/generations",
             image_edits_path=_env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
         )
-        backend = OpenAICompatibleVisionBackend(config=cfg)
+        key = (
+            "openai_compatible_proxy",
+            base_url,
+            _env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
+            model_id,
+            float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "300") or "300"),
+            _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH", "/images/generations") or "/images/generations",
+            _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
+        )
+
+        backend, call_lock = _get_or_create_cached_backend(key, lambda: OpenAICompatibleVisionBackend(config=cfg))
     elif backend_kind == "diffusers":
         model_id = _require_diffusers_model_id(payload.get("model"))
         (
@@ -245,7 +288,14 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
             torch_dtype=_env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
             allow_download=_env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", False),
         )
-        backend = HuggingFaceDiffusersVisionBackend(config=cfg)
+        key = (
+            "diffusers",
+            model_id,
+            _env("ABSTRACTCORE_VISION_DEVICE", "cpu") or "cpu",
+            _env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
+            _env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", False),
+        )
+        backend, call_lock = _get_or_create_cached_backend(key, lambda: HuggingFaceDiffusersVisionBackend(config=cfg))
     elif backend_kind == "sdcpp":
         model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(payload.get("model"))
         (
@@ -271,7 +321,18 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
             extra_args=shlex.split(str(extra_args)) if extra_args else (),
             timeout_s=float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
         )
-        backend = StableDiffusionCppVisionBackend(config=cfg)
+        key = (
+            "sdcpp",
+            _env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
+            model_path,
+            diffusion_model_path,
+            _env("ABSTRACTCORE_VISION_SDCPP_VAE"),
+            _env("ABSTRACTCORE_VISION_SDCPP_LLM"),
+            _env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
+            extra_args,
+            float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
+        )
+        backend, call_lock = _get_or_create_cached_backend(key, lambda: StableDiffusionCppVisionBackend(config=cfg))
     else:
         raise HTTPException(
             status_code=501,
@@ -281,37 +342,39 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
     data_items = []
     for _ in range(n):
         try:
-            asset = backend.generate_image(
-                ImageGenerationRequest(
-                    prompt=prompt,
-                    negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                    width=width,
-                    height=height,
-                    steps=steps,
-                    guidance_scale=guidance_scale,
-                    seed=seed,
-                    extra={
-                        k: v
-                        for k, v in payload.items()
-                        if k
-                        not in {
-                            "prompt",
-                            "model",
-                            "n",
-                            "size",
-                            "response_format",
-                            "width",
-                            "height",
-                            "negative_prompt",
-                            "seed",
-                            "steps",
-                            "guidance_scale",
-                        }
-                    },
-                )
+            req = ImageGenerationRequest(
+                prompt=prompt,
+                negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
+                width=width,
+                height=height,
+                steps=steps,
+                guidance_scale=guidance_scale,
+                seed=seed,
+                extra={
+                    k: v
+                    for k, v in payload.items()
+                    if k
+                    not in {
+                        "prompt",
+                        "model",
+                        "n",
+                        "size",
+                        "response_format",
+                        "width",
+                        "height",
+                        "negative_prompt",
+                        "seed",
+                        "steps",
+                        "guidance_scale",
+                    }
+                },
             )
+            with call_lock:
+                asset = backend.generate_image(req)
         except OptionalDependencyMissingError as e:
             raise HTTPException(status_code=501, detail=str(e)) from e
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         except HTTPException:
             raise
         except Exception as e:
@@ -322,126 +385,154 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
     return {"created": int(time.time()), "data": data_items}
 
 
-@router.post("/images/edits")
-async def images_edits(
-    prompt: str = Form(...),
-    image: UploadFile = File(...),
-    mask: Optional[UploadFile] = File(None),
-    model: Optional[str] = Form(None),
-    negative_prompt: Optional[str] = Form(None),
-    seed: Optional[str] = Form(None),
-    steps: Optional[str] = Form(None),
-    guidance_scale: Optional[str] = Form(None),
-    extra_json: Optional[str] = Form(None),
-) -> Dict[str, Any]:
-    """
-    OpenAI-compatible image edit endpoint: POST /v1/images/edits (multipart/form-data)
+if _HAS_MULTIPART:
 
-    Implemented as a thin proxy over AbstractVision's OpenAI-compatible backend.
-    """
-    prompt_s = str(prompt or "").strip()
-    if not prompt_s:
-        raise HTTPException(status_code=400, detail="Missing required field: prompt")
+    @router.post("/images/edits")
+    async def images_edits(
+        prompt: str = Form(...),
+        image: UploadFile = File(...),
+        mask: Optional[UploadFile] = File(None),
+        model: Optional[str] = Form(None),
+        negative_prompt: Optional[str] = Form(None),
+        seed: Optional[str] = Form(None),
+        steps: Optional[str] = Form(None),
+        guidance_scale: Optional[str] = Form(None),
+        extra_json: Optional[str] = Form(None),
+    ) -> Dict[str, Any]:
+        """
+        OpenAI-compatible image edit endpoint: POST /v1/images/edits (multipart/form-data)
 
-    image_bytes = await image.read()
-    if not image_bytes:
-        raise HTTPException(status_code=400, detail="Missing required image bytes")
+        Implemented as a thin proxy over AbstractVision's OpenAI-compatible backend.
+        """
+        prompt_s = str(prompt or "").strip()
+        if not prompt_s:
+            raise HTTPException(status_code=400, detail="Missing required field: prompt")
 
-    mask_bytes = await mask.read() if mask is not None else None
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Missing required image bytes")
 
-    extra: Dict[str, Any] = {}
-    if extra_json:
-        try:
-            parsed = json.loads(str(extra_json))
-        except Exception as e:
-            raise HTTPException(status_code=400, detail="extra_json must be a JSON object string") from e
-        if parsed is None:
-            extra = {}
-        elif isinstance(parsed, dict):
-            extra = dict(parsed)
+        mask_bytes = await mask.read() if mask is not None else None
+
+        extra: Dict[str, Any] = {}
+        if extra_json:
+            try:
+                parsed = json.loads(str(extra_json))
+            except Exception as e:
+                raise HTTPException(status_code=400, detail="extra_json must be a JSON object string") from e
+            if parsed is None:
+                extra = {}
+            elif isinstance(parsed, dict):
+                extra = dict(parsed)
+            else:
+                raise HTTPException(status_code=400, detail="extra_json must be a JSON object string")
+
+        backend_kind = _vision_backend_kind()
+        if backend_kind == "openai_compatible_proxy":
+            base_url = _require_upstream_base_url()
+            model_id = str(model or _env("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID") or "").strip() or None
+            (
+                OpenAICompatibleBackendConfig,
+                OpenAICompatibleVisionBackend,
+                _HuggingFaceDiffusersBackendConfig,
+                _HuggingFaceDiffusersVisionBackend,
+                _StableDiffusionCppBackendConfig,
+                _StableDiffusionCppVisionBackend,
+                OptionalDependencyMissingError,
+                req_types,
+            ) = _import_abstractvision()
+            _ImageGenerationRequest, ImageEditRequest = req_types
+            cfg = OpenAICompatibleBackendConfig(
+                base_url=base_url,
+                api_key=_env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
+                model_id=model_id,
+                timeout_s=float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "300") or "300"),
+                image_generations_path=_env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH", "/images/generations")
+                or "/images/generations",
+                image_edits_path=_env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
+            )
+            key = (
+                "openai_compatible_proxy",
+                base_url,
+                _env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
+                model_id,
+                float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "300") or "300"),
+                _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH", "/images/generations") or "/images/generations",
+                _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
+            )
+            backend, call_lock = _get_or_create_cached_backend(key, lambda: OpenAICompatibleVisionBackend(config=cfg))
+        elif backend_kind == "diffusers":
+            model_id = _require_diffusers_model_id(model)
+            (
+                _OpenAICompatibleBackendConfig,
+                _OpenAICompatibleVisionBackend,
+                HuggingFaceDiffusersBackendConfig,
+                HuggingFaceDiffusersVisionBackend,
+                _StableDiffusionCppBackendConfig,
+                _StableDiffusionCppVisionBackend,
+                OptionalDependencyMissingError,
+                req_types,
+            ) = _import_abstractvision()
+            _ImageGenerationRequest, ImageEditRequest = req_types
+            cfg = HuggingFaceDiffusersBackendConfig(
+                model_id=model_id,
+                device=_env("ABSTRACTCORE_VISION_DEVICE", "cpu") or "cpu",
+                torch_dtype=_env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
+                allow_download=_env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", False),
+            )
+            key = (
+                "diffusers",
+                model_id,
+                _env("ABSTRACTCORE_VISION_DEVICE", "cpu") or "cpu",
+                _env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
+                _env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", False),
+            )
+            backend, call_lock = _get_or_create_cached_backend(key, lambda: HuggingFaceDiffusersVisionBackend(config=cfg))
+        elif backend_kind == "sdcpp":
+            model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(model)
+            (
+                _OpenAICompatibleBackendConfig,
+                _OpenAICompatibleVisionBackend,
+                _HuggingFaceDiffusersBackendConfig,
+                _HuggingFaceDiffusersVisionBackend,
+                StableDiffusionCppBackendConfig,
+                StableDiffusionCppVisionBackend,
+                OptionalDependencyMissingError,
+                req_types,
+            ) = _import_abstractvision()
+            _ImageGenerationRequest, ImageEditRequest = req_types
+
+            extra_args = _env("ABSTRACTCORE_VISION_SDCPP_EXTRA_ARGS")
+            cfg = StableDiffusionCppBackendConfig(
+                sd_cli_path=_env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
+                model=model_path,
+                diffusion_model=diffusion_model_path,
+                vae=_env("ABSTRACTCORE_VISION_SDCPP_VAE"),
+                llm=_env("ABSTRACTCORE_VISION_SDCPP_LLM"),
+                llm_vision=_env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
+                extra_args=shlex.split(str(extra_args)) if extra_args else (),
+                timeout_s=float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
+            )
+            key = (
+                "sdcpp",
+                _env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
+                model_path,
+                diffusion_model_path,
+                _env("ABSTRACTCORE_VISION_SDCPP_VAE"),
+                _env("ABSTRACTCORE_VISION_SDCPP_LLM"),
+                _env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
+                extra_args,
+                float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
+            )
+            backend, call_lock = _get_or_create_cached_backend(key, lambda: StableDiffusionCppVisionBackend(config=cfg))
         else:
-            raise HTTPException(status_code=400, detail="extra_json must be a JSON object string")
+            raise HTTPException(
+                status_code=501,
+                detail=f"Unknown vision backend kind: {backend_kind!r} (set ABSTRACTCORE_VISION_BACKEND)",
+            )
 
-    backend_kind = _vision_backend_kind()
-    if backend_kind == "openai_compatible_proxy":
-        base_url = _require_upstream_base_url()
-        model_id = str(model or _env("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID") or "").strip() or None
-        (
-            OpenAICompatibleBackendConfig,
-            OpenAICompatibleVisionBackend,
-            _HuggingFaceDiffusersBackendConfig,
-            _HuggingFaceDiffusersVisionBackend,
-            _StableDiffusionCppBackendConfig,
-            _StableDiffusionCppVisionBackend,
-            OptionalDependencyMissingError,
-            req_types,
-        ) = _import_abstractvision()
-        _ImageGenerationRequest, ImageEditRequest = req_types
-        cfg = OpenAICompatibleBackendConfig(
-            base_url=base_url,
-            api_key=_env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
-            model_id=model_id,
-            timeout_s=float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "300") or "300"),
-            image_generations_path=_env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH", "/images/generations")
-            or "/images/generations",
-            image_edits_path=_env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
-        )
-        backend = OpenAICompatibleVisionBackend(config=cfg)
-    elif backend_kind == "diffusers":
-        model_id = _require_diffusers_model_id(model)
-        (
-            _OpenAICompatibleBackendConfig,
-            _OpenAICompatibleVisionBackend,
-            HuggingFaceDiffusersBackendConfig,
-            HuggingFaceDiffusersVisionBackend,
-            _StableDiffusionCppBackendConfig,
-            _StableDiffusionCppVisionBackend,
-            OptionalDependencyMissingError,
-            req_types,
-        ) = _import_abstractvision()
-        _ImageGenerationRequest, ImageEditRequest = req_types
-        cfg = HuggingFaceDiffusersBackendConfig(
-            model_id=model_id,
-            device=_env("ABSTRACTCORE_VISION_DEVICE", "cpu") or "cpu",
-            torch_dtype=_env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
-            allow_download=_env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", False),
-        )
-        backend = HuggingFaceDiffusersVisionBackend(config=cfg)
-    elif backend_kind == "sdcpp":
-        model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(model)
-        (
-            _OpenAICompatibleBackendConfig,
-            _OpenAICompatibleVisionBackend,
-            _HuggingFaceDiffusersBackendConfig,
-            _HuggingFaceDiffusersVisionBackend,
-            StableDiffusionCppBackendConfig,
-            StableDiffusionCppVisionBackend,
-            OptionalDependencyMissingError,
-            req_types,
-        ) = _import_abstractvision()
-        _ImageGenerationRequest, ImageEditRequest = req_types
-
-        extra_args = _env("ABSTRACTCORE_VISION_SDCPP_EXTRA_ARGS")
-        cfg = StableDiffusionCppBackendConfig(
-            sd_cli_path=_env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
-            model=model_path,
-            diffusion_model=diffusion_model_path,
-            vae=_env("ABSTRACTCORE_VISION_SDCPP_VAE"),
-            llm=_env("ABSTRACTCORE_VISION_SDCPP_LLM"),
-            llm_vision=_env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
-            extra_args=shlex.split(str(extra_args)) if extra_args else (),
-            timeout_s=float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
-        )
-        backend = StableDiffusionCppVisionBackend(config=cfg)
-    else:
-        raise HTTPException(
-            status_code=501,
-            detail=f"Unknown vision backend kind: {backend_kind!r} (set ABSTRACTCORE_VISION_BACKEND)",
-        )
-
-    try:
-        asset = backend.edit_image(
-            ImageEditRequest(
+        try:
+            req = ImageEditRequest(
                 prompt=prompt_s,
                 image=bytes(image_bytes),
                 mask=bytes(mask_bytes) if mask_bytes else None,
@@ -451,12 +542,27 @@ async def images_edits(
                 guidance_scale=_coerce_float(guidance_scale),
                 extra=extra,
             )
+            with call_lock:
+                asset = backend.edit_image(req)
+        except OptionalDependencyMissingError as e:
+            raise HTTPException(status_code=501, detail=str(e)) from e
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+        b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
+        return {"created": int(time.time()), "data": [{"b64_json": b64}]}
+
+else:
+
+    @router.post("/images/edits")
+    async def images_edits() -> Dict[str, Any]:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "The /v1/images/edits endpoint requires python-multipart for multipart/form-data parsing. "
+                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+            ),
         )
-    except OptionalDependencyMissingError as e:
-        raise HTTPException(status_code=501, detail=str(e)) from e
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
-    return {"created": int(time.time()), "data": [{"b64_json": b64}]}

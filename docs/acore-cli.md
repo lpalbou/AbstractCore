@@ -83,6 +83,39 @@ Adjust token limits during a CLI session:
 /max-output-tokens auto
 ```
 
+### Thinking / Reasoning Control (`/thinking`)
+
+Toggle unified thinking/reasoning mode (best-effort across providers/models):
+
+```bash
+/thinking auto
+/thinking on
+/thinking off
+/thinking low
+/thinking medium
+/thinking high
+```
+
+Notes:
+- Not every provider/model supports request-side control; unsupported requests may warn and be ignored.
+- Some models expose reasoning in `response.metadata["reasoning"]` (and AbstractCore normalizes/strips it from visible content when configured).
+
+### Reasoning Display (`/show-reasoning`)
+
+Control whether `abstractcore-chat` displays captured reasoning separately from the assistant answer.
+
+```bash
+/show-reasoning auto
+/show-reasoning on
+/show-reasoning off
+```
+
+Notes:
+- `auto` shows reasoning whenever the provider returns it (unless you set `/thinking off` or `/show-reasoning off`).
+- Reasoning is printed in a visually distinct style (best-effort: grey/italic when the terminal supports it).
+- When shown, reasoning is printed **before** the assistant answer.
+- In `--stream` mode, `abstractcore-chat` may buffer output for reasoning-capable models to preserve “reasoning first” display.
+
 ### `/compact` - Chat History Compaction
 
 Compacts your chat history using the fast local `gemma3:1b` model to create a summary while preserving recent exchanges.

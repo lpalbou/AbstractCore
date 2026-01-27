@@ -39,6 +39,19 @@ JSON-driven architecture detection and capability lookup determining **HOW** to 
 
 ---
 
+### 3. Response Post-processing (`response_postprocessing.py`)
+
+These helpers normalize raw model output into a consistent shape across providers using the same JSON assets:
+
+- **Output wrappers**: Strip leading/trailing wrapper tokens (e.g. GLM `<|begin_of_box|>…<|end_of_box|>`)
+- **Harmony transcripts (GPT-OSS)**: Extract final text and capture analysis as `reasoning`
+- **Thinking tags**: Extract `<think>...</think>` blocks (when configured) into `reasoning` and remove them from `content`
+  - Some models may emit only the closing `</think>` tag (opening provided by the chat template); the extractor handles this variant.
+
+Providers call this from `BaseProvider` so the behavior is consistent for OpenAI-compatible servers, Ollama, and local runtimes.
+
+---
+
 ### 3. Convenience Functions
 
 | Function | Returns | Use Case |

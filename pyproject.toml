@@ -251,7 +251,26 @@ dev = [
 server = [
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
+]
+
+# Vision (optional) - delegates to AbstractVision.
+# Keep these extras separate from `server` so users can opt into heavy local ML deps.
+vision = [
+    "abstractvision>=0.2.0",
+]
+
+vision-diffusers = [
+    "abstractvision[huggingface]>=0.2.0",
+]
+
+vision-sdcpp = [
+    "abstractvision[sdcpp]>=0.2.0",
+]
+
+vision-local = [
+    "abstractvision[local]>=0.2.0",
 ]
 
 # Testing dependencies

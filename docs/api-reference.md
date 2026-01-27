@@ -89,6 +89,7 @@ def generate(
     response_model: Optional[BaseModel] = None,
     retry_strategy: Optional[Retry] = None,
     stream: bool = False,
+    thinking: Optional[bool | str] = None,
     **kwargs
 ) -> Union[GenerateResponse, Iterator[GenerateResponse]]
 ```
@@ -101,6 +102,7 @@ def generate(
 - `response_model` (BaseModel, optional): Pydantic model for structured output
 - `retry_strategy` (Retry, optional): Custom retry strategy for structured output
 - `stream` (bool): Enable streaming response
+- `thinking` (bool | str, optional): Unified thinking/reasoning control (`"auto"|"on"|"off"` or `"low"|"medium"|"high"` when supported)
 - `**kwargs`: Additional generation parameters
 
 **Returns:**
@@ -357,7 +359,7 @@ class GenerateResponse:
 - `finish_reason` (str): Why generation stopped ("stop", "length", "tool_calls")
 - `usage` (Dict): Token usage information
 - `tool_calls` (List[Dict]): Tools called by the LLM
-- `metadata` (Dict): Additional metadata
+- `metadata` (Dict): Additional metadata (notably `metadata["reasoning"]` when a provider/model exposes thinking/reasoning)
 - `gen_time` (float): Generation time in milliseconds, rounded to 1 decimal place (NEW in v2.4.7)
 
 **Token and Timing Access Examples:**

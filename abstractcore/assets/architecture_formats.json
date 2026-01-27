@@ -157,11 +157,39 @@
         "user_prefix": "<|im_start|>user\n",
         "user_suffix": "<|im_end|>\n",
         "assistant_prefix": "<|im_start|>assistant\n",
-        "assistant_suffix": "<|im_end|>\n",
-        "tool_format": "special_token",
-        "tool_prefix": "<|tool_call|>",
-        "patterns": ["qwen3-0.6b", "qwen3-1.7b", "qwen3-4b", "qwen3-8b", "qwen3-14b", "qwen3-32b", "qwen3:", "qwen3-4b-thinking", "qwen3-4b-instruct"]
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
+      "thinking_tags": ["<think>", "</think>"],
+      "patterns": ["qwen3-0.6b", "qwen3-1.7b", "qwen3-4b", "qwen3-8b", "qwen3-14b", "qwen3-32b", "qwen3:", "qwen3-4b-thinking", "qwen3-4b-instruct"]
       },
+    "sera": {
+      "description": "AllenAI's SERA architecture (Qwen3-based Open Coding Agents series)",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "xml",
+      "thinking_tags": ["<think>", "</think>"],
+      "patterns": [
+        "sera-",
+        "sera-32b",
+        "sera-32b-ga",
+        "sera-8b",
+        "sera-8b-ga",
+        "sera32b",
+        "sera32bga",
+        "sera8b",
+        "sera8bga",
+        "sera_32b",
+        "sera_32b_ga",
+        "sera_8b",
+        "sera_8b_ga"
+      ]
+    },
     "qwen2": {
       "description": "Alibaba's Qwen2 architecture (June 2024)",
       "message_format": "im_start_end",
@@ -362,6 +390,7 @@
       "assistant_suffix": "\n",
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
+      "thinking_output_field": "reasoning_content",
       "patterns": ["glm-4.7", "glm-4.7-flash", "glm-4.6", "glm-4.5", "glm-4.5-air"]
     },
     "glm4v": {

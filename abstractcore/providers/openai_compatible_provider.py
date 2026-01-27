@@ -76,6 +76,7 @@ def _inline_json_schema_refs(schema: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         return schema
 from .base import BaseProvider
+from ..architectures.response_postprocessing import extract_reasoning_from_message
 from ..core.types import GenerateResponse
 from ..exceptions import (
     ProviderAPIError,
@@ -554,7 +555,11 @@ class OpenAICompatibleProvider(BaseProvider):
                     message = {}
 
                 content = message.get("content", "")
-                reasoning = message.get("reasoning")
+                reasoning = extract_reasoning_from_message(
+                    message,
+                    architecture_format=self.architecture_config,
+                    model_capabilities=self.model_capabilities,
+                )
                 tool_calls = message.get("tool_calls")
                 if tool_calls is None:
                     # Some servers surface tool calls at the choice level.
@@ -642,7 +647,11 @@ class OpenAICompatibleProvider(BaseProvider):
                                 if not isinstance(delta, dict):
                                     delta = {}
                                 content = delta.get("content", "")
-                                reasoning = delta.get("reasoning")
+                                reasoning = extract_reasoning_from_message(
+                                    delta,
+                                    architecture_format=self.architecture_config,
+                                    model_capabilities=self.model_capabilities,
+                                )
                                 tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
                                 finish_reason = choice.get("finish_reason")
 
@@ -820,7 +829,11 @@ class OpenAICompatibleProvider(BaseProvider):
                     message = {}
 
                 content = message.get("content", "")
-                reasoning = message.get("reasoning")
+                reasoning = extract_reasoning_from_message(
+                    message,
+                    architecture_format=self.architecture_config,
+                    model_capabilities=self.model_capabilities,
+                )
                 tool_calls = message.get("tool_calls")
                 if tool_calls is None:
                     tool_calls = choice.get("tool_calls")
@@ -899,7 +912,11 @@ class OpenAICompatibleProvider(BaseProvider):
                                 if not isinstance(delta, dict):
                                     delta = {}
                                 content = delta.get("content", "")
-                                reasoning = delta.get("reasoning")
+                                reasoning = extract_reasoning_from_message(
+                                    delta,
+                                    architecture_format=self.architecture_config,
+                                    model_capabilities=self.model_capabilities,
+                                )
                                 tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
                                 finish_reason = choice.get("finish_reason")
 

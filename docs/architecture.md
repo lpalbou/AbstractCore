@@ -124,6 +124,20 @@ This ensures:
 - **Extensibility**: Easy to add new providers
 - **Memory Management**: Explicit control over model lifecycle
 
+#### Response Normalization (Model Output Cleanup)
+
+`BaseProvider` also applies **asset-driven response normalization** so downstream code sees clean, consistent output across providers:
+
+- **Output wrappers**: Strip configured leading/trailing wrapper tokens (e.g., GLM `<|begin_of_box|>…<|end_of_box|>`)
+- **Harmony transcripts (GPT-OSS)**: Extract `<|channel|>final` into `GenerateResponse.content` and capture `<|channel|>analysis` as `GenerateResponse.metadata["reasoning"]` (non-streaming)
+- **Thinking tags**: Extract inline `<think>...</think>` blocks into `GenerateResponse.metadata["reasoning"]` (when configured)
+
+**Why this belongs in `BaseProvider` (even for streaming):**
+- These artifacts are **model/template-specific**, not provider-specific (the same model can be served via Ollama, vLLM, LMStudio, HF, or MLX)
+- In streaming mode, wrappers often appear in the first/last chunks; stripping them incrementally avoids leaking markup into UIs and tool parsers without buffering the full response
+
+Configuration comes from `abstractcore/assets/architecture_formats.json` and `abstractcore/assets/model_capabilities.json`; implementation lives in `abstractcore/architectures/response_postprocessing.py`.
+
 #### Memory Management
 
 The `unload_model(model_name)` method is a **best-effort resource cleanup hook**.
