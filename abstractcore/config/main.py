@@ -265,9 +265,9 @@ def add_arguments(parser: argparse.ArgumentParser):
     # Timeout configuration group
     timeout_group = parser.add_argument_group('Timeout Configuration')
     timeout_group.add_argument("--set-default-timeout", type=float, metavar="SECONDS",
-                              help="Set default HTTP request timeout in seconds (default: 7200 = 2 hours)")
+                              help="Set default HTTP request timeout in seconds (default: 7200 = 2 hours; 0 = unlimited)")
     timeout_group.add_argument("--set-tool-timeout", type=float, metavar="SECONDS",
-                              help="Set tool execution timeout in seconds (default: 600 = 10 minutes)")
+                              help="Set tool execution timeout in seconds (default: 600 = 10 minutes; 0 = unlimited)")
 
 def print_status():
     """Print comprehensive configuration status with improved readability."""
@@ -463,8 +463,8 @@ def print_status():
     print("│     abstractcore --set-default-cache-dir PATH")
     print("│")
     print("│  ⏱️  Performance & Timeouts")
-    print("│     abstractcore --set-default-timeout SECONDS  (HTTP requests, default: 7200)")
-    print("│     abstractcore --set-tool-timeout SECONDS  (Tool execution, default: 600)")
+    print("│     abstractcore --set-default-timeout SECONDS  (HTTP requests, default: 7200; 0 = unlimited)")
+    print("│     abstractcore --set-tool-timeout SECONDS  (Tool execution, default: 600; 0 = unlimited)")
     print("│")
     print("│  🎯 Specialized Models")
     print("│     abstractcore --set-chat-model PROVIDER/MODEL")
@@ -727,32 +727,44 @@ def handle_commands(args) -> bool:
         handled = True
 
     # Timeout configuration
-    if args.set_default_timeout:
+    # #[WARNING:TIMEOUT]
+    if args.set_default_timeout is not None:
         try:
-            config_manager.set_default_timeout(args.set_default_timeout)
+            ok = config_manager.set_default_timeout(args.set_default_timeout)
+            if not ok:
+                raise RuntimeError("Configuration update failed")
             # Format display (show in minutes if >= 60 seconds)
-            if args.set_default_timeout >= 60:
+            if args.set_default_timeout <= 0:
+                display = "unlimited"
+            elif args.set_default_timeout >= 60:
                 minutes = args.set_default_timeout / 60
                 display = f"{minutes:.1f} minutes" if minutes != int(minutes) else f"{int(minutes)} minutes"
             else:
                 display = f"{args.set_default_timeout} seconds"
-            print(f"✅ Set default HTTP timeout to: {display} ({args.set_default_timeout}s)")
-        except ValueError as e:
-            print(f"❌ Error: {e}")
+            suffix = "" if args.set_default_timeout <= 0 else f" ({args.set_default_timeout}s)"
+            print(f"✅ Set default HTTP timeout to: {display}{suffix}")
+        except Exception as e:
+            print(f"❌ Failed to set default HTTP timeout: {e}")
         handled = True
 
-    if args.set_tool_timeout:
+    # #[WARNING:TIMEOUT]
+    if args.set_tool_timeout is not None:
         try:
-            config_manager.set_tool_timeout(args.set_tool_timeout)
+            ok = config_manager.set_tool_timeout(args.set_tool_timeout)
+            if not ok:
+                raise RuntimeError("Configuration update failed")
             # Format display (show in minutes if >= 60 seconds)
-            if args.set_tool_timeout >= 60:
+            if args.set_tool_timeout <= 0:
+                display = "unlimited"
+            elif args.set_tool_timeout >= 60:
                 minutes = args.set_tool_timeout / 60
                 display = f"{minutes:.1f} minutes" if minutes != int(minutes) else f"{int(minutes)} minutes"
             else:
                 display = f"{args.set_tool_timeout} seconds"
-            print(f"✅ Set tool execution timeout to: {display} ({args.set_tool_timeout}s)")
-        except ValueError as e:
-            print(f"❌ Error: {e}")
+            suffix = "" if args.set_tool_timeout <= 0 else f" ({args.set_tool_timeout}s)"
+            print(f"✅ Set tool execution timeout to: {display}{suffix}")
+        except Exception as e:
+            print(f"❌ Failed to set tool execution timeout: {e}")
         handled = True
 
     return handled

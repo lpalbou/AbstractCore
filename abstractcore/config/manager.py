@@ -648,9 +648,12 @@ class ConfigurationManager:
     def set_default_timeout(self, timeout: float) -> bool:
         """Set default HTTP request timeout in seconds."""
         try:
-            if timeout <= 0:
-                raise ValueError("Timeout must be positive")
-            self.config.timeouts.default_timeout = timeout
+            # #[WARNING:TIMEOUT]
+            # Contract: allow `0` to mean "unlimited" (the provider layer normalizes <=0 to None).
+            timeout_f = float(timeout)
+            if timeout_f < 0:
+                raise ValueError("Timeout must be >= 0 (0 = unlimited)")
+            self.config.timeouts.default_timeout = timeout_f
             self._save_config()
             return True
         except Exception:
@@ -659,9 +662,12 @@ class ConfigurationManager:
     def set_tool_timeout(self, timeout: float) -> bool:
         """Set tool execution timeout in seconds."""
         try:
-            if timeout <= 0:
-                raise ValueError("Timeout must be positive")
-            self.config.timeouts.tool_timeout = timeout
+            # #[WARNING:TIMEOUT]
+            # Contract: allow `0` to mean "unlimited".
+            timeout_f = float(timeout)
+            if timeout_f < 0:
+                raise ValueError("Timeout must be >= 0 (0 = unlimited)")
+            self.config.timeouts.tool_timeout = timeout_f
             self._save_config()
             return True
         except Exception:

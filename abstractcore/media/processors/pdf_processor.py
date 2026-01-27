@@ -22,9 +22,39 @@ except ImportError:
     PYMUPDF_AVAILABLE = False
     fitz = None
 
+import re
+
 from ..base import BaseMediaHandler, MediaProcessingError
 from ..types import MediaContent, MediaType, ContentFormat
 from ...utils.token_utils import estimate_tokens
+
+
+def _safe_pdf_version(doc: Any) -> Optional[str]:
+    """Best-effort PDF version across PyMuPDF variants (callable/property/absent)."""
+    try:
+        pv = getattr(doc, "pdf_version", None)
+        if pv is not None:
+            out = pv() if callable(pv) else pv
+            if out is not None:
+                s = str(out).strip()
+                if s and s.lower() != "none":
+                    return s
+    except Exception:
+        pass
+
+    # PyMuPDF 1.26+ exposes the PDF version via `doc.metadata["format"]` (e.g. "PDF 1.5").
+    try:
+        md = getattr(doc, "metadata", None)
+        if isinstance(md, dict):
+            fmt = md.get("format")
+            if isinstance(fmt, str) and fmt.strip():
+                m = re.search(r"(?i)pdf\s*[- ]?\s*([0-9]+(?:\.[0-9]+)?)", fmt.strip())
+                if m:
+                    return m.group(1)
+    except Exception:
+        pass
+
+    return None
 
 
 class PDFProcessor(BaseMediaHandler):
@@ -320,12 +350,15 @@ class PDFProcessor(BaseMediaHandler):
                         'subject': pdf_metadata.get('subject', ''),
                         'creator': pdf_metadata.get('creator', ''),
                         'producer': pdf_metadata.get('producer', ''),
+                        'format': pdf_metadata.get('format', ''),
                         'creation_date': pdf_metadata.get('creationDate', ''),
                         'modification_date': pdf_metadata.get('modDate', ''),
                         'page_count': doc.page_count,
                         'encrypted': doc.needs_pass,
-                        'pdf_version': doc.pdf_version()
                     })
+                    pdf_version = _safe_pdf_version(doc)
+                    if pdf_version is not None:
+                        metadata["pdf_version"] = pdf_version
 
                     # Clean up empty values
                     metadata = {k: v for k, v in metadata.items() if v}
@@ -396,9 +429,14 @@ class PDFProcessor(BaseMediaHandler):
                         'file_size': file_path.stat().st_size,
                         'page_count': doc.page_count,
                         'encrypted': doc.needs_pass,
-                        'pdf_version': doc.pdf_version(),
                         'metadata': doc.metadata
                     }
+                    fmt = doc.metadata.get("format") if isinstance(doc.metadata, dict) else None
+                    if isinstance(fmt, str) and fmt.strip():
+                        info["format"] = fmt.strip()
+                    pdf_version = _safe_pdf_version(doc)
+                    if pdf_version is not None:
+                        info["pdf_version"] = pdf_version
 
                     # Get first page info
                     if doc.page_count > 0:

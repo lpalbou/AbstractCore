@@ -145,6 +145,8 @@ class LoggingConfig:
 @dataclass
 class TimeoutConfig:
     """HTTP and tool execution timeouts."""
+    # #[WARNING:TIMEOUT]
+    # 0 means "unlimited" (no client-side timeout).
     default_timeout: float = 7200.0  # 2 hours for HTTP requests
     tool_timeout: float = 600.0     # 10 minutes for tool execution
 
@@ -1322,8 +1324,8 @@ provider, model = get_app_defaults("summarizer")
 - `set_app_default(app: str, provider: str, model: str) -> bool` - Set app default
 - `set_vision_provider(provider: str, model: str) -> bool` - Configure vision
 - `set_api_key(provider: str, key: str) -> bool` - Store API key
-- `set_default_timeout(timeout: float) -> bool` - Set HTTP timeout
-- `set_tool_timeout(timeout: float) -> bool` - Set tool timeout
+- `set_default_timeout(timeout: float) -> bool` - Set HTTP timeout (0 = unlimited)
+- `set_tool_timeout(timeout: float) -> bool` - Set tool timeout (0 = unlimited)
 - `set_offline_first(enabled: bool) -> bool` - Enable offline mode
 - `set_allow_network(enabled: bool) -> bool` - Allow network access
 
