@@ -138,6 +138,7 @@ class OpenAICompatibleProvider(BaseProvider):
 
         self.api_key = self._resolve_api_key(api_key)
 
+        # #[WARNING:TIMEOUT]
         # Get timeout value - None means unlimited timeout
         timeout_value = getattr(self, '_timeout', None)
         # Validate timeout if provided (None is allowed for unlimited)

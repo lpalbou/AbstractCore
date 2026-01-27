@@ -227,7 +227,8 @@ graph TD
 1. **Advanced Processing**: PyMuPDF4LLM, Unstructured libraries
 2. **Basic Processing**: Simple text extraction
 3. **Metadata Fallback**: File information and properties
-4. **Never Fails**: System always provides meaningful output
+4. **Degrades gracefully for documents**: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
+5. **Policy-driven for true multimodal inputs (planned)**: for image/audio/video message parts, behavior is policy-driven; unsupported requests should fail loudly unless an explicit enrichment fallback is configured (see ADR-0028).
 
 #### Unified Media API
 
@@ -247,6 +248,11 @@ response = llm.generate(
 # Simple @filename syntax works everywhere
 python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jpg"
 ```
+
+#### Planned: Capabilities plugins (voice/vision)
+To keep `abstractcore` dependency-light (ADR-0001) while still enabling “must work” TTS/STT and vision generation:
+- multimodal transforms (TTS/STT/T2I/…) are planned to integrate via optional **capability plugins** (ADR-0028),
+- and input enrichment fallbacks (image/audio/video → short observations injected into the main LLM request) are planned to be **explicit and config-driven** (no silent semantic change).
 
 ### 4. Request Lifecycle
 
