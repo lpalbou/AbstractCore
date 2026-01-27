@@ -37,6 +37,10 @@ from ..exceptions import (
     ModelNotFoundError
 )
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
+from ..architectures.response_postprocessing import (
+    maybe_extract_harmony_final_text,
+    strip_output_wrappers,
+)
 from ..tools import execute_tools
 from ..core.retry import RetryManager, RetryConfig
 
@@ -235,6 +239,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         self.architecture_config = get_architecture_format(self.architecture)
         self.model_capabilities = get_model_capabilities(model)
 
+        # #[WARNING:TIMEOUT]
         # Setup timeout configuration (centralized defaults).
         #
         # Semantics:
@@ -591,7 +596,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if _looks_like_timeout(error) and not _has_explicit_duration(msg):
                 t = _configured_timeout_s()
                 if t is not None:
-                    return ProviderAPIError(f"{_provider_label()} API error: timed out after {t}s")
+                    return ProviderAPIError(
+                        f"{_provider_label()} API error: timed out after {t}s "
+                        "(configured timeout; set timeout=None or default_timeout=0 for unlimited)"
+                    )
                 return ProviderAPIError(f"{_provider_label()} API error: timed out")
             return error
 
@@ -602,7 +610,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if _looks_like_timeout(error):
             t = _configured_timeout_s()
             if t is not None:
-                return ProviderAPIError(f"{_provider_label()} API error: timed out after {t}s")
+                return ProviderAPIError(
+                    f"{_provider_label()} API error: timed out after {t}s "
+                    "(configured timeout; set timeout=None or default_timeout=0 for unlimited)"
+                )
             return ProviderAPIError(f"{_provider_label()} API error: timed out")
 
         error_str = str(error).lower()
@@ -818,7 +829,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         ttft_ms: Optional[float] = None
                         for processed_chunk in processor.process_stream(response, converted_tools):
                             if isinstance(processed_chunk.content, str) and processed_chunk.content:
-                                processed_chunk.content = self._strip_output_wrappers(processed_chunk.content)
+                                processed_chunk.content = strip_output_wrappers(
+                                    processed_chunk.content,
+                                    architecture_format=self.architecture_config,
+                                    model_capabilities=self.model_capabilities,
+                                )
                             if ttft_ms is None:
                                 has_content = isinstance(processed_chunk.content, str) and bool(processed_chunk.content)
                                 has_tools = isinstance(processed_chunk.tool_calls, list) and bool(processed_chunk.tool_calls)
@@ -858,7 +873,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                 # Strip model-specific output wrappers (e.g. GLM <|begin_of_box|>…<|end_of_box|>).
                 if response and isinstance(response.content, str) and response.content:
-                    response.content = self._strip_output_wrappers(response.content)
+                    response.content = strip_output_wrappers(
+                        response.content,
+                        architecture_format=self.architecture_config,
+                        model_capabilities=self.model_capabilities,
+                    )
+                    cleaned, reasoning = maybe_extract_harmony_final_text(
+                        response.content,
+                        architecture_format=self.architecture_config,
+                        model_capabilities=self.model_capabilities,
+                    )
+                    if isinstance(reasoning, str) and reasoning.strip():
+                        if response.metadata is None or not isinstance(response.metadata, dict):
+                            response.metadata = {}
+                        response.metadata.setdefault("reasoning", reasoning.strip())
+                    response.content = cleaned
 
                 # Add visual token calculation if media metadata is available
                 if media_metadata and response:
@@ -2063,45 +2092,6 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Return original response if rewriting fails
         return response
-
-    def _strip_output_wrappers(self, content: str) -> str:
-        """Strip known model-specific wrapper tokens around assistant output.
-
-        Some model/server combinations emit wrapper tokens like:
-          <|begin_of_box|> ... <|end_of_box|>
-        We remove these only when they appear as leading/trailing wrappers (not when
-        embedded mid-text).
-        """
-        if not isinstance(content, str) or not content:
-            return content
-
-        wrappers: Dict[str, str] = {}
-        for src in (self.architecture_config, self.model_capabilities):
-            if not isinstance(src, dict):
-                continue
-            w = src.get("output_wrappers")
-            if not isinstance(w, dict):
-                continue
-            start = w.get("start")
-            end = w.get("end")
-            if isinstance(start, str) and start.strip():
-                wrappers.setdefault("start", start.strip())
-            if isinstance(end, str) and end.strip():
-                wrappers.setdefault("end", end.strip())
-
-        if not wrappers:
-            return content
-
-        out = content
-        start_token = wrappers.get("start")
-        end_token = wrappers.get("end")
-
-        if isinstance(start_token, str) and start_token:
-            out = re.sub(r"^\s*" + re.escape(start_token) + r"\s*", "", out, count=1)
-        if isinstance(end_token, str) and end_token:
-            out = re.sub(r"\s*" + re.escape(end_token) + r"\s*$", "", out, count=1)
-
-        return out
 
     def _normalize_tool_calls_passthrough(
         self,
