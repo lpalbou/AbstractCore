@@ -173,7 +173,7 @@ class ResearchSubTaskModel(BaseModel):
 class ResearchThemeModel(BaseModel):
     """Pydantic model for research theme (for structured output)"""
     name: str = Field(description="Theme name")
-    questions: List[str] = Field(description="3 specific research questions for this theme", min_items=3, max_items=3)
+    questions: List[str] = Field(description="3 specific research questions for this theme", min_length=3, max_length=3)
     priority: int = Field(description="Theme priority (1=essential, 2=important, 3=supplementary)", ge=1, le=3)
 
 class ResearchPlanModel(BaseModel):
@@ -186,7 +186,7 @@ class ResearchPlanModel(BaseModel):
 
 class SearchQueriesModel(BaseModel):
     """Pydantic model for search queries (for structured output)"""
-    queries: List[str] = Field(description="List of specific search queries", min_items=1, max_items=5)
+    queries: List[str] = Field(description="List of specific search queries", min_length=1, max_length=5)
 
 
 @dataclass

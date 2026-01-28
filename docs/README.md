@@ -38,6 +38,7 @@ Complete navigation guide for AbstractCore documentation.
 ### Advanced Topics
 
 - **[Media Handling System](media-handling-system.md)** - Images, PDFs, documents with vision model optimization
+- **[Concurrency & Throughput](concurrency.md)** - How to measure and reason about concurrency (incl. MLX continuous batching)
 - **[Glyph Visual-Text Compression](glyphs.md)** - Advanced compression techniques for large documents
 - **[Vision Capabilities](vision-capabilities.md)** - Vision model integration and optimization
 - **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion

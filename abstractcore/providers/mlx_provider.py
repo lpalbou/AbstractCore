@@ -312,9 +312,18 @@ class MLXProvider(BaseProvider):
         """Load MLX model and tokenizer"""
         try:
             from mlx_lm import load, generate, stream_generate
+            import mlx.core as mx
             import os
             from contextlib import redirect_stdout, redirect_stderr
             from pathlib import Path
+
+            # Upstream compatibility: mlx-lm may call `mx.metal.device_info()` which is deprecated in recent MLX.
+            # Patch the deprecated entrypoint to the supported API so the warning is fixed (not silenced).
+            try:
+                if hasattr(mx, "device_info") and hasattr(mx, "metal") and hasattr(mx.metal, "device_info"):
+                    mx.metal.device_info = mx.device_info  # type: ignore[attr-defined]
+            except Exception:
+                pass
 
             # Clean model name - remove trailing slashes that cause HuggingFace validation errors
             clean_model_name = self.model.rstrip('/')
