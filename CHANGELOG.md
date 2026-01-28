@@ -7,10 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-01-28
+
+### Added
+- **MLX throughput benchmarking**: `examples/mlx_concurrency_benchmark.py` to sweep concurrency with continuous batching (`mlx-lm`) and generate summary CSVs + PNG plots.
+
+### Changed
+- **MLX install extras**: refreshed/clarified `mlx` + `mlx-bench` optional dependencies for Apple Silicon throughput benchmarking.
+
 ### Fixed
-- **Embedding model detection**: added `nomic-embed-text-v1.5` (and LMStudio alias `text-embedding-nomic-embed-text-v1.5@q6_k`) to `assets/model_capabilities.json`, and aligned `supports_embeddings()` to treat `model_type: "embedding"` as the canonical signal.
-- **MLX model discovery**: `MLXProvider.list_available_models()` now also scans LM Studio's local cache (`~/.lmstudio/models`) (including all models under `lmstudio-community/*` and `mlx-community/*`) and `MLXProvider` loads from those local directories when present.
-- **GPT-OSS (Harmony) on MLX**: improved MLX prompt formatting (prefers tokenizer chat templates), extracts Harmony transcripts into clean `content` (stores reasoning in `metadata.reasoning`), and propagates correct `finish_reason` (`stop`/`length`) for better truncation handling.
+- **Embedding model detection**: treat `model_type: "embedding"` as the canonical signal; add `nomic-embed-text-v1.5` (incl. LMStudio alias `text-embedding-nomic-embed-text-v1.5@q6_k`) to `assets/model_capabilities.json`.
+- **MLX model discovery**: `MLXProvider.list_available_models()` now also scans LM Studio's local cache (`~/.lmstudio/models`) (including `lmstudio-community/*` and `mlx-community/*`) and loads from those local directories when present.
+- **GPT-OSS (Harmony) on MLX**: improved prompt formatting (prefers tokenizer chat templates), extracts Harmony transcripts into clean `content` (stores reasoning in `metadata.reasoning`), and propagates correct `finish_reason` (`stop`/`length`) for truncation handling.
+
+### Documentation
+- **Concurrency guide**: added MLX concurrency benchmarking notes and tracked benchmark plots/CSVs under `docs/assets/` so docs don't depend on the ignored `test_results/` folder.
 
 ## [2.10.1] - 2026-01-11
 
