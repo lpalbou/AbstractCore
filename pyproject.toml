@@ -113,9 +113,15 @@ huggingface = [
 ]
 
 mlx = [
-    "mlx>=0.15.0,<1.0.0",
-    "mlx-lm>=0.15.0,<1.0.0",
+    # The benchmark script relies on `mlx_lm.generate.BatchGenerator` (continuous batching).
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
     "outlines>=0.1.0",  # Optional native structured output support
+]
+
+mlx-bench = [
+    # Used by `examples/mlx_concurrency_benchmark.py` to generate the PNG graph.
+    "matplotlib>=3.8.0,<4.0.0",
 ]
 
 vllm = [
@@ -253,10 +259,12 @@ server = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
+    # Install vision support by default for a "just works" server install.
+    "abstractvision>=0.2.0",
 ]
 
 # Vision (optional) - delegates to AbstractVision.
-# Keep these extras separate from `server` so users can opt into heavy local ML deps.
+# Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
     "abstractvision>=0.2.0",
 ]

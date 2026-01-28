@@ -21,6 +21,8 @@ Validated performance with real testing:
 
 **Average speedup**: ~7x faster for concurrent requests
 
+Note: for **MLX throughput testing**, prefer continuous batching (single model instance, scheduled concurrency). See **[Concurrency & Throughput](concurrency.md)**.
+
 ## Basic Usage
 
 ### Single Async Request
