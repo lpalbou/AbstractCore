@@ -26,6 +26,25 @@ class VisionConfig:
 
 
 @dataclass
+class AudioConfig:
+    """Audio configuration settings (input policy + optional fallback)."""
+    # Default: do not silently change semantics. Allow native audio when supported,
+    # otherwise error unless the caller explicitly requests STT/caption.
+    strategy: str = "native_only"  # native_only|speech_to_text|caption|auto
+    # Optional preferred STT backend (capabilities plugin backend_id).
+    stt_backend_id: Optional[str] = None
+    stt_language: Optional[str] = None
+    # Reserved for future "audio caption" backends.
+    caption_provider: Optional[str] = None
+    caption_model: Optional[str] = None
+    fallback_chain: list = None
+
+    def __post_init__(self):
+        if self.fallback_chain is None:
+            self.fallback_chain = []
+
+
+@dataclass
 class EmbeddingsConfig:
     """Embeddings configuration settings."""
     provider: Optional[str] = "huggingface"
@@ -113,6 +132,7 @@ class OfflineConfig:
 class AbstractCoreConfig:
     """Main configuration class."""
     vision: VisionConfig
+    audio: AudioConfig
     embeddings: EmbeddingsConfig
     app_defaults: AppDefaults
     default_models: DefaultModels
@@ -128,6 +148,7 @@ class AbstractCoreConfig:
         """Create default configuration."""
         return cls(
             vision=VisionConfig(),
+            audio=AudioConfig(),
             embeddings=EmbeddingsConfig(),
             app_defaults=AppDefaults(),
             default_models=DefaultModels(),
@@ -166,6 +187,7 @@ class ConfigurationManager:
         """Convert dictionary to config object."""
         # Create config objects from dictionary data
         vision = VisionConfig(**data.get('vision', {}))
+        audio = AudioConfig(**data.get('audio', {}))
         embeddings = EmbeddingsConfig(**data.get('embeddings', {}))
         app_defaults = AppDefaults(**data.get('app_defaults', {}))
         default_models = DefaultModels(**data.get('default_models', {}))
@@ -178,6 +200,7 @@ class ConfigurationManager:
 
         return AbstractCoreConfig(
             vision=vision,
+            audio=audio,
             embeddings=embeddings,
             app_defaults=app_defaults,
             default_models=default_models,
@@ -196,6 +219,7 @@ class ConfigurationManager:
         # Convert config to dictionary
         config_dict = {
             'vision': asdict(self.config.vision),
+            'audio': asdict(self.config.audio),
             'embeddings': asdict(self.config.embeddings),
             'app_defaults': asdict(self.config.app_defaults),
             'default_models': asdict(self.config.default_models),

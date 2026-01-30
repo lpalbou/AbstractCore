@@ -122,8 +122,13 @@ class OpenAIProvider(BaseProvider):
                     self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
                     api_messages.append({"role": "user", "content": prompt})
                 except Exception as e:
-                    self.logger.warning(f"Failed to process media content: {e}")
-                    api_messages.append({"role": "user", "content": prompt})
+                    # Do not silently drop user-supplied media. Fail loudly so callers can
+                    # choose an explicit fallback policy (e.g. audio_policy='speech_to_text').
+                    from ..exceptions import UnsupportedFeatureError
+
+                    raise UnsupportedFeatureError(
+                        f"OpenAI provider could not format attached media for model '{self.model}': {e}"
+                    ) from e
             else:
                 api_messages.append({"role": "user", "content": prompt})
 
@@ -273,8 +278,11 @@ class OpenAIProvider(BaseProvider):
                     self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
                     api_messages.append({"role": "user", "content": prompt})
                 except Exception as e:
-                    self.logger.warning(f"Failed to process media content: {e}")
-                    api_messages.append({"role": "user", "content": prompt})
+                    from ..exceptions import UnsupportedFeatureError
+
+                    raise UnsupportedFeatureError(
+                        f"OpenAI provider could not format attached media for model '{self.model}': {e}"
+                    ) from e
             else:
                 api_messages.append({"role": "user", "content": prompt})
 

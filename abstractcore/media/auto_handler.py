@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List
 
 from .base import BaseMediaHandler
 from .types import MediaContent, MediaType, ContentFormat, detect_media_type
-from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor
+from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor, AudioProcessor
 from ..exceptions import UnsupportedFeatureError
 
 # Import Glyph compression support
@@ -98,6 +98,9 @@ class AutoMediaHandler(BaseMediaHandler):
             availability['office'] = True
         except ImportError:
             availability['office'] = False
+
+        # AudioProcessor (dependency-free)
+        availability['audio'] = True
         
         # GlyphProcessor (requires reportlab and pdf2image)
         glyph_deps_available = True
@@ -196,6 +199,8 @@ class AutoMediaHandler(BaseMediaHandler):
                 return self._get_text_processor()
 
         # Handle other media types (audio, video) - not yet implemented
+        elif media_type == MediaType.AUDIO:
+            return AudioProcessor(**self.processor_config)
         else:
             self.logger.warning(f"Media type {media_type.value} not yet supported")
             return None
@@ -510,7 +515,7 @@ class AutoMediaHandler(BaseMediaHandler):
         elif media_type == MediaType.DOCUMENT:
             return True  # Always supported via text processor at minimum
         elif media_type == MediaType.AUDIO:
-            return False  # Not yet implemented
+            return self._available_processors.get('audio', False)
         elif media_type == MediaType.VIDEO:
             return False  # Not yet implemented
         return False
@@ -549,6 +554,10 @@ class AutoMediaHandler(BaseMediaHandler):
             # Any other document type can be handled by text processor as fallback
             # This allows processing of unknown document formats
             return True
+
+        elif media_type == MediaType.AUDIO:
+            # AudioProcessor is dependency-free in v0; accept common audio containers.
+            return format_ext.lower() in {'mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac', 'webm'}
 
         return False
 

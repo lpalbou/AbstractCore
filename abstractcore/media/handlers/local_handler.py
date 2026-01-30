@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional, Union
 
 from ..base import BaseProviderMediaHandler, MediaProcessingError
 from ..types import MediaContent, MediaType, ContentFormat
+from ..enrichment import build_enrichment_item
 
 # Import vision detection from existing architecture system
 try:
@@ -47,6 +48,10 @@ class LocalMediaHandler(BaseProviderMediaHandler):
         self.max_image_size = kwargs.get('max_image_size', 10 * 1024 * 1024)  # 10MB for local
         self.prefer_text_extraction = kwargs.get('prefer_text_extraction', True)
         self.embed_images_in_text = kwargs.get('embed_images_in_text', False)
+
+        # Collected "media enrichment" entries (input fallback transparency).
+        # Populated when a modality is converted into text context (e.g. image caption).
+        self.media_enrichment: List[Dict[str, Any]] = []
 
         self.logger.debug(f"Initialized {provider_name} local media handler with model={self.model_name}, capabilities: {self.capabilities}")
 
@@ -232,6 +237,9 @@ class LocalMediaHandler(BaseProviderMediaHandler):
         Returns:
             Formatted message (structured dict for vision models, string for text-only)
         """
+        # Reset per-call enrichment collection.
+        self.media_enrichment = []
+
         # Check if we have images in the media contents
         has_images = any(mc.media_type == MediaType.IMAGE for mc in media_contents)
 
@@ -303,43 +311,94 @@ class LocalMediaHandler(BaseProviderMediaHandler):
         for i, media_content in enumerate(media_contents):
             if media_content.media_type == MediaType.IMAGE:
                 file_name = media_content.metadata.get('file_name', 'image')
-                if self.capabilities.vision_support:
-                    # For vision models, we'll still need to handle images specially
-                    # This will be handled by the provider's generate method
+                # In text-embedded mode, images are not passed natively.
+                # Always prefer the vision fallback (caption → text context) when configured.
+                try:
+                    from ..vision_fallback import VisionFallbackHandler, VisionNotConfiguredError
+
+                    fallback_handler = VisionFallbackHandler()
+
+                    # Get the actual file path from media_content object
+                    file_path = (
+                        media_content.file_path
+                        or media_content.metadata.get('file_path')
+                        or media_content.metadata.get('file_name', 'image')
+                    )
+
+                    # Generate description using vision fallback
+                    description, trace = fallback_handler.create_description_with_trace(
+                        str(file_path), user_text or None
+                    )
+                    description = str(description or "").strip()
+
+                    if description:
+                        image_context_parts.append(f"Image {i+1} ({file_name}): {description}")
+                        self.media_enrichment.append(
+                            build_enrichment_item(
+                                status="used",
+                                input_modality="image",
+                                summary_kind="caption",
+                                policy=str(trace.get("strategy") or ""),
+                                backend=trace.get("backend") if isinstance(trace, dict) else None,
+                                input_index=i + 1,
+                                input_name=str(file_name),
+                                injected_text=description,
+                            )
+                        )
+                    else:
+                        other_parts.append(f"[Image {i+1}: {file_name} - no description returned]")
+                        self.media_enrichment.append(
+                            build_enrichment_item(
+                                status="error",
+                                input_modality="image",
+                                summary_kind="caption",
+                                policy=str(getattr(fallback_handler.vision_config, "strategy", "") or ""),
+                                input_index=i + 1,
+                                input_name=str(file_name),
+                                error="Vision fallback returned empty description",
+                            )
+                        )
+
+                except VisionNotConfiguredError as e:
+                    # Vision not configured - show warning to USER, not model
+                    self.logger.warning("Vision capability not configured for text-only models")
+                    self.logger.warning("To enable image analysis with text-only models:")
+                    self.logger.warning("🔸 EASIEST: Download BLIP vision model (990MB): abstractcore --download-vision-model")
+                    self.logger.warning("🔸 Use existing Ollama model: abstractcore --set-vision-caption qwen2.5vl:7b")
+                    self.logger.warning("🔸 Use cloud API: abstractcore --set-vision-provider openai --model gpt-4o")
+                    self.logger.warning("🔸 Interactive setup: abstractcore --configure")
+                    self.logger.warning("Current status: abstractcore --status")
+
+                    self.media_enrichment.append(
+                        build_enrichment_item(
+                            status="skipped",
+                            input_modality="image",
+                            summary_kind="caption",
+                            policy="disabled",
+                            input_index=i + 1,
+                            input_name=str(file_name),
+                            error=str(e),
+                        )
+                    )
+
+                    # Provide minimal placeholder to model (not configuration instructions!)
                     other_parts.append(f"[Image {i+1}: {file_name}]")
-                else:
-                    # Use vision fallback for text-only models
-                    try:
-                        from ..vision_fallback import VisionFallbackHandler, VisionNotConfiguredError
-                        fallback_handler = VisionFallbackHandler()
 
-                        # Get the actual file path from media_content object
-                        file_path = media_content.file_path or media_content.metadata.get('file_path') or media_content.metadata.get('file_name', 'image')
-
-                        # Generate description using vision fallback
-                        description = fallback_handler.create_description(str(file_path), user_text or None).strip()
-                        if description:
-                            image_context_parts.append(f"Image {i+1} ({file_name}): {description}")
-                        else:
-                            other_parts.append(f"[Image {i+1}: {file_name} - no description returned]")
-
-                    except VisionNotConfiguredError as e:
-                        # Vision not configured - show warning to USER, not model
-                        self.logger.warning("Vision capability not configured for text-only models")
-                        self.logger.warning("To enable image analysis with text-only models:")
-                        self.logger.warning("🔸 EASIEST: Download BLIP vision model (990MB): abstractcore --download-vision-model")
-                        self.logger.warning("🔸 Use existing Ollama model: abstractcore --set-vision-caption qwen2.5vl:7b")
-                        self.logger.warning("🔸 Use cloud API: abstractcore --set-vision-provider openai --model gpt-4o")
-                        self.logger.warning("🔸 Interactive setup: abstractcore --configure")
-                        self.logger.warning("Current status: abstractcore --status")
-
-                        # Provide minimal placeholder to model (not configuration instructions!)
-                        other_parts.append(f"[Image {i+1}: {file_name}]")
-
-                    except Exception as e:
-                        self.logger.warning(f"Vision fallback failed: {e}")
-                        # Fallback to basic placeholder
-                        other_parts.append(f"[Image {i+1}: {file_name} - vision processing unavailable]")
+                except Exception as e:
+                    self.logger.warning(f"Vision fallback failed: {e}")
+                    self.media_enrichment.append(
+                        build_enrichment_item(
+                            status="error",
+                            input_modality="image",
+                            summary_kind="caption",
+                            policy="unknown",
+                            input_index=i + 1,
+                            input_name=str(file_name),
+                            error=str(e),
+                        )
+                    )
+                    # Fallback to basic placeholder
+                    other_parts.append(f"[Image {i+1}: {file_name} - vision processing unavailable]")
             else:
                 # Embed text/document content directly
                 content = str(media_content.content)

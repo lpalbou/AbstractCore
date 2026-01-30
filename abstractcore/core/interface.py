@@ -76,6 +76,7 @@ class AbstractCoreInterface(ABC):
                  **kwargs):
         self.model = model
         self.config = kwargs
+        self._capability_registry = None
 
         # Unified token parameters
         self.max_tokens = max_tokens
@@ -92,6 +93,97 @@ class AbstractCoreInterface(ABC):
 
         # Validate token parameters
         self._validate_token_parameters()
+
+    @property
+    def capabilities(self):
+        """Capability registry (voice/audio/vision plugins).
+
+        Lazily created to avoid importing plugin machinery during `import abstractcore`.
+        """
+        if self._capability_registry is None:
+            try:
+                prefs = self.config.get("capabilities_preferred_backends")
+            except Exception:
+                prefs = None
+            from ..capabilities.registry import CapabilityRegistry
+
+            self._capability_registry = CapabilityRegistry(self, preferred_backends=prefs if isinstance(prefs, dict) else None)
+        return self._capability_registry
+
+    @property
+    def voice(self):
+        return self.capabilities.voice
+
+    @property
+    def audio(self):
+        return self.capabilities.audio
+
+    @property
+    def vision(self):
+        return self.capabilities.vision
+
+    def generate_with_outputs(
+        self,
+        prompt: str,
+        *,
+        outputs: Optional[Dict[str, Any]] = None,
+        artifact_store: Optional[Any] = None,
+        **kwargs,
+    ):
+        """Convenience wrapper: run `generate()` then optional deterministic capability calls.
+
+        This intentionally does *not* change `generate()` semantics.
+
+        `outputs` is a small, explicit contract (v0):
+        - {"tts": {...}}: calls `core.voice.tts(...)` after text generation.
+          - default text source is the LLM response content.
+        - {"t2i": {...}}: calls `core.vision.t2i(...)` after text generation.
+          - default prompt source is the LLM response content.
+
+        If `artifact_store` is provided, it is passed through to capability calls.
+        """
+        from ..capabilities.types import GenerateWithOutputsResult
+
+        stream = bool(kwargs.get("stream", False))
+        if stream:
+            raise ValueError("generate_with_outputs does not support stream=True (v0)")
+
+        resp = self.generate(prompt, **kwargs)
+        out: Dict[str, Any] = {}
+
+        cfg = outputs if isinstance(outputs, dict) else {}
+        if cfg.get("tts"):
+            tts_cfg = cfg.get("tts")
+            tts_cfg = tts_cfg if isinstance(tts_cfg, dict) else {}
+            text = tts_cfg.get("text")
+            if text is None:
+                text = getattr(resp, "content", "") or ""
+            out["tts"] = self.voice.tts(
+                str(text),
+                voice=tts_cfg.get("voice"),
+                format=str(tts_cfg.get("format") or "wav"),
+                artifact_store=artifact_store,
+                run_id=tts_cfg.get("run_id"),
+                tags=tts_cfg.get("tags"),
+                metadata=tts_cfg.get("metadata"),
+            )
+
+        if cfg.get("t2i"):
+            t2i_cfg = cfg.get("t2i")
+            t2i_cfg = t2i_cfg if isinstance(t2i_cfg, dict) else {}
+            img_prompt = t2i_cfg.get("prompt")
+            if img_prompt is None:
+                img_prompt = getattr(resp, "content", "") or ""
+            out["t2i"] = self.vision.t2i(
+                str(img_prompt),
+                artifact_store=artifact_store,
+                run_id=t2i_cfg.get("run_id"),
+                tags=t2i_cfg.get("tags"),
+                metadata=t2i_cfg.get("metadata"),
+                **{k: v for k, v in t2i_cfg.items() if k not in {"prompt", "run_id", "tags", "metadata"}},
+            )
+
+        return GenerateWithOutputsResult(response=resp, outputs=out)
 
     # Unified generation parameter accessors (provider-agnostic)
     def get_temperature(self) -> float:

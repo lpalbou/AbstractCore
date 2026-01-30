@@ -59,7 +59,7 @@
       "parallel_tools": true,
       "max_tools": -1,
       "vision_support": true,
-      "audio_support": true,
+      "audio_support": false,
       "video_support": true,
       "image_resolutions": [
         "variable"
@@ -89,7 +89,7 @@
       "parallel_tools": true,
       "max_tools": -1,
       "vision_support": true,
-      "audio_support": true,
+      "audio_support": false,
       "notes": "16x output capacity variant",
       "source": "OpenAI official docs",
       "canonical_name": "gpt-4o-long-output",
@@ -103,7 +103,7 @@
       "parallel_tools": true,
       "max_tools": -1,
       "vision_support": true,
-      "audio_support": true,
+      "audio_support": false,
       "source": "OpenAI official docs",
       "canonical_name": "gpt-4o-mini",
       "aliases": [],

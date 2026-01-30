@@ -403,6 +403,8 @@ class OpenAICompatibleProvider(BaseProvider):
         if messages:
             chat_messages.extend(messages)
 
+        media_enrichment = None
+
         # Handle media content regardless of prompt (media can be used with messages too)
         if media:
             # Get the last user message content to combine with media
@@ -422,6 +424,7 @@ class OpenAICompatibleProvider(BaseProvider):
 
                 # Create multimodal message combining text and processed media
                 multimodal_message = media_handler.create_multimodal_message(user_message_text, processed_media)
+                media_enrichment = getattr(media_handler, "media_enrichment", None)
 
                 # For OpenAI-compatible servers, we might get a string (embedded text) or dict (structured)
                 if isinstance(multimodal_message, str):
@@ -520,6 +523,10 @@ class OpenAICompatibleProvider(BaseProvider):
             return self._stream_generate(payload)
         else:
             response = self._single_generate(payload)
+            if media_enrichment:
+                from ..media.enrichment import merge_enrichment_metadata
+
+                response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
 
             # Execute tools if enabled and tools are present
             if self.execute_tools and tools and self.tool_handler.supports_prompted and response.content:

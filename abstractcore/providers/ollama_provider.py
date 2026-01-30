@@ -252,6 +252,7 @@ class OllamaProvider(BaseProvider):
                 payload["messages"].extend(converted_messages)
 
             # Handle media content regardless of prompt (media can be used with messages too)
+            media_enrichment = None
             if media:
                 # Get the text to combine with media
                 user_message_text = prompt.strip() if prompt else ""
@@ -261,6 +262,7 @@ class OllamaProvider(BaseProvider):
 
                     # Create multimodal message combining text and media
                     multimodal_message = media_handler.create_multimodal_message(user_message_text, media)
+                    media_enrichment = getattr(media_handler, "media_enrichment", None)
 
                     # For local providers, we might get a string (embedded text) or dict (structured)
                     if isinstance(multimodal_message, str):
@@ -305,7 +307,12 @@ class OllamaProvider(BaseProvider):
         if stream:
             return self._stream_generate(endpoint, payload, tools, kwargs.get('tool_call_tags'))
         else:
-            return self._single_generate(endpoint, payload, tools, media_metadata)
+            response = self._single_generate(endpoint, payload, tools, media_metadata)
+            if media_enrichment:
+                from ..media.enrichment import merge_enrichment_metadata
+
+                response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
+            return response
 
     def _single_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, media_metadata: Optional[List[Dict[str, Any]]] = None) -> GenerateResponse:
         """Generate single response"""
@@ -761,7 +768,8 @@ class OllamaProvider(BaseProvider):
             finish_reason=response.finish_reason,
             raw_response=response.raw_response,
             usage=response.usage,
-            tool_calls=tool_call_response.tool_calls
+            tool_calls=tool_call_response.tool_calls,
+            metadata=response.metadata,
         )
 
     def get_capabilities(self) -> List[str]:
