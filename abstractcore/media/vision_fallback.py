@@ -6,7 +6,7 @@ Uses unified AbstractCore configuration system.
 """
 
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 from ..utils.jsonish import loads_dict_like
 from ..utils.structured_logging import get_logger
@@ -71,6 +71,16 @@ class VisionFallbackHandler:
         Raises:
             VisionNotConfiguredError: When vision fallback is not configured
         """
+        description, _trace = self.create_description_with_trace(image_path, user_prompt=user_prompt)
+        return description
+
+    def create_description_with_trace(self, image_path: str, user_prompt: str = None) -> Tuple[str, Dict[str, Any]]:
+        """
+        Generate a description along with a small transparency trace.
+
+        The trace is intentionally bounded and JSON-serializable so it can be
+        surfaced in response metadata without relying on logs.
+        """
         if self.vision_config.strategy == "disabled":
             raise VisionNotConfiguredError("Vision fallback is disabled")
 
@@ -78,7 +88,14 @@ class VisionFallbackHandler:
             raise VisionNotConfiguredError("No vision capability configured")
 
         try:
-            return self._generate_with_fallback(image_path, user_prompt=user_prompt)
+            description, trace = self._generate_with_fallback_with_trace(image_path, user_prompt=user_prompt)
+            # Always include strategy in trace for host UX.
+            if isinstance(trace, dict):
+                trace = dict(trace)
+            else:
+                trace = {}
+            trace.setdefault("strategy", getattr(self.vision_config, "strategy", None))
+            return description, trace
         except Exception as e:
             logger.debug(f"Vision fallback failed: {e}")
             raise VisionNotConfiguredError(f"Vision fallback generation failed: {e}")
@@ -102,7 +119,14 @@ class VisionFallbackHandler:
         return models_dir.exists() and any(models_dir.iterdir())
 
     def _generate_with_fallback(self, image_path: str, user_prompt: Optional[str] = None) -> str:
-        """Try vision models in fallback chain order."""
+        """Backward-compatible: return only the description."""
+        description, _trace = self._generate_with_fallback_with_trace(image_path, user_prompt=user_prompt)
+        return description
+
+    def _generate_with_fallback_with_trace(
+        self, image_path: str, user_prompt: Optional[str] = None
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Try vision models in fallback chain order and return a small trace."""
         # Try primary provider first
         if self.vision_config.caption_provider and self.vision_config.caption_model:
             try:
@@ -112,20 +136,36 @@ class VisionFallbackHandler:
                     image_path,
                     user_prompt=user_prompt,
                 )
-                return description
+                return description, {
+                    "backend": {
+                        "kind": "llm",
+                        "provider": str(self.vision_config.caption_provider),
+                        "model": str(self.vision_config.caption_model),
+                        "source": "primary",
+                    }
+                }
             except Exception as e:
                 logger.debug(f"Primary vision provider failed: {e}")
 
         # Try fallback chain
-        for provider_config in self.vision_config.fallback_chain:
+        for idx, provider_config in enumerate(self.vision_config.fallback_chain):
             try:
+                provider = provider_config.get("provider")
+                model = provider_config.get("model")
                 description = self._generate_description(
-                    provider_config["provider"],
-                    provider_config["model"],
+                    provider,
+                    model,
                     image_path,
                     user_prompt=user_prompt,
                 )
-                return description
+                return description, {
+                    "backend": {
+                        "kind": "llm",
+                        "provider": str(provider),
+                        "model": str(model),
+                        "source": f"fallback_chain[{idx}]",
+                    }
+                }
             except Exception as e:
                 logger.debug(f"Vision provider {provider_config} failed: {e}")
                 continue
@@ -133,8 +173,8 @@ class VisionFallbackHandler:
         # Try local models
         if self._has_local_models():
             try:
-                description = self._generate_local_description(image_path)
-                return description
+                description, local_trace = self._generate_local_description_with_trace(image_path)
+                return description, local_trace
             except Exception as e:
                 logger.debug(f"Local vision model failed: {e}")
 
@@ -203,7 +243,12 @@ class VisionFallbackHandler:
         return text
 
     def _generate_local_description(self, image_path: str) -> str:
-        """Generate description using local vision model."""
+        """Backward-compatible: return only the local model description."""
+        description, _trace = self._generate_local_description_with_trace(image_path)
+        return description
+
+    def _generate_local_description_with_trace(self, image_path: str) -> Tuple[str, Dict[str, Any]]:
+        """Generate description using a local vision model and return trace."""
         try:
             local_models_path = getattr(self.vision_config, "local_models_path", None)
             if not isinstance(local_models_path, str) or not local_models_path.strip():
@@ -213,7 +258,12 @@ class VisionFallbackHandler:
 
             # Look for downloaded vision models
             for model_dir in models_dir.iterdir():
-                if model_dir.is_dir() and ("caption" in model_dir.name.lower() or "blip" in model_dir.name.lower() or "vit" in model_dir.name.lower() or "git" in model_dir.name.lower()):
+                if model_dir.is_dir() and (
+                    "caption" in model_dir.name.lower()
+                    or "blip" in model_dir.name.lower()
+                    or "vit" in model_dir.name.lower()
+                    or "git" in model_dir.name.lower()
+                ):
                     try:
                         # Check if download is complete
                         if not (model_dir / "download_complete.txt").exists():
@@ -222,7 +272,13 @@ class VisionFallbackHandler:
 
                         description = self._use_local_model(model_dir, image_path)
                         if description:
-                            return description
+                            return description, {
+                                "backend": {
+                                    "kind": "local_model",
+                                    "model": str(model_dir.name),
+                                    "source": "local_models",
+                                }
+                            }
 
                     except Exception as e:
                         logger.debug(f"Local model {model_dir} failed: {e}")

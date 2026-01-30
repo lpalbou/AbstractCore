@@ -666,6 +666,8 @@ graph TD
     C --> E[/v1/embeddings]
     C --> F[/v1/models]
     C --> G[/providers]
+    C --> Img[/v1/images/* (optional)]
+    C --> Cache[/acore/prompt_cache/*]
     
     D --> H[Request Validation]
     E --> H
@@ -698,6 +700,8 @@ graph TD
 - **Streaming Support**: Server-sent events for real-time responses
 - **Model Discovery**: Dynamic model listing across all providers
 - **Embedding Support**: Multi-provider embedding generation (HuggingFace, Ollama, LMStudio)
+- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` (plus `/v1/vision/*` control plane) delegated to `abstractvision` (safe-by-default; requires explicit config).
+- **Prompt Cache Control Plane**: `/acore/prompt_cache/*` proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an `abstractcore.endpoint` upstream).
 
 **Request Flow Example**:
 

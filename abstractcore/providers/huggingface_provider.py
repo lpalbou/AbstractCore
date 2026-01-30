@@ -834,6 +834,7 @@ class HuggingFaceProvider(BaseProvider):
 
         # Build input text with tool and media support
         # Handle media content first if present
+        media_enrichment = None
         if media:
             try:
                 from ..media.handlers import LocalMediaHandler
@@ -841,6 +842,7 @@ class HuggingFaceProvider(BaseProvider):
 
                 # Create multimodal message combining text and media
                 multimodal_message = media_handler.create_multimodal_message(prompt, media)
+                media_enrichment = getattr(media_handler, "media_enrichment", None)
 
                 # For local providers, we get text-embedded content
                 if isinstance(multimodal_message, str):
@@ -877,6 +879,10 @@ class HuggingFaceProvider(BaseProvider):
                 return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'), seed_value)
             else:
                 response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, seed_value)
+                if media_enrichment:
+                    from ..media.enrichment import merge_enrichment_metadata
+
+                    response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:
@@ -1227,6 +1233,7 @@ class HuggingFaceProvider(BaseProvider):
             chat_messages.extend(messages)
 
         # Handle media content for the user message - use proper vision format for GGUF models
+        media_enrichment = None
         if media:
             try:
                 from ..architectures.detection import supports_vision
@@ -1272,6 +1279,7 @@ class HuggingFaceProvider(BaseProvider):
                     from ..media.handlers import LocalMediaHandler
                     media_handler = LocalMediaHandler("huggingface", self.model_capabilities, model_name=self.model)
                     multimodal_message = media_handler.create_multimodal_message(prompt, media)
+                    media_enrichment = getattr(media_handler, "media_enrichment", None)
                     user_message_content = multimodal_message if isinstance(multimodal_message, str) else prompt
 
             except ImportError:
@@ -1376,6 +1384,10 @@ class HuggingFaceProvider(BaseProvider):
                 return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags'))
             else:
                 response = self._single_generate_gguf(generation_kwargs)
+                if media_enrichment:
+                    from ..media.enrichment import merge_enrichment_metadata
+
+                    response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
 
                 # Handle tool execution for both native and prompted responses
                 if tools and (response.has_tool_calls() or

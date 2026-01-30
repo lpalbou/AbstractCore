@@ -37,8 +37,11 @@ def test_text_only_image_fallback_preserves_user_request(monkeypatch, sample_med
 
     monkeypatch.setattr(
         VisionFallbackHandler,
-        "create_description",
-        lambda self, image_path, user_prompt=None: "A solid red square on a plain background.",
+        "create_description_with_trace",
+        lambda self, image_path, user_prompt=None: (
+            "A solid red square on a plain background.",
+            {"strategy": "caption", "backend": {"kind": "llm", "provider": "stub", "model": "stub"}},
+        ),
     )
 
     handler = LocalMediaHandler("openrouter", {"vision_support": False}, model_name="qwen/qwen3-next-80b")
@@ -62,3 +65,9 @@ def test_text_only_image_fallback_preserves_user_request(monkeypatch, sample_med
     assert "Now answer the user's request:" in message
     assert message.strip().endswith(user_request)
 
+    assert isinstance(getattr(handler, "media_enrichment", None), list)
+    assert handler.media_enrichment
+    entry = handler.media_enrichment[0]
+    assert entry.get("status") == "used"
+    assert entry.get("input_modality") == "image"
+    assert entry.get("summary_kind") == "caption"

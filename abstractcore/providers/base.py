@@ -34,6 +34,7 @@ from ..exceptions import (
     AuthenticationError,
     RateLimitError,
     InvalidRequestError,
+    UnsupportedFeatureError,
     ModelNotFoundError
 )
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
@@ -954,6 +955,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Process media content if provided
         processed_media = None
         media_metadata = None
+        media_enrichment = None
         if media:
             compression_pref = glyph_compression or kwargs.get('glyph_compression', 'auto')
             processed_media = self._process_media_content(media, compression_pref)
@@ -964,6 +966,206 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 for media_content in processed_media:
                     if hasattr(media_content, 'metadata') and media_content.metadata:
                         media_metadata.append(media_content.metadata)
+
+        # Audio input policy (v0): avoid placeholder degradation and require explicit fallbacks.
+        if processed_media:
+            try:
+                from ..media.types import ContentFormat, MediaType
+                from ..media.enrichment import build_enrichment_item
+                from ..capabilities.errors import CapabilityUnavailableError
+            except Exception:
+                ContentFormat = None  # type: ignore[assignment]
+                MediaType = None  # type: ignore[assignment]
+                build_enrichment_item = None  # type: ignore[assignment]
+                CapabilityUnavailableError = Exception  # type: ignore[assignment]
+
+            if MediaType is not None:
+                audio_items = [mc for mc in processed_media if getattr(mc, "media_type", None) == MediaType.AUDIO]
+            else:
+                audio_items = []
+
+            if audio_items:
+                # Resolve policy: per-call kwarg > config default.
+                policy_raw = kwargs.pop("audio_policy", None)
+                if policy_raw is None:
+                    policy_raw = kwargs.pop("audio_handling_policy", None)
+                if policy_raw is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        policy_raw = getattr(get_config_manager().config, "audio", None).strategy  # type: ignore[union-attr]
+                    except Exception:
+                        policy_raw = "native_only"
+
+                policy = str(policy_raw or "native_only").strip().lower()
+                model_supports_audio = bool(getattr(self, "model_capabilities", {}).get("audio_support", False))
+
+                if policy in ("native_only", "native", "disabled"):
+                    if not model_supports_audio:
+                        raise UnsupportedFeatureError(
+                            f"Audio input is not supported by model '{self.model}'. "
+                            "Choose an audio-capable model, or pass audio_policy='speech_to_text' "
+                            "(requires an STT capability plugin, e.g. install abstractvoice)."
+                        )
+                    # Keep audio media for provider-native handling (provider support may still vary).
+
+                elif policy in ("speech_to_text", "stt"):
+                    stt_language = kwargs.pop("audio_language", None)
+                    if stt_language is None:
+                        stt_language = kwargs.pop("stt_language", None)
+                    if stt_language is None:
+                        try:
+                            from ..config.manager import get_config_manager
+
+                            stt_language = getattr(get_config_manager().config, "audio", None).stt_language  # type: ignore[union-attr]
+                        except Exception:
+                            stt_language = None
+
+                    audio_context_parts: List[str] = []
+                    enrichments: List[Dict[str, Any]] = []
+
+                    # Resolve backend id (best-effort) for transparency metadata.
+                    backend_id = getattr(getattr(self, "audio", None), "backend_id", None)
+                    backend = {"kind": "plugin"}
+                    if isinstance(backend_id, str) and backend_id.strip():
+                        backend["backend_id"] = backend_id.strip()
+
+                    for idx, mc in enumerate(audio_items):
+                        name = None
+                        try:
+                            name = mc.metadata.get("file_name") if hasattr(mc, "metadata") and isinstance(mc.metadata, dict) else None
+                        except Exception:
+                            name = None
+                        if not isinstance(name, str) or not name.strip():
+                            name = mc.file_path if getattr(mc, "file_path", None) else f"audio_{idx+1}"
+
+                        # Prefer a file path when available.
+                        audio_input: Any = None
+                        try:
+                            if getattr(mc, "file_path", None):
+                                audio_input = str(mc.file_path)
+                            elif getattr(mc, "content_format", None) == ContentFormat.FILE_PATH and isinstance(getattr(mc, "content", None), str):
+                                audio_input = str(mc.content)
+                            elif isinstance(getattr(mc, "content", None), (bytes, bytearray)):
+                                audio_input = bytes(mc.content)
+                        except Exception:
+                            audio_input = None
+
+                        if audio_input is None:
+                            raise UnsupportedFeatureError("Audio STT fallback requires a file path or raw bytes for the audio input.")
+
+                        try:
+                            transcript = self.audio.transcribe(audio_input, language=stt_language)
+                        except CapabilityUnavailableError as e:  # type: ignore[misc]
+                            raise UnsupportedFeatureError(str(e))
+
+                        transcript = str(transcript or "").strip()
+                        audio_context_parts.append(f"Audio {idx+1} ({name}): {transcript}")
+                        if build_enrichment_item is not None:
+                            enrichments.append(
+                                build_enrichment_item(
+                                    status="used",
+                                    input_modality="audio",
+                                    summary_kind="transcript",
+                                    policy="speech_to_text",
+                                    backend=backend,
+                                    input_index=idx + 1,
+                                    input_name=str(name),
+                                    injected_text=transcript,
+                                )
+                            )
+
+                    # Remove audio media from the provider call (we injected text context instead).
+                    processed_media = [mc for mc in processed_media if getattr(mc, "media_type", None) != MediaType.AUDIO]
+
+                    # Inject audio context into the prompt (similar recency semantics as vision fallback).
+                    original_prompt = prompt.strip() if isinstance(prompt, str) else ""
+                    parts: List[str] = []
+                    parts.append(
+                        "Audio context from attached audio file(s) "
+                        "(treat as directly observed; do not mention this section):"
+                    )
+                    parts.extend(audio_context_parts)
+                    if original_prompt:
+                        parts.append("Now answer the user's request:")
+                        parts.append(original_prompt)
+                    prompt = "\n\n".join(parts) if parts else original_prompt
+
+                    media_enrichment = enrichments
+
+                elif policy == "auto":
+                    if model_supports_audio:
+                        pass  # provider-native path
+                    else:
+                        # Explicit "auto" allows fallback, but never silently for default policy.
+                        # Re-enter through the explicit STT path by recursion is risky; inline minimal.
+                        stt_language = kwargs.pop("audio_language", None) or kwargs.pop("stt_language", None)
+                        audio_context_parts: List[str] = []
+                        enrichments: List[Dict[str, Any]] = []
+                        backend_id = getattr(getattr(self, "audio", None), "backend_id", None)
+                        backend = {"kind": "plugin"}
+                        if isinstance(backend_id, str) and backend_id.strip():
+                            backend["backend_id"] = backend_id.strip()
+                        for idx, mc in enumerate(audio_items):
+                            name = None
+                            try:
+                                name = mc.metadata.get("file_name") if hasattr(mc, "metadata") and isinstance(mc.metadata, dict) else None
+                            except Exception:
+                                name = None
+                            if not isinstance(name, str) or not name.strip():
+                                name = mc.file_path if getattr(mc, "file_path", None) else f"audio_{idx+1}"
+                            audio_input: Any = None
+                            try:
+                                if getattr(mc, "file_path", None):
+                                    audio_input = str(mc.file_path)
+                                elif getattr(mc, "content_format", None) == ContentFormat.FILE_PATH and isinstance(getattr(mc, "content", None), str):
+                                    audio_input = str(mc.content)
+                                elif isinstance(getattr(mc, "content", None), (bytes, bytearray)):
+                                    audio_input = bytes(mc.content)
+                            except Exception:
+                                audio_input = None
+                            if audio_input is None:
+                                raise UnsupportedFeatureError("Audio STT fallback requires a file path or raw bytes for the audio input.")
+                            try:
+                                transcript = self.audio.transcribe(audio_input, language=stt_language)
+                            except CapabilityUnavailableError as e:  # type: ignore[misc]
+                                raise UnsupportedFeatureError(str(e))
+                            transcript = str(transcript or "").strip()
+                            audio_context_parts.append(f"Audio {idx+1} ({name}): {transcript}")
+                            if build_enrichment_item is not None:
+                                enrichments.append(
+                                    build_enrichment_item(
+                                        status="used",
+                                        input_modality="audio",
+                                        summary_kind="transcript",
+                                        policy="auto",
+                                        backend=backend,
+                                        input_index=idx + 1,
+                                        input_name=str(name),
+                                        injected_text=transcript,
+                                    )
+                                )
+                        processed_media = [mc for mc in processed_media if getattr(mc, "media_type", None) != MediaType.AUDIO]
+                        original_prompt = prompt.strip() if isinstance(prompt, str) else ""
+                        parts: List[str] = []
+                        parts.append(
+                            "Audio context from attached audio file(s) "
+                            "(treat as directly observed; do not mention this section):"
+                        )
+                        parts.extend(audio_context_parts)
+                        if original_prompt:
+                            parts.append("Now answer the user's request:")
+                            parts.append(original_prompt)
+                        prompt = "\n\n".join(parts) if parts else original_prompt
+                        media_enrichment = enrichments
+
+                elif policy == "caption":
+                    raise UnsupportedFeatureError(
+                        "audio_policy='caption' is not configured in v0. "
+                        "Use audio_policy='speech_to_text' for speech, or configure a future audio caption backend."
+                    )
+                else:
+                    raise ValueError(f"Unknown audio_policy '{policy}'. Expected one of: native_only, speech_to_text, auto, caption.")
 
         # Convert tools to ToolDefinition objects first (outside retry loop)
         converted_tools = None
@@ -1126,6 +1328,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 response.metadata["reasoning"] = f"{existing.strip()}\n\n{reasoning.strip()}"
                         else:
                             response.metadata["reasoning"] = reasoning.strip()
+
+                # Attach media enrichment transparency metadata (caption/STT/etc.).
+                if media_enrichment and response:
+                    from ..media.enrichment import merge_enrichment_metadata
+
+                    response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
 
                 # Add visual token calculation if media metadata is available
                 if media_metadata and response:
@@ -1598,7 +1806,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             finish_reason=response.finish_reason,
             raw_response=response.raw_response,
             usage=response.usage,
-            tool_calls=response.tool_calls  # Keep original format
+            tool_calls=response.tool_calls,  # Keep original format
+            metadata=response.metadata,
         )
 
     def _format_tool_results(self, tool_calls: List, tool_results: List) -> str:

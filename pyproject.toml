@@ -104,7 +104,11 @@ lmstudio = [
 ]
 
 huggingface = [
-    "transformers>=4.57.1,<5.0.0",  # Required for GLM4V architecture support (Glyph, GLM-4.1V)
+    # NOTE:
+    # - `mlx-lm` currently pins `transformers==5.0.0rc*` (and will likely move to 5.0.0+),
+    #   so the HuggingFace extra must not hard-block Transformers v5 if we want `abstractcore[all]`
+    #   (which includes both `huggingface` and `mlx`) to be installable on Apple Silicon.
+    "transformers>=4.57.1,<6.0.0",  # Required for GLM4V architecture support (Glyph, GLM-4.1V)
     "torch>=2.6.0,<3.0.0",  # Required for EmbeddingGemma model support
     "torchvision>=0.17.0",  # Compatible with torch>=2.6.0
     "torchaudio>=2.1.0",  # Compatible with torch>=2.6.0

@@ -505,6 +505,7 @@ class MLXProvider(BaseProvider):
 
         # Handle media content first if present
         processed_prompt = prompt
+        media_enrichment = None
         if media:
             try:
                 from ..media.handlers import LocalMediaHandler
@@ -512,6 +513,7 @@ class MLXProvider(BaseProvider):
 
                 # Create multimodal message combining text and media
                 multimodal_message = media_handler.create_multimodal_message(prompt, media)
+                media_enrichment = getattr(media_handler, "media_enrichment", None)
 
                 # For MLX (local provider), we get text-embedded content
                 if isinstance(multimodal_message, str):
@@ -567,6 +569,10 @@ class MLXProvider(BaseProvider):
                 response = self._single_generate(
                     full_prompt, max_tokens, temperature, top_p, seed_value, prompt_cache
                 )
+                if media_enrichment:
+                    from ..media.enrichment import merge_enrichment_metadata
+
+                    response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:

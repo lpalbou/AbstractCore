@@ -21,8 +21,11 @@ def test_openai_compatible_payload_contains_visual_context_and_user_request(monk
     # No external vision model call: stub vision fallback output.
     monkeypatch.setattr(
         VisionFallbackHandler,
-        "create_description",
-        lambda self, image_path, user_prompt=None: "A solid red square on a plain background.",
+        "create_description_with_trace",
+        lambda self, image_path, user_prompt=None: (
+            "A solid red square on a plain background.",
+            {"strategy": "caption", "backend": {"kind": "llm", "provider": "stub", "model": "stub"}},
+        ),
     )
 
     provider = OpenAICompatibleProvider(
@@ -42,6 +45,9 @@ def test_openai_compatible_payload_contains_visual_context_and_user_request(monk
     user_request = "What is the dominant color in this image?"
     response = provider.generate(user_request, media=[str(sample_media_files["png"])], stream=False)
     assert response.content == "ok"
+    assert isinstance(response.metadata, dict)
+    assert isinstance(response.metadata.get("media_enrichment"), list)
+    assert response.metadata["media_enrichment"]
 
     payload = captured["payload"]
     assert payload["model"] == "qwen/qwen3-next-80b"
@@ -54,4 +60,3 @@ def test_openai_compatible_payload_contains_visual_context_and_user_request(monk
     assert "A solid red square on a plain background." in content
     assert "Now answer the user's request:" in content
     assert content.strip().endswith(user_request)
-

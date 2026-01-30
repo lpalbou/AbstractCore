@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Dependency compatibility**: relaxed `abstractcore[huggingface]` `transformers` upper bound to `<6` so it can co-install with `abstractcore[mlx]` (as `mlx-lm` currently pins `transformers==5.0.0rc*`).
+
 ## [2.11.0] - 2026-01-28
 
 ### Added
