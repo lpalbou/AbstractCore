@@ -53,7 +53,15 @@ class VideoConfig:
 
     # Frame sampling controls for frames-based fallback.
     max_frames: int = 3
+    # Native video models typically require more temporal coverage than the fallback path.
+    # This default is used when the selected model supports native video input (v0: HF only).
+    max_frames_native: int = 8
     frame_format: str = "jpg"  # jpg|png
+    sampling_strategy: str = "uniform"  # uniform|keyframes
+
+    # Downscale extracted frames (preserve aspect ratio; never upscale). Helps memory + token pressure.
+    # Applies to both frames_caption fallback and HF native video ingestion (which uses ffmpeg frames).
+    max_frame_side: int = 1024
 
     # Maximum video size allowed for processing (bytes). None => use media handler defaults.
     max_video_size_bytes: Optional[int] = None
@@ -79,6 +87,19 @@ class AppDefaults:
     judge_model: Optional[str] = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
     intent_provider: Optional[str] = "huggingface"
     intent_model: Optional[str] = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
+
+
+@dataclass
+class MaintenanceConfig:
+    """Maintenance agent configuration (triage, stewardship)."""
+
+    # LLM assist (optional, local-first).
+    triage_llm_enabled: bool = False
+    triage_llm_base_url: str = "http://localhost:1234"
+    triage_llm_model: str = "qwen/qwen3-next-80b"
+    triage_llm_temperature: float = 0.2
+    triage_llm_max_tokens: int = 800
+    triage_llm_timeout_s: float = 30.0
 
 
 @dataclass
@@ -158,6 +179,7 @@ class AbstractCoreConfig:
     streaming: StreamingConfig
     timeouts: TimeoutConfig
     offline: OfflineConfig
+    maintenance: MaintenanceConfig
 
     @classmethod
     def default(cls):
@@ -174,7 +196,8 @@ class AbstractCoreConfig:
             logging=LoggingConfig(),
             streaming=StreamingConfig(),
             timeouts=TimeoutConfig(),
-            offline=OfflineConfig()
+            offline=OfflineConfig(),
+            maintenance=MaintenanceConfig(),
         )
 
 
@@ -215,6 +238,7 @@ class ConfigurationManager:
         streaming = StreamingConfig(**data.get('streaming', {}))
         timeouts = TimeoutConfig(**data.get('timeouts', {}))
         offline = OfflineConfig(**data.get('offline', {}))
+        maintenance = MaintenanceConfig(**data.get('maintenance', {}))
 
         return AbstractCoreConfig(
             vision=vision,
@@ -228,7 +252,8 @@ class ConfigurationManager:
             logging=logging,
             streaming=streaming,
             timeouts=timeouts,
-            offline=offline
+            offline=offline,
+            maintenance=maintenance,
         )
 
     def _save_config(self):
@@ -248,7 +273,8 @@ class ConfigurationManager:
             'logging': asdict(self.config.logging),
             'streaming': asdict(self.config.streaming),
             'timeouts': asdict(self.config.timeouts),
-            'offline': asdict(self.config.offline)
+            'offline': asdict(self.config.offline),
+            'maintenance': asdict(self.config.maintenance),
         }
 
         with open(self.config_file, 'w') as f:
@@ -301,7 +327,10 @@ class ConfigurationManager:
             "video": {
                 "strategy": self.config.video.strategy,
                 "max_frames": self.config.video.max_frames,
+                "max_frames_native": getattr(self.config.video, "max_frames_native", None),
                 "frame_format": self.config.video.frame_format,
+                "sampling_strategy": getattr(self.config.video, "sampling_strategy", None),
+                "max_frame_side": getattr(self.config.video, "max_frame_side", None),
             },
             "app_defaults": {
                 "cli": {
