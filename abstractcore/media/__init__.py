@@ -29,7 +29,7 @@ from .capabilities import (
 )
 
 # Processors for different file types
-from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor
+from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor, AudioProcessor, VideoProcessor
 
 # Provider-specific handlers
 from .handlers import OpenAIMediaHandler, AnthropicMediaHandler, LocalMediaHandler
@@ -106,6 +106,8 @@ __all__ = [
     'TextProcessor',
     'PDFProcessor',
     'OfficeProcessor',
+    'AudioProcessor',
+    'VideoProcessor',
 
     # Handlers
     'OpenAIMediaHandler',

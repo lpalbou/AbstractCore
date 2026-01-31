@@ -501,6 +501,23 @@
       "aliases": [],
       "max_tokens": 10000000
     },
+    "llava-next-video-7b-hf": {
+      "max_output_tokens": 1024,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "video_support": true,
+      "audio_support": false,
+      "notes": "LLaVA-NeXT-Video 7B (HuggingFace Transformers video-input VLM)",
+      "source": "HuggingFace model card / Transformers docs",
+      "canonical_name": "llava-next-video-7b-hf",
+      "aliases": [
+        "llava-hf/LLaVA-NeXT-Video-7B-hf",
+        "LLaVA-NeXT-Video-7B-hf"
+      ],
+      "max_tokens": 10250
+    },
     "qwen2.5-0.5b": {
       "max_output_tokens": 8192,
       "tool_support": "native",

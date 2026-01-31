@@ -581,7 +581,7 @@ These return `501` only if the server can't infer a backend (e.g. no `model` in 
 
 - **Local Diffusers**: set `ABSTRACTCORE_VISION_BACKEND=diffusers`
   - `ABSTRACTCORE_VISION_MODEL_ID` (required) — local model id/path (Diffusers)
-  - `ABSTRACTCORE_VISION_DEVICE` (optional, default `cpu`)
+  - `ABSTRACTCORE_VISION_DEVICE` (optional, default `auto`; chooses `cuda`/`mps` when available, else `cpu`)
   - `ABSTRACTCORE_VISION_TORCH_DTYPE` (optional, e.g. `float16`; for very large models you typically need `float16` or you may run out of memory)
   - `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD` (optional, default true; set to `0` for cache-only/offline)
   - Note: if you set `ABSTRACTCORE_VISION_DEVICE=mps` or `cuda`, your PyTorch must actually support it (`torch.backends.mps.is_available()` / `torch.cuda.is_available()`).

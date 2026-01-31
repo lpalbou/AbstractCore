@@ -644,14 +644,14 @@ def _resolve_backend(request_model: Any):
         allow_download = _env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", True)
         cfg = HuggingFaceDiffusersBackendConfig(
             model_id=model_id,
-            device=_env("ABSTRACTCORE_VISION_DEVICE", "cpu") or "cpu",
+            device=_env("ABSTRACTCORE_VISION_DEVICE", "auto") or "auto",
             torch_dtype=_env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
             allow_download=allow_download,
         )
         key = (
             "diffusers",
             model_id,
-            _env("ABSTRACTCORE_VISION_DEVICE", "cpu") or "cpu",
+            _env("ABSTRACTCORE_VISION_DEVICE", "auto") or "auto",
             _env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
             allow_download,
         )
@@ -808,7 +808,7 @@ async def load_active_vision_model(payload: Dict[str, Any] = Body(...)) -> Dict[
         if backend_kind == "diffusers":
             cfg = HuggingFaceDiffusersBackendConfig(
                 model_id=model_id,
-                device=_env("ABSTRACTCORE_VISION_DEVICE", "cpu") or "cpu",
+                device=_env("ABSTRACTCORE_VISION_DEVICE", "auto") or "auto",
                 torch_dtype=_env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
                 allow_download=_env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", True),
             )

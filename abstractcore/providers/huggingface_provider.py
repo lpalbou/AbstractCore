@@ -1051,25 +1051,48 @@ class HuggingFaceProvider(BaseProvider):
             if prompt:
                 user_content.append({"type": "text", "text": prompt})
             
-            # Add media content (images)
+            # Add media content (images, video)
+            has_video = False
+            try:
+                from ..media.types import MediaType, ContentFormat
+            except Exception:
+                MediaType = None  # type: ignore[assignment]
+                ContentFormat = None  # type: ignore[assignment]
+
             if media:
                 for media_item in media:
-                    if hasattr(media_item, 'file_path') and media_item.file_path:
-                        # Use file path directly
-                        user_content.append({
-                            "type": "image",
-                            "url": str(media_item.file_path)
-                        })
-                    elif hasattr(media_item, 'content') and media_item.content:
-                        # Handle base64 content
-                        if media_item.content_format == 'BASE64':
-                            # Create data URL for base64 content
-                            mime_type = getattr(media_item, 'mime_type', 'image/png')
-                            data_url = f"data:{mime_type};base64,{media_item.content}"
-                            user_content.append({
-                                "type": "image",
-                                "url": data_url
-                            })
+                    media_type = getattr(media_item, "media_type", None)
+
+                    # Video inputs
+                    if MediaType is not None and media_type == MediaType.VIDEO:
+                        has_video = True
+                        video_path = getattr(media_item, "file_path", None) or getattr(media_item, "content", None)
+                        if not isinstance(video_path, str) or not video_path.strip():
+                            raise ValueError("HuggingFace video models require MediaContent.file_path for video inputs.")
+                        user_content.append({"type": "video", "url": video_path})
+                        continue
+
+                    # Image inputs
+                    if MediaType is None or media_type == MediaType.IMAGE:
+                        if getattr(media_item, "file_path", None):
+                            user_content.append({"type": "image", "url": str(media_item.file_path)})
+                            continue
+
+                        content = getattr(media_item, "content", None)
+                        if not content:
+                            continue
+
+                        content_format = getattr(media_item, "content_format", None)
+                        is_base64 = False
+                        if ContentFormat is not None and content_format == ContentFormat.BASE64:
+                            is_base64 = True
+                        elif isinstance(content_format, str) and content_format.strip().lower() == "base64":
+                            is_base64 = True
+
+                        if is_base64:
+                            mime_type = getattr(media_item, "mime_type", "image/png")
+                            data_url = f"data:{mime_type};base64,{content}"
+                            user_content.append({"type": "image", "url": data_url})
             
             # Add user message
             chat_messages.append({
@@ -1077,14 +1100,99 @@ class HuggingFaceProvider(BaseProvider):
                 "content": user_content
             })
             
-            # Process messages using the processor
-            inputs = self.processor.apply_chat_template(
-                chat_messages,
-                tokenize=True,
-                add_generation_prompt=True,
-                return_dict=True,
-                return_tensors="pt"
-            ).to(self.model_instance.device)
+            # Process messages using the processor.
+            #
+            # Some multimodal processors (e.g. LlavaNextVideoProcessor) return a *string*
+            # from apply_chat_template; for those we must call the processor separately
+            # with explicit images/videos tensors and keep video frame counts bounded.
+            if has_video:
+                # Resolve max frames for video sampling (keep small to avoid huge context).
+                max_frames_raw = kwargs.get("video_max_frames", None)
+                if max_frames_raw is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        max_frames_raw = getattr(get_config_manager().config, "video", None).max_frames  # type: ignore[union-attr]
+                    except Exception:
+                        max_frames_raw = 3
+                try:
+                    max_video_frames = max(1, int(max_frames_raw))
+                except Exception:
+                    max_video_frames = 3
+
+                # Build multimodal-typed messages for chat_template renderers that expect list content.
+                mm_messages = []
+                if system_prompt:
+                    mm_messages.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+                if messages:
+                    for msg in messages:
+                        role = msg.get("role", "user")
+                        content = msg.get("content", "")
+                        if isinstance(content, list):
+                            mm_messages.append({"role": role, "content": content})
+                        else:
+                            mm_messages.append({"role": role, "content": [{"type": "text", "text": str(content)}]})
+                mm_messages.append({"role": "user", "content": user_content})
+
+                prompt_text = self.processor.apply_chat_template(mm_messages, add_generation_prompt=True)
+
+                # Prepare explicit video inputs for the processor (use sampling to avoid decoding hundreds of frames).
+                video_paths = []
+                image_inputs = []
+                for media_item in (media or []):
+                    if MediaType is not None and getattr(media_item, "media_type", None) == MediaType.VIDEO:
+                        video_path = getattr(media_item, "file_path", None) or getattr(media_item, "content", None)
+                        if not isinstance(video_path, str) or not video_path.strip():
+                            raise ValueError("Video MediaContent must provide file_path for HuggingFace video models.")
+                        video_paths.append(video_path)
+                    elif MediaType is not None and getattr(media_item, "media_type", None) == MediaType.IMAGE:
+                        fp = getattr(media_item, "file_path", None)
+                        if isinstance(fp, str) and fp.strip():
+                            try:
+                                from PIL import Image as PILImage
+                            except ImportError as e:
+                                raise RuntimeError(f"PIL is required for HuggingFace image inputs: {e}")
+                            image_inputs.append(PILImage.open(fp).convert("RGB"))
+
+                processor_call: Dict[str, Any] = {"text": prompt_text, "return_tensors": "pt"}
+                if image_inputs:
+                    processor_call["images"] = image_inputs if len(image_inputs) > 1 else image_inputs[0]
+                if video_paths:
+                    processor_call["videos"] = video_paths if len(video_paths) > 1 else video_paths[0]
+                    processor_call["videos_kwargs"] = {"do_sample_frames": True, "num_frames": max_video_frames}
+
+                inputs = self.processor(**processor_call)
+                if hasattr(inputs, "to"):
+                    inputs = inputs.to(self.model_instance.device)
+            else:
+                templated = self.processor.apply_chat_template(
+                    chat_messages,
+                    tokenize=True,
+                    add_generation_prompt=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                )
+                if isinstance(templated, str):
+                    # Processor returned a prompt string; fall back to explicit processor call.
+                    image_inputs = []
+                    for media_item in (media or []):
+                        if MediaType is not None and getattr(media_item, "media_type", None) == MediaType.IMAGE:
+                            fp = getattr(media_item, "file_path", None)
+                            if isinstance(fp, str) and fp.strip():
+                                try:
+                                    from PIL import Image as PILImage
+                                except ImportError as e:
+                                    raise RuntimeError(f"PIL is required for HuggingFace image inputs: {e}")
+                                image_inputs.append(PILImage.open(fp).convert("RGB"))
+
+                    processor_call: Dict[str, Any] = {"text": templated, "return_tensors": "pt"}
+                    if image_inputs:
+                        processor_call["images"] = image_inputs if len(image_inputs) > 1 else image_inputs[0]
+                    inputs = self.processor(**processor_call)
+                    if hasattr(inputs, "to"):
+                        inputs = inputs.to(self.model_instance.device)
+                else:
+                    inputs = templated.to(self.model_instance.device)
             
             temperature_value = kwargs.get("temperature", self.temperature)
             if temperature_value is None:

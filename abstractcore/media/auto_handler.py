@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List
 
 from .base import BaseMediaHandler
 from .types import MediaContent, MediaType, ContentFormat, detect_media_type
-from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor, AudioProcessor
+from .processors import ImageProcessor, TextProcessor, PDFProcessor, OfficeProcessor, AudioProcessor, VideoProcessor
 from ..exceptions import UnsupportedFeatureError
 
 # Import Glyph compression support
@@ -60,6 +60,7 @@ class AutoMediaHandler(BaseMediaHandler):
         self._text_processor = None
         self._pdf_processor = None
         self._office_processor = None
+        self._video_processor = None
         
         # Initialize Glyph compression support
         self._compression_orchestrator = None
@@ -101,6 +102,9 @@ class AutoMediaHandler(BaseMediaHandler):
 
         # AudioProcessor (dependency-free)
         availability['audio'] = True
+
+        # VideoProcessor (dependency-free)
+        availability['video'] = True
         
         # GlyphProcessor (requires reportlab and pdf2image)
         glyph_deps_available = True
@@ -141,6 +145,12 @@ class AutoMediaHandler(BaseMediaHandler):
         if self._office_processor is None:
             self._office_processor = OfficeProcessor(**self.processor_config)
         return self._office_processor
+
+    def _get_video_processor(self) -> VideoProcessor:
+        """Get or create VideoProcessor instance."""
+        if self._video_processor is None:
+            self._video_processor = VideoProcessor(**self.processor_config)
+        return self._video_processor
     
     def _get_compression_orchestrator(self) -> 'CompressionOrchestrator':
         """Get or create CompressionOrchestrator instance."""
@@ -198,9 +208,14 @@ class AutoMediaHandler(BaseMediaHandler):
             else:
                 return self._get_text_processor()
 
-        # Handle other media types (audio, video) - not yet implemented
+        # Handle audio
         elif media_type == MediaType.AUDIO:
             return AudioProcessor(**self.processor_config)
+        # Handle video
+        elif media_type == MediaType.VIDEO:
+            if self._available_processors.get('video', False):
+                return self._get_video_processor()
+            return None
         else:
             self.logger.warning(f"Media type {media_type.value} not yet supported")
             return None
@@ -517,7 +532,7 @@ class AutoMediaHandler(BaseMediaHandler):
         elif media_type == MediaType.AUDIO:
             return self._available_processors.get('audio', False)
         elif media_type == MediaType.VIDEO:
-            return False  # Not yet implemented
+            return self._available_processors.get('video', False)
         return False
 
     def supports_format(self, media_type: MediaType, format_ext: str) -> bool:
@@ -558,6 +573,9 @@ class AutoMediaHandler(BaseMediaHandler):
         elif media_type == MediaType.AUDIO:
             # AudioProcessor is dependency-free in v0; accept common audio containers.
             return format_ext.lower() in {'mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac', 'webm'}
+        elif media_type == MediaType.VIDEO:
+            # VideoProcessor is dependency-free in v0; frame extraction fallback may require ffmpeg.
+            return format_ext.lower() in {'mp4', 'mov', 'mkv', 'webm', 'avi', 'wmv', 'm4v'}
 
         return False
 
