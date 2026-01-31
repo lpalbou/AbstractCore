@@ -45,6 +45,21 @@ class AudioConfig:
 
 
 @dataclass
+class VideoConfig:
+    """Video configuration settings (input policy + optional fallback)."""
+    # Default: best-effort usability. Prefer native video when supported; otherwise fall back
+    # to sampled frames routed through existing image/vision handling.
+    strategy: str = "auto"  # native_only|frames_caption|auto
+
+    # Frame sampling controls for frames-based fallback.
+    max_frames: int = 3
+    frame_format: str = "jpg"  # jpg|png
+
+    # Maximum video size allowed for processing (bytes). None => use media handler defaults.
+    max_video_size_bytes: Optional[int] = None
+
+
+@dataclass
 class EmbeddingsConfig:
     """Embeddings configuration settings."""
     provider: Optional[str] = "huggingface"
@@ -133,6 +148,7 @@ class AbstractCoreConfig:
     """Main configuration class."""
     vision: VisionConfig
     audio: AudioConfig
+    video: VideoConfig
     embeddings: EmbeddingsConfig
     app_defaults: AppDefaults
     default_models: DefaultModels
@@ -149,6 +165,7 @@ class AbstractCoreConfig:
         return cls(
             vision=VisionConfig(),
             audio=AudioConfig(),
+            video=VideoConfig(),
             embeddings=EmbeddingsConfig(),
             app_defaults=AppDefaults(),
             default_models=DefaultModels(),
@@ -188,6 +205,7 @@ class ConfigurationManager:
         # Create config objects from dictionary data
         vision = VisionConfig(**data.get('vision', {}))
         audio = AudioConfig(**data.get('audio', {}))
+        video = VideoConfig(**data.get('video', {}))
         embeddings = EmbeddingsConfig(**data.get('embeddings', {}))
         app_defaults = AppDefaults(**data.get('app_defaults', {}))
         default_models = DefaultModels(**data.get('default_models', {}))
@@ -201,6 +219,7 @@ class ConfigurationManager:
         return AbstractCoreConfig(
             vision=vision,
             audio=audio,
+            video=video,
             embeddings=embeddings,
             app_defaults=app_defaults,
             default_models=default_models,
@@ -220,6 +239,7 @@ class ConfigurationManager:
         config_dict = {
             'vision': asdict(self.config.vision),
             'audio': asdict(self.config.audio),
+            'video': asdict(self.config.video),
             'embeddings': asdict(self.config.embeddings),
             'app_defaults': asdict(self.config.app_defaults),
             'default_models': asdict(self.config.default_models),
@@ -277,6 +297,11 @@ class ConfigurationManager:
                 "status": "✅ Ready" if self.config.vision.caption_provider else "❌ Not configured",
                 "caption_provider": self.config.vision.caption_provider,
                 "caption_model": self.config.vision.caption_model
+            },
+            "video": {
+                "strategy": self.config.video.strategy,
+                "max_frames": self.config.video.max_frames,
+                "frame_format": self.config.video.frame_format,
             },
             "app_defaults": {
                 "cli": {

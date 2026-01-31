@@ -406,6 +406,13 @@ class TestCapabilitiesJsonIntegration:
         # Provider-side capability utilities should also treat it as an embedding model.
         assert get_model_output_capabilities(model_name) == [ModelOutputCapability.EMBEDDINGS]
 
+    def test_huggingface_llava_next_video_alias_resolves_video_support_true(self):
+        model_name = "llava-hf/LLaVA-NeXT-Video-7B-hf"
+
+        caps = get_model_capabilities(model_name)
+        assert caps.get("vision_support") is True
+        assert caps.get("video_support") is True
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

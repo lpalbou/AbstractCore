@@ -1167,6 +1167,214 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 else:
                     raise ValueError(f"Unknown audio_policy '{policy}'. Expected one of: native_only, speech_to_text, auto, caption.")
 
+        # Video input policy (v0): allow native video where supported; otherwise fall back to sampled frames.
+        # Note: most providers do not accept native video inputs; frame sampling provides a portable path.
+        if processed_media:
+            try:
+                from ..media.types import MediaType
+                from ..media.enrichment import build_enrichment_item
+            except Exception:
+                MediaType = None  # type: ignore[assignment]
+                build_enrichment_item = None  # type: ignore[assignment]
+
+            if MediaType is not None:
+                video_items = [mc for mc in processed_media if getattr(mc, "media_type", None) == MediaType.VIDEO]
+            else:
+                video_items = []
+
+            if video_items:
+                policy_raw = kwargs.pop("video_policy", None)
+                if policy_raw is None:
+                    policy_raw = kwargs.pop("video_handling_policy", None)
+                if policy_raw is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        policy_raw = getattr(get_config_manager().config, "video", None).strategy  # type: ignore[union-attr]
+                    except Exception:
+                        policy_raw = "native_only"
+
+                policy = str(policy_raw or "native_only").strip().lower()
+
+                # Sampling controls (best-effort; keep small by default).
+                # NOTE: do not `pop` here: native video backends may also need the resolved values.
+                max_frames_raw = kwargs.get("video_max_frames", None)
+                if max_frames_raw is None:
+                    max_frames_raw = kwargs.get("max_video_frames", None)
+                if max_frames_raw is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        max_frames_raw = getattr(get_config_manager().config, "video", None).max_frames  # type: ignore[union-attr]
+                    except Exception:
+                        max_frames_raw = 3
+                try:
+                    max_frames = max(1, int(max_frames_raw))
+                except Exception:
+                    max_frames = 3
+
+                frame_format_raw = kwargs.get("video_frame_format", None)
+                if frame_format_raw is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        frame_format_raw = getattr(get_config_manager().config, "video", None).frame_format  # type: ignore[union-attr]
+                    except Exception:
+                        frame_format_raw = "jpg"
+                frame_format = str(frame_format_raw or "jpg").strip().lower()
+                if frame_format not in {"jpg", "jpeg", "png"}:
+                    frame_format = "jpg"
+                if frame_format == "jpeg":
+                    frame_format = "jpg"
+
+                # Expose normalized sampling values to provider-native implementations.
+                kwargs["video_max_frames"] = max_frames
+                kwargs["video_frame_format"] = frame_format
+
+                provider_name = str(getattr(self, "provider", "") or "").strip().lower()
+                model_supports_native_video = bool(
+                    provider_name == "huggingface"
+                    and isinstance(getattr(self, "model_capabilities", None), dict)
+                    and getattr(self, "model_capabilities", {}).get("video_support", False)
+                )
+
+                if policy in ("native_only", "native", "disabled"):
+                    if not model_supports_native_video:
+                        raise UnsupportedFeatureError(
+                            f"Video input is not supported by model '{self.model}'. "
+                            "Choose a video-capable model, or pass video_policy='frames_caption' "
+                            "(samples frames and uses vision/image handling)."
+                        )
+                    # Keep video media for provider-native handling.
+
+                elif policy in ("frames_caption", "frames", "frame_caption"):
+                    # Convert each video into a small set of sampled frames (images).
+                    try:
+                        from pathlib import Path
+                        import tempfile
+
+                        from ..media import AutoMediaHandler
+                        from ..media.utils.video_frames import extract_video_frames
+                    except Exception as e:
+                        raise UnsupportedFeatureError(f"Video frame fallback is not available: {e}")
+
+                    enrichments: List[Dict[str, Any]] = []
+                    new_media: List[Any] = []
+
+                    video_group_index = 0
+                    for idx, mc in enumerate(processed_media):
+                        if getattr(mc, "media_type", None) != MediaType.VIDEO:  # type: ignore[operator]
+                            new_media.append(mc)
+                            continue
+
+                        video_group_index += 1
+                        video_path_raw = getattr(mc, "file_path", None) or getattr(mc, "content", None)
+                        if not isinstance(video_path_raw, str) or not video_path_raw.strip():
+                            raise UnsupportedFeatureError("Video frame fallback requires a video file path.")
+                        video_path = Path(video_path_raw)
+                        if not video_path.exists():
+                            raise UnsupportedFeatureError(f"Video file not found: {video_path}")
+
+                        out_dir = Path(tempfile.mkdtemp(prefix="abstractcore_video_frames_"))
+                        frames, timestamps_s = extract_video_frames(
+                            video_path,
+                            max_frames=max_frames,
+                            frame_format=frame_format,
+                            output_dir=out_dir,
+                        )
+                        if not frames:
+                            raise UnsupportedFeatureError("Video frame fallback failed: no frames extracted.")
+
+                        handler = AutoMediaHandler(enable_glyph_compression=False)
+                        frame_media: List[Any] = []
+                        for fp in frames:
+                            res = handler.process_file(fp, provider=self.provider, model=self.model, glyph_compression="never")
+                            if res and getattr(res, "success", False) and getattr(res, "media_content", None) is not None:
+                                frame_media.append(res.media_content)
+
+                        if not frame_media:
+                            raise UnsupportedFeatureError("Video frame fallback failed: extracted frames could not be processed as images.")
+
+                        # Insert a short text marker to avoid the model treating sampled frames as
+                        # unrelated standalone images (especially in follow-up prompts like "and this one?").
+                        try:
+                            from ..media.types import MediaContent, ContentFormat
+                        except Exception:
+                            MediaContent = None  # type: ignore[assignment]
+                            ContentFormat = None  # type: ignore[assignment]
+
+                        if MediaContent is not None and ContentFormat is not None:
+                            ts_preview = ", ".join([f"{t:.2f}" for t in timestamps_s[:10]])
+                            marker = MediaContent(
+                                media_type=MediaType.TEXT,
+                                content=(
+                                    f"Video {video_group_index} ({video_path.name}) — "
+                                    f"the following {len(frame_media)} image(s) are frames sampled from this video "
+                                    f"in chronological order (timestamps_s: {ts_preview}). "
+                                    "Treat the frames as directly observed video content."
+                                ),
+                                content_format=ContentFormat.TEXT,
+                                mime_type="text/plain",
+                                file_path=None,
+                                metadata={
+                                    "processor": "VideoFrameFallback",
+                                    "source_video": video_path.name,
+                                    "frame_count": len(frame_media),
+                                    "timestamps_s": timestamps_s,
+                                },
+                            )
+                            new_media.append(marker)
+
+                        new_media.extend(frame_media)
+
+                        if build_enrichment_item is not None:
+                            enrichments.append(
+                                build_enrichment_item(
+                                    status="used",
+                                    input_modality="video",
+                                    summary_kind="frames",
+                                    policy="frames_caption",
+                                    backend={"kind": "unknown", "source": "ffmpeg"},
+                                    input_index=idx + 1,
+                                    input_name=str(video_path.name),
+                                    artifact={"frame_count": len(frame_media), "timestamps_s": timestamps_s},
+                                )
+                            )
+
+                    processed_media = new_media
+                    if enrichments:
+                        if media_enrichment is None:
+                            media_enrichment = enrichments
+                        else:
+                            media_enrichment.extend(enrichments)
+
+                elif policy == "auto":
+                    if model_supports_native_video:
+                        # Use native video when available.
+                        pass
+                    else:
+                        # Auto fallback: sample frames and proceed with existing image pipeline.
+                        # This works well for vision-capable models; for text-only models it requires a vision fallback.
+                        policy_to_use = "frames_caption"
+                        kwargs["video_policy"] = policy_to_use
+                        # Re-run this branch once with explicit policy.
+                        return self.generate_with_telemetry(
+                            prompt=prompt,
+                            messages=messages,
+                            system_prompt=system_prompt,
+                            tools=tools,
+                            media=processed_media,
+                            response_model=response_model,
+                            retry_strategy=retry_strategy,
+                            tool_call_tags=tool_call_tags,
+                            execute_tools=execute_tools,
+                            stream=stream,
+                            **kwargs,
+                        )
+
+                else:
+                    raise ValueError(f"Unknown video_policy '{policy}'. Expected one of: native_only, frames_caption, auto.")
+
         # Convert tools to ToolDefinition objects first (outside retry loop)
         converted_tools = None
         if tools:

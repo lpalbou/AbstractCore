@@ -10,6 +10,7 @@ from .text_processor import TextProcessor
 from .pdf_processor import PDFProcessor
 from .office_processor import OfficeProcessor
 from .audio_processor import AudioProcessor
+from .video_processor import VideoProcessor
 
 # Import Glyph processor if available
 try:
@@ -19,6 +20,6 @@ except ImportError:
     GlyphProcessor = None
     GLYPH_AVAILABLE = False
 
-__all__ = ['ImageProcessor', 'TextProcessor', 'PDFProcessor', 'OfficeProcessor', 'AudioProcessor']
+__all__ = ['ImageProcessor', 'TextProcessor', 'PDFProcessor', 'OfficeProcessor', 'AudioProcessor', 'VideoProcessor']
 if GLYPH_AVAILABLE:
     __all__.append('GlyphProcessor')
