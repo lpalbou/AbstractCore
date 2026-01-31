@@ -1196,18 +1196,36 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                 policy = str(policy_raw or "native_only").strip().lower()
 
+                provider_name = str(getattr(self, "provider", "") or "").strip().lower()
+                model_supports_native_video = bool(
+                    provider_name == "huggingface"
+                    and isinstance(getattr(self, "model_capabilities", None), dict)
+                    and getattr(self, "model_capabilities", {}).get("video_support", False)
+                )
+
+                cfg_video = None
+                try:
+                    from ..config.manager import get_config_manager
+
+                    cfg_video = getattr(get_config_manager().config, "video", None)
+                except Exception:
+                    cfg_video = None
+
                 # Sampling controls (best-effort; keep small by default).
                 # NOTE: do not `pop` here: native video backends may also need the resolved values.
                 max_frames_raw = kwargs.get("video_max_frames", None)
                 if max_frames_raw is None:
                     max_frames_raw = kwargs.get("max_video_frames", None)
                 if max_frames_raw is None:
-                    try:
-                        from ..config.manager import get_config_manager
+                    fallback_default = getattr(cfg_video, "max_frames", 3) if cfg_video is not None else 3
+                    native_default = getattr(cfg_video, "max_frames_native", None) if cfg_video is not None else None
+                    if native_default is None:
+                        native_default = fallback_default
 
-                        max_frames_raw = getattr(get_config_manager().config, "video", None).max_frames  # type: ignore[union-attr]
-                    except Exception:
-                        max_frames_raw = 3
+                    use_native_default = bool(
+                        model_supports_native_video and policy in ("native_only", "native", "disabled", "auto")
+                    )
+                    max_frames_raw = native_default if use_native_default else fallback_default
                 try:
                     max_frames = max(1, int(max_frames_raw))
                 except Exception:
@@ -1227,16 +1245,35 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if frame_format == "jpeg":
                     frame_format = "jpg"
 
+                sampling_strategy_raw = kwargs.get("video_sampling_strategy", None)
+                if sampling_strategy_raw is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        sampling_strategy_raw = getattr(get_config_manager().config, "video", None).sampling_strategy  # type: ignore[union-attr]
+                    except Exception:
+                        sampling_strategy_raw = "uniform"
+                sampling_strategy = str(sampling_strategy_raw or "uniform").strip().lower()
+                if sampling_strategy not in {"uniform", "keyframes"}:
+                    sampling_strategy = "uniform"
+
+                max_frame_side_raw = kwargs.get("video_max_frame_side", None)
+                if max_frame_side_raw is None:
+                    max_frame_side_raw = kwargs.get("video_frame_max_side", None)
+                if max_frame_side_raw is None:
+                    max_frame_side_raw = getattr(cfg_video, "max_frame_side", 1024) if cfg_video is not None else 1024
+                try:
+                    max_frame_side = int(max_frame_side_raw) if max_frame_side_raw is not None else None
+                except Exception:
+                    max_frame_side = 1024
+                if isinstance(max_frame_side, int) and max_frame_side <= 0:
+                    max_frame_side = None
+
                 # Expose normalized sampling values to provider-native implementations.
                 kwargs["video_max_frames"] = max_frames
                 kwargs["video_frame_format"] = frame_format
-
-                provider_name = str(getattr(self, "provider", "") or "").strip().lower()
-                model_supports_native_video = bool(
-                    provider_name == "huggingface"
-                    and isinstance(getattr(self, "model_capabilities", None), dict)
-                    and getattr(self, "model_capabilities", {}).get("video_support", False)
-                )
+                kwargs["video_sampling_strategy"] = sampling_strategy
+                kwargs["video_max_frame_side"] = max_frame_side
 
                 if policy in ("native_only", "native", "disabled"):
                     if not model_supports_native_video:
@@ -1246,6 +1283,135 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             "(samples frames and uses vision/image handling)."
                         )
                     # Keep video media for provider-native handling.
+                    try:
+                        from pathlib import Path
+
+                        from ..media.utils.video_frames import probe_duration_s
+
+                        for idx, mc in enumerate(video_items):
+                            video_path_raw = getattr(mc, "file_path", None) or getattr(mc, "content", None)
+                            if not isinstance(video_path_raw, str) or not video_path_raw.strip():
+                                continue
+                            vp = Path(video_path_raw)
+                            duration_s = probe_duration_s(vp)
+                            file_bytes = None
+                            try:
+                                file_bytes = int(vp.stat().st_size)
+                            except Exception:
+                                file_bytes = None
+
+                            avg_gap_s = None
+                            try:
+                                if isinstance(duration_s, (int, float)) and duration_s > 0 and max_frames > 0:
+                                    avg_gap_s = float(duration_s) / float(max_frames + 1)
+                            except Exception:
+                                avg_gap_s = None
+
+                            self.logger.info(
+                                "Video input policy: native video enabled (video will be sampled/budgeted for model input).",
+                                provider=provider_name,
+                                model=self.model,
+                                video_policy=policy,
+                                video_index=idx + 1,
+                                video_name=vp.name,
+                                video_duration_s=duration_s,
+                                video_bytes=file_bytes,
+                                video_max_frames=max_frames,
+                                video_sampling_strategy=sampling_strategy,
+                                video_max_frame_side=max_frame_side,
+                                video_avg_gap_s=avg_gap_s,
+                            )
+                            if isinstance(avg_gap_s, float) and avg_gap_s >= 10.0:
+                                self.logger.warning(
+                                    "Video sampling is sparse; important events may be missed. "
+                                    "Consider increasing video_max_frames/video.max_frames_native or using keyframes sampling.",
+                                    provider=provider_name,
+                                    model=self.model,
+                                    video_policy=policy,
+                                    video_name=vp.name,
+                                    video_duration_s=duration_s,
+                                    video_max_frames=max_frames,
+                                    video_avg_gap_s=avg_gap_s,
+                                )
+                    except Exception:
+                        pass
+
+                    # Insert a short marker to disambiguate native-video inputs across turns.
+                    #
+                    # Without this, follow-ups like "and this one?" can be brittle for native
+                    # video VLMs (they may over-weight the previous text-only answer and ignore
+                    # that a *new* video is attached in the current call).
+                    try:
+                        from ..media.types import MediaContent, ContentFormat
+                    except Exception:
+                        MediaContent = None  # type: ignore[assignment]
+                        ContentFormat = None  # type: ignore[assignment]
+
+                    if MediaContent is not None and ContentFormat is not None:
+                        try:
+                            from pathlib import Path
+
+                            from ..media.utils.video_frames import probe_duration_s
+                        except Exception:
+                            Path = None  # type: ignore[assignment]
+                            probe_duration_s = None  # type: ignore[assignment]
+
+                        new_media: List[Any] = []
+                        video_group_index = 0
+                        for mc in processed_media:
+                            if getattr(mc, "media_type", None) != MediaType.VIDEO:  # type: ignore[operator]
+                                new_media.append(mc)
+                                continue
+
+                            video_group_index += 1
+                            video_path_raw = getattr(mc, "file_path", None) or getattr(mc, "content", None)
+
+                            video_name = f"video_{video_group_index}"
+                            duration_s = None
+                            file_bytes = None
+                            try:
+                                if Path is not None and isinstance(video_path_raw, str) and video_path_raw.strip():
+                                    vp = Path(video_path_raw)
+                                    video_name = vp.name or video_name
+                                    try:
+                                        file_bytes = int(vp.stat().st_size)
+                                    except Exception:
+                                        file_bytes = None
+                                    if callable(probe_duration_s):
+                                        try:
+                                            duration_s = probe_duration_s(vp)
+                                        except Exception:
+                                            duration_s = None
+                            except Exception:
+                                duration_s = None
+                                file_bytes = None
+
+                            marker = MediaContent(
+                                media_type=MediaType.TEXT,
+                                content=(
+                                    f"Video {video_group_index} ({video_name}) is attached below. "
+                                    "This is the current video for this user message. "
+                                    "Answer the user's question about this video as if you watched it. "
+                                    "If earlier turns mention other videos, images, or audio, ignore them unless the user explicitly asks you to compare. "
+                                    "Do not mention tool activity, attachments lists, sampling, frames, extraction, or this marker."
+                                ),
+                                content_format=ContentFormat.TEXT,
+                                mime_type="text/plain",
+                                file_path=None,
+                                metadata={
+                                    "processor": "VideoNativeInputMarker",
+                                    "source_video": video_name,
+                                    "duration_s": duration_s,
+                                    "bytes": file_bytes,
+                                    "max_frames": max_frames,
+                                    "sampling_strategy": sampling_strategy,
+                                    "max_frame_side": max_frame_side,
+                                },
+                            )
+                            new_media.append(marker)
+                            new_media.append(mc)
+
+                        processed_media = new_media
 
                 elif policy in ("frames_caption", "frames", "frame_caption"):
                     # Convert each video into a small set of sampled frames (images).
@@ -1254,7 +1420,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         import tempfile
 
                         from ..media import AutoMediaHandler
-                        from ..media.utils.video_frames import extract_video_frames
+                        from ..media.utils.video_frames import extract_video_frames, probe_duration_s
                     except Exception as e:
                         raise UnsupportedFeatureError(f"Video frame fallback is not available: {e}")
 
@@ -1276,10 +1442,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             raise UnsupportedFeatureError(f"Video file not found: {video_path}")
 
                         out_dir = Path(tempfile.mkdtemp(prefix="abstractcore_video_frames_"))
+                        duration_s = probe_duration_s(video_path)
+                        file_bytes = None
+                        try:
+                            file_bytes = int(video_path.stat().st_size)
+                        except Exception:
+                            file_bytes = None
                         frames, timestamps_s = extract_video_frames(
                             video_path,
                             max_frames=max_frames,
                             frame_format=frame_format,
+                            sampling_strategy=sampling_strategy,
+                            max_side=max_frame_side,
                             output_dir=out_dir,
                         )
                         if not frames:
@@ -1287,13 +1461,58 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                         handler = AutoMediaHandler(enable_glyph_compression=False)
                         frame_media: List[Any] = []
+                        max_res = None
+                        if isinstance(max_frame_side, int) and max_frame_side > 0:
+                            max_res = (max_frame_side, max_frame_side)
                         for fp in frames:
-                            res = handler.process_file(fp, provider=self.provider, model=self.model, glyph_compression="never")
+                            res = handler.process_file(
+                                fp,
+                                provider=self.provider,
+                                model=self.model,
+                                glyph_compression="never",
+                                max_resolution=max_res,
+                            )
                             if res and getattr(res, "success", False) and getattr(res, "media_content", None) is not None:
                                 frame_media.append(res.media_content)
 
                         if not frame_media:
                             raise UnsupportedFeatureError("Video frame fallback failed: extracted frames could not be processed as images.")
+
+                        avg_gap_s = None
+                        try:
+                            if isinstance(duration_s, (int, float)) and duration_s > 0 and max_frames > 0:
+                                avg_gap_s = float(duration_s) / float(max_frames + 1)
+                        except Exception:
+                            avg_gap_s = None
+
+                        self.logger.info(
+                            "Video input policy: frames_caption (sampling frames for downstream vision handling).",
+                            provider=provider_name,
+                            model=self.model,
+                            video_policy="frames_caption",
+                            video_index=video_group_index,
+                            video_name=video_path.name,
+                            video_duration_s=duration_s,
+                            video_bytes=file_bytes,
+                            extracted_frames=len(frame_media),
+                            video_max_frames=max_frames,
+                            video_sampling_strategy=sampling_strategy,
+                            video_max_frame_side=max_frame_side,
+                            video_avg_gap_s=avg_gap_s,
+                        )
+                        if isinstance(avg_gap_s, float) and avg_gap_s >= 10.0:
+                            self.logger.warning(
+                                "Video sampling is sparse; important events may be missed. "
+                                "Consider increasing video_max_frames/video.max_frames or using keyframes sampling.",
+                                provider=provider_name,
+                                model=self.model,
+                                video_policy="frames_caption",
+                                video_name=video_path.name,
+                                video_duration_s=duration_s,
+                                extracted_frames=len(frame_media),
+                                video_max_frames=max_frames,
+                                video_avg_gap_s=avg_gap_s,
+                            )
 
                         # Insert a short text marker to avoid the model treating sampled frames as
                         # unrelated standalone images (especially in follow-up prompts like "and this one?").
@@ -1304,14 +1523,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             ContentFormat = None  # type: ignore[assignment]
 
                         if MediaContent is not None and ContentFormat is not None:
-                            ts_preview = ", ".join([f"{t:.2f}" for t in timestamps_s[:10]])
                             marker = MediaContent(
                                 media_type=MediaType.TEXT,
                                 content=(
                                     f"Video {video_group_index} ({video_path.name}) — "
-                                    f"the following {len(frame_media)} image(s) are frames sampled from this video "
-                                    f"in chronological order (timestamps_s: {ts_preview}). "
-                                    "Treat the frames as directly observed video content."
+                                    "the following images belong to this video in chronological order. "
+                                    "Answer the user's question about this video as if you watched it. "
+                                    "Do not mention frames, timestamps, sampling, extraction, or this marker."
                                 ),
                                 content_format=ContentFormat.TEXT,
                                 mime_type="text/plain",
@@ -1321,6 +1539,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                     "source_video": video_path.name,
                                     "frame_count": len(frame_media),
                                     "timestamps_s": timestamps_s,
+                                    "duration_s": duration_s,
+                                    "bytes": file_bytes,
                                 },
                             )
                             new_media.append(marker)
@@ -1337,7 +1557,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                     backend={"kind": "unknown", "source": "ffmpeg"},
                                     input_index=idx + 1,
                                     input_name=str(video_path.name),
-                                    artifact={"frame_count": len(frame_media), "timestamps_s": timestamps_s},
+                                    artifact={
+                                        "frame_count": len(frame_media),
+                                        "timestamps_s": timestamps_s,
+                                        "duration_s": duration_s,
+                                        "bytes": file_bytes,
+                                    },
                                 )
                             )
 

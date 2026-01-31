@@ -5,6 +5,7 @@ Supports both transformers models and GGUF models via llama-cpp-python.
 
 import os
 import json
+import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
 
@@ -38,6 +39,9 @@ from ..core.types import GenerateResponse
 from ..exceptions import ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
+
+
+_MPS_GENERATION_LOCK = threading.Lock()
 
 # Try to import transformers (standard HuggingFace support)
 try:
@@ -84,6 +88,22 @@ def _get_local_model_path(model_name: str) -> Optional[str]:
 class HuggingFaceProvider(BaseProvider):
     """HuggingFace provider with dual support for transformers and GGUF models"""
 
+    @staticmethod
+    def _resolve_requested_device(device: Optional[str]) -> Optional[str]:
+        """Resolve the requested device from explicit arg or env override.
+
+        Supported env var: ABSTRACTCORE_HF_DEVICE=cpu|mps|cuda|auto
+        """
+        if isinstance(device, str) and device.strip():
+            return device.strip().lower()
+
+        env_device = os.environ.get("ABSTRACTCORE_HF_DEVICE")
+        if isinstance(env_device, str) and env_device.strip():
+            val = env_device.strip().lower()
+            if val in {"auto", "cpu", "mps", "cuda"}:
+                return val
+        return None
+
     def __init__(self, model: str = "unsloth/Qwen3-4B-Instruct-2507-GGUF",
                  device: Optional[str] = None,
                  n_gpu_layers: Optional[int] = None,
@@ -122,7 +142,7 @@ class HuggingFaceProvider(BaseProvider):
         # Store provider-specific configuration
         self.n_gpu_layers = n_gpu_layers
         self.model_type = None  # Will be "transformers" or "gguf"
-        self.device = device
+        self.device = self._resolve_requested_device(device)
         
         # Store transformers-specific parameters
         self.transformers_kwargs = {
@@ -289,14 +309,58 @@ class HuggingFaceProvider(BaseProvider):
         if not TRANSFORMERS_AVAILABLE:
             return
 
-        if self.device:
-            self.device = self.device
-        elif torch.backends.mps.is_available():
+        requested = str(self.device or "").strip().lower() if isinstance(self.device, str) else ""
+        if requested and requested != "auto":
+            # Respect explicit user/env request, but fall back safely if unavailable.
+            if requested == "mps":
+                if hasattr(torch.backends, "mps") and torch.backends.mps.is_built() and not torch.backends.mps.is_available():
+                    self.logger.warning(
+                        "HuggingFaceProvider requested device=mps but MPS is not available. "
+                        "This usually means the process cannot see Metal devices (sandboxed execution). "
+                        "Falling back to CPU. To silence this, set ABSTRACTCORE_HF_DEVICE=cpu."
+                    )
+                    self.device = "cpu"
+                else:
+                    self.device = "mps"
+            elif requested == "cuda":
+                if torch.cuda.is_available():
+                    self.device = "cuda"
+                else:
+                    self.logger.warning(
+                        "HuggingFaceProvider requested device=cuda but CUDA is not available; falling back to CPU."
+                    )
+                    self.device = "cpu"
+            else:
+                self.device = "cpu"
+            return
+
+        # Auto device selection.
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             self.device = "mps"
         elif torch.cuda.is_available():
             self.device = "cuda"
         else:
             self.device = "cpu"
+
+        # Apple Silicon: MPS built but unavailable is usually a sandbox / Metal visibility issue.
+        try:
+            import platform
+
+            if (
+                self.device == "cpu"
+                and platform.system() == "Darwin"
+                and platform.machine() == "arm64"
+                and hasattr(torch.backends, "mps")
+                and torch.backends.mps.is_built()
+                and not torch.backends.mps.is_available()
+            ):
+                self.logger.warning(
+                    "PyTorch was built with MPS support, but MPS is not available. "
+                    "This often indicates the process cannot access Metal devices (sandboxed execution). "
+                    "Run outside the sandbox or force CPU via ABSTRACTCORE_HF_DEVICE=cpu."
+                )
+        except Exception:
+            pass
 
     def _setup_device_gguf(self):
         """Setup device for GGUF models"""
@@ -443,6 +507,15 @@ class HuggingFaceProvider(BaseProvider):
             # Respect offline-first configuration
             if _config.should_force_local_files_only():
                 vision_kwargs['local_files_only'] = True
+
+            # Safer defaults on GPU backends: float16 unless caller provided torch_dtype.
+            try:
+                if self.device in {"mps", "cuda"} and "torch_dtype" not in vision_kwargs:
+                    import torch as _torch
+
+                    vision_kwargs["torch_dtype"] = _torch.float16
+            except Exception:
+                pass
             
             # Use local cache path if offline mode is enabled and model is cached
             model_path = self.model
@@ -466,6 +539,11 @@ class HuggingFaceProvider(BaseProvider):
             # Move to device (only if not using device_map)
             if self.device in ["cuda", "mps"] and 'device_map' not in self.transformers_kwargs:
                 self.model_instance = self.model_instance.to(self.device)
+
+            try:
+                self.model_instance.eval()
+            except Exception:
+                pass
             
             # For vision models, we don't use the standard pipeline
             self.pipeline = None
@@ -1035,21 +1113,52 @@ class HuggingFaceProvider(BaseProvider):
             )
         
         try:
+            # Server/gateway sometimes call providers with prompt="" + messages=[...] + media=[...].
+            # For multimodal models, the user text and the media must live in the SAME user turn.
+            # Best-effort: if prompt is empty, lift the last user message text into the prompt and
+            # remove that message from the history to avoid duplication.
+            prompt_text = prompt
+            messages_for_context = list(messages) if isinstance(messages, list) else None
+            if (not isinstance(prompt_text, str) or not prompt_text.strip()) and media and messages_for_context:
+                for i in range(len(messages_for_context) - 1, -1, -1):
+                    msg = messages_for_context[i] or {}
+                    role = str(msg.get("role", "") or "").strip().lower()
+                    if role != "user":
+                        continue
+                    content = msg.get("content", "")
+                    lifted = None
+                    if isinstance(content, str) and content.strip():
+                        lifted = content.strip()
+                    elif isinstance(content, list):
+                        # OpenAI-style list content: [{"type":"text","text":"..."}, ...]
+                        for item in content:
+                            if not isinstance(item, dict):
+                                continue
+                            if str(item.get("type", "") or "").strip().lower() == "text":
+                                text_val = item.get("text")
+                                if isinstance(text_val, str) and text_val.strip():
+                                    lifted = text_val.strip()
+                                    break
+                    if lifted:
+                        prompt_text = lifted
+                        del messages_for_context[i]
+                    break
+
             # Build messages for vision model
             chat_messages = []
             
             if system_prompt:
                 chat_messages.append({"role": "system", "content": system_prompt})
             
-            if messages:
-                chat_messages.extend(messages)
+            if messages_for_context:
+                chat_messages.extend(messages_for_context)
             
             # Build user message with media content
             user_content = []
             
             # Add text content
-            if prompt:
-                user_content.append({"type": "text", "text": prompt})
+            if isinstance(prompt_text, str) and prompt_text.strip():
+                user_content.append({"type": "text", "text": prompt_text.strip()})
             
             # Add media content (images, video)
             has_video = False
@@ -1063,13 +1172,19 @@ class HuggingFaceProvider(BaseProvider):
                 for media_item in media:
                     media_type = getattr(media_item, "media_type", None)
 
+                    # Text markers (e.g. provenance / policy annotations) should be preserved for the model.
+                    if MediaType is not None and media_type == MediaType.TEXT:
+                        txt = getattr(media_item, "content", None)
+                        if isinstance(txt, str) and txt.strip():
+                            user_content.append({"type": "text", "text": txt.strip()})
+                        continue
+
                     # Video inputs
                     if MediaType is not None and media_type == MediaType.VIDEO:
                         has_video = True
-                        video_path = getattr(media_item, "file_path", None) or getattr(media_item, "content", None)
-                        if not isinstance(video_path, str) or not video_path.strip():
-                            raise ValueError("HuggingFace video models require MediaContent.file_path for video inputs.")
-                        user_content.append({"type": "video", "url": video_path})
+                        # The actual video content is provided to the processor via `videos=...`;
+                        # the chat template only needs a `<video>` placeholder token.
+                        user_content.append({"type": "video"})
                         continue
 
                     # Image inputs
@@ -1112,7 +1227,10 @@ class HuggingFaceProvider(BaseProvider):
                     try:
                         from ..config.manager import get_config_manager
 
-                        max_frames_raw = getattr(get_config_manager().config, "video", None).max_frames  # type: ignore[union-attr]
+                        cfg_video = getattr(get_config_manager().config, "video", None)
+                        max_frames_raw = getattr(cfg_video, "max_frames_native", None) if cfg_video is not None else None
+                        if max_frames_raw is None:
+                            max_frames_raw = getattr(cfg_video, "max_frames", None) if cfg_video is not None else None
                     except Exception:
                         max_frames_raw = 3
                 try:
@@ -1120,23 +1238,90 @@ class HuggingFaceProvider(BaseProvider):
                 except Exception:
                     max_video_frames = 3
 
+                sampling_strategy_raw = kwargs.get("video_sampling_strategy", None)
+                if sampling_strategy_raw is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        sampling_strategy_raw = getattr(get_config_manager().config, "video", None).sampling_strategy  # type: ignore[union-attr]
+                    except Exception:
+                        sampling_strategy_raw = "uniform"
+                sampling_strategy = str(sampling_strategy_raw or "uniform").strip().lower()
+                if sampling_strategy not in {"uniform", "keyframes"}:
+                    sampling_strategy = "uniform"
+
+                max_frame_side_raw = kwargs.get("video_max_frame_side", None)
+                if max_frame_side_raw is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        max_frame_side_raw = getattr(get_config_manager().config, "video", None).max_frame_side  # type: ignore[union-attr]
+                    except Exception:
+                        max_frame_side_raw = 1024
+                try:
+                    max_frame_side = int(max_frame_side_raw) if max_frame_side_raw is not None else None
+                except Exception:
+                    max_frame_side = 1024
+                if isinstance(max_frame_side, int) and max_frame_side <= 0:
+                    max_frame_side = None
+
                 # Build multimodal-typed messages for chat_template renderers that expect list content.
+                # NOTE: Many HF native-video VLMs are brittle in multi-turn mode if prior turns
+                # referenced media but we only retained text history (no `<video>` placeholders).
+                # This can cause follow-ups like "and this one?" to over-weight the previous
+                # text-only answer and ignore the newly attached video.
+                #
+                # To make follow-ups robust, collapse prior USER/ASSISTANT turns into a single
+                # text block inside the current user message, and keep exactly one `<video>`
+                # placeholder (the current attachment) in the chat template input.
+                history_lines = []
+                if messages_for_context:
+                    for msg in messages_for_context:
+                        role = str(msg.get("role", "user") or "").strip().lower()
+                        if role not in {"user", "assistant"}:
+                            continue
+                        content = msg.get("content", "")
+                        text = ""
+                        if isinstance(content, str):
+                            text = content
+                        elif isinstance(content, list):
+                            # OpenAI-style list content: [{"type":"text","text":"..."}, ...]
+                            for item in content:
+                                if not isinstance(item, dict):
+                                    continue
+                                if str(item.get("type", "") or "").strip().lower() != "text":
+                                    continue
+                                v = item.get("text")
+                                if isinstance(v, str) and v.strip():
+                                    text = v
+                                    break
+                        else:
+                            text = str(content)
+
+                        text = str(text or "").strip()
+                        if not text:
+                            continue
+                        prefix = "USER" if role == "user" else "ASSISTANT"
+                        history_lines.append(f"{prefix}: {text}")
+
+                if history_lines:
+                    history_block = "Prior chat context (text-only):\n" + "\n".join(history_lines) + "\n\n"
+                    # Cap to avoid pathological prompt growth; keep the most recent tail.
+                    if len(history_block) > 8_000:
+                        history_block = "Prior chat context (text-only; truncated):\n…\n" + history_block[-7_800:]
+                    user_content = [{"type": "text", "text": history_block}] + list(user_content)
+
                 mm_messages = []
                 if system_prompt:
                     mm_messages.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
-                if messages:
-                    for msg in messages:
-                        role = msg.get("role", "user")
-                        content = msg.get("content", "")
-                        if isinstance(content, list):
-                            mm_messages.append({"role": role, "content": content})
-                        else:
-                            mm_messages.append({"role": role, "content": [{"type": "text", "text": str(content)}]})
                 mm_messages.append({"role": "user", "content": user_content})
 
                 prompt_text = self.processor.apply_chat_template(mm_messages, add_generation_prompt=True)
 
-                # Prepare explicit video inputs for the processor (use sampling to avoid decoding hundreds of frames).
+                # Prepare explicit video inputs for the processor.
+                #
+                # Prefer ffmpeg-sampled frames (our own extraction) over relying on torchvision/torchcodec
+                # decoding inside Transformers, which can vary by platform/codec support (notably for .mov).
                 video_paths = []
                 image_inputs = []
                 for media_item in (media or []):
@@ -1158,8 +1343,50 @@ class HuggingFaceProvider(BaseProvider):
                 if image_inputs:
                     processor_call["images"] = image_inputs if len(image_inputs) > 1 else image_inputs[0]
                 if video_paths:
-                    processor_call["videos"] = video_paths if len(video_paths) > 1 else video_paths[0]
-                    processor_call["videos_kwargs"] = {"do_sample_frames": True, "num_frames": max_video_frames}
+                    # Try ffmpeg frame sampling first.
+                    video_frame_inputs = []
+                    temp_dirs = []
+                    try:
+                        from pathlib import Path
+                        import tempfile
+
+                        from ..media.utils.video_frames import extract_video_frames
+                        from PIL import Image as PILImage
+
+                        for vp in video_paths:
+                            out_dir = Path(tempfile.mkdtemp(prefix="abstractcore_hf_video_frames_"))
+                            temp_dirs.append(out_dir)
+                            frames, _timestamps_s = extract_video_frames(
+                                Path(vp),
+                                max_frames=max_video_frames,
+                                frame_format="jpg",
+                                sampling_strategy=sampling_strategy,
+                                max_side=max_frame_side,
+                                output_dir=out_dir,
+                            )
+                            if not frames:
+                                raise RuntimeError("No frames extracted")
+                            video_frame_inputs.append([PILImage.open(p).convert("RGB") for p in frames])
+
+                        # Single video -> pass list[PIL]; multiple videos -> list[list[PIL]]
+                        processor_call["videos"] = (
+                            video_frame_inputs[0]
+                            if len(video_frame_inputs) == 1
+                            else video_frame_inputs
+                        )
+                    except Exception:
+                        # If anything goes wrong with ffmpeg sampling, fall back to transformers decode.
+                        processor_call["videos"] = video_paths if len(video_paths) > 1 else video_paths[0]
+                        processor_call["videos_kwargs"] = {"do_sample_frames": True, "num_frames": max_video_frames}
+                    finally:
+                        # Cleanup extracted frames directories (frames are already loaded into memory as PIL).
+                        for d in temp_dirs:
+                            try:
+                                import shutil
+
+                                shutil.rmtree(d, ignore_errors=True)
+                            except Exception:
+                                pass
 
                 inputs = self.processor(**processor_call)
                 if hasattr(inputs, "to"):
@@ -1195,13 +1422,35 @@ class HuggingFaceProvider(BaseProvider):
                     inputs = templated.to(self.model_instance.device)
             
             temperature_value = kwargs.get("temperature", self.temperature)
+            # For HF multimodal video models, default to greedy decoding unless the caller explicitly
+            # provided a temperature. This avoids premature EOS producing unusably short answers.
+            if has_video and ("temperature" in kwargs) and kwargs.get("temperature") is None:
+                temperature_value = 0.0
             if temperature_value is None:
                 temperature_value = self.temperature
 
+            max_new_tokens_raw = kwargs.get("max_output_tokens", None)
+            if max_new_tokens_raw is None:
+                max_new_tokens_raw = kwargs.get("max_tokens", None)
+            if max_new_tokens_raw is None:
+                max_new_tokens_raw = self.max_output_tokens or 512
+            try:
+                max_new_tokens_value = max(1, int(max_new_tokens_raw))
+            except Exception:
+                max_new_tokens_value = int(self.max_output_tokens or 512)
+
+            do_sample = True
+            try:
+                if temperature_value is None or float(temperature_value) <= 0:
+                    do_sample = False
+                    temperature_value = 0.0
+            except Exception:
+                do_sample = True
+
             generation_kwargs = {
-                "max_new_tokens": kwargs.get("max_tokens", self.max_output_tokens or 512),
+                "max_new_tokens": max_new_tokens_value,
                 "temperature": temperature_value,
-                "do_sample": True,
+                "do_sample": do_sample,
                 "pad_token_id": self.processor.tokenizer.eos_token_id,
             }
             
@@ -1213,23 +1462,38 @@ class HuggingFaceProvider(BaseProvider):
                     torch.cuda.manual_seed_all(seed_value)
             
             # Generate response
-            # For Apple Silicon, move inputs to CPU if MPS causes issues
-            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                try:
-                    generated_ids = self.model_instance.generate(**inputs, **generation_kwargs)
-                except RuntimeError as e:
-                    if "MPS: Unsupported Border padding mode" in str(e):
-                        self.logger.warning("MPS Border padding mode error detected, falling back to CPU")
-                        # Move model and inputs to CPU
-                        cpu_model = self.model_instance.to('cpu')
-                        cpu_inputs = {k: v.to('cpu') if hasattr(v, 'to') else v for k, v in inputs.items()}
-                        generated_ids = cpu_model.generate(**cpu_inputs, **generation_kwargs)
-                        # Move model back to original device
-                        self.model_instance.to(self.model_instance.device)
+            generated_ids = None
+            try:
+                with torch.inference_mode():
+                    use_mps_lock = str(getattr(self, "device", "") or "").strip().lower() == "mps"
+                    if use_mps_lock:
+                        with _MPS_GENERATION_LOCK:
+                            generated_ids = self.model_instance.generate(**inputs, **generation_kwargs)
                     else:
-                        raise e
-            else:
-                generated_ids = self.model_instance.generate(**inputs, **generation_kwargs)
+                        generated_ids = self.model_instance.generate(**inputs, **generation_kwargs)
+            except RuntimeError as e:
+                if str(getattr(self, "device", "") or "").strip().lower() == "mps":
+                    raise RuntimeError(
+                        "HuggingFaceProvider vision/video generation failed on MPS. "
+                        "If this persists, force CPU via ABSTRACTCORE_HF_DEVICE=cpu."
+                    ) from e
+                raise
+            finally:
+                # Best-effort: keep MPS memory pressure low between calls.
+                try:
+                    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                            if hasattr(torch.mps, "synchronize"):
+                                torch.mps.synchronize()
+                            torch.mps.empty_cache()
+                except Exception:
+                    pass
+                try:
+                    import gc
+
+                    gc.collect()
+                except Exception:
+                    pass
             
             # Decode response
             output_text = self.processor.decode(
@@ -1244,7 +1508,7 @@ class HuggingFaceProvider(BaseProvider):
             input_tokens = inputs["input_ids"].shape[1]
             output_tokens = len(generated_ids[0]) - input_tokens
             
-            return GenerateResponse(
+            response = GenerateResponse(
                 content=output_text.strip(),
                 model=self.model,
                 finish_reason="stop",
@@ -1257,15 +1521,25 @@ class HuggingFaceProvider(BaseProvider):
                 },
                 gen_time=gen_time
             )
+            if stream:
+                def _single_chunk_stream() -> Iterator[GenerateResponse]:
+                    yield response
+                return _single_chunk_stream()
+            return response
             
         except Exception as e:
             gen_time = (time.time() - start_time) * 1000 if 'start_time' in locals() else 0.0
-            return GenerateResponse(
+            error_resp = GenerateResponse(
                 content=f"Error in vision model generation: {str(e)}",
                 model=self.model,
                 finish_reason="error",
                 gen_time=gen_time
             )
+            if stream:
+                def _error_stream() -> Iterator[GenerateResponse]:
+                    yield error_resp
+                return _error_stream()
+            return error_resp
 
     def _patch_deepseek_for_mps(self):
         """Patch DeepSeek-OCR model to work with MPS instead of CUDA"""
