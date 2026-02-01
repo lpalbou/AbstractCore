@@ -274,7 +274,7 @@ def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
     # `_parse_any_format` when the model emits a different convention.
     if tool_format == "special_token":
         return ToolFormat.SPECIAL_TOKEN
-    if tool_format == "xml":
+    if tool_format in {"xml", "glm_xml"}:
         return ToolFormat.XML_WRAPPED
     if tool_format == "pythonic":
         return ToolFormat.TOOL_CODE
