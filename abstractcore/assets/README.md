@@ -34,7 +34,7 @@ assets/
 
 **Purpose**: Define message formatting conventions and special tokens for different LLM architectures.
 
-**Size**: 16,622 bytes (~500 lines)
+**Size**: ~23 KB (~600 lines)
 
 **Structure**:
 ```json
@@ -67,22 +67,35 @@ assets/
 - **Phi**: phi3, phi4
 - **Others**: command-r, command-r-plus, aya, granite
 
-**Fields**:
-- `description` - Human-readable description with release date
-- `message_format` - Format type (llama3_header, im_start_end, inst, etc.)
-- `system_prefix/suffix` - Special tokens for system messages
-- `user_prefix/suffix` - Special tokens for user messages
-- `assistant_prefix/suffix` - Special tokens for assistant messages
-- `tool_format` - Tool support type (native, prompted, special_token, pythonic)
-- `tool_prefix` - Special token for tool calls (optional)
-- `patterns` - Model name patterns for detection (regex-style)
+**Entry Template (v0)**:
+
+Every entry in `architectures` must include:
+- `description` (string)
+- `message_format` (string; must exist in top-level `message_formats`)
+- `tool_format` (string; must exist in top-level `tool_formats`)
+- `patterns` (list of **lowercase substrings**, not regex; used by `detect_architecture()` with **longest match wins**)
+
+When `message_format != "openai_chat"` (i.e., tokenized prompt formatting), the entry must also include:
+- `system_prefix` / `system_suffix` (strings; can be empty)
+- `user_prefix` / `user_suffix` (strings; can be empty)
+- `assistant_prefix` / `assistant_suffix` (strings; can be empty)
+
+Optional (used by tool parsing and response cleanup; only include when needed):
+- `tool_prefix` (string)
+- `default_tool_support` (`native|prompted|none`) — overrides tool support fallback for this architecture
+- `output_wrappers`: `{ "start": "...", "end": "..." }`
+- `thinking_tags`: `["<think>", "</think>"]`
+- `thinking_output_field` (string)
+- `thinking_control` (string)
+- `reasoning_support` (boolean)
+- `reasoning_levels` (list; typically `["low","medium","high"]`)
 
 **Usage**:
 ```python
 from abstractcore.architectures import detect_architecture
 
 arch = detect_architecture("llama-3-8b-instruct")
-# Returns: ModelArchitecture.LLAMA3
+# Returns: "llama3"
 
 # Get format details
 with open("assets/architecture_formats.json") as f:
@@ -576,32 +589,43 @@ image = processor.text_to_image("Dense text content...")
 
 ### Adding New Model Architecture
 
-1. **Edit architecture_formats.json**:
+1. **Edit architecture_formats.json** (`architectures.{arch_name}`):
 ```json
 {
   "architectures": {
     "new_model": {
       "description": "Description with release date",
-      "message_format": "format_type",
-      "system_prefix": "...",
-      "system_suffix": "...",
-      "user_prefix": "...",
-      "user_suffix": "...",
-      "assistant_prefix": "...",
-      "assistant_suffix": "...",
-      "tool_format": "native|prompted|special_token|none",
-      "tool_prefix": "...",
-      "patterns": ["pattern1", "pattern2"]
+      "message_format": "im_start_end",
+      "tool_format": "special_token",
+      "patterns": ["vendor/model-family-3", "family3-8b", "family3:8b"],
+
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+
+      "tool_prefix": "<|tool_call|>"
     }
   }
 }
 ```
 
-2. **Test detection**:
+Notes:
+- `message_format` and `tool_format` must be declared in the same file under `message_formats` / `tool_formats`.
+- `patterns` are **substring matches** (not regex). Keep them lowercase, avoid duplicates across architectures, and prefer more specific patterns to reduce mis-detection.
+
+2. **Run schema validation (Level A)**:
+```bash
+python -m pytest -q abstractcore/tests/assets/test_architecture_formats_schema.py
+```
+
+3. **Spot-check detection**:
 ```python
 from abstractcore.architectures import detect_architecture
 arch = detect_architecture("new-model-name")
-assert arch == ModelArchitecture.NEW_MODEL
+assert arch == "new_model"
 ```
 
 ### Adding New Model Capabilities

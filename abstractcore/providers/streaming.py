@@ -121,7 +121,7 @@ class IncrementalToolDetector:
             return [self.patterns["qwen"], self.patterns["llama"], self.patterns["xml"]]
 
         # XML-wrapped tools.
-        if tool_format == "xml":
+        if tool_format in {"xml", "glm_xml"}:
             return [self.patterns["xml"], self.patterns["llama"], self.patterns["qwen"]]
 
         # LLaMA-style prompted tools.

@@ -357,7 +357,7 @@
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "pythonic",
-      "patterns": ["gemma-2b", "gemma-7b", "gemma-2", "gemma2-", "gemma3"]
+      "patterns": ["gemma-2b", "gemma-7b", "gemma-2"]
     },
     "glm4v_moe": {
       "description": "Zhipu AI's GLM-4.6V multimodal MoE architecture (May 2025)",
@@ -560,7 +560,7 @@
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "json",
-      "patterns": []
+      "patterns": ["__abstractcore_generic_fallback__"]
     }
   },
   "message_formats": {
@@ -578,6 +578,7 @@
     "pythonic": "Python function call syntax: [func(arg=val)]",
     "json": "JSON object: {\"name\": \"func\", \"parameters\": {...}}",
     "xml": "XML wrapped: <tool>...</tool>",
+    "glm_xml": "GLM XML-like tool call format (parsed as XML-wrapped tool calls)",
     "special_token": "Special token format: <|tool_call|>{...}",
     "native": "Native API support (OpenAI/Anthropic)",
     "openai_functions": "OpenAI function calling API format",
