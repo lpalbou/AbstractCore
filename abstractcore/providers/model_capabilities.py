@@ -134,7 +134,11 @@ def get_model_input_capabilities(model_name: str) -> List[ModelInputCapability]:
     if capabilities.get("audio_support", False):
         input_caps.append(ModelInputCapability.AUDIO)
     
-    if capabilities.get("video_support", False):
+    video_mode = capabilities.get("video_input_mode")
+    if isinstance(video_mode, str) and video_mode.strip().lower() in {"frames", "native"}:
+        input_caps.append(ModelInputCapability.VIDEO)
+    elif capabilities.get("video_support", False):
+        # Backwards compatibility: legacy boolean indicates native video support.
         input_caps.append(ModelInputCapability.VIDEO)
     
     return input_caps

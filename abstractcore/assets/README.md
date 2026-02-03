@@ -126,8 +126,9 @@ with open("assets/architecture_formats.json") as f:
       "parallel_tools": true,
       "max_tools": -1,
       "vision_support": true,
-      "audio_support": true,
-      "video_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "frames",
       "image_resolutions": ["variable"],
       "image_tokenization_method": "tile_based",
       "base_image_tokens": 85,
@@ -158,18 +159,30 @@ with open("assets/architecture_formats.json") as f:
 
 **Fields**:
 
+#### Identity & Aliasing (required)
+- `canonical_name` - Canonical model id (string). By default this matches the entry key.
+- `aliases` - Alternative ids that should resolve to this entry (list of strings).
+  - Resolution is case-insensitive and also normalizes HuggingFace cache ids (`--` → `/`) and provider prefixes (`lmstudio/...` → `...`).
+
 #### Core Capabilities
 - `max_tokens` - Context window size (input tokens)
-- `max_output_tokens` - Maximum output tokens
+- `max_output_tokens` - Maximum output tokens (0 is allowed for embedding-only models)
 - `tool_support` - Tool calling support: "native", "prompted", "none"
 - `structured_output` - Structured output support: "native", "prompted", "none"
 - `parallel_tools` - Can execute multiple tools in parallel (boolean)
 - `max_tools` - Maximum tools per call (-1 = unlimited)
 
 #### Multimodal Capabilities
-- `vision_support` - Image input support (boolean)
-- `audio_support` - Audio input support (boolean)
-- `video_support` - Video input support (boolean)
+- `vision_support` - **Provider-native** image input support (boolean)
+- `audio_support` - **Provider-native** audio input support (boolean)
+- `video_support` - **Provider-native** video input support (boolean; v0 native video is HF-only in this framework)
+- `video_input_mode` - Video handling mode (enum): `"none" | "frames" | "native"`
+  - `native`: provider receives `video/*` directly (no conversion)
+  - `frames`: AbstractCore samples frames and routes them through image/vision handling
+  - `none`: video inputs are unsupported (will error unless a custom enrichment path is added)
+
+**Important**: these flags describe **native provider/model I/O** and AbstractCore’s explicit media policies. They do not
+imply “the framework can always make it work” via optional enrichment plugins (e.g., STT or image captioning).
 
 #### Vision-Specific
 - `image_resolutions` - Supported resolutions (e.g., ["variable"], ["low", "high"])
@@ -185,8 +198,7 @@ with open("assets/architecture_formats.json") as f:
 #### Metadata
 - `notes` - Additional notes about the model
 - `source` - Where capability info was obtained
-- `canonical_name` - Official model name
-- `aliases` - Alternative names for the model
+- (Optional) research metadata keys (benchmarks, arxiv/repo, tokenization notes, etc.) may be included when useful.
 
 **Usage**:
 ```python
@@ -635,6 +647,9 @@ assert arch == "new_model"
 {
   "models": {
     "new-model": {
+      "canonical_name": "new-model",
+      "aliases": [],
+      "max_tokens": 32000,
       "max_output_tokens": 4096,
       "tool_support": "native",
       "structured_output": "prompted",
@@ -642,17 +657,21 @@ assert arch == "new_model"
       "max_tools": 10,
       "vision_support": false,
       "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
       "notes": "Description",
-      "source": "Official docs",
-      "canonical_name": "new-model",
-      "aliases": [],
-      "max_tokens": 32000
+      "source": "Official docs"
     }
   }
 }
 ```
 
-2. **Test capability lookup**:
+2. **Run schema validation (Level A)**:
+```bash
+python -m pytest -q abstractcore/tests/assets/test_model_capabilities_schema.py
+```
+
+3. **Test capability lookup**:
 ```python
 from abstractcore.utils import load_model_capabilities
 caps = load_model_capabilities()
