@@ -66,11 +66,18 @@ class MediaCapabilities:
             caps = {}
 
         # Base capabilities from JSON
+        video_mode = caps.get('video_input_mode')
+        if isinstance(video_mode, str):
+            vm = video_mode.strip().lower()
+            video_support = vm in {'frames', 'native'}
+        else:
+            video_support = caps.get('video_support', False)
+
         instance = cls(
             model_name=model,
             vision_support=caps.get('vision_support', False),
             audio_support=caps.get('audio_support', False),
-            video_support=caps.get('video_support', False),
+            video_support=video_support,
             image_resolutions=caps.get('image_resolutions', [])
         )
 

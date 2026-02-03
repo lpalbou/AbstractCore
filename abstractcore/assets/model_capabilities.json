@@ -11,7 +11,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-4",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "video_input_mode": "none"
     },
     "gpt-4-turbo": {
       "max_output_tokens": 4096,
@@ -30,7 +32,9 @@
       "aliases": [
         "gpt-4-turbo-preview"
       ],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "gpt-4-turbo-with-vision": {
       "max_output_tokens": 4096,
@@ -50,7 +54,9 @@
         "gpt-4-turbo-vision",
         "gpt-4-vision-preview"
       ],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "gpt-4o": {
       "max_output_tokens": 16384,
@@ -60,7 +66,7 @@
       "max_tools": -1,
       "vision_support": true,
       "audio_support": false,
-      "video_support": true,
+      "video_support": false,
       "image_resolutions": [
         "variable"
       ],
@@ -80,7 +86,8 @@
       "source": "OpenAI official docs 2025",
       "canonical_name": "gpt-4o",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_input_mode": "frames"
     },
     "gpt-4o-long-output": {
       "max_output_tokens": 64000,
@@ -94,7 +101,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-4o-long-output",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "gpt-4o-mini": {
       "max_output_tokens": 16000,
@@ -107,7 +116,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-4o-mini",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "gpt-3.5-turbo": {
       "max_output_tokens": 4096,
@@ -120,7 +131,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-3.5-turbo",
       "aliases": [],
-      "max_tokens": 16385
+      "max_tokens": 16385,
+      "video_support": false,
+      "video_input_mode": "none"
     },
     "o1": {
       "max_output_tokens": 32768,
@@ -133,7 +146,10 @@
       "source": "OpenAI official docs",
       "canonical_name": "o1",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "o1-mini": {
       "max_output_tokens": 65536,
@@ -145,7 +161,10 @@
       "source": "OpenAI official docs",
       "canonical_name": "o1-mini",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "o3": {
       "max_output_tokens": 32768,
@@ -159,7 +178,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "o3",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "video_input_mode": "none"
     },
     "o3-mini": {
       "max_output_tokens": 32768,
@@ -173,7 +194,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "o3-mini",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "video_input_mode": "none"
     },
     "claude-3.5-sonnet": {
       "max_output_tokens": 8192,
@@ -196,7 +219,9 @@
       "source": "Anthropic official docs",
       "canonical_name": "claude-3.5-sonnet",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-3.7-sonnet": {
       "max_output_tokens": 128000,
@@ -213,7 +238,9 @@
       "source": "Anthropic official docs",
       "canonical_name": "claude-3.7-sonnet",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-3.5-haiku": {
       "max_output_tokens": 8192,
@@ -232,7 +259,9 @@
       "aliases": [
         "claude-3-5-haiku-20241022"
       ],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-3-opus": {
       "max_output_tokens": 4096,
@@ -248,7 +277,9 @@
       "source": "Anthropic official docs",
       "canonical_name": "claude-3-opus",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-3-sonnet": {
       "max_output_tokens": 4096,
@@ -264,7 +295,9 @@
       "source": "Anthropic official docs",
       "canonical_name": "claude-3-sonnet",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-3-haiku": {
       "max_output_tokens": 4096,
@@ -280,7 +313,9 @@
       "source": "Anthropic official docs",
       "canonical_name": "claude-3-haiku",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-haiku-4-5": {
       "max_output_tokens": 64000,
@@ -300,7 +335,9 @@
         "claude-haiku-4-5-20251001",
         "anthropic/claude-haiku-4-5"
       ],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-4-opus": {
       "max_output_tokens": 4096,
@@ -317,7 +354,9 @@
       "source": "Anthropic official docs",
       "canonical_name": "claude-4-opus",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-4.1-opus": {
       "max_output_tokens": 4096,
@@ -334,7 +373,9 @@
       "source": "Anthropic official docs",
       "canonical_name": "claude-4.1-opus",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-4-sonnet": {
       "max_output_tokens": 8192,
@@ -351,7 +392,9 @@
       "source": "Anthropic official docs",
       "canonical_name": "claude-4-sonnet",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-4.5-sonnet": {
       "max_output_tokens": 64000,
@@ -372,7 +415,9 @@
         "claude-sonnet-4-5-20250929",
         "anthropic/claude-sonnet-4-5"
       ],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "claude-opus-4-5": {
       "max_output_tokens": 64000,
@@ -392,7 +437,9 @@
         "claude-opus-4-5-20251101",
         "anthropic/claude-opus-4-5"
       ],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "llama-3.2-1b": {
       "max_output_tokens": 2048,
@@ -405,7 +452,10 @@
       "source": "Meta official docs",
       "canonical_name": "llama-3.2-1b",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "llama-3.2-3b": {
       "max_output_tokens": 2048,
@@ -418,7 +468,10 @@
       "source": "Meta official docs",
       "canonical_name": "llama-3.2-3b",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "llama-3.2-11b-vision": {
       "max_output_tokens": 2048,
@@ -434,7 +487,10 @@
       "source": "Meta official docs",
       "canonical_name": "llama-3.2-11b-vision",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "llama-3.3-70b": {
       "max_output_tokens": 8192,
@@ -447,7 +503,10 @@
       "source": "Meta official docs",
       "canonical_name": "llama-3.3-70b",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "llama-3.1-8b": {
       "max_output_tokens": 8192,
@@ -460,7 +519,10 @@
       "source": "Meta official docs",
       "canonical_name": "llama-3.1-8b",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "llama-3.1-70b": {
       "max_output_tokens": 8192,
@@ -473,7 +535,10 @@
       "source": "Meta official docs",
       "canonical_name": "llama-3.1-70b",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "llama-3.1-405b": {
       "max_output_tokens": 8192,
@@ -486,7 +551,10 @@
       "source": "Meta official docs",
       "canonical_name": "llama-3.1-405b",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "llama-4": {
       "max_output_tokens": 8192,
@@ -499,7 +567,10 @@
       "source": "Meta announcement",
       "canonical_name": "llama-4",
       "aliases": [],
-      "max_tokens": 10000000
+      "max_tokens": 10000000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "llava-next-video-7b-hf": {
       "max_output_tokens": 1024,
@@ -516,7 +587,9 @@
         "llava-hf/LLaVA-NeXT-Video-7B-hf",
         "LLaVA-NeXT-Video-7B-hf"
       ],
-      "max_tokens": 10250
+      "max_tokens": 10250,
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "qwen2.5-0.5b": {
       "max_output_tokens": 8192,
@@ -529,7 +602,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-0.5b",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen2.5-1.5b": {
       "max_output_tokens": 8192,
@@ -542,7 +618,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-1.5b",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen2.5-3b": {
       "max_output_tokens": 8192,
@@ -555,7 +634,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-3b",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen2.5-7b": {
       "max_output_tokens": 8192,
@@ -568,7 +650,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-7b",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen2.5-14b": {
       "max_output_tokens": 8192,
@@ -581,7 +666,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-14b",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen2.5-32b": {
       "max_output_tokens": 8192,
@@ -594,7 +682,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-32b",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen2.5-72b": {
       "max_output_tokens": 8192,
@@ -607,7 +698,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-72b",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-0.6b": {
       "max_output_tokens": 8192,
@@ -622,7 +716,10 @@
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-0.6b",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-1.7b": {
       "max_output_tokens": 8192,
@@ -637,7 +734,10 @@
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-1.7b",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-4b": {
       "max_output_tokens": 8192,
@@ -652,7 +752,10 @@
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-4b",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-4b-2507": {
       "max_output_tokens": 8192,
@@ -666,10 +769,12 @@
       "source": "LM Studio model card (Qwen/Qwen3-4B-2507) and Qwen3 2507 release notes",
       "canonical_name": "qwen3-4b-2507",
       "aliases": [
-        "qwen/qwen3-4b-2507",
-        "Qwen/Qwen3-4B-2507"
+        "qwen/qwen3-4b-2507"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-4b-thinking-2507": {
       "max_output_tokens": 8192,
@@ -684,10 +789,12 @@
       "source": "LM Studio model card (Qwen/Qwen3-4B-Thinking-2507) and Qwen3 Thinking 2507 docs",
       "canonical_name": "qwen3-4b-thinking-2507",
       "aliases": [
-        "qwen/qwen3-4b-thinking-2507",
-        "Qwen/Qwen3-4B-Thinking-2507"
+        "qwen/qwen3-4b-thinking-2507"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-32b": {
       "max_output_tokens": 8192,
@@ -702,7 +809,10 @@
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-32b",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "sera-32b": {
       "max_output_tokens": 8192,
@@ -718,14 +828,14 @@
       "canonical_name": "sera-32b",
       "aliases": [
         "allenai/SERA-32B",
-        "allenai/sera-32b",
         "SERA-32B",
         "SERA32B",
-        "sera32b",
-        "SERA_32B",
-        "sera_32b"
+        "SERA_32B"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "sera-32b-ga": {
       "max_output_tokens": 8192,
@@ -741,14 +851,14 @@
       "canonical_name": "sera-32b-ga",
       "aliases": [
         "allenai/SERA-32B-GA",
-        "allenai/sera-32b-ga",
         "SERA-32B-GA",
         "SERA32BGA",
-        "sera32bga",
-        "SERA_32B_GA",
-        "sera_32b_ga"
+        "SERA_32B_GA"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "sera-8b": {
       "max_output_tokens": 8192,
@@ -764,14 +874,14 @@
       "canonical_name": "sera-8b",
       "aliases": [
         "allenai/SERA-8B",
-        "allenai/sera-8b",
         "SERA-8B",
         "SERA8B",
-        "sera8b",
-        "SERA_8B",
-        "sera_8b"
+        "SERA_8B"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "sera-8b-ga": {
       "max_output_tokens": 8192,
@@ -787,14 +897,14 @@
       "canonical_name": "sera-8b-ga",
       "aliases": [
         "allenai/SERA-8B-GA",
-        "allenai/sera-8b-ga",
         "SERA-8B-GA",
         "SERA8BGA",
-        "sera8bga",
-        "SERA_8B_GA",
-        "sera_8b_ga"
+        "SERA_8B_GA"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-30b-a3b": {
       "max_output_tokens": 8192,
@@ -809,7 +919,10 @@
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-30b-a3b",
       "aliases": [],
-      "max_tokens": 40960
+      "max_tokens": 40960,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-30b-a3b-2507": {
       "max_output_tokens": 8192,
@@ -825,7 +938,10 @@
       "aliases": [
         "qwen/qwen3-30b-a3b-2507"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-coder-30b": {
       "max_output_tokens": 65536,
@@ -847,7 +963,10 @@
         "qwen3-coder-30b-a3b",
         "qwen3-coder-30b-a3b-instruct"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen2-vl": {
       "max_output_tokens": 8192,
@@ -862,7 +981,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2-vl",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "qwen2.5-vl": {
       "max_output_tokens": 8192,
@@ -878,7 +1000,10 @@
       "source": "Alibaba official docs",
       "canonical_name": "qwen2.5-vl",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "phi-2": {
       "max_output_tokens": 2048,
@@ -890,7 +1015,10 @@
       "source": "Microsoft official docs",
       "canonical_name": "phi-2",
       "aliases": [],
-      "max_tokens": 2048
+      "max_tokens": 2048,
+      "video_support": false,
+      "max_tools": 0,
+      "video_input_mode": "none"
     },
     "phi-3-mini": {
       "max_output_tokens": 4096,
@@ -903,7 +1031,10 @@
       "source": "Microsoft official docs",
       "canonical_name": "phi-3-mini",
       "aliases": [],
-      "max_tokens": 4096
+      "max_tokens": 4096,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "phi-3-small": {
       "max_output_tokens": 8192,
@@ -915,7 +1046,10 @@
       "source": "Microsoft official docs",
       "canonical_name": "phi-3-small",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "phi-3-medium": {
       "max_output_tokens": 4096,
@@ -927,7 +1061,10 @@
       "source": "Microsoft official docs",
       "canonical_name": "phi-3-medium",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "phi-3.5-mini": {
       "max_output_tokens": 4096,
@@ -939,7 +1076,10 @@
       "source": "Microsoft official docs",
       "canonical_name": "phi-3.5-mini",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "phi-3.5-moe": {
       "max_output_tokens": 4096,
@@ -952,7 +1092,10 @@
       "source": "Microsoft official docs",
       "canonical_name": "phi-3.5-moe",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "phi-3-vision": {
       "max_output_tokens": 4096,
@@ -967,7 +1110,10 @@
       "source": "Microsoft official docs",
       "canonical_name": "phi-3-vision",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "phi-4": {
       "max_output_tokens": 16000,
@@ -980,7 +1126,10 @@
       "source": "Microsoft official docs",
       "canonical_name": "phi-4",
       "aliases": [],
-      "max_tokens": 16000
+      "max_tokens": 16000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "mistral-7b": {
       "max_output_tokens": 8192,
@@ -992,7 +1141,10 @@
       "source": "Mistral AI docs",
       "canonical_name": "mistral-7b",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "mixtral-8x7b": {
       "max_output_tokens": 32768,
@@ -1005,7 +1157,10 @@
       "source": "Mistral AI docs",
       "canonical_name": "mixtral-8x7b",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "mixtral-8x22b": {
       "max_output_tokens": 65536,
@@ -1017,7 +1172,10 @@
       "source": "Mistral AI docs",
       "canonical_name": "mixtral-8x22b",
       "aliases": [],
-      "max_tokens": 65536
+      "max_tokens": 65536,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "mistral-small": {
       "max_output_tokens": 32768,
@@ -1029,7 +1187,10 @@
       "source": "Mistral AI docs",
       "canonical_name": "mistral-small",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "mistral-medium": {
       "max_output_tokens": 32768,
@@ -1041,7 +1202,10 @@
       "source": "Mistral AI docs",
       "canonical_name": "mistral-medium",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "mistral-large": {
       "max_output_tokens": 128000,
@@ -1053,7 +1217,10 @@
       "source": "Mistral AI docs",
       "canonical_name": "mistral-large",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "codestral": {
       "max_output_tokens": 32768,
@@ -1066,7 +1233,10 @@
       "source": "Mistral AI docs",
       "canonical_name": "codestral",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "magistral-small-2509": {
       "max_output_tokens": 8192,
@@ -1086,7 +1256,9 @@
       "aliases": [
         "mistralai/magistral-small-2509"
       ],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "Qwen/Qwen3-VL-8B-Instruct-FP8": {
       "max_output_tokens": 8192,
@@ -1110,7 +1282,9 @@
         "qwen3-vl-8b-fp8",
         "qwen3-vl-8b-instruct-fp8"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "llama3.2-vision:11b": {
       "max_output_tokens": 4096,
@@ -1161,7 +1335,9 @@
         "llama3.2-vision-11b",
         "llama-3.2-vision:11b"
       ],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "llama3.2-vision:70b": {
       "max_output_tokens": 4096,
@@ -1187,7 +1363,9 @@
         "llama3.2-vision-70b",
         "llama-3.2-vision:70b"
       ],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "llama3.2-vision:90b": {
       "max_output_tokens": 4096,
@@ -1213,7 +1391,9 @@
         "llama3.2-vision-90b",
         "llama-3.2-vision:90b"
       ],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "gemma-2b": {
       "max_output_tokens": 8192,
@@ -1225,7 +1405,10 @@
       "source": "Google docs",
       "canonical_name": "gemma-2b",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": 0,
+      "video_input_mode": "none"
     },
     "gemma-7b": {
       "max_output_tokens": 8192,
@@ -1237,7 +1420,10 @@
       "source": "Google docs",
       "canonical_name": "gemma-7b",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": 0,
+      "video_input_mode": "none"
     },
     "gemma2-9b": {
       "max_output_tokens": 8192,
@@ -1249,7 +1435,10 @@
       "source": "Google docs",
       "canonical_name": "gemma2-9b",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "gemma2-27b": {
       "max_output_tokens": 8192,
@@ -1261,7 +1450,10 @@
       "source": "Google docs",
       "canonical_name": "gemma2-27b",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "gemma3": {
       "max_output_tokens": 8192,
@@ -1274,7 +1466,10 @@
       "source": "Google docs",
       "canonical_name": "gemma3",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "codegemma": {
       "max_output_tokens": 8192,
@@ -1287,7 +1482,10 @@
       "source": "Google docs",
       "canonical_name": "codegemma",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": 0,
+      "video_input_mode": "none"
     },
     "paligemma": {
       "max_output_tokens": 1024,
@@ -1305,7 +1503,10 @@
       "source": "Google docs",
       "canonical_name": "paligemma",
       "aliases": [],
-      "max_tokens": 8192
+      "max_tokens": 8192,
+      "video_support": false,
+      "max_tools": 0,
+      "video_input_mode": "frames"
     },
     "glm-4": {
       "max_output_tokens": 4096,
@@ -1318,7 +1519,10 @@
       "source": "Model documentation",
       "canonical_name": "glm-4",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "glm-4-9b": {
       "max_output_tokens": 4096,
@@ -1331,7 +1535,10 @@
       "source": "Model documentation",
       "canonical_name": "glm-4-9b",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "glm-4-9b-0414-4bit": {
       "max_output_tokens": 4096,
@@ -1344,7 +1551,10 @@
       "source": "Model documentation",
       "canonical_name": "glm-4-9b-0414-4bit",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "deepseek-r1": {
       "max_output_tokens": 8192,
@@ -1357,7 +1567,10 @@
       "source": "MLX community",
       "canonical_name": "deepseek-r1",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3": {
       "max_output_tokens": 8192,
@@ -1370,7 +1583,10 @@
       "source": "MLX community",
       "canonical_name": "qwen3",
       "aliases": [],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-14b": {
       "max_output_tokens": 8192,
@@ -1385,7 +1601,10 @@
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-14b",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-next-80b-a3b": {
       "max_output_tokens": 16384,
@@ -1402,7 +1621,10 @@
         "qwen/qwen3-next-80b",
         "qwen3-next-80b"
       ],
-      "max_tokens": 262144
+      "max_tokens": 262144,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "gpt-5": {
       "max_output_tokens": 8192,
@@ -1416,7 +1638,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-5",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "gpt-5-turbo": {
       "max_output_tokens": 4096,
@@ -1430,7 +1654,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-5-turbo",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "gpt-5-pro": {
       "max_output_tokens": 16384,
@@ -1444,7 +1670,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-5-pro",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "gpt-5-mini": {
       "max_output_tokens": 8192,
@@ -1458,7 +1686,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-5-mini",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "gpt-5-vision": {
       "max_output_tokens": 8192,
@@ -1475,7 +1705,9 @@
       "source": "OpenAI official docs",
       "canonical_name": "gpt-5-vision",
       "aliases": [],
-      "max_tokens": 200000
+      "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames"
     },
     "qwen3-8b": {
       "max_output_tokens": 8192,
@@ -1490,7 +1722,10 @@
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-8b",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-235b-a22b": {
       "max_output_tokens": 8192,
@@ -1505,7 +1740,10 @@
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-235b-a22b",
       "aliases": [],
-      "max_tokens": 40960
+      "max_tokens": 40960,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-vl": {
       "max_output_tokens": 8192,
@@ -1525,7 +1763,9 @@
       "source": "Alibaba Qwen3-VL technical report",
       "canonical_name": "qwen3-vl",
       "aliases": [],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "qwen2.5-vl-7b": {
       "max_output_tokens": 8192,
@@ -1553,8 +1793,11 @@
         "qwen/qwen2.5-vl-7b",
         "unsloth/Qwen2.5-VL-7B-Instruct-GGUF"
       ],
-      "max_tokens": 128000
-    },    
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames"
+    },
     "gemma3-4b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
@@ -1582,7 +1825,9 @@
       "aliases": [
         "gemma3:4b"
       ],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "qwen2.5vl:7b": {
       "max_output_tokens": 8192,
@@ -1604,7 +1849,10 @@
       "aliases": [
         "qwen2.5vl"
       ],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "gemma3:4b-it-qat": {
       "max_output_tokens": 8192,
@@ -1625,7 +1873,9 @@
       "source": "Ollama model library",
       "canonical_name": "gemma3:4b-it-qat",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "gemma3n:e4b": {
       "max_output_tokens": 8192,
@@ -1654,7 +1904,9 @@
         "gemma3n:e2b:latest",
         "gemma3n:e2b"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "seed-oss": {
       "max_output_tokens": 8192,
@@ -1669,7 +1921,10 @@
       "source": "ByteDance SEED-OSS documentation",
       "canonical_name": "seed-oss",
       "aliases": [],
-      "max_tokens": 524288
+      "max_tokens": 524288,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "glm-4.5": {
       "max_output_tokens": 4096,
@@ -1683,7 +1938,10 @@
       "source": "Zhipu AI GLM-4.5 announcement",
       "canonical_name": "glm-4.5",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "glm-4.6": {
       "max_output_tokens": 4096,
@@ -1701,7 +1959,10 @@
         "zai-org/GLM-4.6-FP8",
         "glm-4.6-fp8"
       ],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "glm-4.5-air": {
       "max_output_tokens": 4096,
@@ -1715,7 +1976,10 @@
       "source": "Zhipu AI GLM-4.5-Air announcement",
       "canonical_name": "glm-4.5-air",
       "aliases": [],
-      "max_tokens": 128000
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "glm-4.7-flash": {
       "max_output_tokens": 131072,
@@ -1725,7 +1989,11 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_modes": ["interleaved_thinking", "preserved_thinking", "turn_level_thinking"],
+      "thinking_modes": [
+        "interleaved_thinking",
+        "preserved_thinking",
+        "turn_level_thinking"
+      ],
       "architecture": "mixture_of_experts",
       "total_parameters": "30B",
       "active_parameters": "3B",
@@ -1738,7 +2006,7 @@
       "transformer_layers": 47,
       "agentic_coding": true,
       "ui_generation": true,
-      "notes": "GLM-4.7-Flash lightweight MoE model (30B total/3B active, 64 routed experts + 1 shared/4 activated) optimized for high-speed agentic coding and complex reasoning. Features Interleaved Thinking (reasoning before actions), Preserved Thinking (cross-turn consistency), and Turn-level Thinking (per-turn toggle). BF16 precision (~62.5GB). Compatible with vLLM, SGLang, and Hugging Face Transformers. Strong performance on SWE-bench Verified (59.2%), AIME 25 (91.6%), τ²-Bench (79.5%), GPQA (75.2%), HLE (14.4%). MIT license. Recommended: temp 0.7 for coding, 0 for tool tasks.",
+      "notes": "GLM-4.7-Flash lightweight MoE model (30B total/3B active, 64 routed experts + 1 shared/4 activated) optimized for high-speed agentic coding and complex reasoning. Features Interleaved Thinking (reasoning before actions), Preserved Thinking (cross-turn consistency), and Turn-level Thinking (per-turn toggle). BF16 precision (~62.5GB). Compatible with vLLM, SGLang, and Hugging Face Transformers. Strong performance on SWE-bench Verified (59.2%), AIME 25 (91.6%), \u03c4\u00b2-Bench (79.5%), GPQA (75.2%), HLE (14.4%). MIT license. Recommended: temp 0.7 for coding, 0 for tool tasks.",
       "source": "HuggingFace zai-org/GLM-4.7-Flash official model card",
       "canonical_name": "glm-4.7-flash",
       "aliases": [
@@ -1753,7 +2021,10 @@
         "max_new_tokens": 131072,
         "coding_temp": 0.7,
         "agentic_temp": 0.0
-      }
+      },
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "llama-4-109b": {
       "max_output_tokens": 8192,
@@ -1766,7 +2037,10 @@
       "source": "Meta LLaMA 4 announcement",
       "canonical_name": "llama-4-109b",
       "aliases": [],
-      "max_tokens": 10000000
+      "max_tokens": 10000000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "granite3.2:2b": {
       "max_output_tokens": 8192,
@@ -1781,7 +2055,10 @@
       "aliases": [
         "granite3.2-2b"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "granite3.2:8b": {
       "max_output_tokens": 8192,
@@ -1796,7 +2073,10 @@
       "aliases": [
         "granite3.2-8b"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "granite3.2-vision:2b": {
       "max_output_tokens": 8192,
@@ -1822,7 +2102,9 @@
         "granite-vision",
         "ibm-granite-vision"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "gemini-2.5-flash": {
       "max_output_tokens": 8192,
@@ -1848,7 +2130,8 @@
       "aliases": [
         "gemini-2.5-flash-001"
       ],
-      "max_tokens": 1000000
+      "max_tokens": 1000000,
+      "video_input_mode": "native"
     },
     "gemini-2.5-pro": {
       "max_output_tokens": 65536,
@@ -1864,7 +2147,7 @@
         "448x448",
         "1024x1024"
       ],
-      "max_image_resolution":  "768x768",
+      "max_image_resolution": "768x768",
       "image_tokenization_method": "gemini_vision_encoder",
       "thinking_support": true,
       "thinking_budget": true,
@@ -1874,7 +2157,8 @@
       "aliases": [
         "gemini-2.5-pro-001"
       ],
-      "max_tokens": 1048576
+      "max_tokens": 1048576,
+      "video_input_mode": "native"
     },
     "granite3.3:2b": {
       "max_output_tokens": 8192,
@@ -1889,7 +2173,10 @@
       "aliases": [
         "granite3.3-2b"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "granite3.3:8b": {
       "max_output_tokens": 8192,
@@ -1904,7 +2191,10 @@
       "aliases": [
         "granite3.3-8b"
       ],
-      "max_tokens": 32768
+      "max_tokens": 32768,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "embeddinggemma:300m": {
       "max_output_tokens": 0,
@@ -1920,7 +2210,10 @@
         "google/embeddinggemma-300m"
       ],
       "max_tokens": 8192,
-      "model_type": "embedding"
+      "model_type": "embedding",
+      "video_support": false,
+      "max_tools": 0,
+      "video_input_mode": "none"
     },
     "nomic-embed-text-v1.5": {
       "max_output_tokens": 0,
@@ -1937,14 +2230,22 @@
         "nomic-embed-text-v1.5",
         "text-embedding-nomic-embed-text-v1.5",
         "text-embedding-nomic-embed-text-v1.5@q6_k",
-        "nomic-embed-text-v1.5@q6_k",
-        "text-embedding-nomic-embed-text-v1.5@q6_k"
+        "nomic-embed-text-v1.5@q6_k"
       ],
       "max_tokens": 8192,
       "model_type": "embedding",
       "embedding_dimension": 768,
-      "matryoshka_dims": [768, 512, 256, 128, 64],
-      "embedding_support": true
+      "matryoshka_dims": [
+        768,
+        512,
+        256,
+        128,
+        64
+      ],
+      "embedding_support": true,
+      "video_support": false,
+      "max_tools": 0,
+      "video_input_mode": "none"
     },
     "blip-image-captioning-base": {
       "max_output_tokens": 512,
@@ -1969,7 +2270,9 @@
       "aliases": [
         "Salesforce/blip-image-captioning-base"
       ],
-      "max_tokens": 2048
+      "max_tokens": 2048,
+      "max_tools": 0,
+      "video_input_mode": "frames"
     },
     "glyph": {
       "max_output_tokens": 8192,
@@ -1995,7 +2298,7 @@
       "conversation_template": {
         "system_prefix": "<|system|>\n",
         "system_suffix": "\n",
-        "user_prefix": "<|user|>\n", 
+        "user_prefix": "<|user|>\n",
         "user_suffix": "\n",
         "assistant_prefix": "<|assistant|>\n",
         "assistant_suffix": "\n"
@@ -2013,7 +2316,9 @@
       "max_tokens": 131072,
       "license": "MIT",
       "arxiv": "2510.17800",
-      "repository": "https://github.com/thu-coai/Glyph"
+      "repository": "https://github.com/thu-coai/Glyph",
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "glm-4.1v-9b-base": {
       "max_output_tokens": 8192,
@@ -2043,7 +2348,9 @@
       "aliases": [
         "zai-org/GLM-4.1V-9B-Base"
       ],
-      "max_tokens": 131072
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "glm-4.1v-9b-thinking": {
       "max_output_tokens": 8192,
@@ -2080,7 +2387,9 @@
         "glm4.1v-9b-thinking"
       ],
       "max_tokens": 65536,
-      "arxiv": "2507.01006"
+      "arxiv": "2507.01006",
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "mistral-small-3.1-24b-instruct": {
       "max_output_tokens": 8192,
@@ -2103,7 +2412,9 @@
       ],
       "max_tokens": 131072,
       "total_parameters": "24B",
-      "release_date": "2025-03-17"
+      "release_date": "2025-03-17",
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "mistral-small-3.2-24b-instruct": {
       "max_output_tokens": 8192,
@@ -2128,7 +2439,9 @@
       ],
       "max_tokens": 131072,
       "total_parameters": "24B",
-      "release_date": "2025-06-01"
+      "release_date": "2025-06-01",
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "llama-4-scout": {
       "max_output_tokens": 8192,
@@ -2157,7 +2470,9 @@
       "max_tokens": 10000000,
       "release_date": "2025-04-05",
       "image_patch_size": 14,
-      "max_image_tokens": 6400
+      "max_image_tokens": 6400,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "llama-4-maverick": {
       "max_output_tokens": 8192,
@@ -2185,7 +2500,9 @@
       "max_tokens": 1000000,
       "release_date": "2025-04-05",
       "image_patch_size": 14,
-      "max_image_tokens": 6400
+      "max_image_tokens": 6400,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "llama-4-behemoth": {
       "max_output_tokens": 8192,
@@ -2214,7 +2531,9 @@
       "release_date": "2025-04-05",
       "status": "announced",
       "image_patch_size": 14,
-      "max_image_tokens": 6400
+      "max_image_tokens": 6400,
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "minimax-m2": {
       "max_output_tokens": 131072,
@@ -2236,7 +2555,6 @@
       "aliases": [
         "MiniMaxAI/MiniMax-M2",
         "mlx-community/minimax-m2",
-        "mlx-community/MiniMax-M2",
         "unsloth/MiniMax-M2-GGUF",
         "minimax-m2-230b",
         "minimax-m2-10b-active",
@@ -2250,7 +2568,9 @@
         "top_p": 0.95,
         "top_k": 40
       },
-      "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2 and is built by MiniMax."
+      "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2 and is built by MiniMax.",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "minimax-m2.1": {
       "max_output_tokens": 131072,
@@ -2273,7 +2593,6 @@
       "canonical_name": "minimax-m2.1",
       "aliases": [
         "MiniMaxAI/MiniMax-M2.1",
-        "minimaxai/minimax-m2.1",
         "minimax-m2.1-229b",
         "minimax-m2.1-10b-active",
         "minimax/minimax-m2.1"
@@ -2310,14 +2629,16 @@
         "SciCode": 41.0,
         "IFBench": 70.0,
         "AA-LCR": 62.0,
-        "τ²-Bench Telecom": 87.0
+        "\u03c4\u00b2-Bench Telecom": 87.0
       },
       "inference_parameters": {
         "temperature": 1.0,
         "top_p": 0.95,
         "top_k": 40
       },
-      "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2.1 and is built by MiniMax."
+      "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2.1 and is built by MiniMax.",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "glm-4.6v": {
       "max_output_tokens": 16384,
@@ -2349,7 +2670,10 @@
         "end": "<|end_of_box|>"
       },
       "thinking_control": "/nothink",
-      "thinking_tags": ["<think>", "</think>"],
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
       "notes": "GLM-4.6V foundation model (106B params) for cloud deployment. Native multimodal function calling with vision-driven tool use using XML format: <tool_call>function_name\\n<arg_key>key</arg_key>\\n<arg_value>value</arg_value>\\n</tool_call>. Supports interleaved image-text generation, 128K context, multimodal document understanding, and frontend replication from screenshots. Generates reasoning in 'reasoning_content' field or <think></think> tags. Achieves SoTA performance in visual understanding among similar parameter scales. Thinking can be disabled with '/nothink' suffix in user message. See: https://github.com/zai-org/GLM-V",
       "source": "HuggingFace zai-org/GLM-4.6V and GLM-V GitHub",
       "canonical_name": "glm-4.6v",
@@ -2362,7 +2686,9 @@
       "max_tokens": 128000,
       "release_date": "2025-05-07",
       "arxiv": "2507.01006",
-      "license": "MIT"
+      "license": "MIT",
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "glm-4.6v-flash": {
       "max_output_tokens": 8192,
@@ -2393,7 +2719,10 @@
         "end": "<|end_of_box|>"
       },
       "thinking_control": "/nothink",
-      "thinking_tags": ["<think>", "</think>"],
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
       "notes": "GLM-4.6V-Flash lightweight model (9B params) optimized for local deployment and low-latency applications. Maintains native multimodal function calling using XML format: <tool_call>function_name\\n<arg_key>key</arg_key>\\n<arg_value>value</arg_value>\\n</tool_call>. Generates reasoning in 'reasoning_content' field or <think></think> tags. Ideal for edge and resource-constrained environments while preserving core GLM-4.6V capabilities. Thinking can be disabled with '/nothink' suffix. See: https://github.com/zai-org/GLM-V",
       "source": "HuggingFace zai-org/GLM-4.6V-Flash and GLM-V GitHub",
       "canonical_name": "glm-4.6v-flash",
@@ -2406,7 +2735,9 @@
       "max_tokens": 128000,
       "release_date": "2025-05-07",
       "arxiv": "2507.01006",
-      "license": "MIT"
+      "license": "MIT",
+      "max_tools": -1,
+      "video_input_mode": "frames"
     },
     "glm-4.7": {
       "max_output_tokens": 32768,
@@ -2420,14 +2751,18 @@
       "architecture": "mixture_of_experts",
       "total_parameters": "358B",
       "thinking_paradigm": "multi_mode",
-      "thinking_modes": ["interleaved_thinking", "preserved_thinking", "turn_level_thinking"],
+      "thinking_modes": [
+        "interleaved_thinking",
+        "preserved_thinking",
+        "turn_level_thinking"
+      ],
       "native_function_calling": true,
       "agentic_coding": true,
       "terminal_tasks": true,
       "web_browsing": true,
       "tool_calling_parser": "glm47",
       "reasoning_parser": "glm45",
-      "notes": "GLM-4.7 latest MoE model (358B params) with enhanced coding, reasoning, and agentic capabilities. Achieves 73.8% on SWE-bench Verified, 66.7% on SWE-bench Multilingual, and 41% on Terminal Bench 2.0. Supports advanced thinking modes: Interleaved (think before actions), Preserved (cross-turn consistency), and Turn-level. Excels at tool using (τ²-Bench: 87.4%), web browsing (BrowseComp: 52%), and complex reasoning (HLE w/ Tools: 42.8%, AIME 2025: 95.7%). 128K context window with 32K output capacity. Optimized for modern coding environments including Claude Code, Kilo Code, Cline, Roo Code.",
+      "notes": "GLM-4.7 latest MoE model (358B params) with enhanced coding, reasoning, and agentic capabilities. Achieves 73.8% on SWE-bench Verified, 66.7% on SWE-bench Multilingual, and 41% on Terminal Bench 2.0. Supports advanced thinking modes: Interleaved (think before actions), Preserved (cross-turn consistency), and Turn-level. Excels at tool using (\u03c4\u00b2-Bench: 87.4%), web browsing (BrowseComp: 52%), and complex reasoning (HLE w/ Tools: 42.8%, AIME 2025: 95.7%). 128K context window with 32K output capacity. Optimized for modern coding environments including Claude Code, Kilo Code, Cline, Roo Code.",
       "source": "HuggingFace zai-org/GLM-4.7 and GLM technical blog",
       "canonical_name": "glm-4.7",
       "aliases": [
@@ -2455,7 +2790,7 @@
         "BrowseComp": 52.0,
         "BrowseComp (w/ Context Manage)": 67.5,
         "BrowseComp-Zh": 66.6,
-        "τ²-Bench": 87.4,
+        "\u03c4\u00b2-Bench": 87.4,
         "MMLU-Pro": 84.3,
         "GPQA-Diamond": 85.7
       },
@@ -2464,7 +2799,9 @@
         "top_p": 0.95,
         "enable_thinking": true,
         "clear_thinking": false
-      }
+      },
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "devstral-small-2-24b": {
       "max_output_tokens": 16384,
@@ -2492,7 +2829,9 @@
       ],
       "max_tokens": 262144,
       "release_date": "2025-12",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "devstral-2-123b": {
       "max_output_tokens": 16384,
@@ -2518,7 +2857,9 @@
       ],
       "max_tokens": 262144,
       "release_date": "2025-12",
-      "license": "Modified-MIT"
+      "license": "Modified-MIT",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-235b-a22b-2507": {
       "max_output_tokens": 16384,
@@ -2546,7 +2887,9 @@
       "max_tokens": 262144,
       "release_date": "2025-07",
       "arxiv": "2505.09388",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-235b-a22b-2507-fp8": {
       "max_output_tokens": 16384,
@@ -2575,7 +2918,9 @@
       "max_tokens": 262144,
       "release_date": "2025-07",
       "arxiv": "2505.09388",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "granite-4.0-h-tiny": {
       "max_output_tokens": 16384,
@@ -2607,7 +2952,9 @@
       ],
       "max_tokens": 131072,
       "release_date": "2025-10-02",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "gpt-oss-20b": {
       "max_output_tokens": 8192,
@@ -2625,7 +2972,11 @@
       "tensor_type": "BF16+U8",
       "quantization_method": "MXFP4",
       "response_format": "harmony",
-      "reasoning_levels": ["low", "medium", "high"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "agentic_capabilities": true,
       "function_calling": true,
       "web_browsing": true,
@@ -2641,7 +2992,9 @@
       "max_tokens": 128000,
       "release_date": "2025-08",
       "arxiv": "2508.10925",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "gpt-oss-120b": {
       "max_output_tokens": 8192,
@@ -2659,7 +3012,11 @@
       "tensor_type": "BF16+U8",
       "quantization_method": "MXFP4",
       "response_format": "harmony",
-      "reasoning_levels": ["low", "medium", "high"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "agentic_capabilities": true,
       "function_calling": true,
       "web_browsing": true,
@@ -2676,7 +3033,9 @@
       "max_tokens": 128000,
       "release_date": "2025-08",
       "arxiv": "2508.10925",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
     },
     "qwen3-vl-2b": {
       "max_output_tokens": 8192,
@@ -2703,7 +3062,11 @@
       "spatial_perception": true,
       "document_understanding": true,
       "ocr_languages": 32,
-      "architecture_updates": ["Interleaved-MRoPE", "DeepStack", "Text-Timestamp-Alignment"],
+      "architecture_updates": [
+        "Interleaved-MRoPE",
+        "DeepStack",
+        "Text-Timestamp-Alignment"
+      ],
       "notes": "Qwen3-VL 2B dense model with 256K context. Visual agent for GUI operation, visual coding (Draw.io/HTML/CSS/JS), advanced spatial perception with 2D/3D grounding. Enhanced OCR (32 languages), long video understanding with second-level indexing. Text understanding on par with pure LLMs.",
       "source": "Qwen HuggingFace and Qwen3 technical report arXiv:2505.09388",
       "canonical_name": "qwen3-vl-2b",
@@ -2714,7 +3077,9 @@
       "max_tokens": 262144,
       "release_date": "2025-05",
       "arxiv": "2505.09388",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "qwen3-vl-4b": {
       "max_output_tokens": 8192,
@@ -2742,7 +3107,11 @@
       "document_understanding": true,
       "ocr_languages": 32,
       "total_parameters": "4.83B",
-      "architecture_updates": ["Interleaved-MRoPE", "DeepStack", "Text-Timestamp-Alignment"],
+      "architecture_updates": [
+        "Interleaved-MRoPE",
+        "DeepStack",
+        "Text-Timestamp-Alignment"
+      ],
       "notes": "Qwen3-VL 4B dense model (4.83B params) with 256K context, optimized for LMStudio. Visual agent for GUI operation, visual coding (Draw.io/HTML/CSS/JS), advanced spatial perception with 2D/3D grounding. Enhanced OCR (32 languages), long video understanding. FP8 checkpoints available.",
       "source": "Qwen HuggingFace and Qwen3 technical report arXiv:2505.09388",
       "canonical_name": "qwen3-vl-4b",
@@ -2754,7 +3123,9 @@
       "max_tokens": 262144,
       "release_date": "2025-05",
       "arxiv": "2505.09388",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "qwen3-vl-8b": {
       "max_output_tokens": 8192,
@@ -2782,7 +3153,11 @@
       "document_understanding": true,
       "ocr_languages": 32,
       "total_parameters": "8.77B",
-      "architecture_updates": ["Interleaved-MRoPE", "DeepStack", "Text-Timestamp-Alignment"],
+      "architecture_updates": [
+        "Interleaved-MRoPE",
+        "DeepStack",
+        "Text-Timestamp-Alignment"
+      ],
       "notes": "Qwen3-VL 8B dense model (8.77B params) with 256K context, optimized for LMStudio. Most powerful vision-language model in Qwen series. Visual agent for GUI operation, visual coding, advanced spatial perception with 2D/3D grounding. Enhanced OCR (32 languages), long video understanding with second-level indexing. FP8 checkpoints available.",
       "source": "Qwen HuggingFace and Qwen3 technical report arXiv:2505.09388",
       "canonical_name": "qwen3-vl-8b",
@@ -2794,7 +3169,9 @@
       "max_tokens": 262144,
       "release_date": "2025-05",
       "arxiv": "2505.09388",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "qwen3-vl-30b-a3b": {
       "max_output_tokens": 8192,
@@ -2824,7 +3201,11 @@
       "architecture": "mixture_of_experts",
       "total_parameters": "30.5B",
       "active_parameters": "3.3B",
-      "architecture_updates": ["Interleaved-MRoPE", "DeepStack", "Text-Timestamp-Alignment"],
+      "architecture_updates": [
+        "Interleaved-MRoPE",
+        "DeepStack",
+        "Text-Timestamp-Alignment"
+      ],
       "notes": "Qwen3-VL 30B MoE model (30.5B total/3.3B active), best performing vision model in the series. 128K context. Visual agent for GUI operation, visual coding (Draw.io/HTML/CSS/JS), advanced spatial perception with 2D/3D grounding. Enhanced OCR (32 languages), long video understanding with second-level indexing. Text understanding on par with pure LLMs.",
       "source": "Qwen HuggingFace and Qwen3 technical report arXiv:2505.09388",
       "canonical_name": "qwen3-vl-30b-a3b",
@@ -2836,7 +3217,9 @@
       "max_tokens": 131072,
       "release_date": "2025-05",
       "arxiv": "2505.09388",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "qwen3-vl-235b-a22b": {
       "max_output_tokens": 8192,
@@ -2868,7 +3251,11 @@
       "active_parameters": "22B",
       "experts": 128,
       "experts_activated": 8,
-      "architecture_updates": ["Interleaved-MRoPE", "DeepStack", "Text-Timestamp-Alignment"],
+      "architecture_updates": [
+        "Interleaved-MRoPE",
+        "DeepStack",
+        "Text-Timestamp-Alignment"
+      ],
       "notes": "Qwen3-VL 235B MoE model (235B total/22B active, 128 experts/8 activated), flagship vision model. 256K context expandable to 1M. Visual agent for GUI operation, visual coding (Draw.io/HTML/CSS/JS), advanced spatial perception with 2D/3D grounding. Enhanced OCR (32 languages), long video understanding with second-level indexing. Text understanding on par with pure LLMs. Superior visual perception and reasoning.",
       "source": "Qwen HuggingFace and Qwen3 technical report arXiv:2505.09388",
       "canonical_name": "qwen3-vl-235b-a22b",
@@ -2879,7 +3266,9 @@
       "max_tokens": 262144,
       "release_date": "2025-05",
       "arxiv": "2505.09388",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "nemotron-3-nano-30b-a3b": {
       "max_output_tokens": 8192,
@@ -2905,7 +3294,14 @@
       "agentic_capabilities": true,
       "function_calling": true,
       "tool_calling_format": "json",
-      "languages": ["English", "German", "Spanish", "French", "Italian", "Japanese"],
+      "languages": [
+        "English",
+        "German",
+        "Spanish",
+        "French",
+        "Italian",
+        "Japanese"
+      ],
       "notes": "NVIDIA Nemotron-3-Nano hybrid MoE model (30B total/3.5B active, 128 experts/6 activated + 1 shared). Combines 23 Mamba-2 layers with 6 Attention layers. Unified model for reasoning and non-reasoning tasks with configurable reasoning mode. Generates reasoning trace before final response. 256K context extendable to 1M with YaRN. Strong performance on AIME25 (99.2% with tools), SWE-Bench (38.8%), MiniF2F (50.0% pass@1). Native tool calling via chatml-function-calling format. Commercial use ready.",
       "source": "NVIDIA Nemotron HuggingFace and technical report",
       "canonical_name": "nemotron-3-nano-30b-a3b",
@@ -2939,7 +3335,9 @@
         "Scale AI Multi Challenge": 38.5,
         "Arena-Hard-V2 (Hard Prompt)": 72.1,
         "Arena-Hard-V2 (Average)": 67.7
-      }
+      },
+      "max_tools": -1,
+      "video_input_mode": "none"
     }
   },
   "tool_support_levels": {
@@ -3023,7 +3421,9 @@
     "source": "AbstractCore generic fallback",
     "canonical_name": "generic_vision_model",
     "aliases": [],
-    "max_tokens": 32768
+    "max_tokens": 32768,
+    "max_tools": -1,
+    "video_input_mode": "frames"
   },
   "default_capabilities": {
     "max_output_tokens": 4096,
@@ -3036,6 +3436,8 @@
     "thinking_budget": false,
     "video_support": false,
     "fim_support": false,
-    "max_tokens": 16384
+    "max_tokens": 16384,
+    "max_tools": 0,
+    "video_input_mode": "none"
   }
 }
