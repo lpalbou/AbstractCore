@@ -4,22 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AbstractCore - Unified LLM Provider Interface</title>
-    <meta name="description" content="A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.">
-    <meta name="keywords" content="LLM, AI, Python, OpenAI, Anthropic, Ollama, Machine Learning, API">
+    <meta name="description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code. Write once, run everywhere.">
+    <meta name="keywords" content="LLM, AI, Python, Open Source LLM, Local LLM, OpenAI, Anthropic, Ollama, LMStudio, MLX, vLLM, HuggingFace, Machine Learning, API">
     <meta name="author" content="AbstractCore Team">
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://www.abstractcore.ai/">
     <meta property="og:title" content="AbstractCore - Unified LLM Provider Interface">
-    <meta property="og:description" content="A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.">
+    <meta property="og:description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code. Write once, run everywhere.">
     <meta property="og:image" content="https://www.abstractcore.ai/assets/logo.svg">
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://www.abstractcore.ai/">
     <meta property="twitter:title" content="AbstractCore - Unified LLM Provider Interface">
-    <meta property="twitter:description" content="A unified, powerful Python library for seamless interaction with multiple Large Language Model (LLM) providers. Write once, run everywhere.">
+    <meta property="twitter:description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code. Write once, run everywhere.">
     <meta property="twitter:image" content="https://www.abstractcore.ai/assets/logo.svg">
 
     <!-- Favicon -->
@@ -103,10 +103,9 @@
                     <br>Write once, run everywhere
                 </h1>
                 <p class="hero-description">
-                    A powerful Python library providing seamless interaction with all major LLM providers
-                    with centralized configuration, universal media handling (images/documents + policy-driven audio/video),
-                    and optional capability plugins for deterministic STT/TTS and generative vision.
-                    Switch between OpenAI, Anthropic, Ollama, and more with identical code.
+                    Open-source first, provider-agnostic LLM infrastructure for Python — run local models to control the full stack end-to-end (software + models),
+                    or switch to cloud providers when you need them. Code once, run everywhere across Ollama, LM Studio, MLX, HuggingFace, vLLM, OpenAI, Anthropic,
+                    and more with consistent APIs for tools, structured output, streaming, and media.
                 </p>
                 
                 <div class="hero-actions">
@@ -243,7 +242,7 @@ llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
                     </div>
                     <h3 class="feature-title">Provider Discovery</h3>
                     <p class="feature-description">
-                        Centralized registry for providers, defaults, and capabilities. Discover what's installed (local vs cloud) and what each provider supports.
+                        Centralized registry for providers, defaults, and capabilities — from open-source local stacks to cloud APIs. Discover what's installed and what each provider supports.
                     </p>
                 </div>
                 
@@ -297,7 +296,7 @@ llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
                     </div>
                     <h3 class="feature-title">Local & Cloud</h3>
                     <p class="feature-description">
-                        Run models locally for privacy and cost savings, or use cloud APIs for maximum performance.
+                        Run open-source models locally to control the full stack end-to-end (software + models), or use cloud APIs for maximum performance.
                     </p>
                 </div>
                 
@@ -1310,9 +1309,9 @@ response = client.chat.completions.create(
                             <span class="doc-title">Audio &amp; Voice (STT/TTS)</span>
                             <span class="doc-description">Speech-to-text inputs + optional text-to-speech outputs</span>
                         </a>
-                        <a href="https://www.abstractcore.ai/llms-full.txt" class="doc-link">
-                            <span class="doc-title">🤖 Complete AI Documentation</span>
-                            <span class="doc-description">Full technical reference for AI agents - all features covered</span>
+                        <a href="docs/events.html" class="doc-link">
+                            <span class="doc-title">Events &amp; Observability</span>
+                            <span class="doc-description">Subscribe to generation/tool/retry/session events</span>
                         </a>
                     </div>
                 </div>
@@ -1333,6 +1332,74 @@ response = client.chat.completions.create(
             <div class="examples-grid">
                 <div class="example-card">
                     <div class="example-header">
+                        <h3 class="example-title">Universal API Gateway</h3>
+                        <span class="example-badge">Server</span>
+                    </div>
+                    <p class="example-description">
+                        Deploy a single OpenAI-compatible <code>/v1</code> gateway for chat + tools, and optionally add <code>/v1/images/*</code> and <code>/v1/audio/*</code> via capability plugins.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-bash"># Start server
+python -m abstractcore.server.app --port 8000
+
+# Route by changing model:
+#   ollama/qwen3:4b-instruct
+#   openai/gpt-4o-mini
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -d '{"model":"ollama/qwen3:4b-instruct","messages":[...]}'</code></pre>
+                    </div>
+                    <a href="docs/server.html" class="example-link">View Full Example →</a>
+                </div>
+                
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Vision Fallback (Images → Any LLM)</h3>
+                        <span class="example-badge">Vision</span>
+                    </div>
+                    <p class="example-description">
+                        Attach images to text-only models (AbstractCore-exclusive fallback). A configured vision model captions and injects short observations into your request.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+# Text-only local model (no native vision)
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+
+# Configure vision fallback once, then attach images anyway
+resp = llm.generate(
+    "What are the key numbers in this chart?",
+    media=["chart.png"],
+)
+print(resp.content)</code></pre>
+                    </div>
+                    <a href="docs/vision-capabilities.html" class="example-link">View Full Example →</a>
+                </div>
+                
+                <div class="example-card">
+                    <div class="example-header">
+                        <h3 class="example-title">Audio &amp; Voice Agents (STT/TTS)</h3>
+                        <span class="example-badge">Audio</span>
+                    </div>
+                    <p class="example-description">
+                        Speech-to-text for audio inputs is policy-driven (no silent semantic changes) and works across providers via an optional capability plugin (AbstractVoice).
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+resp = llm.generate(
+    "Summarize this call and list action items.",
+    media=["call.wav"],
+    audio_policy="speech_to_text",  # requires: pip install abstractvoice
+)
+print(resp.content)</code></pre>
+                    </div>
+                    <a href="docs/audio.html" class="example-link">View Full Example →</a>
+                </div>
+                
+                <div class="example-card">
+                    <div class="example-header">
                         <h3 class="example-title">Provider Flexibility</h3>
                         <span class="example-badge">Core Feature</span>
                     </div>
@@ -1350,7 +1417,7 @@ llm_prod = create_llm("openai", model="gpt-4o-mini")
                     </div>
                     <a href="docs/examples.html#provider-flexibility" class="example-link">View Full Example →</a>
                 </div>
-                
+
                 <div class="example-card">
                     <div class="example-header">
                         <h3 class="example-title">RAG with Embeddings</h3>
@@ -1371,26 +1438,7 @@ similarity = embedder.compute_similarity(query, docs[0])</code></pre>
                     </div>
                     <a href="docs/examples.html#rag-embeddings" class="example-link">View Full Example →</a>
                 </div>
-                
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Universal API Server</h3>
-                        <span class="example-badge">Server</span>
-                    </div>
-                    <p class="example-description">
-                        Deploy an OpenAI-compatible API server that works with all providers.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-bash"># Start server
-uvicorn abstractcore.server.app:app --port 8000
 
-# Use with any OpenAI client
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -d '{"model": "ollama/qwen3:4b-instruct", ...}'</code></pre>
-                    </div>
-                    <a href="docs/examples.html#api-server" class="example-link">View Full Example →</a>
-                </div>
-                
                 <div class="example-card">
                     <div class="example-header">
                         <h3 class="example-title">CLI Apps & Debug Mode</h3>
