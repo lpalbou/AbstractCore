@@ -167,7 +167,7 @@ print(response.tool_calls)</code></pre>
 
                 <section id="built-in-tools">
                     <h2>Built-in Tools</h2>
-                    <p>AbstractCore includes a comprehensive set of ready-to-use tools in <code>abstractcore.tools.common_tools</code>:</p>
+                    <p>AbstractCore includes a comprehensive set of ready-to-use tools in <code>abstractcore.tools.common_tools</code> (requires <code>pip install "abstractcore[tools]"</code>):</p>
 
                     <p style="color: var(--text-secondary);">
                         Web tools (notably <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, <code>fetch_url</code>) require
@@ -199,9 +199,9 @@ preview = skim_url("https://example.com/article")
 # Smaller/filtered web search (compact output)
 results = skim_websearch("HTTP caching best practices")
 
-# Intelligent web content fetching with automatic parsing
-result = fetch_url("https://api.github.com/repos/python/cpython")
-# Automatically detects JSON, HTML, images, PDFs, etc. and provides structured analysis
+	# Full web content fetching and parsing (HTML→Markdown, JSON/XML/text)
+	result = fetch_url("https://api.github.com/repos/python/cpython")
+	# For PDFs/images/other binaries, fetch_url returns metadata (and optional previews), not full extraction.
 
 # File system operations
 files = search_files("def.*fetch", ".", file_pattern="*.py")  # Find function definitions
@@ -219,14 +219,14 @@ response = llm.generate(
                     <h3>Available Built-in Tools</h3>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
                         <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">🌐 Web & Network</h4>
-                            <ul style="margin: 0; padding-left: 1.5rem;">
-                                <li><code>skim_url</code> - Fast URL skim (title/description/headings + short preview)</li>
-                                <li><code>fetch_url</code> - Intelligent web content fetching with automatic content type detection and parsing</li>
-                                <li><code>web_search</code> - Search the web using DuckDuckGo</li>
-                                <li><code>skim_websearch</code> - Smaller/filtered web search (compact result list)</li>
-                            </ul>
-                        </div>
+	                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">🌐 Web & Network</h4>
+	                            <ul style="margin: 0; padding-left: 1.5rem;">
+	                                <li><code>skim_url</code> - Fast URL skim (title/description/headings + short preview)</li>
+	                                <li><code>fetch_url</code> - Fetch + parse common text-first types (HTML→Markdown, JSON/XML/text); binaries return metadata + optional previews</li>
+	                                <li><code>web_search</code> - Search the web using DuckDuckGo</li>
+	                                <li><code>skim_websearch</code> - Smaller/filtered web search (compact result list)</li>
+	                            </ul>
+	                        </div>
                         
                         <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                             <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">📁 File Operations</h4>
@@ -240,20 +240,30 @@ response = llm.generate(
                             </ul>
                         </div>
                         
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">⚙️ System Operations</h4>
-                            <ul style="margin: 0; padding-left: 1.5rem;">
-                                <li><code>execute_command</code> - Execute shell commands safely with security controls</li>
-                            </ul>
-                        </div>
-                    </div>
+	                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
+	                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">⚙️ System Operations</h4>
+	                            <ul style="margin: 0; padding-left: 1.5rem;">
+	                                <li><code>execute_command</code> - Execute shell commands safely with security controls</li>
+	                            </ul>
+	                        </div>
+	                    </div>
 
-                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
-                        <p style="margin: 0; color: #1e40af;"><strong>Note:</strong> Built-in tools include error handling, security controls, and work with all providers and tool syntax rewriting.</p>
-                    </div>
-                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin: 1rem 0;">
-                        <p style="margin: 0; color: #92400e;"><strong>Side effects:</strong> For real email/WhatsApp sending, see <a href="communication-tools.html">Communication Tools</a>. Keep these behind an approval boundary.</p>
-                    </div>
+                        <h3>Suggested web workflow (agent-friendly)</h3>
+                        <ol style="color: var(--text-secondary);">
+                            <li><code>skim_websearch(...)</code> → get a small set of candidate URLs</li>
+                            <li><code>skim_url(...)</code> → quickly decide what’s worth fetching</li>
+                            <li><code>fetch_url(...)</code> → parse the selected URL(s); set <code>include_full_content=False</code> when you want a smaller output</li>
+                        </ol>
+                        <p style="color: var(--text-secondary); margin-top: 0;">
+                            Tip: you can measure output footprint/latency locally with <code>python examples/skim_tools_benchmark.py --help</code>.
+                        </p>
+
+	                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
+	                        <p style="margin: 0; color: #1e40af;"><strong>Note:</strong> Built-in tools include error handling, security controls, and work with all providers and tool syntax rewriting.</p>
+	                    </div>
+	                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin: 1rem 0;">
+	                        <p style="margin: 0; color: #92400e;"><strong>Side effects:</strong> For real email/WhatsApp sending, see <a href="communication-tools.html">Communication Tools</a>. Keep these behind an approval boundary.</p>
+	                    </div>
                 </section>
 
                 <section id="tool-decorator">
@@ -295,7 +305,7 @@ def create_user(name: str, age: int, is_admin: bool = False) -> str:
                     </div>
 
                     <h3>Enhanced Metadata</h3>
-                    <p>The <code>@tool</code> decorator supports rich metadata that gets automatically injected into system prompts for prompted models and passed to native APIs:</p>
+                    <p>The <code>@tool</code> decorator supports rich metadata for prompted tool calling. For native tool calling, only standard tool schema fields (<code>name</code>, <code>description</code>, <code>parameters</code>) are sent to provider APIs; custom keys are omitted for compatibility.</p>
                     
                     <div class="code-block">
                         <pre><code class="language-python">@tool(
@@ -335,10 +345,8 @@ def search_database(query: str, table: str = "users") -> str:
                     <div style="background: var(--background-tertiary); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
                         <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">🎯 How This Metadata is Used:</h4>
                         <ul style="margin: 0;">
-                            <li><strong>Prompted Models</strong>: All metadata is injected into the system prompt to guide the LLM</li>
-                            <li><strong>Native APIs</strong>: Metadata is passed through to the provider's tool API</li>
-                            <li><strong>Examples</strong>: Shown in the system prompt with proper formatting for each architecture</li>
-                            <li><strong>Tags & when_to_use</strong>: Help the LLM understand context and appropriate usage</li>
+                            <li><strong>Prompted tool calling</strong>: the tool formatter injects tool name/description/args into the system prompt. To keep prompts small, <code>when_to_use</code> is included only for small tool sets and a few high-impact tools (edit/write/execute + web triage tools), and tool examples are globally capped.</li>
+                            <li><strong>Native tool calling</strong>: only standard fields (<code>name</code>, <code>description</code>, <code>parameters</code>) are sent to provider APIs (unknown/custom fields are intentionally omitted for compatibility).</li>
                         </ul>
                     </div>
                 </section>

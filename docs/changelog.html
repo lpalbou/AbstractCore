@@ -59,6 +59,23 @@
                     For the full history, see <a href="https://github.com/lpalbou/abstractcore/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">CHANGELOG.md</a>.
                 </p>
 
+                <h2>2.11.2 <span style="color: var(--text-secondary); font-weight: 500;">(2026-02-04)</span></h2>
+
+                <h3>Added</h3>
+                <ul>
+                    <li><strong>Skim tool benchmarks:</strong> added <code>examples/skim_tools_benchmark.py</code> to measure output footprint and latency for <code>skim_websearch</code>/<code>web_search</code> and <code>skim_url</code>/<code>fetch_url</code>.</li>
+                    <li><strong>Import-safety test:</strong> added a test to ensure <code>import abstractcore</code> does not eagerly import optional deps (<code>requests</code>, <code>bs4</code>, <code>sentence_transformers</code>, <code>pymupdf*</code>, ...).</li>
+                </ul>
+
+                <h3>Changed</h3>
+                <ul>
+                    <li><strong>Skim outputs stay compact:</strong> <code>skim_websearch</code> now truncates long titles/snippets to keep tool outputs prompt-friendly by default.</li>
+                    <li><strong>Tool guidance for prompted models:</strong> tool prompts now render short <code>when_to_use</code> hints for small tool sets and a few high-impact tools (edit/write/execute + web triage tools).</li>
+                    <li><strong>Tool examples:</strong> globally-capped examples now include <code>skim_websearch</code>/<code>skim_url</code> earlier so models learn the token-efficient web triage workflow.</li>
+                    <li><strong>Native tool payload compatibility:</strong> native tool schemas no longer include non-standard metadata keys (<code>tags</code>, <code>when_to_use</code>, <code>examples</code>) to avoid strict provider schema validation failures.</li>
+                    <li><strong>Docs accuracy:</strong> clarified <code>fetch_url</code> behavior for PDFs/binaries and documented the recommended <code>skim_*</code> → <code>fetch_*</code> workflow in the docs entry points.</li>
+                </ul>
+
                 <h2>2.11.1 <span style="color: var(--text-secondary); font-weight: 500;">(2026-02-04)</span></h2>
 
                 <h3>Added</h3>
