@@ -6,13 +6,13 @@ This folder contains historical and superseded documentation files. These are ke
 
 These documents have been consolidated into the main documentation:
 
-### API Endpoint Documentation (Now in api-reference.md)
-- `embeddings-endpoint.md` → [api-reference.md](../api-reference.md#embeddings-endpoint)
-- `chat-completions-endpoint.md` → [api-reference.md](../api-reference.md#chat-completions-endpoints)
-- `providers-endpoint.md` → [api-reference.md](../api-reference.md#providers-endpoint)
+### API Endpoint Documentation (Now in server.md)
+- `embeddings-endpoint.md` → [server.md](../server.md#embeddings)
+- `chat-completions-endpoint.md` → [server.md](../server.md#chat-completions)
+- `providers-endpoint.md` → [server.md](../server.md#provider-status)
 
 ### Server Documentation (Now in server.md)
-- `server-quickstart.md` → [server.md](../server.md#quick-start-5-minutes)
+- `server-quickstart.md` → [server.md](../server.md#quick-start)
 - `server-configuration.md` → [server.md](../server.md#configuration)
 - `server-troubleshooting.md` → [troubleshooting.md](../troubleshooting.md#server-issues)
 - `codex-cli-integration.md` → [server.md](../server.md#agentic-cli-integration)
@@ -60,4 +60,3 @@ For current, up-to-date documentation, see:
 ---
 
 **Note**: Files in this archive may be outdated and are kept for historical reference only. Always refer to the current documentation in the parent `docs/` folder.
-

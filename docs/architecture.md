@@ -1,6 +1,6 @@
 # AbstractCore Architecture
 
-AbstractCore provides a unified interface to all major LLM providers with production-grade reliability. This document explains how it works internally and why it's designed this way.
+AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works internally and why it's designed this way.
 
 ## System Overview
 
@@ -456,7 +456,7 @@ llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
 
 ### 6. Event System
 
-Comprehensive observability and control through events:
+Observability hooks through events:
 
 ```mermaid
 graph TD
@@ -486,24 +486,29 @@ graph TD
 ```python
 from abstractcore.events import EventType, on_global
 
-# Cost monitoring
+# Cost monitoring (best-effort estimate; based on token usage)
 def monitor_costs(event):
-    if event.cost_usd and event.cost_usd > 0.10:
-        alert(f"High cost request: ${event.cost_usd}")
+    if event.type != EventType.GENERATION_COMPLETED:
+        return
+    cost = event.data.get("cost_usd")
+    if isinstance(cost, (int, float)) and cost > 0.10:
+        alert(f"High estimated cost: ${cost:.2f}")
 
-# Security control
-def prevent_dangerous_tools(event):
-    for call in event.data.get('tool_calls', []):
-        if call.name in ['delete_file', 'system_command']:
-            event.prevent()  # Stop tool execution
+# Tool monitoring
+def log_tools(event):
+    if event.type == EventType.TOOL_COMPLETED:
+        log(f"Tool completed: {event.data.get('tool_name')}")
 
 # Performance tracking
 def track_performance(event):
-    if event.duration_ms > 10000:
-        log(f"Slow request: {event.duration_ms}ms")
+    if event.type != EventType.GENERATION_COMPLETED:
+        return
+    duration_ms = event.data.get("duration_ms")
+    if isinstance(duration_ms, (int, float)) and duration_ms > 10_000:
+        log(f"Slow request: {float(duration_ms):.0f}ms")
 
 on_global(EventType.GENERATION_COMPLETED, monitor_costs)
-on_global(EventType.TOOL_STARTED, prevent_dangerous_tools)
+on_global(EventType.TOOL_COMPLETED, log_tools)
 on_global(EventType.GENERATION_COMPLETED, track_performance)
 ```
 
@@ -773,24 +778,12 @@ class MyProvider(BaseProvider):
         return ["text_generation", "streaming"]
 ```
 
-### Adding Custom Events
-
-```python
-from abstractcore.events import EventType, emit_global
-
-class EventType(Enum):  # Extend the enum
-    CUSTOM_EVENT = "custom_event"
-
-# Emit custom events
-emit_global(EventType.CUSTOM_EVENT, data={"custom": "data"})
-```
-
 ### Adding Tools
 
 ```python
-from abstractcore.tools import register_tool
+from abstractcore import tool
 
-@register_tool
+@tool
 def my_custom_tool(param: str) -> str:
     """Custom tool that does something useful."""
     return f"Processed: {param}"
@@ -798,21 +791,14 @@ def my_custom_tool(param: str) -> str:
 
 ## Performance Characteristics
 
-### Memory Usage
-- **Core**: ~15MB base memory
-- **Per Provider**: ~2-5MB additional
-- **Scaling**: Linear with number of concurrent requests
+AbstractCore’s overhead is usually small compared to model inference and network latency. If performance matters, benchmark on your target provider/model/hardware.
 
-### Latency Overhead
-- **Provider abstraction**: ~1-2ms overhead
-- **Event system**: ~0.5ms per event
-- **Tool parsing**: ~1-5ms depending on complexity
-- **Retry logic**: Only on failures
-
-### Throughput
-- **Single instance**: 100+ requests/second
-- **Bottleneck**: Usually the LLM provider, not AbstractCore
-- **Scaling**: Horizontal scaling through multiple instances
+Common levers:
+- Provider choice and base URL latency
+- Concurrency (async + connection pooling)
+- Streaming vs non-streaming
+- Structured output (schema size, retry behavior)
+- Tool execution strategy (pass-through vs host execution)
 
 ## Security Considerations
 

@@ -162,9 +162,10 @@
 
 ## Related Documentation
 
-### Streaming Investigation
-- [`STREAMING_INVESTIGATION.md`](./STREAMING_INVESTIGATION.md) - Concurrent investigation
-- [`STREAMING_INVESTIGATION_INDEX.md`](./STREAMING_INVESTIGATION_INDEX.md) - Index for streaming docs
+### Apps + Streaming Investigation
+- [`INVESTIGATION_INDEX.md`](./INVESTIGATION_INDEX.md) - Index for streaming/apps docs
+- [`APPS_STREAMING_INVESTIGATION.md`](./APPS_STREAMING_INVESTIGATION.md) - Apps + streaming deep dive
+- [`APPS_STREAMING_ARCHITECTURE_DIAGRAM.txt`](./APPS_STREAMING_ARCHITECTURE_DIAGRAM.txt) - Architecture diagrams
 
 ### Apps Investigation  
 - [`APPS_STREAMING_INVESTIGATION.md`](./APPS_STREAMING_INVESTIGATION.md) - Apps architecture

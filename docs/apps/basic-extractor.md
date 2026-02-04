@@ -276,16 +276,12 @@ extractor document.txt --iterate 3 --verbose
 | `--style` | `structured`, `focused`, `minimal`, `comprehensive` | `structured` | Extraction style |
 | `--length` | `brief`, `standard`, `detailed`, `comprehensive` | `brief` | Extraction depth |
 | `--entity-types` | Comma-separated list | All types | Entity types to focus on |
-| `--similarity-threshold` | 0.0-1.0 | 0.85 | Similarity threshold for deduplication |
 | `--format` | `json-ld`, `triples`, `json`, `yaml` | `json-ld` | Output format |
 | `--output` | File path | Console | Output file path |
-| `--chunk-size` | 1000-32000 | 6000 | Chunk size in characters |
+| `--chunk-size` | 1000-32000 | 8000 | Chunk size in characters |
 | `--provider` | `openai`, `anthropic`, `ollama`, etc. | `ollama` | LLM provider |
 | `--model` | Provider-specific | `qwen3:4b-instruct-2507-q4_K_M` | LLM model |
-| `--no-embeddings` | Flag | False | Disable semantic deduplication |
-| `--mode` | `fast`, `balanced`, `thorough` | `balanced` | Extraction mode |
-| `--fast` | Flag | False | Legacy flag (use --mode=fast instead) |
-| `--iterate` | 1-10 | 1 | Number of refinement iterations |
+| `--iterate` | 1-5 | 1 | Number of refinement iterations |
 | `--minified` | Flag | False | Output minified JSON |
 | `--verbose` | Flag | False | Show detailed progress |
 | `--timeout` | Seconds/none | unlimited | HTTP timeout for LLM requests. Use 'none' for unlimited or specify seconds (e.g., 600) |
@@ -302,14 +298,6 @@ Available entity types for `--entity-types` parameter:
 - `product` - Products, services, offerings
 - `date` - Temporal references, dates, times
 - `other` - Miscellaneous entities
-
-### Performance Modes
-
-| Mode | Speed | Quality | Description |
-|------|-------|---------|-------------|
-| `fast` | 2-4x faster | Good | Skip verification, larger chunks, no embeddings |
-| `balanced` | Standard | High | Default mode with verification (default) |
-| `thorough` | Slower | Highest | Maximum quality with multiple checks |
 
 ### Output Format Examples
 
@@ -490,7 +478,7 @@ python -m abstractcore.apps.extractor doc.txt --provider openai --model gpt-4o-m
 **For Faster Processing:**
 ```bash
 # Use brief extraction with fast models
-python -m abstractcore.apps.extractor doc.txt --length brief --fast
+python -m abstractcore.apps.extractor doc.txt --length brief
 ```
 
 ## Schema & Ontology
@@ -582,7 +570,6 @@ ollama serve
 - Check model output with `--verbose` flag
 
 **Large file processing slow**
-- Use `--fast` flag for speed
 - Use `length=brief` for fewer entities
 - Consider pre-processing to extract relevant sections
 
@@ -691,22 +678,10 @@ def process_documents(file_paths):
     return pd.DataFrame(results)
 ```
 
-## Performance Characteristics
+## Performance notes
 
-### Speed Benchmarks (Approximate)
+Extraction is an LLM call, so latency and cost vary by provider/model, input size, and retry behavior.
 
-| Model | Text Length | Extraction Time | Quality |
-|-------|-------------|-----------------|---------|
-| `qwen3:4b-instruct-2507-q4_K_M` | 1000 chars | 3-7 seconds | Good |
-| `qwen3-coder:30b` | 1000 chars | 8-15 seconds | High quality |
-| `gpt-oss:120b` | 1000 chars | 10-20 seconds | Optimal |
-| `gpt-4o-mini` | 1000 chars | 3-8 seconds | Optimal |
-| `claude-haiku-4-5` | 1000 chars | 2-6 seconds | Optimal |
-
-### Memory Usage
-
-- **BasicExtractor**: ~50MB base memory
-- **Local models**: +2-8GB depending on model size
-- **Large documents**: Chunking prevents memory issues
-
-BasicExtractor is designed for production use with built-in error handling, retry logic, and efficient processing of documents from small snippets to large reports.
+Practical guidance:
+- For large documents, extract in chunks (or pre-summarize) to reduce latency and avoid context limits.
+- Use a smaller model for higher throughput; use a larger model when extraction quality matters most.

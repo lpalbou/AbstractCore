@@ -343,7 +343,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-**Streaming Response**:
+#### Streaming response
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -355,7 +355,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-**With Function Calling**:
+#### With function calling
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \

@@ -211,10 +211,12 @@ config = GlyphConfig(
     enabled=True,                    # Enable/disable Glyph
     global_default="auto",           # "auto", "always", "never"
     quality_threshold=0.95,          # Minimum quality score (0-1)
+    min_token_threshold=10000,       # Minimum size to consider compression
     target_compression_ratio=3.0,    # Target compression ratio
     provider_optimization=True,      # Enable provider-specific optimization
-    cache_enabled=True,             # Enable compression caching
-    cache_ttl=3600                  # Cache time-to-live in seconds
+    cache_directory="~/.abstractcore/glyph_cache",
+    cache_size_gb=1.0,
+    cache_ttl_days=7,
 )
 ```
 
@@ -360,36 +362,32 @@ benchmark_compression("large_document.pdf", "llama3.2-vision:11b")
 
 ### Debug Mode
 
-```python
-from abstractcore import create_llm
-from abstractcore.compression import GlyphConfig
+Enable verbose logging via AbstractCore’s centralized config:
 
-# Enable detailed logging
-config = GlyphConfig(enabled=True, debug_mode=True)
-llm = create_llm("ollama", model="qwen2.5vl:7b", glyph_config=config)
-
-# Check compression decision
-response = llm.generate("Analyze", media=["doc.pdf"])
-print(response.metadata)  # Contains compression decision details
+```bash
+abstractcore --set-console-log-level DEBUG
+# or:
+abstractcore --enable-debug-logging
 ```
 
-## Performance Characteristics
+Then inspect response metadata for compression decisions:
 
-### Compression Effectiveness
+```python
+from abstractcore import create_llm
 
-| Content Type | Compression Ratio | Quality Score | Use Case |
-|--------------|-------------------|---------------|----------|
-| **Prose/Natural Language** | 3-4x | 95-98% | Documents, articles, reports |
-| **Code** | 2-3x | 90-95% | Source code, technical docs |
-| **Structured Data** | 2x | 85-90% | JSON, CSV, configuration files |
-| **Mixed Content** | 2.5-3.5x | 90-95% | Technical documentation |
+llm = create_llm("ollama", model="qwen2.5vl:7b")
+resp = llm.generate("Analyze", media=["doc.pdf"])
+print(resp.metadata)
+```
 
-### Processing Times
+## Performance and quality
 
-- **First Compression**: 5-30 seconds (includes optimization)
-- **Cached Compression**: 1-5 seconds (reuses configuration)
-- **Quality Validation**: <1 second
-- **Net Processing Time**: Often faster due to 4x inference speedup
+Glyph is a best-effort optimization. Compression ratio and accuracy depend on the vision model, rendering settings (DPI/font size), and the content type (prose vs code vs tables).
+
+Treat it as an optional acceleration technique:
+- validate outputs on your workload
+- keep `glyph_compression="auto"` unless you have a strong reason to force it
+- prefer higher DPI / lower compression ratios for quality-critical tasks
 
 ## Best Practices
 
@@ -429,7 +427,8 @@ config = GlyphConfig(
 config = GlyphConfig(
     quality_threshold=0.90,        # Lower quality for speed
     target_compression_ratio=4.0,  # Aggressive compression
-    cache_enabled=True             # Enable caching for repeated content
+    cache_ttl_days=30,             # Keep artifacts longer for repeated runs
+    cache_size_gb=5.0,             # Increase cache size for many documents
 )
 ```
 

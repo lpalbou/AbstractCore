@@ -136,12 +136,17 @@ for chunk in llm.generate("Tell me about Paris weather", tools=tools, stream=Tru
 **What it does**: Comprehensive events for monitoring, debugging, and control.
 
 ```python
-# Monitor costs in real-time
-def cost_monitor(event):
-    if event.cost_usd > 0.10:
-        alert(f"High cost request: ${event.cost_usd}")
+from abstractcore.events import EventType, on_global
 
-on_global(EventType.AFTER_GENERATE, cost_monitor)
+def cost_monitor(event):
+    if event.type != EventType.GENERATION_COMPLETED:
+        return
+    cost = event.data.get("cost_usd")
+    if isinstance(cost, (int, float)) and cost > 0.10:
+        # NOTE: `cost_usd` is a best-effort estimate based on token usage.
+        alert(f"High estimated cost: ${cost:.2f}")
+
+on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 ```
 
 **Why this helps**: Provides built-in observability for monitoring and debugging.

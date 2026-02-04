@@ -1,10 +1,10 @@
 # Prerequisites & Setup Guide
 
-This guide walks you through setting up AbstractCore with different LLM providers. Choose the provider(s) that suitable for your needs - you can use multiple providers in the same application.
+This guide walks you through setting up AbstractCore with different LLM providers. Choose the provider(s) that are suitable for your needs — you can use multiple providers in the same application.
 
 ## Quick Decision Guide
 
-**Want to get started immediately?** → [OpenAI Setup](#openai-setup) (requires API key, costs ~$0.001-0.01 per request)
+**Want to get started immediately?** → [OpenAI Setup](#openai-setup) (requires API key)
 
 **Want free local models?** → [Ollama Setup](#ollama-setup) (free, runs on your machine)
 
@@ -54,9 +54,7 @@ pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excl
 
 ### OpenAI Setup
 
-**Best for**: Production applications, latest models (GPT-4o, GPT-4o-mini), fast inference
-
-**Cost**: ~$0.001-0.01 per request depending on model
+**Best for**: Production applications and OpenAI’s hosted models
 
 #### 1. Get API Key
 
@@ -84,19 +82,17 @@ echo 'OPENAI_API_KEY=sk-your-actual-api-key-here' > .env
 ```python
 from abstractcore import create_llm
 
-# Test with GPT-4o-mini (fastest, cheapest)
+# Test with an example model (use any model available on your account)
 llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("Say hello in French")
 print(response.content)  # Should output: "Bonjour!"
 ```
 
-**Available Models**: `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-3.5-turbo`
+**Model names**: Use any model supported by your account (examples: `gpt-4o-mini`, `gpt-4o`).
 
 ### Anthropic Setup
 
-**Best for**: Long context tasks, Claude models, high-quality reasoning
-
-**Cost**: ~$0.001-0.02 per request depending on model
+**Best for**: Claude models via Anthropic’s API
 
 #### 1. Get API Key
 
@@ -125,19 +121,19 @@ echo 'ANTHROPIC_API_KEY=sk-ant-your-actual-api-key-here' > .env
 ```python
 from abstractcore import create_llm
 
-# Test with Claude Haiku 4.5 (fast, cost-effective)
+# Test with an example model (use any model available on your account)
 llm = create_llm("anthropic", model="claude-haiku-4-5")
 response = llm.generate("Explain Python in one sentence")
 print(response.content)
 ```
 
-**Available Models**: `claude-haiku-4-5`, `claude-sonnet-4-5`, `claude-opus-4-5`
+**Model names**: Use any model supported by your account (examples: `claude-haiku-4-5`, `claude-sonnet-4-5`).
 
 ## Local Provider Setup
 
 ### Ollama Setup
 
-**Best for**: Privacy, no costs, offline usage, customization
+**Best for**: Privacy, no API keys, offline usage, customization
 
 **Requirements**: 8GB+ RAM, works on Mac/Linux/Windows
 
@@ -169,19 +165,9 @@ ollama serve
 #### 3. Download Models
 
 ```bash
-# Recommended starter models (verified available)
-ollama pull qwen3-coder:30b      # 18GB - Suitable for code, works great with AbstractCore
-ollama pull qwen3:4b-instruct-2507-q4_K_M     # 4GB - AbstractCore default, balanced performance
-ollama pull gemma3:1b            # 815MB - Very fast, good quality
-ollama pull cogito:3b            # 2.2GB - Good general purpose
-
-# Smaller models for resource-constrained systems
-ollama pull gemma3:270m-it-qat   # 241MB - Ultra-fast for testing
-ollama pull gemma3:270m          # 291MB - Minimal resource usage
-
-# Specialized models
-ollama pull nomic-embed-text     # 274MB - For embeddings
-ollama pull granite3.3:2b        # 1.5GB - Good general purpose
+# Pull any model you want to use, then verify it's installed.
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+ollama list
 ```
 
 #### 4. Test Setup
@@ -189,24 +175,13 @@ ollama pull granite3.3:2b        # 1.5GB - Good general purpose
 ```python
 from abstractcore import create_llm
 
-# Test with a fast model
-llm = create_llm("ollama", model="gemma3:1b")
+# Test with any model you installed via `ollama pull ...`
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
 response = llm.generate("What is Python?")
 print(response.content)
 ```
 
-#### Model Selection Guide
-
-| Model | Size | RAM Needed | Speed | Primary Use Cases |
-|-------|------|------------|-------|----------|
-| `gemma3:270m-it-qat` | 241MB | 2GB | Fast | Ultra-fast testing |
-| `qwen3:4b-instruct-2507-q4_K_M` | 4GB | 8GB | Medium | AbstractCore default, balanced performance |
-| `gemma3:1b` | 815MB | 4GB | Fast | Fast general purpose |
-| `cogito:3b` | 2.2GB | 6GB | Medium | Balanced quality/speed |
-| `granite3.3:2b` | 1.5GB | 6GB | Medium | Good reasoning |
-| `qwen3-coder:30b` | 18GB | 32GB | Slow | Code generation, complex tasks |
-
-### MLX Setup (Apple Silicon)
+### MLX Setup
 
 **Best for**: M1/M2/M3/M4 Macs, optimized inference, good speed
 
@@ -282,10 +257,11 @@ print(response.content)
 ```python
 from abstractcore import create_llm
 
-# LMStudio runs on localhost:1234 by default
-llm = create_llm("lmstudio", base_url="http://localhost:1234")
-response = llm.generate("Hello, how are you?")
-print(response.content)
+# LM Studio exposes an OpenAI-compatible server (default: http://localhost:1234/v1).
+# Use the model ID shown in LM Studio (or try "local-model" if unsure).
+llm = create_llm("lmstudio", model="local-model", base_url="http://localhost:1234/v1")
+resp = llm.generate("Hello, how are you?")
+print(resp.content)
 ```
 
 ### HuggingFace Setup
@@ -516,11 +492,7 @@ export HF_HOME="~/.cache/huggingface"
 - `mistralai/Mistral-7B-Instruct-v0.3` - Fast and efficient
 - Any HuggingFace model compatible with vLLM
 
-**Performance Expectations**:
-- Single GPU: 40-80 tokens/sec for 30B models
-- 4 GPUs (tensor parallel): 100-200 tokens/sec for 30B models
-- PagedAttention: <4% memory waste, 24x throughput vs HF Transformers
-- Continuous batching: No waiting for batch completion
+**Performance notes**: Throughput depends on model size, context length, concurrency, quantization, and GPU. See vLLM docs for tuning knobs (`--tensor-parallel-size`, `--max-model-len`, `--max-num-seqs`, …).
 
 ## Troubleshooting
 
@@ -690,26 +662,11 @@ Some tests are intentionally **real network calls** and are disabled by default.
 
 Example (OpenRouter):
 ```bash
-ABSTRACTCORE_RUN_LIVE_API_TESTS=1 OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \\
-  .venv/bin/python -m pytest -q abstractcore/tests/test_graceful_fallback.py::test_openrouter_generation_smoke
+ABSTRACTCORE_RUN_LIVE_API_TESTS=1 OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+  python -m pytest -q tests/test_graceful_fallback.py::test_openrouter_generation_smoke
 ```
 
-## Performance Recommendations
-
-### For Development
-- **Local**: `ollama` with `gemma3:1b` (fast, free)
-- **Cloud**: `openai` with `gpt-4o-mini` (fast, cheap)
-
-### For Production
-- **High Quality**: `openai` with `gpt-4o` or `anthropic` with `claude-sonnet-4-5`
-- **Cost-Effective**: `openai` with `gpt-4o-mini`
-- **Privacy**: `ollama` with `qwen2.5:14b` (if you have the hardware)
-
-### For Specific Tasks
-- **Code Generation**: `ollama` with `qwen2.5-coder:7b`
-- **Long Context**: `anthropic` with Claude models (up to 200K tokens)
-- **Fast Responses**: `ollama` with `gemma3:1b` or `openai` with `gpt-4o-mini`
-- **Offline/Air-gapped**: `ollama` or `mlx` with downloaded models
+Local provider smoke tests use `ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1` (and `ABSTRACTCORE_RUN_MLX_TESTS=1` for MLX).
 
 ## Security Notes
 

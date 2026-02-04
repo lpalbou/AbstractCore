@@ -1190,21 +1190,17 @@ that you must justify
           --
           /Users/albou/projects/abstractcore/abstractcore/tools/README.md-31-
           /Users/albou/projects/abstractcore/abstractcore/tools/README.md-32--
-          **How do I define a tool?** → See [Defining Tools](#defining-tools)
+          **How do I define a tool?** → See [Tool Calling](../../tool-calling.md)
           /Users/albou/projects/abstractcore/abstractcore/tools/README.md-33--
-          **How do I register a tool?** → See [Registering
-          Tools](#registering-tools)
+          **How do I register a tool?** → See Registering Tools
           abstractcore/tools/README.md:34:- **How do I execute tools?** → See
-          [Executing Tools](#executing-tools)
+          [Tool Calling](../../tool-calling.md)
           /Users/albou/projects/abstractcore/abstractcore/tools/README.md-35--
-          **How do I use tools with an LLM?** → See [Using with
-          LLM](#using-with-llm)
+          **How do I use tools with an LLM?** → See Using with LLM
           /Users/albou/projects/abstractcore/abstractcore/tools/README.md-36--
-          **How do I convert tool formats?** → See [Syntax
-          Rewriting](#3-syntax_rewriterpy---format-transformation)
+          **How do I convert tool formats?** → See Syntax Rewriting
           /Users/albou/projects/abstractcore/abstractcore/tools/README.md-37--
-          **How do I handle tool errors?** → See [Error
-          Handling](#2-validation-in-tools)
+          **How do I handle tool errors?** → See Error Handling
           --
           abstractcore/tools/README.md-356-    def execute_tool(self, tool_call:
            ToolCall) -> ToolResult:

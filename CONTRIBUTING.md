@@ -1,198 +1,97 @@
 # Contributing to AbstractCore
 
-We welcome contributions to AbstractCore! This guide will help you get started.
+Thanks for contributing to AbstractCore. This guide is written for external contributors and focuses on a fast setup, practical repo conventions, and a smooth PR process.
 
-## Quick Start for Contributors
+## Quick start
 
-1. **Fork the repository** on GitHub
-2. **Clone your fork** locally:
-   ```bash
-   git clone https://github.com/lpalbou/AbstractCore.git
-   cd AbstractCore
-   ```
-3. **Install in development mode**:
-   ```bash
-   pip install -e ".[all]"  # Install with all optional dependencies
-   ```
-4. **Run tests** to make sure everything works:
-   ```bash
-   pytest
-   ```
-
-## How to Contribute
-
-### 🐛 Bug Reports
-- Use GitHub Issues to report bugs
-- Include your Python version, AbstractCore version, and provider details
-- Provide a minimal code example that reproduces the issue
-- Include the full error message and traceback
-
-### 💡 Feature Requests
-- Check existing issues to avoid duplicates
-- Clearly describe the use case and expected behavior
-- Consider if the feature aligns with AbstractCore's philosophy of being focused infrastructure
-
-### 🔧 Code Contributions
-
-#### Development Setup
 ```bash
-# Clone the repo
 git clone https://github.com/lpalbou/AbstractCore.git
 cd AbstractCore
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+python -m pip install -U pip
 
-# Install in development mode with all dependencies
-pip install -e ".[all]"
+# Tooling + tests (recommended baseline for contributors)
+pip install -e ".[dev,test]"
 
-# Install development tools
-pip install pytest black isort mypy
+pytest -q
 ```
 
-#### Code Style
-- **Black** for code formatting: `black .`
-- **isort** for import sorting: `isort .`
-- **Type hints** are required for new code
-- **Docstrings** for all public functions and classes
+### Optional extras (install only what you need)
 
-#### Testing
-- **No mocking** - AbstractCore tests against real implementations
-- **Cross-provider testing** - Ensure features work across all providers
-- **Integration tests** - Test real-world scenarios
-- **Run tests**: `pytest`
+AbstractCore’s default install is intentionally lightweight. Most features and provider SDKs are behind extras:
 
-#### Version Management
-
-AbstractCore uses a **dual-version system** for reliable version management:
-
-1. **Source of Truth**: `abstractcore/utils/version.py` contains the static version string
-2. **Build System**: `pyproject.toml` uses dynamic versioning to read from the version file
-3. **Manual Sync Required**: Both files must be updated when releasing new versions
-
-**For Release Maintainers:**
 ```bash
-# 1. Update the version in version.py
-# Edit abstractcore/utils/version.py:
-__version__ = "2.3.8"  # Update this line
-
-# 2. The pyproject.toml automatically reads from version.py during build
-# No manual update needed in pyproject.toml
-
-# 3. Verify version consistency
-python -c "import abstractcore; print(f'Version: {abstractcore.__version__}')"
-
-# 4. Build and test
-python -m build --wheel
+pip install -e ".[openai]"       # OpenAI SDK
+pip install -e ".[anthropic]"    # Anthropic SDK
+pip install -e ".[tools]"        # requests/bs4/lxml/ddgs for built-in tools
+pip install -e ".[media]"        # Pillow + PDF/Office extraction
+pip install -e ".[embeddings]"   # sentence-transformers + numpy
+pip install -e ".[server]"       # FastAPI gateway
 ```
 
-**Why This Approach:**
-- **Reliability**: Static version works in all deployment scenarios (development, installed packages, Docker, etc.)
-- **Single Source**: Python code always reads from one place (`version.py`)
-- **Build Integration**: Setuptools automatically reads version during packaging
-- **No Dependencies**: No runtime dependency on `pyproject.toml` or external tools
+If you want a “kitchen sink” contributor environment, `full-dev` is a convenient superset, but it may not install everywhere (for example MLX vs CUDA-only stacks):
 
-#### Pull Request Guidelines
-1. **Create a feature branch**: `git checkout -b feature/your-feature-name`
-2. **Write tests** for your changes
-3. **Update documentation** if needed
-4. **Run the full test suite**: `pytest`
-5. **Format code**: `black . && isort .`
-6. **Commit with clear messages**:
-   ```bash
-   git commit -m "Add retry logic for structured output validation
-
-   - Implement FeedbackRetry class with error feedback
-   - Add automatic validation retry in StructuredOutputHandler
-   - Include comprehensive tests for retry scenarios"
-   ```
-7. **Push and create PR** on GitHub
-
-## Types of Contributions We Need
-
-### 🔌 Provider Support
-- **New providers**: Add support for additional LLM providers
-- **Model updates**: Update model lists and capabilities
-- **Provider bug fixes**: Fix provider-specific issues
-
-### 🛠️ Tool System
-- **New common tools**: Add useful tools to `abstractcore/tools/common_tools.py`
-- **Tool improvements**: Better error handling, validation, examples
-- **Architecture support**: Tool calling for new model architectures
-
-### 📊 Structured Output
-- **Validation improvements**: Better error messages and retry logic
-- **Pydantic compatibility**: Support for new Pydantic features
-- **Provider compatibility**: Ensure structured output works across providers
-
-### 🔄 Reliability & Performance
-- **Retry mechanisms**: Improve retry logic and error handling
-- **Circuit breakers**: Enhance circuit breaker functionality
-- **Performance**: Optimize hot code paths
-
-### 📖 Documentation
-- **Examples**: Real-world use cases and code examples
-- **Guides**: Tutorials for specific use cases
-- **API docs**: Improve API reference documentation
-- **Troubleshooting**: Common issues and solutions
-
-## Code Organization
-
-```
-abstractcore/
-├── core/           # Core interfaces and base classes
-├── providers/      # LLM provider implementations
-├── tools/          # Tool calling system
-├── structured/     # Structured output handling
-├── events/         # Event system
-├── embeddings/     # Vector embeddings
-├── utils/          # Utilities and helpers
-└── exceptions/     # Custom exceptions
+```bash
+pip install -e ".[full-dev]"
 ```
 
-## What We DON'T Want
+## Repository conventions
 
-AbstractCore is focused infrastructure. We generally **don't accept** contributions for:
+### Dependency and import-safety policy (important)
 
-- **Application-level features** (use AbstractAgent/AbstractMemory instead)
-- **Complex workflows** (keep AbstractCore simple)
-- **Heavy dependencies** (maintain lightweight core)
-- **Provider-specific hacks** (prefer universal solutions)
-- **Framework lock-in** (maintain provider agnosticism)
+AbstractCore is designed so:
+- `pip install abstractcore` stays small.
+- `import abstractcore` stays import-safe.
 
-## Development Philosophy
+When contributing:
+- Don’t add heavy libraries to core `dependencies` in `pyproject.toml`.
+- Keep optional subsystems behind explicit extras (`[tools]`, `[media]`, `[embeddings]`, `[server]`, provider SDKs).
+- Avoid importing optional dependencies on default import paths (for example `abstractcore/__init__.py`). Prefer lazy imports and clear install hints like `pip install "abstractcore[media]"`.
 
-### Keep It Simple
-- AbstractCore should remain lightweight and focused
-- Prefer simple, universal solutions over complex ones
-- Each feature should work across all providers
+### Style
 
-### Production First
-- All code should be production-ready
-- Include comprehensive error handling
-- Add proper logging and observability
+```bash
+black .
+ruff check .
+```
 
-### No Breaking Changes
-- Maintain backward compatibility
-- Use deprecation warnings for removed features
-- Follow semantic versioning
+### Tests
 
-## Getting Help
+```bash
+pytest -q
+```
 
-- **GitHub Discussions** for questions and ideas
-- **GitHub Issues** for bug reports and feature requests
-- **Look at existing code** to understand patterns and conventions
+Some provider-/network-/hardware-dependent tests are intentionally opt-in and may skip locally. See `tests/README_VISION_TESTING.md` and `tests/README_SEED_TESTING.md`.
 
-## Recognition
+## Documentation
 
-Contributors are recognized in:
-- **Git commits** show your contributions
-- **Release notes** highlight significant contributions
-- **ACKNOWLEDGEMENTS.md** lists all contributors
+If a change affects user-facing behavior, update the docs entry points:
+- `README.md`
+- `docs/getting-started.md`
+- `docs/faq.md`
 
-## Questions?
+Keep language clear, user-oriented, and accurate to the code (the code is the source of truth).
 
-Feel free to open a GitHub Discussion if you have questions about contributing, need help getting started, or want to discuss a potential contribution.
+## Pull request checklist
 
-Thank you for contributing to AbstractCore! 🚀
+- Add or update tests where appropriate.
+- Run `pytest -q`.
+- Run `black .` and `ruff check .`.
+- Update relevant documentation.
+- Add a changelog entry when the change is user-visible.
+
+## Versioning (maintainers)
+
+The package version is sourced from `abstractcore/utils/version.py`.
+
+For a release:
+1. Bump `abstractcore/utils/version.py`.
+2. Add a new section to `CHANGELOG.md`.
+3. Verify: `python -c "import abstractcore; print(abstractcore.__version__)"`
+
+## Security
+
+If you believe you found a security vulnerability, please follow `SECURITY.md` for responsible disclosure.
+

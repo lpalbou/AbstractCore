@@ -264,8 +264,8 @@ asyncio.run(compare_providers())
 ```
 
 **Features:**
-- Works with all 6 providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
-- 3-10x faster batch operations via concurrent execution
+- Works across AbstractCore providers (cloud + local); some use native async, others fall back to `asyncio.to_thread()`
+- Faster batch operations via concurrent execution (depends on provider, network, and hardware)
 - Full streaming support with AsyncIterator
 - Compatible with FastAPI and async web frameworks
 - Zero breaking changes to sync API
@@ -564,31 +564,33 @@ Available event types for monitoring.
 ```python
 class EventType(Enum):
     # Generation events
-    BEFORE_GENERATE = "before_generate"
-    AFTER_GENERATE = "after_generate"
+    GENERATION_STARTED = "generation_started"
+    GENERATION_COMPLETED = "generation_completed"
 
     # Tool events
-    BEFORE_TOOL_EXECUTION = "before_tool_execution"
-    AFTER_TOOL_EXECUTION = "after_tool_execution"
+    TOOL_STARTED = "tool_started"
+    TOOL_PROGRESS = "tool_progress"
+    TOOL_COMPLETED = "tool_completed"
 
-    # Structured output events
-    STRUCTURED_OUTPUT_REQUESTED = "structured_output_requested"
-    VALIDATION_FAILED = "validation_failed"
-    VALIDATION_SUCCEEDED = "validation_succeeded"
+    # Error handling
+    ERROR = "error"
 
-    # Retry events
+    # Retry and resilience events
     RETRY_ATTEMPTED = "retry_attempted"
     RETRY_EXHAUSTED = "retry_exhausted"
 
-    # Session events
+    # Useful events
+    VALIDATION_FAILED = "validation_failed"
     SESSION_CREATED = "session_created"
-    SESSION_SAVED = "session_saved"
-    SESSION_LOADED = "session_loaded"
     SESSION_CLEARED = "session_cleared"
+    COMPACTION_STARTED = "compaction_started"
+    COMPACTION_COMPLETED = "compaction_completed"
 
-    # System events
-    PROVIDER_CREATED = "provider_created"
-    ERROR_OCCURRED = "error_occurred"
+    # Runtime/workflow events
+    WORKFLOW_STEP_STARTED = "workflow_step_started"
+    WORKFLOW_STEP_COMPLETED = "workflow_step_completed"
+    WORKFLOW_STEP_WAITING = "workflow_step_waiting"
+    WORKFLOW_STEP_FAILED = "workflow_step_failed"
 ```
 
 ### on_global()
@@ -608,17 +610,26 @@ def on_global(event_type: EventType, handler: Callable[[Event], None]) -> None
 from abstractcore.events import EventType, on_global
 
 def cost_monitor(event):
-    if hasattr(event, 'cost_usd') and event.cost_usd:
-        print(f"Cost: ${event.cost_usd:.4f}")
+    cost = event.data.get("cost_usd")
+    if cost:
+        # NOTE: `cost_usd` is a best-effort estimate based on token usage.
+        print(f"Estimated cost: ${cost:.4f}")
 
 def tool_monitor(event):
-    tool_calls = event.data.get('tool_calls', [])
-    for call in tool_calls:
-        print(f"Tool called: {call['name']}")
+    # Tool event payload shape varies by emitter.
+    # - Single-tool execution: {"tool_name": ..., "success": ..., ...}
+    # - Batch execution: {"tool_results": [{"name": ..., "success": ...}, ...], ...}
+    tool_name = event.data.get("tool_name")
+    if tool_name:
+        print(f"Tool completed: {tool_name} success={event.data.get('success')}")
+        return
+
+    for r in event.data.get("tool_results", []) or []:
+        print(f"Tool completed: {r.get('name')} success={r.get('success')} error={r.get('error')}")
 
 # Register handlers
-on_global(EventType.AFTER_GENERATE, cost_monitor)
-on_global(EventType.BEFORE_TOOL_EXECUTION, tool_monitor)
+on_global(EventType.GENERATION_COMPLETED, cost_monitor)
+on_global(EventType.TOOL_COMPLETED, tool_monitor)
 
 # Now all LLM operations will trigger these handlers
 llm = create_llm("openai", model="gpt-4o-mini")
@@ -633,23 +644,10 @@ Event object passed to handlers.
 @dataclass
 class Event:
     type: EventType
-    data: Dict[str, Any]
     timestamp: datetime
-    duration_ms: Optional[float] = None
-    cost_usd: Optional[float] = None
-    tokens_input: Optional[int] = None
-    tokens_output: Optional[int] = None
-    model_name: Optional[str] = None
-    provider_name: Optional[str] = None
+    data: Dict[str, Any]
+    source: Optional[str] = None
 ```
-
-**Methods:**
-
-#### prevent()
-```python
-def prevent(self) -> None
-```
-Prevent default behavior (only works for preventable events like `BEFORE_TOOL_EXECUTION`).
 
 ## Retry Configuration
 
@@ -890,22 +888,25 @@ total_cost = 0.0
 def production_monitor(event):
     global total_cost
 
-    if event.type == EventType.AFTER_GENERATE:
-        if event.cost_usd:
-            total_cost += event.cost_usd
-            logger.info(f"Request cost: ${event.cost_usd:.4f}, Total: ${total_cost:.4f}")
+    if event.type == EventType.GENERATION_COMPLETED:
+        cost = event.data.get("cost_usd")
+        if cost:
+            # NOTE: `cost_usd` is a best-effort estimate based on token usage.
+            total_cost += float(cost)
+            logger.info(f"Estimated cost: ${float(cost):.4f}, Total: ${total_cost:.4f}")
 
-        if event.duration_ms and event.duration_ms > 10000:
-            logger.warning(f"Slow request: {event.duration_ms:.0f}ms")
+        duration_ms = event.data.get("duration_ms")
+        if isinstance(duration_ms, (int, float)) and duration_ms > 10_000:
+            logger.warning(f"Slow request: {float(duration_ms):.0f}ms")
 
-    elif event.type == EventType.ERROR_OCCURRED:
+    elif event.type == EventType.ERROR:
         logger.error(f"Error: {event.data.get('error')}")
 
     elif event.type == EventType.RETRY_ATTEMPTED:
         logger.info(f"Retrying due to: {event.data.get('error_type')}")
 
-on_global(EventType.AFTER_GENERATE, production_monitor)
-on_global(EventType.ERROR_OCCURRED, production_monitor)
+on_global(EventType.GENERATION_COMPLETED, production_monitor)
+on_global(EventType.ERROR, production_monitor)
 on_global(EventType.RETRY_ATTEMPTED, production_monitor)
 ```
 

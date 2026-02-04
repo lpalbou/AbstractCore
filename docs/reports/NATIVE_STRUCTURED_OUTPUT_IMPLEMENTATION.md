@@ -122,7 +122,7 @@ def _has_native_support(self, provider) -> bool:
 
 ### Ollama Native Format
 
-**Research Reference**: `docs/research/structured/ollama-structured_outputs_deep_dive.md`
+**Research Reference**: `docs/research/structured/ollama-structured_outputs_deep_dive.md` (repo-relative) / `../research/structured/ollama-structured_outputs_deep_dive.md` (relative)
 
 **Key Points**:
 - Uses `format` parameter with full JSON schema
@@ -148,7 +148,7 @@ payload = {
 
 ### LMStudio Native Format
 
-**Research Reference**: `docs/research/structured/lmstudio-http-structured-response.md`
+**Research Reference**: `docs/research/structured/lmstudio-http-structured-response.md` (repo-relative) / `../research/structured/lmstudio-http-structured-response.md` (relative)
 
 **Key Points**:
 - Uses OpenAI-compatible `response_format` parameter
@@ -313,7 +313,7 @@ This implementation provides robust, efficient, and reliable structured output s
 
 ## References
 
-- [Ollama Structured Outputs Deep Dive](docs/research/structured/ollama-structured_outputs_deep_dive.md)
-- [LMStudio HTTP Structured Response](docs/research/structured/lmstudio-http-structured-response.md)
+- [Ollama Structured Outputs Deep Dive](../research/structured/ollama-structured_outputs_deep_dive.md)
+- [LMStudio HTTP Structured Response](../research/structured/lmstudio-http-structured-response.md)
 - [Ollama API Documentation](https://github.com/ollama/ollama/blob/main/docs/api.md#generate-a-chat-completion)
 - [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)

@@ -253,6 +253,5 @@ Potential improvements:
 
 **Related Documentation:**
 - [Server Configuration](server-configuration.md)
-- [Embeddings](embeddings.md)
-- [Getting Started](getting-started.md)
-
+- [Embeddings](../embeddings.md)
+- [Getting Started](../getting-started.md)

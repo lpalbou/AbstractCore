@@ -239,6 +239,7 @@ Start here:
 - [Docs Index](docs/README.md) — navigation for all docs
 - [Prerequisites](docs/prerequisites.md) — provider setup (keys, local servers, hardware notes)
 - [Getting Started](docs/getting-started.md) — first call + core concepts
+- [FAQ](docs/faq.md) — common questions and setup gotchas
 - [Examples](docs/examples.md) — end-to-end patterns and recipes
 - [Troubleshooting](docs/troubleshooting.md) — common failures and fixes
 
@@ -260,6 +261,7 @@ Core features:
 
 Reference and internals:
 - [Architecture](docs/architecture.md) — system overview + event system
+- [API (Python)](docs/api.md) — how to use the public API
 - [API Reference](docs/api-reference.md) — Python API (including events)
 - [Server](docs/server.md) — OpenAI-compatible gateway with tool/media support
 - [CLI Guide](docs/acore-cli.md) — interactive `abstractcore-chat` walkthrough
@@ -267,6 +269,8 @@ Reference and internals:
 Project:
 - [Changelog](CHANGELOG.md) — version history and upgrade notes
 - [Contributing](CONTRIBUTING.md) — dev setup and contribution guidelines
+- [Security](SECURITY.md) — responsible vulnerability reporting
+- [Acknowledgements](ACKNOWLEDGEMENTS.md) — upstream projects and communities
 
 ## License
 

@@ -1363,22 +1363,25 @@ class CostMonitor:
         self.requests = []
 
         # Register event handlers
-        on_global(EventType.AFTER_GENERATE, self.track_cost)
+        on_global(EventType.GENERATION_COMPLETED, self.track_cost)
 
     def track_cost(self, event):
         """Track costs from generation events."""
-        if hasattr(event, 'cost_usd') and event.cost_usd:
-            self.total_cost += event.cost_usd
+        cost = event.data.get("cost_usd")
+        if cost:
+            # NOTE: `cost_usd` is a best-effort estimate based on token usage.
+            cost_f = float(cost)
+            self.total_cost += cost_f
             self.requests.append({
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': event.timestamp.isoformat(),
                 'provider': event.data.get('provider'),
                 'model': event.data.get('model'),
-                'cost': event.cost_usd,
-                'tokens_input': event.tokens_input,
-                'tokens_output': event.tokens_output
+                'cost_usd': cost_f,
+                'tokens_input': event.data.get('tokens_input'),
+                'tokens_output': event.data.get('tokens_output')
             })
 
-            print(f"[COST] ${event.cost_usd:.4f} | Total: ${self.total_cost:.4f}")
+            print(f"[COST] ${cost_f:.4f} | Total: ${self.total_cost:.4f}")
 
             if self.total_cost > self.budget_limit:
                 print(f"[WARN] BUDGET EXCEEDED: ${self.total_cost:.4f} > ${self.budget_limit}")

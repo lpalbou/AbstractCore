@@ -552,10 +552,10 @@ class CompressionAnalytics:
 
 ### 1. Choose the Right Method
 
-- **< 1,000 tokens**: Don't compress (overhead not worth it)
-- **1,000-10,000 tokens**: Standard Glyph (2.8-3.5x)
-- **10,000-100,000 tokens**: Optimized Glyph (3.5-4.5x)
-- **> 100,000 tokens**: Consider hybrid (5-15x)
+- **< 1,000 tokens**: Don’t compress (overhead often isn’t worth it)
+- **1,000–10,000 tokens**: Standard Glyph may help (measure on your workload)
+- **10,000–100,000 tokens**: Optimized Glyph may help (measure on your workload)
+- **> 100,000 tokens**: Consider hybrid (experimental; validate quality carefully)
 
 ### 2. Balance Quality and Compression
 
@@ -616,9 +616,9 @@ except Exception as e:
 
 ### Realistic Expectations
 
-- **Maximum practical compression**: 10-15x with good quality
-- **Processing overhead**: 1-5 seconds depending on document size
-- **Quality tradeoff**: Higher compression = lower quality
+- **Compression ratio**: Varies widely by content, rendering settings, and the vision model’s OCR/tokenizer behavior
+- **Overhead**: Rendering + vision inference adds latency; caching can help for repeated runs
+- **Quality tradeoff**: Higher compression targets can reduce fidelity
 - **Provider dependency**: Requires vision-capable models
 
 ### Not Suitable For
@@ -630,4 +630,4 @@ except Exception as e:
 
 ---
 
-*For technical details and research background, see [Vision Compression Reality Report](report/vision-compression-reality.md)*
+*For technical details and research background, see [Vision Compression Reality Report](reports/vision-compression-reality.md)*

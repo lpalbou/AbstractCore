@@ -828,7 +828,7 @@ def generate_with_complexity_reduction(llm, prompt, model_class):
 
 - [Ollama Structured Outputs Deep Dive](../research/structured/ollama-structured_outputs_deep_dive.md)
 - [LMStudio HTTP Structured Response](../research/structured/lmstudio-http-structured-response.md)
-- [Native Structured Output Implementation](../NATIVE_STRUCTURED_OUTPUT_IMPLEMENTATION.md)
+- [Native Structured Output Implementation](../reports/NATIVE_STRUCTURED_OUTPUT_IMPLEMENTATION.md)
 - [Ollama API Documentation](https://github.com/ollama/ollama/blob/main/docs/api.md)
 - [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
 

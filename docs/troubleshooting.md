@@ -248,7 +248,7 @@ pip install abstractcore
 # Install with specific provider
 pip install "abstractcore[openai]"
 pip install "abstractcore[anthropic]"
-pip install "abstractcore[ollama]"
+# Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, ...) work with the core install.
 
 # Install the full feature set (pick one)
 pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
@@ -644,7 +644,7 @@ echo $ANTHROPIC_API_KEY  # Should start with sk-ant-
 
 ### LMStudio
 
-**Issue: Connection refused**
+#### Issue: Connection refused
 ```bash
 # Verify LMStudio server is running
 # Check LMStudio GUI shows "Server running"
@@ -655,7 +655,7 @@ curl http://localhost:1234/v1/models
 # Check port number in LMStudio (usually 1234)
 ```
 
-**Issue: LM Studio Server Not Enabled**
+#### Issue: LM Studio Server Not Enabled
 ```bash
 # CRITICAL: Ensure LM Studio server is enabled in the GUI
 # 1. Open LM Studio application
@@ -670,7 +670,7 @@ curl http://localhost:1234/v1/models
 # If still failing, check LM Studio logs for any error messages
 ```
 
-**Issue: Context Length Too Small (400 Bad Request, Truncated Responses)**
+#### Issue: Context Length Too Small (400 Bad Request, Truncated Responses)
 ```bash
 # Problem: LLM returns 400 Bad Request, truncated output, or errors with long inputs
 # Root Cause: Insufficient context length configured for the model or server
