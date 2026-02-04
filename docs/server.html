@@ -181,6 +181,8 @@ uvicorn abstractcore.server.app:app --workers 4</code></pre>
                             <li><strong>Chat:</strong> <code>POST /v1/chat/completions</code></li>
                             <li><strong>Responses API:</strong> <code>POST /v1/responses</code></li>
                             <li><strong>Embeddings:</strong> <code>POST /v1/embeddings</code></li>
+                            <li><strong>Audio (STT):</strong> <code>POST /v1/audio/transcriptions</code></li>
+                            <li><strong>Audio (TTS):</strong> <code>POST /v1/audio/speech</code></li>
                             <li><strong>Model discovery:</strong> <code>GET /v1/models</code></li>
                             <li><strong>Provider status:</strong> <code>GET /providers</code></li>
                             <li><strong>Health:</strong> <code>GET /health</code></li>
@@ -194,6 +196,31 @@ curl "http://localhost:8000/v1/models?provider=ollama"
 curl "http://localhost:8000/v1/models?type=text-embedding"
 curl "http://localhost:8000/v1/models?provider=ollama&type=text-embedding"</code></pre>
                     </div>
+
+                    <h3>Audio endpoints (optional)</h3>
+                    <p>
+                        AbstractCore also exposes OpenAI-compatible audio endpoints powered by capability plugins (for example <code>abstractvoice</code>).
+                        These endpoints do <strong>not</strong> require an LLM provider configuration.
+                    </p>
+                    <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
+                        <ul style="margin: 0;">
+                            <li><code>/v1/audio/transcriptions</code> requires <code>pip install abstractvoice</code> and <code>pip install "python-multipart"</code> on the server.</li>
+                            <li><code>/v1/audio/speech</code> requires <code>pip install abstractvoice</code> on the server.</li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Speech-to-text (multipart)
+curl -X POST http://localhost:8000/v1/audio/transcriptions \
+  -F file=@./call.wav \
+  -F language=en
+
+# Text-to-speech (JSON)
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Hello from AbstractCore","format":"wav"}' \
+  --output out.wav</code></pre>
+                    </div>
+                    <p>See <a href="audio.html">Audio &amp; Voice (STT/TTS)</a> for library-side usage and configuration defaults.</p>
                 </section>
 
                 <section id="model-routing" style="margin-top: 3rem;">

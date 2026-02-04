@@ -166,6 +166,14 @@ response = text_llm.generate(
                     <li>You receive a response combining vision analysis with text processing</li>
                 </ol>
 
+                <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0; border-left: 4px solid var(--warning-color);">
+                    <h3 style="margin: 0 0 1rem 0; color: var(--warning-color);">No silent drops</h3>
+                    <p style="margin: 0; color: var(--text-secondary);">
+                        If you attach images to a text-only model and vision fallback isn't configured, AbstractCore won't silently ignore your files.
+                        It injects a small placeholder (for example <code>[Image 1: ...]</code>) and records what happened in <code>response.metadata.media_enrichment</code>.
+                    </p>
+                </div>
+
                 <h2>Automatic Resolution Optimization</h2>
                 <p>AbstractCore automatically optimizes images for each model's maximum capability:</p>
 

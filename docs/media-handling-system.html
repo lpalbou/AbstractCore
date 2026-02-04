@@ -56,7 +56,7 @@
             <div class="doc-content">
                 <h2>Overview</h2>
                 <p>
-                    AbstractCore provides a production-ready unified media handling system that enables seamless file attachment and processing across all LLM providers. The system automatically processes images, documents, and other media files using the same simple API, with intelligent provider-specific formatting and graceful fallback handling.
+                    AbstractCore provides a production-ready unified media handling system that enables seamless file attachment and processing across all LLM providers. The system automatically processes images, documents, and other media files (including audio/video inputs via explicit policies) using the same simple API, with intelligent provider-specific formatting and graceful fallback handling.
                 </p>
 
                 <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -67,7 +67,7 @@
                         <li><strong>Intelligent Processing</strong> - Automatic file type detection with specialized processors</li>
                         <li><strong>Provider Adaptation</strong> - Automatic formatting for each provider's API requirements</li>
                         <li><strong>Robust Fallback</strong> - Graceful degradation when advanced processing fails</li>
-                        <li><strong>Cross-Format Support</strong> - Images, PDFs, Office docs, CSV/TSV all work seamlessly</li>
+                        <li><strong>Cross-Format Support</strong> - Images, PDFs, Office docs, audio/video, CSV/TSV all work (policy-driven for audio/video)</li>
                     </ul>
                 </div>
 
@@ -138,13 +138,28 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and 
                     <li><strong>Structured:</strong> JSON with intelligent parsing</li>
                 </ul>
 
+                <h3>Audio (policy-driven)</h3>
+                <ul>
+                    <li><strong>Formats:</strong> MP3, WAV, M4A, OGG, FLAC, AAC</li>
+                    <li><strong>Default policy:</strong> <code>native_only</code> (fails loudly unless you opt into STT)</li>
+                    <li><strong>Speech-to-text fallback:</strong> <code>audio_policy="speech_to_text"</code> (requires a capability plugin such as <code>abstractvoice</code>)</li>
+                    <li><strong>See:</strong> <a href="audio.html">Audio &amp; Voice (STT/TTS)</a></li>
+                </ul>
+
+                <h3>Video (policy-driven)</h3>
+                <ul>
+                    <li><strong>Formats:</strong> MP4, MOV, MKV, WEBM, AVI, WMV</li>
+                    <li><strong>Default policy:</strong> <code>auto</code> (typically samples a small number of frames and routes them through vision/image handling)</li>
+                    <li><strong>Note:</strong> frames-based fallback may require <code>ffmpeg</code> on your PATH</li>
+                </ul>
+
                 <h2>How It Works</h2>
 
                 <p>The media system uses a sophisticated multi-layer architecture:</p>
 
                 <ol>
                     <li><strong>File Attachment Processing</strong> - CLI <code>@filename</code> syntax and Python <code>media=[]</code> parameter</li>
-                    <li><strong>Intelligent Processing</strong> - AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text)</li>
+                    <li><strong>Intelligent Processing</strong> - AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text, Audio, Video)</li>
                     <li><strong>Provider Formatting</strong> - Same content formatted differently for each provider's API</li>
                     <li><strong>Graceful Fallback</strong> - Multi-level fallback ensures users always get meaningful results</li>
                 </ol>
@@ -173,6 +188,55 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and 
   ]
 }</code></pre>
                 </div>
+
+                <h3>Text-only models and vision fallback</h3>
+                <p>
+                    For vision-capable models (for example <code>gpt-4o</code>), AbstractCore sends native multimodal message blocks.
+                    For text-only models, AbstractCore adapts instead of silently dropping inputs:
+                </p>
+                <ul>
+                    <li><strong>Vision fallback (recommended):</strong> route images through your configured vision model and inject a short description</li>
+                    <li><strong>No fallback configured:</strong> inject deterministic placeholders (for example <code>[Image 1: ...]</code>) so media is never ignored</li>
+                </ul>
+                <p>
+                    In both cases, you can inspect <code>response.metadata.media_enrichment</code> for transparency about what was injected or skipped.
+                </p>
+
+                <h3>Media with conversation history (<code>messages</code>)</h3>
+                <p>
+                    If you're supplying OpenAI-style <code>messages=[...]</code>, keep <code>prompt=""</code> to avoid duplicating the final user turn.
+                    AbstractCore will attach media to the most recent user message.
+                </p>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+resp = llm.generate(
+    prompt="",
+    messages=[{"role": "user", "content": "What's in this image?"}],
+    media=["photo.jpg"],
+)
+print(resp.content)</code></pre>
+                </div>
+
+                <h3>Audio inputs (speech-to-text)</h3>
+                <p>
+                    Audio is handled via an explicit policy to avoid silently changing semantics. For speech audio, use
+                    <code>audio_policy="speech_to_text"</code> (requires <code>pip install abstractvoice</code>).
+                </p>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+resp = llm.generate(
+    "Summarize this call.",
+    media=["./call.wav"],
+    audio_policy="speech_to_text",
+)
+print(resp.content)</code></pre>
+                </div>
+                <p>See <a href="audio.html">Audio &amp; Voice (STT/TTS)</a> for configuration and server endpoints.</p>
 
                 <h2>Common Use Cases</h2>
 

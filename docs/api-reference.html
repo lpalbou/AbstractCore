@@ -184,8 +184,16 @@ llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost
                                 <li><code>response_model</code> (BaseModel, optional): Pydantic model for structured output</li>
                                 <li><code>retry_strategy</code> (Retry, optional): Custom retry strategy for structured output</li>
                                 <li><code>stream</code> (bool): Enable streaming response</li>
-                                <li><code>**kwargs</code>: Additional generation parameters</li>
+                                <li><code>**kwargs</code>: Additional generation parameters (token budgets, thinking, <code>audio_policy</code>, <code>video_policy</code>, ...)</li>
                             </ul>
+                            <p style="margin: 1rem 0 0 0; color: var(--text-secondary);">
+                                Tip: if you're supplying <code>messages</code>, keep <code>prompt=""</code> and put the user text in the last <code>role="user"</code> message.
+                                Media attachments are applied to the most recent user turn to avoid duplication.
+                            </p>
+                            <p style="margin: 0.75rem 0 0 0; color: var(--text-secondary);">
+                                For speech audio, pass <code>audio_policy="speech_to_text"</code> (requires a capability plugin such as <code>abstractvoice</code>).
+                                See <a href="audio.html">Audio &amp; Voice</a>.
+                            </p>
                         </div>
 
                         <h4>Media Handling Example</h4>
@@ -300,7 +308,7 @@ class GenerateResponse:
                                 <li><code>finish_reason</code> (str): Why generation stopped ("stop", "length", "tool_calls")</li>
                                 <li><code>usage</code> (Dict): Token usage information (provider-specific format)</li>
                                 <li><code>tool_calls</code> (List[Dict]): Tools called by the LLM</li>
-                                <li><code>metadata</code> (Dict): Additional metadata</li>
+                                <li><code>metadata</code> (Dict): Additional metadata (includes <code>media_enrichment</code> when media is adapted via fallback)</li>
                                 <li><strong>NEW v2.4.7:</strong> <code>input_tokens</code> (int): Input tokens (consistent across all providers)</li>
                                 <li><strong>NEW v2.4.7:</strong> <code>output_tokens</code> (int): Output tokens (consistent across all providers)</li>
                                 <li><strong>NEW v2.4.7:</strong> <code>total_tokens</code> (int): Total tokens (consistent across all providers)</li>

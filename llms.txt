@@ -1,6 +1,6 @@
 # AbstractCore
 
-> Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media/vision handling, embeddings, and an optional OpenAI-compatible HTTP server. The default install is lightweight; features are enabled via extras.
+> Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + docs), embeddings, and an optional OpenAI-compatible HTTP server. The default install is lightweight; features are enabled via extras.
 
 Core install:
 - `pip install abstractcore`
@@ -38,6 +38,8 @@ Common extras (quote brackets for zsh):
 - [docs/events.md](docs/events.md): global event bus (`on_global`)
 - [docs/structured-logging.md](docs/structured-logging.md): configure console/file logging
 - [docs/media-handling-system.md](docs/media-handling-system.md): `media=[...]` + file processing
+- [docs/vision-capabilities.md](docs/vision-capabilities.md): image/video input + vision fallback (and how this differs from generative vision)
+- [abstractcore/capabilities/registry.py](abstractcore/capabilities/registry.py): capability plugins (`core.voice/core.audio/core.vision`) + `status()` discovery
 - [abstractcore/media/](abstractcore/media/): media pipeline (optional deps behind extras)
 - [docs/glyphs.md](docs/glyphs.md): glyph compression
 - [abstractcore/compression/](abstractcore/compression/): glyph compression (optional)
@@ -50,9 +52,15 @@ Common extras (quote brackets for zsh):
 - [docs/server.md](docs/server.md): OpenAI-compatible HTTP endpoints
 - [abstractcore/server/app.py](abstractcore/server/app.py): FastAPI implementation
 
+Notes:
+- `/v1/images/*` endpoints are optional and require `abstractvision`.
+- `/v1/audio/*` endpoints are optional and require an audio/voice capability plugin (typically `abstractvoice`).
+
 ## Development
 
 - [pyproject.toml](pyproject.toml): dependencies + extras (keep default small)
+- [CHANGELOG.md](CHANGELOG.md): release notes and upgrade guidance
+- [SECURITY.md](SECURITY.md): responsible vulnerability reporting
 - [CONTRIBUTING.md](CONTRIBUTING.md): contributor workflow
 - [tests/](tests/): pytest suite
 

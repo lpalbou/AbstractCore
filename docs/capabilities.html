@@ -192,7 +192,7 @@ mlx_llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit", seed=42, temper
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
                         <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">6. Universal Media Handling System</h3>
-                        <p><strong>What it does</strong>: Attach any file type (images, PDFs, Office docs, data) with simple <code>@filename</code> syntax or <code>media=[]</code> parameter.</p>
+                        <p><strong>What it does</strong>: Attach files to your LLM requests with simple <code>@filename</code> syntax or <code>media=[]</code> parameter. Images and documents are handled automatically; audio/video inputs are supported via explicit policies (no silent semantic changes).</p>
 
                         <div class="code-block">
                             <pre><code class="language-python"># Python API - works across ALL providers
@@ -207,10 +207,20 @@ response = llm.generate(
 
 # Supported: Images (PNG, JPEG, GIF, WEBP, BMP, TIFF)
 #            Documents (PDF, DOCX, XLSX, PPTX)
-#            Data (CSV, TSV, TXT, MD, JSON)</code></pre>
+#            Data (CSV, TSV, TXT, MD, JSON)
+#            Audio (MP3, WAV, M4A, OGG, FLAC, AAC) via audio_policy (e.g. speech_to_text)
+#            Video (MP4, MOV, MKV, WEBM, AVI, WMV) via video_policy (frames sampling)</code></pre>
                         </div>
 
-                        <p><strong>Key benefit</strong>: Same code works across all providers with automatic format detection and processing.</p>
+                        <p><strong>Key benefit</strong>: Same code works across all providers with automatic format detection and processing, plus explicit policy controls for audio/video.</p>
+
+                        <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
+                            <p style="margin: 0;">
+                                Audio is <strong>policy-driven</strong> by default: attaching an audio file will fail unless you opt into a fallback.
+                                For speech audio, use <code>audio_policy="speech_to_text"</code> (requires <code>pip install abstractvoice</code>).
+                                See <a href="audio.html">Audio &amp; Voice (STT/TTS)</a>.
+                            </p>
+                        </div>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -497,6 +507,11 @@ def complex_agent():
                         <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Vision Capabilities</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
+                        </a>
+
+                        <a href="audio.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Audio &amp; Voice</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">STT fallback, TTS outputs, and server endpoints</p>
                         </a>
 
                         <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
