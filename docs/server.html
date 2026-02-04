@@ -181,6 +181,8 @@ uvicorn abstractcore.server.app:app --workers 4</code></pre>
                             <li><strong>Chat:</strong> <code>POST /v1/chat/completions</code></li>
                             <li><strong>Responses API:</strong> <code>POST /v1/responses</code></li>
                             <li><strong>Embeddings:</strong> <code>POST /v1/embeddings</code></li>
+                            <li><strong>Images (generate):</strong> <code>POST /v1/images/generations</code></li>
+                            <li><strong>Images (edit):</strong> <code>POST /v1/images/edits</code></li>
                             <li><strong>Audio (STT):</strong> <code>POST /v1/audio/transcriptions</code></li>
                             <li><strong>Audio (TTS):</strong> <code>POST /v1/audio/speech</code></li>
                             <li><strong>Model discovery:</strong> <code>GET /v1/models</code></li>
@@ -197,14 +199,32 @@ curl "http://localhost:8000/v1/models?type=text-embedding"
 curl "http://localhost:8000/v1/models?provider=ollama&type=text-embedding"</code></pre>
                     </div>
 
-                    <h3>Audio endpoints (optional)</h3>
+                    <h3>Media generation endpoints (optional)</h3>
                     <p>
-                        AbstractCore also exposes OpenAI-compatible audio endpoints powered by capability plugins (for example <code>abstractvoice</code>).
-                        These endpoints do <strong>not</strong> require an LLM provider configuration.
+                        AbstractCore Server can optionally expose OpenAI-compatible <strong>image generation</strong> and <strong>audio</strong> endpoints.
+                        These are interoperability-first endpoints; if the required plugin/backend is not available, the server returns <code>501</code> with actionable messaging.
                     </p>
+
+                    <h4>Images (generate/edit) — requires <code>abstractvision</code></h4>
+                    <ul>
+                        <li><code>POST /v1/images/generations</code></li>
+                        <li><code>POST /v1/images/edits</code></li>
+                    </ul>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install "abstractcore[server]" abstractvision
+python -m abstractcore.server.app</code></pre>
+                    </div>
+                    <p style="color: var(--text-secondary);">
+                        <code>abstractvision</code> typically needs an OpenAI-compatible images backend. Configure
+                        <code>ABSTRACTVISION_BASE_URL</code> + <code>ABSTRACTVISION_API_KEY</code> + <code>ABSTRACTVISION_MODEL_ID</code>
+                        (or the equivalent config settings) to point to that backend.
+                    </p>
+
+                    <h4>Audio (STT/TTS) — requires <code>abstractvoice</code></h4>
+                    <p>These endpoints do <strong>not</strong> require an LLM provider configuration.</p>
                     <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
                         <ul style="margin: 0;">
-                            <li><code>/v1/audio/transcriptions</code> requires <code>pip install abstractvoice</code> and <code>pip install "python-multipart"</code> on the server.</li>
+                            <li><code>/v1/audio/transcriptions</code> requires <code>pip install abstractvoice</code> (multipart parsing via <code>python-multipart</code> is included in <code>abstractcore[server]</code>).</li>
                             <li><code>/v1/audio/speech</code> requires <code>pip install abstractvoice</code> on the server.</li>
                         </ul>
                     </div>
@@ -244,8 +264,11 @@ curl -X POST http://localhost:8000/v1/audio/speech \
                 </section>
 
                 <section id="media" style="margin-top: 3rem;">
-                    <h2>Multimodal Requests (Images, PDFs, Office docs)</h2>
-                    <p>Two common ways to attach files:</p>
+                    <h2>Multimodal Requests (Images, Documents, Audio/Video)</h2>
+                    <p>
+                        Two common ways to attach files. Images and documents are handled automatically; audio/video inputs are
+                        <strong>policy-driven</strong> (<code>audio_policy</code>, <code>video_policy</code>) to avoid silent semantic changes.
+                    </p>
 
                     <h3>1) <code>@filename</code> syntax (AbstractCore extension)</h3>
                     <div class="code-block">
@@ -261,7 +284,11 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 
                     <h3>2) OpenAI vision-style messages</h3>
                     <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
-                        <p style="margin: 0;">For full examples (image URLs, base64, mixed content), see <a href="media-handling-system.html">Media Handling</a> and <a href="vision-capabilities.html">Vision Capabilities</a>.</p>
+                        <p style="margin: 0;">
+                            For full examples (image URLs, base64, and policy-driven audio/video fallbacks), see
+                            <a href="media-handling-system.html">Media Handling</a>, <a href="vision-capabilities.html">Vision Capabilities</a>, and
+                            <a href="audio.html">Audio &amp; Voice</a>.
+                        </p>
                     </div>
                 </section>
 

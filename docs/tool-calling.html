@@ -168,14 +168,36 @@ print(response.tool_calls)</code></pre>
                 <section id="built-in-tools">
                     <h2>Built-in Tools</h2>
                     <p>AbstractCore includes a comprehensive set of ready-to-use tools in <code>abstractcore.tools.common_tools</code>:</p>
+
+                    <p style="color: var(--text-secondary);">
+                        Web tools (notably <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, <code>fetch_url</code>) require
+                        <code>abstractcore[tools]</code> so runtime dependencies like <code>requests</code>/<code>bs4</code> are available:
+                    </p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install "abstractcore[tools]"</code></pre>
+                    </div>
                     
                     <div class="code-block">
                         <pre><code class="language-python">from abstractcore import create_llm
-from abstractcore.tools.common_tools import analyze_code, fetch_url, search_files, read_file, list_files
+from abstractcore.tools.common_tools import (
+    analyze_code,
+    skim_url,
+    skim_websearch,
+    fetch_url,
+    search_files,
+    read_file,
+    list_files,
+)
 
 # Code navigation (recommended before editing)
 outline = analyze_code("src/app.py")
 print(outline)
+
+# Quick URL preview (fast, small)
+preview = skim_url("https://example.com/article")
+
+# Smaller/filtered web search (compact output)
+results = skim_websearch("HTTP caching best practices")
 
 # Intelligent web content fetching with automatic parsing
 result = fetch_url("https://api.github.com/repos/python/cpython")
@@ -199,8 +221,10 @@ response = llm.generate(
                         <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
                             <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">🌐 Web & Network</h4>
                             <ul style="margin: 0; padding-left: 1.5rem;">
+                                <li><code>skim_url</code> - Fast URL skim (title/description/headings + short preview)</li>
                                 <li><code>fetch_url</code> - Intelligent web content fetching with automatic content type detection and parsing</li>
                                 <li><code>web_search</code> - Search the web using DuckDuckGo</li>
+                                <li><code>skim_websearch</code> - Smaller/filtered web search (compact result list)</li>
                             </ul>
                         </div>
                         
@@ -802,21 +826,22 @@ on_global(EventType.TOOL_COMPLETED, track_tool_outcomes)</code></pre>
                             <h3 style="margin: 0 0 1rem 0;">1. Clear Documentation</h3>
                             <p style="margin: 0 0 1rem 0;">Always provide clear docstrings for your tools:</p>
                             <div class="code-block">
-                                <pre><code class="language-python">@tool
-def send_email(to: str, subject: str, body: str) -> str:
-    """Send an email to the specified recipient.
-    
-    Args:
-        to: Email address of the recipient
-        subject: Subject line of the email
-        body: Main content of the email
-    
-    Returns:
-        Success message or error description
-    
+                                <pre><code class="language-python">from typing import Any, Dict, Optional
+
+@tool
+def send_email(
+    to: Any,
+    subject: str,
+    *,
+    account: Optional[str] = None,
+    body_text: Optional[str] = None,
+    body_html: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Send an email from an operator-configured account.
+
     Note:
-        This tool requires email configuration to be set up.
-        Use with caution as it sends actual emails.
+        - SMTP/IMAP settings are configured by the operator (not passed via tool args).
+        - Use with caution as it sends real emails; keep behind an approval boundary.
     """
     # Implementation here</code></pre>
                             </div>

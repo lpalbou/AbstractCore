@@ -61,6 +61,7 @@
                 </p>
                 <ul>
                     <li><strong>Audio input (speech-to-text):</strong> set <code>audio_policy="speech_to_text"</code> to inject a transcript into the prompt</li>
+                    <li><strong>Auto policy:</strong> <code>audio_policy="auto"</code> uses native audio when supported, otherwise STT when configured</li>
                     <li><strong>Audio output (text-to-speech):</strong> use <code>llm.voice.tts(...)</code> or <code>generate_with_outputs(...)</code> (optional)</li>
                 </ul>
 
@@ -173,11 +174,11 @@ wav_bytes = result.outputs["tts"]</code></pre>
                     <li><code>POST /v1/audio/speech</code> (JSON; text-to-speech)</li>
                 </ul>
                 <div class="code-block">
-                    <pre><code class="language-bash">pip install "abstractcore[server]" abstractvoice "python-multipart"
+                    <pre><code class="language-bash">pip install "abstractcore[server]" abstractvoice
 python -m abstractcore.server.app</code></pre>
                 </div>
                 <div class="code-block">
-                    <pre><code class="language-bash"># STT (requires: pip install abstractvoice, and python-multipart on the server)
+                    <pre><code class="language-bash"># STT (requires: pip install abstractvoice; python-multipart is included in abstractcore[server])
 curl -X POST http://localhost:8000/v1/audio/transcriptions \
   -F file=@./call.wav \
   -F language=en

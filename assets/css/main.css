@@ -79,6 +79,10 @@
     --background-dark: #1e293b;
     --border-color: #d1d5db;
     --border-light: #e5e7eb;
+
+    /* Back-compat aliases used by older pages */
+    --bg-secondary: var(--background-secondary);
+    --bg-tertiary: var(--background-tertiary);
     
     /* Status colors with proper contrast */
     --success-bg: #dcfce7;
@@ -166,7 +170,7 @@ p {
 }
 
 .doc-content h3 {
-    margin-top: var(--spacing-8);
+    margin-top: var(--spacing-10);
 }
 
 .doc-content h4,
@@ -188,7 +192,7 @@ p {
 
 .doc-content ul,
 .doc-content ol {
-    padding-left: 1.5rem;
+    padding-left: 2rem;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-secondary);
     line-height: 1.6;

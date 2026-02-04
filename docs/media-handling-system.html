@@ -141,16 +141,22 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and 
                 <h3>Audio (policy-driven)</h3>
                 <ul>
                     <li><strong>Formats:</strong> MP3, WAV, M4A, OGG, FLAC, AAC</li>
-                    <li><strong>Default policy:</strong> <code>native_only</code> (fails loudly unless you opt into STT)</li>
-                    <li><strong>Speech-to-text fallback:</strong> <code>audio_policy="speech_to_text"</code> (requires a capability plugin such as <code>abstractvoice</code>)</li>
+                    <li><strong>Default policy:</strong> <code>audio_policy="native_only"</code> (fails unless the selected model supports native audio input)</li>
+                    <li><strong>Speech-to-text fallback:</strong> <code>audio_policy="speech_to_text"</code> injects a transcript (typically requires <code>pip install abstractvoice</code>)</li>
+                    <li><strong>Auto:</strong> <code>audio_policy="auto"</code> uses native audio when supported, otherwise STT when configured, otherwise errors</li>
+                    <li><strong>Reserved:</strong> <code>audio_policy="caption"</code> is not configured in v0 (must error)</li>
+                    <li><strong>Transparency:</strong> <code>response.metadata.media_enrichment[]</code> records what was injected and which backend was used</li>
                     <li><strong>See:</strong> <a href="audio.html">Audio &amp; Voice (STT/TTS)</a></li>
                 </ul>
 
                 <h3>Video (policy-driven)</h3>
                 <ul>
                     <li><strong>Formats:</strong> MP4, MOV, MKV, WEBM, AVI, WMV</li>
-                    <li><strong>Default policy:</strong> <code>auto</code> (typically samples a small number of frames and routes them through vision/image handling)</li>
-                    <li><strong>Note:</strong> frames-based fallback may require <code>ffmpeg</code> on your PATH</li>
+                    <li><strong>Default policy:</strong> <code>video_policy="auto"</code> (native when supported; otherwise samples frames and routes them through vision/image handling)</li>
+                    <li><strong>Frames fallback:</strong> <code>video_policy="frames_caption"</code> always samples frames (portable across providers)</li>
+                    <li><strong>Strict:</strong> <code>video_policy="native_only"</code> fails unless the selected model supports native video input</li>
+                    <li><strong>Budgets:</strong> frame count + downscale are explicit and logged (<code>video_max_frames</code>, <code>video_max_frame_side</code>)</li>
+                    <li><strong>Note:</strong> frame extraction may require <code>ffmpeg</code>/<code>ffprobe</code> on your PATH</li>
                 </ul>
 
                 <h2>How It Works</h2>
@@ -192,11 +198,11 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and 
                 <h3>Text-only models and vision fallback</h3>
                 <p>
                     For vision-capable models (for example <code>gpt-4o</code>), AbstractCore sends native multimodal message blocks.
-                    For text-only models, AbstractCore adapts instead of silently dropping inputs:
+                    For text-only models, AbstractCore can optionally run a configured vision backend to produce short grounded observations and inject them as text:
                 </p>
                 <ul>
                     <li><strong>Vision fallback (recommended):</strong> route images through your configured vision model and inject a short description</li>
-                    <li><strong>No fallback configured:</strong> inject deterministic placeholders (for example <code>[Image 1: ...]</code>) so media is never ignored</li>
+                    <li><strong>No fallback configured:</strong> the model will receive a minimal placeholder marker, and <code>media_enrichment</code> will record that enrichment was skipped</li>
                 </ul>
                 <p>
                     In both cases, you can inspect <code>response.metadata.media_enrichment</code> for transparency about what was injected or skipped.
@@ -237,6 +243,26 @@ resp = llm.generate(
 print(resp.content)</code></pre>
                 </div>
                 <p>See <a href="audio.html">Audio &amp; Voice (STT/TTS)</a> for configuration and server endpoints.</p>
+
+                <h2>Token Estimation &amp; No Truncation Policy</h2>
+                <p>
+                    AbstractCore processors do <strong>not</strong> silently truncate content. When available, token estimates are added to media metadata so you can
+                    make an explicit choice (summarize, chunk, error) at the application layer.
+                </p>
+                <div class="code-block">
+                    <pre><code class="language-python"># Example (metadata shape varies by processor)
+from abstractcore.media.processors import TextProcessor
+
+processor = TextProcessor()
+result = processor.process_file("data.csv")
+media_content = result.media_content
+
+print(media_content.metadata.get("estimated_tokens"))
+print(media_content.metadata.get("content_length"))</code></pre>
+                </div>
+                <p style="color: var(--text-secondary);">
+                    For large files that exceed model context limits, use a summarizer workflow or implement custom chunking.
+                </p>
 
                 <h2>Common Use Cases</h2>
 

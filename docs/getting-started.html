@@ -93,6 +93,18 @@ pip install "abstractcore[compression]"  # glyph visual-text compression
 # work with the core install — just set the server base_url.</code></pre>
                 </div>
 
+                <h3>Optional capability plugins (voice/audio/vision)</h3>
+                <p>
+                    AbstractCore keeps the default install small. Deterministic modality APIs (STT/TTS, generative vision) live in optional plugins:
+                </p>
+                <div class="code-block">
+                    <pre><code class="language-bash">pip install abstractvoice   # enables llm.voice / llm.audio (TTS/STT)
+pip install abstractvision  # enables llm.vision (generative vision via an OpenAI-compatible images endpoint)</code></pre>
+                </div>
+                <p>
+                    See <a href="capabilities.html">Capabilities</a> and <a href="server.html">Server</a>.
+                </p>
+
                 <h3>Quick Setup Examples</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1.5rem 0;">
                     <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 0.75rem;">
@@ -300,7 +312,7 @@ print("AI:", response2.content)
                 </div>
 
                 <h3>7. Media Handling (Attach Any File)</h3>
-                <p>Attach images, PDFs, Office docs with simple syntax:</p>
+                <p>Attach images, documents, and (policy-driven) audio/video with simple syntax:</p>
 
                 <div class="code-block">
                     <pre><code class="language-python">from abstractcore import create_llm
@@ -313,12 +325,20 @@ response = llm.generate(
     media=["photo.jpg", "report.pdf"]
 )
 
+# Audio/video inputs are policy-driven (no silent semantic changes)
+# For speech audio, use STT fallback (requires: pip install abstractvoice)
+response = llm.generate(
+    "Summarize this call.",
+    media=["call.wav"],
+    audio_policy="speech_to_text",
+)
+
 # Or from CLI with @filename syntax
 # abstractcore-chat --prompt "Analyze @report.pdf"</code></pre>
                 </div>
 
-                <p><strong>Supported:</strong> Images (PNG, JPEG, GIF, WEBP), Documents (PDF, DOCX, XLSX, PPTX), Data (CSV, TSV, TXT, MD, JSON)</p>
-                <p><strong>Learn more:</strong> <a href="media-handling-system.html">Media Handling System Guide</a></p>
+                <p><strong>Supported:</strong> Images (PNG, JPEG, GIF, WEBP), Documents (PDF, DOCX, XLSX, PPTX), Data (CSV, TSV, TXT, MD, JSON), plus audio/video via explicit policies.</p>
+                <p><strong>Learn more:</strong> <a href="media-handling-system.html">Media Handling System Guide</a> and <a href="audio.html">Audio &amp; Voice</a></p>
 
                 <h3>8. Vision Capabilities (Image Analysis)</h3>
                 <p>Analyze images across all providers with the same code:</p>
@@ -360,6 +380,12 @@ response = llm.generate("Describe this image", media=["scene.jpg"])</code></pre>
                         <h4 style="margin: 0 0 0.5rem 0;">Vision Capabilities</h4>
                         <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis everywhere</p>
                         <a href="vision-capabilities.html" style="color: var(--primary-color); font-weight: 500;">Explore Vision →</a>
+                    </div>
+
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
+                        <h4 style="margin: 0 0 0.5rem 0;">Audio &amp; Voice</h4>
+                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">STT fallback + optional TTS</p>
+                        <a href="audio.html" style="color: var(--primary-color); font-weight: 500;">Explore Audio →</a>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
