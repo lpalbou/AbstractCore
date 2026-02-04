@@ -3812,14 +3812,20 @@ def skim_websearch(
             if any(t in text for t in terms):
                 filtered.append(item)
 
+    def _one_line_text(value: Any) -> str:
+        # Keep tool outputs small and JSON-friendly (no stray newlines/tabs).
+        return re.sub(r"\s+", " ", str(value or "")).strip()
+
     out_results: list[Dict[str, Any]] = []
     for item in filtered[:requested]:
+        title = preview_text(_one_line_text(item.get("title")), max_chars=180)
+        snippet = preview_text(_one_line_text(item.get("snippet")), max_chars=240)
         out_results.append(
             {
                 "rank": item.get("rank"),
-                "title": item.get("title"),
-                "url": item.get("url"),
-                "snippet": item.get("snippet"),
+                "title": title,
+                "url": _one_line_text(item.get("url")),
+                "snippet": snippet,
             }
         )
 

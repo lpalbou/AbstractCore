@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.2] - 2026-02-04
+
+### Added
+- **Skim tool benchmarks**: added `examples/skim_tools_benchmark.py` to measure output footprint and latency for `skim_websearch`/`web_search` and `skim_url`/`fetch_url`.
+- **Import-safety test**: added a test to ensure `import abstractcore` does not eagerly import optional deps (`requests`, `bs4`, `sentence_transformers`, `pymupdf*`, ...).
+
+### Changed
+- **Skim outputs stay compact**: `skim_websearch` now truncates long titles/snippets to keep tool outputs prompt-friendly by default.
+- **Tool guidance for prompted models**: tool prompts now render short `when_to_use` hints for small tool sets and a few high-impact tools (edit/write/execute + web triage tools).
+- **Tool examples**: globally-capped examples now include `skim_websearch`/`skim_url` earlier so models learn the token-efficient web triage workflow.
+- **Native tool payload compatibility**: native tool schemas no longer include non-standard metadata keys (`tags`, `when_to_use`, `examples`) to avoid strict provider schema validation failures.
+- **Docs accuracy**: clarified `fetch_url` behavior for PDFs/binaries and documented the recommended `skim_*` → `fetch_*` workflow in the docs entry points.
+
 ## [2.11.1] - 2026-02-04
 
 ### Added

@@ -103,6 +103,21 @@ print(resp.tool_calls)
 
 See [Tool Calling](tool-calling.md) and [Tool Syntax Rewriting](tool-syntax-rewriting.md) (`tool_call_tags`, server `agent_format`).
 
+### Built-in tools (optional)
+
+If you want a ready-made toolset for agentic scripts, install:
+
+```bash
+pip install "abstractcore[tools]"
+```
+
+Then import from `abstractcore.tools.common_tools`:
+
+- `skim_websearch` vs `web_search`: compact/filtered links vs full results
+- `skim_url` vs `fetch_url`: fast URL triage (small output) vs full fetch + parsing for text-first types (HTML/JSON/text)
+
+See [Tool Calling](tool-calling.md) for a recommended workflow and the full built-in tool list.
+
 ## Structured output
 
 Pass a Pydantic model via `response_model=...` to get a typed result back (instead of parsing JSON yourself):

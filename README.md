@@ -23,7 +23,7 @@ First-class support for:
 (*) Media input is policy-driven (no silent semantic changes). If a model doesn’t support images, AbstractCore can use a configured vision model to generate short visual observations and inject them into your text-only request (vision fallback). Audio/video attachments are also policy-driven (`audio_policy`, `video_policy`) and may require capability plugins for fallbacks. See [Media Handling](docs/media-handling-system.md) and [Centralized Config](docs/centralized-config.md).
 (**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (install `pip install "abstractcore[compression]"`; for PDFs also install `pip install "abstractcore[media]"`).
 
-Docs: [Getting Started](docs/getting-started.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
+Docs: [Getting Started](docs/getting-started.md) · [FAQ](docs/faq.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
 
 ## Install
 
@@ -132,6 +132,7 @@ You can also persist settings (including API keys) via the config CLI:
 ## What’s inside (quick tour)
 
 - Tools: universal tool calling across providers → [Tool Calling](docs/tool-calling.md)
+- Built-in tools (optional): web + filesystem helpers (`skim_websearch`, `skim_url`, `fetch_url`, `read_file`, …) → [Tool Calling](docs/tool-calling.md)
 - Tool syntax rewriting: `tool_call_tags` (Python) and `agent_format` (server) → [Tool Syntax Rewriting](docs/tool-syntax-rewriting.md)
 - Structured output: Pydantic-first with provider-aware strategies → [Structured Output](docs/structured-output.md)
 - Media input: images/audio/video + documents (policies + fallbacks) → [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md)
