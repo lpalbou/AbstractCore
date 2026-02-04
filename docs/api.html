@@ -124,6 +124,16 @@ print(result.bullets)</code></pre>
                 </div>
                 <p>Then pass <code>media=[...]</code> to <code>generate()</code> / <code>agenerate()</code>. See <a href="media-handling-system.html">Media Handling</a>.</p>
 
+                <h2>Audio &amp; voice (optional)</h2>
+                <p>
+                    Audio inputs are handled via an explicit policy to avoid silent semantic changes. For speech audio, use
+                    <code>audio_policy="speech_to_text"</code> (requires a capability plugin such as <code>abstractvoice</code>).
+                </p>
+                <div class="code-block">
+                    <pre><code class="language-bash">pip install abstractvoice</code></pre>
+                </div>
+                <p>See <a href="audio.html">Audio &amp; Voice (STT/TTS)</a> for usage, configuration defaults, and server endpoints.</p>
+
                 <h2>HTTP API (optional)</h2>
                 <p>If you want an OpenAI-compatible <code>/v1</code> gateway, install and run the server:</p>
                 <div class="code-block">
@@ -150,6 +160,11 @@ python -m abstractcore.server.app</code></pre>
                             <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">FAQ</h4>
                             <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Common questions and setup gotchas</p>
                         </a>
+
+                        <a href="audio.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Audio &amp; Voice</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">STT fallback and optional TTS</p>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -162,4 +177,3 @@ python -m abstractcore.server.app</code></pre>
     <script src="../assets/js/main.js"></script>
 </body>
 </html>
-

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Changelog - AbstractCore</title>
+    <meta name="description" content="Release notes and upgrade guidance for AbstractCore.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [
+                    { text: 'Features', href: '/docs/capabilities.html' },
+                    { text: 'Quick Start', href: '/docs/getting-started.html' },
+                    { text: 'Documentation', href: '/#docs' },
+                    { text: 'Examples', href: '/docs/examples.html' },
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/abstractcore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Changelog</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Release notes and upgrade guidance for AbstractCore.
+                </p>
+            </div>
+
+            <div class="doc-content">
+                <p>
+                    AbstractCore follows <a href="https://keepachangelog.com/en/1.0.0/" target="_blank" rel="noopener noreferrer">Keep a Changelog</a>
+                    and <a href="https://semver.org/spec/v2.0.0.html" target="_blank" rel="noopener noreferrer">Semantic Versioning</a>.
+                    For the full history, see <a href="https://github.com/lpalbou/abstractcore/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">CHANGELOG.md</a>.
+                </p>
+
+                <h2>2.11.1 <span style="color: var(--text-secondary); font-weight: 500;">(2026-02-04)</span></h2>
+
+                <h3>Added</h3>
+                <ul>
+                    <li><strong>Security policy:</strong> added <code>SECURITY.md</code> with responsible disclosure guidance.</li>
+                    <li><strong>API overview doc:</strong> added <code>docs/api.md</code> as a user-facing map of the public Python API.</li>
+                    <li><strong>FAQ:</strong> added <code>docs/faq.md</code> and linked it from the docs entry points.</li>
+                    <li><strong>Events + logging docs:</strong> added <code>docs/events.md</code> and <code>docs/structured-logging.md</code>.</li>
+                </ul>
+
+                <h3>Changed</h3>
+                <ul>
+                    <li><strong>Install composition (default stays small):</strong> docs and packaging emphasize a lightweight core install, with heavy features enabled via explicit extras (<code>tools</code>, <code>media</code>, <code>embeddings</code>, <code>server</code>, provider SDKs).</li>
+                    <li><strong>Dependency compatibility:</strong> relaxed <code>abstractcore[huggingface]</code> <code>transformers</code> upper bound to <code>&lt;6</code> so it can co-install with <code>abstractcore[mlx]</code>.</li>
+                    <li><strong>Documentation polish:</strong> refreshed wording and navigation; ensured internal links/anchors resolve across docs.</li>
+                </ul>
+
+                <h3>Fixed</h3>
+                <ul>
+                    <li><strong>Docs accuracy:</strong> aligned event fields and examples with the current codebase (events, telemetry, and usage data).</li>
+                    <li><strong>Optional imports:</strong> made Telegram Bot API tools import-safe when <code>requests</code> is not installed (returns a clear <code>abstractcore[tools]</code> install hint when used).</li>
+                </ul>
+
+                <h2>2.11.0 <span style="color: var(--text-secondary); font-weight: 500;">(2026-01-28)</span></h2>
+
+                <h3>Added</h3>
+                <ul>
+                    <li><strong>MLX throughput benchmarking:</strong> added <code>examples/mlx_concurrency_benchmark.py</code> to sweep concurrency with continuous batching and generate summary CSVs + PNG plots.</li>
+                </ul>
+
+                <h3>Changed</h3>
+                <ul>
+                    <li><strong>MLX install extras:</strong> refreshed/clarified <code>mlx</code> + <code>mlx-bench</code> optional dependencies for Apple Silicon throughput benchmarking.</li>
+                </ul>
+
+                <h3>Fixed</h3>
+                <ul>
+                    <li><strong>Embedding model detection:</strong> treat <code>model_type: "embedding"</code> as the canonical signal; added <code>nomic-embed-text-v1.5</code> and LMStudio alias <code>text-embedding-nomic-embed-text-v1.5@q6_k</code> to the capabilities database.</li>
+                    <li><strong>MLX model discovery:</strong> <code>MLXProvider.list_available_models()</code> scans LM Studio's local cache (<code>~/.lmstudio/models</code>) and loads from those local directories when present.</li>
+                    <li><strong>GPT-OSS (Harmony) on MLX:</strong> improved prompt formatting, extracts Harmony transcripts into clean <code>content</code> (stores reasoning in <code>metadata.reasoning</code>), and propagates correct <code>finish_reason</code> (<code>stop</code>/<code>length</code>).</li>
+                </ul>
+
+                <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2.5rem 0;">
+                    <h3 style="margin: 0 0 0.75rem 0; color: var(--primary-color);">Project docs</h3>
+                    <ul style="margin: 0;">
+                        <li><a href="security.html">Security Policy</a></li>
+                        <li><a href="https://github.com/lpalbou/abstractcore/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Full changelog on GitHub</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
