@@ -15,7 +15,9 @@ from email.header import decode_header
 from email.message import EmailMessage, Message
 from email.utils import formatdate, make_msgid
 import imaplib
+import json
 import os
+from pathlib import Path
 import re
 import smtplib
 from typing import Any, Dict, List, Optional, Tuple
@@ -86,6 +88,531 @@ def _resolve_required_env(env_var: str, *, label: str) -> Tuple[Optional[str], O
     if value is None or not str(value).strip():
         return None, f"Missing env var {name} for {label}"
     return str(value), None
+
+
+def _env_str(name: str) -> Optional[str]:
+    v = os.getenv(name)
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s if s else None
+
+
+def _env_bool(name: str) -> Optional[bool]:
+    v = _env_str(name)
+    if v is None:
+        return None
+    s = v.strip().lower()
+    if s in {"1", "true", "yes", "y", "on"}:
+        return True
+    if s in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
+
+
+def _env_int(name: str) -> Optional[int]:
+    v = _env_str(name)
+    if v is None:
+        return None
+    try:
+        return int(v)
+    except Exception:
+        return None
+
+
+def _load_smtp_defaults() -> Dict[str, Any]:
+    """Load default SMTP settings from AbstractCore config + env overrides.
+
+    Precedence:
+    1) env vars (ABSTRACT_EMAIL_SMTP_*)
+    2) AbstractCore config system (`config.email.*`)
+    3) hardcoded fallbacks
+    """
+    out: Dict[str, Any] = {
+        "smtp_host": "",
+        "smtp_port": 587,
+        "username": "",
+        "password_env_var": "EMAIL_PASSWORD",
+        "use_starttls": True,
+        "from_email": "",
+        "reply_to": "",
+    }
+
+    # AbstractCore config (best-effort).
+    try:
+        from abstractcore.config.manager import get_config_manager  # type: ignore
+
+        cfg = get_config_manager().config
+        email_cfg = getattr(cfg, "email", None)
+        if email_cfg is not None:
+            out["smtp_host"] = str(getattr(email_cfg, "smtp_host", "") or "")
+            try:
+                out["smtp_port"] = int(getattr(email_cfg, "smtp_port", 587) or 587)
+            except Exception:
+                out["smtp_port"] = 587
+            out["username"] = str(getattr(email_cfg, "smtp_username", "") or "")
+            out["password_env_var"] = str(getattr(email_cfg, "smtp_password_env_var", "") or "") or "EMAIL_PASSWORD"
+            out["use_starttls"] = bool(getattr(email_cfg, "smtp_use_starttls", True))
+            out["from_email"] = str(getattr(email_cfg, "from_email", "") or "")
+            out["reply_to"] = str(getattr(email_cfg, "reply_to", "") or "")
+    except Exception:
+        pass
+
+    # Env overrides (framework-native).
+    out["smtp_host"] = _env_str("ABSTRACT_EMAIL_SMTP_HOST") or str(out.get("smtp_host") or "")
+    out["username"] = _env_str("ABSTRACT_EMAIL_SMTP_USERNAME") or str(out.get("username") or "")
+    out["password_env_var"] = _env_str("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR") or str(out.get("password_env_var") or "EMAIL_PASSWORD")
+    out["from_email"] = _env_str("ABSTRACT_EMAIL_FROM") or str(out.get("from_email") or "")
+    out["reply_to"] = _env_str("ABSTRACT_EMAIL_REPLY_TO") or str(out.get("reply_to") or "")
+
+    port = _env_int("ABSTRACT_EMAIL_SMTP_PORT")
+    if isinstance(port, int) and port > 0:
+        out["smtp_port"] = int(port)
+
+    starttls = _env_bool("ABSTRACT_EMAIL_SMTP_STARTTLS")
+    if isinstance(starttls, bool):
+        out["use_starttls"] = bool(starttls)
+    else:
+        # If STARTTLS isn't explicitly configured, infer a safe default from common ports.
+        # - 465 => implicit TLS (SMTP_SSL)
+        # - 587/25 => STARTTLS (when supported by the server)
+        try:
+            port_i = int(out.get("smtp_port") or 587)
+        except Exception:
+            port_i = 587
+        if port_i == 465:
+            out["use_starttls"] = False
+
+    return out
+
+
+def _load_imap_defaults() -> Dict[str, Any]:
+    """Load default IMAP settings from AbstractCore config + env overrides.
+
+    Precedence:
+    1) env vars (ABSTRACT_EMAIL_IMAP_*)
+    2) AbstractCore config system (`config.email.*`)
+    3) hardcoded fallbacks
+    """
+    out: Dict[str, Any] = {
+        "imap_host": "",
+        "imap_port": 993,
+        "username": "",
+        "password_env_var": "EMAIL_PASSWORD",
+    }
+
+    # AbstractCore config (best-effort).
+    try:
+        from abstractcore.config.manager import get_config_manager  # type: ignore
+
+        cfg = get_config_manager().config
+        email_cfg = getattr(cfg, "email", None)
+        if email_cfg is not None:
+            out["imap_host"] = str(getattr(email_cfg, "imap_host", "") or "")
+            try:
+                out["imap_port"] = int(getattr(email_cfg, "imap_port", 993) or 993)
+            except Exception:
+                out["imap_port"] = 993
+            out["username"] = str(getattr(email_cfg, "imap_username", "") or "")
+            out["password_env_var"] = str(getattr(email_cfg, "imap_password_env_var", "") or "") or "EMAIL_PASSWORD"
+    except Exception:
+        pass
+
+    # Env overrides (framework-native).
+    out["imap_host"] = _env_str("ABSTRACT_EMAIL_IMAP_HOST") or str(out.get("imap_host") or "")
+    out["username"] = _env_str("ABSTRACT_EMAIL_IMAP_USERNAME") or str(out.get("username") or "")
+    out["password_env_var"] = _env_str("ABSTRACT_EMAIL_IMAP_PASSWORD_ENV_VAR") or str(out.get("password_env_var") or "EMAIL_PASSWORD")
+
+    port = _env_int("ABSTRACT_EMAIL_IMAP_PORT")
+    if isinstance(port, int) and port > 0:
+        out["imap_port"] = int(port)
+
+    return out
+
+
+@dataclass(frozen=True)
+class _EmailImapConfig:
+    host: str
+    port: int
+    username: str
+    password_env_var: str
+    mailbox: str
+
+
+@dataclass(frozen=True)
+class _EmailSmtpConfig:
+    host: str
+    port: int
+    username: str
+    password_env_var: str
+    use_starttls: bool
+    from_email: str
+    reply_to: str
+
+
+@dataclass(frozen=True)
+class _EmailAccountConfig:
+    name: str
+    allow_read: bool
+    allow_send: bool
+    imap: Optional[_EmailImapConfig]
+    smtp: Optional[_EmailSmtpConfig]
+
+    def email_address(self) -> str:
+        if self.smtp is not None and self.smtp.username:
+            return self.smtp.username
+        if self.imap is not None and self.imap.username:
+            return self.imap.username
+        return ""
+
+    def from_email(self) -> str:
+        if self.smtp is None:
+            return ""
+        return self.smtp.from_email or self.smtp.username
+
+
+@dataclass(frozen=True)
+class _EmailAccountsConfig:
+    accounts: Dict[str, _EmailAccountConfig]
+    default_account: Optional[str]
+    source: str  # "env" | "yaml"
+    config_path: Optional[str] = None
+
+
+def _as_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _as_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if int(value) == 1:
+            return True
+        if int(value) == 0:
+            return False
+        return None
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in {"1", "true", "yes", "y", "on"}:
+            return True
+        if s in {"0", "false", "no", "n", "off"}:
+            return False
+    return None
+
+
+def _as_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        try:
+            return int(s)
+        except Exception:
+            return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _parse_email_imap_config(raw: Any) -> Tuple[Optional[_EmailImapConfig], Optional[str]]:
+    if raw is None:
+        return None, None
+    if not isinstance(raw, dict):
+        return None, "imap must be a mapping"
+
+    host = _as_str(raw.get("host") or raw.get("imap_host"))
+    username = _as_str(raw.get("username") or raw.get("user"))
+    port = _as_int(raw.get("port") or raw.get("imap_port")) or 993
+    password_env_var = _as_str(raw.get("password_env_var") or raw.get("passwordEnvVar")) or "EMAIL_PASSWORD"
+    mailbox = _as_str(raw.get("mailbox") or raw.get("folder")) or "INBOX"
+
+    if not host:
+        return None, "imap.host is required"
+    if not username:
+        return None, "imap.username is required"
+    if port <= 0:
+        return None, "imap.port must be a positive integer"
+    if not password_env_var:
+        return None, "imap.password_env_var is required"
+
+    return (
+        _EmailImapConfig(
+            host=host,
+            port=int(port),
+            username=username,
+            password_env_var=password_env_var,
+            mailbox=mailbox,
+        ),
+        None,
+    )
+
+
+def _parse_email_smtp_config(raw: Any) -> Tuple[Optional[_EmailSmtpConfig], Optional[str]]:
+    if raw is None:
+        return None, None
+    if not isinstance(raw, dict):
+        return None, "smtp must be a mapping"
+
+    host = _as_str(raw.get("host") or raw.get("smtp_host"))
+    username = _as_str(raw.get("username") or raw.get("user"))
+    port = _as_int(raw.get("port") or raw.get("smtp_port")) or 587
+    password_env_var = _as_str(raw.get("password_env_var") or raw.get("passwordEnvVar")) or "EMAIL_PASSWORD"
+
+    use_starttls = _as_bool(raw.get("use_starttls"))
+    if use_starttls is None:
+        use_starttls = _as_bool(raw.get("starttls"))
+    if use_starttls is None:
+        use_starttls = False if int(port) == 465 else True
+
+    from_email = _as_str(raw.get("from_email") or raw.get("from"))
+    reply_to = _as_str(raw.get("reply_to") or raw.get("replyTo"))
+
+    if not host:
+        return None, "smtp.host is required"
+    if not username:
+        return None, "smtp.username is required"
+    if port <= 0:
+        return None, "smtp.port must be a positive integer"
+    if not password_env_var:
+        return None, "smtp.password_env_var is required"
+
+    return (
+        _EmailSmtpConfig(
+            host=host,
+            port=int(port),
+            username=username,
+            password_env_var=password_env_var,
+            use_starttls=bool(use_starttls),
+            from_email=from_email,
+            reply_to=reply_to,
+        ),
+        None,
+    )
+
+
+def _parse_email_account(name: str, raw: Any) -> Tuple[Optional[_EmailAccountConfig], Optional[str]]:
+    if not isinstance(raw, dict):
+        return None, "account entry must be a mapping"
+
+    allow_read_raw = _as_bool(raw.get("allow_read"))
+    allow_send_raw = _as_bool(raw.get("allow_send"))
+
+    imap_cfg, imap_err = _parse_email_imap_config(raw.get("imap"))
+    if imap_err is not None:
+        return None, imap_err
+
+    smtp_cfg, smtp_err = _parse_email_smtp_config(raw.get("smtp"))
+    if smtp_err is not None:
+        return None, smtp_err
+
+    allow_read = bool(imap_cfg is not None) if allow_read_raw is None else bool(allow_read_raw)
+    allow_send = bool(smtp_cfg is not None) if allow_send_raw is None else bool(allow_send_raw)
+
+    if allow_read and imap_cfg is None:
+        return None, "allow_read=true but imap is missing"
+    if allow_send and smtp_cfg is None:
+        return None, "allow_send=true but smtp is missing"
+
+    return (
+        _EmailAccountConfig(
+            name=name,
+            allow_read=allow_read,
+            allow_send=allow_send,
+            imap=imap_cfg,
+            smtp=smtp_cfg,
+        ),
+        None,
+    )
+
+
+def _load_email_accounts_from_file(path: str) -> Tuple[Optional[_EmailAccountsConfig], Optional[str]]:
+    raw_path = str(path or "").strip()
+    if not raw_path:
+        return None, "Missing email accounts config path"
+
+    expanded = os.path.expanduser(os.path.expandvars(raw_path))
+    p = Path(expanded)
+    if not p.is_file():
+        return None, f"ABSTRACT_EMAIL_ACCOUNTS_CONFIG is set but file not found: {expanded}"
+
+    try:
+        text = p.read_text(encoding="utf-8")
+    except Exception as e:
+        return None, f"Failed to read email accounts config ({expanded}): {e}"
+
+    try:
+        if p.suffix.lower() == ".json":
+            data = json.loads(text)
+        else:
+            try:
+                import yaml  # type: ignore
+            except Exception as e:
+                return None, f"PyYAML is required to parse {expanded}: {e}"
+            data = yaml.safe_load(text)
+    except Exception as e:
+        return None, f"Failed to parse email accounts config ({expanded}): {e}"
+
+    if not isinstance(data, dict):
+        return None, "Email accounts config must be a mapping (YAML/JSON object)"
+
+    accounts_raw = data.get("accounts")
+    if not isinstance(accounts_raw, dict) or not accounts_raw:
+        return None, "Email accounts config must contain a non-empty 'accounts' mapping"
+
+    accounts: Dict[str, _EmailAccountConfig] = {}
+    errors: list[str] = []
+    for k, v in accounts_raw.items():
+        name = _as_str(k)
+        if not name:
+            errors.append("account name must be a non-empty string")
+            continue
+        acc, err = _parse_email_account(name, v)
+        if err is not None:
+            errors.append(f"{name}: {err}")
+            continue
+        if acc is not None:
+            accounts[name] = acc
+
+    if errors:
+        return None, "Invalid email accounts config: " + "; ".join(errors)
+
+    default_from_env = _env_str("ABSTRACT_EMAIL_DEFAULT_ACCOUNT")
+    default_from_file = _as_str(data.get("default_account"))
+    default_account = (default_from_env or default_from_file or "").strip() or None
+    if default_account is None and len(accounts) == 1:
+        default_account = next(iter(accounts.keys()))
+    if default_account is not None and default_account not in accounts:
+        return None, f"Default email account '{default_account}' not found in accounts"
+
+    return _EmailAccountsConfig(accounts=accounts, default_account=default_account, source="yaml", config_path=str(p)), None
+
+
+def _load_email_accounts_from_env() -> Tuple[_EmailAccountsConfig, Optional[str]]:
+    name = _env_str("ABSTRACT_EMAIL_ACCOUNT_NAME") or "default"
+
+    smtp_defaults = _load_smtp_defaults()
+    smtp_host = str(smtp_defaults.get("smtp_host") or "").strip()
+    smtp_user = str(smtp_defaults.get("username") or "").strip()
+    smtp_cfg: Optional[_EmailSmtpConfig] = None
+    if smtp_host and smtp_user:
+        smtp_cfg = _EmailSmtpConfig(
+            host=smtp_host,
+            port=int(smtp_defaults.get("smtp_port") or 587),
+            username=smtp_user,
+            password_env_var=str(smtp_defaults.get("password_env_var") or "EMAIL_PASSWORD").strip() or "EMAIL_PASSWORD",
+            use_starttls=bool(smtp_defaults.get("use_starttls")),
+            from_email=str(smtp_defaults.get("from_email") or "").strip(),
+            reply_to=str(smtp_defaults.get("reply_to") or "").strip(),
+        )
+
+    imap_defaults = _load_imap_defaults()
+    imap_host = str(imap_defaults.get("imap_host") or "").strip()
+    imap_user = str(imap_defaults.get("username") or "").strip()
+    imap_cfg: Optional[_EmailImapConfig] = None
+    if imap_host and imap_user:
+        mailbox = _env_str("ABSTRACT_EMAIL_IMAP_FOLDER") or "INBOX"
+        imap_cfg = _EmailImapConfig(
+            host=imap_host,
+            port=int(imap_defaults.get("imap_port") or 993),
+            username=imap_user,
+            password_env_var=str(imap_defaults.get("password_env_var") or "EMAIL_PASSWORD").strip() or "EMAIL_PASSWORD",
+            mailbox=str(mailbox or "").strip() or "INBOX",
+        )
+
+    accounts: Dict[str, _EmailAccountConfig] = {}
+    if smtp_cfg is not None or imap_cfg is not None:
+        accounts[name] = _EmailAccountConfig(
+            name=name,
+            allow_read=bool(imap_cfg is not None),
+            allow_send=bool(smtp_cfg is not None),
+            imap=imap_cfg,
+            smtp=smtp_cfg,
+        )
+
+    default_from_env = _env_str("ABSTRACT_EMAIL_DEFAULT_ACCOUNT")
+    default_account = (default_from_env or "").strip() or (name if accounts else None)
+    if default_account is not None and default_account not in accounts:
+        default_account = name if accounts else None
+
+    return _EmailAccountsConfig(accounts=accounts, default_account=default_account, source="env", config_path=None), None
+
+
+def _load_email_accounts_config() -> Tuple[Optional[_EmailAccountsConfig], Optional[str]]:
+    path = _env_str("ABSTRACT_EMAIL_ACCOUNTS_CONFIG")
+    if path:
+        return _load_email_accounts_from_file(path)
+    cfg, err = _load_email_accounts_from_env()
+    return cfg, err
+
+
+def _available_email_accounts(cfg: _EmailAccountsConfig) -> str:
+    names = sorted(cfg.accounts.keys())
+    return ", ".join(names)
+
+
+def _select_email_account(cfg: _EmailAccountsConfig, requested: Optional[str]) -> Tuple[Optional[_EmailAccountConfig], Optional[str]]:
+    if not cfg.accounts:
+        return (
+            None,
+            "No email accounts configured. Set ABSTRACT_EMAIL_ACCOUNTS_CONFIG (YAML) or "
+            "ABSTRACT_EMAIL_{IMAP,SMTP}_* env vars.",
+        )
+
+    name = _as_str(requested)
+    if not name:
+        if cfg.default_account:
+            name = cfg.default_account
+        elif len(cfg.accounts) == 1:
+            name = next(iter(cfg.accounts.keys()))
+        else:
+            return None, f"Multiple email accounts configured; specify account. Available: {_available_email_accounts(cfg)}"
+
+    acc = cfg.accounts.get(name)
+    if acc is None:
+        return None, f"Unknown email account '{name}'. Available: {_available_email_accounts(cfg)}"
+    return acc, None
+
+
+def _select_email_account_for(
+    requested: Optional[str], *, capability: str
+) -> Tuple[Optional[_EmailAccountConfig], Optional[str]]:
+    cfg, err = _load_email_accounts_config()
+    if err is not None:
+        return None, err
+    if cfg is None:
+        return None, "Email account configuration is unavailable"
+
+    acc, err2 = _select_email_account(cfg, requested)
+    if err2 is not None:
+        return None, err2
+    if acc is None:
+        return None, "Email account selection failed"
+
+    cap = str(capability or "").strip().lower()
+    if cap == "read":
+        if not acc.allow_read or acc.imap is None:
+            return None, f"Email account '{acc.name}' is not configured for reading (IMAP)."
+    elif cap == "send":
+        if not acc.allow_send or acc.smtp is None:
+            return None, f"Email account '{acc.name}' is not configured for sending (SMTP)."
+    else:
+        return None, f"Unknown capability: {capability}"
+
+    return acc, None
 
 
 def _parse_since(value: Optional[str]) -> Tuple[Optional[datetime], Optional[str]]:
@@ -182,78 +709,112 @@ def _extract_text_bodies(msg: Message) -> Tuple[str, str]:
 
 
 @tool(
-    description="Send an email via SMTP (supports text and HTML bodies).",
+    description="List configured email accounts (what the runtime host has enabled).",
     tags=["comms", "email"],
-    when_to_use="Use to send an email notification or report to one or more recipients.",
+    when_to_use="Use before reading/sending email to discover which accounts are configured and allowed.",
+    examples=[{"description": "List available accounts", "arguments": {}}],
+)
+def list_email_accounts() -> Dict[str, Any]:
+    cfg, err = _load_email_accounts_config()
+    if err is not None:
+        return {"success": False, "error": err}
+    if cfg is None:
+        return {"success": False, "error": "Email account configuration is unavailable"}
+
+    accounts: list[Dict[str, Any]] = []
+    for name in sorted(cfg.accounts.keys()):
+        acc = cfg.accounts.get(name)
+        if acc is None:
+            continue
+        accounts.append(
+            {
+                "account": acc.name,
+                "email": acc.email_address(),
+                "from_email": acc.from_email() or None,
+                "can_read": bool(acc.allow_read and acc.imap is not None),
+                "can_send": bool(acc.allow_send and acc.smtp is not None),
+            }
+        )
+
+    return {
+        "success": True,
+        "source": cfg.source,
+        "config_path": cfg.config_path,
+        "default_account": cfg.default_account,
+        "accounts": accounts,
+    }
+
+
+@tool(
+    description="Send an email from a configured account (SMTP).",
+    tags=["comms", "email"],
+    when_to_use=(
+        "Use to send an email notification or report. The sender account is restricted to the operator-configured "
+        "email accounts (it cannot be overridden by tool arguments)."
+    ),
     examples=[
         {
-            "description": "Send a simple text email (credentials via env)",
-            "arguments": {
-                "smtp_host": "smtp.example.com",
-                "username": "me@example.com",
-                "password_env_var": "EMAIL_PASSWORD",
-                "to": "you@example.com",
-                "subject": "Hello",
-                "body_text": "Hi there!",
-            },
-        }
+            "description": "Send a simple text email from the default configured account",
+            "arguments": {"to": "you@example.com", "subject": "Hello", "body_text": "Hi there!"},
+        },
+        {
+            "description": "Send from a named account (multi-account config)",
+            "arguments": {"account": "work", "to": "you@example.com", "subject": "Report", "body_text": "Done."},
+        },
     ],
 )
 def send_email(
-    smtp_host: str,
-    username: str,
     to: Any,
     subject: str,
     *,
+    account: Optional[str] = None,
     body_text: Optional[str] = None,
     body_html: Optional[str] = None,
-    from_email: Optional[str] = None,
     cc: Any = None,
     bcc: Any = None,
-    reply_to: Optional[str] = None,
-    smtp_port: int = 587,
-    use_starttls: bool = True,
-    password_env_var: str = "EMAIL_PASSWORD",
     timeout_s: float = 30.0,
     headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """Send an email via SMTP, resolving the SMTP password from an env var."""
-    password, err = _resolve_required_env(password_env_var, label="SMTP password")
+    """Send an email via SMTP using only operator-configured account settings."""
+    acc, err = _select_email_account_for(account, capability="send")
     if err is not None:
         return {"success": False, "error": err}
+    if acc is None or acc.smtp is None:
+        return {"success": False, "error": "SMTP account configuration is unavailable"}
 
-    smtp_host = str(smtp_host or "").strip()
-    username = str(username or "").strip()
-    subject = str(subject or "").strip()
-    if not smtp_host:
-        return {"success": False, "error": "smtp_host is required"}
-    if not username:
-        return {"success": False, "error": "username is required"}
-    if not subject:
-        return {"success": False, "error": "subject is required"}
+    smtp_cfg = acc.smtp
+
+    password, err2 = _resolve_required_env(smtp_cfg.password_env_var, label="SMTP password")
+    if err2 is not None:
+        return {"success": False, "error": err2, "account": acc.name}
+
+    subject_s = str(subject or "").strip()
+    if not subject_s:
+        return {"success": False, "error": "subject is required", "account": acc.name}
 
     to_list = _coerce_str_list(to)
     cc_list = _coerce_str_list(cc)
     bcc_list = _coerce_str_list(bcc)
     if not to_list and not cc_list and not bcc_list:
-        return {"success": False, "error": "At least one recipient is required (to/cc/bcc)"}
+        return {"success": False, "error": "At least one recipient is required (to/cc/bcc)", "account": acc.name}
 
-    body_text = (body_text or "").strip()
-    body_html = (body_html or "").strip()
-    if not body_text and not body_html:
-        return {"success": False, "error": "Provide body_text and/or body_html"}
+    body_text_s = (body_text or "").strip()
+    body_html_s = (body_html or "").strip()
+    if not body_text_s and not body_html_s:
+        return {"success": False, "error": "Provide body_text and/or body_html", "account": acc.name}
 
-    sender = (from_email or "").strip() or username
+    sender = smtp_cfg.from_email or smtp_cfg.username
+    reply_to = smtp_cfg.reply_to.strip() or None
 
     msg = EmailMessage()
-    msg["Subject"] = subject
+    msg["Subject"] = subject_s
     msg["From"] = sender
     if to_list:
         msg["To"] = ", ".join(to_list)
     if cc_list:
         msg["Cc"] = ", ".join(cc_list)
-    if reply_to and str(reply_to).strip():
-        msg["Reply-To"] = str(reply_to).strip()
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid()
 
@@ -264,32 +825,27 @@ def send_email(
                 continue
             msg[str(k).strip()] = str(v)
 
-    if body_text and body_html:
-        msg.set_content(body_text)
-        msg.add_alternative(body_html, subtype="html")
-    elif body_html:
-        # Some clients handle HTML-only emails poorly; include a minimal text fallback.
-        msg.set_content(body_text or "(This email contains HTML content.)")
-        msg.add_alternative(body_html, subtype="html")
+    if body_text_s and body_html_s:
+        msg.set_content(body_text_s)
+        msg.add_alternative(body_html_s, subtype="html")
+    elif body_html_s:
+        msg.set_content(body_text_s or "(This email contains HTML content.)")
+        msg.add_alternative(body_html_s, subtype="html")
     else:
-        msg.set_content(body_text)
-
-    smtp_port_i = int(smtp_port or 0)
-    if smtp_port_i <= 0:
-        return {"success": False, "error": "smtp_port must be a positive integer"}
+        msg.set_content(body_text_s)
 
     timeout = float(timeout_s) if isinstance(timeout_s, (int, float)) else 30.0
     if timeout <= 0:
         timeout = 30.0
 
     try:
-        if use_starttls:
-            client: Any = smtplib.SMTP(smtp_host, smtp_port_i, timeout=timeout)
+        if smtp_cfg.use_starttls:
+            client: Any = smtplib.SMTP(smtp_cfg.host, int(smtp_cfg.port), timeout=timeout)
             try:
                 client.ehlo()
                 client.starttls()
                 client.ehlo()
-                client.login(username, password)
+                client.login(smtp_cfg.username, password)
                 client.send_message(msg, from_addr=sender, to_addrs=to_list + cc_list + bcc_list)
             finally:
                 try:
@@ -297,9 +853,9 @@ def send_email(
                 except Exception:
                     pass
         else:
-            client2: Any = smtplib.SMTP_SSL(smtp_host, smtp_port_i, timeout=timeout)
+            client2: Any = smtplib.SMTP_SSL(smtp_cfg.host, int(smtp_cfg.port), timeout=timeout)
             try:
-                client2.login(username, password)
+                client2.login(smtp_cfg.username, password)
                 client2.send_message(msg, from_addr=sender, to_addrs=to_list + cc_list + bcc_list)
             finally:
                 try:
@@ -309,64 +865,71 @@ def send_email(
 
         return {
             "success": True,
+            "account": acc.name,
             "message_id": str(msg.get("Message-ID") or ""),
             "from": sender,
             "to": list(to_list),
             "cc": list(cc_list),
             "bcc": list(bcc_list),
-            "smtp": {"host": smtp_host, "port": smtp_port_i, "username": username, "starttls": bool(use_starttls)},
+            "smtp": {
+                "host": smtp_cfg.host,
+                "port": int(smtp_cfg.port),
+                "username": smtp_cfg.username,
+                "starttls": bool(smtp_cfg.use_starttls),
+            },
         }
     except Exception as e:
         return {
             "success": False,
+            "account": acc.name,
             "error": str(e),
-            "smtp": {"host": smtp_host, "port": smtp_port_i, "username": username, "starttls": bool(use_starttls)},
+            "smtp": {
+                "host": smtp_cfg.host,
+                "port": int(smtp_cfg.port),
+                "username": smtp_cfg.username,
+                "starttls": bool(smtp_cfg.use_starttls),
+            },
         }
 
 
 @tool(
-    description="List recent emails from an IMAP mailbox (supports since + read/unread filters).",
+    description="List recent emails from a configured IMAP mailbox (supports since + read/unread filters).",
     tags=["comms", "email"],
     when_to_use="Use to fetch a digest of recent emails (subject/from/date/flags) for review or routing.",
     examples=[
         {
-            "description": "List unread emails from the last 7 days",
-            "arguments": {
-                "imap_host": "imap.example.com",
-                "username": "me@example.com",
-                "password_env_var": "EMAIL_PASSWORD",
-                "since": "7d",
-                "status": "unread",
-                "limit": 10,
-            },
-        }
+            "description": "List unread emails from the default configured account (last 7 days)",
+            "arguments": {"since": "7d", "status": "unread", "limit": 10},
+        },
+        {
+            "description": "List unread emails from a named account (multi-account config)",
+            "arguments": {"account": "work", "since": "7d", "status": "unread", "limit": 10},
+        },
     ],
 )
 def list_emails(
-    imap_host: str,
-    username: str,
     *,
-    password_env_var: str = "EMAIL_PASSWORD",
-    mailbox: str = "INBOX",
+    account: Optional[str] = None,
+    mailbox: Optional[str] = None,
     since: Optional[str] = None,
     status: str = "all",
     limit: int = 20,
-    imap_port: int = 993,
     timeout_s: float = 30.0,
 ) -> Dict[str, Any]:
-    """List email headers from an IMAP mailbox, resolving the password from an env var."""
-    password, err = _resolve_required_env(password_env_var, label="IMAP password")
+    """List email headers from an IMAP mailbox using only operator-configured account settings."""
+    acc, err = _select_email_account_for(account, capability="read")
     if err is not None:
         return {"success": False, "error": err}
+    if acc is None or acc.imap is None:
+        return {"success": False, "error": "IMAP account configuration is unavailable"}
 
-    imap_host = str(imap_host or "").strip()
-    username = str(username or "").strip()
-    mailbox = str(mailbox or "").strip() or "INBOX"
+    imap_cfg = acc.imap
 
-    if not imap_host:
-        return {"success": False, "error": "imap_host is required"}
-    if not username:
-        return {"success": False, "error": "username is required"}
+    password, err2 = _resolve_required_env(imap_cfg.password_env_var, label="IMAP password")
+    if err2 is not None:
+        return {"success": False, "error": err2, "account": acc.name}
+
+    mailbox2 = str(mailbox or "").strip() or str(imap_cfg.mailbox or "").strip() or "INBOX"
 
     try:
         limit_i = int(limit or 0)
@@ -375,20 +938,16 @@ def list_emails(
     if limit_i <= 0:
         limit_i = 20
 
-    try:
-        imap_port_i = int(imap_port or 0)
-    except Exception:
-        imap_port_i = 0
-    if imap_port_i <= 0:
-        return {"success": False, "error": "imap_port must be a positive integer"}
+    if int(imap_cfg.port) <= 0:
+        return {"success": False, "error": "imap_port must be a positive integer", "account": acc.name}
 
     dt_since, dt_err = _parse_since(since)
     if dt_err is not None:
-        return {"success": False, "error": dt_err}
+        return {"success": False, "error": dt_err, "account": acc.name}
 
     status_norm = str(status or "").strip().lower() or "all"
     if status_norm not in {"all", "unread", "read"}:
-        return {"success": False, "error": "status must be one of: all, unread, read"}
+        return {"success": False, "error": "status must be one of: all, unread, read", "account": acc.name}
 
     timeout = float(timeout_s) if isinstance(timeout_s, (int, float)) else 30.0
     if timeout <= 0:
@@ -396,17 +955,17 @@ def list_emails(
 
     client: Optional[imaplib.IMAP4_SSL] = None
     try:
-        client = imaplib.IMAP4_SSL(imap_host, imap_port_i)
+        client = imaplib.IMAP4_SSL(imap_cfg.host, int(imap_cfg.port))
         try:
             if getattr(client, "sock", None) is not None:
                 client.sock.settimeout(timeout)  # type: ignore[attr-defined]
         except Exception:
             pass
 
-        client.login(username, password)
-        typ, _ = client.select(mailbox, readonly=True)
+        client.login(imap_cfg.username, password)
+        typ, _ = client.select(mailbox2, readonly=True)
         if typ != "OK":
-            return {"success": False, "error": f"Failed to select mailbox: {mailbox}"}
+            return {"success": False, "error": f"Failed to select mailbox: {mailbox2}", "account": acc.name}
 
         criteria: list[str] = []
         if dt_since is not None:
@@ -419,7 +978,7 @@ def list_emails(
 
         typ2, data = client.uid("search", None, search_query)
         if typ2 != "OK" or not data:
-            return {"success": False, "error": "IMAP search failed"}
+            return {"success": False, "error": "IMAP search failed", "account": acc.name, "mailbox": mailbox2}
 
         raw_uids = data[0] if isinstance(data, list) and data else b""
         if not isinstance(raw_uids, (bytes, bytearray)):
@@ -489,13 +1048,14 @@ def list_emails(
 
         return {
             "success": True,
-            "mailbox": mailbox,
+            "account": acc.name,
+            "mailbox": mailbox2,
             "filter": {"since": dt_since.isoformat() if dt_since else None, "status": status_norm, "limit": limit_i},
             "counts": {"returned": len(messages), "unread": unread, "read": read},
             "messages": messages,
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "mailbox": mailbox}
+        return {"success": False, "account": acc.name, "error": str(e), "mailbox": mailbox2}
     finally:
         if client is not None:
             try:
@@ -510,49 +1070,40 @@ def list_emails(
     when_to_use="Use after list_emails to fetch the full content of a specific email.",
     examples=[
         {
-            "description": "Read an email by UID",
-            "arguments": {
-                "imap_host": "imap.example.com",
-                "username": "me@example.com",
-                "password_env_var": "EMAIL_PASSWORD",
-                "uid": "12345",
-            },
-        }
+            "description": "Read an email by UID from the default configured account",
+            "arguments": {"uid": "12345"},
+        },
+        {"description": "Read an email by UID from a named account", "arguments": {"account": "work", "uid": "12345"}},
     ],
 )
 def read_email(
-    imap_host: str,
-    username: str,
-    uid: str,
     *,
-    password_env_var: str = "EMAIL_PASSWORD",
-    mailbox: str = "INBOX",
-    imap_port: int = 993,
+    uid: str,
+    account: Optional[str] = None,
+    mailbox: Optional[str] = None,
     timeout_s: float = 30.0,
     max_body_chars: int = 20000,
 ) -> Dict[str, Any]:
     """Read a single email by UID from an IMAP mailbox (best-effort; does not mark as read)."""
-    password, err = _resolve_required_env(password_env_var, label="IMAP password")
+    acc, err = _select_email_account_for(account, capability="read")
     if err is not None:
         return {"success": False, "error": err}
+    if acc is None or acc.imap is None:
+        return {"success": False, "error": "IMAP account configuration is unavailable"}
 
-    imap_host = str(imap_host or "").strip()
-    username = str(username or "").strip()
-    mailbox = str(mailbox or "").strip() or "INBOX"
-    uid = str(uid or "").strip()
-    if not imap_host:
-        return {"success": False, "error": "imap_host is required"}
-    if not username:
-        return {"success": False, "error": "username is required"}
-    if not uid:
-        return {"success": False, "error": "uid is required"}
+    imap_cfg = acc.imap
 
-    try:
-        imap_port_i = int(imap_port or 0)
-    except Exception:
-        imap_port_i = 0
-    if imap_port_i <= 0:
-        return {"success": False, "error": "imap_port must be a positive integer"}
+    password, err2 = _resolve_required_env(imap_cfg.password_env_var, label="IMAP password")
+    if err2 is not None:
+        return {"success": False, "error": err2, "account": acc.name}
+
+    mailbox2 = str(mailbox or "").strip() or str(imap_cfg.mailbox or "").strip() or "INBOX"
+    uid2 = str(uid or "").strip()
+    if not uid2:
+        return {"success": False, "error": "uid is required", "account": acc.name}
+
+    if int(imap_cfg.port) <= 0:
+        return {"success": False, "error": "imap_port must be a positive integer", "account": acc.name}
 
     try:
         max_chars = int(max_body_chars or 0)
@@ -567,21 +1118,21 @@ def read_email(
 
     client: Optional[imaplib.IMAP4_SSL] = None
     try:
-        client = imaplib.IMAP4_SSL(imap_host, imap_port_i)
+        client = imaplib.IMAP4_SSL(imap_cfg.host, int(imap_cfg.port))
         try:
             if getattr(client, "sock", None) is not None:
                 client.sock.settimeout(timeout)  # type: ignore[attr-defined]
         except Exception:
             pass
 
-        client.login(username, password)
-        typ, _ = client.select(mailbox, readonly=True)
+        client.login(imap_cfg.username, password)
+        typ, _ = client.select(mailbox2, readonly=True)
         if typ != "OK":
-            return {"success": False, "error": f"Failed to select mailbox: {mailbox}"}
+            return {"success": False, "error": f"Failed to select mailbox: {mailbox2}", "account": acc.name}
 
-        typ2, fetched = client.uid("fetch", uid, "(FLAGS BODY.PEEK[])")
+        typ2, fetched = client.uid("fetch", uid2, "(FLAGS BODY.PEEK[])")
         if typ2 != "OK" or not fetched:
-            return {"success": False, "error": f"Email not found for uid={uid}"}
+            return {"success": False, "error": f"Email not found for uid={uid2}", "account": acc.name, "mailbox": mailbox2}
 
         raw_bytes: Optional[bytes] = None
         flags: list[str] = []
@@ -599,7 +1150,7 @@ def read_email(
                     flags = []
 
         if raw_bytes is None:
-            return {"success": False, "error": f"Failed to fetch email bytes for uid={uid}"}
+            return {"success": False, "error": f"Failed to fetch email bytes for uid={uid2}", "account": acc.name, "mailbox": mailbox2}
 
         msg = email.message_from_bytes(raw_bytes)
         subject_v = _decode_mime_header(msg.get("Subject"))
@@ -632,8 +1183,9 @@ def read_email(
 
         return {
             "success": True,
-            "mailbox": mailbox,
-            "uid": uid,
+            "account": acc.name,
+            "mailbox": mailbox2,
+            "uid": uid2,
             "message_id": message_id,
             "subject": subject_v,
             "from": from_v,
@@ -647,7 +1199,7 @@ def read_email(
             "attachments": attachments,
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "mailbox": mailbox, "uid": uid}
+        return {"success": False, "account": acc.name, "error": str(e), "mailbox": mailbox2, "uid": uid2}
     finally:
         if client is not None:
             try:
