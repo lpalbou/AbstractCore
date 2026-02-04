@@ -94,7 +94,7 @@ llm = create_llm(
 # Same parameters work with any provider
 openai_llm = create_llm(
     "openai",
-    model="gpt-5-mini",
+    model="gpt-4o-mini",
     max_tokens=16384,           # Context window
     max_output_tokens=4000,     # Output limit
     max_input_tokens=12384      # Input limit (auto-calculated: 16384 - 4000)
@@ -154,7 +154,7 @@ if estimated > budget.max_input_tokens:
                     <div class="code-block">
                         <pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-5-mini", seed=42)
+llm = create_llm("openai", model="gpt-4o-mini", seed=42)
 response = llm.generate("Explain quantum computing")
 
 # GenerateResponse object provides consistent structure across all providers
@@ -176,7 +176,7 @@ print(f"Raw usage: {response.usage}")               # Provider-specific token da
 print(f"Metadata: {response.metadata}")             # Additional context
 
 # Comprehensive summary with timing
-print(f"Summary: {response.get_summary()}")         # "Model: gpt-5-mini | Tokens: 117 | Time: 1234.5ms"</code></pre>
+print(f"Summary: {response.get_summary()}")         # "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"</code></pre>
                     </div>
 
                     <h3>Token Count Sources</h3>
@@ -216,7 +216,7 @@ def cost_monitor(event):
 on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 
 # Generate with cost tracking
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("Write a detailed analysis...")
 
 # Access usage information
@@ -293,7 +293,7 @@ print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
                                 <pre><code class="language-python"># Good: Reasonable limits
 llm = create_llm(
     "openai",
-    model="gpt-5-mini",
+    model="gpt-4o-mini",
     max_tokens=16384,       # Model's context window
     max_output_tokens=4000, # 25% for output
     max_input_tokens=12384  # 75% for input

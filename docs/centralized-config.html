@@ -71,7 +71,7 @@ abstractcore --status
 abstractcore --set-global-default ollama/qwen3:4b-instruct
 
 # Set app-specific defaults for optimal performance
-abstractcore --set-app-default summarizer openai gpt-5-mini
+abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # Set API keys
@@ -88,19 +88,19 @@ abstractcore --set-console-log-level WARNING</code></pre>
                 <ol>
                     <li><strong>Explicit Parameters</strong> (highest priority)
                         <div class="code-block">
-                            <pre><code class="language-bash">summarizer document.txt --provider openai --model gpt-5-mini</code></pre>
+                            <pre><code class="language-bash">summarizer document.txt --provider openai --model gpt-4o-mini</code></pre>
                         </div>
                     </li>
 
                     <li><strong>App-Specific Configuration</strong>
                         <div class="code-block">
-                            <pre><code class="language-bash">abstractcore --set-app-default summarizer openai gpt-5-mini</code></pre>
+                            <pre><code class="language-bash">abstractcore --set-app-default summarizer openai gpt-4o-mini</code></pre>
                         </div>
                     </li>
 
                     <li><strong>Global Configuration</strong>
                         <div class="code-block">
-                            <pre><code class="language-bash">abstractcore --set-global-default openai/gpt-5-mini</code></pre>
+                            <pre><code class="language-bash">abstractcore --set-global-default openai/gpt-4o-mini</code></pre>
                         </div>
                     </li>
 
@@ -117,7 +117,7 @@ abstractcore --set-console-log-level WARNING</code></pre>
 abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # High-quality cloud model for document summarization
-abstractcore --set-app-default summarizer openai gpt-5-mini
+abstractcore --set-app-default summarizer openai gpt-4o-mini
 
 # Balanced model for extraction tasks
 abstractcore --set-app-default extractor anthropic claude-haiku-4-5
@@ -134,10 +134,10 @@ abstractcore --set-app-default judge anthropic claude-haiku-4-5</code></pre>
 abstractcore --download-vision-model
 
 # Or use existing Ollama model
-abstractcore --set-vision-caption qwen2.5vl:7b
+abstractcore --set-vision-provider ollama qwen2.5vl:7b
 
 # Or use cloud API
-abstractcore --set-vision-provider openai --model gpt-4o
+abstractcore --set-vision-provider openai gpt-4o
 
 # Disable vision fallback
 abstractcore --disable-vision</code></pre>
@@ -219,17 +219,17 @@ abstractcore --set-app-default cli ollama qwen3:4b-instruct  # Fast model for CL
                 <h3>Production Environment</h3>
                 <div class="code-block">
                     <pre><code class="language-bash"># Configure for production reliability and performance
-abstractcore --set-global-default openai/gpt-5-mini  # Reliable cloud provider
+abstractcore --set-global-default openai/gpt-4o-mini  # Reliable cloud provider
 abstractcore --set-console-log-level WARNING          # Reduce noise
 abstractcore --enable-file-logging                    # Persistent logs
-abstractcore --set-app-default summarizer openai gpt-5-mini  # Optimize for quality</code></pre>
+abstractcore --set-app-default summarizer openai gpt-4o-mini  # Optimize for quality</code></pre>
                 </div>
 
                 <h3>Multi-Environment Approach</h3>
                 <div class="code-block">
                     <pre><code class="language-bash"># Use different providers for different applications
 abstractcore --set-app-default cli ollama qwen3:4b-instruct           # Fast for development
-abstractcore --set-app-default summarizer openai gpt-5-mini # Quality for documents
+abstractcore --set-app-default summarizer openai gpt-4o-mini # Quality for documents
 abstractcore --set-app-default judge anthropic claude-haiku-4-5 # Detailed analysis</code></pre>
                 </div>
 

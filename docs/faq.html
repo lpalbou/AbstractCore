@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ - AbstractCore</title>
+    <meta name="description" content="Frequently asked questions about AbstractCore installs, providers, tools, structured output, media, embeddings, and the server.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [
+                    { text: 'Features', href: '/docs/capabilities.html' },
+                    { text: 'Quick Start', href: '/docs/getting-started.html' },
+                    { text: 'Documentation', href: '/#docs' },
+                    { text: 'Examples', href: '/docs/examples.html' },
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/abstractcore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">FAQ</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    Common questions about installs, providers, tools, structured output, media, embeddings, and the server.
+                </p>
+            </div>
+
+            <!-- Table of Contents -->
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;">
+                <h2 style="margin: 0 0 1rem 0;">Table of Contents</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem;">
+                    <div>
+                        <a href="#install" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Install & Extras</a>
+                        <a href="#providers" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Providers & Models</a>
+                        <a href="#tools" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tools</a>
+                    </div>
+                    <div>
+                        <a href="#structured-output" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Structured Output</a>
+                        <a href="#media" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Media / Vision</a>
+                        <a href="#embeddings" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Embeddings</a>
+                    </div>
+                    <div>
+                        <a href="#server" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">HTTP Server</a>
+                        <a href="#debugging" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Debugging & Downloads</a>
+                        <a href="#scope" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Scope & Philosophy</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="doc-content">
+                <section id="install">
+                    <h2>Install & Extras</h2>
+
+                    <h3>What do I get with <code>pip install abstractcore</code>?</h3>
+                    <p>
+                        The default install is intentionally lightweight. It includes the core API (<code>create_llm</code>,
+                        <code>BasicSession</code>, tool definitions, structured output plumbing) and small dependencies.
+                        Heavy dependencies live behind install extras.
+                    </p>
+                    <p>
+                        See <a href="getting-started.html">Getting Started</a> and <a href="prerequisites.html">Prerequisites</a>.
+                    </p>
+
+                    <h3>Which extra do I need for my provider?</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install "abstractcore[openai]"       # OpenAI SDK
+pip install "abstractcore[anthropic]"    # Anthropic SDK
+pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
+pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
+pip install "abstractcore[vllm]"         # GPU server integration (heavy)</code></pre>
+                    </div>
+
+                    <p>These providers work with the core install (no provider extra): <code>ollama</code>, <code>lmstudio</code>, <code>openrouter</code>, <code>openai-compatible</code>.</p>
+
+                    <h3>How do I combine extras?</h3>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># zsh: keep quotes
+pip install "abstractcore[openai,media,tools]"</code></pre>
+                    </div>
+
+                    <p>For turnkey installs, see the project README (extras like <code>all-apple</code>, <code>all-non-mlx</code>, <code>all-gpu</code>).</p>
+
+                    <h3>Why did my install pull <code>torch</code> / take a long time?</h3>
+                    <p>
+                        You probably installed a heavy extra (most commonly <code>abstractcore[huggingface]</code>, <code>abstractcore[mlx]</code>, or a turnkey <code>all-*</code> extra).
+                        The core install (<code>pip install abstractcore</code>) does not include torch/transformers.
+                    </p>
+                </section>
+
+                <section id="providers" style="margin-top: 3rem;">
+                    <h2>Providers & Models</h2>
+
+                    <h3>What’s the difference between “provider” and “model”?</h3>
+                    <ul>
+                        <li><strong>Provider</strong>: a backend adapter (<code>openai</code>, <code>anthropic</code>, <code>ollama</code>, <code>lmstudio</code>, …)</li>
+                        <li><strong>Model</strong>: a provider-specific model name (for example <code>gpt-4o-mini</code> or <code>qwen3:4b-instruct</code>)</li>
+                    </ul>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")</code></pre>
+                    </div>
+
+                    <h3>How do I connect to a local server (Ollama / LMStudio / vLLM / OpenAI-compatible)?</h3>
+                    <p>Use the matching provider and set <code>base_url</code> (or the provider’s base-url env var).</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434")
+llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
+llm = create_llm("vllm", model="Qwen/Qwen3-Coder-30B-A3B-Instruct", base_url="http://localhost:8000/v1")
+
+# Generic OpenAI-compatible endpoint
+llm = create_llm("openai-compatible", model="my-model", base_url="http://localhost:1234/v1")</code></pre>
+                    </div>
+
+                    <p>See <a href="prerequisites.html">Prerequisites</a> for setup details and env var names.</p>
+
+                    <h3>How do I set API keys and defaults?</h3>
+                    <p>Use env vars, or persist settings via the config CLI:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">abstractcore --configure
+abstractcore --set-api-key openai sk-...
+abstractcore --set-api-key anthropic sk-ant-...
+abstractcore --status</code></pre>
+                    </div>
+                    <p>Config is stored in <code>~/.abstractcore/config/abstractcore.json</code>. See <a href="centralized-config.html">Centralized Configuration</a>.</p>
+                </section>
+
+                <section id="tools" style="margin-top: 3rem;">
+                    <h2>Tools</h2>
+
+                    <h3>Why aren’t tools executed automatically?</h3>
+                    <p>
+                        By default, AbstractCore runs in <strong>pass-through</strong> mode (<code>execute_tools=False</code>): it returns tool calls in
+                        <code>resp.tool_calls</code>, and your host/runtime decides whether/how to execute them.
+                    </p>
+                    <p>Automatic execution (<code>execute_tools=True</code>) exists but is deprecated for most use cases. See <a href="tool-calling.html">Tool Calling</a>.</p>
+
+                    <h3>How do I preserve tool-call markup in <code>response.content</code> for agentic CLIs?</h3>
+                    <p>Use tool-call syntax rewriting:</p>
+                    <ul>
+                        <li>Python: pass <code>tool_call_tags=...</code> to <code>generate()</code> / <code>agenerate()</code></li>
+                        <li>Server: set <code>agent_format</code> in requests</li>
+                    </ul>
+                    <p>See <a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a>.</p>
+                </section>
+
+                <section id="structured-output" style="margin-top: 3rem;">
+                    <h2>Structured Output</h2>
+
+                    <h3>How do I get structured output (typed objects) instead of parsing JSON?</h3>
+                    <p>Pass a Pydantic model via <code>response_model=...</code>:</p>
+                    <div class="code-block">
+                        <pre><code class="language-python">from pydantic import BaseModel
+from abstractcore import create_llm
+
+class Answer(BaseModel):
+    title: str
+    bullets: list[str]
+
+llm = create_llm("openai", model="gpt-4o-mini")
+result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
+print(result.bullets)</code></pre>
+                    </div>
+                    <p>See <a href="structured-output.html">Structured Output</a>.</p>
+
+                    <h3>Why does structured output retry or fail validation?</h3>
+                    <p>Validation failures trigger retries with schema feedback (up to the configured retry limit). Common fixes:</p>
+                    <ul>
+                        <li>Simplify schemas (fewer nested structures, fewer strict constraints)</li>
+                        <li>Tighten prompts (explicit allowed values and ranges)</li>
+                        <li>Increase timeouts for slow backends</li>
+                    </ul>
+                    <p>See <a href="structured-output.html">Structured Output</a> and <a href="troubleshooting.html">Troubleshooting</a>.</p>
+                </section>
+
+                <section id="media" style="margin-top: 3rem;">
+                    <h2>Media / Vision</h2>
+
+                    <h3>Why do PDFs / Office docs / images not work?</h3>
+                    <p>Those require the media extra:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install "abstractcore[media]"</code></pre>
+                    </div>
+                    <p>Then pass <code>media=[...]</code> to <code>generate()</code> or use the media pipeline. See <a href="media-handling-system.html">Media Handling</a>.</p>
+
+                    <h3>What are “glyphs” and what do they require?</h3>
+                    <p>
+                        Glyph visual-text compression is an optional feature for long documents. Until this website includes a dedicated page,
+                        see the GitHub docs:
+                        <a href="https://github.com/lpalbou/abstractcore/blob/main/docs/glyphs.md" target="_blank" rel="noopener noreferrer">Glyph Visual-Text Compression</a>.
+                    </p>
+                </section>
+
+                <section id="embeddings" style="margin-top: 3rem;">
+                    <h2>Embeddings</h2>
+
+                    <h3>How do I use embeddings?</h3>
+                    <p>Embeddings are opt-in:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install "abstractcore[embeddings]"</code></pre>
+                    </div>
+                    <p>Then import and use the embeddings module:</p>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager</code></pre>
+                    </div>
+                    <p>See <a href="embeddings.html">Embeddings</a>.</p>
+                </section>
+
+                <section id="server" style="margin-top: 3rem;">
+                    <h2>HTTP Server</h2>
+
+                    <h3>Do I need the HTTP server?</h3>
+                    <p>No. The server is optional and is mainly for:</p>
+                    <ul>
+                        <li>Exposing one OpenAI-compatible <code>/v1</code> endpoint that can route to multiple providers/models</li>
+                        <li>Integrating with OpenAI-compatible clients and agentic CLIs</li>
+                    </ul>
+                    <p>Install and run:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install "abstractcore[server]"
+python -m abstractcore.server.app</code></pre>
+                    </div>
+                    <p>See <a href="server.html">HTTP Server Guide</a>.</p>
+                </section>
+
+                <section id="debugging" style="margin-top: 3rem;">
+                    <h2>Debugging & Downloads</h2>
+
+                    <h3>Where are logs and traces?</h3>
+                    <ul>
+                        <li>Logging: configured via the config CLI and config file.</li>
+                        <li>Interaction tracing: opt-in (<code>enable_tracing=True</code>).</li>
+                    </ul>
+                    <p>
+                        See <a href="structured-logging.html">Structured Logging</a> and (for tracing)
+                        <a href="https://github.com/lpalbou/abstractcore/blob/main/docs/interaction-tracing.md" target="_blank" rel="noopener noreferrer">Interaction Tracing</a>.
+                    </p>
+
+                    <h3>I’m getting HTTP timeouts. What should I change?</h3>
+                    <ul>
+                        <li>Per-provider: pass <code>timeout=...</code> to <code>create_llm(...)</code> (<code>timeout=None</code> means unlimited).</li>
+                        <li>Process-wide default: <code>abstractcore --set-default-timeout 0</code> (0 = unlimited).</li>
+                    </ul>
+                    <p>See <a href="troubleshooting.html">Troubleshooting</a> and <a href="centralized-config.html">Centralized Config</a>.</p>
+
+                    <h3>HuggingFace won’t download models — why?</h3>
+                    <p>
+                        The HuggingFace provider respects offline-first settings. If you want it to fetch from the Hub, update
+                        <code>~/.abstractcore/config/abstractcore.json</code>:
+                    </p>
+                    <ul>
+                        <li>Set <code>"offline_first": false</code></li>
+                        <li>Set <code>"force_local_files_only": false</code></li>
+                    </ul>
+                    <p>Restart your Python process after changing this (the provider reads these settings at import time).</p>
+                </section>
+
+                <section id="scope" style="margin-top: 3rem;">
+                    <h2>Scope & Philosophy</h2>
+
+                    <h3>Is AbstractCore a full agent/RAG framework?</h3>
+                    <p>
+                        AbstractCore focuses on provider abstraction + infrastructure (tools, structured output, media handling, tracing).
+                        It does not ship a full RAG pipeline or multi-step agent orchestration framework.
+                    </p>
+                    <p>See <a href="capabilities.html">Capabilities</a> for current scope and limitations.</p>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">First call + core concepts</p>
+                        </a>
+
+                        <a href="prerequisites.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Prerequisites</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Provider setup + env vars</p>
+                        </a>
+
+                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Passthrough tool calls + safety boundaries</p>
+                        </a>
+
+                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible gateway</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

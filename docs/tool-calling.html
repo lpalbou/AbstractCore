@@ -113,7 +113,7 @@
                         <a href="#tool-execution" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Tool Execution</a>
                         <a href="#advanced-patterns" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Advanced Patterns</a>
                         <a href="#error-handling" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Error Handling</a>
-                        <a href="#performance" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Performance Optimization</a>
+                        <a href="#performance-optimization" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Performance Optimization</a>
                     </div>
                     <div>
                         <a href="#syntax-rewriting" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Tool Syntax Rewriting</a>
@@ -148,14 +148,20 @@ def calculate(expression: str) -> float:
         return float('nan')
 
 # Works with ANY provider
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate(
     "What's the weather in Tokyo and what's 15 * 23?",
     tools=[get_weather, calculate]  # Pass functions directly
 )
 
+# By default (`execute_tools=False`), AbstractCore does not execute tools.
+# It returns a clean assistant message plus structured tool call requests.
 print(response.content)
-# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.</code></pre>
+print(response.tool_calls)</code></pre>
+                    </div>
+
+                    <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
+                        <p style="margin: 0;"><strong>Recommended:</strong> execute tool calls in your host/runtime and apply your own safety policy (approval gates, allowlists, timeouts) before sending tool results back to the model in a follow-up turn.</p>
                     </div>
                 </section>
 
@@ -164,7 +170,8 @@ print(response.content)
                     <p>AbstractCore includes a comprehensive set of ready-to-use tools in <code>abstractcore.tools.common_tools</code>:</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.tools.common_tools import analyze_code, fetch_url, search_files, read_file, list_files
+                        <pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.tools.common_tools import analyze_code, fetch_url, search_files, read_file, list_files
 
 # Code navigation (recommended before editing)
 outline = analyze_code("src/app.py")
@@ -427,7 +434,7 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
                             <p style="margin: 0 0 1rem 0;">For providers with native tool APIs (OpenAI, Anthropic):</p>
                             <div class="code-block">
                                 <pre><code class="language-python"># OpenAI with native tool support
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                             </div>
                         </div>
@@ -445,20 +452,102 @@ response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                     </div>
                 </section>
 
+                <section id="tool-definition">
+                    <h2>Tool Definition</h2>
+                    <p>
+                        In most cases, define tools with <code>@tool</code>. Under the hood, tools are represented as
+                        <code>ToolDefinition</code> objects (manual definitions are rarely needed).
+                    </p>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore.tools import ToolDefinition
+
+def get_weather_function(city: str) -> str:
+    return f"{city}: 22°C and sunny"
+
+# Manual tool definition (rarely needed)
+tool_def = ToolDefinition(
+    name="get_weather",
+    description="Get current weather for a city",
+    parameters={
+        "city": {"type": "string", "description": "The city name"}
+    },
+    function=get_weather_function,
+)</code></pre>
+                    </div>
+
+                    <h3>Parameter Types</h3>
+                    <p>AbstractCore derives tool schemas from Python type hints (including nested objects).</p>
+                    <div style="background: var(--background-secondary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
+                        <ul style="margin: 0;">
+                            <li><code>string</code>, <code>integer</code>, <code>number</code>, <code>boolean</code></li>
+                            <li><code>array</code> (lists) and <code>object</code> (dicts / nested structures)</li>
+                        </ul>
+                    </div>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import tool
+
+@tool
+def complex_tool(
+    text: str,
+    count: int,
+    threshold: float,
+    enabled: bool,
+    tags: list[str],
+    config: dict,
+) -> str:
+    """Tool with various parameter types."""
+    return f"Processed: {text} with {count} items"</code></pre>
+                    </div>
+                </section>
+
                 <section id="tool-execution">
                     <h2>Tool Execution</h2>
-                    
-                    <h3>Execution Flow</h3>
-                    <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin: 2rem 0;">
-                        <ol style="margin: 0; padding-left: 1.5rem;">
-                            <li style="margin-bottom: 0.5rem;"><strong>LLM generates response</strong> with tool calls</li>
-                            <li style="margin-bottom: 0.5rem;"><strong>AbstractCore detects</strong> tool calls in the response</li>
-                            <li style="margin-bottom: 0.5rem;"><strong>Event system emits</strong> <code>TOOL_STARTED</code> (preventable)</li>
-                            <li style="margin-bottom: 0.5rem;"><strong>Tools execute locally</strong> in AbstractCore (not by provider)</li>
-                            <li style="margin-bottom: 0.5rem;"><strong>Results collected</strong> and error handling applied</li>
-                            <li style="margin-bottom: 0.5rem;"><strong>Event system emits</strong> <code>TOOL_COMPLETED</code> with results</li>
-                            <li><strong>Results integrated</strong> into the final response</li>
-                        </ol>
+
+                    <h3>Execution Modes</h3>
+                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
+                        <ul style="margin: 0;">
+                            <li><strong>Passthrough mode (default):</strong> <code>execute_tools=False</code> → tool calls are returned in <code>response.tool_calls</code> for your host/runtime to execute.</li>
+                            <li><strong>Direct execution (deprecated):</strong> <code>execute_tools=True</code> → AbstractCore executes tools locally and appends results (avoid in server/untrusted environments).</li>
+                        </ul>
+                    </div>
+
+                    <h3>Recommended: Host/runtime execution</h3>
+                    <p>In passthrough mode, treat tool calls as untrusted requests. Execute only what you allow.</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm, tool
+from abstractcore.tools import ToolCall, ToolRegistry
+
+@tool
+def get_weather(city: str) -> str:
+    return f"{city}: 22°C and sunny"
+
+dangerous = {"execute_command", "edit_file", "send_email"}
+
+registry = ToolRegistry()
+registry.register(get_weather)
+
+llm = create_llm("openai", model="gpt-4o-mini")
+resp = llm.generate("What's the weather in Paris? Use the tool.", tools=[get_weather])
+
+for call in resp.tool_calls or []:
+    name = call.get("name")
+    if name in dangerous:
+        continue
+    result = registry.execute_tool(
+        ToolCall(
+            name=name,
+            arguments=call.get("arguments") or {},
+            call_id=call.get("call_id") or call.get("id"),
+        )
+    )
+    print(result)</code></pre>
+                    </div>
+
+                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin: 1rem 0;">
+                        <p style="margin: 0; color: #92400e;"><strong>Safety tip:</strong> keep side-effect tools behind an approval boundary (especially filesystem, shell, and messaging tools).</p>
                     </div>
 
                     <h3>Architecture-Aware Tool Call Detection</h3>
@@ -489,15 +578,6 @@ response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
                     <div style="background: var(--background-tertiary); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
                         <p style="margin: 0;"><strong>🎯 Key Point:</strong> You never need to worry about these formats! AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.</p>
                     </div>
-
-                    <h3>Local Execution</h3>
-                    <p>All tools execute locally in AbstractCore, ensuring:</p>
-                    <ul>
-                        <li><strong>Consistent behavior</strong> across all providers</li>
-                        <li><strong>Security control</strong> through event system</li>
-                        <li><strong>Error handling</strong> and validation</li>
-                        <li><strong>Performance monitoring</strong></li>
-                    </ul>
                 </section>
 
                 <section id="advanced-patterns">
@@ -524,25 +604,38 @@ response = llm.generate(
     "What's the weather like for user123?",
     tools=[get_user_location, get_weather]
 )
-# LLM will first call get_user_location, then get_weather with the result</code></pre>
+# In an agent loop, your host executes tool calls and feeds results back so the model can chain.</code></pre>
                     </div>
 
-                    <h3>Conditional Tool Execution</h3>
-                    <p>Use the event system to control tool execution:</p>
+                    <h3>Conditional Tool Execution (Recommended)</h3>
+                    <p>In passthrough mode, your host/runtime decides which tool calls to execute:</p>
                     
                     <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.events import EventType, on_global
+                        <pre><code class="language-python">from abstractcore.tools import ToolCall, ToolRegistry
 
-def security_check(event):
-    """Prevent execution of dangerous tools."""
-    dangerous_tools = ['execute_command', 'edit_file', 'send_email']
-    
-    for tool_call in event.data.get('tool_calls', []):
-        if tool_call.name in dangerous_tools:
-            print(f"Blocking dangerous tool: {tool_call.name}")
-            event.prevent()  # Stop execution
+dangerous_tools = {"execute_command", "edit_file", "send_email"}
 
-on_global(EventType.TOOL_STARTED, security_check)</code></pre>
+registry = ToolRegistry()
+registry.register(get_user_location)
+registry.register(get_weather)
+
+resp = llm.generate(
+    "What's the weather like for user123?",
+    tools=[get_user_location, get_weather],
+)
+
+for call in resp.tool_calls or []:
+    name = call.get("name")
+    if name in dangerous_tools:
+        continue
+    result = registry.execute_tool(
+        ToolCall(
+            name=name,
+            arguments=call.get("arguments") or {},
+            call_id=call.get("call_id") or call.get("id"),
+        )
+    )
+    print(result)</code></pre>
                     </div>
                 </section>
 
@@ -577,6 +670,52 @@ except ToolExecutionError as e:
     print(f"Tool execution failed: {e}")
     print(f"Failed tool: {e.tool_name}")
     print(f"Error details: {e.error_details}")</code></pre>
+                    </div>
+                </section>
+
+                <section id="performance-optimization">
+                    <h2>Performance Optimization</h2>
+
+                    <h3>Tool Registry</h3>
+                    <p>For many tools, register once and reuse definitions instead of rebuilding them each call:</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore.tools import ToolRegistry
+
+# Register tools once and reuse the registry
+registry = ToolRegistry()
+registry.register(get_weather)
+registry.register(calculate)
+
+resp = llm.generate("Help me with weather and math.", tools=registry.list_tools())</code></pre>
+                    </div>
+
+                    <h3>Lazy Loading</h3>
+                    <p>Load expensive resources only when the tool is invoked:</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">class DatabaseTool:
+    def __init__(self):
+        self._connection = None
+
+    @property
+    def connection(self):
+        if self._connection is None:
+            self._connection = create_database_connection()
+        return self._connection
+
+db = DatabaseTool()</code></pre>
+                    </div>
+
+                    <h3>Caching Results</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from functools import lru_cache
+from abstractcore import tool
+
+@tool
+@lru_cache(maxsize=100)
+def expensive_calculation(input_data: str) -> str:
+    return run_expensive_step(input_data)</code></pre>
                     </div>
                 </section>
 
@@ -628,7 +767,7 @@ except ToolExecutionError as e:
 
                 <section id="event-integration">
                     <h2>Event System Integration</h2>
-                    <p>Monitor and control tool execution through events:</p>
+                    <p>Observe tool calling and (optional) tool execution through events (event payload shapes may vary by emitter):</p>
                     
                     <h3>Cost Monitoring</h3>
                     <div class="code-block">
@@ -636,25 +775,22 @@ except ToolExecutionError as e:
 
 def monitor_tool_costs(event):
     """Monitor costs of tool executions."""
-    tool_calls = event.data.get('tool_calls', [])
-    for tool_call in tool_calls:
-        if tool_call.name in ['expensive_api_call', 'premium_service']:
-            print(f"Warning: Using expensive tool {tool_call.name}")
+    for call in event.data.get("tool_calls", []) or []:
+        if call.get("name") in {"expensive_api_call", "premium_service"}:
+            print(f"Warning: Using expensive tool {call.get('name')}")
 
 on_global(EventType.TOOL_STARTED, monitor_tool_costs)</code></pre>
                     </div>
 
                     <h3>Performance Tracking</h3>
                     <div class="code-block">
-                        <pre><code class="language-python">def track_tool_performance(event):
-    """Track tool execution performance."""
-    duration = event.data.get('duration_ms', 0)
-    tool_name = event.data.get('tool_name', 'unknown')
-    
-    if duration > 5000:  # More than 5 seconds
-        print(f"Slow tool execution: {tool_name} took {duration}ms")
+                        <pre><code class="language-python">def track_tool_outcomes(event):
+    """Track tool execution outcomes (shape varies by emitter)."""
+    for result in event.data.get("tool_results", []) or []:
+        if result.get("success") is False:
+            print(f"Tool failed: {result.get('name')} error={result.get('error')}")
 
-on_global(EventType.TOOL_COMPLETED, track_tool_performance)</code></pre>
+on_global(EventType.TOOL_COMPLETED, track_tool_outcomes)</code></pre>
                     </div>
                 </section>
 

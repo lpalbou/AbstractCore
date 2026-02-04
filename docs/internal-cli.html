@@ -4,19 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Internal CLI - AbstractCore</title>
-    <meta name="description" content="Built-in CLI tool for testing, demonstration, and interactive conversations with AbstractCore.">
+    <meta name="description" content="Interactive CLI for testing and exploring AbstractCore providers, tools, media, and token controls.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
-    
+
     <!-- Navbar Component -->
     <script src="../assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
@@ -49,374 +49,189 @@
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Internal CLI</h1>
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Built-in CLI tool for testing, demonstration, and interactive conversations with AbstractCore.
-                    This is AbstractCore's internal testing CLI, not to be confused with external agentic CLIs.
+                    A lightweight interactive CLI for testing and exploring providers, tools, media, and token controls.
+                    This is AbstractCore’s internal chat CLI—not an external agentic CLI.
                 </p>
+            </div>
 
-            <!-- Quick Start -->
-            <section style="margin-bottom: 3rem;">
-                <h2>🚀 Quick Start</h2>
-                <p>Start the internal CLI with any provider:</p>
-                
-                <div class="code-block">
-                    <pre><code class="language-bash"># Start the internal CLI
-python -m abstractcore.utils.cli --provider ollama --model qwen3:4b-instruct
+            <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 3rem;">
+                <p style="margin: 0; color: var(--info-text);">
+                    <strong>Using Codex / Gemini CLI / Crush?</strong>
+                    Use the OpenAI-compatible server instead: see the <a href="server.html" style="color: var(--info-text); text-decoration: underline; font-weight: 600;">HTTP Server Guide</a>.
+                </p>
+            </div>
 
-# Or with any provider
-python -m abstractcore.utils.cli --provider openai --model gpt-5-mini
-python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
+            <!-- Table of Contents -->
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;">
+                <h2 style="margin: 0 0 1rem 0;">Table of Contents</h2>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 0.75rem;">
+                    <div>
+                        <a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+                        <a href="#token-controls" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Token Controls</a>
+                        <a href="#thinking" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Thinking / Reasoning</a>
+                    </div>
+                    <div>
+                        <a href="#commands" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Built-in Commands</a>
+                        <a href="#media" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Media Attachments</a>
+                        <a href="#async-demo" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Async Demo (Educational)</a>
+                    </div>
+                </div>
+            </div>
 
-# With streaming enabled
-python -m abstractcore.utils.cli --provider ollama --model qwen3:4b-instruct --stream</code></pre>
-                
-                <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <p style="margin: 0; color: var(--info-text);"><strong>💡 Note:</strong> Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)? See the <a href="server.html" style="color: var(--info-text); text-decoration: underline; font-weight: 600;">Server Documentation</a> for complete setup guides.</p>
-            </section>
+            <div class="doc-content">
+                <section id="quick-start">
+                    <h2>Quick Start</h2>
+                    <p>The internal CLI is installed as <code>abstractcore-chat</code>.</p>
 
-            <!-- Commands Overview -->
-            <section style="margin-bottom: 3rem;">
-                <h2>⚡ Available Commands</h2>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
-                        <h3 style="margin: 0 0 1rem 0;">/compact</h3>
-                        <p style="margin: 0 0 1rem 0;">Compress chat history while preserving context</p>
-                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/compact</code>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
-                        <h3 style="margin: 0 0 1rem 0;">/facts</h3>
-                        <p style="margin: 0 0 1rem 0;">Extract facts from conversation as structured data</p>
-                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/facts [file]</code>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
-                        <h3 style="margin: 0 0 1rem 0;">/judge</h3>
-                        <p style="margin: 0 0 1rem 0;">Evaluate conversation quality using LLM-as-a-judge</p>
-                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/judge</code>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
-                        <h3 style="margin: 0 0 1rem 0;">/stream</h3>
-                        <p style="margin: 0 0 1rem 0;">Toggle real-time streaming of responses</p>
-                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/stream</code>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--primary-color);">
-                        <h3 style="margin: 0 0 1rem 0;">/history</h3>
-                        <p style="margin: 0 0 1rem 0;">Show conversation history without truncation</p>
-                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/history [n]</code>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid var(--secondary-color);">
-                        <h3 style="margin: 0 0 1rem 0;">/system</h3>
-                        <p style="margin: 0 0 1rem 0;">Manage system prompt that guides AI behavior</p>
-                        <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">/system [prompt]</code>
-            </section>
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Local provider (Ollama)
+abstractcore-chat --provider ollama --model qwen3:4b-instruct
 
-            <!-- Media Handling Section -->
-            <section style="margin-bottom: 3rem;">
-                <h2>📎 Media Handling</h2>
-                <p>The internal CLI supports universal media handling with the <code>@filename</code> syntax for attaching images, documents, and data files.</p>
+# Cloud providers
+abstractcore-chat --provider openai --model gpt-4o-mini
+abstractcore-chat --provider anthropic --model claude-haiku-4-5
 
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">@filename Syntax</h3>
-                    <p>Attach any file type using the <code>@filename</code> syntax in your prompt:</p>
+# OpenAI-compatible local servers
+# Note: include /v1 in the base URL.
+abstractcore-chat --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
+abstractcore-chat --provider openai-compatible --model local-model --base-url http://localhost:1234/v1
+
+# Streaming
+abstractcore-chat --provider ollama --model qwen3:4b-instruct --stream</code></pre>
+                    </div>
+
+                    <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
+                        <p style="margin: 0;">
+                            <strong>Tip:</strong> <code>python -m abstractcore.utils.cli ...</code> is equivalent if you prefer module execution.
+                        </p>
+                    </div>
+
+                    <h3>API keys</h3>
+                    <p>Cloud providers require API keys in your environment:</p>
+                    <ul>
+                        <li>OpenAI: <code>OPENAI_API_KEY</code></li>
+                        <li>Anthropic: <code>ANTHROPIC_API_KEY</code></li>
+                        <li>OpenRouter: <code>OPENROUTER_API_KEY</code></li>
+                    </ul>
+                </section>
+
+                <section id="token-controls" style="margin-top: 3rem;">
+                    <h2>Token Controls</h2>
+                    <p>Set token budgets at startup or adjust them inside the REPL.</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash"># Startup flags
+abstractcore-chat --provider openai --model gpt-4o-mini --max-tokens 16384 --max-output-tokens 1024</code></pre>
+                    </div>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash"># In the REPL
+/max-tokens 16384
+/max-output-tokens 1024
+/max-tokens auto
+/max-output-tokens auto</code></pre>
+                    </div>
+                </section>
+
+                <section id="thinking" style="margin-top: 3rem;">
+                    <h2>Thinking / Reasoning</h2>
+                    <p>Toggle unified thinking/reasoning mode (best-effort across providers/models):</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash">/thinking auto
+/thinking on
+/thinking off
+/thinking low
+/thinking medium
+/thinking high</code></pre>
+                    </div>
+
+                    <p>Control whether reasoning (when available) is displayed separately:</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash">/show-reasoning auto
+/show-reasoning on
+/show-reasoning off</code></pre>
+                    </div>
+                </section>
+
+                <section id="commands" style="margin-top: 3rem;">
+                    <h2>Built-in Commands</h2>
+                    <p>A few useful commands shipped with the CLI:</p>
+                    <ul>
+                        <li><code>/compact</code> — compacts chat history (fast local summarizer model)</li>
+                        <li><code>/facts [file]</code> — extract facts as triples (optionally save JSON-LD)</li>
+                        <li><code>/judge</code> — evaluate discussion quality (LLM-as-a-judge demonstrator)</li>
+                        <li><code>/intent [participant]</code> — intent analysis (optionally per participant)</li>
+                    </ul>
+                </section>
+
+                <section id="media" style="margin-top: 3rem;">
+                    <h2>Media Attachments (<code>@filename</code>)</h2>
+                    <p>Attach files directly in your prompt using <code>@path/to/file</code> (requires media extras):</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install "abstractcore[media]"</code></pre>
+                    </div>
 
                     <div class="code-block">
                         <pre><code class="language-bash"># Image analysis
-python -m abstractcore.utils.cli --prompt "What's in this image? @photo.jpg"
+abstractcore-chat --provider openai --model gpt-4o --prompt "What's in @photo.jpg?"
 
 # PDF document analysis
-python -m abstractcore.utils.cli --prompt "Summarize @report.pdf"
+abstractcore-chat --provider anthropic --model claude-haiku-4-5 --prompt "Summarize @report.pdf"
 
-# Office documents
-python -m abstractcore.utils.cli --prompt "Extract key points from @presentation.pptx"
-python -m abstractcore.utils.cli --prompt "Analyze the data in @spreadsheet.xlsx"
-
-# Data files
-python -m abstractcore.utils.cli --prompt "What patterns are in @sales_data.csv"
-
-# Multiple files
-python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"</code></pre>
+# Office documents and data files
+abstractcore-chat --provider openai --model gpt-4o --prompt "Extract action items from @slides.pptx"
+abstractcore-chat --provider openai --model gpt-4o --prompt "Analyze @spreadsheet.xlsx"
+abstractcore-chat --provider openai --model gpt-4o-mini --prompt "Spot anomalies in @metrics.csv"</code></pre>
                     </div>
 
-                    <h4 style="margin: 2rem 0 1rem 0;">Supported File Types</h4>
+                    <h3>Supported file types</h3>
                     <ul>
                         <li><strong>Images:</strong> PNG, JPEG, GIF, WEBP, BMP, TIFF</li>
                         <li><strong>Documents:</strong> PDF, DOCX, XLSX, PPTX</li>
                         <li><strong>Data/Text:</strong> CSV, TSV, TXT, MD, JSON, XML</li>
                     </ul>
+                </section>
 
-                    <h4 style="margin: 2rem 0 1rem 0;">How It Works</h4>
-                    <p>The system automatically:</p>
-                    <ol>
-                        <li>Detects file type from extension</li>
-                        <li>Applies appropriate processor (Image, PDF, Office, Text)</li>
-                        <li>Formats content for the selected provider's API</li>
-                        <li>Handles vision fallback for text-only models when needed</li>
-                    </ol>
+                <section id="async-demo" style="margin-top: 3rem;">
+                    <h2>Async CLI Demo (Educational)</h2>
+                    <p>AbstractCore includes an educational async CLI demo to learn async patterns. This is for learning, not production.</p>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash">python examples/async_cli_demo.py --provider ollama --model qwen3:4b
+python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b --stream</code></pre>
+                    </div>
+                </section>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="apps.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">CLI Apps</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Summarizer, Extractor, Judge, Intent, DeepSearch</p>
+                        </a>
+
+                        <a href="token-management.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Token Management</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Unified budgets and validation</p>
+                        </a>
+
+                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Media Handling</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Images, PDFs, Office docs + fallback</p>
+                        </a>
+
+                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible gateway for agentic CLIs</p>
+                        </a>
+                    </div>
                 </div>
-            </section>
-
-            <!-- Detailed Command Documentation -->
-            <section style="margin-bottom: 3rem;">
-                <h2>📚 Command Details</h2>
-                
-                <!-- Compact Command -->
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">🗜️ /compact - Chat History Compaction</h3>
-                    <p>Compacts your chat history using the fast local <code>qwen3:4b-instruct</code> model to create a summary while preserving recent exchanges.</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-bash"># In the CLI
-/compact
-
-# Output example:
-🗜️  Compacting chat history...
-   Before: 15 messages (~450 tokens)
-   Using qwen3:4b-instruct for compaction...
-✅ Compaction completed in 3.2s
-   After: 5 messages (~280 tokens)
-   Structure:
-   1. ⚙️  System prompt
-   2. 📚 Conversation summary (1,200 chars)
-   3. 👤 How do I handle errors in Python?
-   4. 🤖 You can use try/except blocks...
-   5. 👤 What about logging?</code></pre>
-                    
-                    <p><strong>When to use:</strong></p>
-                    <ul>
-                        <li>Long conversations that slow down responses</li>
-                        <li>When you want to preserve context but reduce memory usage</li>
-                        <li>Before switching to a different topic</li>
-                    </ul>
-                
-                <!-- Judge Command -->
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">⚖️ /judge - Conversation Quality Evaluation</h3>
-                    <p>Evaluates the quality and interest of the current discussion using LLM-as-a-judge. This demonstrates objective assessment capabilities with constructive feedback.</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-bash"># In the CLI
-/judge
-
-# Output example:
-⚖️  Evaluating conversation quality...
-   Analyzing 450 characters of conversation...
-✅ Evaluation completed in 35.2s
-
-📊 Overall Discussion Quality: 4/5
-
-📈 Quality Dimensions:
-   Clarity      : 5/5
-   Coherence    : 4/5
-   Actionability: 3/5
-   Relevance    : 5/5
-   Completeness : 4/5
-   Soundness    : 4/5
-   Simplicity   : 5/5
-
-✅ Conversation Strengths:
-   • The discussion maintains clear focus and addresses questions directly
-   • Explanations are well-structured and easy to follow
-   • Technical concepts are explained in accessible language
-
-💡 Suggestions for Better Discussions:
-   • Include more specific examples to illustrate key points
-   • Add actionable next steps or recommendations where appropriate
-   • Consider exploring alternative approaches or edge cases</code></pre>
-                    
-                    <p><strong>When to use:</strong></p>
-                    <ul>
-                        <li>Get objective feedback on discussion quality</li>
-                        <li>Understand strengths and areas for improvement</li>
-                        <li>Demonstrate LLM-as-a-judge evaluation capabilities</li>
-                        <li>Practice critical assessment and constructive feedback</li>
-                    </ul>
-                
-                <!-- Facts Command -->
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">🔍 /facts - Extract Structured Facts</h3>
-                    <p>Extracts facts from your conversation history as simple triples (subject-predicate-object). Display them in chat or save as structured JSON-LD.</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Display facts in chat
-/facts
-
-# Output example:
-🔍 Extracting facts from conversation history...
-   Processing 415 characters of conversation...
-✅ Fact extraction completed in 4.5s
-
-📋 Facts extracted from conversation:
-==================================================
- 1. OpenAI creates GPT-4
- 2. Microsoft Copilot uses GPT-4
- 3. Google develops TensorFlow
-==================================================
-📊 Found 3 entities and 2 relationships
-
-# Save to JSON-LD file
-/facts myconversation
-
-# Output example:
-🔍 Extracting facts from conversation history...
-   Processing 415 characters of conversation...
-✅ Fact extraction completed in 3.3s
-💾 Facts saved to myconversation.jsonld
-📊 Saved 3 entities and 2 relationships as JSON-LD</code></pre>
-                    
-                    <p><strong>When to use:</strong></p>
-                    <ul>
-                        <li>Extract key information discussed in the conversation</li>
-                        <li>Create structured knowledge from chat sessions</li>
-                        <li>Document facts for later reference or analysis</li>
-                        <li>Generate semantic data for knowledge graphs</li>
-                    </ul>
-                
-                <!-- Tool Tag Testing -->
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">🏷️ /tooltag - Test Tool Call Tag Rewriting</h3>
-                    <p>Test tool call tag rewriting with custom tags to verify compatibility with downstream parsers and clients.</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Test LLaMA3 tags
-/tooltag '<function_call>' '</function_call>'
-
-# Test XML tags
-/tooltag '<tool_call>' '</tool_call>'
-
-# Test Qwen3 tags
-/tooltag '<|tool_call|>' '</|tool_call|>'
-
-# Test custom format
-/tooltag '<my_tool>' '</my_tool>'</code></pre>
-                    
-                    <p><strong>When to use:</strong></p>
-                    <ul>
-                        <li>Test compatibility with specific tag formats</li>
-                        <li>Verify tool call tag rewriting works correctly</li>
-                        <li>Debug tool call format issues</li>
-                        <li>Compare different tag formats side by side</li>
-                    </ul>
-            </section>
-
-            <!-- Usage Examples -->
-            <section style="margin-bottom: 3rem;">
-                <h2>💡 Usage Examples</h2>
-                
-                <div style="background: linear-gradient(135deg, #e0f2fe, #b3e5fc); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0;">Complete Workflow Example</h3>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Start CLI with a model that supports auto-compaction
-python -m abstractcore.utils.cli --provider ollama --model qwen3:4b-instruct
-
-# Have a long conversation...
-👤 You: What is Python?
-🤖 Assistant: Python is a high-level programming language...
-
-👤 You: What about data types?
-🤖 Assistant: Python has several built-in data types...
-
-# Check history
-👤 You: /history 2
-
-# Change system prompt for specific task
-👤 You: /system You are an expert Python tutor focused on data science.
-
-# Compact when needed
-👤 You: /compact
-
-# Extract facts from the conversation
-👤 You: /facts
-
-# Continue conversation with preserved context
-👤 You: Can you explain more about functions?
-🤖 Assistant: [Responds as Python tutor, refers to previous context]</code></pre>
-                
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0;">Controlling Tool Usage</h3>
-                    <p>If the AI is calling tools unnecessarily, you can control this behavior:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Check current system prompt to understand behavior
-👤 You: /system
-
-# Update to prevent unnecessary tool calls
-👤 You: /system You are a helpful AI assistant. Only use tools when explicitly requested by the user or when necessary to answer a specific question. Do not demonstrate tool capabilities unprompted.
-
-# Now the AI will be less likely to call tools unnecessarily
-👤 You: Who are you?
-🤖 Assistant: I am an AI assistant. [No tool calls]</code></pre>
-            </section>
-
-            <!-- Best Practices -->
-            <section style="margin-bottom: 3rem;">
-                <h2>✅ Best Practices</h2>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Regular History Checks</h3>
-                        <p style="margin: 0;">Use <code>/history n</code> to review recent context and understand conversation flow.</p>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">Strategic Compaction</h3>
-                        <p style="margin: 0;">Use <code>/compact</code> when conversation becomes slow, you've covered multiple topics, or before switching contexts.</p>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">System Prompt Control</h3>
-                        <p style="margin: 0;">Use <code>/system</code> to adapt AI behavior for different tasks and prevent unwanted tool calls.</p>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">Context Verification</h3>
-                        <p style="margin: 0;">After compaction, use <code>/history</code> to verify preserved context and summary quality.</p>
-            </section>
-
-            <!-- Technical Details -->
-            <section style="margin-bottom: 3rem;">
-                <h2>🔧 Technical Details</h2>
-                
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <ul>
-                        <li><strong>Compaction Model:</strong> Uses <code>qwen3:4b-instruct</code> for fast, local processing</li>
-                        <li><strong>Preservation:</strong> Keeps last 6 messages (3 exchanges) by default</li>
-                        <li><strong>Fallback:</strong> If <code>qwen3:4b-instruct</code> unavailable, uses current provider</li>
-                        <li><strong>Token Estimation:</strong> Provides rough token count estimates</li>
-                        <li><strong>Message Types:</strong> Distinguishes between system, user, and assistant messages</li>
-                        <li><strong>Error Handling:</strong> Gracefully handles various scenarios with helpful messages</li>
-                    </ul>
-            </section>
-
-            <!-- Related Documentation -->
-            <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                    <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
-                    </a>
-
-                    <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Media Handling</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment system</p>
-                    </a>
-
-                    <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Vision Capabilities</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
-                    </a>
-
-                    <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Server Guide</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible REST API</p>
-                    </a>
-
-                    <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
-                    </a>
-
-                    <a href="troubleshooting.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Troubleshooting</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Common issues and solutions</p>
-                    </a>
+            </div>
+        </div>
     </main>
 
     <!-- Scripts -->

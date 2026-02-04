@@ -143,7 +143,7 @@
                         <div class="stat-label">Providers</div>
                     </div>
                     <div class="stat">
-                        <div class="stat-number">2.10.1</div>
+                        <div class="stat-number">2.11.1</div>
                         <div class="stat-label">Version</div>
                     </div>
                     <div class="stat">
@@ -172,10 +172,10 @@ response = llm.generate("What is the capital of France?")
 print(response.content)
 
 # Switch providers with zero code changes
-llm = create_llm("openai", model="gpt-5-mini", seed=42)
-llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42)
+llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
 
-# Same interface, deterministic results ✨</code></pre>
+# Same interface across providers</code></pre>
                     </div>
                 </div>
             </div>
@@ -215,7 +215,7 @@ llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42)
                     </div>
                     <h3 class="feature-title">Universal Media Handling</h3>
                     <p class="feature-description">
-                        Attach any file with simple @filename syntax. Images, PDFs, Office docs, CSV/TSV automatically processed. Same API across all providers with intelligent fallback.
+                        Attach files with <code>media=[...]</code> (or <code>@file</code> in the CLI). Images, PDFs, Office docs, CSV/TSV are automatically processed with intelligent fallbacks across providers.
                     </p>
                 </div>
 
@@ -366,12 +366,16 @@ llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42)
                             <h3 class="step-title">Install</h3>
                             <p class="step-description">Install AbstractCore with your preferred providers</p>
                             <div class="code-block">
-                                <pre><code class="language-bash"># Install everything
-pip install abstractcore[all]
+                                <pre><code class="language-bash"># Core (lightweight default)
+pip install abstractcore
 
-# Or install specific providers
-pip install abstractcore[openai]
-pip install abstractcore[anthropic]</code></pre>
+# Providers (install only what you use; zsh: keep quotes)
+pip install "abstractcore[openai]"
+pip install "abstractcore[anthropic]"
+
+# Optional features
+pip install "abstractcore[media]"   # images, PDFs, Office docs
+pip install "abstractcore[server]"  # OpenAI-compatible HTTP gateway</code></pre>
                             </div>
                         </div>
                     </div>
@@ -401,7 +405,7 @@ export ANTHROPIC_API_KEY="your-key-here"
                                 <pre><code class="language-python">from abstractcore import create_llm
 
 # Create LLM instance
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Generate response
 response = llm.generate("Hello, world!")
@@ -437,14 +441,14 @@ abstractcore --status
 # Set global fallback model (used when no app-specific default)
 abstractcore --set-global-default ollama/qwen3:4b-instruct
 
-# Set app-specific defaults for optimal performance
-abstractcore --set-app-default summarizer openai gpt-5-mini
+# Set app-specific defaults (examples)
+abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # Configure vision fallback for text-only models
-abstractcore --download-vision-model  # Download local model
-# OR use existing model:
-# abstractcore --set-vision-caption qwen2.5vl:7b
+abstractcore --download-vision-model  # Download local caption model
+# OR use an existing vision model:
+# abstractcore --set-vision-provider ollama qwen2.5vl:7b
 
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
@@ -453,7 +457,7 @@ abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-console-log-level WARNING
 
 # Now use without specifying provider/model every time!
-python -m abstractcore.utils.cli --prompt &quot;Hello!&quot;  # Uses configured defaults">
+abstractcore-chat --prompt &quot;Hello!&quot;  # Uses configured defaults">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -469,14 +473,14 @@ abstractcore --status
 # Set global fallback model (used when no app-specific default)
 abstractcore --set-global-default ollama/qwen3:4b-instruct
 
-# Set app-specific defaults for optimal performance
-abstractcore --set-app-default summarizer openai gpt-5-mini
+# Set app-specific defaults (examples)
+abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-app-default cli ollama qwen3:4b-instruct
 
 # Configure vision fallback for text-only models
-abstractcore --download-vision-model  # Download local model
-# OR use existing model:
-# abstractcore --set-vision-caption qwen2.5vl:7b
+abstractcore --download-vision-model  # Download local caption model
+# OR use an existing vision model:
+# abstractcore --set-vision-provider ollama qwen2.5vl:7b
 
 # Set API keys
 abstractcore --set-api-key openai sk-your-key-here
@@ -485,7 +489,7 @@ abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-console-log-level WARNING
 
 # Now use without specifying provider/model every time!
-python -m abstractcore.utils.cli --prompt "Hello!"  # Uses configured defaults</code></pre>
+abstractcore-chat --prompt "Hello!"  # Uses configured defaults</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -511,7 +515,7 @@ response = llm.generate(
 )
 
 # Or use CLI with @filename syntax
-# python -m abstractcore.utils.cli --prompt &quot;Analyze @report.pdf&quot;
+# abstractcore-chat --prompt &quot;Analyze @report.pdf&quot;
 
 # Supported file types:
 # - Images: PNG, JPEG, GIF, WEBP, BMP, TIFF
@@ -519,7 +523,7 @@ response = llm.generate(
 # - Data: CSV, TSV, TXT, MD, JSON
 
 # Same code works with any provider
-	llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 response = llm.generate(
     &quot;Summarize these materials&quot;,
     media=[&quot;chart.png&quot;, &quot;data.csv&quot;, &quot;presentation.pptx&quot;]
@@ -545,7 +549,7 @@ response = llm.generate(
 )
 
 # Or use CLI with @filename syntax
-# python -m abstractcore.utils.cli --prompt "Analyze @report.pdf"
+# abstractcore-chat --prompt "Analyze @report.pdf"
 
 # Supported file types:
 # - Images: PNG, JPEG, GIF, WEBP, BMP, TIFF
@@ -653,26 +657,26 @@ response = llm.generate(
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">tool_syntax_rewriting.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
-from abstractcore.tools import tool
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm, tool
 
 @tool
-def calculate(expression: str) -&gt; float:
-    &quot;&quot;&quot;Perform mathematical calculation.&quot;&quot;&quot;
-    return eval(expression)
+def multiply(a: float, b: float) -&gt; float:
+    &quot;&quot;&quot;Multiply two numbers.&quot;&quot;&quot;
+    return a * b
 
-# Custom tag configuration for agent CLI compatibility
-llm = create_llm(
-    &quot;ollama&quot;,
-    model=&quot;qwen3:4b-instruct&quot;,
-    tool_call_tags=&quot;function_call&quot;  # Converts to &lt;function_call&gt;...&lt;/function_call&gt;
-)
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct-2507-q4_K_M&quot;)
 
-# Real-time streaming with format conversion
-for chunk in llm.generate(&quot;Calculate 15 * 23&quot;, tools=[calculate], stream=True):
+# Convert tool-call markup in `content` for downstream parsers.
+# Tool calls are always available as structured data in `chunk.tool_calls`.
+for chunk in llm.generate(
+    &quot;Compute 15 * 23 using the tool.&quot;,
+    tools=[multiply],
+    stream=True,
+    tool_call_tags=&quot;llama3&quot;,
+):
     if chunk.tool_calls:
         print(f&quot;Tool detected: {chunk.tool_calls[0].name}&quot;)
-    print(chunk.content, end=&quot;&quot;, flush=True)">
+    print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -682,26 +686,26 @@ for chunk in llm.generate(&quot;Calculate 15 * 23&quot;, tools=[calculate], stre
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python">from abstractcore import create_llm
-from abstractcore.tools import tool
+                                    <pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
-def calculate(expression: str) -> float:
-    """Perform mathematical calculation."""
-    return eval(expression)
+def multiply(a: float, b: float) -> float:
+    """Multiply two numbers."""
+    return a * b
 
-# Custom tag configuration for agent CLI compatibility
-llm = create_llm(
-    "ollama",
-    model="qwen3:4b-instruct",
-    tool_call_tags="function_call"  # Converts to <function_call>...</function_call>
-)
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
 
-# Real-time streaming with format conversion
-for chunk in llm.generate("Calculate 15 * 23", tools=[calculate], stream=True):
+# Convert tool-call markup in `content` for downstream parsers.
+# Tool calls are always available as structured data in `chunk.tool_calls`.
+for chunk in llm.generate(
+    "Compute 15 * 23 using the tool.",
+    tools=[multiply],
+    stream=True,
+    tool_call_tags="llama3",
+):
     if chunk.tool_calls:
         print(f"Tool detected: {chunk.tool_calls[0].name}")
-    print(chunk.content, end="", flush=True)</code></pre>
+    print(chunk.content or "", end="", flush=True)</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -717,22 +721,22 @@ for chunk in llm.generate("Calculate 15 * 23", tools=[calculate], stream=True):
                                     <div class="code-title">session_analytics.py</div>
                                     <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import BasicSession, create_llm
 
-llm = create_llm(&quot;openai&quot;, model=&quot;gpt-5-mini&quot;)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 session = BasicSession(llm, system_prompt=&quot;You are a helpful assistant.&quot;)
 
 response1 = session.generate(&quot;My name is Alice&quot;)
 response2 = session.generate(&quot;What's my name?&quot;)  # Remembers context
 
-# Auto-compaction with SOTA 2025 algorithm
-session.compact(target_tokens=8000)  # Compresses while preserving context
+# Compact chat history (in-place)
+session.force_compact(preserve_recent=6, focus=&quot;key details&quot;)
 
 # Advanced analytics
-summary = session.generate_summary(style=&quot;executive&quot;, length=&quot;brief&quot;)
-assessment = session.generate_assessment(criteria=[&quot;clarity&quot;, &quot;helpfulness&quot;])
-facts = session.extract_facts(entity_types=[&quot;person&quot;, &quot;organization&quot;, &quot;date&quot;])
+summary = session.generate_summary(focus=&quot;key decisions&quot;)
+assessment = session.generate_assessment(criteria={&quot;clarity&quot;: True, &quot;helpfulness&quot;: True})
+facts = session.extract_facts(output_format=&quot;triples&quot;)
 
-# Save with analytics
-session.save(&quot;conversation.json&quot;, summary=True, assessment=True, facts=True)">
+# Save (includes analytics if generated)
+session.save(&quot;conversation.json&quot;)">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -744,22 +748,22 @@ session.save(&quot;conversation.json&quot;, summary=True, assessment=True, facts
                                 <div class="code-content">
                                     <pre><code class="language-python">from abstractcore import BasicSession, create_llm
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(llm, system_prompt="You are a helpful assistant.")
 
 response1 = session.generate("My name is Alice")
 response2 = session.generate("What's my name?")  # Remembers context
 
-# Auto-compaction with SOTA 2025 algorithm
-session.compact(target_tokens=8000)  # Compresses while preserving context
+# Compact chat history (in-place)
+session.force_compact(preserve_recent=6, focus="key details")
 
 # Advanced analytics
-summary = session.generate_summary(style="executive", length="brief")
-assessment = session.generate_assessment(criteria=["clarity", "helpfulness"])
-facts = session.extract_facts(entity_types=["person", "organization", "date"])
+summary = session.generate_summary(focus="key decisions")
+assessment = session.generate_assessment(criteria={"clarity": True, "helpfulness": True})
+facts = session.extract_facts(output_format="triples")
 
-# Save with analytics
-session.save("conversation.json", summary=True, assessment=True, facts=True)</code></pre>
+# Save (includes analytics if generated)
+session.save("conversation.json")</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -842,21 +846,17 @@ print(f"Cost estimate: ${response.usage.cost_usd:.4f}")</code></pre>
                                     <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
 
 # Deterministic outputs with seed + temperature=0
-llm = create_llm(&quot;openai&quot;, model=&quot;gpt-5-mini&quot;, seed=42, temperature=0.0)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;, seed=42, temperature=0.0)
 
-# These will produce identical outputs
+# Best-effort determinism depends on provider/model
 response1 = llm.generate(&quot;Write exactly 3 words about coding&quot;)
 response2 = llm.generate(&quot;Write exactly 3 words about coding&quot;)
 print(f&quot;Response 1: {response1.content}&quot;)  # &quot;Innovative, challenging, rewarding.&quot;
 print(f&quot;Response 2: {response2.content}&quot;)  # &quot;Innovative, challenging, rewarding.&quot;
 
-# Empirically verified deterministic behavior:
-# ✅ OpenAI (gpt-5-mini): Same seed → Identical outputs
-# ✅ Ollama (qwen3:4b-instruct): Same seed → Identical outputs  
-# ✅ MLX (mlx-community/Qwen3-4B-4bit): Same seed → Identical outputs
-# ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
-# ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
-# ⚠️ Anthropic (claude-haiku-4-5): temperature=0 → Consistent outputs (issues warning for seed)
+# Notes:
+# - Many local providers support `seed` (Ollama/MLX/HF/LMStudio best-effort).
+# - Anthropic issues a warning when `seed` is provided; use temperature=0.0 for consistency.
 
 # Works across all providers with same interface
 ollama_llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;, seed=42, temperature=0.0)
@@ -873,21 +873,17 @@ mlx_llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B-4bit&qu
                                     <pre><code class="language-python">from abstractcore import create_llm
 
 # Deterministic outputs with seed + temperature=0
-llm = create_llm("openai", model="gpt-5-mini", seed=42, temperature=0.0)
+llm = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
 
-# These will produce identical outputs
+# Best-effort determinism depends on provider/model
 response1 = llm.generate("Write exactly 3 words about coding")
 response2 = llm.generate("Write exactly 3 words about coding")
 print(f"Response 1: {response1.content}")  # "Innovative, challenging, rewarding."
 print(f"Response 2: {response2.content}")  # "Innovative, challenging, rewarding."
 
-# Empirically verified deterministic behavior:
-# ✅ OpenAI (gpt-5-mini): Same seed → Identical outputs
-# ✅ Ollama (qwen3:4b-instruct): Same seed → Identical outputs  
-# ✅ MLX (mlx-community/Qwen3-4B-4bit): Same seed → Identical outputs
-# ✅ HuggingFace: Same seed → Identical outputs (transformers + GGUF)
-# ✅ LMStudio: Same seed → Identical outputs (OpenAI-compatible)
-# ⚠️ Anthropic (claude-haiku-4-5): temperature=0 → Consistent outputs (issues warning for seed)
+# Notes:
+# - Many local providers support `seed` (Ollama/MLX/HF/LMStudio best-effort).
+# - Anthropic issues a warning when `seed` is provided; use temperature=0.0 for consistency.
 
 # Works across all providers with same interface
 ollama_llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42, temperature=0.0)
@@ -1000,7 +996,7 @@ response = client.chat.completions.create(
                             <img src="assets/providers/openai.svg" alt="OpenAI">
                         </div>
                         <h3 class="provider-name">OpenAI</h3>
-                        <p class="provider-description">gpt-5-mini, GPT-4o (vision), embeddings</p>
+                    <p class="provider-description">gpt-4o-mini, GPT-4o (vision), embeddings</p>
                         <div class="provider-status">
                             <span class="status-badge status-full">✅ Full Support</span>
                             <span class="status-badge status-seed">🎯 Native SEED</span>
@@ -1154,6 +1150,14 @@ response = client.chat.completions.create(
                             <span class="doc-title">Centralized Configuration</span>
                             <span class="doc-description">Global defaults, app preferences, one-time setup</span>
                         </a>
+                        <a href="docs/apps.html" class="doc-link">
+                            <span class="doc-title">CLI Applications</span>
+                            <span class="doc-description">Summarizer, Extractor, Judge, Intent, DeepSearch</span>
+                        </a>
+                        <a href="docs/examples.html" class="doc-link">
+                            <span class="doc-title">Examples</span>
+                            <span class="doc-description">End-to-end patterns and recipes</span>
+                        </a>
                         <a href="docs/capabilities.html" class="doc-link">
                             <span class="doc-title">Capabilities</span>
                             <span class="doc-description">What AbstractCore can do</span>
@@ -1161,6 +1165,10 @@ response = client.chat.completions.create(
                         <a href="docs/troubleshooting.html" class="doc-link">
                             <span class="doc-title">Troubleshooting</span>
                             <span class="doc-description">Fix common issues quickly</span>
+                        </a>
+                        <a href="docs/faq.html" class="doc-link">
+                            <span class="doc-title">FAQ</span>
+                            <span class="doc-description">Common questions and setup gotchas</span>
                         </a>
                         <a href="https://www.abstractcore.ai/llms.txt" class="doc-link">
                             <span class="doc-title">🤖 AI Agent Documentation</span>
@@ -1172,9 +1180,25 @@ response = client.chat.completions.create(
                 <div class="doc-category">
                     <h3 class="doc-category-title">📚 Core Library</h3>
                     <div class="doc-links">
+                        <a href="docs/api.html" class="doc-link">
+                            <span class="doc-title">API Overview</span>
+                            <span class="doc-description">Public Python API map and patterns</span>
+                        </a>
+                        <a href="docs/api-reference.html" class="doc-link">
+                            <span class="doc-title">Python API Reference</span>
+                            <span class="doc-description">Complete API documentation</span>
+                        </a>
                         <a href="docs/async-guide.html" class="doc-link">
                             <span class="doc-title">Async/Await Guide</span>
                             <span class="doc-description">agenerate(), async streaming, concurrency</span>
+                        </a>
+                        <a href="docs/tool-calling.html" class="doc-link">
+                            <span class="doc-title">Tool Calling System</span>
+                            <span class="doc-description">Universal tools across all providers</span>
+                        </a>
+                        <a href="docs/structured-output.html" class="doc-link">
+                            <span class="doc-title">Structured Output</span>
+                            <span class="doc-description">Pydantic schemas + automatic validation/retry</span>
                         </a>
                         <a href="docs/media-handling-system.html" class="doc-link">
                             <span class="doc-title">Media Handling System</span>
@@ -1183,26 +1207,6 @@ response = client.chat.completions.create(
                         <a href="docs/vision-capabilities.html" class="doc-link">
                             <span class="doc-title">Vision Capabilities</span>
                             <span class="doc-description">Image analysis with vision fallback for text-only models</span>
-                        </a>
-                        <a href="docs/structured-output.html" class="doc-link">
-                            <span class="doc-title">Structured Output</span>
-                            <span class="doc-description">Pydantic schemas + automatic validation/retry</span>
-                        </a>
-                        <a href="docs/api-reference.html" class="doc-link">
-                            <span class="doc-title">Python API Reference</span>
-                            <span class="doc-description">Complete API documentation</span>
-                        </a>
-                        <a href="docs/tool-calling.html" class="doc-link">
-                            <span class="doc-title">Tool Calling System</span>
-                            <span class="doc-description">Universal tools across all providers</span>
-                        </a>
-                        <a href="docs/mcp.html" class="doc-link">
-                            <span class="doc-title">MCP Tools</span>
-                            <span class="doc-description">Discover external tools via Model Context Protocol</span>
-                        </a>
-                        <a href="docs/communication-tools.html" class="doc-link">
-                            <span class="doc-title">Communication Tools</span>
-                            <span class="doc-description">Email + WhatsApp tools (opt-in; safety-first)</span>
                         </a>
                         <a href="docs/session.html" class="doc-link">
                             <span class="doc-title">Session Management</span>
@@ -1218,21 +1222,29 @@ response = client.chat.completions.create(
                 <div class="doc-category">
                     <h3 class="doc-category-title">🔧 Advanced</h3>
                     <div class="doc-links">
+                        <a href="docs/server.html" class="doc-link">
+                            <span class="doc-title">HTTP Server Guide</span>
+                            <span class="doc-description">OpenAI-compatible REST API</span>
+                        </a>
                         <a href="docs/token-management.html" class="doc-link">
                             <span class="doc-title">Token Management</span>
                             <span class="doc-description">Unified parameters and budget validation</span>
+                        </a>
+                        <a href="docs/structured-logging.html" class="doc-link">
+                            <span class="doc-title">Structured Logging</span>
+                            <span class="doc-description">Configure console/file logging</span>
                         </a>
                         <a href="docs/tool-syntax-rewriting.html" class="doc-link">
                             <span class="doc-title">Tool Syntax Rewriting</span>
                             <span class="doc-description">tool_call_tags (Python) + agent_format (server)</span>
                         </a>
-                        <a href="docs/apps.html" class="doc-link">
-                            <span class="doc-title">CLI Applications</span>
-                            <span class="doc-description">Extractor, Judge, Summarizer with debug modes</span>
+                        <a href="docs/mcp.html" class="doc-link">
+                            <span class="doc-title">MCP Tools</span>
+                            <span class="doc-description">Discover external tools via Model Context Protocol</span>
                         </a>
-                        <a href="docs/server.html" class="doc-link">
-                            <span class="doc-title">HTTP Server Guide</span>
-                            <span class="doc-description">OpenAI-compatible REST API</span>
+                        <a href="docs/communication-tools.html" class="doc-link">
+                            <span class="doc-title">Communication Tools</span>
+                            <span class="doc-description">Email + WhatsApp tools (opt-in; safety-first)</span>
                         </a>
                         <a href="docs/architecture.html" class="doc-link">
                             <span class="doc-title">Architecture Overview</span>
@@ -1276,7 +1288,7 @@ response = client.chat.completions.create(
 llm_dev = create_llm("ollama", model="qwen3:4b-instruct")
 
 # Production (high quality, cloud)
-llm_prod = create_llm("openai", model="gpt-5-mini")
+llm_prod = create_llm("openai", model="gpt-4o-mini")
 
 # Same interface, different capabilities</code></pre>
                     </div>
@@ -1411,7 +1423,7 @@ judge README.md --focus "examples, completeness" --debug
             
             <div class="footer-bottom">
                 <div class="footer-copyright">
-                    <p>&copy; 2026 AbstractCore (v2.10.1). Licensed under MIT License.</p>
+                    <p>&copy; 2026 AbstractCore (v2.11.1). Licensed under MIT License.</p>
                 </div>
                 <div class="footer-meta">
                     <span>Made with ❤️ for the AI community</span>

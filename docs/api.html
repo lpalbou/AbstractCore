@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Overview - AbstractCore</title>
+    <meta name="description" content="User-facing map of AbstractCore’s public Python API: create_llm, BasicSession, tool calling, structured output, media, and the server.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [
+                    { text: 'Features', href: '/docs/capabilities.html' },
+                    { text: 'Quick Start', href: '/docs/getting-started.html' },
+                    { text: 'Documentation', href: '/#docs' },
+                    { text: 'Examples', href: '/docs/examples.html' },
+                    {
+                        text: 'GitHub',
+                        href: 'https://github.com/lpalbou/abstractcore',
+                        target: '_blank',
+                        icon: 'github'
+                    },
+                    {
+                        text: 'PyPI',
+                        href: 'https://pypi.org/project/abstractcore/',
+                        target: '_blank',
+                        icon: 'pypi'
+                    }
+                ]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">API Overview (Python)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">
+                    A user-facing map of the public Python API. For a complete listing (including events), see the
+                    <a href="api-reference.html">API Reference</a>.
+                </p>
+            </div>
+
+            <div class="doc-content">
+                <h2>Core entrypoints</h2>
+
+                <h3><code>create_llm(...)</code></h3>
+                <p>Create a provider instance:</p>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")  # requires: pip install "abstractcore[openai]"
+resp = llm.generate("Hello!")
+print(resp.content)</code></pre>
+                </div>
+
+                <h3><code>BasicSession</code></h3>
+                <p>Keep conversation state:</p>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import BasicSession, create_llm
+
+session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))
+print(session.generate("Give me 3 name ideas.").content)
+print(session.generate("Pick the best one.").content)</code></pre>
+                </div>
+
+                <h2>Responses (<code>GenerateResponse</code>)</h2>
+                <p>Most calls return a <code>GenerateResponse</code> object (or an iterator for streaming). Common fields:</p>
+                <ul>
+                    <li><code>content</code>: cleaned assistant text</li>
+                    <li><code>tool_calls</code>: structured tool calls (pass-through by default)</li>
+                    <li><code>usage</code>: token usage (provider-dependent)</li>
+                    <li><code>metadata</code>: provider/model-specific fields (for example extracted reasoning text when configured)</li>
+                </ul>
+
+                <h2>Tool calling</h2>
+                <p>Tools are passed explicitly to <code>generate()</code> / <code>agenerate()</code>:</p>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm, tool
+
+@tool
+def get_weather(city: str) -> str:
+    return f"{city}: 22°C and sunny"
+
+llm = create_llm("openai", model="gpt-4o-mini")
+resp = llm.generate("Use the tool.", tools=[get_weather])
+print(resp.tool_calls)</code></pre>
+                </div>
+                <p>See <a href="tool-calling.html">Tool Calling</a> and <a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a>.</p>
+
+                <h2>Structured output</h2>
+                <p>Pass a Pydantic model via <code>response_model=...</code> to receive a typed result:</p>
+                <div class="code-block">
+                    <pre><code class="language-python">from pydantic import BaseModel
+from abstractcore import create_llm
+
+class Answer(BaseModel):
+    title: str
+    bullets: list[str]
+
+llm = create_llm("openai", model="gpt-4o-mini")
+result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
+print(result.bullets)</code></pre>
+                </div>
+                <p>See <a href="structured-output.html">Structured Output</a>.</p>
+
+                <h2>Media input</h2>
+                <p>Media handling is opt-in:</p>
+                <div class="code-block">
+                    <pre><code class="language-bash">pip install "abstractcore[media]"</code></pre>
+                </div>
+                <p>Then pass <code>media=[...]</code> to <code>generate()</code> / <code>agenerate()</code>. See <a href="media-handling-system.html">Media Handling</a>.</p>
+
+                <h2>HTTP API (optional)</h2>
+                <p>If you want an OpenAI-compatible <code>/v1</code> gateway, install and run the server:</p>
+                <div class="code-block">
+                    <pre><code class="language-bash">pip install "abstractcore[server]"
+python -m abstractcore.server.app</code></pre>
+                </div>
+                <p>See <a href="server.html">HTTP Server Guide</a>.</p>
+
+                <!-- Related Documentation -->
+                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
+                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Full API listing (incl. events)</p>
+                        </a>
+
+                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">5-minute setup and first call</p>
+                        </a>
+
+                        <a href="faq.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
+                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">FAQ</h4>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Common questions and setup gotchas</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>
+

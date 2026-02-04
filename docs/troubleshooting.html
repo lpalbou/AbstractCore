@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Troubleshooting Guide - AbstractCore</title>
-    <meta name="description" content="Complete troubleshooting guide for AbstractCore with common issues, solutions, and best practices.">
+    <title>Troubleshooting - AbstractCore</title>
+    <meta name="description" content="Troubleshooting guide for AbstractCore: installation, provider setup, tool calling, and server issues.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
-    
+
     <!-- Navbar Component -->
     <script src="../assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
@@ -45,297 +45,170 @@
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 900px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Troubleshooting Guide</h1>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Troubleshooting</h1>
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Complete troubleshooting guide for AbstractCore with common issues, solutions, and best practices.
+                    Fix common installation, provider, tool calling, and server issues in minutes.
                 </p>
+            </div>
 
-            <!-- Quick Diagnosis -->
-            <div style="background: linear-gradient(135deg, #ef4444, #dc2626); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">🚨 Quick Diagnosis</h2>
-                <p style="margin: 0 0 1rem 0;">Run these checks first:</p>
+            <div class="doc-content">
+                <h2>Quick Diagnosis</h2>
+                <p>Run these checks first:</p>
                 <div class="code-block">
-                    <pre><code class="language-bash"># Check Python version
-python --version  # Should be 3.9+
+                    <pre><code class="language-bash"># Python version (should be 3.9+)
+python --version
 
-# Check AbstractCore installation
+# Confirm package is installed
 pip show abstractcore
 
-# Test core library
-python -c "from abstractcore import create_llm; print('✓ Core library OK')"
+# Sanity-check import
+python -c "from abstractcore import create_llm; print('✓ import ok')"
 
-# Test server (if installed)
-curl http://localhost:8000/health  # Should return {"status":"healthy"}</code></pre>
+# Server health (only if you run the server)
+curl -sS http://localhost:8000/health</code></pre>
+                </div>
 
-            <!-- Common Mistakes -->
-            <section style="margin-bottom: 3rem;">
-                <h2>🔥 Top 3 Critical Mistakes</h2>
-                
-                <div style="display: grid; gap: 1.5rem; margin: 2rem 0;">
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid #ef4444;">
-                        <h3 style="margin: 0 0 1rem 0; color: #ef4444;">1. 🔑 Incorrect Provider Configuration</h3>
-                        <p><strong>Symptom:</strong> Authentication failures, no model response</p>
-                        <p><strong>Quick Fix:</strong> Always set API keys as environment variables</p>
-                        <div class="code-block">
-                            <pre><code class="language-bash"># Set API keys correctly
+                <h2>Installation & Provider Extras</h2>
+                <p>
+                    The default install is intentionally lightweight. Install only the extras you need (zsh: keep quotes).
+                    Local OpenAI-compatible servers (Ollama, LM Studio, custom gateways) work with the core install — you just set <code>base_url</code>.
+                </p>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Core
+pip install abstractcore
+
+# Providers (only if you use them)
+pip install "abstractcore[openai]"
+pip install "abstractcore[anthropic]"
+pip install "abstractcore[huggingface]"  # heavy (torch/transformers)
+pip install "abstractcore[mlx]"          # Apple Silicon (heavy)
+pip install "abstractcore[vllm]"         # GPU server integration (heavy)
+
+# Optional features
+pip install "abstractcore[media]"        # PDFs / Office docs / images
+pip install "abstractcore[tools]"        # web_search, fetch_url (needed for deepsearch)
+pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway</code></pre>
+                </div>
+
+                <div style="background: var(--background-secondary); padding: 1.25rem 1.5rem; border-radius: 0.75rem; border-left: 4px solid #f59e0b; margin: 1.5rem 0;">
+                    <p style="margin: 0;">
+                        <strong>Note:</strong> <code>ollama</code>, <code>lmstudio</code>, <code>openrouter</code>, and <code>openai-compatible</code> do not require a provider extra.
+                        Use <code>pip install abstractcore</code> and configure the relevant API key / base URL.
+                    </p>
+                </div>
+
+                <h2>Authentication Errors</h2>
+                <p>Make sure the right API key env var is set (or store it via the config CLI).</p>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Environment variables
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENROUTER_API_KEY="sk-or-..."
 
-# Verify they're set
-echo $OPENAI_API_KEY</code></pre>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid #f59e0b;">
-                        <h3 style="margin: 0 0 1rem 0; color: #f59e0b;">2. 🧩 Mishandling Tool Calls</h3>
-                        <p><strong>Symptom:</strong> Tools not executing, streaming interruptions</p>
-                        <p><strong>Quick Fix:</strong> Use <code>@tool</code> decorator and handle tool calls properly</p>
-                        <div class="code-block">
-                            <pre><code class="language-python">from abstractcore import create_llm, tool
+# Or store keys in AbstractCore config (recommended)
+abstractcore --set-api-key openai sk-...
+abstractcore --set-api-key anthropic sk-ant-...
+abstractcore --set-api-key openrouter sk-or-...</code></pre>
+                </div>
+
+                <h2>Model Not Found (Local Providers)</h2>
+                <h3>Ollama</h3>
+                <div class="code-block">
+                    <pre><code class="language-bash"># Verify Ollama is running
+ollama serve
+
+# See installed models
+ollama list
+
+# Pull a model if missing
+ollama pull qwen3:4b-instruct-2507-q4_K_M</code></pre>
+                </div>
+
+                <h3>LM Studio</h3>
+                <p>Ensure the server is enabled in the LM Studio UI, and include <code>/v1</code> in the base URL.</p>
+                <div class="code-block">
+                    <pre><code class="language-bash">export LMSTUDIO_BASE_URL="http://localhost:1234/v1"</code></pre>
+                </div>
+
+                <h2>Tool Calls Not Working</h2>
+                <p>
+                    By default, AbstractCore returns tool calls in <code>response.tool_calls</code> (passthrough mode).
+                    Your host/runtime decides how to execute them. If you expected tools to run automatically, check your integration.
+                </p>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -> str:
-    """Get weather for a city."""
-    return f"Weather in {city}: sunny, 72°F"
+    return f"{city}: 22°C and sunny"
 
-llm = create_llm("openai", model="gpt-5-mini")
-response = llm.generate(
-    "What's the weather in Paris?",
-    tools=[get_weather]  # Pass as list
-)</code></pre>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border-left: 4px solid #8b5cf6;">
-                        <h3 style="margin: 0 0 1rem 0; color: #8b5cf6;">3. 💻 Provider Dependency Confusion</h3>
-                        <p><strong>Symptom:</strong> <code>ModuleNotFoundError</code> for providers</p>
-                        <p><strong>Quick Fix:</strong> Install provider-specific packages</p>
-                        <div class="code-block">
-                            <pre><code class="language-bash"># Install with specific provider
-pip install abstractcore[openai]
-pip install abstractcore[anthropic]
-pip install abstractcore[ollama]
+llm = create_llm("openai", model="gpt-4o-mini")
+resp = llm.generate("What's the weather in Paris? Use the tool.", tools=[get_weather])
 
-# Install everything
-pip install abstractcore[all]</code></pre>
-            </section>
+print(resp.content)
+print(resp.tool_calls)</code></pre>
+                </div>
 
-            <!-- Common Issues -->
-            <section style="margin-bottom: 3rem;">
-                <h2>🛠️ Common Issues & Solutions</h2>
-                
-                <div style="display: grid; gap: 2rem; margin: 2rem 0;">
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0;">Authentication Errors</h3>
-                        <p><strong>Symptoms:</strong></p>
-                        <ul>
-                            <li><code>Error: OpenAI API key not found</code></li>
-                            <li><code>Error: Authentication failed</code></li>
-                            <li><code>Error: Invalid API key</code></li>
-                        </ul>
-                        
-                        <p><strong>Solutions:</strong></p>
-                        <div class="code-block">
-                            <pre><code class="language-bash"># Check if API key is set
-echo $OPENAI_API_KEY  # Should show your key
-echo $ANTHROPIC_API_KEY
+                <h2>Server Won't Start</h2>
+                <p>Port conflicts are the most common cause.</p>
+                <div class="code-block">
+                    <pre><code class="language-bash"># macOS/Linux: find what's using port 8000
+lsof -i :8000
 
-# Set API key
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
+# Kill the process (be careful)
+kill -9 $(lsof -t -i:8000)
 
-# Add to shell profile for persistence
-echo 'export OPENAI_API_KEY="sk-..."' >> ~/.bashrc
-source ~/.bashrc
-
-# Test authentication
-python -c "from abstractcore import create_llm; llm = create_llm('openai', model='gpt-5-mini'); print(llm.generate('test').content)"</code></pre>
-                    
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0;">Model Not Found</h3>
-                        <p><strong>Symptoms:</strong></p>
-                        <ul>
-                            <li><code>Error: Model 'qwen3:4b-instruct' not found</code></li>
-                            <li><code>Error: Unsupported model</code></li>
-                        </ul>
-                        
-                        <p><strong>For Ollama:</strong></p>
-                        <div class="code-block">
-                            <pre><code class="language-bash"># Check available models
-ollama list
-
-# Pull missing model
-ollama pull qwen3:4b-instruct
-
-# Verify Ollama is running
-ollama serve</code></pre>
-                        
-                        <p><strong>For OpenAI/Anthropic:</strong></p>
-                        <div class="code-block">
-                            <pre><code class="language-python"># Use correct model names
-llm = create_llm("openai", model="gpt-5-mini")  # ✓ Correct
-llm = create_llm("openai", model="gpt4")  # ✗ Wrong
-
-llm = create_llm("anthropic", model="claude-haiku-4-5")  # ✓ Correct
-llm = create_llm("anthropic", model="claude-3")  # ✗ Wrong</code></pre>
-                    
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0;">Server Won't Start</h3>
-                        <p><strong>Symptoms:</strong></p>
-                        <ul>
-                            <li><code>Address already in use</code></li>
-                            <li><code>Port 8000 is already allocated</code></li>
-                        </ul>
-                        
-                        <p><strong>Solutions:</strong></p>
-                        <div class="code-block">
-                            <pre><code class="language-bash"># Check what's using port 8000
-lsof -i :8000  # Linux/Mac
-netstat -ano | findstr :8000  # Windows
-
-# Kill process on port
-kill -9 $(lsof -t -i:8000)  # Linux/Mac
-
-# Use different port
+# Start on a different port
 uvicorn abstractcore.server.app:app --port 3000</code></pre>
-            </section>
+                </div>
 
-            <!-- Best Practices -->
-            <section style="margin-bottom: 3rem;">
-                <h2>✅ Best Practices</h2>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Configuration</h3>
-                        <ul style="margin: 0;">
-                            <li>✅ Use environment variables for API keys</li>
-                            <li>✅ Never commit credentials to version control</li>
-                            <li>✅ Use <code>.env</code> files (add to <code>.gitignore</code>)</li>
-                            <li>✅ Implement configuration validation</li>
-                        </ul>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">Tool Development</h3>
-                        <ul style="margin: 0;">
-                            <li>✅ Always use <code>@tool</code> decorator</li>
-                            <li>✅ Add type hints to all parameters</li>
-                            <li>✅ Write clear docstrings</li>
-                            <li>✅ Handle edge cases and errors</li>
-                        </ul>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Error Handling</h3>
-                        <ul style="margin: 0;">
-                            <li>✅ Always use try/except blocks</li>
-                            <li>✅ Implement provider fallback strategies</li>
-                            <li>✅ Log errors systematically</li>
-                            <li>✅ Design for graceful degradation</li>
-                        </ul>
-            </section>
-
-            <!-- Debug Techniques -->
-            <section style="margin-bottom: 3rem;">
-                <h2>🔍 Debug Techniques</h2>
-                
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0;">Enable Debug Logging</h3>
-                    
-                    <p><strong>Core Library:</strong></p>
-                    <div class="code-block">
-                        <pre><code class="language-python">import logging
-logging.basicConfig(level=logging.DEBUG)
-
-from abstractcore import create_llm
-llm = create_llm("openai", model="gpt-5-mini")</code></pre>
-                    
-                    <p><strong>Server:</strong></p>
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Enable debug mode
-export ABSTRACTCORE_DEBUG=true
-
-# Start with debug logging
-uvicorn abstractcore.server.app:app --log-level debug
-
-# Monitor logs
-tail -f logs/abstractcore_*.log</code></pre>
-            </section>
-
-            <!-- Error Reference -->
-            <section style="margin-bottom: 3rem;">
-                <h2>📋 Common Error Messages</h2>
-                
-                <div style="overflow-x: auto; margin: 2rem 0;">
+                <h2>Common Error Messages</h2>
+                <div style="overflow-x: auto; margin: 1.5rem 0;">
                     <table style="width: 100%; border-collapse: collapse; background: var(--background-secondary); border-radius: 0.75rem; overflow: hidden;">
                         <thead style="background: var(--primary-color); color: white;">
                             <tr>
                                 <th style="padding: 1rem; text-align: left;">Error</th>
                                 <th style="padding: 1rem; text-align: left;">Meaning</th>
-                                <th style="padding: 1rem; text-align: left;">Solution</th>
+                                <th style="padding: 1rem; text-align: left;">Typical Fix</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr style="border-bottom: 1px solid var(--border-light);">
                                 <td style="padding: 1rem;"><code>ModuleNotFoundError</code></td>
-                                <td style="padding: 1rem;">Package not installed</td>
-                                <td style="padding: 1rem;"><code>pip install abstractcore[all]</code></td>
+                                <td style="padding: 1rem;">Missing dependency / extra</td>
+                                <td style="padding: 1rem;"><code>pip install "abstractcore[openai]"</code> (or the extra you need)</td>
                             </tr>
                             <tr style="border-bottom: 1px solid var(--border-light);">
-                                <td style="padding: 1rem;"><code>Authentication Error</code></td>
-                                <td style="padding: 1rem;">Invalid API key</td>
-                                <td style="padding: 1rem;">Check API key environment variable</td>
+                                <td style="padding: 1rem;"><code>Authentication failed</code></td>
+                                <td style="padding: 1rem;">Invalid/missing API key</td>
+                                <td style="padding: 1rem;">Set <code>OPENAI_API_KEY</code>/<code>ANTHROPIC_API_KEY</code>/<code>OPENROUTER_API_KEY</code></td>
                             </tr>
                             <tr style="border-bottom: 1px solid var(--border-light);">
                                 <td style="padding: 1rem;"><code>Connection refused</code></td>
-                                <td style="padding: 1rem;">Service not running</td>
-                                <td style="padding: 1rem;">Start Ollama/LMStudio/server</td>
-                            </tr>
-                            <tr style="border-bottom: 1px solid var(--border-light);">
-                                <td style="padding: 1rem;"><code>Model not found</code></td>
-                                <td style="padding: 1rem;">Model unavailable</td>
-                                <td style="padding: 1rem;">Pull model or check name</td>
-                            </tr>
-                            <tr style="border-bottom: 1px solid var(--border-light);">
-                                <td style="padding: 1rem;"><code>Rate limit exceeded</code></td>
-                                <td style="padding: 1rem;">Too many requests</td>
-                                <td style="padding: 1rem;">Wait or upgrade plan</td>
+                                <td style="padding: 1rem;">Local server not running</td>
+                                <td style="padding: 1rem;">Start Ollama/LM Studio, verify base URL</td>
                             </tr>
                             <tr>
-                                <td style="padding: 1rem;"><code>Port already in use</code></td>
-                                <td style="padding: 1rem;">Another process using port</td>
-                                <td style="padding: 1rem;">Kill process or use different port</td>
+                                <td style="padding: 1rem;"><code>Model not found</code></td>
+                                <td style="padding: 1rem;">Model not installed / wrong name</td>
+                                <td style="padding: 1rem;">Pull the model (Ollama) or check provider model list</td>
                             </tr>
                         </tbody>
                     </table>
-            </section>
+                </div>
 
-            <!-- Getting Help -->
-            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin: 3rem 0;">
-                <h2 style="margin: 0 0 1rem 0;">🆘 Getting Help</h2>
-                <p style="margin: 0 0 1rem 0;">If you're still stuck:</p>
-                <ol style="margin: 0; padding-left: 1.5rem;">
-                    <li style="margin-bottom: 0.5rem;"><strong>Enable Debug Mode:</strong> <code>export ABSTRACTCORE_DEBUG=true</code></li>
-                    <li style="margin-bottom: 0.5rem;"><strong>Collect Information:</strong> Error messages, debug logs, system info</li>
-                    <li style="margin-bottom: 0.5rem;"><strong>Check Documentation:</strong> <a href="getting-started.html" style="color: #e0e7ff;">Getting Started</a>, <a href="api-reference.html" style="color: #e0e7ff;">API Reference</a></li>
-                    <li><strong>Community Support:</strong> <a href="https://github.com/lpalbou/abstractcore/issues" style="color: #e0e7ff;" target="_blank">GitHub Issues</a></li>
-                </ol>
-
-            <!-- Related Documentation -->
-            <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                    <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
-                    
-                    <a href="prerequisites.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Prerequisites</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Provider setup</p>
-                    
-                    <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API docs</p>
-                    
-                    <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
+                <h2>Getting Help</h2>
+                <p>If you’re still stuck, these pages usually unblock things:</p>
+                <ul>
+                    <li><a href="getting-started.html">Getting Started</a></li>
+                    <li><a href="prerequisites.html">Prerequisites & Setup</a></li>
+                    <li><a href="tool-calling.html">Tool Calling</a></li>
+                    <li><a href="server.html">Server Guide</a></li>
+                </ul>
+            </div>
+        </div>
     </main>
 
     <!-- Scripts -->

@@ -70,7 +70,7 @@
 from abstractcore import create_llm
 
 async def main():
-    llm = create_llm("openai", model="gpt-5-mini")
+    llm = create_llm("openai", model="gpt-4o-mini")
     response = await llm.agenerate("Explain Python in one paragraph.")
     print(response.content)
 
@@ -130,7 +130,7 @@ asyncio.run(main())</code></pre>
 from abstractcore import create_llm, BasicSession
 
 async def main():
-    llm = create_llm("openai", model="gpt-5-mini")
+    llm = create_llm("openai", model="gpt-4o-mini")
     session = BasicSession(provider=llm, system_prompt="You are a helpful assistant.")
 
     r1 = await session.agenerate("My name is Alice.")

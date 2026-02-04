@@ -57,8 +57,8 @@
             <section style="margin-bottom: 4rem;">
                 <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Overview</h2>
                 <p style="margin-bottom: 1.5rem; font-size: 1.1rem; line-height: 1.7;">
-                    AbstractCore includes three production-ready CLI applications that work directly from the terminal without any Python programming. 
-                    These tools provide immediate access to advanced LLM capabilities for common text processing tasks.
+                    AbstractCore includes five production-ready CLI applications that work directly from the terminal without any Python programming.
+                    These tools provide immediate access to advanced LLM capabilities for common workflows: summarization, extraction, evaluation, intent analysis, and autonomous research.
                 </p>
                 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-top: 2rem;">
@@ -79,6 +79,18 @@
                         <p style="margin-bottom: 1rem;">Text evaluation and scoring with customizable criteria</p>
                         <code style="background: var(--bg-tertiary); padding: 0.5rem; border-radius: 6px; font-size: 0.9rem;">judge essay.txt --criteria=clarity,accuracy</code>
                     </div>
+
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="color: var(--accent-color); margin-bottom: 1rem;">🧭 Intent</h3>
+                        <p style="margin-bottom: 1rem;">Intent analysis with deception indicators (structured output)</p>
+                        <code style="background: var(--bg-tertiary); padding: 0.5rem; border-radius: 6px; font-size: 0.9rem;">intent email.txt --context document --depth comprehensive</code>
+                    </div>
+
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="color: var(--accent-color); margin-bottom: 1rem;">🔎 DeepSearch</h3>
+                        <p style="margin-bottom: 1rem;">Autonomous web-assisted research with citations</p>
+                        <code style="background: var(--bg-tertiary); padding: 0.5rem; border-radius: 6px; font-size: 0.9rem;">deepsearch "AI impact on healthcare" --depth comprehensive</code>
+                    </div>
                 </div>
             </section>
 
@@ -87,13 +99,24 @@
                 <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Installation & Setup</h2>
                 <p style="margin-bottom: 1.5rem;">Apps are automatically available after installing AbstractCore:</p>
                 
-                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 1.5rem;"><code class="language-bash"># Install with all features
-pip install abstractcore[all]
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 1.5rem;"><code class="language-bash"># Core (lightweight default)
+pip install abstractcore
 
-# Apps are immediately available
+# Provider extras (install only what you use; zsh: keep quotes)
+pip install "abstractcore[openai]"      # or "abstractcore[anthropic]" / "abstractcore[huggingface]" / "abstractcore[mlx]" / "abstractcore[vllm]"
+
+# Optional: PDFs / Office docs for file-based CLIs
+pip install "abstractcore[media]"
+
+# Required for deepsearch (web_search, fetch_url)
+pip install "abstractcore[tools]"
+
+# Apps are immediately available:
 summarizer --help
 extractor --help
-judge --help</code></pre>
+judge --help
+intent --help
+deepsearch --help</code></pre>
             </section>
 
             <!-- Usage Methods Section -->
@@ -106,14 +129,18 @@ judge --help</code></pre>
                         <h3 style="color: var(--success-color); margin-bottom: 1rem;">✅ Direct Commands (Recommended)</h3>
                         <pre style="background: var(--bg-tertiary); padding: 1rem; border-radius: 8px; font-size: 0.9rem;"><code>summarizer document.txt
 extractor report.pdf
-judge essay.md</code></pre>
+judge essay.md
+intent email.txt --context document
+deepsearch "AI impact on healthcare"</code></pre>
                     </div>
                     
                     <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px;">
                         <h3 style="color: var(--warning-color); margin-bottom: 1rem;">🐍 Python Module</h3>
                         <pre style="background: var(--bg-tertiary); padding: 1rem; border-radius: 8px; font-size: 0.9rem;"><code>python -m abstractcore.apps.summarizer document.txt
 python -m abstractcore.apps.extractor report.pdf
-python -m abstractcore.apps.judge essay.md</code></pre>
+python -m abstractcore.apps.judge essay.md
+python -m abstractcore.apps.intent email.txt --context document
+python -m abstractcore.apps.deepsearch "AI impact on healthcare"</code></pre>
                     </div>
                 </div>
             </section>
@@ -272,7 +299,7 @@ extractor large_doc.txt --mode=fast --minified --output=kg_fast.jsonld</code></p
                         <li><strong>Self-Healing JSON</strong>: Automatically repairs truncated or malformed JSON responses</li>
                         <li><strong>Debug Mode</strong>: <code>--debug</code> flag shows raw LLM responses for troubleshooting</li>
                         <li><strong>Focus Areas</strong>: <code>--focus</code> parameter for targeted evaluation</li>
-                        <li><strong>Increased Token Limits</strong>: Default <code>max_tokens=32000</code>, <code>max_output_tokens=8000</code></li>
+                        <li><strong>Token Budgets</strong>: Control context/output with <code>--max-tokens</code> and <code>--max-output-tokens</code> (or <code>auto</code>)</li>
                         <li><strong>Consistent CLI Syntax</strong>: All apps use space syntax (<code>--param value</code>)</li>
                     </ul>
                 </div>
@@ -367,10 +394,64 @@ judge multiple_files.txt --exclude-global --reference reference.md</code></pre>
                 </div>
             </section>
 
+            <!-- Intent Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">🧭 Intent</h2>
+                <p style="margin-bottom: 1.5rem;">Intent analysis with deception indicators for standalone text, documents, or multi-participant conversations.</p>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Quick Examples</h3>
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Direct text
+intent "I need help with this problem" --depth underlying
+
+# File input (document mode)
+intent ./email.txt --context document --depth comprehensive --format plain
+
+# Conversation log input (expects lines like USER: ... / ASSISTANT: ...)
+intent ./chat.txt --conversation-mode --focus-participant user --format plain</code></pre>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Key Parameters</h3>
+                <ul style="margin-left: 1.5rem; line-height: 1.8;">
+                    <li><code>--context</code>: <code>standalone</code>, <code>conversational</code>, <code>document</code>, <code>interactive</code></li>
+                    <li><code>--depth</code>: <code>surface</code>, <code>underlying</code>, <code>comprehensive</code></li>
+                    <li><code>--conversation-mode</code> + <code>--focus-participant</code>: analyze multi-message inputs</li>
+                    <li><code>--format</code>: <code>json</code>, <code>yaml</code>, <code>plain</code></li>
+                    <li><code>--provider</code> + <code>--model</code>: override defaults (must be provided together)</li>
+                </ul>
+
+                <p style="margin: 0; color: var(--text-secondary);">Tip: run <code>intent --help</code> to see every option.</p>
+            </section>
+
+            <!-- DeepSearch Section -->
+            <section style="margin-bottom: 4rem;">
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">🔎 DeepSearch</h2>
+                <p style="margin-bottom: 1.5rem;">Autonomous, multi-stage research with citations using the built-in web tools (<code>web_search</code>, <code>fetch_url</code>). Requires <code>pip install "abstractcore[tools]"</code>.</p>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Quick Examples</h3>
+                <pre style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; overflow-x: auto; margin-bottom: 2rem;"><code class="language-bash"># Simple research query
+deepsearch "What are the latest developments in quantum computing?"
+
+# Add focus areas
+deepsearch "AI impact on healthcare" --focus "diagnosis,treatment,ethics"
+
+# Comprehensive research with custom provider/model
+deepsearch "sustainable energy 2025" --depth comprehensive --provider openai --model gpt-4o-mini --output report.json</code></pre>
+
+                <h3 style="font-size: 1.5rem; margin-bottom: 1rem;">Key Parameters</h3>
+                <ul style="margin-left: 1.5rem; line-height: 1.8;">
+                    <li><code>--depth</code>: <code>brief</code>, <code>standard</code>, <code>comprehensive</code></li>
+                    <li><code>--max-sources</code>: cap the number of sources</li>
+                    <li><code>--parallel-searches</code>: increase throughput (be mindful of rate limits)</li>
+                    <li><code>--reflexive</code>: self-improving gap analysis + refinement</li>
+                    <li><code>--no-verification</code>: skip optional verification layer</li>
+                </ul>
+
+                <p style="margin: 0; color: var(--text-secondary);">Tip: run <code>deepsearch --help</code> to see every option.</p>
+            </section>
+
             <!-- Common Parameters Section -->
             <section style="margin-bottom: 4rem;">
                 <h2 style="font-size: 2rem; margin-bottom: 1.5rem;">Common Parameters</h2>
-                <p style="margin-bottom: 1.5rem;">Parameters available across all three applications:</p>
+                <p style="margin-bottom: 1.5rem;">Common parameters shared across the CLI apps (use <code>--help</code> on each command for the full list):</p>
                 
                 <div style="overflow-x: auto;">
                     <table style="width: 100%; border-collapse: collapse; margin-bottom: 2rem;">
@@ -385,7 +466,7 @@ judge multiple_files.txt --exclude-global --reference reference.md</code></pre>
                             <tr>
                                 <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--provider</code> + <code>--model</code></td>
                                 <td style="padding: 1rem; border: 1px solid var(--border-color);">Use different LLM providers</td>
-                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--provider=openai --model=gpt-5-mini</code></td>
+                                <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--provider=openai --model=gpt-4o-mini</code></td>
                             </tr>
                             <tr>
                                 <td style="padding: 1rem; border: 1px solid var(--border-color);"><code>--output</code></td>
@@ -409,8 +490,8 @@ judge multiple_files.txt --exclude-global --reference reference.md</code></pre>
 
             <!-- Complete CLI Parameters Reference -->
             <section style="margin-bottom: 4rem;">
-                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">📋 Complete CLI Parameters Reference</h2>
-                <p style="margin-bottom: 1.5rem;">Comprehensive parameter documentation for all applications with enhanced features.</p>
+                <h2 style="font-size: 2rem; margin-bottom: 1.5rem; color: var(--accent-color);">📋 CLI Parameters (Highlights)</h2>
+                <p style="margin-bottom: 1.5rem;">Selected parameters for the most common apps. For the full, up-to-date list, run <code>&lt;app&gt; --help</code> (e.g. <code>deepsearch --help</code>).</p>
 
                 <!-- Extractor Parameters -->
                 <div style="margin-bottom: 3rem;">
@@ -571,6 +652,24 @@ extractor "@sales_chart.png What trends do you see?" --focus "business metrics"<
                            View Full Documentation →
                         </a>
                     </div>
+
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 1rem;">🧭 Intent</h3>
+                        <p style="margin-bottom: 1rem;">Intent analysis guide with conversation + document modes</p>
+                        <a href="https://github.com/lpalbou/abstractcore/blob/main/docs/apps/basic-intent.md" 
+                           style="color: var(--accent-color); text-decoration: none; font-weight: 500;">
+                           View Full Documentation →
+                        </a>
+                    </div>
+
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <h3 style="margin-bottom: 1rem;">🔎 DeepSearch</h3>
+                        <p style="margin-bottom: 1rem;">Autonomous research agent guide with citations + reflexive mode</p>
+                        <a href="https://github.com/lpalbou/abstractcore/blob/main/docs/apps/basic-deepsearch.md" 
+                           style="color: var(--accent-color); text-decoration: none; font-weight: 500;">
+                           View Full Documentation →
+                        </a>
+                    </div>
                 </div>
             </section>
         </div>
@@ -580,7 +679,7 @@ extractor "@sales_chart.png What trends do you see?" --focus "business metrics"<
     <footer style="background: var(--bg-secondary); border-top: 1px solid var(--border-color); padding: 2rem 0; margin-top: 4rem;">
         <div class="container" style="text-align: center;">
             <p style="color: var(--text-secondary);">
-                © 2025 AbstractCore. Licensed under MIT. 
+                © 2026 AbstractCore. Licensed under MIT. 
                 <a href="https://github.com/lpalbou/abstractcore" style="color: var(--accent-color);">View on GitHub</a> | 
                 <a href="mailto:contact@abstractcore.ai" style="color: var(--accent-color);">Contact Us</a>
             </p>

@@ -72,7 +72,7 @@ class Person(BaseModel):
     age: int
     email: str
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 person = llm.generate(
     "Extract: John Doe, 35 years old, john@example.com",
     response_model=Person,
