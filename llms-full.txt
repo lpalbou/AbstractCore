@@ -3,7 +3,7 @@
 > AbstractCore is a Python library that provides a unified `create_llm(...)` API over multiple LLM backends (cloud + local). Optional subsystems (tools, embeddings, media/vision, glyph compression, server) are enabled via explicit install extras; the default install is intentionally small.
 
 Last updated: 2026-02-04  
-Package version: 2.11.0 (`abstractcore/utils/version.py`)
+Package version: 2.11.1 (`abstractcore/utils/version.py`)
 
 ## What to install
 

@@ -422,7 +422,7 @@ If you're still stuck:
 2. **Join community**: [Discord Server](https://discord.abstractcore.ai)
 3. **Read detailed docs**:
    - [Configuration Guide](server-configuration.md)
-   - [Tool Call Tag Rewriting](tool-syntax-rewriting.md)
+   - [Tool Call Tag Rewriting](../tool-syntax-rewriting.md)
    - [Unified Streaming Architecture](unified-streaming-architecture.md)
 
 When asking for help, always include:

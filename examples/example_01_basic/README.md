@@ -1,114 +1,70 @@
-# AbstractCore Core: Basic Introduction
+# Example 01: Basic usage (Ollama)
 
-## What You'll Learn
+This example shows the smallest useful AbstractCore program: create a provider and call `generate()`.
 
-- 🌟 Initialize AbstractCore Core
-- 📝 Configure basic text generation
-- 🔍 Understand core library concepts
-
-### Learning Objectives
-
-1. Import AbstractCore library
-2. Select and configure a basic model
-3. Generate simple text responses
-4. Explore basic configuration options
-
-### Prerequisites
+## Prerequisites
 
 - Python 3.9+
-- Basic Python programming knowledge
-- Ollama or other supported provider installed
+- An Ollama server running locally (or reachable over the network)
 
-### Example Walkthrough
+Install Ollama: see https://ollama.com/
 
-This example demonstrates the simplest way to use AbstractCore Core. You'll learn how to:
-- Set up a basic text generation environment
-- Make your first API call
-- Handle basic configurations
-
-### Installation
+## Install
 
 ```bash
-# Ensure you have the required dependencies
-pip install abstractcore ollama
-
-# Verify Ollama is running
-ollama serve
+pip install abstractcore
 ```
 
-### Code Example
+Ollama uses the core install (no provider extra is required).
+
+## Prepare a model
+
+```bash
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+```
+
+## Code (non-streaming)
 
 ```python
 from abstractcore import create_llm
 
-# Initialize a basic model
-llm = create_llm(provider='ollama', model='llama3')
-
-# Generate a simple response
-response = llm.generate("Tell me a short joke.")
-print(response)
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+resp = llm.generate("Tell me a short joke.")
+print(resp.content)
 ```
 
-### Expected Output
-
-```
-A typical AI-generated humorous response about a programmer walking into a bar.
-```
-
-### Configuration Options
+## Code (streaming)
 
 ```python
-# Advanced configuration example
-llm = create_llm(
-    provider='ollama',
-    model='llama3',
-    max_tokens=100,      # Limit response length
-    temperature=0.7,     # Control randomness
-    stream=True          # Enable streaming
-)
+from abstractcore import create_llm
+
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
+for chunk in llm.generate("Write a short poem about distributed systems.", stream=True):
+    print(chunk.content or "", end="", flush=True)
 ```
 
-### Troubleshooting
+## Troubleshooting
 
-#### Common Issues
-- **Model Not Found**: Ensure the model is installed via `ollama pull llama3`
-- **Connection Error**: Verify Ollama is running (`ollama serve`)
-- **Dependency Problems**: Use `pip install -U abstractcore ollama`
+- **Connection errors**: ensure Ollama is running (`ollama serve`) and that your base URL is correct.
+  - programmatic: `create_llm("ollama", ..., base_url="http://localhost:11434")`
+  - env vars: `OLLAMA_BASE_URL` (or legacy `OLLAMA_HOST`)
+- **Model not found**: confirm the model exists: `ollama list`
 
-#### Debugging Tips
-- Check Ollama logs: `ollama logs`
-- Validate model availability: `ollama list`
-- Use verbose mode for detailed errors
+## Reference docs
 
-### Best Practices
+- [Getting Started](../../docs/getting-started.md)
+- [Prerequisites](../../docs/prerequisites.md)
+- [Troubleshooting](../../docs/troubleshooting.md)
 
-- Always specify a max token limit
-- Use temperature to control response creativity
-- Handle potential network or model errors
-
-### Performance Considerations
-
-- First call might be slower due to model loading
-- Subsequent calls will be faster
-- Consider model size and your hardware capabilities
-
-### Reference Documentation
-
-- [AbstractCore Core Documentation](/docs/getting-started.md)
-- [Provider Configuration](/docs/prerequisites.md)
-- [Troubleshooting Guide](/docs/troubleshooting.md)
-
-### Next Steps
+## Next steps
 
 After completing this example, move to `example_02_providers` to explore more advanced provider configurations.
 
-### Contribute & Feedback
+## Contribute & feedback
 
-- Found an issue? [Open an Issue](https://github.com/your-org/abstractcore/issues)
+- Found an issue? [Open an issue](https://github.com/lpalbou/AbstractCore/issues)
 - Want to improve the example? Submit a pull request!
 
 ---
-
-**Learning Time**: ~15 minutes
-**Complexity**: Beginner
-**Last Updated**: 2025-10-11
+**Complexity**: Beginner  
+**Last Updated**: 2026-02-04

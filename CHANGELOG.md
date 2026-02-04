@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.1] - 2026-02-04
+
+### Added
+- **Security policy**: added `SECURITY.md` with responsible disclosure guidance.
+- **API overview doc**: added `docs/api.md` as a user-facing map of the public Python API.
+- **FAQ**: added `docs/faq.md` and linked it from the docs entry points.
+- **Events + logging docs**: added `docs/events.md` and `docs/structured-logging.md`.
+
 ### Changed
+- **Install composition (default stays small)**: docs and packaging emphasize a lightweight core install, with heavy features enabled via explicit extras (`tools`, `media`, `embeddings`, `server`, provider SDKs).
 - **Dependency compatibility**: relaxed `abstractcore[huggingface]` `transformers` upper bound to `<6` so it can co-install with `abstractcore[mlx]` (as `mlx-lm` currently pins `transformers==5.0.0rc*`).
+- **Documentation polish**: refreshed wording and navigation for external users; ensured internal links/anchors resolve across docs.
+
+### Fixed
+- **Docs accuracy**: aligned event fields and examples with the current codebase (events, telemetry, and usage data).
+- **Optional imports**: made Telegram Bot API tools import-safe when `requests` is not installed (returns a clear `abstractcore[tools]` install hint when used).
 
 ## [2.11.0] - 2026-01-28
 
@@ -439,7 +453,6 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
   - **Use Cases**: Docker deployments, automated setup, web UIs with SSE streaming, batch downloads
   - **Implementation**: ~240 lines in `abstractcore/download.py`, 11/11 tests passing with real implementations
   - **Zero Breaking Changes**: New functionality only, fully backward compatible
-  - **Completed Backlog**: [docs/backlog/completed/010-model-download-api.md](docs/backlog/completed/010-model-download-api.md)
 
 - **Custom Base URL Support**: Configure custom API endpoints for OpenAI and Anthropic providers (2025-12-01)
   - **OpenAI Provider**: `base_url` parameter + `OPENAI_BASE_URL` environment variable
@@ -454,7 +467,6 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
   - **Testing**: 8/10 tests passing, 2 appropriately skipped (OpenAI model validation with test keys)
   - **Zero Breaking Changes**: Optional parameter with None default, fully backward compatible
   - **Note**: Azure OpenAI NOT supported (requires AzureOpenAI SDK class)
-  - **Completed Backlog**: [docs/backlog/completed/009-base-url-openai-anthropic.md](docs/backlog/completed/009-base-url-openai-anthropic.md)
 
 - **Production-Ready Native Async Support**: Complete async/await implementation with validated 6-7.5x performance improvement (2025-11-30)
   - **Native Async Providers**: Ollama, LMStudio, OpenAI, Anthropic now use native async clients (httpx.AsyncClient, AsyncOpenAI, AsyncAnthropic)
@@ -476,7 +488,6 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
   - **SOTA Compliance**: Follows PEP 282, Django, FastAPI, and cloud-native patterns
   - **Zero Breaking Changes**: Fully backward compatible, all tests passing
   - **Benefits**: Consistent structured logs, JSON output support, cloud-native ready, improved observability
-  - **Completed Backlog**: [docs/backlog/completed/004-structured-logging.md](docs/backlog/completed/004-structured-logging.md)
 
 ### Enhanced
 - **Async Documentation**:
@@ -506,10 +517,9 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 - **Fallback Efficiency**: MLX/HF keep event loop responsive for mixing with async I/O operations
 
 ### Documentation
-- [Async/Await Support](README.md#asyncawait-support) - Updated with performance data
+- [Async/Await Support](README.md#async) - Updated usage examples
 - [Async Guide](docs/async-guide.md) - Comprehensive examples and patterns
 - [Async CLI Demo](examples/async_cli_demo.py) - Educational reference for learning
-- [Completed Backlog](docs/backlog/completed/002-async-await-support.md) - Implementation report
 
 ## [2.5.4] - 2025-11-27
 

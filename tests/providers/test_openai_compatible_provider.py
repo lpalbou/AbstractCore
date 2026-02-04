@@ -98,13 +98,19 @@ _TEST_BASE_URL, _TEST_MODEL = _discover_server()
 
 
 def server_available() -> bool:
+    # Opt-in: these are integration tests that hit a local OpenAI-compatible server.
+    # Without an explicit flag, developers can get flaky failures if they happen to
+    # have an unrelated service running on the default ports.
+    if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
+        return False
     return bool(_TEST_BASE_URL and _TEST_MODEL)
 
 
 pytestmark = pytest.mark.skipif(
     not server_available(),
     reason=(
-        "OpenAI-compatible server not available. Set OPENAI_COMPATIBLE_BASE_URL "
+        "OpenAI-compatible integration tests disabled by default. Set "
+        "ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1 and configure OPENAI_COMPATIBLE_BASE_URL "
         "(or run LM Studio on :1234 or Ollama OpenAI API on :11434)."
     ),
 )

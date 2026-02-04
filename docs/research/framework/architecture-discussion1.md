@@ -656,7 +656,7 @@ to provide an informed opinion. Do not guess. Ultrathink
      testing, and multi-tenant deployments without environment variables
      llms.txt:25:- **Dynamic Base URL** (v2.6.5): POST `base_url` parameter
       for runtime endpoint routing without env vars
-     llms.txt:35:- **[Structured Output](docs/structured-output.md)**:
+     llms.txt:35:- **[Structured Output](../../structured-output.md)**:
      Native vs prompted strategies, schema validation, production
      deployment
      llms.txt:460:# - Production deployment guidelines
@@ -722,7 +722,7 @@ to provide an informed opinion. Do not guess. Ultrathink
      abstractcore/core/README.md:335:Central retry orchestration with smart
       error classification:
      abstractcore/core/README.md:853:-
-     [`compression/`](../compression/README.md) - Compression orchestration
+     [`compression/`](../../../abstractcore/compression/README.md) - Compression orchestration
      abstractcore/config/README.md:887:4. **DO** use offline-first
      configuration for local deployments:
      abstractcore/processing/basic_judge.py:676:SCORING RUBRIC (1-5 scale):
@@ -743,7 +743,7 @@ to provide an informed opinion. Do not guess. Ultrathink
      abstractcore/__init__.py:83:    __all__.extend(['GlyphConfig',
      'CompressionOrchestrator'])
      abstractcore/server/README.md:52:- **How do I deploy to production?**
-     → See [Production Deployment](#production-deployment)
+     → See [Deployment](../../server.md#deployment)
      abstractcore/server/README.md:818:## Deployment
      abstractcore/server/README.md:850:### Production Deployment
      abstractcore/server/README.md:865:**Docker Deployment**:
@@ -877,7 +877,7 @@ to provide an informed opinion. Do not guess. Ultrathink
      abstractcore/compression/README.md:1362:CompressionOrchestrator()
      abstractcore/compression/README.md:1405:- **Intelligent
      decision-making** via Orchestrator
-     abstractcore/compression/README.md:1448:- [`core/`](../core/README.md)
+     abstractcore/compression/README.md:1448:- [`core/`](../../../abstractcore/core/README.md)
       - Orchestrator in factory pattern
      abstractcore/compression/orchestrator.py:2:Compression orchestrator
      for intelligent decision-making.
@@ -1260,10 +1260,7 @@ to provide an informed opinion. Do not guess. Ultrathink
      docs/research/vision-first/Image Tokenization for Visual
      Models.md:191:2. An Image is Worth 16x16 Words: Transformers for Image
       ..., accessed October 31, 2025,
-     [https://www.researchgate.net/publication/344828174\_An\_Image\_is\_Wo
-     rth\_16x16\_Words\_Transformers\_for\_Image\_Recognition\_at\_Scale](h
-     ttps://www.researchgate.net/publication/344828174_An_Image_is_Worth_16
-     x16_Words_Transformers_for_Image_Recognition_at_Scale)
+     [https://www.researchgate.net/publication/344828174_An_Image_is_Worth_16x16_Words_Transformers_for_Image_Recognition_at_Scale](https://www.researchgate.net/publication/344828174_An_Image_is_Worth_16x16_Words_Transformers_for_Image_Recognition_at_Scale)
      docs/research/vision-first/Image Tokenization for Visual
      Models.md:192:3. An Image is Worth 16x16 Words: Transformers for Image
       Recognition at Scale \- SciSpace, accessed October 31, 2025,
@@ -1554,7 +1551,7 @@ to provide an informed opinion. Do not guess. Ultrathink
      docs/capabilities.md:101:**Why this helps**: Allows flexible tool
      execution control for different deployment scenarios.
      docs/capabilities.md:121:> **See**: [Structured Output
-     Guide](structured-output.md) for native vs prompted strategies, schema
+     Guide](../../structured-output.md) for native vs prompted strategies, schema
       design, and production deployment
      docs/capabilities.md:228:-
      **[LangGraph](https://github.com/langchain-ai/langgraph)** - Agent
@@ -1627,7 +1624,7 @@ to provide an informed opinion. Do not guess. Ultrathink
      simplicity**: Can deploy without all dependencies
      docs/embeddings.md:596:- **Use REST API**: Deploy embeddings as HTTP
      service with the server
-     docs/embeddings.md:606:- **[Server Guide](server.md)** - Server setup
+     docs/embeddings.md:606:- **[Server Guide](../../server.md)** - Server setup
      and deployment
      docs/backlog/completed/structured_logging_audit_report.md:34:11. ✅
      abstractcore/media/utils/image_scaler.py - **Instance logger in
@@ -1822,7 +1819,7 @@ to provide an informed opinion. Do not guess. Ultrathink
      deployments
      docs/README.md:57:  - Deployment (Docker, production, cloud)
      docs/README.md:177:- Deploy to production → [Server
-     Documentation](server.md#deployment)
+     Documentation](../../server.md#deployment)
      docs/vision-capabilities.md:9:- **15+ vision models** supported across
       cloud and local deployments
      docs/vision-capabilities.md:122:- Local deployment with REST API
@@ -1834,7 +1831,7 @@ to provide an informed opinion. Do not guess. Ultrathink
       | Medium | Very Good | 3584px | Free | Local deployment |
      docs/vision-capabilities.md:1111:   - Edge deployment options
      docs/structured-output.md:16:8. [Production
-     Deployment](#production-deployment)
+     Deployment](../../structured-output.md#production-deployment)
      docs/structured-output.md:549:    proficiency: int  # 1-10 scale
      docs/structured-output.md:971:## Production Deployment
      docs/structured-output.md:973:### Pre-Deployment Checklist
@@ -1940,13 +1937,13 @@ to provide an informed opinion. Do not guess. Ultrathink
      non-standard ports:
      README.md:739:- **Docker Startup**: Read from custom env vars and
      configure programmatically
-     README.md:767:- **[Server Documentation](docs/server.md)** - Complete
+     README.md:767:- **[Server Documentation](../../server.md)** - Complete
      server setup, API reference, and deployment
      llms-full.txt:34:- **Dynamic Base URL** (v2.6.5): POST `base_url`
      parameter for runtime endpoint routing without environment variables
      llms-full.txt:43:- **Structured Output**: Native vs prompted
      strategies, schema validation, production deployment
-     ([docs/structured-output.md](docs/structured-output.md))
+     ([docs/structured-output.md](../../structured-output.md))
      llms-full.txt:330:AbstractCore supports environment variables for
      configuring provider base URLs, enabling remote servers, Docker
      deployments, and non-standard ports. Provider discovery

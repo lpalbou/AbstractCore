@@ -788,8 +788,8 @@ from abstractcore.media.processors import (
 
 - **[Getting Started Guide](getting-started.md)** - Complete AbstractCore tutorial
 - **[API Reference](api-reference.md)** - Full Python API documentation
-- **[Vision Examples](../examples/vision/)** - More vision model examples
-- **[Document Processing Examples](../examples/documents/)** - Document analysis examples
+- **[Glyph + Vision Example](../examples/glyph_complete_example.py)** - End-to-end document analysis with a vision model
+- **[Supported Formats Utility](../examples/list_supported_formats.py)** - Inspect available processors and supported formats
 
 ---
 

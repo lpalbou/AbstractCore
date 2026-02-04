@@ -265,10 +265,7 @@ The built-in token estimation uses a simple heuristic:
 
 ### Compression Results
 
-Typical compression ratios:
-- **Long conversations**: 3-5x token reduction
-- **Technical discussions**: 2-4x reduction
-- **Very long sessions**: 10x+ reduction possible
+Compaction results vary with conversation length, content, and the compaction prompt. To quantify impact in your app, compare token estimates before/after compaction.
 
 ## Error Handling
 
@@ -319,10 +316,15 @@ compacted = session.compact()  # Tools are preserved in compacted session
 from abstractcore.events import EventType, on_global
 
 def monitor_compaction(event):
-    if event.type == EventType.AFTER_GENERATE:
-        print(f"Compaction step completed: {event.duration_ms}ms")
+    if event.type == EventType.COMPACTION_STARTED:
+        print("Compaction started…")
+    elif event.type == EventType.COMPACTION_COMPLETED:
+        duration_ms = event.data.get("duration_ms")
+        if isinstance(duration_ms, (int, float)):
+            print(f"Compaction completed in {float(duration_ms):.0f}ms")
 
-on_global(EventType.AFTER_GENERATE, monitor_compaction)
+on_global(EventType.COMPACTION_STARTED, monitor_compaction)
+on_global(EventType.COMPACTION_COMPLETED, monitor_compaction)
 
 # Compaction operations emit events for monitoring
 compacted = session.compact()

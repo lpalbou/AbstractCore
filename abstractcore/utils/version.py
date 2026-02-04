@@ -10,4 +10,4 @@ including when the package is installed from PyPI where pyproject.toml is not av
 """
 
 # Package version - update this when releasing new versions
-__version__ = "2.11.0"
+__version__ = "2.11.1"

@@ -806,35 +806,18 @@ def grade_assignment(student_submission, rubric_reference):
     }
 ```
 
-## Performance Characteristics
+## Performance notes
 
-### Speed Benchmarks (Approximate)
+Judging is an LLM call, so latency and cost vary by provider/model, input size, and retry behavior (for example, structured output validation).
 
-| Model | Content Length | Evaluation Time | Quality |
-|-------|----------------|-----------------|---------|
-| `qwen3:4b-instruct-2507-q4_K_M` | 500 chars | 30-40 seconds | Good |
-| `qwen3-coder:30b` | 500 chars | 60-90 seconds | High |
-| `gpt-oss:120b` | 500 chars | 90-120 seconds | Optimal |
-| `gpt-4o-mini` | 500 chars | 15-30 seconds | Optimal |
-| `claude-haiku-4-5` | 500 chars | 10-25 seconds | Optimal |
-
-### Memory Usage
-
-- **BasicJudge**: ~50MB base memory
-- **Local models**: +2-8GB depending on model size
-- **Structured output**: Adds minimal overhead
-
-### Consistency
-
-The judge uses low temperature (0.1 by default) for consistent evaluation:
-- **Same content + same criteria** → Similar scores across runs
-- **Different contexts** → Appropriately different assessments
-- **Cloud providers** → Highest consistency
-- **Local models** → Good consistency with proper temperature
+Practical guidance:
+- Prefer smaller/faster models for routine scoring.
+- Keep inputs short (or summarize first) for lower latency.
+- Use low temperature for more consistent scores.
 
 ## LLM-as-a-Judge Best Practices
 
-BasicJudge implements 2025 state-of-the-art practices:
+BasicJudge follows common best practices for LLM-based evaluation:
 
 ### 1. Structured Output
 - **JSON format** for easy parsing and integration

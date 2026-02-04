@@ -99,7 +99,7 @@ def _generate_internal(self, prompt, messages, system_prompt, tools, media, stre
 def list_available_models(self, **kwargs) -> List[str]
 ```
 
-**Public Interface**:
+#### Public interface
 ```python
 # Generation
 response = provider.generate(prompt="Hello", system_prompt="You are helpful", stream=False)
@@ -147,8 +147,6 @@ Controls visual-text compression for large documents (vision models only):
 - `glyph_compression="auto"` with non-vision model → Warning logged, falls back to text processing
 
 See [Compression Module](../compression/README.md) for detailed documentation.
-
-```
 
 ### registry.py - Provider Registry & Discovery
 

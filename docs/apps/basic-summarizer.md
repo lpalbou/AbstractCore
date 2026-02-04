@@ -382,13 +382,15 @@ Monitor summarization progress with AbstractCore's event system:
 from abstractcore.events import EventType, on_global
 
 def monitor_summarization(event):
-    if event.type == EventType.BEFORE_GENERATE:
-        print("🔄 Starting summarization...")
-    elif event.type == EventType.AFTER_GENERATE:
-        print(f"Completed in {event.duration_ms}ms")
+    if event.type == EventType.GENERATION_STARTED:
+        print("Starting summarization...")
+    elif event.type == EventType.GENERATION_COMPLETED:
+        duration_ms = event.data.get("duration_ms")
+        if isinstance(duration_ms, (int, float)):
+            print(f"Completed in {float(duration_ms):.0f}ms")
 
-on_global(EventType.BEFORE_GENERATE, monitor_summarization)
-on_global(EventType.AFTER_GENERATE, monitor_summarization)
+on_global(EventType.GENERATION_STARTED, monitor_summarization)
+on_global(EventType.GENERATION_COMPLETED, monitor_summarization)
 
 result = summarizer.summarize(text)
 ```

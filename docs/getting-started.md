@@ -52,6 +52,8 @@ Tip: you can omit `model=...`, but it’s usually better to pass an explicit mod
 
 ## Your first call
 
+OpenAI example (requires `pip install "abstractcore[openai]"`):
+
 ```python
 from abstractcore import create_llm
 
@@ -155,7 +157,9 @@ abstractcore-chat --provider openai --model gpt-4o-mini
 ## Next steps
 
 - [Prerequisites](prerequisites.md) — provider setup (keys, base URLs, hardware notes)
+- [FAQ](faq.md) — common questions and setup gotchas
 - [Examples](examples.md) — end-to-end patterns and recipes
-- [API Reference](api-reference.md) — public Python API
+- [API (Python)](api.md) — public API map and common patterns
+- [API Reference](api-reference.md) — complete function/class listing
 - [Troubleshooting](troubleshooting.md) — common errors and fixes
 - [Server](server.md) — OpenAI-compatible HTTP gateway

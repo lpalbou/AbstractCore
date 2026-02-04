@@ -17,6 +17,8 @@ Common extras (quote brackets for zsh):
 - [docs/README.md](docs/README.md): docs index and reading paths
 - [docs/getting-started.md](docs/getting-started.md): 5-minute intro (`create_llm`, `generate`)
 - [docs/prerequisites.md](docs/prerequisites.md): provider setup + install extras
+- [docs/faq.md](docs/faq.md): common questions and setup gotchas
+- [docs/api.md](docs/api.md): public API map and patterns
 - [docs/api-reference.md](docs/api-reference.md): public API reference
 
 ## Core API
@@ -33,6 +35,8 @@ Common extras (quote brackets for zsh):
 - [abstractcore/tools/](abstractcore/tools/): tool system (core/registry/parser/handler)
 - [docs/tool-syntax-rewriting.md](docs/tool-syntax-rewriting.md): tool-call format rewriting (`tool_call_tags`, server `agent_format`)
 - [docs/structured-output.md](docs/structured-output.md): `response_model=...`
+- [docs/events.md](docs/events.md): global event bus (`on_global`)
+- [docs/structured-logging.md](docs/structured-logging.md): configure console/file logging
 - [docs/media-handling-system.md](docs/media-handling-system.md): `media=[...]` + file processing
 - [abstractcore/media/](abstractcore/media/): media pipeline (optional deps behind extras)
 - [docs/glyphs.md](docs/glyphs.md): glyph compression
@@ -57,7 +61,4 @@ Common extras (quote brackets for zsh):
 - [docs/reports/README.md](docs/reports/README.md): non-authoritative engineering notes
 - [docs/research/README.md](docs/research/README.md): non-authoritative research/experiments
 - [docs/archive/README.md](docs/archive/README.md): historical/superseded documentation
-
-## Full Context
-
 - [llms-full.txt](llms-full.txt): standalone repo context for LLMs

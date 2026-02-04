@@ -373,7 +373,7 @@ server {
 
 - [Quick Start Guide](server-quickstart.md) - Get running in 5 minutes
 - [Troubleshooting Guide](server-troubleshooting.md) - Debug common issues
-- [Tool Call Tag Rewriting](tool-syntax-rewriting.md) - Deep dive into tool formats
+- [Tool Call Tag Rewriting](../tool-syntax-rewriting.md) - Deep dive into tool formats
 - [Agentic CLI Integration](codex-cli-integration.md) - CLI-specific setup
 
 ---

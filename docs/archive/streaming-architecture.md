@@ -156,7 +156,7 @@ for chunk in response:
 
 - **[Streaming Architecture Visual Guide](streaming-architecture-visual-guide.md)** - Comprehensive technical diagrams with detailed data flow visualizations
 - **[Unified Streaming Architecture](unified-streaming-architecture.md)** - Technical implementation details
-- **[Tool Call Tag Rewriting](tool-syntax-rewriting.md)** - Custom tag configuration and rewriting
+- **[Tool Call Tag Rewriting](../tool-syntax-rewriting.md)** - Custom tag configuration and rewriting
 
 ## Conclusion
 

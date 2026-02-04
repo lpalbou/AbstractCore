@@ -7,7 +7,7 @@ Security model:
 - For true E2EE, use TDLib + Secret Chats (see docs/guide/telegram-integration.md).
 
 Dependency policy:
-- Bot API transport uses `requests` (already a base dependency).
+- Bot API transport uses `requests` (install with: pip install "abstractcore[tools]").
 - TDLib transport uses stdlib `ctypes` and an externally installed TDLib (tdjson).
 """
 
@@ -18,7 +18,12 @@ from pathlib import Path
 import re
 from typing import Any, Dict, Optional
 
-import requests
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    requests = None  # type: ignore[assignment]
+    REQUESTS_AVAILABLE = False
 
 from abstractcore.tools.core import tool
 from abstractcore.tools.telegram_tdlib import TdlibNotAvailable, get_global_tdlib_client
@@ -81,6 +86,13 @@ def send_telegram_message(
     transport = _telegram_transport()
 
     if transport == "bot_api":
+        if not REQUESTS_AVAILABLE:
+            return {
+                "success": False,
+                "transport": "bot_api",
+                "error": "requests is required for Telegram Bot API transport. Install with: pip install \"abstractcore[tools]\"",
+            }
+
         token, err = _resolve_required_env(bot_token_env_var, label="Telegram bot token")
         if err:
             return {"success": False, "transport": "bot_api", "error": err}
@@ -96,7 +108,7 @@ def send_telegram_message(
             payload["disable_web_page_preview"] = True
 
         try:
-            resp = requests.post(url, json=payload, timeout=float(timeout_s))
+            resp = requests.post(url, json=payload, timeout=float(timeout_s))  # type: ignore[union-attr]
         except Exception as e:
             return {"success": False, "transport": "bot_api", "error": str(e)}
 
@@ -167,6 +179,13 @@ def send_telegram_artifact(
         return {"success": False, "error": err}
 
     if transport == "bot_api":
+        if not REQUESTS_AVAILABLE:
+            return {
+                "success": False,
+                "transport": "bot_api",
+                "error": "requests is required for Telegram Bot API transport. Install with: pip install \"abstractcore[tools]\"",
+            }
+
         token, err2 = _resolve_required_env(bot_token_env_var, label="Telegram bot token")
         if err2:
             return {"success": False, "transport": "bot_api", "error": err2}
@@ -183,7 +202,7 @@ def send_telegram_artifact(
                 data: Dict[str, Any] = {"chat_id": str(int(chat_id))}
                 if caption:
                     data["caption"] = str(caption)
-                resp = requests.post(url, data=data, files=files, timeout=float(timeout_s))
+                resp = requests.post(url, data=data, files=files, timeout=float(timeout_s))  # type: ignore[union-attr]
         except Exception as e:
             return {"success": False, "transport": "bot_api", "error": str(e)}
 
@@ -240,4 +259,3 @@ def send_telegram_artifact(
     if isinstance(out, dict) and out.get("@type") == "error":
         return {"success": False, "transport": "tdlib", "error": str(out.get("message") or "TDLib error"), "response": out}
     return {"success": True, "transport": "tdlib", "response": out}
-

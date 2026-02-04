@@ -45,25 +45,27 @@ python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b 
 ## Quick Start
 
 ```bash
-# Start the internal CLI
-python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
+# Start the internal CLI (installed as `abstractcore-chat`)
+abstractcore-chat --provider ollama --model qwen3-coder:30b
 
 # Or with any provider
-python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini
-python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
-python -m abstractcore.utils.cli --provider openrouter --model openai/gpt-4o-mini
+abstractcore-chat --provider openai --model gpt-4o-mini
+abstractcore-chat --provider anthropic --model claude-haiku-4-5
+abstractcore-chat --provider openrouter --model openai/gpt-4o-mini
 
 # With streaming enabled (--stream flag)
-python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream
+abstractcore-chat --provider ollama --model qwen3-coder:30b --stream
 
 # OpenAI-compatible /v1 endpoints (LM Studio, vLLM, custom proxies)
 # Note: include `/v1` in the base URL for OpenAI-compatible servers.
-python -m abstractcore.utils.cli --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
-python -m abstractcore.utils.cli --provider openai-compatible --model local-model --base-url http://localhost:1234/v1
+abstractcore-chat --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
+abstractcore-chat --provider openai-compatible --model local-model --base-url http://localhost:1234/v1
 
 # Control token budgets
-python -m abstractcore.utils.cli --provider lmstudio --model qwen/qwen3-4b-2507 --max-tokens 16384 --max-output-tokens 1024
+abstractcore-chat --provider lmstudio --model qwen/qwen3-4b-2507 --max-tokens 16384 --max-output-tokens 1024
 ```
+
+Tip: `python -m abstractcore.utils.cli ...` is equivalent if you prefer module execution.
 
 Cloud providers require API keys:
 - OpenAI: `OPENAI_API_KEY`
@@ -309,7 +311,7 @@ Toggle real-time streaming of responses. You can also start with streaming enabl
 
 ```bash
 # Method 1: Start with streaming enabled
-python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b --stream
+abstractcore-chat --provider ollama --model qwen3-coder:30b --stream
 
 # Method 2: Toggle during conversation
 User: You: /stream
@@ -528,7 +530,7 @@ Assistant: Assistant (default): <|tool_call|>{"name": "get_weather", "arguments"
 
 ```bash
 # Start CLI with a model that supports auto-compaction
-python -m abstractcore.utils.cli --provider ollama --model gemma3:1b
+abstractcore-chat --provider ollama --model gemma3:1b
 
 # Have a long conversation...
 User: You: What is Python?

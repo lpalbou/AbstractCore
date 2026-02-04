@@ -9,6 +9,7 @@ Complete navigation guide for AbstractCore documentation.
 1. **[Prerequisites](prerequisites.md)** - Install and configure providers (OpenAI, Anthropic, Ollama, etc.)
 2. **[Getting Started](getting-started.md)** - 5-minute quick start with core concepts and examples
 3. **[Troubleshooting](troubleshooting.md)** - Fix common issues quickly
+4. **[FAQ](faq.md)** - Common questions about installs, providers, tools, and the server
 
 ## Core Library (Python API)
 
@@ -18,6 +19,7 @@ Complete navigation guide for AbstractCore documentation.
 
 - **[Getting Started](getting-started.md)** - Quick start, core concepts, common patterns
 - **[Prerequisites](prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
+- **[API (Python)](api.md)** - Public API map and common patterns
 - **[Async/Await Support](api-reference.md#agenerate)** - Concurrent requests for faster batch operations
 - **[Interaction Tracing](interaction-tracing.md)** - Programmatic observability for prompts, responses, timing, and usage
 - **[Glyph Visual-Text Compression](glyphs.md)** - Experimental vision-based compression that can reduce token usage for long documents (results vary)
@@ -28,7 +30,7 @@ Complete navigation guide for AbstractCore documentation.
 
 ### Python API Reference
 
-- **[Python API Reference](api-reference.md)** - Complete Python API: functions, classes, methods
+- **[API Reference](api-reference.md)** - Complete listing: functions, classes, methods, and events
 
 ### Provider Documentation
 
@@ -40,6 +42,8 @@ Complete navigation guide for AbstractCore documentation.
 - **[Media Handling System](media-handling-system.md)** - Images, PDFs, documents with vision model optimization
 - **[Concurrency & Throughput](concurrency.md)** - How to measure and reason about concurrency (incl. MLX continuous batching)
 - **[Glyph Visual-Text Compression](glyphs.md)** - Advanced compression techniques for large documents
+- **[Structured Logging](structured-logging.md)** - Configure console/file logging and verbatim capture
+- **[Event System](events.md)** - Subscribe to generation/tool/retry events
 - **[Vision Capabilities](vision-capabilities.md)** - Vision model integration and optimization
 - **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
 - **[Tool Syntax Rewriting](tool-syntax-rewriting.md)** - Convert tool-call syntax for different runtimes/clients
@@ -110,6 +114,7 @@ judge essay.txt --criteria clarity,accuracy --provider ollama
   - Provider-specific issues
   - Performance issues
   - Debug techniques
+- **[FAQ](faq.md)** - Common questions about install extras, provider setup, tools, and the server
 
 ## Documentation Structure
 
@@ -120,6 +125,7 @@ docs/
 ├── Getting Started/
 │   ├── prerequisites.md        # Provider setup
 │   ├── getting-started.md      # Quick start guide
+│   ├── faq.md                  # Frequently asked questions
 │   └── troubleshooting.md      # Common issues
 │
 ├── Core Library (Python)/
@@ -156,6 +162,7 @@ docs/
 ```
 
 **Key Distinction:**
+- **`api.md`** = API overview (how to use the public API)
 - **`api-reference.md`** = Python library API (functions, classes)
 - **`server.md`** = HTTP REST API (endpoints, requests)
 
@@ -182,7 +189,8 @@ docs/
 - Get structured outputs → [Structured Output](structured-output.md)
 - Stream responses → [Getting Started](getting-started.md#streaming)
 - Generate embeddings → [Embeddings](embeddings.md)
-- See Python API → [Python API Reference](api-reference.md)
+- See API overview → [API (Python)](api.md)
+- See full API listing → [API Reference](api-reference.md)
 
 **Set Up Server (HTTP REST API):**
 - Start the server → [Server Documentation](server.md#quick-start)
@@ -199,8 +207,8 @@ docs/
 - Check providers → [Server Documentation](server.md#provider-status)
 
 **Troubleshoot:**
-- Fix authentication errors → [Troubleshooting](troubleshooting.md#authentication-errors)
-- Solve connection issues → [Troubleshooting](troubleshooting.md#connection-errors)
+- Fix authentication errors → [Troubleshooting](troubleshooting.md#issue-authentication-errors)
+- Solve connection issues → [Troubleshooting](troubleshooting.md#issue-connection-errors)
 - Debug server problems → [Troubleshooting](troubleshooting.md#server-issues)
 - Improve performance → [Troubleshooting](troubleshooting.md#performance-issues)
 
@@ -252,6 +260,14 @@ docs/
 - **Issues**: [Report bugs](https://github.com/lpalbou/AbstractCore/issues)
 - **Discussions**: [Get help](https://github.com/lpalbou/AbstractCore/discussions)
 
+## Project Docs
+
+- **[Changelog](../CHANGELOG.md)** - Release notes and upgrade guidance
+- **[Contributing](../CONTRIBUTING.md)** - Dev setup and PR guidelines
+- **[Security](../SECURITY.md)** - Responsible vulnerability reporting
+- **[Acknowledgements](../ACKNOWLEDGEMENTS.md)** - Upstream projects and communities
+- **[License](../LICENSE)** - MIT license text
+
 ## Document Status
 
 Core docs in `docs/` aim to reflect the current codebase.
@@ -264,6 +280,7 @@ Non-authoritative folders:
 If you find a mismatch between docs and code, please open an issue.
 
 **Key Files:**
+- **`api.md`** - API overview and common usage patterns
 - **`api-reference.md`** - For Python programmers using AbstractCore library
 - **`server.md`** - For HTTP/REST API integration with the server
 

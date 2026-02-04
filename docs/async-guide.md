@@ -4,24 +4,20 @@ Complete guide to using async/await with AbstractCore for concurrent LLM operati
 
 ## Overview
 
-AbstractCore provides production-ready async support with **validated 6-7.5x performance improvement** for concurrent requests. All 6 providers support async operations through either native async clients or intelligent fallbacks.
+AbstractCore exposes `agenerate()` for async generation across providers.
 
-## Performance
+- **HTTP-based providers** (OpenAI-compatible endpoints, OpenRouter, Ollama, LMStudio, vLLM, etc.) implement native async I/O.
+- **In-process local inference** providers (MLX, HuggingFace) use an `asyncio.to_thread()` fallback to avoid blocking the event loop.
 
-Validated performance with real testing:
+Concurrency can improve throughput when requests are **I/O-bound** (network calls). For local inference, throughput is limited by your hardware and the model runtime.
 
-| Provider | Native Async | Performance |
-|----------|--------------|-------------|
-| **Ollama** | ✅ Yes (httpx.AsyncClient) | **7.5x faster** |
-| **LMStudio** | ✅ Yes (httpx.AsyncClient) | **6.5x faster** |
-| **OpenAI** | ✅ Yes (AsyncOpenAI) | **6.0x faster** |
-| **Anthropic** | ✅ Yes (AsyncAnthropic) | **7.4x faster** |
-| **MLX** | ⚠️ Fallback (asyncio.to_thread) | Keeps event loop responsive |
-| **HuggingFace** | ⚠️ Fallback (asyncio.to_thread) | Keeps event loop responsive |
+## Provider support
 
-**Average speedup**: ~7x faster for concurrent requests
-
-Note: for **MLX throughput testing**, prefer continuous batching (single model instance, scheduled concurrency). See **[Concurrency & Throughput](concurrency.md)**.
+| Provider | Async implementation |
+|----------|----------------------|
+| `openai`, `anthropic` | Native async SDK clients (when installed) |
+| HTTP-based providers (`ollama`, `lmstudio`, `openrouter`, `vllm`, `openai-compatible`, …) | `httpx.AsyncClient` (native async HTTP) |
+| `mlx`, `huggingface` | `asyncio.to_thread()` fallback (keeps the event loop responsive) |
 
 ## Basic Usage
 
@@ -41,7 +37,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Concurrent Requests (6-7x Faster!)
+### Concurrent Requests
 
 ```python
 import asyncio
@@ -75,7 +71,7 @@ import asyncio
 from abstractcore import create_llm
 
 async def main():
-    llm = create_llm("anthropic", model="claude-sonnet-4-5-20250929")
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
 
     # Step 1: await the generator
     stream_gen = await llm.agenerate(
@@ -280,7 +276,7 @@ from abstractcore import create_llm
 import asyncio
 
 app = FastAPI()
-llm = create_llm("anthropic", model="claude-sonnet-4-5-20250929")
+llm = create_llm("anthropic", model="claude-haiku-4-5")
 
 async def stream_response(prompt: str):
     """Generate streaming response."""
@@ -377,18 +373,18 @@ async def main():
 asyncio.run(main())
 ```
 
-## Performance Tips
+## Practical tips
 
-### 1. Use Native Async Providers for Best Performance
+### 1. Prefer native-async providers when possible
 
 ```python
-# ✅ BEST: Native async (7.5x faster)
+# ✅ Native async HTTP (I/O-bound)
 llm = create_llm("ollama", model="qwen3:4b")
 
-# ✅ GOOD: Native async (6-7x faster)
+# ✅ Native async SDK (cloud APIs)
 llm = create_llm("openai", model="gpt-4o-mini")
 
-# ⚠️ OK: Fallback keeps event loop responsive
+# ⚠️ Fallback: runs sync generation in a thread (keeps the event loop responsive)
 llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 ```
 
@@ -548,11 +544,10 @@ async def main():
 asyncio.run(main())
 ```
 
-**For true concurrent MLX inference**: Use LMStudio provider (wraps MLX in HTTP server):
+If you run local inference behind an OpenAI-compatible HTTP server (for example, via LM Studio), you can use the `lmstudio` (or `openai-compatible`) provider for native async I/O to the server:
 
 ```python
-# LMStudio with MLX model: True native async (6.5x faster)
-llm = create_llm("lmstudio", model="mlx-community/Qwen3-4B-4bit")
+llm = create_llm("lmstudio", model="local-model", base_url="http://localhost:1234/v1")
 ```
 
 ## Best Practices
@@ -607,18 +602,16 @@ results = await asyncio.gather(*[safe_task(p) for p in prompts])
 ## Learning Resources
 
 - **Educational Demo**: [examples/async_cli_demo.py](../examples/async_cli_demo.py) - 8 core async/await patterns
-- **Test Suite**: `tests/async/test_async_providers.py` - Real implementation examples
-- **Completion Report**: [docs/backlog/completed/002-async-await-support.md](backlog/completed/002-async-await-support.md)
-- **SOTA Research**: [docs/backlog/async-mlx-hf.md](backlog/async-mlx-hf.md) - Why MLX/HF use fallback
+- **Test Suite**: `tests/async/test_async_providers.py` - real implementation examples
+- **Concurrency & Throughput**: [concurrency.md](concurrency.md) - practical guidance for local inference
 
 ## Summary
 
-- ✅ **7x average speedup** for concurrent requests (validated with real testing)
-- ✅ **Native async** for Ollama, LMStudio, OpenAI, Anthropic
-- ✅ **Smart fallback** for MLX, HuggingFace (keeps event loop responsive)
-- ✅ **Zero breaking changes** - all sync APIs continue to work
-- ✅ **Production-ready** - comprehensive testing, industry-standard patterns
-- ✅ **FastAPI compatible** - works seamlessly with async web frameworks
+- ✅ `agenerate()` works across providers
+- ✅ Use `asyncio.gather()` for concurrent (I/O-bound) requests
+- ✅ HTTP-based providers use native async; MLX/HuggingFace use a thread fallback to keep the event loop responsive
+- ✅ Async streaming uses a 2-step pattern: `stream_gen = await llm.agenerate(..., stream=True)` then `async for ...`
+- ✅ Works well in FastAPI and other async frameworks
 
 **Get Started**:
 ```bash

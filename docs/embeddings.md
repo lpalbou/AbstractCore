@@ -4,7 +4,7 @@ AbstractCore includes built-in support for vector embeddings with **multiple pro
 
 **Two ways to use embeddings:**
 1. **Python Library** (this guide) - Direct programmatic usage via `EmbeddingManager`
-2. **REST API** - HTTP endpoints via AbstractCore server (see [Server API Reference](server.md#embeddings-endpoint))
+2. **REST API** - HTTP endpoints via AbstractCore server (see [Server API Reference](server.md#embeddings))
 
 ## Quick Start
 
@@ -20,7 +20,7 @@ pip install "abstractcore[embeddings]"
 ```python
 from abstractcore.embeddings import EmbeddingManager
 
-# Option 1: HuggingFace (default) - Local models with ONNX acceleration
+# Option 1: HuggingFace (default) - Local models with optional ONNX acceleration
 embedder = EmbeddingManager()  # Uses all-MiniLM-L6-v2 by default
 
 # Option 2: Ollama - Local models via Ollama API
@@ -53,7 +53,7 @@ AbstractCore supports multiple embedding providers:
 
 ### HuggingFace Provider (Default)
 
-Local sentence-transformers models with ONNX acceleration for 2-3x speedup.
+Local sentence-transformers models with optional ONNX acceleration (when available).
 
 | Model | Size | Dimensions | Languages | Primary Use Cases |
 |-------|------|------------|-----------|----------|
@@ -314,13 +314,13 @@ for i, cluster in enumerate(clusters):
 
 ## Performance Optimization
 
-### ONNX Backend (2-3x Faster)
+### ONNX Backend (optional)
 
 ```python
 # Enable ONNX for faster inference
 embedder = EmbeddingManager(
     model="embeddinggemma",
-    backend="onnx"  # 2-3x speedup
+    backend="onnx"  # optional
 )
 
 # Performance comparison
@@ -362,7 +362,7 @@ embedder = EmbeddingManager(
 # Regular embedding with standard caching
 embedding1 = embedder.embed("Machine learning text")
 
-# NEW: Normalized embedding with dedicated cache (2x faster for similarity)
+# NEW: Normalized embedding with dedicated cache (unit-length vectors for cosine similarity)
 normalized = embedder.embed_normalized("Machine learning text")
 print(f"Normalized embedding length: {sum(x*x for x in normalized)**0.5:.3f}")  # 1.0 (unit length)
 
@@ -550,7 +550,7 @@ If you prefer HTTP endpoints over Python code, use the AbstractCore server:
 ```bash
 # Start the server
 pip install "abstractcore[server]"
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
+python -m abstractcore.server.app
 ```
 
 **HTTP Request:**
@@ -563,17 +563,17 @@ curl -X POST http://localhost:8000/v1/embeddings \
   }'
 ```
 
-**Supported providers via REST API:**
-- `huggingface/model-name` - HuggingFace models
-- `ollama/model-name` - Ollama models
-- `lmstudio/model-name` - LMStudio models
+**Model IDs via REST API (examples):**
+- `huggingface/model-name`
+- `ollama/model-name`
+- `lmstudio/model-name`
 
-**Complete REST API documentation:** [Server API Reference](server.md#embeddings-endpoint)
+**Complete REST API documentation:** [Server API Reference](server.md#embeddings)
 
 ## Provider-Specific Features
 
 ### HuggingFace Features
-- **ONNX Acceleration**: 2-3x faster inference
+- **ONNX Acceleration** (when available)
 - **Matryoshka Truncation**: Reduce dimensions for efficiency
 - **Persistent Caching**: Automatic disk caching of embeddings
 

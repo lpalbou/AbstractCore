@@ -1,38 +1,10 @@
 #!/usr/bin/env python3
 """
-AbstractCore Entity Extractor CLI Application
+AbstractCore entity & relationship extraction CLI.
 
-Usage:
-    python -m abstractcore.apps.extractor <file_path> [options]
-
-Options:
-    --focus <focus>             Specific focus area for extraction (e.g., "technology", "business", "medical")
-    --style <style>             Extraction style (structured, focused, minimal, comprehensive, default: structured)
-    --length <length>           Extraction depth (brief, standard, detailed, comprehensive, default: standard)
-    --entity-types <types>      Comma-separated entity types to focus on (person,organization,location,etc.)
-    --similarity-threshold <t>  Similarity threshold for entity deduplication (0.0-1.0, default: 0.85)
-    --format <format>           Output format (json-ld, json, yaml, triples, default: json-ld)
-    --output <output>           Output file path (optional, prints to console if not provided)
-    --chunk-size <size>         Chunk size in characters (default: 6000, max: 32000)
-    --provider <provider>       LLM provider (requires --model)
-    --model <model>             LLM model (requires --provider)
-    --no-embeddings             Disable semantic entity deduplication
-    --fast                      Use fast extraction (skip verification, larger chunks, no embeddings)
-    --iterate <number>          Number of refinement iterations (default: 1, finds missing entities and verifies relationships)
-    --minified                  Output minified JSON-LD (compact, no indentation)
-    --verbose                   Show detailed progress information
-    --timeout <seconds>         HTTP timeout for LLM providers (default: 300, increase for large models)
-    --max-tokens <tokens>       Maximum total tokens for LLM context (default: 32000)
-    --max-output-tokens <tokens> Maximum tokens for LLM output generation (default: 8000)
-    --help                      Show this help message
-
-Examples:
-    python -m abstractcore.apps.extractor document.pdf
-    python -m abstractcore.apps.extractor report.txt --focus technology --style structured --verbose
-    python -m abstractcore.apps.extractor data.md --entity-types person,organization --output kg.jsonld
-    python -m abstractcore.apps.extractor large.txt --fast --minified --verbose  # Fast, compact output
-    python -m abstractcore.apps.extractor report.txt --length detailed --provider openai --model gpt-4o-mini
-    python -m abstractcore.apps.extractor doc.txt --iterate 3 --verbose  # 3 refinement passes for higher quality
+Run:
+  - extractor <file> --help
+  - python -m abstractcore.apps.extractor <file> --help
 """
 
 import argparse
@@ -181,7 +153,7 @@ Examples:
   python -m abstractcore.apps.extractor document.pdf
   python -m abstractcore.apps.extractor report.txt --focus=technology --style=structured --verbose
   python -m abstractcore.apps.extractor data.md --entity-types=person,organization --output=kg.jsonld
-  python -m abstractcore.apps.extractor large.txt --length=detailed --fast --minified --verbose
+  python -m abstractcore.apps.extractor large.txt --length=detailed --minified --verbose
   python -m abstractcore.apps.extractor doc.txt --iterate=3 --verbose  # Iterative refinement for quality
   python -m abstractcore.apps.extractor doc.txt --format=triples --verbose  # RDF triples output
   python -m abstractcore.apps.extractor doc.txt --format=triples --output=triples.txt  # Simple triples
@@ -198,20 +170,19 @@ Output options:
   - Default: Pretty-printed JSON with indentation
   - --minified: Compact JSON without indentation (smaller file size)
 
-Performance options:
-  - Default: High accuracy with Chain of Verification (slower, 2x LLM calls per chunk)
-  - --fast: Optimized speed (skip verification, larger chunks, no embeddings)
-  - For large files: Use --fast flag for significant speedup (2-4x faster)
+Performance notes:
+  - Extraction is an LLM call; latency depends on provider/model and input size.
+  - For large files, increase --chunk-size to reduce the number of LLM calls (at the cost of context usage).
+  - Use --iterate for refinement (higher quality, more calls).
 
 Quality enhancement:
   - --iterate=N: Perform N refinement passes to find missing entities/relationships
   - Each iteration reviews the extraction to find gaps and verify relationship directionality
-  - Recommended: 2-3 iterations for critical extractions, 1 (default) for speed
+  - Tip: Start with 1 (default), then increase if you need higher recall.
 
 Default model setup:
   - Requires Ollama: https://ollama.com/
   - Download model: ollama pull qwen3:4b-instruct-2507-q4_K_M
-  - For best performance: qwen3-coder:30b or gpt-oss:120b
   - Or use --provider and --model for other providers
         """
     )
@@ -243,13 +214,6 @@ Default model setup:
     parser.add_argument(
         '--entity-types',
         help='Comma-separated entity types to focus on (person,organization,location,concept,event,technology,product,date,other)'
-    )
-
-    parser.add_argument(
-        '--similarity-threshold',
-        type=float,
-        default=0.85,
-        help='Similarity threshold for entity deduplication (0.0-1.0, default: 0.85)'
     )
 
     # Build format choices based on available dependencies
@@ -284,25 +248,6 @@ Default model setup:
     parser.add_argument(
         '--model',
         help='LLM model (requires --provider)'
-    )
-
-    parser.add_argument(
-        '--no-embeddings',
-        action='store_true',
-        help='Disable semantic entity deduplication'
-    )
-
-    parser.add_argument(
-        '--mode',
-        choices=['fast', 'balanced', 'thorough'],
-        default='balanced',
-        help='Extraction mode: fast (2-3x faster), balanced (default), thorough (highest quality)'
-    )
-
-    parser.add_argument(
-        '--fast',
-        action='store_true',
-        help='Legacy flag: equivalent to --mode=fast (deprecated, use --mode instead)'
     )
 
     parser.add_argument(
@@ -349,11 +294,6 @@ Default model setup:
     args = parser.parse_args()
 
     try:
-        # Validate similarity threshold
-        if not 0.0 <= args.similarity_threshold <= 1.0:
-            print("Error: Similarity threshold must be between 0.0 and 1.0")
-            sys.exit(1)
-
         # Validate chunk size
         if args.chunk_size < 1000:
             print("Error: Chunk size must be at least 1000 characters")
@@ -402,43 +342,18 @@ Default model setup:
         extraction_style = parse_extraction_style(args.style)
         extraction_length = parse_extraction_length(args.length)
 
-        # Determine extraction mode (handle legacy --fast flag)
-        extraction_mode = args.mode
-        if args.fast:
-            extraction_mode = "fast"
-
         # Initialize LLM and extractor
-        use_embeddings = not args.no_embeddings
-
         if args.provider and args.model:
-            # Custom provider/model with max_tokens adjusted for chunk size and provider limits
-            max_tokens = max(32000, args.chunk_size)
-
             # Adjust chunk size for provider-specific limits first
             adjusted_chunk_size = args.chunk_size
 
-            # Adjust limits for specific providers to avoid context overflow
+            # Provider-specific safety: some models work better with smaller per-chunk payloads.
             if args.provider.lower() == "anthropic":
-                # Claude models have varying context limits
                 if "haiku" in args.model.lower():
-                    # Claude 3.5 Haiku: 200K tokens total
-                    max_tokens = min(max_tokens, 150000)  # Leave room for output
-                    max_output_tokens = 4000  # Conservative output limit
                     adjusted_chunk_size = min(args.chunk_size, 4000)  # Smaller chunks for Haiku
-                elif "sonnet" in args.model.lower():
-                    # Claude 3.5 Sonnet: 200K tokens
-                    max_tokens = min(max_tokens, 180000)
-                    max_output_tokens = 8000
-                else:
-                    # Claude 3 Opus or other: assume 200K
-                    max_tokens = min(max_tokens, 180000)
-                    max_output_tokens = 8000
-            else:
-                # Default for other providers
-                max_output_tokens = 8000
 
             if args.verbose:
-                print(f"Initializing BasicExtractor (mode: {extraction_mode}, {args.provider}, {args.model}, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
+                print(f"Initializing BasicExtractor ({args.provider}, {args.model}, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
                 if adjusted_chunk_size != args.chunk_size:
                     print(f"Adjusted chunk size from {args.chunk_size} to {adjusted_chunk_size} characters for {args.provider} compatibility")
 
@@ -454,7 +369,7 @@ Default model setup:
         else:
             # Default configuration
             if args.verbose:
-                print(f"Initializing BasicExtractor (mode: {extraction_mode}, ollama, qwen3:4b-instruct-2507-q4_K_M, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
+                print(f"Initializing BasicExtractor (ollama, qwen3:4b-instruct-2507-q4_K_M, {args.max_tokens} token context, {args.max_output_tokens} output tokens)...")
 
             try:
                 extractor = BasicExtractor(
@@ -469,7 +384,6 @@ Default model setup:
                 print("\n🚀 Quick alternatives to get started:")
                 print("   - Use --provider and --model to specify an available provider")
                 print("   - Example: extractor document.txt --provider openai --model gpt-4o-mini")
-                print("   - For speed: extractor document.txt --mode=fast")
                 sys.exit(1)
 
         # Extract entities and relationships

@@ -39,7 +39,7 @@ This module is the cornerstone of AbstractCore's **provider-agnostic architectur
 - **How do I execute tools?** → See [Executing Tools](#executing-tools)
 - **How do I use tools with an LLM?** → See [Using with LLM](#using-with-llm)
 - **How do I convert tool formats?** → See [Syntax Rewriting](#3-syntax_rewriterpy---format-transformation)
-- **How do I handle tool errors?** → See [Error Handling](#2-validation-in-tools)
+- **How do I handle tool errors?** → See [Error Handling](#error-handling)
 - **What built-in tools exist?** → See [Common Tools](#7-common_toolspy---built-in-tools)
 - **How do I parse tool calls?** → See [Parser](#2-parserpy---tool-call-extraction)
 

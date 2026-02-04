@@ -43,7 +43,7 @@ The `utils` module provides cross-cutting utilities and foundational services us
 
 ### 1. version.py
 **Usage**: `from abstractcore.utils.version import __version__`
-**Note**: Manually sync with `pyproject.toml` during releases
+**Note**: Packaging reads the version from this module via `pyproject.toml` (dynamic version).
 
 ---
 
@@ -69,6 +69,10 @@ logger.log_generation(provider="openai", model="gpt-4o", prompt="...", response=
 **Verbatim Format**: JSON Lines with timestamp, provider, model, full prompt/response, metadata
 
 ---
+
+## Token counting
+
+Token counting utilities live in `token_utils.py`. AbstractCore supports both precise counting (when optional dependencies are installed) and fast heuristics for general budgeting.
 
 ### 3. token_utils.py
 
