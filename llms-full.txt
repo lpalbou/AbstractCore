@@ -1,6 +1,6 @@
 # AbstractCore — Full LLM Context
 
-> AbstractCore is a Python library that provides a unified `create_llm(...)` API over multiple LLM backends (cloud + local). Optional subsystems (tools, embeddings, media/vision, glyph compression, server) are enabled via explicit install extras; the default install is intentionally small.
+> AbstractCore is a Python library that provides a unified `create_llm(...)` API over multiple LLM backends (cloud + local). Optional subsystems (tools, embeddings, media handling, glyph compression, server) are enabled via explicit install extras; the default install is intentionally small.
 
 Last updated: 2026-02-04  
 Package version: 2.11.1 (`abstractcore/utils/version.py`)
@@ -165,10 +165,27 @@ Common provider IDs used by `create_llm(provider=..., model=...)`:
 - Use `response_model=YourPydanticModel` in `generate(...)`.
 - The provider layer selects the best available strategy (native when supported; otherwise prompted validation + retry).
 
-### Media / vision input
+### Media input (images/audio/video + documents)
 
-- Use `media=[...]` on `generate(...)` to attach images/files.
+- Use `media=[...]` on `generate(...)` to attach images/audio/video/documents.
+- Input modality behavior is policy-driven and fails loudly by default unless an explicit fallback is configured:
+  - audio: `audio_policy` (`native_only|speech_to_text|auto|caption`)
+  - video: `video_policy` (`native_only|frames_caption|auto`)
+  - images: optional vision fallback (caption → inject short observations; config-driven)
 - Advanced PDF/Office extraction requires `abstractcore[media]` (PyMuPDF4LLM + unstructured).
+
+### Capability plugins (voice/audio/vision)
+
+- `AbstractCoreInterface` exposes lazy facades:
+  - `llm.capabilities` (plugin registry + `status()`)
+  - `llm.voice` / `llm.audio` / `llm.vision` (convenience proxies)
+- Plugins are discovered via Python entry points (`abstractcore.capabilities_plugins`).
+- Optional packages register backends:
+  - install `abstractvoice` → `core.voice` + `core.audio` (TTS/STT)
+  - install `abstractvision` → `core.vision` (generative vision)
+
+Server note:
+- AbstractCore Server can optionally expose `/v1/images/*` (requires `abstractvision`) and `/v1/audio/*` (requires an audio/voice plugin, typically `abstractvoice`).
 
 ### Glyph visual-text compression
 

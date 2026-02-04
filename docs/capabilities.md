@@ -12,6 +12,32 @@ AbstractCore is **production-ready LLM infrastructure**. It provides a unified, 
 - **Simplicity over complexity**
 - **Provider agnostic**
 
+## Optional capability plugins (voice/audio/vision)
+
+AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in **optional packages** and are exposed through the capability plugin layer:
+
+- Install `abstractvoice` → `llm.voice` / `llm.audio` (TTS/STT)
+- Install `abstractvision` → `llm.vision` (text→image, image→image, …)
+
+```bash
+pip install abstractvoice
+pip install abstractvision
+```
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")  # example; pick a provider/model you have access to
+print(llm.capabilities.status())  # availability + selected backend ids + install hints
+
+# Voice/audio
+wav_bytes = llm.voice.tts("Hello", format="wav")
+text = llm.audio.transcribe("speech.wav")
+
+# Vision (requires vision_base_url / ABSTRACTVISION_BASE_URL)
+# png_bytes = llm.vision.t2i("a red square")
+```
+
 ## What AbstractCore Does Well
 
 ### 1. Universal LLM Provider Interface

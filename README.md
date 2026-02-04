@@ -15,11 +15,12 @@ First-class support for:
 - streaming + non-streaming
 - universal tool calling (native + prompted tool syntax)
 - structured output (Pydantic)
-- media input (vision), even for text-only LLMs (*)
+- media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
+- optional capability plugins (`core.voice/core.audio/core.vision`) for deterministic TTS/STT and generative vision (via `abstractvoice` / `abstractvision`)
 - glyph visual-text compression for long documents (**)
 - unified openai-compatible endpoint for all providers and models
 
-(*) If a model doesn’t support images, AbstractCore can use a configured vision model to generate an image description and feed that to your text-only model. See [Media Handling](docs/media-handling-system.md) (requires `pip install "abstractcore[media]"`) and [Centralized Config](docs/centralized-config.md).
+(*) Media input is policy-driven (no silent semantic changes). If a model doesn’t support images, AbstractCore can use a configured vision model to generate short visual observations and inject them into your text-only request (vision fallback). Audio/video attachments are also policy-driven (`audio_policy`, `video_policy`) and may require capability plugins for fallbacks. See [Media Handling](docs/media-handling-system.md) and [Centralized Config](docs/centralized-config.md).
 (**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (install `pip install "abstractcore[compression]"`; for PDFs also install `pip install "abstractcore[media]"`).
 
 Docs: [Getting Started](docs/getting-started.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
@@ -38,7 +39,7 @@ pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
 pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm (heavy)
 
 # Optional features
-pip install "abstractcore[tools]"       # built-in web tools (fetch_url, web_search)
+pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
 pip install "abstractcore[media]"       # images, PDFs, Office docs
 pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
 pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
@@ -133,12 +134,13 @@ You can also persist settings (including API keys) via the config CLI:
 - Tools: universal tool calling across providers → [Tool Calling](docs/tool-calling.md)
 - Tool syntax rewriting: `tool_call_tags` (Python) and `agent_format` (server) → [Tool Syntax Rewriting](docs/tool-syntax-rewriting.md)
 - Structured output: Pydantic-first with provider-aware strategies → [Structured Output](docs/structured-output.md)
-- Media + vision input: images/PDFs with vision fallback and optimization → [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md)
+- Media input: images/audio/video + documents (policies + fallbacks) → [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md)
+- Capability plugins (optional): deterministic `llm.voice/llm.audio/llm.vision` surfaces → [Capabilities](docs/capabilities.md)
 - Glyph visual-text compression: scale long-context document analysis via VLMs → [Glyph Visual-Text Compression](docs/glyphs.md)
 - Embeddings and semantic search → [Embeddings](docs/embeddings.md)
 - Observability: global event bus + interaction traces → [Architecture](docs/architecture.md), [API Reference (Events)](docs/api-reference.md#eventtype), [Interaction Tracing](docs/interaction-tracing.md)
 - MCP (Model Context Protocol): discover tools from MCP servers (HTTP/stdio) → [MCP](docs/mcp.md)
-- OpenAI-compatible server: one `/v1` endpoint for all providers/models → [Server](docs/server.md)
+- OpenAI-compatible server: one `/v1` gateway for chat + optional `/v1/images/*` and `/v1/audio/*` endpoints → [Server](docs/server.md)
 
 ## Tool calling (passthrough by default)
 
@@ -189,6 +191,10 @@ llm = create_llm("anthropic", model="claude-haiku-4-5")
 resp = llm.generate("Describe the image.", media=["./image.png"])
 print(resp.content)
 ```
+
+Notes:
+- Audio/video attachments are policy-driven (`audio_policy`, `video_policy`) and fail loudly by default unless you configure or request a fallback.
+- Speech-to-text fallback for audio attachments typically requires installing `abstractvoice` (capability plugin).
 
 See [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md).
 
@@ -247,8 +253,8 @@ Core features:
 - [Tool Calling](docs/tool-calling.md) — universal tools across providers (native + prompted)
 - [Tool Syntax Rewriting](docs/tool-syntax-rewriting.md) — rewrite tool-call syntax for different runtimes/clients
 - [Structured Output](docs/structured-output.md) — schema enforcement + retry strategies
-- [Media Handling](docs/media-handling-system.md) — images/PDFs/docs + vision fallback
-- [Vision Capabilities](docs/vision-capabilities.md) — supported vision models + constraints
+- [Media Handling](docs/media-handling-system.md) — images/audio/video + documents (policies + fallbacks)
+- [Vision Capabilities](docs/vision-capabilities.md) — image/video input, vision fallback, and how this differs from generative vision
 - [Glyph Visual-Text Compression](docs/glyphs.md) — compress long documents into images for VLMs
 - [Generation Parameters](docs/generation-parameters.md) — unified parameter vocabulary and provider quirks
 - [Session Management](docs/session.md) — conversation history, persistence, and compaction

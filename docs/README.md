@@ -22,11 +22,12 @@ This folder contains the **canonical user documentation** for AbstractCore. The 
 - **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
 - **[Interaction Tracing](interaction-tracing.md)** — record prompts/responses/usage for debugging
 - **[Capabilities](capabilities.md)** — what AbstractCore can and cannot do
+- **Capability plugins (voice/audio/vision)** — optional deterministic outputs via `llm.voice/llm.audio/llm.vision` (see `capabilities.md` and `server.md`)
 
 ## Media, embeddings, and MCP (optional subsystems)
 
-- **[Media Handling System](media-handling-system.md)** — images/PDFs/docs + vision fallback
-- **[Vision Capabilities](vision-capabilities.md)** — vision model support and constraints
+- **[Media Handling System](media-handling-system.md)** — images/audio/video + documents (policies + fallbacks)
+- **[Vision Capabilities](vision-capabilities.md)** — image/video input, vision fallback, and how this differs from generative vision
 - **[Glyph Visual-Text Compression](glyphs.md)** — optional vision-based document compression (experimental)
 - **[Embeddings](embeddings.md)** — `EmbeddingManager` and local embedding models (opt-in)
 - **[MCP (Model Context Protocol)](mcp.md)** — consume MCP tool servers (HTTP/stdio) as tool sources

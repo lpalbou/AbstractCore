@@ -81,13 +81,32 @@ def _decode_mime_header(value: Optional[str]) -> str:
 
 
 def _resolve_required_env(env_var: str, *, label: str) -> Tuple[Optional[str], Optional[str]]:
-    name = str(env_var or "").strip()
-    if not name:
+    """
+    Resolve a secret reference.
+
+    The input is usually an env var *name* (e.g. EMAIL_PASSWORD). For pragmatic operator ergonomics,
+    we also accept literal secrets (common when the "env var name" contains characters that shells
+    can't export, or when operators intentionally place the secret directly in the reference).
+
+    Resolution rules:
+    1) If an env var exists with that name, use its value.
+    2) If the reference looks like a conventional env var identifier, fail fast (clear config error).
+    3) Otherwise treat the reference itself as the secret.
+    """
+    ref = str(env_var or "").strip()
+    if not ref:
         return None, f"Missing {label} env var name"
-    value = os.getenv(name)
-    if value is None or not str(value).strip():
-        return None, f"Missing env var {name} for {label}"
-    return str(value), None
+
+    value = os.getenv(ref)
+    if value is not None and str(value).strip():
+        return str(value), None
+
+    # If it looks like a normal env var name, missing should be an error (don't silently use a name as a password).
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ref):
+        return None, f"Missing env var {ref} for {label}"
+
+    # Otherwise: treat the reference itself as the secret.
+    return ref, None
 
 
 def _env_str(name: str) -> Optional[str]:
@@ -328,6 +347,45 @@ def _as_int(value: Any) -> Optional[int]:
         return None
 
 
+_ENV_INTERP_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def _interpolate_env_in_str(text: str, *, missing: set[str]) -> str:
+    raw = str(text or "")
+    if "${" not in raw:
+        return raw
+
+    def repl(match: re.Match[str]) -> str:
+        name = str(match.group(1) or "").strip()
+        default = match.group(2)
+        value = os.getenv(name)
+        if value is not None and str(value).strip():
+            return str(value)
+        if default is not None:
+            return str(default)
+        missing.add(name)
+        return ""
+
+    return _ENV_INTERP_RE.sub(repl, raw)
+
+
+def _interpolate_env(obj: Any) -> Tuple[Any, set[str]]:
+    missing: set[str] = set()
+
+    def walk(v: Any) -> Any:
+        if isinstance(v, str):
+            return _interpolate_env_in_str(v, missing=missing)
+        if isinstance(v, list):
+            return [walk(x) for x in v]
+        if isinstance(v, tuple):
+            return [walk(x) for x in v]
+        if isinstance(v, dict):
+            return {k: walk(val) for k, val in v.items()}
+        return v
+
+    return walk(obj), missing
+
+
 def _parse_email_imap_config(raw: Any) -> Tuple[Optional[_EmailImapConfig], Optional[str]]:
     if raw is None:
         return None, None
@@ -468,6 +526,12 @@ def _load_email_accounts_from_file(path: str) -> Tuple[Optional[_EmailAccountsCo
 
     if not isinstance(data, dict):
         return None, "Email accounts config must be a mapping (YAML/JSON object)"
+
+    data2, missing = _interpolate_env(data)
+    if missing:
+        missing_list = ", ".join(sorted(missing))
+        return None, f"Email accounts config references missing env vars: {missing_list}"
+    data = data2
 
     accounts_raw = data.get("accounts")
     if not isinstance(accounts_raw, dict) or not accounts_raw:
@@ -722,10 +786,26 @@ def list_email_accounts() -> Dict[str, Any]:
         return {"success": False, "error": "Email account configuration is unavailable"}
 
     accounts: list[Dict[str, Any]] = []
+
+    def secret_available(secret_ref: str) -> bool:
+        ref = str(secret_ref or "").strip()
+        if not ref:
+            return False
+        v = os.getenv(ref)
+        if v is not None and str(v).strip():
+            return True
+        return re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", ref) is None
+
     for name in sorted(cfg.accounts.keys()):
         acc = cfg.accounts.get(name)
         if acc is None:
             continue
+        imap_password_set = False
+        smtp_password_set = False
+        if acc.imap is not None:
+            imap_password_set = secret_available(str(acc.imap.password_env_var or ""))
+        if acc.smtp is not None:
+            smtp_password_set = secret_available(str(acc.smtp.password_env_var or ""))
         accounts.append(
             {
                 "account": acc.name,
@@ -733,6 +813,8 @@ def list_email_accounts() -> Dict[str, Any]:
                 "from_email": acc.from_email() or None,
                 "can_read": bool(acc.allow_read and acc.imap is not None),
                 "can_send": bool(acc.allow_send and acc.smtp is not None),
+                "imap_password_set": imap_password_set if acc.imap is not None else None,
+                "smtp_password_set": smtp_password_set if acc.smtp is not None else None,
             }
         )
 

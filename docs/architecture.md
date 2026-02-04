@@ -2,6 +2,12 @@
 
 AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works internally and why it's designed this way.
 
+Related docs (user-facing):
+- Media inputs (images/audio/video + documents): `docs/media-handling-system.md`
+- Vision input + fallback: `docs/vision-capabilities.md`
+- Capability plugins (voice/audio/vision): `docs/capabilities.md`
+- OpenAI-compatible server endpoints: `docs/server.md`
+
 ## System Overview
 
 AbstractCore operates as both a Python library and an optional HTTP server:
@@ -242,7 +248,7 @@ graph TD
 2. **Basic Processing**: Simple text extraction
 3. **Metadata Fallback**: File information and properties
 4. **Degrades gracefully for documents**: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
-5. **Policy-driven for true multimodal inputs (planned)**: for image/audio/video message parts, behavior is policy-driven; unsupported requests should fail loudly unless an explicit enrichment fallback is configured (see ADR-0028).
+5. **Policy-driven for true multimodal inputs**: for image/audio/video message parts, behavior is policy-driven; unsupported requests fail loudly unless an explicit enrichment fallback is configured (see ADR-0028).
 
 #### Unified Media API
 
@@ -263,10 +269,14 @@ response = llm.generate(
 python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jpg"
 ```
 
-#### Planned: Capabilities plugins (voice/vision)
-To keep `abstractcore` dependency-light (ADR-0001) while still enabling “must work” TTS/STT and vision generation:
-- multimodal transforms (TTS/STT/T2I/…) are planned to integrate via optional **capability plugins** (ADR-0028),
-- and input enrichment fallbacks (image/audio/video → short observations injected into the main LLM request) are planned to be **explicit and config-driven** (no silent semantic change).
+#### Capability plugins (voice/audio/vision)
+To keep `abstractcore` dependency-light (ADR-0001) while still enabling “must work” deterministic modality APIs, AbstractCore supports optional **capability plugins** (ADR-0028):
+- `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
+- `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
+
+Discovery:
+- `llm.capabilities.status()` returns a JSON-safe snapshot (which backends are available/selected, plus install hints).
+- Convenience facades exist as properties: `llm.voice`, `llm.audio`, `llm.vision` (lazy; missing plugins raise actionable errors).
 
 ### 4. Request Lifecycle
 
@@ -663,16 +673,17 @@ graph LR
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
 
 ```mermaid
-graph TD
-    A[HTTP Client] --> B[FastAPI Server]
-    B --> C{Endpoint Router}
-    
-    C --> D[/v1/chat/completions]
-    C --> E[/v1/embeddings]
-    C --> F[/v1/models]
-    C --> G[/providers]
-    C --> Img[/v1/images/* (optional)]
-    C --> Cache[/acore/prompt_cache/*]
+	graph TD
+	    A[HTTP Client] --> B[FastAPI Server]
+	    B --> C{Endpoint Router}
+	    
+	    C --> D[/v1/chat/completions]
+	    C --> E[/v1/embeddings]
+	    C --> F[/v1/models]
+	    C --> G[/providers]
+	    C --> Img[/v1/images/* (optional)]
+	    C --> Aud[/v1/audio/* (optional)]
+	    C --> Cache[/acore/prompt_cache/*]
     
     D --> H[Request Validation]
     E --> H
@@ -706,6 +717,7 @@ graph TD
 - **Model Discovery**: Dynamic model listing across all providers
 - **Embedding Support**: Multi-provider embedding generation (HuggingFace, Ollama, LMStudio)
 - **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` (plus `/v1/vision/*` control plane) delegated to `abstractvision` (safe-by-default; requires explicit config).
+- **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`).
 - **Prompt Cache Control Plane**: `/acore/prompt_cache/*` proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an `abstractcore.endpoint` upstream).
 
 **Request Flow Example**:

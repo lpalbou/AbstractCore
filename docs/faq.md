@@ -127,6 +127,59 @@ pip install "abstractcore[media]"
 
 Then pass `media=[...]` to `generate()` or use the media pipeline. See [Media Handling](media-handling-system.md).
 
+## How do I attach audio or video?
+
+Audio and video attachments are supported via `media=[...]`, but they are **policy-driven** by design:
+
+- Audio defaults to `audio_policy="native_only"` (fails loudly unless the model supports native audio input).
+- Video defaults to `video_policy="auto"` (native video when supported; otherwise sample frames and route through the vision pipeline).
+
+Speech-to-text fallback for audio (`audio_policy="speech_to_text"`) typically requires installing `abstractvoice` (capability plugin).
+
+See:
+- [Media Handling](media-handling-system.md) (policies + fallbacks)
+- [Vision Capabilities](vision-capabilities.md) (image/video input + fallback behavior)
+
+## How do I do speech-to-text (STT) or text-to-speech (TTS)?
+
+Install the optional capability plugin package:
+
+```bash
+pip install abstractvoice
+```
+
+Then use the deterministic capability surfaces:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")  # provider/model is only for LLM calls; STT/TTS are deterministic
+print(llm.capabilities.status())  # shows which capability backends are available/selected
+
+wav_bytes = llm.voice.tts("Hello", format="wav")
+text = llm.audio.transcribe("speech.wav")
+```
+
+If you run the optional HTTP server, you can also use OpenAI-compatible endpoints:
+- `POST /v1/audio/transcriptions`
+- `POST /v1/audio/speech`
+
+See: [Server](server.md) and [Capabilities](capabilities.md).
+
+## How do I generate or edit images?
+
+Generative vision is intentionally not part of AbstractCore’s default install. Use `abstractvision`:
+
+```bash
+pip install abstractvision
+```
+
+You can use it through AbstractCore’s `llm.vision.*` capability plugin surface (typically configured via an OpenAI-compatible images endpoint), or through AbstractCore Server’s optional endpoints:
+- `POST /v1/images/generations`
+- `POST /v1/images/edits`
+
+See: [Server](server.md), [Capabilities](capabilities.md), and `abstractvision/docs/reference/abstractcore-integration.md` (in the AbstractVision repo).
+
 ## What are “glyphs” and what do they require?
 
 Glyph visual-text compression is an optional feature for long documents. Install:

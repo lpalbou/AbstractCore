@@ -149,9 +149,12 @@ def search_database(query: str, table: str = "users") -> str:
 AbstractCore includes a comprehensive set of ready-to-use tools in `abstractcore.tools.common_tools`:
 
 ```python
-from abstractcore.tools.common_tools import fetch_url, search_files, read_file, list_files
+from abstractcore.tools.common_tools import skim_url, fetch_url, search_files, read_file, list_files
 
-# Intelligent web content fetching
+# Quick URL preview (fast, small)
+preview = skim_url("https://example.com/article")
+
+# Full web content fetching and parsing (HTML→Markdown, JSON, PDFs, ...)
 result = fetch_url("https://api.github.com/repos/python/cpython")
 # Automatically detects and parses JSON, HTML, images, PDFs, etc.
 
@@ -162,6 +165,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 ```
 
 **Available Built-in Tools:**
+- `skim_url` - Fast URL skim (title/description/headings + short preview)
 - `fetch_url` - Intelligent web content fetching with automatic content type detection and parsing
 - `search_files` - Search for text patterns inside files using regex
 - `list_files` - Find and list files by names/paths using glob patterns
@@ -169,6 +173,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 - `write_file` - Write content to files with directory creation
 - `edit_file` - Edit files using pattern matching and replacement
 - `web_search` - Search the web using DuckDuckGo
+- `skim_websearch` - Smaller/filtered web search (compact result list)
 - `execute_command` - Execute shell commands safely with security controls
 
 ### Real-World Example

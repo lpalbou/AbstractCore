@@ -1,0 +1,32 @@
+# AbstractCore — default email accounts config
+#
+# Use with:
+#   export ABSTRACT_EMAIL_ACCOUNTS_CONFIG="$PWD/configs/emails.yaml"
+#
+# This file defines a single `default` account whose values are inherited from
+# environment variables via `${ENV_VAR}` interpolation.
+#
+# Secrets MUST stay in env vars referenced by `password_env_var`.
+
+default_account: default
+
+accounts:
+  default:
+    allow_read: true
+    allow_send: true
+
+    imap:
+      host: ${ABSTRACT_EMAIL_IMAP_HOST}
+      port: ${ABSTRACT_EMAIL_IMAP_PORT:-993}
+      username: ${ABSTRACT_EMAIL_IMAP_USERNAME}
+      password_env_var: ${ABSTRACT_EMAIL_IMAP_PASSWORD_ENV_VAR}
+      mailbox: ${ABSTRACT_EMAIL_IMAP_FOLDER:-INBOX}
+
+    smtp:
+      host: ${ABSTRACT_EMAIL_SMTP_HOST}
+      port: ${ABSTRACT_EMAIL_SMTP_PORT:-587}
+      username: ${ABSTRACT_EMAIL_SMTP_USERNAME}
+      password_env_var: ${ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR}
+      use_starttls: ${ABSTRACT_EMAIL_SMTP_STARTTLS:-}
+      from_email: ${ABSTRACT_EMAIL_FROM:-}
+      reply_to: ${ABSTRACT_EMAIL_REPLY_TO:-}
