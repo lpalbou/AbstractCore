@@ -3551,7 +3551,7 @@ def web_search(
                             {
                                 "rank": i,
                                 "title": (result.get("title") or "").strip(),
-                                "url": (result.get("href") or "").strip(),
+                                "url": _unwrap_duckduckgo_redirect((result.get("href") or "").strip()),
                                 "snippet": (result.get("body") or "").strip(),
                             }
                             for i, result in enumerate(search_results, 1)
@@ -3609,6 +3609,7 @@ def web_search(
                 # DuckDuckGo uses // for browser contexts, but we need full URLs for Python requests.
                 if href.startswith("//"):
                     href = "https:" + href
+                href = _unwrap_duckduckgo_redirect(href)
                 
                 title_html = m.group(2) or ""
                 title = html_lib.unescape(tag_re.sub("", title_html)).strip()
@@ -3731,7 +3732,8 @@ def skim_websearch(
 
     def _json(payload: Dict[str, Any]) -> str:
         try:
-            return json.dumps(payload, ensure_ascii=False, indent=2)
+            # Compact JSON keeps tool outputs smaller in prompts.
+            return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         except Exception:
             return json.dumps({"error": "Failed to serialize skim_websearch output", "query": query})
 
@@ -3869,8 +3871,8 @@ def skim_url(
     url: str,
     timeout: int = 15,
     max_bytes: int = 200_000,
-    max_preview_chars: int = 2000,
-    max_headings: int = 12,
+    max_preview_chars: int = 1200,
+    max_headings: int = 8,
     user_agent: str = "AbstractCore-SkimTool/1.0",
 ) -> str:
     """
@@ -3909,15 +3911,15 @@ def skim_url(
     try:
         preview_cap = int(max_preview_chars)
     except Exception:
-        preview_cap = 2000
+        preview_cap = 1200
     if preview_cap <= 0:
-        preview_cap = 2000
+        preview_cap = 1200
     preview_cap = max(200, min(preview_cap, 12_000))
 
     try:
         headings_cap = int(max_headings)
     except Exception:
-        headings_cap = 12
+        headings_cap = 8
     if headings_cap < 0:
         headings_cap = 0
     headings_cap = min(headings_cap, 50)
@@ -3973,7 +3975,6 @@ def skim_url(
                         f"Final URL: {final_url}" if final_url and final_url != u else None,
                         f"Status: {status} {reason}".strip(),
                         f"Content-Type: {content_type or 'unknown'}",
-                        f"Timestamp: {started_at}",
                     ]
                     return "\n".join([p for p in parts if p])
 
@@ -4007,9 +4008,7 @@ def skim_url(
                     main_type.startswith("text/") and _is_html_content(_decode_text_bytes(raw_bytes, content_type))
                 ):
                     html_text = _decode_text_bytes(raw_bytes, content_type)
-                    title, description, extracted = _extract_clean_text_from_html(html_text, final_url)
-
-                    if headings_cap > 0 and BS4_AVAILABLE and BeautifulSoup is not None:
+                    if BS4_AVAILABLE and BeautifulSoup is not None:
                         try:
                             parser = _get_appropriate_parser(html_text)
                             import warnings
@@ -4018,26 +4017,91 @@ def skim_url(
                                 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
                                 soup = BeautifulSoup(html_text, parser)
 
-                            seen: set[str] = set()
-                            for level in ("h1", "h2", "h3"):
-                                for tag in soup.find_all(level, limit=200):
-                                    text = str(tag.get_text(" ", strip=True) or "").strip()
-                                    text = " ".join(text.split())
-                                    if not text:
-                                        continue
-                                    if text.lower() in seen:
-                                        continue
-                                    seen.add(text.lower())
-                                    headings.append(f"{level.upper()}: {preview_text(text, max_chars=140)}")
-                                    if len(headings) >= headings_cap:
-                                        break
-                                if len(headings) >= headings_cap:
-                                    break
-                        except Exception:
-                            headings = []
+                            def _meta_content(attr_name: str, attr_value: str) -> str:
+                                try:
+                                    tag = soup.find("meta", attrs={attr_name: attr_value})
+                                    return str((tag or {}).get("content") or "").strip()
+                                except Exception:
+                                    return ""
 
-                    extracted = _normalize_extracted_text(extracted)
-                    preview = preview_text(extracted, max_chars=preview_cap)
+                            title = ""
+                            try:
+                                title_tag = soup.find("title")
+                                if title_tag:
+                                    title = str(title_tag.get_text() or "").strip()
+                            except Exception:
+                                title = ""
+
+                            og_title = (
+                                _meta_content("property", "og:title")
+                                or _meta_content("name", "twitter:title")
+                                or _meta_content("name", "og:title")
+                            )
+                            if og_title and (not title or len(og_title) > len(title)):
+                                title = og_title
+
+                            description = ""
+                            try:
+                                meta_desc = soup.find("meta", attrs={"name": "description"})
+                                if meta_desc and meta_desc.get("content"):
+                                    description = str(meta_desc["content"] or "").strip()
+                            except Exception:
+                                description = ""
+
+                            if not description:
+                                description = (
+                                    _meta_content("property", "og:description")
+                                    or _meta_content("name", "twitter:description")
+                                    or _meta_content("name", "og:description")
+                                )
+
+                            _prune_html_soup_for_text(soup)
+                            container = _select_html_main_container(soup, final_url)
+                            try:
+                                _prune_html_container_for_readability(container)
+                            except Exception:
+                                pass
+
+                            if headings_cap > 0:
+                                try:
+                                    scope = container if container is not None else soup
+                                    seen: set[str] = set()
+                                    for level in ("h1", "h2", "h3"):
+                                        for tag in scope.find_all(level, limit=200):
+                                            text = str(tag.get_text(" ", strip=True) or "").strip()
+                                            text = " ".join(text.split())
+                                            if not text:
+                                                continue
+                                            lower = text.lower()
+                                            if lower in seen:
+                                                continue
+                                            seen.add(lower)
+                                            headings.append(f"{level.upper()}: {preview_text(text, max_chars=140)}")
+                                            if len(headings) >= headings_cap:
+                                                break
+                                        if len(headings) >= headings_cap:
+                                            break
+                                except Exception:
+                                    headings = []
+
+                            markdown = _html_to_markdown(container, base_url=final_url, keep_links=False)
+                            if markdown:
+                                preview = preview_text(markdown, max_chars=preview_cap)
+                            else:
+                                try:
+                                    text_raw = (container if container is not None else soup).get_text("\n", strip=True)
+                                except Exception:
+                                    text_raw = soup.get_text("\n", strip=True)
+                                preview = preview_text(_normalize_extracted_text(text_raw), max_chars=preview_cap)
+
+                        except Exception:
+                            title, description, extracted = _extract_clean_text_from_html(html_text, final_url)
+                            extracted = _normalize_extracted_text(extracted)
+                            preview = preview_text(extracted, max_chars=preview_cap)
+                    else:
+                        title, description, extracted = _extract_clean_text_from_html(html_text, final_url)
+                        extracted = _normalize_extracted_text(extracted)
+                        preview = preview_text(extracted, max_chars=preview_cap)
 
                 elif main_type == "application/json" or (main_type.startswith("text/") and _is_json_content(_decode_text_bytes(raw_bytes, content_type))):
                     text = _decode_text_bytes(raw_bytes, content_type)
@@ -4060,13 +4124,10 @@ def skim_url(
                     out.append(f"Final URL: {final_url}")
                 out.append(f"Status: {status} {reason}".strip())
                 out.append(f"Content-Type: {content_type or 'unknown'}")
-                if content_length is not None:
-                    out.append(f"Content-Length: {content_length:,} bytes")
                 downloaded_line = f"Downloaded: {len(raw_bytes):,} bytes"
                 if truncated:
                     downloaded_line += f" (partial; limit {cap:,})"
                 out.append(downloaded_line)
-                out.append(f"Timestamp: {started_at}")
 
                 if title:
                     out.append(f"📰 Title: {preview_text(title, max_chars=180)}")
@@ -4952,6 +5013,12 @@ def _select_html_main_container(soup: BeautifulSoup, url: str) -> Any:
             "#mw-content-text",
             "#bodyContent",
             ".mw-parser-output",
+            "#readme",
+            ".markdown-body",
+            ".readme",
+            ".project-description",
+            "#description",
+            "[itemprop='articleBody']",
             "article",
             ".entry-content",
             ".post-content",
