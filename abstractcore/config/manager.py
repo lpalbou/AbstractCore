@@ -103,6 +103,31 @@ class MaintenanceConfig:
 
 
 @dataclass
+class EmailConfig:
+    """Email defaults (SMTP outbound + IMAP inbound).
+
+    These defaults are used by framework-native comms tools and gateway bridges when
+    explicit parameters are omitted (env vars still take precedence).
+    """
+
+    # SMTP (outbound)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password_env_var: str = "EMAIL_PASSWORD"
+    smtp_use_starttls: bool = True
+    from_email: Optional[str] = None
+    reply_to: Optional[str] = None
+
+    # IMAP (inbound)
+    imap_host: str = ""
+    imap_port: int = 993
+    imap_username: str = ""
+    imap_password_env_var: str = "EMAIL_PASSWORD"
+    imap_folder: str = "INBOX"
+
+
+@dataclass
 class DefaultModels:
     """Global default model configurations."""
     global_provider: Optional[str] = None
@@ -180,6 +205,7 @@ class AbstractCoreConfig:
     timeouts: TimeoutConfig
     offline: OfflineConfig
     maintenance: MaintenanceConfig
+    email: EmailConfig
 
     @classmethod
     def default(cls):
@@ -198,6 +224,7 @@ class AbstractCoreConfig:
             timeouts=TimeoutConfig(),
             offline=OfflineConfig(),
             maintenance=MaintenanceConfig(),
+            email=EmailConfig(),
         )
 
 
@@ -239,6 +266,7 @@ class ConfigurationManager:
         timeouts = TimeoutConfig(**data.get('timeouts', {}))
         offline = OfflineConfig(**data.get('offline', {}))
         maintenance = MaintenanceConfig(**data.get('maintenance', {}))
+        email_cfg = EmailConfig(**data.get('email', {}))
 
         return AbstractCoreConfig(
             vision=vision,
@@ -254,6 +282,7 @@ class ConfigurationManager:
             timeouts=timeouts,
             offline=offline,
             maintenance=maintenance,
+            email=email_cfg,
         )
 
     def _save_config(self):

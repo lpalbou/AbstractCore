@@ -1,43 +1,60 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
+from pathlib import Path
+import textwrap
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
-def test_send_email_requires_password_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_email_fails_when_no_accounts_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.comms_tools import send_email
 
-    monkeypatch.delenv("EMAIL_PASSWORD", raising=False)
-    out = send_email(
-        smtp_host="smtp.example.com",
-        username="me@example.com",
-        password_env_var="EMAIL_PASSWORD",
-        to="you@example.com",
-        subject="Hello",
-        body_text="Hi",
-    )
+    monkeypatch.delenv("ABSTRACT_EMAIL_ACCOUNTS_CONFIG", raising=False)
+    monkeypatch.delenv("ABSTRACT_EMAIL_SMTP_HOST", raising=False)
+    monkeypatch.delenv("ABSTRACT_EMAIL_SMTP_USERNAME", raising=False)
+    monkeypatch.delenv("ABSTRACT_EMAIL_IMAP_HOST", raising=False)
+    monkeypatch.delenv("ABSTRACT_EMAIL_IMAP_USERNAME", raising=False)
+
+    with patch("abstractcore.config.manager.get_config_manager", side_effect=Exception("no config")):
+        out = send_email(to="you@example.com", subject="Hello", body_text="Hi")
     assert out["success"] is False
-    assert "Missing env var" in str(out.get("error") or "")
+    assert "No email accounts configured" in str(out.get("error") or "")
 
 
-def test_send_email_uses_starttls_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_list_email_accounts_reports_env_fallback_account(monkeypatch: pytest.MonkeyPatch) -> None:
+    from abstractcore.tools.comms_tools import list_email_accounts
+
+    monkeypatch.setenv("ABSTRACT_EMAIL_ACCOUNT_NAME", "primary")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PORT", "587")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_HOST", "imap.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_PORT", "993")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
+
+    out = list_email_accounts()
+    assert out["success"] is True
+    assert out["source"] == "env"
+    assert any(a.get("account") == "primary" and a.get("can_read") and a.get("can_send") for a in out.get("accounts") or [])
+
+
+def test_send_email_uses_starttls_when_port_587(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.comms_tools import send_email
 
-    monkeypatch.setenv("EMAIL_PASSWORD", "pw")
+    monkeypatch.setenv("DEFAULT_EMAIL_PASSWORD", "pw")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PORT", "587")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_STARTTLS", "1")
 
     smtp = MagicMock()
     with patch("smtplib.SMTP", return_value=smtp) as smtp_ctor:
-        out = send_email(
-            smtp_host="smtp.example.com",
-            smtp_port=587,
-            username="me@example.com",
-            password_env_var="EMAIL_PASSWORD",
-            to=["you@example.com"],
-            subject="Hello",
-            body_text="Hi",
-        )
+        out = send_email(to=["you@example.com"], subject="Hello", body_text="Hi")
 
     assert out["success"] is True
     smtp_ctor.assert_called_once()
@@ -46,10 +63,36 @@ def test_send_email_uses_starttls_by_default(monkeypatch: pytest.MonkeyPatch) ->
     smtp.send_message.assert_called_once()
 
 
-def test_list_emails_parses_headers_and_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_email_uses_smtp_ssl_when_port_465_and_starttls_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    from abstractcore.tools.comms_tools import send_email
+
+    monkeypatch.setenv("DEFAULT_EMAIL_PASSWORD", "pw")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PORT", "465")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
+    monkeypatch.delenv("ABSTRACT_EMAIL_SMTP_STARTTLS", raising=False)
+
+    smtp_ssl = MagicMock()
+    with patch("smtplib.SMTP_SSL", return_value=smtp_ssl) as smtp_ssl_ctor:
+        with patch("smtplib.SMTP") as smtp_ctor:
+            out = send_email(to="you@example.com", subject="Hello", body_text="Hi")
+
+    assert out["success"] is True
+    smtp_ctor.assert_not_called()
+    smtp_ssl_ctor.assert_called_once()
+    smtp_ssl.login.assert_called_once_with("me@example.com", "pw")
+    smtp_ssl.send_message.assert_called_once()
+
+
+def test_list_emails_uses_imap_env_config_and_parses_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.comms_tools import list_emails
 
-    monkeypatch.setenv("EMAIL_PASSWORD", "pw")
+    monkeypatch.setenv("DEFAULT_EMAIL_PASSWORD", "pw")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_HOST", "imap.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_PORT", "993")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
 
     header = EmailMessage()
     header["Subject"] = "=?utf-8?b?VGVzdCDwn5iA?="  # "Test 😀"
@@ -61,12 +104,9 @@ def test_list_emails_parses_headers_and_flags(monkeypatch: pytest.MonkeyPatch) -
     class FakeImap:
         def __init__(self) -> None:
             self.sock = MagicMock()
-
-        def login(self, *_: object, **__: object) -> tuple[str, list[bytes]]:
-            return ("OK", [b""])
-
-        def select(self, *_: object, **__: object) -> tuple[str, list[bytes]]:
-            return ("OK", [b""])
+            self.login = MagicMock(return_value=("OK", [b""]))
+            self.select = MagicMock(return_value=("OK", [b""]))
+            self.logout = MagicMock(return_value=None)
 
         def uid(self, command: str, *_: object) -> tuple[str, list[object]]:
             if command.lower() == "search":
@@ -76,13 +116,13 @@ def test_list_emails_parses_headers_and_flags(monkeypatch: pytest.MonkeyPatch) -
                 return ("OK", [(meta, header.as_bytes())])
             raise AssertionError(f"Unexpected command: {command}")
 
-        def logout(self) -> None:
-            return None
-
-    with patch("imaplib.IMAP4_SSL", return_value=FakeImap()):
-        out = list_emails(imap_host="imap.example.com", username="me@example.com", since="7d", status="all", limit=5)
+    fake = FakeImap()
+    with patch("imaplib.IMAP4_SSL", return_value=fake) as ctor:
+        out = list_emails(since="7d", status="all", limit=5)
 
     assert out["success"] is True
+    ctor.assert_called_once_with("imap.example.com", 993)
+    fake.login.assert_called_once_with("me@example.com", "pw")
     msgs = out.get("messages")
     assert isinstance(msgs, list) and len(msgs) == 1
     assert msgs[0]["uid"] == "1"
@@ -90,10 +130,14 @@ def test_list_emails_parses_headers_and_flags(monkeypatch: pytest.MonkeyPatch) -
     assert msgs[0]["subject"] == "Test 😀"
 
 
-def test_read_email_extracts_text_body(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_read_email_uses_imap_env_config_and_extracts_body(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.comms_tools import read_email
 
-    monkeypatch.setenv("EMAIL_PASSWORD", "pw")
+    monkeypatch.setenv("DEFAULT_EMAIL_PASSWORD", "pw")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_HOST", "imap.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_PORT", "993")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
 
     msg = EmailMessage()
     msg["Subject"] = "Hello"
@@ -104,12 +148,9 @@ def test_read_email_extracts_text_body(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeImap:
         def __init__(self) -> None:
             self.sock = MagicMock()
-
-        def login(self, *_: object, **__: object) -> tuple[str, list[bytes]]:
-            return ("OK", [b""])
-
-        def select(self, *_: object, **__: object) -> tuple[str, list[bytes]]:
-            return ("OK", [b""])
+            self.login = MagicMock(return_value=("OK", [b""]))
+            self.select = MagicMock(return_value=("OK", [b""]))
+            self.logout = MagicMock(return_value=None)
 
         def uid(self, command: str, *_: object) -> tuple[str, list[object]]:
             if command.lower() == "fetch":
@@ -117,15 +158,56 @@ def test_read_email_extracts_text_body(monkeypatch: pytest.MonkeyPatch) -> None:
                 return ("OK", [(meta, msg.as_bytes())])
             raise AssertionError(f"Unexpected command: {command}")
 
-        def logout(self) -> None:
-            return None
-
-    with patch("imaplib.IMAP4_SSL", return_value=FakeImap()):
-        out = read_email(imap_host="imap.example.com", username="me@example.com", uid="1")
+    fake = FakeImap()
+    with patch("imaplib.IMAP4_SSL", return_value=fake):
+        out = read_email(uid="1")
 
     assert out["success"] is True
+    fake.login.assert_called_once_with("me@example.com", "pw")
     assert out["subject"] == "Hello"
     assert "Plain body" in out.get("body_text", "")
+
+
+def test_multi_account_yaml_requires_explicit_account(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from abstractcore.tools.comms_tools import list_email_accounts, list_emails
+
+    cfg_path = tmp_path / "emails.yaml"
+    cfg_path.write_text(
+        textwrap.dedent(
+            """
+            accounts:
+              a:
+                imap:
+                  host: imap.example.com
+                  port: 993
+                  username: a@example.com
+                  password_env_var: A_PW
+                smtp:
+                  host: smtp.example.com
+                  port: 587
+                  username: a@example.com
+                  password_env_var: A_PW
+                  use_starttls: true
+              b:
+                imap:
+                  host: imap.example.com
+                  port: 993
+                  username: b@example.com
+                  password_env_var: B_PW
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ABSTRACT_EMAIL_ACCOUNTS_CONFIG", str(cfg_path))
+
+    out = list_email_accounts()
+    assert out["success"] is True
+    assert out["source"] == "yaml"
+
+    out2 = list_emails(since="1d", status="all", limit=5)
+    assert out2["success"] is False
+    assert "Multiple email accounts configured" in str(out2.get("error") or "")
 
 
 def test_send_whatsapp_message_twilio_prefixes_numbers(monkeypatch: pytest.MonkeyPatch) -> None:
