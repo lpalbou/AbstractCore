@@ -607,7 +607,9 @@ def skim_url(
     url: str,
     timeout: int = 15,
     max_bytes: int = 200_000,
-    max_preview_chars: int = 2000
+    max_preview_chars: int = 1200,
+    max_headings: int = 8,
+    user_agent: str = "AbstractCore-SkimTool/1.0",
 ) -> str:
     """Quick URL skim (metadata + short text preview); use fetch_url for full parsing"""
 

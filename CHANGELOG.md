@@ -14,15 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API overview doc**: added `docs/api.md` as a user-facing map of the public Python API.
 - **FAQ**: added `docs/faq.md` and linked it from the docs entry points.
 - **Events + logging docs**: added `docs/events.md` and `docs/structured-logging.md`.
+- **Skim tools**: added `skim_url` (fast URL triage) and `skim_websearch` (compact/filtered search) to keep agent prompts smaller when you only need “what is this about?”.
 
 ### Changed
 - **Install composition (default stays small)**: docs and packaging emphasize a lightweight core install, with heavy features enabled via explicit extras (`tools`, `media`, `embeddings`, `server`, provider SDKs).
 - **Dependency compatibility**: relaxed `abstractcore[huggingface]` `transformers` upper bound to `<6` so it can co-install with `abstractcore[mlx]` (as `mlx-lm` currently pins `transformers==5.0.0rc*`).
 - **Documentation polish**: refreshed wording and navigation for external users; ensured internal links/anchors resolve across docs.
+- **Skim output footprint**: tuned `skim_url` defaults (smaller preview/headings) and made `skim_websearch` JSON compact so tool outputs are more token-efficient by default.
+- **Web search URLs**: `web_search` now unwraps DuckDuckGo redirect URLs (more readable links; smaller tool outputs).
 
 ### Fixed
 - **Docs accuracy**: aligned event fields and examples with the current codebase (events, telemetry, and usage data).
 - **Optional imports**: made Telegram Bot API tools import-safe when `requests` is not installed (returns a clear `abstractcore[tools]` install hint when used).
+- **HTML extraction edge cases**: improved main-content selection/pruning so `fetch_url`/`skim_url` previews don’t get wiped by over-aggressive boilerplate removal on some pages.
 
 ## [2.11.0] - 2026-01-28
 
