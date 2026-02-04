@@ -1,289 +1,70 @@
 # AbstractCore Documentation Index
 
-Complete navigation guide for AbstractCore documentation.
+This folder contains the **canonical user documentation** for AbstractCore. The codebase is the source of truth; if you spot a mismatch, please open an issue.
 
-## Getting Started
+## Start here (recommended reading order)
 
-**New to AbstractCore? Start here:**
+1. **[Prerequisites](prerequisites.md)** — install/configure providers (OpenAI, Anthropic, Ollama, LMStudio, …)
+2. **[Getting Started](getting-started.md)** — first call (`create_llm`, `generate`), streaming, tools, structured output
+3. **[FAQ](faq.md)** — install extras, local servers, common gotchas
+4. **[Troubleshooting](troubleshooting.md)** — actionable fixes for common failures
+5. **[API (Python)](api.md)** — user-facing map of the public API
+6. **[API Reference](api-reference.md)** — complete function/class reference (including events)
 
-1. **[Prerequisites](prerequisites.md)** - Install and configure providers (OpenAI, Anthropic, Ollama, etc.)
-2. **[Getting Started](getting-started.md)** - 5-minute quick start with core concepts and examples
-3. **[Troubleshooting](troubleshooting.md)** - Fix common issues quickly
-4. **[FAQ](faq.md)** - Common questions about installs, providers, tools, and the server
+## Core guides
 
-## Core Library (Python API)
+- **[Tool Calling](tool-calling.md)** — native + prompted tools; passthrough vs execution
+- **[Tool Syntax Rewriting](tool-syntax-rewriting.md)** — normalize tool-call markup for different runtimes/clients
+- **[Structured Output](structured-output.md)** — `response_model=...` strategies and limitations
+- **[Session Management](session.md)** — conversation state, persistence, compaction
+- **[Generation Parameters](generation-parameters.md)** — unified parameter vocabulary + provider quirks
+- **[Centralized Config](centralized-config.md)** — config file + config CLI (`abstractcore --configure`)
+- **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
+- **[Interaction Tracing](interaction-tracing.md)** — record prompts/responses/usage for debugging
+- **[Capabilities](capabilities.md)** — what AbstractCore can and cannot do
 
-**AbstractCore is primarily a Python library for programmatic LLM usage.**
+## Media, embeddings, and MCP (optional subsystems)
 
-### Essential Guides
+- **[Media Handling System](media-handling-system.md)** — images/PDFs/docs + vision fallback
+- **[Vision Capabilities](vision-capabilities.md)** — vision model support and constraints
+- **[Glyph Visual-Text Compression](glyphs.md)** — optional vision-based document compression (experimental)
+- **[Embeddings](embeddings.md)** — `EmbeddingManager` and local embedding models (opt-in)
+- **[MCP (Model Context Protocol)](mcp.md)** — consume MCP tool servers (HTTP/stdio) as tool sources
 
-- **[Getting Started](getting-started.md)** - Quick start, core concepts, common patterns
-- **[Prerequisites](prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
-- **[API (Python)](api.md)** - Public API map and common patterns
-- **[Async/Await Support](api-reference.md#agenerate)** - Concurrent requests for faster batch operations
-- **[Interaction Tracing](interaction-tracing.md)** - Programmatic observability for prompts, responses, timing, and usage
-- **[Glyph Visual-Text Compression](glyphs.md)** - Experimental vision-based compression that can reduce token usage for long documents (results vary)
-- **[Structured Output](structured-output.md)** - Pydantic models, schema validation, native vs prompted strategies
-- **[Session Management](session.md)** - Persistent conversations, serialization, and analytics
-- **[Embeddings](embeddings.md)** - Vector embeddings, semantic search, RAG applications
-- **[Examples](examples.md)** - Real-world use cases and code samples
+## Server (optional HTTP API)
 
-### Python API Reference
+- **[Server](server.md)** — OpenAI-compatible `/v1` gateway (install `pip install "abstractcore[server]"`)
 
-- **[API Reference](api-reference.md)** - Complete listing: functions, classes, methods, and events
+## Built-in CLI apps
 
-### Provider Documentation
+These are convenience CLIs built on top of the core library:
 
-- **[Prerequisites](prerequisites.md)** - Provider setup and configuration (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
-- **[Capabilities](capabilities.md)** - What AbstractCore can and cannot do
+- **[Summarizer](apps/basic-summarizer.md)**
+- **[Extractor](apps/basic-extractor.md)**
+- **[Judge](apps/basic-judge.md)**
+- **[Intent](apps/basic-intent.md)**
+- **[DeepSearch](apps/basic-deepsearch.md)**
 
-### Advanced Topics
+## Project docs
 
-- **[Media Handling System](media-handling-system.md)** - Images, PDFs, documents with vision model optimization
-- **[Concurrency & Throughput](concurrency.md)** - How to measure and reason about concurrency (incl. MLX continuous batching)
-- **[Glyph Visual-Text Compression](glyphs.md)** - Advanced compression techniques for large documents
-- **[Structured Logging](structured-logging.md)** - Configure console/file logging and verbatim capture
-- **[Event System](events.md)** - Subscribe to generation/tool/retry events
-- **[Vision Capabilities](vision-capabilities.md)** - Vision model integration and optimization
-- **[Tool Calling](tool-calling.md)** - Universal tool system and format conversion
-- **[Tool Syntax Rewriting](tool-syntax-rewriting.md)** - Convert tool-call syntax for different runtimes/clients
-- **[MCP (Model Context Protocol)](mcp.md)** - Discover tools from MCP servers (HTTP/stdio) and route tool calls
-- **[AbstractCore CLI](acore-cli.md)** - Built-in CLI tool for testing and exploration
+- **[Changelog](../CHANGELOG.md)** — release notes and upgrade guidance
+- **[Contributing](../CONTRIBUTING.md)** — dev setup and PR guidelines
+- **[Security](../SECURITY.md)** — responsible vulnerability reporting
+- **[Acknowledgements](../ACKNOWLEDGEMENTS.md)** — upstream projects and communities
+- **[License](../LICENSE)** — MIT license text
 
-## Server (Optional HTTP REST API)
+## Docs layout (what’s where)
 
-**The server is an optional component that provides OpenAI-compatible HTTP endpoints.**
+`docs/` is mostly a flat set of guides plus a few subfolders:
 
-### Server Documentation
+- `docs/apps/` — CLI app guides
+- `docs/known_bugs/` — focused notes on known issues (when present)
+- `docs/archive/` — superseded/historical docs (see `docs/archive/README.md`)
+- `docs/backlog/` — planning notes (see `docs/backlog/README.md`)
+- `docs/reports/` — non-authoritative engineering notes (see `docs/reports/README.md`)
+- `docs/research/` — non-authoritative experiments (see `docs/research/README.md`)
 
-- **[Server Documentation](server.md)** - Complete guide including:
-  - Quick start (5 minutes)
-  - Configuration and environment variables
-  - API endpoints: chat completions, embeddings, models, providers
-  - Use cases and examples
-  - Agentic CLI integration (Codex, Crush, Gemini CLI)
-  - Deployment (Docker, production, cloud)
-
-## Built-in Applications (CLI Tools)
-
-**AbstractCore includes five production-ready command-line applications for common LLM tasks.**
-
-### Quick Start with Apps
-
-```bash
-# Install and use immediately (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
-
-# Direct terminal usage (no Python code needed)
-summarizer document.pdf --provider openai --model gpt-4o-mini
-extractor research_paper.pdf --format json-ld --provider anthropic  
-judge essay.txt --criteria clarity,accuracy --provider ollama
-```
-
-### Application Documentation
-
-- **[Summarizer Guide](apps/basic-summarizer.md)** - Document summarization with multiple strategies
-- **[Extractor Guide](apps/basic-extractor.md)** - Entity and relationship extraction from text
-- **[Judge Guide](apps/basic-judge.md)** - Text evaluation and scoring systems
-- **[Intent Guide](apps/basic-intent.md)** - Intent analysis & deception detection
-- **[DeepSearch Guide](apps/basic-deepsearch.md)** - Autonomous web-assisted research
-
-**Key Features:**
-- **Direct CLI usage**: `summarizer`, `extractor`, `judge`, `intent`, `deepsearch`
-- **Provider agnostic**: Works with any configured LLM provider
-- **Multiple formats** (with `pip install "abstractcore[media]"`): PDF, TXT, MD, DOCX support
-- **Batch processing**: Handle multiple files at once
-- **Production ready**: Robust error handling and logging
-
-## Specialized Topics
-
-### Architecture & Design
-
-- **[Architecture](architecture.md)** - System architecture overview
-- **[Comparison](comparison.md)** - Compare AbstractCore with alternatives
-- **[Chat Compaction](chat-compaction.md)** - Manage conversation history efficiently
-
-## Troubleshooting & Help
-
-- **[Troubleshooting](troubleshooting.md)** - Comprehensive troubleshooting guide:
-  - Installation issues
-  - Core library issues
-  - Server issues
-  - Provider-specific issues
-  - Performance issues
-  - Debug techniques
-- **[FAQ](faq.md)** - Common questions about install extras, provider setup, tools, and the server
-
-## Documentation Structure
-
-```
-docs/
-├── README.md                   # This file - navigation guide
-│
-├── Getting Started/
-│   ├── prerequisites.md        # Provider setup
-│   ├── getting-started.md      # Quick start guide
-│   ├── faq.md                  # Frequently asked questions
-│   └── troubleshooting.md      # Common issues
-│
-├── Core Library (Python)/
-│   ├── api-reference.md        # Python API reference
-│   ├── structured-output.md    # Structured output with Pydantic
-│   ├── embeddings.md           # Embeddings guide
-│   ├── examples.md             # Code examples
-│   ├── capabilities.md         # What AbstractCore can do
-│   ├── interaction-tracing.md  # Observability for prompts/responses/timing
-│   ├── mcp.md                  # MCP tool servers (HTTP/stdio)
-│   └── tool-syntax-rewriting.md  # Tool format conversion
-│
-├── Server (Optional HTTP REST API)/
-│   └── server.md               # Complete server documentation 
-│
-├── Built-in Applications (CLI Tools)/
-│   ├── apps/                   # Production-ready CLI applications
-│   │   ├── basic-summarizer.md     # Document summarization
-│   │   ├── basic-extractor.md      # Entity/relationship extraction
-│   │   ├── basic-judge.md          # Text evaluation and scoring
-│   │   ├── basic-intent.md         # Intent analysis & deception detection
-│   │   └── basic-deepsearch.md     # Multi-stage research with web search
-│
-├── Specialized/
-│   ├── acore-cli.md           # Interactive CLI tool for development
-│   ├── architecture.md         # System architecture
-│   ├── comparison.md           # vs alternatives
-│   └── chat-compaction.md      # History management
-│
-├── reports/                    # Technical reports (see reports/README.md)
-├── research/                   # Research notes / experiments (see research/README.md)
-└── Archive/
-    └── README.md               # Superseded documentation (historical)
-```
-
-**Key Distinction:**
-- **`api.md`** = API overview (how to use the public API)
-- **`api-reference.md`** = Python library API (functions, classes)
-- **`server.md`** = HTTP REST API (endpoints, requests)
-
-## Quick Navigation
-
-### I want to...
-
-**Get Started:**
-- Install AbstractCore → [Prerequisites](prerequisites.md)
-- Make my first LLM call → [Getting Started](getting-started.md)
-- Fix installation issues → [Troubleshooting](troubleshooting.md#installation-issues)
-
-**Use Built-in Apps (CLI Tools):**
-- Summarize documents → [Summarizer Guide](apps/basic-summarizer.md)
-- Extract entities → [Extractor Guide](apps/basic-extractor.md)  
-- Evaluate text → [Judge Guide](apps/basic-judge.md)
-- Analyze intent → [Intent Guide](apps/basic-intent.md)
-- Run deep research → [DeepSearch Guide](apps/basic-deepsearch.md)
-- Quick start → `pip install "abstractcore[all-apple]"` / `"abstractcore[all-non-mlx]"` / `"abstractcore[all-gpu]"` then `summarizer --help`
-
-**Use Core Library (Python):**
-- Switch between providers → [Getting Started](getting-started.md#providers-and-models)
-- Use tool calling → [Getting Started](getting-started.md#tool-calling)
-- Get structured outputs → [Structured Output](structured-output.md)
-- Stream responses → [Getting Started](getting-started.md#streaming)
-- Generate embeddings → [Embeddings](embeddings.md)
-- See API overview → [API (Python)](api.md)
-- See full API listing → [API Reference](api-reference.md)
-
-**Set Up Server (HTTP REST API):**
-- Start the server → [Server Documentation](server.md#quick-start)
-- Configure environment → [Server Documentation](server.md#configuration)
-- Use with OpenAI client → [Server Documentation](server.md#quick-start)
-- Integrate with Codex CLI → [Server Documentation](server.md#agentic-cli-integration)
-- Deploy to production → [Server Documentation](server.md#deployment)
-
-**REST API Integration:**
-- See all HTTP endpoints → [Server Documentation](server.md#api-endpoints)
-- Use chat completions → [Server Documentation](server.md#chat-completions)
-- Create embeddings → [Server Documentation](server.md#embeddings)
-- List models → [Server Documentation](server.md#model-discovery)
-- Check providers → [Server Documentation](server.md#provider-status)
-
-**Troubleshoot:**
-- Fix authentication errors → [Troubleshooting](troubleshooting.md#issue-authentication-errors)
-- Solve connection issues → [Troubleshooting](troubleshooting.md#issue-connection-errors)
-- Debug server problems → [Troubleshooting](troubleshooting.md#server-issues)
-- Improve performance → [Troubleshooting](troubleshooting.md#performance-issues)
-
-### By Provider
-
-**OpenAI:**
-- Setup → [Prerequisites](prerequisites.md#openai-setup)
-- Issues → [Troubleshooting](troubleshooting.md#openai)
-
-**Anthropic:**
-- Setup → [Prerequisites](prerequisites.md#anthropic-setup)
-- Issues → [Troubleshooting](troubleshooting.md#anthropic)
-
-**Ollama:**
-- Setup → [Prerequisites](prerequisites.md#ollama-setup)
-- Issues → [Troubleshooting](troubleshooting.md#ollama)
-
-**LMStudio:**
-- Setup → [Prerequisites](prerequisites.md#lmstudio-setup)
-- Issues → [Troubleshooting](troubleshooting.md#lmstudio)
-
-**MLX:**
-- Setup → [Prerequisites](prerequisites.md#mlx-setup)
-- HuggingFace Setup → [Prerequisites](prerequisites.md#huggingface-setup)
-
-## Reading Paths
-
-### For Beginners
-1. [Prerequisites](prerequisites.md) - Setup
-2. [Getting Started](getting-started.md) - Learn basics
-3. [Built-in Apps](apps/) - Use CLI tools immediately
-4. [Examples](examples.md) - See real code
-5. [Troubleshooting](troubleshooting.md) - Fix issues
-
-### For Server/API Users
-1. [Server Documentation](server.md) - Setup server and learn API endpoints
-2. [Prerequisites](prerequisites.md) - Configure providers
-3. [Troubleshooting](troubleshooting.md) - Fix server issues
-
-### For Advanced Users
-1. [Architecture](architecture.md) - Understand system
-2. [Tool Call Syntax Rewriting](tool-syntax-rewriting.md) - Format conversion
-3. [AbstractCore CLI](acore-cli.md) - Advanced CLI usage
-4. [Capabilities](capabilities.md) - Deep dive into features
-
-## External Links
-
-- **GitHub Repository**: [lpalbou/AbstractCore](https://github.com/lpalbou/AbstractCore)
-- **Issues**: [Report bugs](https://github.com/lpalbou/AbstractCore/issues)
-- **Discussions**: [Get help](https://github.com/lpalbou/AbstractCore/discussions)
-
-## Project Docs
-
-- **[Changelog](../CHANGELOG.md)** - Release notes and upgrade guidance
-- **[Contributing](../CONTRIBUTING.md)** - Dev setup and PR guidelines
-- **[Security](../SECURITY.md)** - Responsible vulnerability reporting
-- **[Acknowledgements](../ACKNOWLEDGEMENTS.md)** - Upstream projects and communities
-- **[License](../LICENSE)** - MIT license text
-
-## Document Status
-
-Core docs in `docs/` aim to reflect the current codebase.
-
-Non-authoritative folders:
-- `docs/reports/` (engineering notes) → see `docs/reports/README.md`
-- `docs/research/` (experiments) → see `docs/research/README.md`
-- `docs/archive/` (historical) → see `docs/archive/README.md`
-
-If you find a mismatch between docs and code, please open an issue.
-
-**Key Files:**
-- **`api.md`** - API overview and common usage patterns
-- **`api-reference.md`** - For Python programmers using AbstractCore library
-- **`server.md`** - For HTTP/REST API integration with the server
-
----
-
-**Start your journey:** [Prerequisites](prerequisites.md) → [Getting Started](getting-started.md) → Build your applications!
+**Key distinction:**
+- `api.md` = API overview (how to use the public API)
+- `api-reference.md` = full Python API reference
+- `server.md` = HTTP server endpoints and deployment

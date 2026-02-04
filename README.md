@@ -8,7 +8,7 @@
 Unified LLM Interface
 > Write once, run everywhere
 
-A powerful Python library providing seamless interaction with all major LLM providers with centralized configuration, universal media handling, and vision capabilities. Switch between OpenAI, Anthropic, Ollama, LMStudio and more with identical code. 
+AbstractCore is a Python library that provides a unified `create_llm(...)` API across cloud + local LLM providers (OpenAI, Anthropic, Ollama, LMStudio, and more). The default install is intentionally lightweight; add providers and optional subsystems via explicit install extras.
 
 First-class support for:
 - sync + async
