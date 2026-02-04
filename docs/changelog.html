@@ -67,6 +67,7 @@
                     <li><strong>API overview doc:</strong> added <code>docs/api.md</code> as a user-facing map of the public Python API.</li>
                     <li><strong>FAQ:</strong> added <code>docs/faq.md</code> and linked it from the docs entry points.</li>
                     <li><strong>Events + logging docs:</strong> added <code>docs/events.md</code> and <code>docs/structured-logging.md</code>.</li>
+                    <li><strong>Skim tools:</strong> added <code>skim_url</code> (fast URL triage) and <code>skim_websearch</code> (compact/filtered search) to keep prompts smaller when you only need “what is this about?”.</li>
                 </ul>
 
                 <h3>Changed</h3>
@@ -74,12 +75,15 @@
                     <li><strong>Install composition (default stays small):</strong> docs and packaging emphasize a lightweight core install, with heavy features enabled via explicit extras (<code>tools</code>, <code>media</code>, <code>embeddings</code>, <code>server</code>, provider SDKs).</li>
                     <li><strong>Dependency compatibility:</strong> relaxed <code>abstractcore[huggingface]</code> <code>transformers</code> upper bound to <code>&lt;6</code> so it can co-install with <code>abstractcore[mlx]</code>.</li>
                     <li><strong>Documentation polish:</strong> refreshed wording and navigation; ensured internal links/anchors resolve across docs.</li>
+                    <li><strong>Skim output footprint:</strong> tuned <code>skim_url</code> defaults (smaller preview/headings) and made <code>skim_websearch</code> output more compact by default.</li>
+                    <li><strong>Web search URLs:</strong> <code>web_search</code> now unwraps DuckDuckGo redirect URLs for more readable links and smaller tool outputs.</li>
                 </ul>
 
                 <h3>Fixed</h3>
                 <ul>
                     <li><strong>Docs accuracy:</strong> aligned event fields and examples with the current codebase (events, telemetry, and usage data).</li>
                     <li><strong>Optional imports:</strong> made Telegram Bot API tools import-safe when <code>requests</code> is not installed (returns a clear <code>abstractcore[tools]</code> install hint when used).</li>
+                    <li><strong>HTML extraction edge cases:</strong> improved main-content selection/pruning so <code>fetch_url</code>/<code>skim_url</code> previews don’t get wiped by over-aggressive boilerplate removal on some pages.</li>
                 </ul>
 
                 <h2>2.11.0 <span style="color: var(--text-secondary); font-weight: 500;">(2026-01-28)</span></h2>

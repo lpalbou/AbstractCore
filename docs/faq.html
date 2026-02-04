@@ -215,6 +215,49 @@ print(result.bullets)</code></pre>
                     </div>
                     <p>Then pass <code>media=[...]</code> to <code>generate()</code> or use the media pipeline. See <a href="media-handling-system.html">Media Handling</a>.</p>
 
+                    <h3>How do I attach audio or video?</h3>
+                    <p>
+                        Audio and video attachments are supported via <code>media=[...]</code>, but they are <strong>policy-driven</strong> by design:
+                    </p>
+                    <ul>
+                        <li>Audio defaults to <code>audio_policy="native_only"</code> (fails unless the selected model supports native audio input).</li>
+                        <li>Video defaults to <code>video_policy="auto"</code> (native when supported; otherwise samples frames and routes them through vision handling).</li>
+                    </ul>
+                    <p>
+                        For speech audio, use <code>audio_policy="speech_to_text"</code> (typically requires installing <code>abstractvoice</code>).
+                        See <a href="media-handling-system.html">Media Handling</a>, <a href="vision-capabilities.html">Vision Capabilities</a>, and <a href="audio.html">Audio &amp; Voice</a>.
+                    </p>
+
+                    <h3>How do I do speech-to-text (STT) or text-to-speech (TTS)?</h3>
+                    <p>Install the optional capability plugin package:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install abstractvoice</code></pre>
+                    </div>
+                    <p>Then use the deterministic capability surfaces:</p>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")  # provider/model is for LLM calls; STT/TTS are deterministic
+print(llm.capabilities.status())  # availability + selected backend ids + install hints
+
+wav_bytes = llm.voice.tts("Hello", format="wav")
+text = llm.audio.transcribe("speech.wav")</code></pre>
+                    </div>
+                    <p>
+                        If you run the optional HTTP server, you can also use OpenAI-compatible endpoints
+                        (<code>POST /v1/audio/transcriptions</code>, <code>POST /v1/audio/speech</code>). See <a href="server.html">Server</a>.
+                    </p>
+
+                    <h3>How do I generate or edit images?</h3>
+                    <p>Generative vision is intentionally not part of AbstractCore’s default install. Use <code>abstractvision</code>:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install abstractvision</code></pre>
+                    </div>
+                    <p>
+                        You can use it through AbstractCore’s <code>llm.vision.*</code> capability plugin surface, or via AbstractCore Server’s optional endpoints
+                        (<code>POST /v1/images/generations</code>, <code>POST /v1/images/edits</code>). See <a href="server.html">Server</a> and <a href="capabilities.html">Capabilities</a>.
+                    </p>
+
                     <h3>What are “glyphs” and what do they require?</h3>
                     <p>
                         Glyph visual-text compression is an optional feature for long documents. Until this website includes a dedicated page,

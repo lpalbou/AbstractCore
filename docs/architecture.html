@@ -449,7 +449,7 @@ response = llm.generate("Hello, world!")</code></pre>
 
                         <div class="flow-step">
                             <h3>2. Intelligent Processing</h3>
-                            <p>AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text)</p>
+                            <p>AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text, Audio, Video)</p>
                         </div>
 
                         <div class="flow-step">
@@ -479,11 +479,25 @@ response = llm.generate("Hello, world!")</code></pre>
                             <h5>Data/Text</h5>
                             <p style="font-size: 0.9rem;">CSV, TSV, TXT, MD, JSON with parsing and analysis</p>
                         </div>
+
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--secondary-color);">
+                            <h5>Audio</h5>
+                            <p style="font-size: 0.9rem;">Policy-driven inputs (STT fallback via capability plugins, e.g. abstractvoice)</p>
+                        </div>
+
+                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--primary-color);">
+                            <h5>Video</h5>
+                            <p style="font-size: 0.9rem;">Policy-driven inputs (native when supported; otherwise frames sampling)</p>
+                        </div>
                     </div>
                 </div>
 
                 <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <p style="margin: 0; color: var(--info-text);"><strong>Vision Fallback System:</strong> Text-only models can process images through a transparent two-stage pipeline where a vision model analyzes the image and the text model processes the description.</p>
+                    <p style="margin: 0; color: var(--info-text);">
+                        <strong>Policy-driven modalities:</strong> Audio/video handling is explicit (no silent semantic changes), and enrichments are recorded in
+                        <code>response.metadata.media_enrichment[]</code>. Text-only models can process images via an optional vision fallback pipeline (caption → inject short observations).
+                        See <a href="media-handling-system.html" style="color: inherit; text-decoration: underline;">Media Handling</a> and <a href="audio.html" style="color: inherit; text-decoration: underline;">Audio &amp; Voice</a>.
+                    </p>
                 </div>
             </section>
 

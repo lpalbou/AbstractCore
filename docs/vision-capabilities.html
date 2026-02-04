@@ -56,7 +56,9 @@
             <div class="doc-content">
                 <h2>Overview</h2>
                 <p>
-                    AbstractCore provides comprehensive vision capabilities that enable seamless image analysis across multiple AI providers and models. The system automatically handles image optimization, provider-specific formatting, and intelligent fallback mechanisms.
+                    This page describes <strong>vision as an input modality</strong> in AbstractCore (images + video understanding), and clarifies how it relates to
+                    <strong>vision fallback</strong> (caption → inject short observations) and <strong>generative vision</strong> (image/video creation), which lives in
+                    the optional <code>abstractvision</code> capability plugin.
                 </p>
 
                 <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -70,12 +72,61 @@
                     </ul>
                 </div>
 
+                <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.25rem; border-radius: 0.75rem; margin: 2rem 0;">
+                    <p style="margin: 0; color: var(--info-text);">
+                        This page focuses on <strong>vision input</strong>. For <strong>generative vision output</strong>, see
+                        <a href="capabilities.html" style="color: inherit; text-decoration: underline;">Capabilities</a> and
+                        <a href="server.html" style="color: inherit; text-decoration: underline;">Server</a>.
+                    </p>
+                </div>
+
+                <h2>1) Image/video input modalities (owned by AbstractCore)</h2>
+                <p>Attach images (and videos) to an LLM call using <code>media=[...]</code>:</p>
+                <div class="code-block">
+                    <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")  # example; pick a vision-capable model you have access to
+
+# Image input
+resp = llm.generate("What is in this image?", media=["photo.jpg"])
+print(resp.content)
+
+# Video input (policy-driven)
+resp = llm.generate(
+    "Summarize what happens in this clip.",
+    media=["clip.mp4"],
+    video_policy="auto",  # native when supported; otherwise sample frames
+)
+print(resp.content)</code></pre>
+                </div>
+
+                <h2>2) Vision fallback for text-only models (optional; config-driven)</h2>
+                <p>
+                    When a user attaches an image to a text-only model, AbstractCore can optionally run a configured vision backend to produce short grounded observations
+                    and inject them into the main request. This is explicit (config-driven) and transparent via <code>response.metadata.media_enrichment[]</code>.
+                </p>
+                <p style="color: var(--text-secondary);">
+                    See <a href="media-handling-system.html">Media Handling</a> for policy details and enrichment metadata.
+                </p>
+
+                <h2>3) Generative vision output is not part of AbstractCore’s default install</h2>
+                <p>
+                    Creating/editing images and videos is a deterministic capability provided by <code>abstractvision</code>. You can integrate it in two ways:
+                </p>
+                <ul>
+                    <li><strong>Capability plugin (library mode):</strong> install <code>abstractvision</code> and use <code>llm.vision.*</code></li>
+                    <li><strong>HTTP interop:</strong> run the server and enable <code>/v1/images/*</code> endpoints delegated to <code>abstractvision</code></li>
+                </ul>
+                <p style="color: var(--text-secondary);">
+                    See <a href="server.html">Server</a> for the optional <code>/v1/images/generations</code> and <code>/v1/images/edits</code> endpoints.
+                </p>
+
                 <h2>Supported Providers and Models</h2>
 
                 <h3>Cloud Providers</h3>
                 <ul>
-                    <li><strong>OpenAI:</strong> GPT-4o, GPT-4 Turbo Vision (multiple images, up to 4096×4096)</li>
-                    <li><strong>Anthropic:</strong> Claude 3.5 Sonnet, Claude 3 Haiku (up to 20 images, 1568×1568)</li>
+                    <li><strong>OpenAI:</strong> GPT-4o, GPT-4o mini (multiple images)</li>
+                    <li><strong>Anthropic:</strong> Claude Haiku 4.5, Claude Sonnet 4.5 (vision-capable models)</li>
                 </ul>
 
                 <h3>Local Providers</h3>

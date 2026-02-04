@@ -104,7 +104,8 @@
                 </h1>
                 <p class="hero-description">
                     A powerful Python library providing seamless interaction with all major LLM providers
-                    with centralized configuration, universal media handling, and vision capabilities.
+                    with centralized configuration, universal media handling (images/documents + policy-driven audio/video),
+                    and optional capability plugins for deterministic STT/TTS and generative vision.
                     Switch between OpenAI, Anthropic, Ollama, and more with identical code.
                 </p>
                 
@@ -215,7 +216,7 @@ llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
                     </div>
                     <h3 class="feature-title">Universal Media Handling</h3>
                     <p class="feature-description">
-                        Attach files with <code>media=[...]</code> (or <code>@file</code> in the CLI). Images, PDFs, Office docs, CSV/TSV are automatically processed with intelligent fallbacks across providers.
+                        Attach files with <code>media=[...]</code> (or <code>@file</code> in the CLI). Images and documents are processed automatically; audio/video inputs are policy-driven (<code>audio_policy</code>/<code>video_policy</code>) to avoid silent semantic changes.
                     </p>
                 </div>
 
@@ -228,7 +229,7 @@ llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
                     </div>
                     <h3 class="feature-title">Vision Capabilities</h3>
                     <p class="feature-description">
-                        Image analysis across all providers with automatic optimization. Vision fallback for text-only models through smart captioning. Multi-image support with resolution handling.
+                        Image and video understanding across providers with automatic optimization. Vision fallback for text-only models through smart captioning, plus explicit frame sampling for video when native input isn’t available.
                     </p>
                 </div>
 
@@ -420,6 +421,7 @@ print(response.content)</code></pre>
                         <button class="tab-button active" data-tab="config">Centralized Config</button>
                         <button class="tab-button" data-tab="media">Media Handling</button>
                         <button class="tab-button" data-tab="vision">Vision Capabilities</button>
+                        <button class="tab-button" data-tab="audio">Audio &amp; Voice</button>
                         <button class="tab-button" data-tab="tools">Tool Calling</button>
                         <button class="tab-button" data-tab="deterministic">Deterministic Generation</button>
                         <button class="tab-button" data-tab="server">HTTP Server</button>
@@ -644,6 +646,60 @@ response = llm.generate(
     "Compare these architectural styles",
     media=["building1.jpg", "building2.jpg", "building3.jpg"]
 )</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="demo-panel" id="audio">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">audio_and_voice.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import create_llm
+
+llm = create_llm('openai', model='gpt-4o-mini')
+
+# Speech audio as input (policy-driven)
+resp = llm.generate(
+    'Summarize this call.',
+    media=['call.wav'],
+    audio_policy='speech_to_text',  # requires: pip install abstractvoice
+)
+print(resp.content)
+
+# Deterministic STT/TTS surfaces (capability plugin)
+text = llm.audio.transcribe('speech.wav')
+wav_bytes = llm.voice.tts('Hello', format='wav')
+print(len(wav_bytes))">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm('openai', model='gpt-4o-mini')
+
+# Speech audio as input (policy-driven)
+resp = llm.generate(
+    'Summarize this call.',
+    media=['call.wav'],
+    audio_policy='speech_to_text',  # requires: pip install abstractvoice
+)
+print(resp.content)
+
+# Deterministic STT/TTS surfaces (capability plugin)
+text = llm.audio.transcribe('speech.wav')
+wav_bytes = llm.voice.tts('Hello', format='wav')
+print(len(wav_bytes))</code></pre>
                                 </div>
                             </div>
                         </div>

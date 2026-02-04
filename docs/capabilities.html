@@ -86,6 +86,41 @@
                 </section>
 
                 <section>
+                    <h2>Optional capability plugins (voice/audio/vision)</h2>
+                    <p>
+                        AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in
+                        optional packages and are exposed through the capability plugin layer:
+                    </p>
+                    <ul>
+                        <li>Install <code>abstractvoice</code> → <code>llm.voice</code> / <code>llm.audio</code> (TTS/STT)</li>
+                        <li>Install <code>abstractvision</code> → <code>llm.vision</code> (text→image, image→image, …)</li>
+                    </ul>
+
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install abstractvoice
+pip install abstractvision</code></pre>
+                    </div>
+
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")  # example; pick a provider/model you have access to
+print(llm.capabilities.status())  # availability + selected backend ids + install hints
+
+# Voice/audio
+wav_bytes = llm.voice.tts("Hello", format="wav")
+text = llm.audio.transcribe("speech.wav")
+
+# Vision (requires vision_base_url / ABSTRACTVISION_BASE_URL)
+# png_bytes = llm.vision.t2i("a red square")</code></pre>
+                    </div>
+
+                    <p style="color: var(--text-secondary);">
+                        See <a href="audio.html">Audio &amp; Voice</a>, <a href="vision-capabilities.html">Vision Capabilities</a>, and <a href="server.html">Server</a>.
+                    </p>
+                </section>
+
+                <section>
                     <h2>✅ What AbstractCore Does Exceptionally Well</h2>
                     
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
@@ -248,7 +283,7 @@ response = text_llm.generate(
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">7. Tool-Call Syntax Rewriting</h3>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">8. Tool-Call Syntax Rewriting</h3>
                         <p><strong>What it does</strong>: Preserve/rewrite tool-call markup in assistant content when a downstream consumer needs text-based tool parsing.</p>
                         
                         <div class="code-block">
@@ -274,7 +309,7 @@ response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">8. Structured Output with Automatic Retry</h3>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">9. Structured Output with Automatic Retry</h3>
                         <p><strong>What it does</strong>: Gets typed Python objects from LLMs with automatic validation and retry on failures.</p>
                         
                         <div class="code-block">
@@ -295,7 +330,7 @@ product = llm.generate(
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">9. MCP Tool Discovery (Model Context Protocol)</h3>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">10. MCP Tool Discovery (Model Context Protocol)</h3>
                         <p><strong>What it does</strong>: Discover external tool schemas from an MCP server and inject them into any LLM call (MCP is a tool protocol, not a provider).</p>
 
                         <div class="code-block">
@@ -316,7 +351,7 @@ print(response.tool_calls)  # names like: mcp::local::tool_name</code></pre>
                     </div>
 
                     <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">10. Communication Tools (Email + WhatsApp)</h3>
+                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">11. Communication Tools (Email + WhatsApp)</h3>
                         <p><strong>What it does</strong>: Optional side-effecting tools for email (SMTP/IMAP) and WhatsApp (Twilio) that you can expose to agents behind an approval boundary.</p>
 
                         <div class="code-block">

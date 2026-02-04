@@ -68,6 +68,7 @@
                     <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
                         <h3 style="margin: 0 0 1rem 0;">Email tools (SMTP/IMAP)</h3>
                         <ul style="margin: 0; padding-left: 1.5rem;">
+                            <li><code>list_email_accounts</code></li>
                             <li><code>send_email</code></li>
                             <li><code>list_emails</code></li>
                             <li><code>read_email</code></li>
@@ -86,6 +87,7 @@
                     <h2>Importing the tools</h2>
                     <div class="code-block">
                         <pre><code class="language-python">from abstractcore.tools.comms_tools import (
+    list_email_accounts,
     send_email,
     list_emails,
     read_email,
@@ -97,56 +99,109 @@
                 </section>
 
                 <section id="runtime-gating" style="margin-top: 3rem;">
-                    <h2>Opt-in gating (AbstractRuntime default toolsets)</h2>
-                    <p>If you use AbstractRuntime’s default tool discovery/execution, comms tools are disabled unless explicitly enabled:</p>
+                    <h2>Execution boundaries (recommended)</h2>
+                    <p>
+                        Communication tools have real-world side effects. Keep them behind an allowlist / approval boundary in your host/runtime
+                        (even if you use <code>execute_tools=True</code>).
+                    </p>
                     <div class="code-block">
-                        <pre><code class="language-bash">export ABSTRACT_ENABLE_COMMS_TOOLS=1
-# or:
-export ABSTRACT_ENABLE_EMAIL_TOOLS=1
-export ABSTRACT_ENABLE_WHATSAPP_TOOLS=1</code></pre>
+                        <pre><code class="language-python">from abstractcore.tools import ToolCall, ToolRegistry
+from abstractcore.tools.comms_tools import send_email, send_whatsapp_message
+
+dangerous_tools = {"send_email", "send_whatsapp_message"}
+
+registry = ToolRegistry()
+registry.register(send_email)
+registry.register(send_whatsapp_message)
+
+# In your agent loop:
+for call in response.tool_calls or []:
+    name = call.get("name")
+    if name in dangerous_tools:
+        # gate via UI approval / allowlist / policy engine
+        continue
+    registry.execute_tool(ToolCall(name=name, arguments=call.get("arguments") or {}))</code></pre>
                     </div>
-                    <p style="color: var(--text-secondary);">
-                        If you manually pass <code>tools=[...]</code> in your own Python host, you control the allowlist directly.
+                    <p style="color: var(--text-secondary); margin-bottom: 0;">
+                        See <a href="tool-calling.html">Tool Calling System</a> for a complete host/runtime execution flow.
                     </p>
                 </section>
 
                 <section id="email" style="margin-top: 3rem;">
-                    <h2>Email (Gmail example)</h2>
-                    <p>Send and read email via SMTP/IMAP. Passwords are read from an env var (default: <code>EMAIL_PASSWORD</code>).</p>
+                    <h2>Email (SMTP + IMAP)</h2>
+                    <p>
+                        Email tools are <strong>operator-configured</strong>: tool arguments cannot override SMTP/IMAP hosts, usernames, or secrets.
+                        Configure one or more accounts first, then use tools like <code>send_email</code> / <code>list_emails</code>.
+                    </p>
+
+                    <h3>1) Configure accounts</h3>
+                    <p>
+                        Recommended: point AbstractCore to an accounts YAML file (supports multiple accounts + per-account allowlists).
+                        The AbstractCore repo includes a template at <a href="https://github.com/lpalbou/abstractcore/blob/main/configs/emails.yaml" target="_blank" rel="noopener noreferrer"><code>configs/emails.yaml</code></a>.
+                    </p>
 
                     <div class="code-block">
-                        <pre><code class="language-bash">export EMAIL_PASSWORD="xxxx xxxx xxxx xxxx"  # Gmail App Password</code></pre>
+                        <pre><code class="language-bash"># Point to your accounts config file
+export ABSTRACT_EMAIL_ACCOUNTS_CONFIG="$PWD/emails.yaml"
+
+# Secrets stay in env vars
+export EMAIL_PASSWORD="xxxx xxxx xxxx xxxx"  # e.g. Gmail App Password
+
+# Gmail example (values referenced by the YAML via ${ENV_VAR})
+export ABSTRACT_EMAIL_IMAP_HOST="imap.gmail.com"
+export ABSTRACT_EMAIL_IMAP_USERNAME="you@gmail.com"
+export ABSTRACT_EMAIL_IMAP_PASSWORD_ENV_VAR="EMAIL_PASSWORD"
+
+export ABSTRACT_EMAIL_SMTP_HOST="smtp.gmail.com"
+export ABSTRACT_EMAIL_SMTP_PORT=587
+export ABSTRACT_EMAIL_SMTP_USERNAME="you@gmail.com"
+export ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR="EMAIL_PASSWORD"
+export ABSTRACT_EMAIL_SMTP_STARTTLS=1
+export ABSTRACT_EMAIL_FROM="you@gmail.com"</code></pre>
                     </div>
 
-                    <h3>Send an email (tool call payload)</h3>
+                    <p style="color: var(--text-secondary);">
+                        Prefer env vars for secrets. The config stores a <em>reference</em> (<code>password_env_var</code>), not the secret itself.
+                    </p>
+
+                    <h3>2) Discover available accounts</h3>
+                    <div class="code-block">
+                        <pre><code class="language-python">from abstractcore.tools.comms_tools import list_email_accounts
+
+print(list_email_accounts())  # shows can_read/can_send + default account</code></pre>
+                    </div>
+
+                    <h3>3) Send an email</h3>
                     <div class="code-block">
                         <pre><code class="language-json">{
   "name": "send_email",
   "arguments": {
-    "smtp_host": "smtp.gmail.com",
-    "smtp_port": 587,
-    "use_starttls": true,
-    "username": "xxx@gmail.com",
-    "password_env_var": "EMAIL_PASSWORD",
     "to": "you@example.com",
     "subject": "Daily report",
     "body_text": "Hello! Here is the report..."
   }
 }</code></pre>
                     </div>
+                    <p style="color: var(--text-secondary);">
+                        If you configured multiple accounts, pass <code>account</code> to select one. Otherwise, the default account is used.
+                    </p>
 
-                    <h3>List unread emails since yesterday</h3>
+                    <h3>4) List and read emails</h3>
                     <div class="code-block">
                         <pre><code class="language-json">{
   "name": "list_emails",
   "arguments": {
-    "imap_host": "imap.gmail.com",
-    "imap_port": 993,
-    "username": "xxx@gmail.com",
-    "password_env_var": "EMAIL_PASSWORD",
     "since": "1d",
     "status": "unread",
     "limit": 20
+  }
+}</code></pre>
+                    </div>
+                    <div class="code-block">
+                        <pre><code class="language-json">{
+  "name": "read_email",
+  "arguments": {
+    "uid": "12345"
   }
 }</code></pre>
                     </div>
@@ -201,4 +256,3 @@ export TWILIO_AUTH_TOKEN="..."</code></pre>
     <script src="../assets/js/main.js"></script>
 </body>
 </html>
-
