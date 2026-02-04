@@ -53,10 +53,10 @@
                 </p>
             </div>
 
-            <div class="examples-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 2rem;">
+                <div class="examples-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 2rem;">
                 
                 <!-- Provider Flexibility Example -->
-                <div class="example-card">
+                <div class="example-card" id="provider-flexibility">
                     <div class="example-header">
                         <h3 class="example-title">Provider Flexibility</h3>
                         <span class="example-badge">Core Feature</span>
@@ -69,7 +69,7 @@
 llm_dev = create_llm("ollama", model="qwen3:4b-instruct", seed=42, temperature=0.0)
 
 # Production (high quality, cloud) with same seed
-llm_prod = create_llm("openai", model="gpt-5-mini", seed=42, temperature=0.0)
+llm_prod = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
 
 # Same interface, deterministic results
 def ask_question(llm, question):
@@ -83,7 +83,7 @@ prod_answer = ask_question(llm_prod, "What is Python?")
                 </div>
 
                 <!-- RAG Example -->
-                <div class="example-card">
+                <div class="example-card" id="rag-embeddings">
                     <div class="example-header">
                         <h3 class="example-title">RAG with Embeddings</h3>
                         <span class="example-badge">Advanced</span>
@@ -97,7 +97,7 @@ from abstractcore import create_llm
 
 # Initialize components
 embedder = EmbeddingManager()
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Documents to search
 documents = [
@@ -127,6 +127,33 @@ response = llm.generate(
     f"Context: {context}\n\nQuestion: {query}\n\nAnswer:"
 )
 print(response.content)</code></pre>
+                    </div>
+                </div>
+
+                <!-- Universal API Server Example -->
+                <div class="example-card" id="api-server">
+                    <div class="example-header">
+                        <h3 class="example-title">Universal API Server</h3>
+                        <span class="example-badge">Server</span>
+                    </div>
+                    <p class="example-description">
+                        Run a single OpenAI-compatible <code>/v1</code> endpoint and route to any provider/model with <code>model="provider/model"</code>.
+                    </p>
+                    <div class="example-code">
+                        <pre><code class="language-bash">pip install "abstractcore[server]"
+python -m abstractcore.server.app --port 8000
+
+curl http://localhost:8000/health</code></pre>
+                    </div>
+                    <div class="example-code">
+                        <pre><code class="language-python">from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+resp = client.chat.completions.create(
+    model="ollama/qwen3:4b-instruct",
+    messages=[{"role": "user", "content": "Hello from the gateway!"}],
+)
+print(resp.choices[0].message.content)</code></pre>
                     </div>
                 </div>
 
@@ -216,7 +243,7 @@ class Company(BaseModel):
     founded_year: int
     headquarters: Address
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Extract complex nested data
 company_data = """
@@ -263,7 +290,7 @@ def get_system_time() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 def interactive_chat():
-    llm = create_llm("openai", model="gpt-5-mini")
+    llm = create_llm("openai", model="gpt-4o-mini")
     
     print("🤖 AI Assistant (type 'quit' to exit)")
     print("=" * 40)

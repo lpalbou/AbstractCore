@@ -296,10 +296,13 @@
                         <div class="provider-grid">
                             <div class="provider-item">OpenAI</div>
                             <div class="provider-item">Anthropic</div>
+                            <div class="provider-item">OpenRouter</div>
                             <div class="provider-item">Ollama</div>
                             <div class="provider-item">MLX</div>
                             <div class="provider-item">LMStudio</div>
                             <div class="provider-item">HuggingFace</div>
+                            <div class="provider-item">vLLM</div>
+                            <div class="provider-item">OpenAI-Compatible</div>
                         </div>
                     </div>
                 </div>
@@ -314,7 +317,7 @@
                         <pre><code class="language-python">from abstractcore import create_llm
 
 # Factory creates the right provider
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("Hello, world!")</code></pre>
                     </div>
                     <p><strong>Benefits:</strong> Same interface for all providers, automatic reliability, built-in tool support.</p>
@@ -326,7 +329,7 @@ response = llm.generate("Hello, world!")</code></pre>
                     <div class="code-block">
                         <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "openai/gpt-5-mini", "messages": [{"role": "user", "content": "Hello"}]}'</code></pre>
+  -d '{"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}'</code></pre>
                     </div>
                     <p><strong>Benefits:</strong> Drop-in OpenAI replacement, universal provider access, tool call format conversion.</p>
                 </div>
@@ -359,10 +362,13 @@ response = llm.generate("Hello, world!")</code></pre>
                     <div class="provider-grid">
                         <div class="provider-item">OpenAI</div>
                         <div class="provider-item">Anthropic</div>
+                        <div class="provider-item">OpenRouter</div>
                         <div class="provider-item">Ollama</div>
                         <div class="provider-item">MLX</div>
                         <div class="provider-item">LMStudio</div>
                         <div class="provider-item">HuggingFace</div>
+                        <div class="provider-item">vLLM</div>
+                        <div class="provider-item">OpenAI-Compatible</div>
                     </div>
                     <p><strong>Features:</strong> Memory management, capability detection, unified error handling.</p>
                 </div>

@@ -121,7 +121,7 @@
                             <pre><code class="language-python">from abstractcore import create_llm
 
 # Basic usage
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # With unified token management and deterministic generation
 llm = create_llm(
@@ -242,7 +242,7 @@ response = llm.generate(
 from abstractcore import create_llm
 
 async def main():
-    llm = create_llm("openai", model="gpt-5-mini")
+    llm = create_llm("openai", model="gpt-4o-mini")
     response = await llm.agenerate("Explain async/await in one paragraph.")
     print(response.content)
 
@@ -264,7 +264,7 @@ llm.unload_model(llm.model)  # Explicitly free memory
 del llm
 
 # API providers (OpenAI, Anthropic) - unload_model() is safe but usually no-op
-api_llm = create_llm("openai", model="gpt-5-mini")
+api_llm = create_llm("openai", model="gpt-4o-mini")
 api_llm.unload_model(api_llm.model)  # Safe to call, but has no effect</code></pre>
                         </div>
                     </div>
@@ -320,7 +320,7 @@ class GenerateResponse:
                         <h4>Methods</h4>
                         <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
                             <ul style="margin: 0;">
-                                <li><code>get_summary()</code> (str): Returns comprehensive summary with timing: "Model: gpt-5-mini | Tokens: 117 | Time: 1234.5ms"</li>
+                                <li><code>get_summary()</code> (str): Returns comprehensive summary with timing: "Model: gpt-4o-mini | Tokens: 117 | Time: 1234.5ms"</li>
                             </ul>
                         </div>
                     </div>
@@ -383,7 +383,7 @@ def load(cls, filepath: Path, provider: AbstractCoreInterface) -> "BasicSession"
                         <div class="code-block">
                             <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(
     provider=llm,
     system_prompt="You are a helpful coding tutor."
@@ -470,7 +470,7 @@ config = RetryConfig(
     recovery_timeout=60.0     # Test recovery after 1 minute
 )
 
-llm = create_llm("openai", model="gpt-5-mini", retry_config=config)</code></pre>
+llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)</code></pre>
                     </div>
                 </section>
 
@@ -516,7 +516,7 @@ from abstractcore.events import EventType, on_global
 # Production resilience with retry and circuit breaker
 llm = create_llm(
     "openai",
-    model="gpt-5-mini",
+    model="gpt-4o-mini",
     retry_manager=RetryManager(max_attempts=3, backoff_strategy="exponential"),
     circuit_breaker=CircuitBreaker(failure_threshold=5, timeout=60)
 )
@@ -545,7 +545,7 @@ from abstractcore import create_llm
 
 # Initialize components
 embedder = EmbeddingManager()
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Documents to search
 documents = [

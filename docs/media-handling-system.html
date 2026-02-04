@@ -286,10 +286,11 @@ response = requests.post(
 
                 <div class="code-block">
                     <pre><code class="language-bash"># Install with media support
-pip install abstractcore[media]
+pip install abstractcore
+pip install "abstractcore[media]"
 
-# Or install everything
-pip install abstractcore[all]</code></pre>
+# Combine extras (zsh: keep quotes)
+pip install "abstractcore[openai,media]"</code></pre>
                 </div>
 
                 <!-- Related Documentation -->

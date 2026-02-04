@@ -151,7 +151,7 @@ ollama_response = ollama_llm.generate("Weather in Paris?", tools=[get_weather])<
                             <pre><code class="language-bash"># One-time configuration
 abstractcore --status
 abstractcore --set-global-default ollama/qwen3:4b-instruct
-abstractcore --set-app-default summarizer openai gpt-5-mini
+abstractcore --set-app-default summarizer openai gpt-4o-mini
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --download-vision-model
 
@@ -169,7 +169,7 @@ python -m abstractcore.utils.cli --prompt "Hello"  # Uses CLI default</code></pr
 
                         <div class="code-block">
                             <pre><code class="language-python"># Deterministic outputs with seed + temperature=0
-llm = create_llm("openai", model="gpt-5-mini", seed=42, temperature=0.0)
+llm = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
 
 # These will produce identical outputs
 response1 = llm.generate("Write exactly 3 words about coding")
@@ -242,7 +242,7 @@ response = text_llm.generate(
                         <p><strong>What it does</strong>: Preserve/rewrite tool-call markup in assistant content when a downstream consumer needs text-based tool parsing.</p>
                         
                         <div class="code-block">
-                            <pre><code class="language-python">llm = create_llm("openai", model="gpt-5-mini")
+                            <pre><code class="language-python">llm = create_llm("openai", model="gpt-4o-mini")
 
 # Qwen3 tags
 response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="qwen3")
@@ -292,7 +292,7 @@ product = llm.generate(
                             <pre><code class="language-python">from abstractcore import create_llm
 from abstractcore.mcp import McpClient, McpToolSource
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 client = McpClient(url="http://localhost:3000/mcp")  # example MCP endpoint
 tool_specs = McpToolSource(server_id="local", client=client).list_tool_specs()

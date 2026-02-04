@@ -68,39 +68,29 @@
                     <pre><code class="language-bash">pip install abstractcore
 
 # For media handling (images, PDFs, Office docs)
-pip install abstractcore[media]</code></pre>
+pip install "abstractcore[media]"</code></pre>
                 </div>
 
                 <h3>Provider-Specific Installation</h3>
                 <p>Choose based on which LLM providers you want to use:</p>
                 
                 <div class="code-block">
-                    <pre><code class="language-bash"># OpenAI
-pip install abstractcore[openai]
+                    <pre><code class="language-bash"># Providers (install only what you use; zsh: keep quotes)
+pip install "abstractcore[openai]"       # OpenAI SDK
+pip install "abstractcore[anthropic]"    # Anthropic SDK
+pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
+pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
+pip install "abstractcore[vllm]"         # GPU server integration (heavy)
 
-# Anthropic
-pip install abstractcore[anthropic]
+# Optional features
+pip install "abstractcore[media]"        # images, PDFs, Office docs
+pip install "abstractcore[tools]"        # built-in tools (fetch_url, web_search)
+pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway
+pip install "abstractcore[embeddings]"   # vector embeddings + RAG helpers
+pip install "abstractcore[compression]"  # glyph visual-text compression
 
-# Ollama (local models)
-pip install abstractcore[ollama]
-
-# LMStudio (local models)
-pip install abstractcore[lmstudio]
-
-# MLX (Apple Silicon)
-pip install abstractcore[mlx]
-
-# HuggingFace
-pip install abstractcore[huggingface]
-
-# Server support
-pip install abstractcore[server]
-
-# Embeddings
-pip install abstractcore[embeddings]
-
-# Everything
-pip install abstractcore[all]</code></pre>
+# Note: providers like ollama, lmstudio, openrouter, and openai-compatible
+# work with the core install — just set the server base_url.</code></pre>
                 </div>
 
                 <h3>Quick Setup Examples</h3>
@@ -109,7 +99,8 @@ pip install abstractcore[all]</code></pre>
                         <h4 style="margin: 0 0 1rem 0; color: var(--accent-color);">Cloud Provider</h4>
                         <div class="code-block">
                             <pre><code class="language-bash"># OpenAI setup
-pip install abstractcore[openai]
+pip install abstractcore
+pip install "abstractcore[openai]"
 export OPENAI_API_KEY="your-key-here"</code></pre>
                         </div>
                     </div>
@@ -118,8 +109,8 @@ export OPENAI_API_KEY="your-key-here"</code></pre>
                         <div class="code-block">
                             <pre><code class="language-bash"># Ollama setup
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3:4b-instruct
-pip install abstractcore[ollama]</code></pre>
+ollama pull qwen3:4b-instruct-2507-q4_K_M
+pip install abstractcore</code></pre>
                         </div>
                     </div>
                 </div>
@@ -131,19 +122,19 @@ pip install abstractcore[ollama]</code></pre>
                     <pre><code class="language-python">from abstractcore import create_llm
 
 # Choose your provider (uncomment one):
-llm = create_llm("openai", model="gpt-5-mini", temperature=0.7, seed=42)        # Cloud
+llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7)        # Cloud
 # llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.0)  # Cloud (use temp=0 for consistency)
-# llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42)   # Local
+# llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", seed=42)   # Local
 
 # Generate your first response
 response = llm.generate("What is the capital of France?")
 print(response.content)
 
-# For deterministic outputs across calls
-deterministic_llm = create_llm("openai", model="gpt-5-mini", temperature=0.0, seed=42)
+# Best-effort deterministic outputs (provider/model dependent)
+deterministic_llm = create_llm("openai", model="gpt-4o-mini", temperature=0.0, seed=42)
 response1 = deterministic_llm.generate("Write exactly 3 words about AI")
 response2 = deterministic_llm.generate("Write exactly 3 words about AI")
-# response1.content == response2.content (identical outputs)</code></pre>
+# Determinism depends on provider/model.</code></pre>
                 </div>
 
                 <p>Run it:</p>
@@ -200,10 +191,10 @@ for provider in providers:
                 <div class="code-block">
                     <pre><code class="language-python">from abstractcore import create_llm
 
-# Same interface, different providers - all support deterministic generation
-openai_llm = create_llm("openai", model="gpt-5-mini", seed=42)
+# Same interface, different providers
+openai_llm = create_llm("openai", model="gpt-4o-mini", seed=42)
 claude_llm = create_llm("anthropic", model="claude-haiku-4-5", temperature=0.0)  # Use temp=0 for consistency
-local_llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42)
+local_llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", seed=42)
 
 question = "Explain Python list comprehensions"
 
@@ -225,7 +216,7 @@ class MovieReview(BaseModel):
     rating: int  # 1-5 stars
     summary: str
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Get structured data automatically
 review = llm.generate(
@@ -262,7 +253,7 @@ def calculate(expression: str) -> float:
         return float('nan')
 
 # Instantiate the LLM
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Automatically extract tool definitions from decorated functions
 response = llm.generate(
@@ -280,7 +271,7 @@ print(response.content)
                 <div class="code-block">
                     <pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 print("AI: ", end="", flush=True)
 for chunk in llm.generate("Write a haiku about programming", stream=True):
@@ -295,7 +286,7 @@ print("\n")
                 <div class="code-block">
                     <pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(provider=llm, system_prompt="You are a helpful coding tutor.")
 
 # First exchange
@@ -323,7 +314,7 @@ response = llm.generate(
 )
 
 # Or from CLI with @filename syntax
-# python -m abstractcore.utils.cli --prompt "Analyze @report.pdf"</code></pre>
+# abstractcore-chat --prompt "Analyze @report.pdf"</code></pre>
                 </div>
 
                 <p><strong>Supported:</strong> Images (PNG, JPEG, GIF, WEBP), Documents (PDF, DOCX, XLSX, PPTX), Data (CSV, TSV, TXT, MD, JSON)</p>

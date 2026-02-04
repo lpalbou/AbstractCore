@@ -94,23 +94,28 @@
                     <p>Install AbstractCore and the provider(s) you plan to use:</p>
 
                     <div class="code-block">
-                        <pre><code class="language-bash"># Minimal
+                        <pre><code class="language-bash"># Core (small default)
 pip install abstractcore
 
-# Common cloud providers
-pip install abstractcore[openai,anthropic]
+# Providers (install only what you use; zsh: keep quotes)
+pip install "abstractcore[openai]"       # OpenAI SDK
+pip install "abstractcore[anthropic]"    # Anthropic SDK
+pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
+pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
+pip install "abstractcore[vllm]"         # GPU server integration (heavy)
 
-# Common local providers
-pip install abstractcore[ollama,mlx,lmstudio]
+# Optional features
+pip install "abstractcore[tools]"       # built-in web tools (fetch_url, web_search)
+pip install "abstractcore[media]"       # images, PDFs, Office docs
+pip install "abstractcore[embeddings]"  # vector embeddings + RAG helpers
+pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
+pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
+pip install "abstractcore[compression]" # glyph visual-text compression
 
-# Media handling (images, PDFs, Office docs)
-pip install abstractcore[media]
-
-# Optional: HTTP server (OpenAI-compatible REST API)
-pip install abstractcore[server]
-
-# Everything (recommended for development)
-pip install abstractcore[all]</code></pre>
+# Turnkey installs (pick one)
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)</code></pre>
                     </div>
                 </section>
 
@@ -127,7 +132,7 @@ abstractcore --set-global-default ollama/qwen3:4b-instruct
 
 # App-specific defaults
 abstractcore --set-app-default cli ollama qwen3:4b-instruct
-abstractcore --set-app-default summarizer openai gpt-5-mini
+abstractcore --set-app-default summarizer openai gpt-4o-mini
 
 # Store API keys in config (recommended)
 abstractcore --set-api-key openai sk-your-key
@@ -157,7 +162,7 @@ abstractcore --set-api-key openrouter sk-or-your-key</code></pre>
                     <div class="code-block">
                         <pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 print(llm.generate("Hello, world!").content)</code></pre>
                     </div>
 
@@ -319,7 +324,7 @@ print(llm.generate("Hello from vLLM!").content)</code></pre>
                     <p>MLX provides optimized local inference on Apple Silicon (M1/M2/M3/M4).</p>
 
                     <div class="code-block">
-                        <pre><code class="language-bash">pip install abstractcore[mlx]</code></pre>
+                        <pre><code class="language-bash">pip install "abstractcore[mlx]"</code></pre>
                     </div>
 
                     <div class="code-block">
@@ -335,7 +340,7 @@ print(llm.generate("Hello from MLX!").content)</code></pre>
                     <p>Run open-source models via HuggingFace tooling.</p>
 
                     <div class="code-block">
-                        <pre><code class="language-bash">pip install abstractcore[huggingface]</code></pre>
+                        <pre><code class="language-bash">pip install "abstractcore[huggingface]"</code></pre>
                     </div>
 
                     <div class="code-block">

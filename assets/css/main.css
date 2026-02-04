@@ -160,6 +160,52 @@ p {
     line-height: 1.6;
 }
 
+/* Documentation Pages */
+.doc-content h2 {
+    margin-top: var(--spacing-10);
+}
+
+.doc-content h3 {
+    margin-top: var(--spacing-8);
+}
+
+.doc-content h4,
+.doc-content h5 {
+    margin-top: var(--spacing-6);
+}
+
+.doc-content h6 {
+    margin-top: var(--spacing-4);
+}
+
+.doc-content > h2:first-child,
+.doc-content > h3:first-child,
+.doc-content > h4:first-child,
+.doc-content > h5:first-child,
+.doc-content > h6:first-child {
+    margin-top: 0;
+}
+
+.doc-content ul,
+.doc-content ol {
+    padding-left: 1.5rem;
+    margin: 0 0 var(--spacing-4) 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    list-style-position: outside;
+}
+
+.doc-content li {
+    margin: 0.5rem 0;
+}
+
+.doc-content ul ul,
+.doc-content ul ol,
+.doc-content ol ul,
+.doc-content ol ol {
+    margin-bottom: 0;
+}
+
 a {
     color: var(--primary-color);
     text-decoration: none;
