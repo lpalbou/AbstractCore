@@ -51,6 +51,20 @@ Notes:
 - Quote extras in shells like zsh: `"abstractcore[media]"`.
 - `abstractcore[all]` exists but may not install cleanly everywhere (MLX + vLLM together).
 
+## Key docs (source of truth)
+
+- `README.md`: overview, install matrix, quickstart
+- `docs/getting-started.md`: 5-minute intro (`create_llm`, `generate`)
+- `docs/README.md`: docs index and reading paths
+- `docs/api.md`: user-facing public API map
+- `docs/api-reference.md`: complete Python API reference (includes events)
+- `docs/faq.md`: common setup questions and gotchas
+- `CHANGELOG.md`: version history and upgrade notes
+- `SECURITY.md`: responsible vulnerability reporting
+
+Notes:
+- `docs/reports/`, `docs/research/`, and `docs/archive/` are useful background but are not canonical user docs.
+
 ## Key entrypoints (how users interact)
 
 ### Python API

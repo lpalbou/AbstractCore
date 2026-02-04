@@ -106,30 +106,64 @@ class OpenAIProvider(BaseProvider):
                         "content": msg["content"]
                     })
 
-        # Add current prompt as user message
-        if prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
-            # Handle multimodal message with media content
-            if media:
-                try:
-                    from ..media.handlers import OpenAIMediaHandler
-                    media_handler = OpenAIMediaHandler(self.model_capabilities)
+        media_enrichment = None
 
-                    # Create multimodal message combining text and media
-                    multimodal_message = media_handler.create_multimodal_message(prompt, media)
-                    api_messages.append(multimodal_message)
-                except ImportError:
-                    self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
-                    api_messages.append({"role": "user", "content": prompt})
-                except Exception as e:
-                    # Do not silently drop user-supplied media. Fail loudly so callers can
-                    # choose an explicit fallback policy (e.g. audio_policy='speech_to_text').
-                    from ..exceptions import UnsupportedFeatureError
+        # Handle media content regardless of prompt (media can be used with messages too)
+        if media:
+            # Get the last user message content to combine with media
+            user_message_text = prompt.strip() if prompt else ""
+            if not user_message_text and api_messages:
+                # If no prompt, try to get text from the last user message
+                for msg in reversed(api_messages):
+                    if msg.get("role") == "user" and msg.get("content"):
+                        user_message_text = msg["content"]
+                        break
 
-                    raise UnsupportedFeatureError(
-                        f"OpenAI provider could not format attached media for model '{self.model}': {e}"
-                    ) from e
-            else:
-                api_messages.append({"role": "user", "content": prompt})
+            replace_last_user = False
+            if api_messages and api_messages[-1].get("role") == "user":
+                last_content = api_messages[-1].get("content")
+                # Only replace the last user message when prompt is empty (prompt already in messages)
+                # or when the prompt is the same as the last user content (avoid duplication).
+                if (not prompt.strip()) or (last_content == user_message_text):
+                    replace_last_user = True
+
+            try:
+                # Process media files into MediaContent objects first
+                processed_media = self._process_media_content(media)
+
+                # Use capability-based media handler selection (vision vs fallback)
+                media_handler = self._get_media_handler_for_model(self.model)
+
+                # Create multimodal message combining text and processed media
+                multimodal_message = media_handler.create_multimodal_message(user_message_text, processed_media)
+                media_enrichment = getattr(media_handler, "media_enrichment", None)
+
+                if isinstance(multimodal_message, str):
+                    if replace_last_user:
+                        api_messages[-1]["content"] = multimodal_message
+                    else:
+                        api_messages.append({"role": "user", "content": multimodal_message})
+                else:
+                    if replace_last_user:
+                        api_messages[-1] = multimodal_message
+                    else:
+                        api_messages.append(multimodal_message)
+            except ImportError:
+                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
+                if user_message_text and not replace_last_user:
+                    api_messages.append({"role": "user", "content": user_message_text})
+            except Exception as e:
+                # Do not silently drop user-supplied media. Fail loudly so callers can
+                # choose an explicit fallback policy (e.g. audio_policy='speech_to_text').
+                from ..exceptions import UnsupportedFeatureError
+
+                raise UnsupportedFeatureError(
+                    f"OpenAI provider could not format attached media for model '{self.model}': {e}"
+                ) from e
+
+        # Add prompt as separate message if provided (for backward compatibility)
+        elif prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
+            api_messages.append({"role": "user", "content": prompt})
 
         # Prepare API call parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -224,6 +258,10 @@ class OpenAIProvider(BaseProvider):
                 # Runtime observability: capture the exact client payload we sent.
                 formatted.metadata = dict(formatted.metadata or {})
                 formatted.metadata["_provider_request"] = {"call_params": call_params}
+                if media_enrichment:
+                    from ..media.enrichment import merge_enrichment_metadata
+
+                    formatted.metadata = merge_enrichment_metadata(formatted.metadata, media_enrichment)
 
                 # Handle tool execution for OpenAI native responses
                 if tools and formatted.has_tool_calls():
@@ -262,28 +300,56 @@ class OpenAIProvider(BaseProvider):
                         "content": msg["content"]
                     })
 
-        # Add current prompt as user message
-        if prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
-            # Handle multimodal message with media content
-            if media:
-                try:
-                    from ..media.handlers import OpenAIMediaHandler
-                    media_handler = OpenAIMediaHandler(self.model_capabilities)
+        media_enrichment = None
 
-                    # Create multimodal message combining text and media
-                    multimodal_message = media_handler.create_multimodal_message(prompt, media)
-                    api_messages.append(multimodal_message)
-                except ImportError:
-                    self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
-                    api_messages.append({"role": "user", "content": prompt})
-                except Exception as e:
-                    from ..exceptions import UnsupportedFeatureError
+        # Handle media content regardless of prompt (media can be used with messages too)
+        if media:
+            # Get the last user message content to combine with media
+            user_message_text = prompt.strip() if prompt else ""
+            if not user_message_text and api_messages:
+                # If no prompt, try to get text from the last user message
+                for msg in reversed(api_messages):
+                    if msg.get("role") == "user" and msg.get("content"):
+                        user_message_text = msg["content"]
+                        break
 
-                    raise UnsupportedFeatureError(
-                        f"OpenAI provider could not format attached media for model '{self.model}': {e}"
-                    ) from e
-            else:
-                api_messages.append({"role": "user", "content": prompt})
+            replace_last_user = False
+            if api_messages and api_messages[-1].get("role") == "user":
+                last_content = api_messages[-1].get("content")
+                if (not prompt.strip()) or (last_content == user_message_text):
+                    replace_last_user = True
+
+            try:
+                processed_media = self._process_media_content(media)
+                media_handler = self._get_media_handler_for_model(self.model)
+                multimodal_message = media_handler.create_multimodal_message(user_message_text, processed_media)
+                media_enrichment = getattr(media_handler, "media_enrichment", None)
+
+                if isinstance(multimodal_message, str):
+                    if replace_last_user:
+                        api_messages[-1]["content"] = multimodal_message
+                    else:
+                        api_messages.append({"role": "user", "content": multimodal_message})
+                else:
+                    if replace_last_user:
+                        api_messages[-1] = multimodal_message
+                    else:
+                        api_messages.append(multimodal_message)
+
+            except ImportError:
+                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
+                if user_message_text and not replace_last_user:
+                    api_messages.append({"role": "user", "content": user_message_text})
+            except Exception as e:
+                from ..exceptions import UnsupportedFeatureError
+
+                raise UnsupportedFeatureError(
+                    f"OpenAI provider could not format attached media for model '{self.model}': {e}"
+                ) from e
+
+        # Add prompt as separate message if provided (for backward compatibility)
+        elif prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
+            api_messages.append({"role": "user", "content": prompt})
 
         # Prepare API call parameters using unified system (same logic as sync)
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -376,6 +442,10 @@ class OpenAIProvider(BaseProvider):
                 formatted.gen_time = gen_time
                 formatted.metadata = dict(formatted.metadata or {})
                 formatted.metadata["_provider_request"] = {"call_params": call_params}
+                if media_enrichment:
+                    from ..media.enrichment import merge_enrichment_metadata
+
+                    formatted.metadata = merge_enrichment_metadata(formatted.metadata, media_enrichment)
 
                 # Handle tool execution for OpenAI native responses
                 if tools and formatted.has_tool_calls():
@@ -655,6 +725,29 @@ class OpenAIProvider(BaseProvider):
                     )
             else:
                 yield chunk_response
+
+    def _get_media_handler_for_model(self, model_name: str):
+        """Get appropriate media handler based on model vision capabilities."""
+        from ..media.handlers import OpenAIMediaHandler, LocalMediaHandler
+
+        # Determine if model supports vision
+        try:
+            from ..architectures.detection import supports_vision
+
+            use_vision_handler = supports_vision(model_name)
+        except Exception as e:
+            self.logger.debug(f"Vision detection failed: {e}, defaulting to LocalMediaHandler")
+            use_vision_handler = False
+
+        # Create appropriate handler
+        if use_vision_handler:
+            handler = OpenAIMediaHandler(self.model_capabilities, model_name=model_name)
+            self.logger.debug(f"Using OpenAIMediaHandler for vision model: {model_name}")
+        else:
+            handler = LocalMediaHandler(self.provider, self.model_capabilities, model_name=model_name)
+            self.logger.debug(f"Using LocalMediaHandler for model: {model_name}")
+
+        return handler
 
     def supports_prompt_cache(self) -> bool:
         """OpenAI supports prompt caching via `prompt_cache_key` (server-managed)."""

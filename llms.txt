@@ -53,6 +53,8 @@ Common extras (quote brackets for zsh):
 ## Development
 
 - [pyproject.toml](pyproject.toml): dependencies + extras (keep default small)
+- [CHANGELOG.md](CHANGELOG.md): release notes and upgrade guidance
+- [SECURITY.md](SECURITY.md): responsible vulnerability reporting
 - [CONTRIBUTING.md](CONTRIBUTING.md): contributor workflow
 - [tests/](tests/): pytest suite
 

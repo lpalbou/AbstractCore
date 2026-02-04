@@ -1634,7 +1634,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if not should_execute_tools and converted_tools:
             # If tools are provided but execution is disabled,
             # we still pass them to the provider for generation but won't execute them
-            self.logger.info("Tool execution disabled - tools will be generated but not executed")
+            self.logger.debug(
+                "Provider-side tool execution disabled (expected for runtime/host tool execution); "
+                "tools will be sent for generation only."
+            )
 
         # Define generation function for retry wrapper
         def _execute_generation():
@@ -2182,7 +2185,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         
         if not should_execute:
             # Tool execution disabled - return response with tool calls but don't execute
-            self.logger.info("Tool execution disabled - returning response with tool calls")
+            self.logger.debug(
+                "Provider-side tool execution disabled (expected for runtime/host tool execution); "
+                "returning response with tool calls."
+            )
             return response
         
         # Emit tool started event
