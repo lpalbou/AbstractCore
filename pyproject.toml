@@ -48,11 +48,8 @@ requires-python = ">=3.9"
 dependencies = [
     "pydantic>=2.0.0,<3.0.0",
     "httpx>=0.24.0,<1.0.0",
-    "tiktoken>=0.5.0,<1.0.0",
-    "requests>=2.25.0,<3.0.0",  # Required for common_tools web functionality
-    # `abstractcore.tools.common_tools` imports BeautifulSoup at import-time; keep base installs import-safe.
-    "beautifulsoup4>=4.12.0,<5.0.0",
-    "Pillow>=10.0.0,<12.0.0",  # Required for media handling in providers
+    # Keep the default install small and import-safe. Optional features (tools/media/embeddings)
+    # provide their own dependencies via extras.
 ]
 
 [project.urls]
@@ -137,14 +134,15 @@ embeddings = [
     "numpy>=1.20.0,<2.0.0",
 ]
 
-processing = [
-    # No additional dependencies - built on core AbstractCore
+tokens = [
+    # Precise token counting for OpenAI-compatible models (optional; falls back to heuristics without it).
+    "tiktoken>=0.5.0,<1.0.0",
 ]
 
 tools = [
+    "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
     "lxml>=4.9.0,<6.0.0",
-    "ruff>=0.1.0",
     # Web search backend for `web_search` (preferred). ddgs requires Python>=3.10.
     "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
     # Legacy backend kept for Python 3.9 compatibility.
@@ -154,9 +152,9 @@ tools = [
 
 # Compatibility alias (common typo): `abstractcore[tool]` -> `abstractcore[tools]`
 tool = [
+    "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
     "lxml>=4.9.0,<6.0.0",
-    "ruff>=0.1.0",
     "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
@@ -175,74 +173,153 @@ media = [
 ]
 
 compression = [
-    "abstractcore[media]",  # Compression requires media handling (PIL for image processing)
-    "pdf2image>=1.16.0,<2.0.0",
+    # Glyph visual-text compression renders text into images (PIL renderer).
+    "Pillow>=10.0.0,<12.0.0",
 ]
 
-# Provider groups for convenience
-api-providers = [
-    "abstractcore[openai,anthropic]",
-]
-
-local-providers = [
-    "abstractcore[ollama,lmstudio,mlx]",
-]
-
-local-providers-apple = [
-    "abstractcore[ollama,lmstudio,mlx]",
-]
-
-local-providers-gpu = [
-    "abstractcore[ollama,lmstudio,vllm]",
-]
-
-gpu-providers = [
-    "abstractcore[huggingface,vllm]",
-]
-
-heavy-providers = [
-    "abstractcore[huggingface]",
-]
-
-# Comprehensive installations
-all-providers = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,vllm,embeddings]",
-]
-
-all-providers-apple = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings]",
-]
-
-all-providers-gpu = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,vllm,embeddings]",
-]
-
-all-providers-non-mlx = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,embeddings]",
-]
-
-local-providers-non-mlx = [
-    "abstractcore[ollama,lmstudio]",
-]
-
+# Turnkey installs (end-user focused). Prefer these in docs.
+# Notes:
+# - `ollama` / `lmstudio` / `openai-compatible` / `openrouter` use only core deps.
+# - `all` includes both MLX (Apple Silicon) and vLLM (CUDA) and may not install everywhere.
 all = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,vllm,embeddings,processing,media,compression,tools,server,dev,test,docs]",
+    # Providers
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    # HuggingFace provider deps
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    # MLX provider deps
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
+    # vLLM provider deps
+    "vllm>=0.6.0,<1.0.0",
+    # Features
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # Server
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
 ]
 
 all-apple = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,mlx,embeddings,processing,media,compression,tools,server,dev,test,docs]",
+    # Providers
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
+    # Features
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # Server
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
 ]
 
 all-gpu = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,vllm,embeddings,processing,media,compression,tools,server,dev,test,docs]",
+    # Providers
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    "vllm>=0.6.0,<1.0.0",
+    # Features
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # Server
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
 ]
 
 all-non-mlx = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,huggingface,embeddings,processing,media,compression,tools,server,dev,test,docs]",
-]
-
-lightweight = [
-    "abstractcore[openai,anthropic,ollama,lmstudio,embeddings,processing,media,compression,tools,server]",
+    # Providers
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    # Features
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # Server
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
 ]
 
 # Development dependencies
@@ -305,7 +382,53 @@ docs = [
 
 # Complete development environment
 full-dev = [
-    "abstractcore[all-providers,tools,dev,test,docs]",
+    # A convenient superset for contributors (providers + optional features + tooling).
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
+    "vllm>=0.6.0,<1.0.0",
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
+    # Tooling
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+    "pytest-cov>=4.0.0",
+    "responses>=0.23.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.5.0",
+    "ruff>=0.1.0",
+    "pre-commit>=3.0.0",
+    # Docs
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.22.0",
+    "mkdocs-autorefs>=0.4.0",
 ]
 
 

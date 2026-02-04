@@ -38,7 +38,7 @@ def calculate(expression: str) -> float:
         return float('nan')
 
 # Works with ANY provider
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate(
     "What's the weather in Tokyo and what's 15 * 23?",
     tools=[get_weather, calculate]  # Pass functions directly
@@ -303,7 +303,7 @@ For providers with native tool APIs (OpenAI, Anthropic):
 
 ```python
 # OpenAI with native tool support
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("What's the weather?", tools=[get_weather])
 ```
 

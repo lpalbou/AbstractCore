@@ -271,7 +271,7 @@ class ProviderRegistry:
             self._logger.warning(f"Failed to load provider {provider_info.name}: {e}")
             raise ImportError(
                 f"{provider_info.display_name} dependencies not installed. "
-                f"Install with: pip install abstractcore[{provider_info.installation_extras}]"
+                f"Install with: pip install \"abstractcore[{provider_info.installation_extras}]\""
             ) from e
 
     def get_available_models(self, provider_name: str, **kwargs) -> List[str]:
@@ -469,7 +469,7 @@ class ProviderRegistry:
             if provider_info.installation_extras:
                 raise ImportError(
                     f"{provider_info.display_name} dependencies not installed. "
-                    f"Install with: pip install abstractcore[{provider_info.installation_extras}]"
+                    f"Install with: pip install \"abstractcore[{provider_info.installation_extras}]\""
                 ) from e
             else:
                 raise ImportError(f"{provider_info.display_name} provider not available") from e

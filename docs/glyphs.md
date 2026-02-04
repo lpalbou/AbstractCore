@@ -1,6 +1,8 @@
 # Glyph Visual-Text Compression
 
-**Glyph** is a revolutionary visual-text compression system integrated into AbstractCore that renders long textual content into optimized images and processes them using Vision-Language Models (VLMs). This approach achieves **3-4x token compression**, **faster inference**, and **reduced memory usage** without sacrificing accuracy.
+**Glyph** is a visual-text compression system integrated into AbstractCore. It renders long text into optimized images and processes them with Vision-Language Models (VLMs) to reduce effective token usage for long-document workflows.
+
+Requires `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` if you want PDF/Office text extraction).
 
 ## What is Glyph?
 
@@ -13,10 +15,9 @@ Glyph transforms the traditional text-processing paradigm by:
 
 ### Key Benefits
 
-- **14% faster processing** (validated with real-world testing)
-- **79% lower memory usage** during processing
-- **3-4x token compression** for large documents
-- **Preserved analytical quality** - no loss of understanding or accuracy
+- **Lower effective token usage** for long text (often 3–4x compression; depends on content/model)
+- **Fewer context overflows** for long-document analysis
+- **Preserved analytical quality** via vision-capable models (best-effort; validate for your domain)
 - **Transparent integration** - works seamlessly with existing code
 
 ## How Glyph Works
@@ -34,11 +35,13 @@ Long Text (1M tokens) → Visual Rendering → Image Processing (250K tokens) �
 The Glyph pipeline transforms text through these stages:
 
 1. **Content Analysis**: Determines compression suitability and optimal parameters
-2. **PDF Rendering**: Uses ReportLab for precise typography and layout control
-3. **Image Optimization**: Converts PDFs to images with provider-specific DPI settings
-4. **Quality Validation**: Multi-metric assessment ensures accuracy preservation
+2. **Text Extraction** (optional): For PDFs/Office docs, extract text via the Media system when installed
+3. **Visual Rendering**: Render text into images via a Pillow-based renderer
+4. **Quality Validation**: Best-effort checks + fallback to standard processing when needed
 5. **VLM Processing**: Vision models process the compressed visual content
-6. **Intelligent Caching**: Stores results for repeated content processing
+6. **Caching**: Store artifacts for repeated content processing
+
+**Optional (experimental)**: For PDFs, the media pipeline can try a direct PDF→image conversion path (requires `pdf2image` + system dependencies). When unavailable, it falls back to text extraction.
 
 ### Provider Optimization
 
@@ -82,7 +85,7 @@ response = llm.generate(
 
 ### Configuration System
 ```python
-from abstractcore import GlyphConfig
+from abstractcore.compression import GlyphConfig
 
 # Configure compression behavior
 glyph_config = GlyphConfig(
@@ -140,7 +143,8 @@ if response.metadata and response.metadata.get('compression_used'):
 ### Example 3: LMStudio Integration
 
 ```python
-from abstractcore import create_llm, GlyphConfig
+from abstractcore import create_llm
+from abstractcore.compression import GlyphConfig
 
 # Configure for LMStudio with custom settings
 glyph_config = GlyphConfig(
@@ -201,7 +205,7 @@ for doc in documents:
 ### Global Configuration
 
 ```python
-from abstractcore import GlyphConfig
+from abstractcore.compression import GlyphConfig
 
 config = GlyphConfig(
     enabled=True,                    # Enable/disable Glyph
@@ -357,7 +361,8 @@ benchmark_compression("large_document.pdf", "llama3.2-vision:11b")
 ### Debug Mode
 
 ```python
-from abstractcore import create_llm, GlyphConfig
+from abstractcore import create_llm
+from abstractcore.compression import GlyphConfig
 
 # Enable detailed logging
 config = GlyphConfig(enabled=True, debug_mode=True)
@@ -443,7 +448,8 @@ Complete Glyph Visual-Text Compression Example
 Demonstrates all aspects of Glyph compression with AbstractCore
 """
 
-from abstractcore import create_llm, GlyphConfig
+from abstractcore import create_llm
+from abstractcore.compression import GlyphConfig
 import time
 
 def basic_glyph_example():

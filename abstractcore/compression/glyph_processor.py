@@ -1,8 +1,10 @@
 """
 Glyph visual-text compression processor for AbstractCore.
 
-Based on the actual Glyph implementation using reportlab for PDF generation
-and pdf2image for conversion, with provider-specific optimization.
+Renders long text into images for vision-capable models using a Pillow-based renderer.
+
+This is an experimental feature; compression ratios and quality vary significantly by
+content, model, and rendering settings.
 """
 
 import time
@@ -29,7 +31,8 @@ class GlyphProcessor(BaseMediaHandler):
     Glyph visual-text compression processor for AbstractCore.
     
     Transforms long textual sequences into optimized images for processing
-    by Vision-Language Models (VLMs), achieving 3-4x token compression.
+    by Vision-Language Models (VLMs). This can reduce token usage for long inputs,
+    but results depend on content/model/OCR behavior.
     """
     
     def __init__(self, config: Optional[GlyphConfig] = None, **kwargs):
@@ -378,4 +381,3 @@ class GlyphProcessor(BaseMediaHandler):
             },
             'provider_profiles': list(self.provider_profiles.keys())
         }
-

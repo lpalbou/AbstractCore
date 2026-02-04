@@ -8,7 +8,7 @@
 
 ## Overview
 
-AbstractCore's Vision Compression system transforms long text documents into optimized visual representations, achieving 3-15x compression while maintaining high quality. This guide covers practical usage, configuration, and best practices.
+AbstractCore's Vision Compression system transforms long text documents into visual representations for vision-capable models. This can reduce token usage for long inputs, but compression ratios and quality vary significantly by content, model, and configuration.
 
 ## Table of Contents
 
@@ -21,6 +21,15 @@ AbstractCore's Vision Compression system transforms long text documents into opt
 7. [API Reference](#api-reference)
 
 ## Quick Start
+
+### Installation
+
+```bash
+# Glyph compression (Pillow renderer)
+pip install "abstractcore[compression]"
+```
+
+Optional (experimental): Direct PDF→image conversion requires `pdf2image` and its system dependencies (Poppler).
 
 ### Basic Glyph Compression
 
@@ -53,29 +62,25 @@ response = llm.generate(
 )
 ```
 
-**Expected Results:**
-- Compression ratio: 2.8-3.5x
-- Quality preservation: >90%
-- Processing time: 1-2 seconds
+**What to expect**:
+- Compression ratio and quality depend heavily on content, model OCR behavior, and rendering settings.
+- Treat this as a tuning problem: higher DPI/font sizes typically improve fidelity but increase image tokens.
 
 ### PDF Compression
 
-For PDF documents, use the DirectPDFProcessor:
+For PDF documents, you can use the (experimental) DirectPDFProcessor:
 
 ```python
 from abstractcore.media.processors.direct_pdf_processor import DirectPDFProcessor
-from pathlib import Path
 
-processor = DirectPDFProcessor()
-pdf_path = Path("document.pdf")
+# Requires: `pip install pdf2image` (+ Poppler installed on your system)
+processor = DirectPDFProcessor(pages_per_image=2, dpi=150)
+result = processor.process_file("document.pdf")
+if not result.success:
+    raise RuntimeError(result.error_message)
 
-# Convert PDF to compressed images
-result = processor._process_internal(
-    pdf_path,
-    MediaType.DOCUMENT
-)
-
-# Result contains base64-encoded images optimized for vision models
+# MediaContent (base64 PNG) you can pass to a vision-capable model:
+media_image = result.media_content
 ```
 
 ## Compression Methods
@@ -97,10 +102,9 @@ compressed = processor.process_text(
 ```
 
 **Characteristics:**
-- Compression: 2.8-3.5x
-- Quality: 90-95%
-- Infrastructure: None required
-- Speed: Fast (1-2s)
+- Compression/quality tradeoffs vary by content, model, and rendering settings
+- No external infrastructure beyond a vision-capable model
+- Latency depends on rendering + model inference
 
 ### 2. Optimized Glyph Compression
 
@@ -124,10 +128,8 @@ compressed = processor.process_text(text, provider="openai", model="gpt-4o")
 ```
 
 **Characteristics:**
-- Compression: 3.5-4.5x
-- Quality: 88-93%
-- Infrastructure: None required
-- Speed: Fast (1-2s)
+- More aggressive provider-specific rendering defaults (when configured)
+- Compression/quality tradeoffs vary by content, model, and rendering settings
 
 ### 3. Hybrid Compression (Experimental)
 
@@ -162,24 +164,20 @@ response = llm.generate(
 ```
 
 **Characteristics:**
-- Compression: 5-28x (varies by mode)
-- Quality: 85-95% (adjustable)
-- Infrastructure: Vision model required
-- Speed: Moderate (2-5s)
+- Compression/quality tradeoffs vary by mode and model
+- Requires a vision-capable model
+- Latency depends on rendering + model inference
 
 ## Provider Optimization
 
 ### Pre-configured Profiles
 
-AbstractCore includes optimized profiles for major providers:
+AbstractCore includes provider/model rendering profiles as starting points. They are heuristics (not guarantees) and may need tuning for your content and target vision model.
 
-| Provider | Model | Compression | Quality | Notes |
-|----------|-------|-------------|---------|-------|
-| OpenAI | gpt-4o | 3.5x | 93% | Balanced for GPT-4 |
-| OpenAI | gpt-4o-mini | 4.0x | 90% | Aggressive for mini |
-| Anthropic | claude-3-5-sonnet | 3.0x | 94% | Conservative for quality |
-| Anthropic | claude-haiku-4-5 | 3.5x | 91% | Balanced efficiency |
-| Ollama | llama3.2-vision | 4.5x | 88% | Maximum local compression |
+Examples:
+- OpenAI: gpt-4o, gpt-4o-mini
+- Anthropic: claude-3-5-sonnet, claude-haiku-4-5
+- Ollama: llama3.2-vision
 
 ### Using Provider Profiles
 

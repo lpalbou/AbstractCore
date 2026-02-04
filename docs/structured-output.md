@@ -53,7 +53,7 @@ assert person.age == 35
 - **Schema Compliance**: Automatic validation ensures data conforms to defined structure
 - **Provider Agnostic**: Identical API across OpenAI, Anthropic, Ollama, LMStudio, HuggingFace, MLX
 - **Automatic Strategy Selection**: Framework selects optimal implementation based on provider capabilities
-- **Production Tested**: 100% validation success rate across 23 comprehensive tests
+- **Test Coverage**: Supported strategies are exercised by the repository test suite (see `tests/structured/`)
 
 ---
 
@@ -80,10 +80,9 @@ AbstractCore implements two distinct strategies for structured output generation
 - Deterministic schema compliance
 - Optimal performance for production workloads
 
-**Validation Results** (from comprehensive testing):
-- Success rate: 100% across 23 tests
-- Retry rate: 0%
-- Schema violations: 0
+**Validation**:
+- Structured output behavior is covered by automated tests in this repo (see `tests/structured/`).
+- Exact success rates and latency depend on provider/model/schema complexity.
 
 #### Strategy 2: Prompted with Validation (Client-Side Enforcement)
 
@@ -182,16 +181,13 @@ if response_model and PYDANTIC_AVAILABLE:
 **Mechanism**:
 1. Full JSON schema passed to Ollama API
 2. Server-side constrained sampling enforces schema compliance
-3. Response guaranteed to match schema structure
+3. Response is expected to follow the schema (provider/model dependent)
 
-**Test Results**:
-- Models tested: qwen3:4b, gpt-oss:20b
-- Tests: 10
-- Success rate: 100%
-- Average response time: 22,828ms
-- Retry rate: 0%
+**Notes**:
+- Native structured output depends on the Ollama server/build and the selected model.
+- For example coverage, see `tests/structured/`.
 
-**Supported Models**: 50+ models including:
+**Supported Models**: Many models, including:
 - Llama 3.1, 3.2, 3.3 family
 - Qwen 2.5, 3, 3-coder family
 - Gemma 2b, 7b, gemma2, gemma3
@@ -203,7 +199,7 @@ if response_model and PYDANTIC_AVAILABLE:
 
 ### LMStudio
 
-**Implementation**: Native support via OpenAI-compatible `response_format` parameter (added in v2.5.1)
+**Implementation**: Native support via OpenAI-compatible `response_format` parameter
 
 ```python
 # AbstractCore implementation (abstractcore/providers/lmstudio_provider.py:211-222)
@@ -221,19 +217,11 @@ if response_model and PYDANTIC_AVAILABLE:
 **Mechanism**:
 1. OpenAI-compatible format passed to LMStudio server
 2. Server-side schema enforcement via underlying inference engine
-3. Guaranteed schema compliance
+3. Response is expected to follow the schema (server/model dependent)
 
-**Test Results**:
-- Models tested: qwen/qwen3-4b-2507, openai/gpt-oss-20b
-- Tests: 10
-- Success rate: 100%
-- Average response time: 31,442ms
-- Retry rate: 0%
-
-**Performance Characteristics**:
-- Simple schemas: 680ms average (fastest tested)
-- Medium schemas: 3,785ms average
-- Complex schemas: 76,832ms average
+**Notes**:
+- Behavior depends on the LMStudio server version and underlying model/runtime.
+- For example coverage, see `tests/structured/`.
 
 **Reference**: [LMStudio Documentation](https://lmstudio.ai/docs)
 
@@ -245,7 +233,7 @@ if response_model and PYDANTIC_AVAILABLE:
 
 #### GGUF Models (Native Support)
 
-**Backend**: llama-cpp-python with native structured output (added in v2.5.2)
+**Backend**: llama-cpp-python with native structured output
 
 ```python
 # AbstractCore implementation (abstractcore/providers/huggingface_provider.py:669-680)
@@ -260,21 +248,13 @@ if response_model and PYDANTIC_AVAILABLE:
     }
 ```
 
-**Test Results** (GGUF models):
-- Model tested: unsloth/Qwen3-4B-Instruct-GGUF
-- Tests: 3
-- Success rate: 100%
-- Average response time: 17,014ms
-- Retry rate: 0%
-
-**Performance Characteristics**:
-- Simple schemas: 3,559ms average
-- Medium schemas: 18,211ms average
-- Complex schemas: 29,272ms average (2.6-3.1x faster than Ollama/LMStudio for complex schemas)
+**Notes**:
+- GGUF structured output support depends on the llama-cpp-python backend and model.
+- For example coverage, see `tests/structured/`.
 
 #### Transformers Models (Native via Outlines)
 
-**Backend**: Hugging Face Transformers library with Outlines (added in v2.5.2)
+**Backend**: Hugging Face Transformers library with Outlines
 
 **Implementation**: Native support via Outlines constrained generation
 
@@ -303,44 +283,30 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 1. Outlines wraps transformers model and tokenizer
 2. JSON schema passed to constrained generator
 3. Server-side logit filtering ensures only valid tokens are sampled
-4. Guaranteed schema compliance - no validation errors
+4. Schema compliance is enforced via constrained decoding (provider/model dependent)
 5. Automatic fallback to prompted approach if Outlines unavailable
 
 **Installation**:
 ```bash
-pip install abstractcore[huggingface]  # Includes Outlines automatically
+pip install "abstractcore[huggingface]"  # Includes Outlines automatically
 ```
 
 **Characteristics**:
-- 100% schema compliance (constrained decoding)
-- Zero validation retries required
-- Works with any transformers-compatible model
-- Automatic detection and activation when Outlines installed
-- Graceful fallback to prompted approach if Outlines missing
+- Schema compliance via constrained decoding (still validated client-side)
+- Zero or minimal validation retries when supported
+- Works with many transformers-compatible models
+- Automatic detection and activation when Outlines is installed
+- Graceful fallback to prompted approach if Outlines is missing
 
-**Test Results** (Prompted Fallback - Outlines not installed):
-
-Tested with HuggingFace GGUF model (llama-cpp-python native support):
-- Model tested: unsloth/Qwen3-4B-Instruct-2507-GGUF (4B parameters)
-- Tests: 3 (simple, medium, complex)
-- Success rate: 100%
-- Response times:
-  - Simple schema: 3,639ms
-  - Medium schema: 184,476ms
-  - Complex schema: 85,493ms
-- Note: Uses llama-cpp-python's native structured output, not Outlines
-
-**Expected Performance** (With Outlines installed):
-- Success rate: 100% (guaranteed by constrained decoding)
-- Per-token overhead: +10-40ms depending on schema complexity
-- Net faster for medium-complex schemas (eliminates retry cost)
-- Requires: `pip install abstractcore[huggingface]` to install Outlines
+**Fallback behavior**:
+- If Outlines isn't available (or a backend doesn't support constrained decoding), AbstractCore falls back to prompted structured output with validation and retries.
+- Exact success rates and latency depend on provider/model/hardware/schema complexity.
 
 ---
 
 ### MLX (Apple Silicon)
 
-**Implementation**: Native via Outlines (added in v2.5.2)
+**Implementation**: Native via Outlines
 
 **Backend**: MLX with Outlines constrained generation
 
@@ -371,7 +337,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 
 **Installation**:
 ```bash
-pip install abstractcore[mlx]  # Includes Outlines automatically
+pip install "abstractcore[mlx]"  # Includes Outlines automatically
 ```
 
 **Models**:
@@ -380,68 +346,15 @@ pip install abstractcore[mlx]  # Includes Outlines automatically
 - All MLX-compatible models
 
 **Characteristics**:
-- 100% schema compliance (constrained decoding)
-- Zero validation retries required
+- Schema compliance via constrained decoding (still validated client-side)
+- Zero or minimal validation retries when supported
 - Optimized for Apple M-series processors
 - Automatic detection and activation when Outlines installed
 - Graceful fallback to prompted approach if Outlines missing
 
-**Test Results** (Comprehensive Comparison - October 26, 2025):
-
-Tested on Apple Silicon M4 Max (128GB RAM) with mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit:
-
-**WITHOUT Outlines (Prompted Fallback)**:
-- Tests: 3 (simple, medium, complex)
-- Success rate: 100%
-- Method: Client-side validation with prompted approach
-- Response times:
-  - Simple schema: 745ms
-  - Medium schema: 1,945ms
-  - Complex schema: 4,193ms
-
-**WITH Outlines (Native Constrained Generation)**:
-- Tests: 3 (simple, medium, complex)
-- Success rate: 100%
-- Method: Server-side constrained decoding
-- Outlines used: ✅ Yes
-- Response times:
-  - Simple schema: 2,031ms
-  - Medium schema: 9,904ms
-  - Complex schema: 9,840ms
-
-**Performance Comparison**:
-
-| Complexity | Prompted (ms) | Outlines Native (ms) | Overhead | Both Succeed? |
-|------------|---------------|----------------------|----------|---------------|
-| Simple | 745 | 2,031 | +173% | ✅ Yes (100%) |
-| Medium | 1,945 | 9,904 | +409% | ✅ Yes (100%) |
-| Complex | 4,193 | 9,840 | +135% | ✅ Yes (100%) |
-
-**Key Findings**:
-1. ✅ **100% success rate with BOTH approaches**: Prompted fallback performs excellently
-2. ⚠️ **Significant performance overhead**: Outlines native is 1.7-5x slower
-3. ✅ **Zero validation retries**: Both approaches achieved 100% success with zero retries
-4. 📊 **Prompted fallback recommended**: Given 100% success rate and superior performance
-5. 💡 **Outlines value proposition**: Theoretical guarantee vs proven reliability
-
-**Recommendation**:
-
-Given test results showing **100% success with prompted fallback at 2-5x better performance**, we recommend:
-
-- **Default**: Use prompted fallback (Outlines not installed) - Fast and reliable
-- **Optional**: Install Outlines for theoretical schema compliance guarantee if needed
-- **Production**: Prompted approach is production-ready with demonstrated 100% success rate
-
-**When to Use Outlines Native**:
-- Mission-critical applications where theoretical guarantee outweighs performance cost
-- Regulatory requirements for provable schema compliance
-- Complex schemas where you want absolute certainty (though prompted also achieved 100%)
-
-**When to Use Prompted (Default)**:
-- All general use cases (100% success demonstrated)
-- Performance-sensitive applications
-- Development and prototyping
-- Cost-sensitive production workloads
+**Performance notes**:
+- Prompted structured output (validation + retry) is the default fallback and is often the simplest to run.
+- Constrained decoding can be slower or faster depending on backend/model/schema; benchmark on your hardware if it matters.
 
 ---
 
@@ -497,7 +410,7 @@ assert isinstance(task.priority, Priority)
 print(f"Priority: {task.priority.value}")  # "critical"
 ```
 
-**Test Results**: Enum validation achieved 100% success rate across all providers in comprehensive testing.
+**Notes**: Enums are supported and exercised by tests; exact behavior depends on provider/model.
 
 ### Nested Objects
 
@@ -580,7 +493,7 @@ org = llm.generate(
 )
 ```
 
-**Test Results**: Complex schemas (3+ nesting levels) achieved 100% validation success across all providers with native support.
+**Notes**: Deeply nested schemas are supported; validate against your target provider/model and see `tests/structured/` for examples.
 
 ### Direct Handler Usage
 
@@ -695,7 +608,7 @@ class Person(BaseModel):
 
 ### Complexity Guidelines
 
-Based on performance testing, schema complexity affects response time but not validation success rate.
+Schema complexity affects latency and cost; keep schemas as small as practical.
 
 #### Simple Schemas (< 10 fields, 1 level)
 
@@ -707,10 +620,6 @@ class PersonInfo(BaseModel):
     email: str
     occupation: str
 ```
-
-**Performance** (average across providers):
-- Response time: 439ms - 8,473ms
-- Success rate: 100%
 
 **Recommended for**: User profiles, data extraction, form processing
 
@@ -725,10 +634,6 @@ class Project(BaseModel):
     tasks: List[Task]  # Nested objects
     total_hours: float
 ```
-
-**Performance** (average across providers):
-- Response time: 2,123ms - 146,408ms
-- Success rate: 100%
 
 **Recommended for**: Project management, task tracking, structured data extraction
 
@@ -745,10 +650,6 @@ class Organization(BaseModel):
     #     # Employee contains:
     #     #   skills: List[Skill]  # Level 4
 ```
-
-**Performance** (average across providers):
-- Response time: 9,194ms - 163,556ms
-- Success rate: 100%
 
 **Recommended for**: Organizational hierarchies, knowledge graphs, complex data models
 
@@ -801,44 +702,14 @@ class Data(BaseModel):
 
 ## Performance Characteristics
 
-Performance data based on comprehensive testing across 23 test cases with 3 providers, 5 models, and 3 complexity levels.
+Structured output performance is highly dependent on:
+- Provider/backend strategy (native constrained decoding vs prompted validation/retry)
+- Schema complexity (field count + nesting depth)
+- Model choice, server configuration, and hardware
+- Sampling settings (use `temperature=0` when you care about schema fidelity)
 
-### By Provider
-
-| Provider | Average Response Time | Success Rate | Notes |
-|----------|----------------------|--------------|-------|
-| Ollama | 22,828ms | 100% | Consistent across complexity |
-| LMStudio | 31,442ms | 100% | Fastest for simple schemas |
-| HuggingFace GGUF | 17,014ms | 100% | Best for complex schemas |
-
-### By Schema Complexity
-
-| Complexity | Ollama | LMStudio | HuggingFace GGUF | Overall |
-|------------|--------|----------|------------------|---------|
-| Simple | 4,290ms | 947ms | 3,559ms | 2,932ms |
-| Medium | 7,431ms | 39,213ms | 18,211ms | 21,618ms |
-| Complex | 90,694ms | 76,832ms | 29,272ms | 65,599ms |
-
-### Model Selection Guidelines
-
-Based on empirical testing:
-
-**Simple Schemas** (< 10 fields):
-- **Recommended**: LMStudio qwen3-4b (680ms average)
-- Alternative: HuggingFace GGUF (3,559ms average)
-- Alternative: Ollama gpt-oss:20b (6,219ms average)
-
-**Medium Schemas** (10-30 fields):
-- **Recommended**: LMStudio qwen3-4b (3,785ms average)
-- Alternative: Ollama gpt-oss:20b (10,291ms average)
-- Alternative: HuggingFace GGUF (18,211ms average)
-
-**Complex Schemas** (30+ fields, 3+ levels):
-- **Recommended**: HuggingFace GGUF qwen3-4b (29,272ms average)
-- Alternative: Ollama gpt-oss:20b (17,831ms average)
-- Alternative: LMStudio (76,832ms average)
-
-**Note**: HuggingFace GGUF models demonstrate 2.6-3.1x latency reduction for complex schemas compared to other providers.
+If performance matters, benchmark on your target provider/model/hardware.
+Historical benchmark notes (non-authoritative) may exist under `docs/reports/`.
 
 ### Temperature Settings
 
@@ -1140,78 +1011,30 @@ retry = FeedbackRetry(max_attempts=3)
 
 ## Testing and Validation
 
-### Comprehensive Test Suite
+Structured output behavior is exercised by automated tests under `tests/structured/`.
 
-AbstractCore includes comprehensive test suites for validating structured output across all providers:
+### Running tests
 
-**Test Files**:
-- `tests/structured/test_comprehensive_native.py` - Ollama and LMStudio (20 tests, 100% success)
-- `tests/structured/test_huggingface_structured.py` - HuggingFace GGUF models (3 tests, 100% success)
-- `tests/structured/test_outlines_huggingface.py` - HuggingFace Transformers with Outlines
-- `tests/structured/test_outlines_mlx.py` - MLX with Outlines
+From this repository:
 
-**Running Tests**:
 ```bash
-# Test HuggingFace with Outlines (requires Outlines installed)
-python tests/structured/test_outlines_huggingface.py
-
-# Test MLX with Outlines (requires Outlines installed)
-python tests/structured/test_outlines_mlx.py
-
-# View results
-cat test_results_huggingface_outlines.json
-cat test_results_mlx_outlines.json
+pip install -e ".[test]"
+pytest tests/structured -q
 ```
 
-### Test Results Summary
+Some provider-specific tests require additional extras:
 
-**Current Test Results** (October 26, 2025):
+- HuggingFace / Outlines: `pip install -e ".[huggingface]"`
+- MLX: `pip install -e ".[mlx]"` (macOS + Apple Silicon only)
 
-**Hardware**: Apple Silicon M4 Max, 128GB RAM
+If you're installing from PyPI and just want the test dependencies:
 
-### HuggingFace Provider
-
-| Model | Type | Complexity | Time (ms) | Success Rate | Method |
-|-------|------|------------|-----------|--------------|--------|
-| Qwen3-4B-GGUF | GGUF | Simple | 3,551 | 100% | llama-cpp-python native |
-| Qwen3-4B-GGUF | GGUF | Medium | 36,090 | 100% | llama-cpp-python native |
-| Qwen3-4B-GGUF | GGUF | Complex | 41,479 | 100% | llama-cpp-python native |
-
-**Note**: GGUF models use llama-cpp-python's native structured output, not Outlines. For HuggingFace Transformers models with Outlines, model download is required.
-
-### MLX Provider (with comparison)
-
-| Model | Complexity | Prompted (ms) | Outlines Native (ms) | Overhead | Success Rate |
-|-------|------------|---------------|----------------------|----------|--------------|
-| Qwen3-Coder-30B | Simple | 745 | 2,031 | +173% | 100% / 100% |
-| Qwen3-Coder-30B | Medium | 1,945 | 9,904 | +409% | 100% / 100% |
-| Qwen3-Coder-30B | Complex | 4,193 | 9,840 | +135% | 100% / 100% |
-
-**Performance Analysis**:
-- **Prompted fallback**: Faster (745-4,193ms), still achieves 100% success
-- **Outlines native**: Slower (2,031-9,840ms), guarantees schema compliance through constrained generation
-- **Overhead**: 135-409% slower with Outlines, most significant for medium complexity schemas
-- **Trade-off**: Guaranteed compliance vs speed
-
-**Key Findings**:
-1. ✅ **100% success rate** across ALL tests (prompted and native, all providers)
-2. ✅ **MLX prompted fallback**: Excellent performance without Outlines (745-4,193ms)
-3. ✅ **MLX with Outlines**: Guaranteed schema compliance at 2-5x performance cost
-4. ⚠️ **Performance overhead**: Constrained generation adds significant per-token cost
-5. ✅ **Graceful fallback verified**: Falls back to prompted when Outlines unavailable
-6. ✅ **Both approaches production-ready**: 100% success rate with either method
-
-**To Test with Outlines Native Support**:
 ```bash
-# Install Outlines
-pip install "outlines>=0.1.0"
-
-# Re-run tests to see native constrained generation
-python tests/structured/test_outlines_mlx.py
+pip install "abstractcore[test]"
+pytest -q
 ```
 
----
+### Notes
 
-**Last Updated**: October 26, 2025
-**Version**: 2.5.2
-**Test Coverage**: Comprehensive testing across all providers with 100% success rate
+- Performance and success rates vary widely by provider/model/schema complexity and are not guaranteed.
+- If performance matters, benchmark on your target hardware/provider setup.

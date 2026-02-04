@@ -7,7 +7,7 @@ AbstractCore provides seamless integration with Codex CLI, enabling powerful AI-
 ## Prerequisites
 
 - Python 3.9+
-- AbstractCore server installed: `pip install abstractcore[server]`
+- AbstractCore server installed: `pip install "abstractcore[server]"`
 - Codex CLI (follow Codex installation instructions)
 - A supported language model (local or cloud)
 

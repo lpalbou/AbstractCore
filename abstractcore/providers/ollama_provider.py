@@ -273,7 +273,7 @@ class OllamaProvider(BaseProvider):
                     else:
                         payload["messages"].append(multimodal_message)
                 except ImportError:
-                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
                     if user_message_text:
                         payload["messages"].append({
                             "role": "user",

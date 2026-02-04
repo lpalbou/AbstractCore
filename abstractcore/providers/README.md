@@ -190,7 +190,7 @@ providers = list_available_providers()  # ['openai', 'anthropic', 'ollama', ...]
 # Get provider details
 info = get_provider_info("openai")
 print(f"Features: {info.supported_features}")
-print(f"Install: pip install abstractcore[{info.installation_extras}]")
+print(f"Install: pip install \"abstractcore[{info.installation_extras}]\"")
 
 # Discover all providers with models
 providers_with_models = get_all_providers_with_models()
@@ -243,7 +243,7 @@ for chunk in processor.process_stream(response_stream, tools):
 
 **Capabilities**: GPT-3.5, GPT-4, GPT-5, native tools, structured outputs, vision (4o/4-turbo), embeddings
 **Authentication**: API key required
-**Installation**: `pip install abstractcore[openai]`
+**Installation**: `pip install "abstractcore[openai]"`
 
 **Setup**:
 ```bash
@@ -334,7 +334,7 @@ response = llm.generate("Hello from OpenRouter")
 
 **Capabilities**: Claude (Haiku, Sonnet, Opus), native tools, structured outputs (via tool trick), vision
 **Authentication**: API key required
-**Installation**: `pip install abstractcore[anthropic]`
+**Installation**: `pip install "abstractcore[anthropic]"`
 
 **Setup**:
 ```bash
@@ -364,7 +364,7 @@ report = llm.generate("Analyze sales data", response_model=Report)
 
 **Capabilities**: Local models (Llama, Qwen, Mistral, etc.), prompted tools, streaming, structured outputs (native JSON schema), embeddings
 **Authentication**: None (local server)
-**Installation**: `pip install abstractcore[ollama]` + [Ollama installation](https://ollama.com)
+**Installation**: `pip install "abstractcore[ollama]"` + [Ollama installation](https://ollama.com)
 
 **Setup**:
 ```bash
@@ -440,7 +440,7 @@ task = llm.generate("Create task: Fix bug, priority 1", response_model=Task)
 
 **Capabilities**: OpenAI-compatible API + guided decoding, beam search, Multi-LoRA management
 **Authentication**: Optional (depends on your deployment)
-**Installation**: `pip install abstractcore[vllm]` (plus a running vLLM server)
+**Installation**: `pip install "abstractcore[vllm]"` (plus a running vLLM server)
 
 **Setup**:
 - Base URL: `base_url=...` or `VLLM_BASE_URL` (default: `http://localhost:8000/v1`)
@@ -462,8 +462,8 @@ response = llm.generate(
 **Capabilities**: Transformers models, GGUF models (via llama-cpp-python), vision models, prompted tools, structured outputs (native for GGUF, optional Outlines for transformers)
 **Authentication**: Optional (public models work without API key)
 **Installation**:
-- Transformers: `pip install abstractcore[huggingface]`
-- GGUF: `pip install abstractcore[huggingface] llama-cpp-python`
+- Transformers: `pip install "abstractcore[huggingface]"`
+- GGUF: `pip install "abstractcore[huggingface]" llama-cpp-python`
 - Outlines (optional): `pip install outlines>=0.1.0`
 
 **Setup**:
@@ -519,7 +519,7 @@ llm = create_llm("huggingface", model="GGUF-model", n_gpu_layers=-1)  # All laye
 
 **Capabilities**: Apple Silicon optimized models, prompted tools, streaming, structured outputs (optional Outlines)
 **Authentication**: None (local models)
-**Installation**: `pip install abstractcore[mlx]` (macOS with Apple Silicon only)
+**Installation**: `pip install "abstractcore[mlx]"` (macOS with Apple Silicon only)
 
 **Setup**:
 ```bash

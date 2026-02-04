@@ -22,9 +22,9 @@ relationships = [item for item in result['@graph'] if item.get('@id', '').starts
 
 ```bash
 # Install AbstractCore (pick one full install)
-pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
@@ -32,7 +32,7 @@ pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, exclud
 # 3. Start Ollama service
 
 # Alternative: Use cloud providers
-pip install abstractcore[openai,anthropic]
+pip install "abstractcore[openai,anthropic]"
 ```
 
 ### Model Performance Recommendations
@@ -208,7 +208,7 @@ The `extractor` CLI provides direct terminal access for knowledge graph extracti
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after installing AbstractCore; add `abstractcore[media]` for PDFs)
+# Simple usage (after installing AbstractCore; add `pip install "abstractcore[media]"` for PDFs)
 extractor document.pdf
 
 # With specific format and focus

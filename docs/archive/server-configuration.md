@@ -214,8 +214,8 @@ grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl | \
 ```dockerfile
 FROM python:3.9-slim
 
-# Install dependencies
-RUN pip install abstractcore[server,all-providers]
+# Install dependencies (server + the providers you plan to use)
+RUN pip install "abstractcore[server,openai]"
 
 # Configure environment
 ENV ABSTRACTCORE_DEFAULT_PROVIDER=openai

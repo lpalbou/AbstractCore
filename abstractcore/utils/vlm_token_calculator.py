@@ -24,7 +24,12 @@ from typing import Tuple, Dict, Any, Optional, List
 from pathlib import Path
 import logging
 
-from PIL import Image
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    Image = None
+    PIL_AVAILABLE = False
 
 from ..utils.structured_logging import get_logger
 from ..architectures.detection import get_model_capabilities, detect_architecture
@@ -143,6 +148,11 @@ class VLMTokenCalculator:
         """
         # Get image dimensions
         if image_path and image_path.exists():
+            if not PIL_AVAILABLE:
+                raise ImportError(
+                    "PIL/Pillow is required to read image files for token calculation. "
+                    "Install with: pip install \"abstractcore[media]\""
+                )
             try:
                 with Image.open(image_path) as img:
                     width, height = img.size

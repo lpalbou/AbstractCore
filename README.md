@@ -19,33 +19,49 @@ First-class support for:
 - glyph visual-text compression for long documents (**)
 - unified openai-compatible endpoint for all providers and models
 
-(*) If a model doesn’t support images, AbstractCore can use a configured vision model to generate an image description and feed that to your text-only model. See [Media Handling](docs/media-handling-system.md) and [Centralized Config](docs/centralized-config.md).
-(**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md).
+(*) If a model doesn’t support images, AbstractCore can use a configured vision model to generate an image description and feed that to your text-only model. See [Media Handling](docs/media-handling-system.md) (requires `pip install "abstractcore[media]"`) and [Centralized Config](docs/centralized-config.md).
+(**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (install `pip install "abstractcore[compression]"`; for PDFs also install `pip install "abstractcore[media]"`).
 
 Docs: [Getting Started](docs/getting-started.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
 
 ## Install
 
 ```bash
-# Minimal install (local providers + core features)
+# Core (small, lightweight default)
 pip install abstractcore
 
-# Cloud providers
-pip install abstractcore[openai]     # OpenAI SDK
-pip install abstractcore[anthropic]  # Anthropic SDK
+# Providers
+pip install "abstractcore[openai]"       # OpenAI SDK
+pip install "abstractcore[anthropic]"    # Anthropic SDK
+pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
+pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
+pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm (heavy)
 
-# Full installs
-pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install abstractcore[all-non-mlx]  # Linux/Windows (excludes MLX; use all-gpu for vLLM)
-pip install abstractcore[all-gpu]      # Linux GPU (includes vLLM)
+# Optional features
+pip install "abstractcore[tools]"       # built-in web tools (fetch_url, web_search)
+pip install "abstractcore[media]"       # images, PDFs, Office docs
+pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
+pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
+pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
+pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
+
+# Combine extras (zsh: keep quotes)
+pip install "abstractcore[openai,media,tools]"
+
+# Turnkey "everything" installs (pick one)
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 ```
 
 ## Quickstart
 
+OpenAI example (requires `pip install "abstractcore[openai]"`):
+
 ```python
 from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
@@ -77,7 +93,7 @@ import asyncio
 from abstractcore import create_llm
 
 async def main():
-    llm = create_llm("openai", model="gpt-5-mini")
+    llm = create_llm("openai", model="gpt-4o-mini")
     resp = await llm.agenerate("Give me 5 bullet points about HTTP caching.")
     print(resp.content)
 
@@ -91,7 +107,7 @@ from abstractcore import create_llm
 
 llm = create_llm(
     "openai",
-    model="gpt-5-mini",
+    model="gpt-4o-mini",
     max_tokens=8000,        # total budget (input + output)
     max_output_tokens=1200, # output cap
 )
@@ -137,7 +153,7 @@ from abstractcore import create_llm, tool
 def get_weather(city: str) -> str:
     return f"{city}: 22°C and sunny"
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 resp = llm.generate("What's the weather in Paris? Use the tool.", tools=[get_weather])
 
 print(resp.content)
@@ -157,12 +173,14 @@ class Answer(BaseModel):
     title: str
     bullets: list[str]
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 answer = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 print(answer.bullets)
 ```
 
 ## Media / vision input
+
+Requires `pip install "abstractcore[media]"`.
 
 ```python
 from abstractcore import create_llm
@@ -177,7 +195,7 @@ See [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](do
 ## HTTP server (OpenAI-compatible gateway)
 
 ```bash
-pip install abstractcore[server]
+pip install "abstractcore[server]"
 python -m abstractcore.server.app
 ```
 
@@ -201,9 +219,9 @@ See [Server](docs/server.md).
 Interactive chat:
 
 ```bash
-abstractcore-chat --provider openai --model gpt-5-mini
+abstractcore-chat --provider openai --model gpt-4o-mini
 abstractcore-chat --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
-abstractcore-chat --provider openrouter --model openai/gpt-5-mini
+abstractcore-chat --provider openrouter --model openai/gpt-4o-mini
 ```
 
 Token limits:

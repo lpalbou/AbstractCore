@@ -7,9 +7,10 @@ web scraping, command execution, and user interaction.
 Migrated from legacy system with enhanced decorator support.
 """
 
+from __future__ import annotations  # avoid hard optional deps at import time
+
 import os
 import subprocess
-import requests
 import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, Union
@@ -24,8 +25,23 @@ from datetime import datetime
 from urllib.parse import parse_qs, parse_qsl, urlencode, unquote, urljoin, urlparse, urlunparse
 import mimetypes
 
-from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
-from bs4.element import NavigableString, Tag
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    requests = None  # type: ignore[assignment]
+    REQUESTS_AVAILABLE = False
+
+try:
+    from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+    from bs4.element import NavigableString, Tag
+    BS4_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    BeautifulSoup = None  # type: ignore[assignment]
+    XMLParsedAsHTMLWarning = None  # type: ignore[assignment]
+    NavigableString = None  # type: ignore[assignment]
+    Tag = None  # type: ignore[assignment]
+    BS4_AVAILABLE = False
 
 try:
     import lxml  # noqa: F401
@@ -3552,6 +3568,25 @@ def web_search(
             url = "https://duckduckgo.com/html/"
             params: Dict[str, Any] = {"q": query, "kl": region}
             headers = {"User-Agent": "AbstractCore-WebSearch/1.0", "Accept-Language": region}
+            if not REQUESTS_AVAILABLE:
+                payload: Dict[str, Any] = {
+                    "engine": "duckduckgo",
+                    "source": "duckduckgo.text",
+                    "query": query,
+                    "params": {
+                        "num_results": num_results,
+                        "safe_search": safe_search,
+                        "region": region,
+                        "time_range": normalized_time_range,
+                        "backend": "duckduckgo.html",
+                    },
+                    "results": [],
+                    "error": "requests is not installed",
+                    "hint": "Install with: pip install \"abstractcore[tools]\" (recommended) or `pip install ddgs`.",
+                }
+                if ddgs_error:
+                    payload["ddgs_error"] = ddgs_error
+                return _json_output(payload)
             resp = requests.get(url, params=params, headers=headers, timeout=15)
             resp.raise_for_status()
             page = resp.text or ""
@@ -3699,6 +3734,18 @@ def fetch_url(
         fetch_url("https://httpbin.org/post", method="POST", data={"test": "value"})  # POST request
         fetch_url("https://example.com/image.jpg", include_binary_preview=True)  # Fetch image with preview
     """
+    if not REQUESTS_AVAILABLE:
+        rendered = (
+            "❌ Missing dependency: `requests`\n"
+            "This tool fetches URLs using `requests`.\n"
+            "Install with: pip install \"abstractcore[tools]\""
+        )
+        return {
+            "success": False,
+            "error": "requests is not installed",
+            "url": str(url),
+            "rendered": rendered,
+        }
     try:
         # Validate URL
         parsed_url = urlparse(url)
@@ -4526,6 +4573,11 @@ def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str
     if not html_content:
         return "", "", ""
 
+    if not BS4_AVAILABLE or BeautifulSoup is None:
+        stripped = re.sub(r"<[^>]+>", " ", str(html_content or ""))
+        extracted = _normalize_extracted_text(stripped)
+        return "", "", extracted
+
     parser = _get_appropriate_parser(html_content)
     import warnings
 
@@ -4981,6 +5033,21 @@ def _parse_html_content(
     # Detect if content is actually XML (fallback detection)
     if _is_xml_content(html_content):
         return _parse_xml_content(html_content, include_full_content)
+
+    if not BS4_AVAILABLE or BeautifulSoup is None:
+        fallback = _normalize_extracted_text(re.sub(r"<[^>]+>", " ", str(html_content or "")))
+        preview = fallback if include_full_content else fallback[:2000]
+        if not include_full_content and len(fallback) > 2000:
+            preview += "\n\n... (truncated)"
+        return "\n".join(
+            [
+                "🌐 HTML Document Analysis",
+                "⚠️  BeautifulSoup is not installed; returning text-only fallback.",
+                "Install with: pip install \"abstractcore[tools]\"",
+                ("📄 Text Content:" if include_full_content else "📄 Text Content Preview:"),
+                preview,
+            ]
+        )
     
     result_parts = []
     result_parts.append("🌐 HTML Document Analysis")

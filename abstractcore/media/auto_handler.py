@@ -106,19 +106,10 @@ class AutoMediaHandler(BaseMediaHandler):
         # VideoProcessor (dependency-free)
         availability['video'] = True
         
-        # GlyphProcessor (requires reportlab and pdf2image)
-        glyph_deps_available = True
-        if GLYPH_AVAILABLE and self.enable_compression:
-            # Check actual dependencies
-            try:
-                import reportlab
-                import pdf2image
-            except ImportError:
-                glyph_deps_available = False
-        else:
-            glyph_deps_available = False
-            
-        availability['glyph'] = glyph_deps_available
+        # GlyphProcessor (PIL renderer). Requires Pillow at runtime.
+        availability['glyph'] = bool(
+            GLYPH_AVAILABLE and self.enable_compression and availability.get('image', False)
+        )
 
         return availability
 
@@ -388,19 +379,21 @@ class AutoMediaHandler(BaseMediaHandler):
         # Check dependencies
         missing_deps = []
         try:
-            import reportlab
+            from PIL import Image  # noqa: F401
         except ImportError:
-            missing_deps.append("reportlab")
+            missing_deps.append("Pillow")
             
         try:
             import pdf2image
         except ImportError:
-            missing_deps.append("pdf2image")
+            # Only required for the experimental direct PDF→image path.
+            missing_deps.append("pdf2image (optional)")
             
         if missing_deps:
             deps_str = ", ".join(missing_deps)
             self.logger.warning(f"Missing Glyph dependencies: {deps_str}")
-            self.logger.warning(f"Install with: pip install {' '.join(missing_deps)}")
+            self.logger.warning("Install with: pip install \"abstractcore[compression]\" (Pillow renderer)")
+            self.logger.warning("Optional (PDF→image): pip install pdf2image (+ Poppler installed on your system)")
         
         if not self.enable_compression:
             self.logger.warning("Glyph compression is disabled in AutoMediaHandler configuration")

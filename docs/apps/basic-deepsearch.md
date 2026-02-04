@@ -21,6 +21,16 @@ BasicDeepSearch implements a state-of-the-art four-stage research pipeline:
 - **Multiple Formats**: Structured, narrative, or executive report styles
 - **Configurable Depth**: Brief, standard, or comprehensive research modes
 
+## Installation
+
+BasicDeepSearch relies on the built-in web tools (`web_search`, `fetch_url`).
+
+```bash
+pip install "abstractcore[tools]"
+# plus any provider extras you use, e.g.:
+# pip install "abstractcore[openai]"
+```
+
 ## CLI Usage
 
 ### Basic Usage

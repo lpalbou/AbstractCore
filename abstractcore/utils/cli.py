@@ -985,7 +985,7 @@ class SimpleCLI:
         try:
             from mlx_lm.models.cache import save_prompt_cache
         except Exception:
-            self._print_error("❌ MLX cache saving requires mlx-lm (install: `pip install abstractcore[mlx]`)")
+            self._print_error("❌ MLX cache saving requires mlx-lm (install: `pip install \"abstractcore[mlx]\"`)")
             return
 
         meta: Dict[str, str] = {
@@ -1035,7 +1035,7 @@ class SimpleCLI:
         try:
             from mlx_lm.models.cache import load_prompt_cache
         except Exception:
-            self._print_error("❌ MLX cache loading requires mlx-lm (install: `pip install abstractcore[mlx]`)")
+            self._print_error("❌ MLX cache loading requires mlx-lm (install: `pip install \"abstractcore[mlx]\"`)")
             return
 
         try:

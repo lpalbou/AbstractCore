@@ -305,8 +305,15 @@ class HuggingFaceProvider(BaseProvider):
         return any(vision_keyword in model_lower for vision_keyword in vision_models)
 
     def _setup_device_transformers(self):
-        """Setup device for transformers models"""
-        if not TRANSFORMERS_AVAILABLE:
+        """Setup device for transformers models (best-effort).
+
+        We validate explicit device requests even when Transformers isn't available,
+        since Torch availability (MPS/CUDA) may still matter for downstream behavior.
+        """
+        try:
+            import torch  # type: ignore
+        except Exception:
+            self.device = "cpu"
             return
 
         requested = str(self.device or "").strip().lower() if isinstance(self.device, str) else ""
@@ -332,6 +339,11 @@ class HuggingFaceProvider(BaseProvider):
                     self.device = "cpu"
             else:
                 self.device = "cpu"
+            return
+
+        if not TRANSFORMERS_AVAILABLE:
+            # Without transformers, default to CPU for safety.
+            self.device = "cpu"
             return
 
         # Auto device selection.
@@ -862,7 +874,7 @@ class HuggingFaceProvider(BaseProvider):
             # Check if Outlines is required but unavailable
             if self.structured_output_method == "native_outlines" and not OUTLINES_AVAILABLE:
                 return GenerateResponse(
-                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install abstractcore[huggingface]",
+                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install \"abstractcore[huggingface]\"",
                     model=self.model,
                     finish_reason="error"
                 )
@@ -939,7 +951,7 @@ class HuggingFaceProvider(BaseProvider):
                         else:
                             prompt = str(multimodal_message["content"])
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")
 
@@ -1665,7 +1677,7 @@ class HuggingFaceProvider(BaseProvider):
                     user_message_content = multimodal_message if isinstance(multimodal_message, str) else prompt
 
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
                 user_message_content = prompt
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")

@@ -202,7 +202,7 @@ python scripts/validate_integration.py
 
 ### "Dependencies missing"
 **Status**: Solvable now
-**Solution**: `pip install abstractcore[media-full]`
+**Solution**: `pip install "abstractcore[media]"`
 ```
 
 **Justification**:

@@ -17,7 +17,7 @@ In 5 minutes, you'll have a universal LLM gateway running locally that:
 ## Step 1: Install (30 seconds)
 
 ```bash
-pip install abstractcore[server]
+pip install "abstractcore[server]"
 ```
 
 ## Step 2: Start Server (10 seconds)

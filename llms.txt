@@ -1,59 +1,63 @@
 # AbstractCore
 
-> Unified Python interface for cloud + local LLM providers with streaming, tool calling, media/vision input handling, structured output, centralized configuration, and an optional OpenAI-compatible HTTP server.
+> Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media/vision handling, embeddings, and an optional OpenAI-compatible HTTP server. The default install is lightweight; features are enabled via extras.
+
+Core install:
+- `pip install abstractcore`
+
+Common extras (quote brackets for zsh):
+- `pip install "abstractcore[openai]"` / `"abstractcore[anthropic]"`
+- `pip install "abstractcore[huggingface]"` / `"abstractcore[mlx]"` / `"abstractcore[vllm]"`
+- `pip install "abstractcore[tools]"` / `"abstractcore[media]"` / `"abstractcore[embeddings]"` / `"abstractcore[compression]"`
+- `pip install "abstractcore[server]"` / `"abstractcore[tokens]"`
 
 ## Start Here
 
-- [README.md](README.md) — project overview, install, core concepts
-- [docs/getting-started.md](docs/getting-started.md) — 5-minute setup (`create_llm`, `generate`)
-- [docs/prerequisites.md](docs/prerequisites.md) — API keys + local provider setup (Ollama/LMStudio/etc)
-- [docs/api-reference.md](docs/api-reference.md) — Python API reference (sync/async, streaming)
-- [docs/examples.md](docs/examples.md) — copy/paste examples (tools, streaming, sessions)
+- [README.md](README.md): project overview, install matrix, quickstart
+- [docs/README.md](docs/README.md): docs index and reading paths
+- [docs/getting-started.md](docs/getting-started.md): 5-minute intro (`create_llm`, `generate`)
+- [docs/prerequisites.md](docs/prerequisites.md): provider setup + install extras
+- [docs/api-reference.md](docs/api-reference.md): public API reference
 
-## Provider IDs (Factory Names)
+## Core API
 
-- Cloud: `openai`, `anthropic`, `openrouter`
-- Local / self-hosted: `ollama`, `lmstudio`, `mlx`, `huggingface`, `vllm`, `openai-compatible`
+- [abstractcore/__init__.py](abstractcore/__init__.py): lightweight public exports
+- [abstractcore/core/factory.py](abstractcore/core/factory.py): `create_llm(...)`
+- [abstractcore/providers/registry.py](abstractcore/providers/registry.py): provider IDs + install extras
+- [abstractcore/providers/base.py](abstractcore/providers/base.py): shared generate logic (tools/media/structured output)
+- [docs/centralized-config.md](docs/centralized-config.md): config defaults + API key management
 
-## Configuration
+## Features
 
-- [docs/centralized-config.md](docs/centralized-config.md) — defaults + API key management (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`)
-- [abstractcore/providers/registry.py](abstractcore/providers/registry.py) — single source of truth for providers + default models
+- [docs/tool-calling.md](docs/tool-calling.md): `@tool`, passthrough vs execution
+- [abstractcore/tools/](abstractcore/tools/): tool system (core/registry/parser/handler)
+- [docs/tool-syntax-rewriting.md](docs/tool-syntax-rewriting.md): tool-call format rewriting (`tool_call_tags`, server `agent_format`)
+- [docs/structured-output.md](docs/structured-output.md): `response_model=...`
+- [docs/media-handling-system.md](docs/media-handling-system.md): `media=[...]` + file processing
+- [abstractcore/media/](abstractcore/media/): media pipeline (optional deps behind extras)
+- [docs/glyphs.md](docs/glyphs.md): glyph compression
+- [abstractcore/compression/](abstractcore/compression/): glyph compression (optional)
+- [docs/embeddings.md](docs/embeddings.md): embeddings usage
+- [abstractcore/embeddings/](abstractcore/embeddings/): `EmbeddingManager` (optional)
+- [docs/mcp.md](docs/mcp.md): MCP tool servers (HTTP/stdio)
 
-## Tools & Tool Syntax
+## Server
 
-- [docs/tool-calling.md](docs/tool-calling.md) — `@tool`, `GenerateResponse.tool_calls`, passthrough vs execution
-- [docs/tool-syntax-rewriting.md](docs/tool-syntax-rewriting.md) — `tool_call_tags` (Python) + `agent_format` (server)
-- [abstractcore/tools/parser.py](abstractcore/tools/parser.py) — tool-call detection/parsing (tags + JSON-ish)
-- [abstractcore/providers/streaming.py](abstractcore/providers/streaming.py) — unified streaming + incremental tool-call parsing
-- [docs/mcp.md](docs/mcp.md) — MCP tool servers (HTTP/stdio) as tool sources
+- [docs/server.md](docs/server.md): OpenAI-compatible HTTP endpoints
+- [abstractcore/server/app.py](abstractcore/server/app.py): FastAPI implementation
 
-## Media & Vision (Input)
+## Development
 
-- [docs/media-handling-system.md](docs/media-handling-system.md) — universal file attachments + vision fallback
-- [docs/vision-capabilities.md](docs/vision-capabilities.md) — vision support overview
+- [pyproject.toml](pyproject.toml): dependencies + extras (keep default small)
+- [CONTRIBUTING.md](CONTRIBUTING.md): contributor workflow
+- [tests/](tests/): pytest suite
 
-## Observability
+## Optional
 
-- [docs/interaction-tracing.md](docs/interaction-tracing.md) — capture prompts/responses/timing/usage for debugging & compliance
-- [docs/api-reference.md](docs/api-reference.md) — events (`EventType`, `on_global`, `emit_global`)
-- [docs/architecture.md](docs/architecture.md) — high-level system overview
-
-## Thinking / Reasoning
-
-- `thinking`: `None|"auto"|"on"|"off"|True|False|"low"|"medium"|"high"` (best-effort; warns when unsupported)
-- Reasoning capture: normalized into `GenerateResponse.metadata["reasoning"]` and stripped from `content` when needed (Harmony transcripts, `<think>` tags, wrapper tokens, and `</think>`-only outputs) via `abstractcore/architectures/response_postprocessing.py`
-
-## Server (OpenAI-Compatible REST API)
-
-- [docs/server.md](docs/server.md) — endpoints + request fields (`base_url`, `agent_format`)
-- [abstractcore/server/app.py](abstractcore/server/app.py) — FastAPI implementation
-
-## CLI
-
-- [docs/acore-cli.md](docs/acore-cli.md) — interactive CLI usage
-- [abstractcore/utils/cli.py](abstractcore/utils/cli.py) — CLI entrypoint + flags (`--base-url`, `--max-output-tokens`, `/max-tokens`, `/thinking`, `/show-reasoning`)
+- [docs/reports/README.md](docs/reports/README.md): non-authoritative engineering notes
+- [docs/research/README.md](docs/research/README.md): non-authoritative research/experiments
+- [docs/archive/README.md](docs/archive/README.md): historical/superseded documentation
 
 ## Full Context
 
-- [llms-full.txt](llms-full.txt) — standalone, copy/pasteable “full context” file (no required external doc fetches)
+- [llms-full.txt](llms-full.txt): standalone repo context for LLMs

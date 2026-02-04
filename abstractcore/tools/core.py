@@ -282,6 +282,8 @@ def tool(
 
         # Attach tool definition to function for easy access
         f._tool_definition = tool_def
+        # Public alias (docs/examples use this name).
+        f.tool_definition = tool_def
         f.tool_name = tool_name
 
         return f

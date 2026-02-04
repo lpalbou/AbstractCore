@@ -680,7 +680,7 @@ response = llama_llm.generate(
 
 ```bash
 # Core media handling (images, text, basic documents)
-pip install abstractcore[media]
+pip install "abstractcore[media]"
 ```
 
 ### Full Installation
@@ -688,16 +688,18 @@ pip install abstractcore[media]
 ```bash
 # Media features (PDF + Office docs) are covered by `abstractcore[media]`.
 # If you want the full framework install (providers + tools + server + docs), pick one:
-pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
-
-# Individual optional dependencies
-pip install pymupdf4llm        # For advanced PDF processing
-pip install unstructured       # For Office documents (DOCX, XLSX, PPT)
-pip install pillow            # For image processing
-pip install pandas            # For CSV/data processing
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 ```
+
+Advanced: If you prefer to install only the pieces you need (instead of `abstractcore[media]`),
+these are the main libraries AbstractCore uses:
+
+- `Pillow` (images)
+- `pymupdf4llm` + `pymupdf-layout` (PDF extraction)
+- `unstructured[docx,pptx,xlsx,odt,rtf]` (Office docs)
+- `pandas` (tabular helpers)
 
 ## Troubleshooting
 
@@ -710,7 +712,7 @@ try:
     response = llm.generate("Test", media=["test.jpg"])
 except ImportError as e:
     print(f"Missing dependency: {e}")
-    print("Install with: pip install abstractcore[media]")
+    print("Install with: pip install \"abstractcore[media]\"")
 ```
 
 **Vision model not detecting images:**

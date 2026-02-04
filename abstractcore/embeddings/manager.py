@@ -285,7 +285,10 @@ class EmbeddingManager:
         """Load the HuggingFace embedding model with optimal backend and reduced warnings."""
         try:
             if sentence_transformers is None:
-                raise ImportError("sentence-transformers is required but not installed")
+                raise ImportError(
+                    "sentence-transformers is required but not installed. "
+                    "Install with: pip install \"abstractcore[embeddings]\""
+                )
 
             # Set HuggingFace cache directory (sentence-transformers uses this automatically)
             import os
@@ -341,7 +344,8 @@ class EmbeddingManager:
         except ImportError:
             raise ImportError(
                 "sentence-transformers is required for embedding functionality. "
-                "Install with: pip install sentence-transformers"
+                "Install with: pip install \"abstractcore[embeddings]\" (recommended) "
+                "or: pip install sentence-transformers"
             )
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")

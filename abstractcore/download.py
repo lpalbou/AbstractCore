@@ -212,7 +212,7 @@ async def _download_huggingface(
             status=DownloadStatus.ERROR,
             message=(
                 "huggingface_hub is not installed. "
-                "Install with: pip install abstractcore[huggingface]"
+                "Install with: pip install \"abstractcore[huggingface]\""
             ),
         )
         return

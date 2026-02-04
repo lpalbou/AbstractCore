@@ -181,20 +181,16 @@ All changes are fully backward compatible:
 - New parameters are optional with sensible defaults
 - Provider behavior remains consistent for existing use cases
 
-## Empirical Verification ✅
+## Empirical Verification (Best-Effort)
 
-**Real-World Testing Confirms Deterministic Behavior**:
+Determinism across LLM providers is **not guaranteed**. When supported, AbstractCore passes seed-like
+controls to providers/backends and recommends `temperature=0` to reduce randomness, but results can
+still vary with backend settings, hardware, and model/server updates.
 
-All providers (except Anthropic) achieve true determinism with `seed + temperature=0`:
+To verify determinism for your exact provider/model/backend, run:
 
-```python
-# Verified with actual API calls (100% success rate):
-[VERIFIED] OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-[VERIFIED] Ollama (gemma3:1b): Same seed → Identical outputs  
-[VERIFIED] MLX (Qwen3-4B): Same seed → Identical outputs
-[VERIFIED] HuggingFace: Same seed → Identical outputs (transformers + GGUF)
-[VERIFIED] LMStudio: Same seed → Identical outputs (OpenAI-compatible)
-⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (no seed support)
+```bash
+python tests/manual_seed_verification.py
 ```
 
 **Provider-Specific Implementations**:

@@ -49,7 +49,7 @@ python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b 
 python -m abstractcore.utils.cli --provider ollama --model qwen3-coder:30b
 
 # Or with any provider
-python -m abstractcore.utils.cli --provider openai --model gpt-5-mini
+python -m abstractcore.utils.cli --provider openai --model gpt-4o-mini
 python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
 python -m abstractcore.utils.cli --provider openrouter --model openai/gpt-4o-mini
 

@@ -16,7 +16,6 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..media import MediaHandler
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
@@ -119,7 +118,7 @@ class OpenAIProvider(BaseProvider):
                     multimodal_message = media_handler.create_multimodal_message(prompt, media)
                     api_messages.append(multimodal_message)
                 except ImportError:
-                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
                     api_messages.append({"role": "user", "content": prompt})
                 except Exception as e:
                     # Do not silently drop user-supplied media. Fail loudly so callers can
@@ -275,7 +274,7 @@ class OpenAIProvider(BaseProvider):
                     multimodal_message = media_handler.create_multimodal_message(prompt, media)
                     api_messages.append(multimodal_message)
                 except ImportError:
-                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
                     api_messages.append({"role": "user", "content": prompt})
                 except Exception as e:
                     from ..exceptions import UnsupportedFeatureError

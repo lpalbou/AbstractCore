@@ -89,12 +89,12 @@ response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
 
 ```python
 # Default (recommended): passthrough mode (tools are *not* executed in AbstractCore)
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 response = llm.generate("Weather in Paris?", tools=tools)
 # response.tool_calls contains structured tool call requests; host/runtime executes them
 
 # Optional (deprecated): direct execution in AbstractCore for simple scripts only
-# llm = create_llm("openai", model="gpt-5-mini", execute_tools=True)
+# llm = create_llm("openai", model="gpt-4o-mini", execute_tools=True)
 ```
 
 **Why this helps**: Allows flexible tool execution control for different deployment scenarios.
