@@ -35,29 +35,15 @@ from .core.types import GenerateResponse, Message
 from .core.enums import ModelParameter, ModelCapability, MessageRole
 from .exceptions import ModelNotFoundError, ProviderAPIError, AuthenticationError
 
-# Embeddings module (optional import)
-try:
-    from .embeddings import EmbeddingManager
-    _has_embeddings = True
-except ImportError:
-    _has_embeddings = False
+# Processing helpers (lightweight; do not import optional tool/media deps here).
+from .processing.basic_summarizer import BasicSummarizer, SummaryStyle, SummaryLength
+from .processing.basic_extractor import BasicExtractor
 
-# Processing module (core functionality)
-from .processing import BasicSummarizer, SummaryStyle, SummaryLength, BasicExtractor
-_has_processing = True
-
-# Tools module (core functionality)
-from .tools import tool
+# Tools: the decorator is dependency-free (built-in tool library lives in abstractcore.tools.common_tools).
+from .tools.core import tool
 
 # Download module (core functionality)
 from .download import download_model, DownloadProgress, DownloadStatus
-
-# Compression module (optional import)
-try:
-    from .compression import GlyphConfig, CompressionOrchestrator
-    _has_compression = True
-except ImportError:
-    _has_compression = False
 
 __all__ = [
     'create_llm',
@@ -76,11 +62,5 @@ __all__ = [
     'DownloadStatus',
 ]
 
-if _has_embeddings:
-    __all__.append('EmbeddingManager')
-
-if _has_compression:
-    __all__.extend(['GlyphConfig', 'CompressionOrchestrator'])
-
-# Processing is core functionality
+# Processing helpers are part of the default install.
 __all__.extend(['BasicSummarizer', 'SummaryStyle', 'SummaryLength', 'BasicExtractor'])

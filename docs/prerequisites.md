@@ -16,24 +16,31 @@ This guide walks you through setting up AbstractCore with different LLM provider
 
 ## Core Installation
 
-First, install AbstractCore with your preferred providers:
+Install AbstractCore, then add the extras you need:
 
 ```bash
-# Option 1: Cloud providers (API keys required)
-pip install abstractcore[openai,anthropic]
-
-# Option 2: Local providers (no API keys needed)
-pip install abstractcore[ollama,lmstudio]
-pip install abstractcore[mlx]   # Apple Silicon only
-pip install abstractcore[vllm]  # NVIDIA CUDA only
-
-# Option 3: Full installs (recommended; pick one)
-pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
-
-# Option 4: Minimal core only
+# Core (small default)
 pip install abstractcore
+
+# Providers (only if you use them)
+pip install "abstractcore[openai]"       # OpenAI SDK
+pip install "abstractcore[anthropic]"    # Anthropic SDK
+pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
+pip install "abstractcore[mlx]"          # Apple Silicon only (heavy)
+pip install "abstractcore[vllm]"         # NVIDIA CUDA/ROCm only (heavy)
+
+# Optional features
+pip install "abstractcore[tools]"       # built-in web tools (fetch_url, web_search)
+pip install "abstractcore[media]"       # images, PDFs, Office docs
+pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
+pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
+pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
+pip install "abstractcore[compression]" # Glyph visual-text compression (Pillow renderer)
+
+# Turnkey "everything" installs (pick one)
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 ```
 
 **Hardware Notes:**
@@ -209,7 +216,7 @@ print(response.content)
 
 ```bash
 # MLX is automatically installed with AbstractCore
-pip install abstractcore[mlx]
+pip install "abstractcore[mlx]"
 ```
 
 #### 2. Download Models
@@ -290,7 +297,7 @@ print(response.content)
 #### 1. Install Dependencies
 
 ```bash
-pip install abstractcore[huggingface]
+pip install "abstractcore[huggingface]"
 ```
 
 #### 2. Optional: Get HuggingFace Token
@@ -344,7 +351,7 @@ print(response.content)
 
 ```bash
 # Install AbstractCore with vLLM support
-pip install abstractcore[vllm]
+pip install "abstractcore[vllm]"
 
 # This installs vLLM which requires NVIDIA CUDA
 # If you get CUDA errors, ensure CUDA 12.1+ is installed:
@@ -456,7 +463,7 @@ print(response.content)
 
 #### 4. vLLM-Specific Features
 
-**Guided Decoding** (100% syntax-safe code generation):
+**Guided Decoding** (syntax-constrained generation):
 ```python
 # Regex-constrained generation
 response = llm.generate(

@@ -12,7 +12,7 @@ AbstractCore includes built-in support for vector embeddings with **multiple pro
 
 ```bash
 # Install with embeddings support
-pip install abstractcore[embeddings]
+pip install "abstractcore[embeddings]"
 ```
 
 ### First Embeddings
@@ -549,7 +549,7 @@ If you prefer HTTP endpoints over Python code, use the AbstractCore server:
 
 ```bash
 # Start the server
-pip install abstractcore[server]
+pip install "abstractcore[server]"
 uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 

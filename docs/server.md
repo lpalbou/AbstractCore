@@ -8,7 +8,7 @@ Transform AbstractCore into an OpenAI-compatible API server. One server, all mod
 
 ```bash
 # Install
-pip install abstractcore[server]
+pip install "abstractcore[server]"
 
 # Start server
 python -m abstractcore.server.app
@@ -414,7 +414,7 @@ for model in providers_models:
 
 **Endpoint:** `POST /v1/responses`
 
-**NEW in v2.5.0**: 100% OpenAI-compatible Responses API with native `input_file` support.
+AbstractCore implements an OpenAI-compatible Responses-style API, including `input_file` support.
 
 #### Why Use /v1/responses?
 
@@ -754,7 +754,7 @@ export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client
 ```dockerfile
 FROM python:3.9-slim
 
-RUN pip install abstractcore[server]
+RUN pip install "abstractcore[server]"
 
 ENV ABSTRACTCORE_DEFAULT_PROVIDER=openai
 ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini

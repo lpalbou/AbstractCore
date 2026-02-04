@@ -72,6 +72,25 @@ def read_content(content_or_path: str) -> str:
     try:
         file_path = Path(content_or_path)
         if file_path.exists() and file_path.is_file():
+            # Use the Media system for non-text documents when available (PDF/Office).
+            rich_doc_exts = {'.pdf', '.docx', '.pptx', '.xlsx', '.odt', '.rtf'}
+            if file_path.suffix.lower() in rich_doc_exts:
+                try:
+                    from ..media import process_file
+
+                    media_content = process_file(str(file_path))
+                    content = getattr(media_content, "content", "")
+                    if isinstance(content, bytes):
+                        return content.decode("utf-8", errors="ignore")
+                    return str(content or "")
+                except ImportError as e:
+                    raise ImportError(
+                        f"Reading {file_path.suffix.lower()} files requires media dependencies. "
+                        f"Install with: pip install \"abstractcore[media]\". Error: {e}"
+                    ) from e
+                except Exception as e:
+                    raise Exception(f"Failed to extract content from {content_or_path}: {e}") from e
+
             # Try to read as text file
             try:
                 # Try UTF-8 first

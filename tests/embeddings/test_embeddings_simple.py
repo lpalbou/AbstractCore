@@ -64,10 +64,10 @@ class TestEmbeddingManagerBasic:
     def test_text_hash(self):
         """Test text hashing functionality."""
         # Create a minimal mock to test the hashing method
-        with patch('sentence_transformers.SentenceTransformer') as mock_st:
+        with patch('abstractcore.embeddings.manager.sentence_transformers') as mock_st:
             mock_model = MagicMock()
             mock_model.get_sentence_embedding_dimension.return_value = 768
-            mock_st.return_value = mock_model
+            mock_st.SentenceTransformer.return_value = mock_model
 
             manager = EmbeddingManager(cache_dir=self.cache_dir)
 
@@ -82,10 +82,10 @@ class TestEmbeddingManagerBasic:
 
     def test_dimension_methods(self):
         """Test dimension-related methods."""
-        with patch('sentence_transformers.SentenceTransformer') as mock_st:
+        with patch('abstractcore.embeddings.manager.sentence_transformers') as mock_st:
             mock_model = MagicMock()
             mock_model.get_sentence_embedding_dimension.return_value = 768
-            mock_st.return_value = mock_model
+            mock_st.SentenceTransformer.return_value = mock_model
 
             # Test without Matryoshka
             manager = EmbeddingManager(cache_dir=self.cache_dir)
@@ -101,10 +101,10 @@ class TestEmbeddingManagerBasic:
 
     def test_cache_operations(self):
         """Test cache operations."""
-        with patch('sentence_transformers.SentenceTransformer') as mock_st:
+        with patch('abstractcore.embeddings.manager.sentence_transformers') as mock_st:
             mock_model = MagicMock()
             mock_model.get_sentence_embedding_dimension.return_value = 768
-            mock_st.return_value = mock_model
+            mock_st.SentenceTransformer.return_value = mock_model
 
             manager = EmbeddingManager(cache_dir=self.cache_dir)
 

@@ -332,7 +332,7 @@ unset ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS
 unset ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS
 
 # 4. Fresh start
-pip install --upgrade abstractcore[server]
+pip install --upgrade "abstractcore[server]"
 uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 ```
 

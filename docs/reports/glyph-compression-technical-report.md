@@ -311,11 +311,8 @@ except CompressionError as e:
 ### CLI Applications
 
 ```bash
-# Automatic compression in built-in apps
-summarizer large_document.pdf --glyph-compression auto --verbose
-
-# Output shows compression statistics
-# Compression: 3.2x ratio, 96% quality, 4.1x faster processing
+# Note: built-in CLI apps currently don't expose a `--glyph-compression` flag.
+# Use the Python API (below) or implement a thin wrapper in your own CLI.
 ```
 
 ### HTTP Server
@@ -323,13 +320,13 @@ summarizer large_document.pdf --glyph-compression auto --verbose
 ```python
 import requests
 
-# Server automatically handles compression
+# Note: the OpenAI-compatible server does not currently expose a `glyph_compression`
+# request field. Use the Python API, or extend the server request schema to pass it through.
 response = requests.post(
     "http://localhost:8000/v1/chat/completions",
     json={
         "model": "openai/gpt-4o",
         "messages": [{"role": "user", "content": "Analyze @large_report.pdf"}],
-        "glyph_compression": "auto"
     }
 )
 ```
@@ -337,14 +334,11 @@ response = requests.post(
 ### Production Deployment
 
 ```python
-from abstractcore.compression import EnterpriseGlyphConfig
+from abstractcore.compression import GlyphConfig
 
 # Production-grade configuration
-config = EnterpriseGlyphConfig(
+config = GlyphConfig(
     quality_threshold=0.98,
-    cost_optimization=True,
-    monitoring_enabled=True,
-    fallback_strategy="graceful"
 )
 
 llm = create_llm("openai", model="gpt-4o", glyph_config=config)
@@ -362,17 +356,19 @@ Glyph is based on the research paper "Glyph: Scaling Context Windows via Visual-
 ## Dependencies
 
 ### Required
-- `reportlab`: PDF generation and typography control
-- `pdf2image`: PDF to image conversion
 - `PIL/Pillow`: Image processing and optimization
+
+### Optional (advanced)
+- `pdf2image` (+ system dependencies): direct PDF→image conversion path (otherwise falls back to text extraction)
+- `pip install "abstractcore[media]"`: PDF/Office text extraction (PyMuPDF4LLM, unstructured, ...)
 
 ### Installation
 ```bash
 # Install with compression support
-pip install abstractcore[compression]
+pip install "abstractcore[compression]"
 
-# Or install dependencies manually
-pip install reportlab pdf2image Pillow
+# For PDFs/Office documents (text extraction)
+pip install "abstractcore[media]"
 ```
 
 ## Conclusion
@@ -380,4 +376,3 @@ pip install reportlab pdf2image Pillow
 Glyph compression represents a paradigm shift in long-context processing, offering significant performance and cost benefits while maintaining quality. Its seamless integration with AbstractCore makes it easy to adopt incrementally, with automatic fallback ensuring robust operation.
 
 For more information, see the [Glyph research paper](https://arxiv.org/abs/2510.17800) and the [AbstractCore documentation](../README.md).
-

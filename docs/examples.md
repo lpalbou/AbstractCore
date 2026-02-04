@@ -23,7 +23,7 @@ This guide shows real-world use cases for AbstractCore with complete, copy-paste
 from abstractcore import create_llm
 
 # Works with any provider
-llm = create_llm("openai", model="gpt-5-mini")  # or "anthropic", "ollama"...
+llm = create_llm("openai", model="gpt-4o-mini")  # or "anthropic", "ollama"...
 
 response = llm.generate("What is the difference between Python and JavaScript?")
 print(response.content)
@@ -35,7 +35,7 @@ print(response.content)
 from abstractcore import create_llm
 
 providers = [
-    ("openai", "gpt-5-mini"),
+    ("openai", "gpt-4o-mini"),
     ("anthropic", "claude-haiku-4-5"),
     ("ollama", "qwen3:4b-instruct")
 ]
@@ -60,7 +60,7 @@ from abstractcore import create_llm
 def generate_with_fallback(prompt, **kwargs):
     """Try multiple providers until one works."""
     providers = [
-        ("openai", "gpt-5-mini"),
+        ("openai", "gpt-4o-mini"),
         ("anthropic", "claude-haiku-4-5"),
         ("ollama", "qwen3:4b-instruct")
     ]
@@ -82,7 +82,9 @@ print(response.content)
 
 ## Glyph Visual-Text Compression
 
-Glyph compression provides 3-4x token compression and faster inference by rendering text as optimized images. Perfect for large documents and research papers.
+Glyph compression renders long text into images for vision-capable models to reduce effective token usage (often 3–4x on long text; depends on content/model).
+
+Requires `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` if you want PDF/Office text extraction).
 
 ### Automatic Compression with Ollama
 
@@ -139,7 +141,8 @@ print(f"Without compression: {response_no_compression.gen_time}ms")
 ### Custom Configuration
 
 ```python
-from abstractcore import create_llm, GlyphConfig
+from abstractcore import create_llm
+from abstractcore.compression import GlyphConfig
 
 # Configure compression behavior
 glyph_config = GlyphConfig(
@@ -259,7 +262,6 @@ for provider, model in models_to_test:
 **Key Benefits Demonstrated:**
 - **Automatic optimization**: Glyph decides when compression is beneficial
 - **Transparent integration**: Works with existing media handling code
-- **Performance gains**: 14% faster processing, 79% less memory usage
 - **Quality preservation**: No loss of analytical accuracy
 - **Provider flexibility**: Works across Ollama, LMStudio, and other vision providers
 
@@ -307,7 +309,7 @@ weather_tool = {
 }
 
 # Works with any provider that supports tools
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 response = llm.generate(
     "What's the weather like in Paris and London?",
@@ -372,7 +374,7 @@ tools = [
     }
 ]
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 response = llm.generate(
     "What is 25 * 4 + 12, and what's the square root of 144?",
@@ -681,7 +683,7 @@ class UserProfile(BaseModel):
             raise ValueError('Invalid email format')
         return v
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Text with user information
 user_text = """
@@ -854,7 +856,7 @@ import time
 
 def streaming_with_insights(prompt):
     # Supports any provider: OpenAI, Anthropic, Ollama, MLX
-    llm = create_llm("openai", model="gpt-5-mini")
+    llm = create_llm("openai", model="gpt-4o-mini")
 
     print("Generating response...")
 
@@ -956,7 +958,7 @@ import time
 def compare_providers(prompt):
     """Compare streaming performance across providers."""
     providers = [
-        ("openai", "gpt-5-mini"),
+        ("openai", "gpt-4o-mini"),
         ("anthropic", "claude-haiku-4-5"),
         ("ollama", "qwen3:4b-instruct")
     ]
@@ -990,10 +992,10 @@ compare_providers("Write a creative short story about artificial intelligence")
 ```
 
 **Streaming Features**:
-- First chunk in <10ms
+- Time-to-first-token depends on provider/model/network
 - Unified strategy across all providers
 - Real-time tool call detection
-- Zero buffering overhead
+- Streams chunks as they arrive (minimal buffering)
 - Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 - Robust error handling for malformed responses
 
@@ -1004,7 +1006,7 @@ compare_providers("Write a creative short story about artificial intelligence")
 ```python
 from abstractcore import create_llm, BasicSession
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 session = BasicSession(
     provider=llm,
     system_prompt="You are a helpful coding tutor. Always provide examples."
@@ -1106,7 +1108,7 @@ from abstractcore import create_llm
 # Enable tracing on provider
 llm = create_llm(
     'openai',
-    model='gpt-5-mini',
+    model='gpt-4o-mini',
     enable_tracing=True,
     max_traces=100  # Keep last 100 interactions (ring buffer)
 )
@@ -1143,7 +1145,7 @@ Automatically track all interactions in a session with correlation:
 from abstractcore import create_llm
 from abstractcore.core.session import BasicSession
 
-llm = create_llm('openai', model='gpt-5-mini', enable_tracing=True)
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
 session = BasicSession(provider=llm, enable_tracing=True)
 
 # All interactions automatically traced
@@ -1173,7 +1175,7 @@ Track code generation workflows with retry attempts:
 from abstractcore import create_llm
 from abstractcore.core.session import BasicSession
 
-llm = create_llm('openai', model='gpt-5-mini', enable_tracing=True)
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
 session = BasicSession(provider=llm, enable_tracing=True)
 
 # Step 1: Generate code
@@ -1226,7 +1228,7 @@ Export traces to different formats for analysis:
 from abstractcore import create_llm
 from abstractcore.utils import export_traces, summarize_traces
 
-llm = create_llm('openai', model='gpt-5-mini', enable_tracing=True)
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
 
 # Generate some interactions
 for i in range(5):
@@ -1262,7 +1264,7 @@ Different ways to retrieve traces:
 ```python
 from abstractcore import create_llm
 
-llm = create_llm('openai', model='gpt-5-mini', enable_tracing=True)
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
 
 # Generate some interactions
 for i in range(10):
@@ -1311,7 +1313,7 @@ def create_production_llm():
 
     return create_llm(
         "openai",
-        model="gpt-5-mini",
+        model="gpt-4o-mini",
         retry_config=retry_config,
         timeout=30
     )
@@ -1394,7 +1396,7 @@ class CostMonitor:
 # Usage
 monitor = CostMonitor(budget_limit=1.0)  # $1 budget
 
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Make some requests
 for i in range(3):
@@ -1463,7 +1465,7 @@ class LoadBalancer:
 
 # Usage
 balancer = LoadBalancer([
-    ("openai", "gpt-5-mini"),
+    ("openai", "gpt-4o-mini"),
     ("anthropic", "claude-haiku-4-5"),
     ("ollama", "qwen3:4b-instruct")
 ])
@@ -1491,7 +1493,7 @@ import uuid
 app = FastAPI(title="AbstractCore API")
 
 # Global LLM instance
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 # Store sessions in memory (use Redis in production)
 sessions = {}
@@ -1621,7 +1623,7 @@ from IPython.display import display, Markdown, HTML
 import json
 
 # Create LLM instance
-llm = create_llm("openai", model="gpt-5-mini")
+llm = create_llm("openai", model="gpt-4o-mini")
 
 def display_response(response, title="AI Response"):
     """Pretty display for Jupyter notebooks."""

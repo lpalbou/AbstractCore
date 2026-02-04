@@ -457,7 +457,7 @@ class MLXProvider(BaseProvider):
             # Check if Outlines is required but unavailable
             if self.structured_output_method == "native_outlines" and not OUTLINES_AVAILABLE:
                 return GenerateResponse(
-                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install abstractcore[mlx]",
+                    content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install \"abstractcore[mlx]\"",
                     model=self.model,
                     finish_reason="error"
                 )
@@ -532,7 +532,7 @@ class MLXProvider(BaseProvider):
                         else:
                             processed_prompt = str(multimodal_message["content"])
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")
 

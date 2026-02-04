@@ -48,7 +48,7 @@ The `summarizer` CLI provides direct terminal access for document summarization 
 ### Quick CLI Usage
 
 ```bash
-# Simple usage (after installing AbstractCore; add `abstractcore[media]` for PDFs)
+# Simple usage (after installing AbstractCore; add `pip install "abstractcore[media]"` for PDFs)
 summarizer document.pdf
 
 # With specific style and length

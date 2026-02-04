@@ -324,7 +324,7 @@ llm2 = create_llm("mlx", model="mlx-community/Qwen3-30B-4bit")
 
 ### GenerateResponse
 
-Response object from LLM generation with **consistent token terminology** and **generation time tracking** (NEW in v2.4.7).
+Response object from LLM generation with **consistent token terminology** and **generation time tracking**.
 
 ```python
 @dataclass
@@ -336,9 +336,9 @@ class GenerateResponse:
     usage: Optional[Dict[str, int]]
     tool_calls: Optional[List[Dict]]
     metadata: Optional[Dict]
-    gen_time: Optional[float]  # NEW in v2.4.7 - Generation time in milliseconds
+    gen_time: Optional[float]  # Generation time in milliseconds
     
-    # Consistent token access properties (NEW in v2.4.7)
+    # Consistent token access properties
     @property
     def input_tokens(self) -> Optional[int]:
         """Get input tokens with consistent terminology."""
@@ -360,13 +360,13 @@ class GenerateResponse:
 - `usage` (Dict): Token usage information
 - `tool_calls` (List[Dict]): Tools called by the LLM
 - `metadata` (Dict): Additional metadata (notably `metadata["reasoning"]` when a provider/model exposes thinking/reasoning)
-- `gen_time` (float): Generation time in milliseconds, rounded to 1 decimal place (NEW in v2.4.7)
+- `gen_time` (float): Generation time in milliseconds, rounded to 1 decimal place
 
 **Token and Timing Access Examples:**
 ```python
 response = llm.generate("Explain quantum computing")
 
-# Consistent access across ALL providers (NEW in v2.4.7)
+# Consistent access across ALL providers
 print(f"Input tokens: {response.input_tokens}")      # Always available
 print(f"Output tokens: {response.output_tokens}")    # Always available  
 print(f"Total tokens: {response.total_tokens}")      # Always available

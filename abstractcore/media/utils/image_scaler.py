@@ -5,11 +5,19 @@ Provides intelligent image scaling based on model-specific requirements
 and capabilities for vision models.
 """
 
+from __future__ import annotations  # PEP 563 - avoid hard PIL dependency at import time
+
 from typing import Tuple, Optional, Union, Dict, Any
 from enum import Enum
 from pathlib import Path
 
-from PIL import Image, ImageOps
+try:
+    from PIL import Image, ImageOps
+    PIL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    Image = None
+    ImageOps = None
+    PIL_AVAILABLE = False
 
 from ..base import MediaProcessingError
 from ...utils.structured_logging import get_logger
@@ -132,6 +140,11 @@ class ModelOptimizedScaler:
         Returns:
             Scaled PIL Image
         """
+        if not PIL_AVAILABLE:
+            raise MediaProcessingError(
+                "PIL/Pillow is required for image scaling. "
+                "Install with: pip install \"abstractcore[media]\""
+            )
         target_width, target_height = target_size
 
         if mode == ScalingMode.FIT:
@@ -278,6 +291,11 @@ def scale_image_for_model(image: Union[Image.Image, str, Path],
     Returns:
         Optimally scaled PIL Image
     """
+    if not PIL_AVAILABLE:
+        raise MediaProcessingError(
+            "PIL/Pillow is required for image scaling. "
+            "Install with: pip install \"abstractcore[media]\""
+        )
     if isinstance(image, (str, Path)):
         image = Image.open(image)
 

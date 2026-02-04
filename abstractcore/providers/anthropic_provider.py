@@ -15,7 +15,6 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider
 from ..core.types import GenerateResponse
-from ..media import MediaHandler
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
@@ -142,7 +141,7 @@ class AnthropicProvider(BaseProvider):
                     multimodal_message = media_handler.create_multimodal_message(prompt, media)
                     api_messages.append(multimodal_message)
                 except ImportError:
-                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
                     api_messages.append({"role": "user", "content": prompt})
                 except Exception as e:
                     self.logger.warning(f"Failed to process media content: {e}")
@@ -190,7 +189,7 @@ class AnthropicProvider(BaseProvider):
                         text0 = str(api_messages[idx].get("content") or "")
                         api_messages[idx] = media_handler.create_multimodal_message(text0, media)
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")
 
@@ -374,7 +373,7 @@ class AnthropicProvider(BaseProvider):
                     multimodal_message = media_handler.create_multimodal_message(prompt, media)
                     api_messages.append(multimodal_message)
                 except ImportError:
-                    self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                    self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
                     api_messages.append({"role": "user", "content": prompt})
                 except Exception as e:
                     self.logger.warning(f"Failed to process media content: {e}")
@@ -422,7 +421,7 @@ class AnthropicProvider(BaseProvider):
                         text0 = str(api_messages[idx].get("content") or "")
                         api_messages[idx] = media_handler.create_multimodal_message(text0, media)
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install abstractcore[media]")
+                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")
 

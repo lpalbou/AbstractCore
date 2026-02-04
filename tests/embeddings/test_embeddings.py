@@ -52,12 +52,12 @@ class TestEmbeddingManagerInit:
         """Clean up test environment."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('sentence_transformers.SentenceTransformer')
-    def test_init_default(self, mock_st_class):
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
+    def test_init_default(self, mock_st):
         """Test initialization with default parameters."""
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 768
-        mock_st_class.return_value = mock_model
+        mock_st.SentenceTransformer.return_value = mock_model
 
         manager = EmbeddingManager(cache_dir=self.cache_dir)
 
@@ -66,12 +66,12 @@ class TestEmbeddingManagerInit:
         assert manager.cache_size == 1000
         assert manager.output_dims is None
 
-    @patch('sentence_transformers.SentenceTransformer')
-    def test_init_custom_model(self, mock_st_class):
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
+    def test_init_custom_model(self, mock_st):
         """Test initialization with custom model."""
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 768  # granite-278m has 768 dimensions
-        mock_st_class.return_value = mock_model
+        mock_st.SentenceTransformer.return_value = mock_model
 
         manager = EmbeddingManager(
             model="embeddinggemma",
@@ -82,12 +82,12 @@ class TestEmbeddingManagerInit:
         assert manager.model_id == "google/embeddinggemma-300m"
         assert manager.output_dims == 512
 
-    @patch('sentence_transformers.SentenceTransformer')
-    def test_init_direct_huggingface_id(self, mock_st_class):
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
+    def test_init_direct_huggingface_id(self, mock_st):
         """Test initialization with direct HuggingFace model ID."""
         mock_model = MagicMock()
         mock_model.get_sentence_embedding_dimension.return_value = 384
-        mock_st_class.return_value = mock_model
+        mock_st.SentenceTransformer.return_value = mock_model
 
         manager = EmbeddingManager(
             model="sentence-transformers/all-MiniLM-L6-v2",
@@ -97,11 +97,11 @@ class TestEmbeddingManagerInit:
         assert manager.model_id == "sentence-transformers/all-MiniLM-L6-v2"
         assert manager.model_config is None
 
-    @patch('sentence_transformers.SentenceTransformer')
-    def test_backend_selection(self, mock_st_class):
+    @patch('abstractcore.embeddings.manager.sentence_transformers')
+    def test_backend_selection(self, mock_st):
         """Test backend selection logic."""
         mock_model = MagicMock()
-        mock_st_class.return_value = mock_model
+        mock_st.SentenceTransformer.return_value = mock_model
 
         # Test auto backend selection
         with patch('importlib.util.find_spec') as mock_find_spec:

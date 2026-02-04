@@ -586,6 +586,70 @@ def _coerce_float(v: Any) -> Optional[float]:
 
 def _resolve_backend(request_model: Any):
     req_model = str(request_model or "").strip()
+    backend_kind = _effective_backend_kind(request_model)
+
+    # Important: return "not configured" errors without requiring optional deps.
+    if backend_kind == "auto_unconfigured":
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "Vision image endpoints are not configured. "
+                "Either pass `model` in the request (recommended), or set one of:\n"
+                "- ABSTRACTCORE_VISION_MODEL_ID (Diffusers)\n"
+                "- ABSTRACTCORE_VISION_UPSTREAM_BASE_URL (OpenAI-compatible proxy)\n"
+                "- ABSTRACTCORE_VISION_SDCPP_MODEL / ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL (stable-diffusion.cpp)"
+            ),
+        )
+
+    # Validate backend-specific configuration before importing AbstractVision.
+    # This keeps error messages stable and avoids optional dependency requirements for unconfigured setups.
+    prevalidated: Dict[str, Any] = {"backend_kind": backend_kind}
+    if backend_kind == "openai_compatible_proxy":
+        base_url = _require_upstream_base_url()
+        model_id = str(request_model or _env("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID") or "").strip() or None
+        prevalidated.update(
+            {
+                "base_url": base_url,
+                "model_id": model_id,
+                "timeout_s": float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "300") or "300"),
+                "image_generations_path": _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH", "/images/generations")
+                or "/images/generations",
+                "image_edits_path": _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
+                "api_key": _env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
+            }
+        )
+    elif backend_kind == "diffusers":
+        model_id = _require_diffusers_model_id(request_model)
+        allow_download = _env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", True)
+        prevalidated.update(
+            {
+                "model_id": model_id,
+                "device": _env("ABSTRACTCORE_VISION_DEVICE", "auto") or "auto",
+                "torch_dtype": _env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
+                "allow_download": allow_download,
+            }
+        )
+    elif backend_kind == "sdcpp":
+        model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(request_model)
+        extra_args = _env("ABSTRACTCORE_VISION_SDCPP_EXTRA_ARGS")
+        prevalidated.update(
+            {
+                "sd_cli_path": _env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
+                "model_path": model_path,
+                "diffusion_model_path": diffusion_model_path,
+                "vae": _env("ABSTRACTCORE_VISION_SDCPP_VAE"),
+                "llm": _env("ABSTRACTCORE_VISION_SDCPP_LLM"),
+                "llm_vision": _env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
+                "clip_l": _env("ABSTRACTCORE_VISION_SDCPP_CLIP_L"),
+                "clip_g": _env("ABSTRACTCORE_VISION_SDCPP_CLIP_G"),
+                "t5xxl": _env("ABSTRACTCORE_VISION_SDCPP_T5XXL"),
+                "extra_args": extra_args,
+                "timeout_s": float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
+            }
+        )
+    else:
+        raise HTTPException(status_code=501, detail=f"Unknown vision backend kind: {backend_kind!r} (set ABSTRACTCORE_VISION_BACKEND)")
+
     (
         OpenAICompatibleBackendConfig,
         OpenAICompatibleVisionBackend,
@@ -602,91 +666,78 @@ def _resolve_backend(request_model: Any):
     if active_backend is not None and active_call_lock is not None and (not req_model or req_model == active_model_id):
         return active_backend, active_call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
 
-    backend_kind = _effective_backend_kind(request_model)
-    if backend_kind == "auto_unconfigured":
-        raise HTTPException(
-            status_code=501,
-            detail=(
-                "Vision image endpoints are not configured. "
-                "Either pass `model` in the request (recommended), or set one of:\n"
-                "- ABSTRACTCORE_VISION_MODEL_ID (Diffusers)\n"
-                "- ABSTRACTCORE_VISION_UPSTREAM_BASE_URL (OpenAI-compatible proxy)\n"
-                "- ABSTRACTCORE_VISION_SDCPP_MODEL / ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL (stable-diffusion.cpp)"
-            ),
-        )
-
     if backend_kind == "openai_compatible_proxy":
-        base_url = _require_upstream_base_url()
-        model_id = str(request_model or _env("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID") or "").strip() or None
+        base_url = prevalidated["base_url"]
+        model_id = prevalidated["model_id"]
         cfg = OpenAICompatibleBackendConfig(
             base_url=base_url,
-            api_key=_env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
+            api_key=prevalidated["api_key"],
             model_id=model_id,
-            timeout_s=float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "300") or "300"),
-            image_generations_path=_env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH", "/images/generations")
-            or "/images/generations",
-            image_edits_path=_env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
+            timeout_s=prevalidated["timeout_s"],
+            image_generations_path=prevalidated["image_generations_path"],
+            image_edits_path=prevalidated["image_edits_path"],
         )
         key = (
             "openai_compatible_proxy",
             base_url,
-            _env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
+            prevalidated["api_key"],
             model_id,
-            float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "300") or "300"),
-            _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH", "/images/generations") or "/images/generations",
-            _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
+            prevalidated["timeout_s"],
+            prevalidated["image_generations_path"],
+            prevalidated["image_edits_path"],
         )
         backend, call_lock = _get_or_create_cached_backend(key, lambda: OpenAICompatibleVisionBackend(config=cfg))
         return backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
 
     if backend_kind == "diffusers":
-        model_id = _require_diffusers_model_id(request_model)
-        allow_download = _env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", True)
+        model_id = prevalidated["model_id"]
+        allow_download = prevalidated["allow_download"]
         cfg = HuggingFaceDiffusersBackendConfig(
             model_id=model_id,
-            device=_env("ABSTRACTCORE_VISION_DEVICE", "auto") or "auto",
-            torch_dtype=_env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
+            device=prevalidated["device"],
+            torch_dtype=prevalidated["torch_dtype"],
             allow_download=allow_download,
         )
         key = (
             "diffusers",
             model_id,
-            _env("ABSTRACTCORE_VISION_DEVICE", "auto") or "auto",
-            _env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
+            prevalidated["device"],
+            prevalidated["torch_dtype"],
             allow_download,
         )
         backend, call_lock = _get_or_create_cached_backend(key, lambda: HuggingFaceDiffusersVisionBackend(config=cfg))
         return backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
 
     if backend_kind == "sdcpp":
-        model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(request_model)
-        extra_args = _env("ABSTRACTCORE_VISION_SDCPP_EXTRA_ARGS")
+        model_path = prevalidated["model_path"]
+        diffusion_model_path = prevalidated["diffusion_model_path"]
+        extra_args = prevalidated["extra_args"]
         cfg = StableDiffusionCppBackendConfig(
-            sd_cli_path=_env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
+            sd_cli_path=prevalidated["sd_cli_path"],
             model=model_path,
             diffusion_model=diffusion_model_path,
-            vae=_env("ABSTRACTCORE_VISION_SDCPP_VAE"),
-            llm=_env("ABSTRACTCORE_VISION_SDCPP_LLM"),
-            llm_vision=_env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
-            clip_l=_env("ABSTRACTCORE_VISION_SDCPP_CLIP_L"),
-            clip_g=_env("ABSTRACTCORE_VISION_SDCPP_CLIP_G"),
-            t5xxl=_env("ABSTRACTCORE_VISION_SDCPP_T5XXL"),
+            vae=prevalidated["vae"],
+            llm=prevalidated["llm"],
+            llm_vision=prevalidated["llm_vision"],
+            clip_l=prevalidated["clip_l"],
+            clip_g=prevalidated["clip_g"],
+            t5xxl=prevalidated["t5xxl"],
             extra_args=shlex.split(str(extra_args)) if extra_args else (),
-            timeout_s=float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
+            timeout_s=prevalidated["timeout_s"],
         )
         key = (
             "sdcpp",
-            _env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
+            prevalidated["sd_cli_path"],
             model_path,
             diffusion_model_path,
-            _env("ABSTRACTCORE_VISION_SDCPP_VAE"),
-            _env("ABSTRACTCORE_VISION_SDCPP_LLM"),
-            _env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
-            _env("ABSTRACTCORE_VISION_SDCPP_CLIP_L"),
-            _env("ABSTRACTCORE_VISION_SDCPP_CLIP_G"),
-            _env("ABSTRACTCORE_VISION_SDCPP_T5XXL"),
+            prevalidated["vae"],
+            prevalidated["llm"],
+            prevalidated["llm_vision"],
+            prevalidated["clip_l"],
+            prevalidated["clip_g"],
+            prevalidated["t5xxl"],
             extra_args,
-            float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
+            prevalidated["timeout_s"],
         )
         backend, call_lock = _get_or_create_cached_backend(key, lambda: StableDiffusionCppVisionBackend(config=cfg))
         return backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest

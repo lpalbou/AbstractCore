@@ -18,9 +18,9 @@ Complete navigation guide for AbstractCore documentation.
 
 - **[Getting Started](getting-started.md)** - Quick start, core concepts, common patterns
 - **[Prerequisites](prerequisites.md)** - Provider setup (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)
-- **[Async/Await Support](api-reference.md#agenerate)** - Concurrent requests for 3-10x faster batch operations
+- **[Async/Await Support](api-reference.md#agenerate)** - Concurrent requests for faster batch operations
 - **[Interaction Tracing](interaction-tracing.md)** - Programmatic observability for prompts, responses, timing, and usage
-- **[Glyph Visual-Text Compression](glyphs.md)** - Revolutionary compression for 3-4x token reduction and faster inference
+- **[Glyph Visual-Text Compression](glyphs.md)** - Experimental vision-based compression that can reduce token usage for long documents (results vary)
 - **[Structured Output](structured-output.md)** - Pydantic models, schema validation, native vs prompted strategies
 - **[Session Management](session.md)** - Persistent conversations, serialization, and analytics
 - **[Embeddings](embeddings.md)** - Vector embeddings, semantic search, RAG applications
@@ -68,12 +68,12 @@ Complete navigation guide for AbstractCore documentation.
 
 ```bash
 # Install and use immediately (pick one)
-pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 # Direct terminal usage (no Python code needed)
-summarizer document.pdf --provider openai --model gpt-5-mini
+summarizer document.pdf --provider openai --model gpt-4o-mini
 extractor research_paper.pdf --format json-ld --provider anthropic  
 judge essay.txt --criteria clarity,accuracy --provider ollama
 ```
@@ -89,7 +89,7 @@ judge essay.txt --criteria clarity,accuracy --provider ollama
 **Key Features:**
 - **Direct CLI usage**: `summarizer`, `extractor`, `judge`, `intent`, `deepsearch`
 - **Provider agnostic**: Works with any configured LLM provider
-- **Multiple formats**: PDF, TXT, MD, DOCX support
+- **Multiple formats** (with `pip install "abstractcore[media]"`): PDF, TXT, MD, DOCX support
 - **Batch processing**: Handle multiple files at once
 - **Production ready**: Robust error handling and logging
 
@@ -149,8 +149,10 @@ docs/
 │   ├── comparison.md           # vs alternatives
 │   └── chat-compaction.md      # History management
 │
+├── reports/                    # Technical reports (see reports/README.md)
+├── research/                   # Research notes / experiments (see research/README.md)
 └── Archive/
-    └── README.md               # Superseded documentation
+    └── README.md               # Superseded documentation (historical)
 ```
 
 **Key Distinction:**
@@ -172,7 +174,7 @@ docs/
 - Evaluate text → [Judge Guide](apps/basic-judge.md)
 - Analyze intent → [Intent Guide](apps/basic-intent.md)
 - Run deep research → [DeepSearch Guide](apps/basic-deepsearch.md)
-- Quick start → `pip install abstractcore[all-apple]` / `abstractcore[all-non-mlx]` / `abstractcore[all-gpu]` then `summarizer --help`
+- Quick start → `pip install "abstractcore[all-apple]"` / `"abstractcore[all-non-mlx]"` / `"abstractcore[all-gpu]"` then `summarizer --help`
 
 **Use Core Library (Python):**
 - Switch between providers → [Getting Started](getting-started.md#providers-and-models)
@@ -252,18 +254,14 @@ docs/
 
 ## Document Status
 
-| Document | Type | Status | Since Version |
-|----------|------|--------|---------------|
-| README.md | Overview | Current | 2.5.3 |
-| getting-started.md | Core Library | Current | 2.5.0 |
-| prerequisites.md | Core Library | Current | 2.5.0 |
-| api-reference.md | Python API | Current | 2.5.0 |
-| embeddings.md | Core Library | Current | 2.4.0 |
-| interaction-tracing.md | Core Library | Current | 2.5.3 |
-| server.md | Server + REST API | Current | 2.5.0 |
-| troubleshooting.md | Core + Server | Current | 2.5.0 |
+Core docs in `docs/` aim to reflect the current codebase.
 
-**All core documentation reviewed and current as of version 2.5.3 (November 10, 2025).**
+Non-authoritative folders:
+- `docs/reports/` (engineering notes) → see `docs/reports/README.md`
+- `docs/research/` (experiments) → see `docs/research/README.md`
+- `docs/archive/` (historical) → see `docs/archive/README.md`
+
+If you find a mismatch between docs and code, please open an issue.
 
 **Key Files:**
 - **`api-reference.md`** - For Python programmers using AbstractCore library

@@ -2,13 +2,13 @@
 
 **The Unified Python Framework for Provider-Agnostic LLM Applications**
 
-Version: 2.5.2+ | Architecture: Layered, Modular | Philosophy: Offline-First, Production-Ready
+Version: 2.11.0 | Architecture: Layered, Modular | Philosophy: Offline-First, Production-Ready
 
 ---
 
 ## Overview
 
-AbstractCore is a comprehensive Python framework that provides a unified, provider-agnostic interface for building sophisticated LLM applications. With support for 6 providers (OpenAI, Anthropic, Ollama, LMStudio, HuggingFace, MLX), 137+ models, and a rich ecosystem of processing capabilities, AbstractCore enables you to write once and run everywhere.
+AbstractCore is a Python framework that provides a unified, provider-agnostic interface for building LLM applications. It supports cloud and local providers including OpenAI, Anthropic, OpenRouter, Ollama, LMStudio, MLX, HuggingFace, vLLM, and generic OpenAI-compatible endpoints.
 
 **Key Philosophy**: Built primarily for open-source LLMs with complete offline capability while maintaining seamless cloud provider integration when needed.
 
@@ -19,11 +19,13 @@ AbstractCore is a comprehensive Python framework that provides a unified, provid
 ### Installation
 
 ```bash
-# Complete installation (recommended)
-pip install abstractcore[all]
-
-# Minimal core
+# Core (small default)
 pip install abstractcore
+
+# Turnkey "everything" installs (pick one)
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 ```
 
 ### Hello World
@@ -40,6 +42,7 @@ print(response.content)
 ### With Vision
 
 ```python
+# Requires `pip install "abstractcore[media]"`
 llm = create_llm("openai", model="gpt-4o")
 response = llm.generate(
     "Describe this image",
@@ -93,7 +96,7 @@ AbstractCore is organized into **16 specialized modules** across **5 architectur
 │  LLM Provider Implementations and Registry                      │
 ├─────────────────────────────────────────────────────────────────┤
 │ providers/                                                       │
-│ OpenAI, Anthropic, Ollama, LMStudio, HuggingFace, MLX          │
+│ OpenAI, Anthropic, OpenRouter, Ollama, LMStudio, MLX, HF, vLLM │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -423,8 +426,8 @@ for llm in [openai_llm, local_llm, mlx_llm]:
 **Purpose**: Revolutionary 3-4x token compression through visual text rendering
 
 **Key Features**:
-- 14% faster processing, 79% lower memory usage
-- 100% quality preservation (tested)
+- Lower effective token usage for long documents (best-effort; validate for your domain)
+- Best-effort quality validation with automatic fallback
 - Transparent operation with automatic mode
 - Configurable compression policies
 

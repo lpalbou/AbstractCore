@@ -34,7 +34,7 @@ Understanding common pitfalls helps prevent issues before they occur.
 
 3. **💻 Provider Dependency Confusion**
    - *Symptom*: `ModuleNotFoundError` for providers
-   - *Quick Fix*: Install provider-specific packages with `pip install abstractcore[provider]`
+   - *Quick Fix*: Install provider-specific packages with `pip install "abstractcore[provider]"`
    - See: [ModuleNotFoundError](#issue-modulenotfounderror)
 
 4. **🖥️ LM Studio Server Not Enabled**
@@ -246,14 +246,14 @@ ModuleNotFoundError: No module named 'openai'
 pip install abstractcore
 
 # Install with specific provider
-pip install abstractcore[openai]
-pip install abstractcore[anthropic]
-pip install abstractcore[ollama]
+pip install "abstractcore[openai]"
+pip install "abstractcore[anthropic]"
+pip install "abstractcore[ollama]"
 
 # Install the full feature set (pick one)
-pip install abstractcore[all-apple]    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install abstractcore[all-gpu]      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 # Verify installation
 pip list | grep abstract
@@ -276,12 +276,12 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install abstractcore[all-apple]    # macOS/Apple Silicon
-# or: pip install abstractcore[all-non-mlx]  # Linux/Windows/Intel Mac
-# or: pip install abstractcore[all-gpu]      # Linux NVIDIA GPU
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon
+# or: pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac
+# or: pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU
 
 # If still failing, try one provider at a time
-pip install abstractcore[openai]
+pip install "abstractcore[openai]"
 ```
 
 ---
