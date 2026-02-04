@@ -1024,12 +1024,39 @@ def _format_parameters_compact(parameters: Dict[str, Any]) -> str:
     return ", ".join(parts) if parts else "(none)"
 
 
+# Prompt footprint control: include `when_to_use` only when it will meaningfully
+# improve tool selection, without bloating large tool catalogs.
+_WHEN_TO_USE_PRIORITY_TOOLS: set[str] = {
+    # Core editing loop / safety-sensitive tools
+    "edit_file",
+    "write_file",
+    "execute_command",
+    # Common web triage workflow tools
+    "web_search",
+    "skim_websearch",
+    "skim_url",
+    "fetch_url",
+}
+
+
+def _should_render_when_to_use(tool: ToolDefinition, *, total_tools: int) -> bool:
+    when = getattr(tool, "when_to_use", None)
+    if not when:
+        return False
+    # If the tool list is small, include all `when_to_use` guidance.
+    if total_tools <= 6:
+        return True
+    # For larger tool catalogs, include guidance only for priority tools.
+    name = str(getattr(tool, "name", "") or "").strip()
+    return name in _WHEN_TO_USE_PRIORITY_TOOLS
+
+
 def _append_tool_examples(
     prompt: str,
     tools: List[ToolDefinition],
     *,
     tool_format: ToolFormat,
-    max_examples_total: int = 6,
+    max_examples_total: int = 8,
 ) -> str:
     """Append a small, globally-capped examples section.
 
@@ -1052,6 +1079,8 @@ def _append_tool_examples(
         "edit_file",
         "write_file",
         "execute_command",
+        "skim_websearch",
+        "skim_url",
         "fetch_url",
         "web_search",
     ]
@@ -1097,10 +1126,13 @@ def _format_qwen_style(tools: List[ToolDefinition], *, include_tool_list: bool =
     prompt = "You are a helpful AI assistant with access to the following tools:\n\n"
 
     if include_tool_list:
+        total_tools = len(tools)
         for tool in tools:
             prompt += f"**{tool.name}**: {tool.description}\n"
             if tool.parameters:
                 prompt += f"  • **Args**: {_format_parameters_compact(tool.parameters)}\n"
+            if _should_render_when_to_use(tool, total_tools=total_tools):
+                prompt += f"  • **When**: {tool.when_to_use}\n"
             prompt += "\n"
 
     prompt += """To use a tool, respond with one or more tool-call blocks (no other text):
@@ -1126,10 +1158,13 @@ def _format_llama_style(tools: List[ToolDefinition], *, include_tool_list: bool 
     prompt = "You have access to the following functions. Use them when needed:\n\n"
 
     if include_tool_list:
+        total_tools = len(tools)
         for tool in tools:
             prompt += f"**{tool.name}**: {tool.description}\n"
             if tool.parameters:
                 prompt += f"  • **Args**: {_format_parameters_compact(tool.parameters)}\n"
+            if _should_render_when_to_use(tool, total_tools=total_tools):
+                prompt += f"  • **When**: {tool.when_to_use}\n"
             prompt += "\n"
 
     prompt += """To call a function, output one or more <function_call> blocks (no other text):
@@ -1154,11 +1189,14 @@ def _format_xml_style(tools: List[ToolDefinition], *, include_tool_list: bool = 
     prompt = "You have access to these tools:\n\n"
 
     if include_tool_list:
+        total_tools = len(tools)
         for tool in tools:
             prompt += f'<tool name="{tool.name}">\n'
             prompt += f"  <description>{tool.description}</description>\n"
             if tool.parameters:
                 prompt += f"  <args>{_format_parameters_compact(tool.parameters)}</args>\n"
+            if _should_render_when_to_use(tool, total_tools=total_tools):
+                prompt += f"  <when_to_use>{tool.when_to_use}</when_to_use>\n"
             prompt += "</tool>\n\n"
 
     prompt += """To use a tool, output one or more <tool_call> blocks (no other text):
@@ -1183,10 +1221,13 @@ def _format_json_style(tools: List[ToolDefinition], *, include_tool_list: bool =
     prompt = "You have access to the following tools:\n\n"
 
     if include_tool_list:
+        total_tools = len(tools)
         for tool in tools:
             prompt += f"- {tool.name}: {tool.description}\n"
             if tool.parameters:
                 prompt += f"  args: {_format_parameters_compact(tool.parameters)}\n"
+            if _should_render_when_to_use(tool, total_tools=total_tools):
+                prompt += f"  when: {tool.when_to_use}\n"
 
     prompt += """To use a tool, respond with one or more JSON objects (no extra text):
 {"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
@@ -1208,10 +1249,13 @@ def _format_gemma_style(tools: List[ToolDefinition], *, include_tool_list: bool 
     prompt = "You can use these tools by writing tool_code blocks:\n\n"
 
     if include_tool_list:
+        total_tools = len(tools)
         for tool in tools:
             prompt += f"**{tool.name}**: {tool.description}\n"
             if tool.parameters:
                 prompt += f"Args: {_format_parameters_compact(tool.parameters)}\n"
+            if _should_render_when_to_use(tool, total_tools=total_tools):
+                prompt += f"When: {tool.when_to_use}\n"
             prompt += "\n"
 
     prompt += """To call a tool, output one or more tool_code blocks (no other text):
@@ -1235,10 +1279,13 @@ def _format_generic_style(tools: List[ToolDefinition], *, include_tool_list: boo
     prompt = "You have access to the following tools:\n\n"
 
     if include_tool_list:
+        total_tools = len(tools)
         for tool in tools:
             prompt += f"- {tool.name}: {tool.description}\n"
             if tool.parameters:
                 prompt += f"  args: {_format_parameters_compact(tool.parameters)}\n"
+            if _should_render_when_to_use(tool, total_tools=total_tools):
+                prompt += f"  when: {tool.when_to_use}\n"
 
     prompt += _critical_rules()
 

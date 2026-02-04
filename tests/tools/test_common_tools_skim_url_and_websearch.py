@@ -4,7 +4,6 @@ import json
 
 import pytest
 
-
 pytestmark = pytest.mark.basic
 
 
@@ -25,7 +24,7 @@ class _FakeResponse:
         self.ok = 200 <= status_code < 400
         self._body = body
 
-    def __enter__(self) -> "_FakeResponse":
+    def __enter__(self) -> _FakeResponse:
         return self
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
@@ -41,7 +40,7 @@ class _FakeSession:
         self._response = response
         self.headers: dict[str, str] = {}
 
-    def __enter__(self) -> "_FakeSession":
+    def __enter__(self) -> _FakeSession:
         return self
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
@@ -51,7 +50,9 @@ class _FakeSession:
         return self._response
 
 
-def test_skim_url_extracts_title_description_headings_and_preview(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_skim_url_extracts_title_description_headings_and_preview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import abstractcore.tools.common_tools as common_tools
 
     html = (
@@ -73,7 +74,9 @@ def test_skim_url_extracts_title_description_headings_and_preview(monkeypatch: p
     )
     monkeypatch.setattr(common_tools.requests, "Session", lambda: _FakeSession(fake))
 
-    out = common_tools.skim_url("http://example.com/page", max_bytes=900, max_preview_chars=600, max_headings=5)
+    out = common_tools.skim_url(
+        "http://example.com/page", max_bytes=900, max_preview_chars=600, max_headings=5
+    )
 
     assert "🌐 URL Skim" in out
     assert "📰 Title: R-Type" in out
@@ -93,9 +96,24 @@ def test_skim_websearch_filters_results_by_snippet(monkeypatch: pytest.MonkeyPat
         "query": "pets",
         "params": {"num_results": 10},
         "results": [
-            {"rank": 1, "title": "Cats", "url": "https://example.com/cats", "snippet": "All about cats"},
-            {"rank": 2, "title": "Dogs", "url": "https://example.com/dogs", "snippet": "All about dogs"},
-            {"rank": 3, "title": "Cats and Dogs", "url": "https://example.com/both", "snippet": "Cats and dogs together"},
+            {
+                "rank": 1,
+                "title": "Cats",
+                "url": "https://example.com/cats",
+                "snippet": "All about cats",
+            },
+            {
+                "rank": 2,
+                "title": "Dogs",
+                "url": "https://example.com/dogs",
+                "snippet": "All about dogs",
+            },
+            {
+                "rank": 3,
+                "title": "Cats and Dogs",
+                "url": "https://example.com/both",
+                "snippet": "Cats and dogs together",
+            },
         ],
     }
 
@@ -106,8 +124,38 @@ def test_skim_websearch_filters_results_by_snippet(monkeypatch: pytest.MonkeyPat
     urls_any = [r["url"] for r in data_any["results"]]
     assert urls_any == ["https://example.com/cats", "https://example.com/both"]
 
-    out_all = common_tools.skim_websearch(query="pets", required_terms="cats,dogs", match="all", num_results=5)
+    out_all = common_tools.skim_websearch(
+        query="pets", required_terms="cats,dogs", match="all", num_results=5
+    )
     data_all = json.loads(out_all)
     urls_all = [r["url"] for r in data_all["results"]]
     assert urls_all == ["https://example.com/both"]
 
+
+def test_skim_websearch_truncates_long_snippets_to_keep_outputs_small(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import abstractcore.tools.common_tools as common_tools
+
+    long_snippet = "A" * 2000
+    sample = {
+        "engine": "duckduckgo",
+        "query": "pets",
+        "params": {"num_results": 10},
+        "results": [
+            {
+                "rank": 1,
+                "title": "Cats",
+                "url": "https://example.com/cats",
+                "snippet": long_snippet,
+            }
+        ],
+    }
+
+    monkeypatch.setattr(common_tools, "web_search", lambda *args, **kwargs: json.dumps(sample))
+
+    out = common_tools.skim_websearch(query="pets", num_results=1)
+    data = json.loads(out)
+    snippet = data["results"][0]["snippet"]
+    assert "… (truncated)" in snippet
+    assert len(snippet) <= 240

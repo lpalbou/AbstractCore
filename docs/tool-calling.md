@@ -139,14 +139,12 @@ def search_database(query: str, table: str = "users") -> str:
 ```
 
 **How This Metadata is Used:**
-- **Prompted Models**: All metadata is injected into the system prompt to guide the LLM
-- **Native APIs**: Metadata is passed through to the provider's tool API
-- **Examples**: Shown in the system prompt with proper formatting for each architecture
-- **Tags & when_to_use**: Help the LLM understand context and appropriate usage
+- **Prompted tool calling**: the tool formatter injects tool name/description/args into the system prompt. To keep prompts small, `when_to_use` is included only for small tool sets and a few high-impact tools (edit/write/execute + web triage tools), and tool examples are globally capped.
+- **Native tool calling**: only standard fields (`name`, `description`, `parameters`) are sent to provider APIs (unknown/custom fields are intentionally omitted for compatibility).
 
 ### Built-in Tools
 
-AbstractCore includes a comprehensive set of ready-to-use tools in `abstractcore.tools.common_tools`:
+AbstractCore includes a comprehensive set of ready-to-use tools in `abstractcore.tools.common_tools` (requires `pip install "abstractcore[tools]"`):
 
 ```python
 from abstractcore.tools.common_tools import skim_url, fetch_url, search_files, read_file, list_files
@@ -154,9 +152,9 @@ from abstractcore.tools.common_tools import skim_url, fetch_url, search_files, r
 # Quick URL preview (fast, small)
 preview = skim_url("https://example.com/article")
 
-# Full web content fetching and parsing (HTML→Markdown, JSON, PDFs, ...)
+# Full web content fetching and parsing (HTML→Markdown, JSON/XML/text)
 result = fetch_url("https://api.github.com/repos/python/cpython")
-# Automatically detects and parses JSON, HTML, images, PDFs, etc.
+# For PDFs/images/other binaries, fetch_url returns metadata (and optional previews), not full extraction.
 
 # File system operations  
 files = search_files("def.*fetch", ".", file_pattern="*.py")
@@ -166,7 +164,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 
 **Available Built-in Tools:**
 - `skim_url` - Fast URL skim (title/description/headings + short preview)
-- `fetch_url` - Intelligent web content fetching with automatic content type detection and parsing
+- `fetch_url` - Fetch + parse common text-first types (HTML→Markdown, JSON/XML/text); binaries return metadata + optional previews
 - `search_files` - Search for text patterns inside files using regex
 - `list_files` - Find and list files by names/paths using glob patterns
 - `read_file` - Read file contents with optional line range selection
@@ -175,6 +173,13 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 - `web_search` - Search the web using DuckDuckGo
 - `skim_websearch` - Smaller/filtered web search (compact result list)
 - `execute_command` - Execute shell commands safely with security controls
+
+**Suggested web workflow (agent-friendly):**
+1. `skim_websearch(...)` → get a small set of candidate URLs
+2. `skim_url(...)` → quickly decide what’s worth fetching
+3. `fetch_url(...)` → parse the selected URL(s); set `include_full_content=False` when you want a smaller output
+
+Tip: you can measure output footprint/latency locally with `python examples/skim_tools_benchmark.py --help`.
 
 ### Real-World Example
 

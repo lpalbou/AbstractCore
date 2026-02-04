@@ -80,6 +80,21 @@ By default, AbstractCore runs in **pass-through** mode (`execute_tools=False`): 
 
 Automatic execution (`execute_tools=True`) exists but is deprecated for most use cases. See [Tool Calling](tool-calling.md).
 
+## What’s the difference between `web_search`, `skim_websearch`, `skim_url`, and `fetch_url`?
+
+These built-in web tools live in `abstractcore.tools.common_tools` and require:
+
+```bash
+pip install "abstractcore[tools]"
+```
+
+- `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options).
+- `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results and truncates long snippets.
+- `skim_url`: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). Defaults: `max_bytes=200_000`, `max_preview_chars=1200`, `max_headings=8`.
+- `fetch_url`: full fetch + parsing for text-first types (HTML→Markdown, JSON/XML/text). For PDFs/images/other binaries it returns metadata and optional previews; it does **not** do full PDF text extraction. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
+
+Recommended workflow: `skim_websearch` → `skim_url` → `fetch_url` (use `include_full_content=False` when you want a smaller `fetch_url` output).
+
 ## How do I preserve tool-call markup in `response.content` for agentic CLIs?
 
 Use tool-call syntax rewriting:

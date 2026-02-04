@@ -55,6 +55,16 @@ print(resp.tool_calls)
 
 See **[Tool Calling](tool-calling.md)** and **[Tool Syntax Rewriting](tool-syntax-rewriting.md)**.
 
+### Built-in tools (optional)
+
+If you want a ready-made toolset (web + filesystem helpers), install:
+
+```bash
+pip install "abstractcore[tools]"
+```
+
+Then import from `abstractcore.tools.common_tools` (for example `web_search`, `skim_websearch`, `skim_url`, `fetch_url`). See **[Tool Calling](tool-calling.md)** for usage patterns and when to use `skim_*` vs `fetch_*`.
+
 ## Structured output
 
 Pass a Pydantic model via `response_model=...` to receive a typed result:
@@ -94,4 +104,3 @@ python -m abstractcore.server.app
 ```
 
 See **[Server](server.md)**.
-
