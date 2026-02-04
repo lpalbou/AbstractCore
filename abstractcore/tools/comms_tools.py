@@ -945,14 +945,22 @@ def send_email(
                 except Exception:
                     pass
 
+        msg_id = str(msg.get("Message-ID") or "")
+        recipients = to_list + cc_list + bcc_list
+        rendered = (
+            f"Sent email (account={acc.name}) from {sender} to {', '.join(recipients)} "
+            f"subject={subject_s!r} message_id={msg_id}"
+        )
+
         return {
             "success": True,
             "account": acc.name,
-            "message_id": str(msg.get("Message-ID") or ""),
+            "message_id": msg_id,
             "from": sender,
             "to": list(to_list),
             "cc": list(cc_list),
             "bcc": list(bcc_list),
+            "rendered": rendered,
             "smtp": {
                 "host": smtp_cfg.host,
                 "port": int(smtp_cfg.port),
@@ -965,6 +973,10 @@ def send_email(
             "success": False,
             "account": acc.name,
             "error": str(e),
+            "rendered": (
+                f"Failed to send email (account={acc.name}) from {sender} to {', '.join(to_list + cc_list + bcc_list)} "
+                f"subject={subject_s!r}"
+            ),
             "smtp": {
                 "host": smtp_cfg.host,
                 "port": int(smtp_cfg.port),
