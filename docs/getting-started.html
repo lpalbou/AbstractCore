@@ -82,12 +82,12 @@ pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
 pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
 pip install "abstractcore[vllm]"         # GPU server integration (heavy)
 
-# Optional features
-pip install "abstractcore[media]"        # images, PDFs, Office docs
-pip install "abstractcore[tools]"        # built-in tools (fetch_url, web_search)
-pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway
-pip install "abstractcore[embeddings]"   # vector embeddings + RAG helpers
-pip install "abstractcore[compression]"  # glyph visual-text compression
+	# Optional features
+	pip install "abstractcore[media]"        # images, PDFs, Office docs
+	pip install "abstractcore[tools]"        # built-in tools (web_search, skim_websearch, skim_url, fetch_url, read_file, ...)
+	pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway
+	pip install "abstractcore[embeddings]"   # vector embeddings + RAG helpers
+	pip install "abstractcore[compression]"  # glyph visual-text compression
 
 # Note: providers like ollama, lmstudio, openrouter, and openai-compatible
 # work with the core install — just set the server base_url.</code></pre>
@@ -273,8 +273,25 @@ response = llm.generate(
     tools=[get_weather, calculate]  # Pass tool functions directly
 )
 
-print(response.content)
-# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.</code></pre>
+	print(response.content)
+	# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.</code></pre>
+                </div>
+
+                <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0; border-left: 4px solid var(--primary-color);">
+                    <h4 style="margin: 0 0 0.75rem 0; color: var(--primary-color);">Built-in tools (optional)</h4>
+                    <p style="margin: 0 0 1rem 0; color: var(--text-secondary);">
+                        If you want a ready-made toolset for agentic scripts, install:
+                    </p>
+                    <div class="code-block" style="margin: 0 0 1rem 0;">
+                        <pre><code class="language-bash">pip install "abstractcore[tools]"</code></pre>
+                    </div>
+                    <ul style="margin: 0 0 1rem 0; color: var(--text-secondary);">
+                        <li><code>skim_websearch</code> vs <code>web_search</code>: compact/filtered links vs fuller search results</li>
+                        <li><code>skim_url</code> vs <code>fetch_url</code>: fast URL triage (small output) vs full fetch + parsing for text-first types (HTML/JSON/text)</li>
+                    </ul>
+                    <p style="margin: 0; color: var(--text-secondary);">
+                        See <a href="tool-calling.html">Tool Calling</a> for a recommended workflow and the full built-in tool list.
+                    </p>
                 </div>
 
                 <h3>5. Streaming (Real-Time Responses)</h3>

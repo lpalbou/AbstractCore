@@ -33,6 +33,8 @@ Common extras (quote brackets for zsh):
 
 - [docs/tool-calling.md](docs/tool-calling.md): `@tool`, passthrough vs execution
 - [abstractcore/tools/](abstractcore/tools/): tool system (core/registry/parser/handler)
+- [abstractcore/tools/common_tools.py](abstractcore/tools/common_tools.py): built-in tools (web_search/skim_websearch/skim_url/fetch_url + filesystem helpers; requires `abstractcore[tools]`)
+- [examples/skim_tools_benchmark.py](examples/skim_tools_benchmark.py): benchmark output footprint/latency for skim_* vs fetch_*
 - [docs/tool-syntax-rewriting.md](docs/tool-syntax-rewriting.md): tool-call format rewriting (`tool_call_tags`, server `agent_format`)
 - [docs/structured-output.md](docs/structured-output.md): `response_model=...`
 - [docs/events.md](docs/events.md): global event bus (`on_global`)

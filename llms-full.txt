@@ -3,7 +3,7 @@
 > AbstractCore is a Python library that provides a unified `create_llm(...)` API over multiple LLM backends (cloud + local). Optional subsystems (tools, embeddings, media handling, glyph compression, server) are enabled via explicit install extras; the default install is intentionally small.
 
 Last updated: 2026-02-04  
-Package version: 2.11.1 (`abstractcore/utils/version.py`)
+Package version: 2.11.2 (`abstractcore/utils/version.py`)
 
 ## What to install
 
@@ -159,6 +159,7 @@ Common provider IDs used by `create_llm(provider=..., model=...)`:
 - Default mode is **passthrough**: AbstractCore parses tool calls and returns them in `GenerateResponse.tool_calls`; the host/runtime executes tools.
 - Tools are created with `@tool` (`abstractcore/tools/core.py`). The decorator is dependency-free.
 - Built-in web tools (`fetch_url`, `web_search`, …) live in `abstractcore/tools/common_tools.py` and require `abstractcore[tools]`.
+- Prompted tool catalogs include short `when_to_use` hints for small tool sets and a few high-impact tools (edit/write/execute + web triage tools) to improve tool choice without bloating prompts.
 
 ### Structured output
 
@@ -214,3 +215,6 @@ pytest tests/structured -q
 ```
 
 If you need provider-specific tests, install the relevant extra as well (e.g. `pip install -e ".[huggingface]"`).
+
+Benchmarks:
+- Web triage tool footprint: `python examples/skim_tools_benchmark.py --help`

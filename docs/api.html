@@ -101,6 +101,16 @@ print(resp.tool_calls)</code></pre>
                 </div>
                 <p>See <a href="tool-calling.html">Tool Calling</a> and <a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a>.</p>
 
+                <h3>Built-in tools (optional)</h3>
+                <p>If you want a ready-made toolset (web + filesystem helpers), install:</p>
+                <div class="code-block">
+                    <pre><code class="language-bash">pip install "abstractcore[tools]"</code></pre>
+                </div>
+                <p>
+                    Then import from <code>abstractcore.tools.common_tools</code> (for example <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, <code>fetch_url</code>).
+                    See <a href="tool-calling.html">Tool Calling</a> for usage patterns and when to use <code>skim_*</code> vs <code>fetch_*</code>.
+                </p>
+
                 <h2>Structured output</h2>
                 <p>Pass a Pydantic model via <code>response_model=...</code> to receive a typed result:</p>
                 <div class="code-block">

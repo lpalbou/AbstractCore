@@ -167,6 +167,19 @@ abstractcore --status</code></pre>
                     </p>
                     <p>Automatic execution (<code>execute_tools=True</code>) exists but is deprecated for most use cases. See <a href="tool-calling.html">Tool Calling</a>.</p>
 
+                    <h3>What’s the difference between <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, and <code>fetch_url</code>?</h3>
+                    <p>These built-in web tools live in <code>abstractcore.tools.common_tools</code> and require:</p>
+                    <div class="code-block">
+                        <pre><code class="language-bash">pip install "abstractcore[tools]"</code></pre>
+                    </div>
+                    <ul>
+                        <li><code>web_search</code>: fuller DuckDuckGo result set (good when you want breadth or more options).</li>
+                        <li><code>skim_websearch</code>: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results and truncates long snippets.</li>
+                        <li><code>skim_url</code>: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). Defaults: <code>max_bytes=200_000</code>, <code>max_preview_chars=1200</code>, <code>max_headings=8</code>.</li>
+                        <li><code>fetch_url</code>: full fetch + parsing for text-first types (HTML→Markdown, JSON/XML/text). For PDFs/images/other binaries it returns metadata and optional previews; it does <strong>not</strong> do full PDF text extraction. It downloads up to 10MB by default; use <code>include_full_content=False</code> for smaller outputs.</li>
+                    </ul>
+                    <p>Recommended workflow: <code>skim_websearch</code> → <code>skim_url</code> → <code>fetch_url</code> (use <code>include_full_content=False</code> when you want a smaller <code>fetch_url</code> output).</p>
+
                     <h3>How do I preserve tool-call markup in <code>response.content</code> for agentic CLIs?</h3>
                     <p>Use tool-call syntax rewriting:</p>
                     <ul>
