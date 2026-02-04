@@ -183,6 +183,60 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 If `api_key` is not provided, AbstractCore falls back to environment variables.
 
+### Media generation endpoints (optional)
+
+AbstractCore Server can optionally expose OpenAI-compatible **image generation** and **audio** endpoints.
+
+Important notes:
+- These are **interoperability-first** endpoints (return `b64_json` or raw bytes), not an artifact-first durability contract.
+- If the required plugin/backend is not available, the server returns `501` with actionable messaging.
+
+#### Images (generate/edit) — requires `abstractvision`
+
+Endpoints:
+- `POST /v1/images/generations`
+- `POST /v1/images/edits`
+
+Install:
+```bash
+pip install "abstractcore[server]"
+pip install abstractvision
+```
+
+#### Audio (STT/TTS) — requires an audio/voice capability plugin (typically `abstractvoice`)
+
+Endpoints:
+- `POST /v1/audio/transcriptions` (multipart; `file=...`)
+- `POST /v1/audio/speech` (json; `input=...`, optional `voice`, optional `format`)
+
+Install:
+```bash
+pip install "abstractcore[server]"
+pip install abstractvoice
+```
+
+Notes:
+- `/v1/audio/transcriptions` requires `python-multipart` for form parsing (included in the server extra).
+
+Examples:
+
+```bash
+# Speech-to-text (STT)
+curl -X POST http://localhost:8000/v1/audio/transcriptions \
+  -F "file=@speech.wav" \
+  -F "language=en"
+
+# Text-to-speech (TTS)
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Hello!","format":"wav"}' \
+  --output hello.wav
+```
+
+If you want to “ask a model about an audio file”, prefer one of:
+- Run STT first (`/v1/audio/transcriptions`) then send the transcript to `POST /v1/chat/completions`, or
+- Configure the server’s default audio strategy (`config.audio.strategy`) to enable STT fallback for audio attachments, then attach audio in chat requests.
+
 ### Multimodal Requests (Images, Documents, Files)
 
 AbstractCore server supports comprehensive file attachments using OpenAI-compatible multimodal message format, plus AbstractCore's convenient `@filename` syntax.

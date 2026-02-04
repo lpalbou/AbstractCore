@@ -9,7 +9,7 @@ This module is the cornerstone of AbstractCore's **provider-agnostic architectur
 ## Installation
 
 - Tool parsing/rewriting is part of core `abstractcore`.
-- The built-in toolset in `abstractcore.tools.common_tools` (notably `fetch_url` and `web_search`) requires `pip install "abstractcore[tools]"` so runtime dependencies like BeautifulSoup/requests are available.
+- The built-in toolset in `abstractcore.tools.common_tools` (notably `web_search`, `skim_websearch`, `skim_url`, `fetch_url`) requires `pip install "abstractcore[tools]"` so runtime dependencies like BeautifulSoup/requests are available.
 
 ## Quick Reference
 
@@ -28,7 +28,7 @@ This module is the cornerstone of AbstractCore's **provider-agnostic architectur
 | Need | Use | Example |
 |------|-----|---------|
 | File operations | `list_files`, `read_file`, `write_file`, `edit_file`, `search_files` | List Python files, read config, update code |
-| Web operations | `web_search`, `fetch_url` | Search DuckDuckGo, fetch API data |
+| Web operations | `web_search`, `skim_websearch`, `skim_url`, `fetch_url` | Search DuckDuckGo, skim a URL, fetch full content |
 | System commands | `execute_command` | Run tests, git operations |
 | Custom logic | `@tool` decorator | Business rules, API integrations |
 
@@ -584,12 +584,32 @@ def edit_file(
 @tool
 def web_search(
     query: str,
-    num_results: int = 5,
+    num_results: int = 10,
     safe_search: str = "moderate",
-    region: str = "us-en",
+    region: str = "wt-wt",
     time_range: Optional[str] = None
 ) -> str:
     """Search web using DuckDuckGo (no API key required) and return JSON results"""
+
+@tool
+def skim_websearch(
+    query: str,
+    required_terms: Optional[list[str]] = None,
+    num_results: int = 5,
+    safe_search: str = "moderate",
+    region: str = "wt-wt",
+    time_range: Optional[str] = None
+) -> str:
+    """Smaller/filtered subset of web_search results (compact result list)"""
+
+@tool
+def skim_url(
+    url: str,
+    timeout: int = 15,
+    max_bytes: int = 200_000,
+    max_preview_chars: int = 2000
+) -> str:
+    """Quick URL skim (metadata + short text preview); use fetch_url for full parsing"""
 
 @tool
 def fetch_url(
@@ -602,7 +622,7 @@ def fetch_url(
     keep_links: bool = True,
     user_agent: str = "AbstractCore-FetchTool/1.0",
     include_full_content: bool = True
-) -> str:
+) -> Dict[str, Any]:
     """Fetch and parse content from URLs"""
 ```
 

@@ -3672,6 +3672,432 @@ def web_search(
 
 
 @tool(
+    description="Run a small web search and return a compact, optionally keyword-filtered result list.",
+    when_to_use="Use when you only need a few relevant links; optionally require keywords in the snippet before opening URLs.",
+    examples=[
+        {
+            "description": "Get a short list of links for a topic",
+            "arguments": {"query": "python http caching best practices", "num_results": 5},
+        },
+        {
+            "description": "Filter results to ones mentioning a keyword in the snippet",
+            "arguments": {"query": "vector databases comparison", "required_terms": ["latency", "benchmark"]},
+        },
+        {
+            "description": "Require all keywords, searching recent results",
+            "arguments": {"query": "llm tool calling formats", "required_terms": ["xml", "qwen"], "match": "all", "time_range": "w"},
+        },
+    ],
+)
+def skim_websearch(
+    query: str,
+    required_terms: Optional[list[str]] = None,
+    num_results: int = 5,
+    safe_search: str = "moderate",
+    region: str = "wt-wt",
+    time_range: Optional[str] = None,
+    require_in: str = "snippet",
+    match: str = "any",
+) -> str:
+    """Return a smaller, filtered subset of `web_search` results."""
+
+    def _parse_terms(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+            normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+            if "|" in normalized or "\n" in normalized:
+                parts: list[str] = []
+                for chunk in normalized.split("\n"):
+                    for p in chunk.split("|"):
+                        s = str(p or "").strip()
+                        if s:
+                            parts.append(s)
+                return parts
+            if "," in normalized:
+                return [p.strip() for p in normalized.split(",") if p.strip()]
+            return [text]
+        if isinstance(value, (list, tuple, set)):
+            out: list[str] = []
+            for x in value:
+                s = str(x or "").strip()
+                if s:
+                    out.append(s)
+            return out
+        return []
+
+    def _json(payload: Dict[str, Any]) -> str:
+        try:
+            return json.dumps(payload, ensure_ascii=False, indent=2)
+        except Exception:
+            return json.dumps({"error": "Failed to serialize skim_websearch output", "query": query})
+
+    q = str(query or "").strip()
+    if not q:
+        return _json({"error": "query is required"})
+
+    try:
+        requested = int(num_results)
+    except Exception:
+        requested = 5
+    if requested <= 0:
+        requested = 5
+    # Keep this tool compact by default.
+    requested = min(requested, 15)
+
+    terms = [t.lower() for t in _parse_terms(required_terms) if str(t).strip()]
+    require_in_norm = str(require_in or "snippet").strip().lower()
+    if require_in_norm not in {"snippet", "title", "title_snippet", "all"}:
+        require_in_norm = "snippet"
+
+    match_norm = str(match or "any").strip().lower()
+    if match_norm not in {"any", "all"}:
+        match_norm = "any"
+
+    # Fetch a few more results than requested so filtering doesn't usually zero out.
+    search_n = requested if not terms else min(max(requested * 3, 10), 30)
+
+    raw = web_search(
+        query=q,
+        num_results=search_n,
+        safe_search=safe_search,
+        region=region,
+        time_range=time_range,
+    )
+
+    try:
+        payload = json.loads(str(raw or ""))
+    except Exception:
+        return _json(
+            {
+                "query": q,
+                "error": "web_search returned non-JSON output",
+                "raw_preview": preview_text(str(raw or ""), max_chars=500),
+            }
+        )
+
+    results = payload.get("results")
+    if not isinstance(results, list):
+        results = []
+
+    def _haystack(item: Dict[str, Any]) -> str:
+        title = str(item.get("title") or "")
+        snippet = str(item.get("snippet") or "")
+        url = str(item.get("url") or "")
+        if require_in_norm == "title":
+            return title
+        if require_in_norm == "title_snippet":
+            return f"{title} {snippet}".strip()
+        if require_in_norm == "all":
+            return f"{title} {snippet} {url}".strip()
+        return snippet
+
+    filtered: list[Dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        if not terms:
+            filtered.append(item)
+            continue
+        text = _haystack(item).lower()
+        if match_norm == "all":
+            if all(t in text for t in terms):
+                filtered.append(item)
+        else:
+            if any(t in text for t in terms):
+                filtered.append(item)
+
+    out_results: list[Dict[str, Any]] = []
+    for item in filtered[:requested]:
+        out_results.append(
+            {
+                "rank": item.get("rank"),
+                "title": item.get("title"),
+                "url": item.get("url"),
+                "snippet": item.get("snippet"),
+            }
+        )
+
+    out_payload: Dict[str, Any] = {
+        "query": q,
+        "params": {
+            "num_results": requested,
+            "safe_search": safe_search,
+            "region": region,
+            "time_range": time_range,
+        },
+        "filter": {
+            "required_terms": terms,
+            "require_in": require_in_norm,
+            "match": match_norm,
+        },
+        "results": out_results,
+        "counts": {
+            "fetched": len(results),
+            "matched": len(filtered),
+            "returned": len(out_results),
+        },
+    }
+
+    if terms and not out_results:
+        out_payload["hint"] = "No matches. Try fewer required_terms or match='any'."
+    if isinstance(payload, dict) and payload.get("error"):
+        out_payload["search_error"] = payload.get("error")
+
+    return _json(out_payload)
+
+
+@tool(
+    description="Quickly skim a URL (metadata + short text preview) without downloading the full page.",
+    when_to_use="Use to decide whether a URL is worth fetching fully; for full parsing, use fetch_url.",
+    examples=[
+        {"description": "Skim an article page", "arguments": {"url": "https://example.com/article.html"}},
+        {
+            "description": "Skim a JSON endpoint",
+            "arguments": {"url": "https://api.github.com/repos/python/cpython"},
+        },
+        {
+            "description": "Skim a long page with smaller byte/preview limits",
+            "arguments": {"url": "https://example.com/very-long", "max_bytes": 120000, "max_preview_chars": 1200},
+        },
+    ],
+)
+def skim_url(
+    url: str,
+    timeout: int = 15,
+    max_bytes: int = 200_000,
+    max_preview_chars: int = 2000,
+    max_headings: int = 12,
+    user_agent: str = "AbstractCore-SkimTool/1.0",
+) -> str:
+    """
+    Skim a URL quickly: fetch only a small prefix and extract lightweight metadata and a short preview.
+
+    This is intentionally faster and smaller than `fetch_url`. If you need full HTML→Markdown conversion,
+    link extraction, or binary previews, use `fetch_url(...)`.
+    """
+    u = str(url or "").strip()
+    if not u:
+        return "Error: url is required"
+
+    if not REQUESTS_AVAILABLE or requests is None:
+        return (
+            "Error: skim_url requires `requests`, which is not installed.\n"
+            "Install with: pip install \"abstractcore[tools]\""
+        )
+
+    try:
+        timeout_s = int(timeout)
+    except Exception:
+        timeout_s = 15
+    if timeout_s <= 0:
+        timeout_s = 15
+    timeout_s = min(timeout_s, 120)
+
+    try:
+        cap = int(max_bytes)
+    except Exception:
+        cap = 200_000
+    if cap <= 0:
+        cap = 200_000
+    # Allow small values for ultra-fast “peek” usage, but keep a tiny floor to avoid empty reads.
+    cap = max(512, min(cap, 2_000_000))
+
+    try:
+        preview_cap = int(max_preview_chars)
+    except Exception:
+        preview_cap = 2000
+    if preview_cap <= 0:
+        preview_cap = 2000
+    preview_cap = max(200, min(preview_cap, 12_000))
+
+    try:
+        headings_cap = int(max_headings)
+    except Exception:
+        headings_cap = 12
+    if headings_cap < 0:
+        headings_cap = 0
+    headings_cap = min(headings_cap, 50)
+
+    request_headers: Dict[str, str] = {
+        "User-Agent": str(user_agent or "AbstractCore-SkimTool/1.0"),
+        "Accept": "text/html,application/json,text/plain;q=0.9,*/*;q=0.1",
+    }
+
+    def _decode_text_bytes(content: bytes, content_type_header: str) -> str:
+        encoding = "utf-8"
+        if "charset=" in (content_type_header or ""):
+            try:
+                encoding = str(content_type_header).split("charset=")[1].split(";")[0].strip() or "utf-8"
+            except Exception:
+                encoding = "utf-8"
+
+        for enc in [encoding, "utf-8", "iso-8859-1", "windows-1252"]:
+            try:
+                return content.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return content.decode("utf-8", errors="replace")
+
+    started_at = datetime.utcnow().isoformat()
+
+    try:
+        with requests.Session() as session:
+            session.headers.update(request_headers)
+            with session.request(
+                method="GET",
+                url=u,
+                timeout=timeout_s,
+                allow_redirects=True,
+                stream=True,
+            ) as response:
+                status = int(getattr(response, "status_code", 0) or 0)
+                reason = str(getattr(response, "reason", "") or "")
+                final_url = str(getattr(response, "url", u) or u)
+                content_type = str((getattr(response, "headers", {}) or {}).get("content-type", "") or "")
+                content_length_raw = str((getattr(response, "headers", {}) or {}).get("content-length", "") or "").strip()
+                content_length: Optional[int] = None
+                if content_length_raw.isdigit():
+                    try:
+                        content_length = int(content_length_raw)
+                    except Exception:
+                        content_length = None
+
+                if not getattr(response, "ok", False):
+                    parts = [
+                        "🌐 URL Skim",
+                        f"URL: {u}",
+                        f"Final URL: {final_url}" if final_url and final_url != u else None,
+                        f"Status: {status} {reason}".strip(),
+                        f"Content-Type: {content_type or 'unknown'}",
+                        f"Timestamp: {started_at}",
+                    ]
+                    return "\n".join([p for p in parts if p])
+
+                chunks: list[bytes] = []
+                total = 0
+                truncated = False
+                for chunk in response.iter_content(chunk_size=16_384):
+                    if not chunk:
+                        continue
+                    remaining = cap - total
+                    if remaining <= 0:
+                        truncated = True
+                        break
+                    if len(chunk) > remaining:
+                        chunks.append(chunk[:remaining])
+                        total += remaining
+                        truncated = True
+                        break
+                    chunks.append(chunk)
+                    total += len(chunk)
+
+                raw_bytes = b"".join(chunks)
+                main_type = content_type.split(";")[0].strip().lower()
+
+                title = ""
+                description = ""
+                preview = ""
+                headings: list[str] = []
+
+                if main_type.startswith(("text/html", "application/xhtml+xml", "application/xhtml")) or (
+                    main_type.startswith("text/") and _is_html_content(_decode_text_bytes(raw_bytes, content_type))
+                ):
+                    html_text = _decode_text_bytes(raw_bytes, content_type)
+                    title, description, extracted = _extract_clean_text_from_html(html_text, final_url)
+
+                    if headings_cap > 0 and BS4_AVAILABLE and BeautifulSoup is not None:
+                        try:
+                            parser = _get_appropriate_parser(html_text)
+                            import warnings
+
+                            with warnings.catch_warnings():
+                                warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+                                soup = BeautifulSoup(html_text, parser)
+
+                            seen: set[str] = set()
+                            for level in ("h1", "h2", "h3"):
+                                for tag in soup.find_all(level, limit=200):
+                                    text = str(tag.get_text(" ", strip=True) or "").strip()
+                                    text = " ".join(text.split())
+                                    if not text:
+                                        continue
+                                    if text.lower() in seen:
+                                        continue
+                                    seen.add(text.lower())
+                                    headings.append(f"{level.upper()}: {preview_text(text, max_chars=140)}")
+                                    if len(headings) >= headings_cap:
+                                        break
+                                if len(headings) >= headings_cap:
+                                    break
+                        except Exception:
+                            headings = []
+
+                    extracted = _normalize_extracted_text(extracted)
+                    preview = preview_text(extracted, max_chars=preview_cap)
+
+                elif main_type == "application/json" or (main_type.startswith("text/") and _is_json_content(_decode_text_bytes(raw_bytes, content_type))):
+                    text = _decode_text_bytes(raw_bytes, content_type)
+                    try:
+                        data = json.loads(text)
+                        pretty = json.dumps(data, ensure_ascii=False, indent=2, separators=(",", ": "))
+                        preview = preview_text(pretty, max_chars=preview_cap)
+                    except Exception:
+                        preview = preview_text(text, max_chars=preview_cap)
+
+                elif main_type.startswith("text/"):
+                    text = _decode_text_bytes(raw_bytes, content_type)
+                    preview = preview_text(_normalize_extracted_text(text), max_chars=preview_cap)
+
+                else:
+                    preview = ""
+
+                out: list[str] = ["🌐 URL Skim", f"URL: {u}"]
+                if final_url and final_url != u:
+                    out.append(f"Final URL: {final_url}")
+                out.append(f"Status: {status} {reason}".strip())
+                out.append(f"Content-Type: {content_type or 'unknown'}")
+                if content_length is not None:
+                    out.append(f"Content-Length: {content_length:,} bytes")
+                downloaded_line = f"Downloaded: {len(raw_bytes):,} bytes"
+                if truncated:
+                    downloaded_line += f" (partial; limit {cap:,})"
+                out.append(downloaded_line)
+                out.append(f"Timestamp: {started_at}")
+
+                if title:
+                    out.append(f"📰 Title: {preview_text(title, max_chars=180)}")
+                if description:
+                    out.append(f"📝 Description: {preview_text(description, max_chars=220)}")
+                if headings:
+                    out.append("🏷️ Headings (H1–H3):")
+                    out.extend([f"- {h}" for h in headings])
+
+                if preview:
+                    out.append("📄 Preview:")
+                    out.append(preview)
+                else:
+                    out.append("📄 Preview:")
+                    out.append("⚠️  Non-text content. Use fetch_url(...) for content-type specific parsing and previews.")
+
+                out.append("Next: use fetch_url(...) when you need full parsing/output.")
+                return "\n".join(out)
+
+    except Exception as e:
+        return "\n".join(
+            [
+                "🌐 URL Skim",
+                f"URL: {u}",
+                f"Error: {str(e)}",
+                f"Timestamp: {started_at}",
+            ]
+        )
+
+
+@tool(
     description="Fetch a URL and parse common content types (HTML/JSON/text); supports previews and basic metadata.",
     when_to_use="Use to retrieve and analyze content from a URL (HTML→Markdown). Redirects are always followed. For shorter outputs, set include_full_content=False; set keep_links=False to strip links.",
     examples=[
@@ -4517,55 +4943,68 @@ def _score_html_container(container: Any) -> float:
 
 def _select_html_main_container(soup: BeautifulSoup, url: str) -> Any:
     """Select the best main content container from an HTML soup."""
-    content_candidates: list[Any] = []
-    content_selectors = [
-        "main",
-        "article",
-        "[role='main']",
-        "#mw-content-text",
-        "#bodyContent",
-        "#content",
-        "#main",
-        ".mw-parser-output",
-        ".entry-content",
-        ".post-content",
-        ".article-content",
-        ".page-content",
-        ".content",
-        ".article-body",
-        ".post-body",
-        ".story-body",
-        ".main-content",
+    if soup is None:
+        return None
+
+    # Prefer content-specific selectors first (they typically exclude global navigation/sidebar noise).
+    selector_groups: list[list[str]] = [
+        [
+            "#mw-content-text",
+            "#bodyContent",
+            ".mw-parser-output",
+            "article",
+            ".entry-content",
+            ".post-content",
+            ".article-content",
+            ".article-body",
+            ".post-body",
+            ".story-body",
+            ".page-content",
+            ".main-content",
+        ],
+        [
+            "[role='main']",
+            "main",
+            "#content",
+            "#main",
+            ".content",
+        ],
     ]
-    try:
-        selector_query = ", ".join(content_selectors)
-        content_candidates.extend(soup.select(selector_query)[:50])
-    except Exception:
-        pass
 
-    if soup.body:
-        content_candidates.append(soup.body)
-    content_candidates.append(soup)
+    def _dedupe(items: list[Any]) -> list[Any]:
+        seen: set[int] = set()
+        out: list[Any] = []
+        for c in items:
+            cid = id(c)
+            if cid in seen:
+                continue
+            seen.add(cid)
+            out.append(c)
+        return out
 
-    # Deduplicate while preserving order.
-    seen: set[int] = set()
-    unique_candidates: list[Any] = []
-    for c in content_candidates:
-        cid = id(c)
-        if cid in seen:
-            continue
-        seen.add(cid)
-        unique_candidates.append(c)
+    def _best_by_score(items: list[Any]) -> tuple[Any, float]:
+        best: Any = None
+        best_score = -1.0
+        for candidate in items:
+            score = _score_html_container(candidate)
+            if score > best_score:
+                best_score = score
+                best = candidate
+        return best, best_score
 
-    best_container: Any = None
-    best_score = -1.0
-    for candidate in unique_candidates:
-        score = _score_html_container(candidate)
-        if score > best_score:
-            best_score = score
-            best_container = candidate
+    for selectors in selector_groups:
+        candidates: list[Any] = []
+        try:
+            candidates.extend(soup.select(", ".join(selectors))[:80])
+        except Exception:
+            candidates = []
+        candidates = _dedupe(candidates)
+        best, score = _best_by_score(candidates)
+        if best is not None and score >= 0:
+            return best
 
-    return best_container or soup
+    # Fallback: body if available, else the whole soup.
+    return soup.body or soup
 
 
 def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str, str]:
@@ -4603,6 +5042,10 @@ def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str
 
     _prune_html_soup_for_text(soup)
     container = _select_html_main_container(soup, url)
+    try:
+        _prune_html_container_for_readability(container)
+    except Exception:
+        pass
     try:
         extracted_raw = container.get_text("\n", strip=True)
     except Exception:
@@ -4723,6 +5166,10 @@ def _prune_html_container_for_readability(container: Any) -> None:
             if getattr(element, "attrs", None) is None:
                 continue
             if element is container:
+                continue
+            # Never decompose the document roots; doing so can wipe all content when
+            # container selection falls back to broad scopes (body / soup).
+            if element.name in {"html", "body"}:
                 continue
             if element.name in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li"}:
                 continue

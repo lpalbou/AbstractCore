@@ -191,6 +191,21 @@ except PDFProcessingError:
   - **Excel**: Sheet-by-sheet extraction with data analysis
   - **PowerPoint**: Slide content extraction with comprehensive analysis
 
+### Audio (policy-driven; optional STT fallback)
+- **Formats**: common `audio/*` types (WAV, MP3, M4A, …) as attachments via `media=[...]`
+- **Default behavior**: `audio_policy="native_only"` (fails loudly unless the model supports native audio input)
+- **Speech-to-text**: `audio_policy="speech_to_text"` runs STT via the capability plugin layer (`llm.audio.transcribe(...)`; typically install `abstractvoice`) and injects a transcript into the main request
+- **Auto**: `audio_policy="auto"` uses native audio when supported, otherwise STT when configured, otherwise errors
+- **Reserved**: `audio_policy="caption"` is not configured in v0 (must error; non-speech audio analysis needs an explicit capability)
+
+Transparency:
+- When STT fallback is used, `GenerateResponse.metadata.media_enrichment[]` records what was injected and which backend was used.
+
+### Video (policy-driven; native or frames fallback)
+- **Formats**: common `video/*` types as attachments via `media=[...]`
+- **Default behavior**: `video_policy="auto"` (native video when supported; otherwise sample frames and route through the vision pipeline)
+- **Budgets**: frame count and downscale are explicit and logged (see `abstractcore/providers/base.py`)
+
 ### Processing Features All Working
 - **Intelligent Detection**: Automatic file type recognition and processor selection
 - **Content Optimization**: Format-specific processing optimized for LLM consumption

@@ -101,13 +101,35 @@ class AbstractCoreInterface(ABC):
         Lazily created to avoid importing plugin machinery during `import abstractcore`.
         """
         if self._capability_registry is None:
+            explicit_prefs = None
             try:
-                prefs = self.config.get("capabilities_preferred_backends")
+                explicit_prefs = self.config.get("capabilities_preferred_backends")
             except Exception:
-                prefs = None
+                explicit_prefs = None
+
+            merged_prefs: Dict[str, str] = {}
+
+            # Global config defaults (config-manager) — lowest precedence.
+            try:
+                from ..config.manager import get_config_manager
+
+                stt_backend_id = getattr(getattr(get_config_manager().config, "audio", None), "stt_backend_id", None)
+            except Exception:
+                stt_backend_id = None
+            if isinstance(stt_backend_id, str) and stt_backend_id.strip():
+                merged_prefs["audio"] = stt_backend_id.strip()
+
+            # Per-instance explicit preferences — highest precedence.
+            if isinstance(explicit_prefs, dict):
+                for k, v in explicit_prefs.items():
+                    ks = str(k or "").strip()
+                    vs = str(v or "").strip()
+                    if ks and vs:
+                        merged_prefs[ks] = vs
+
             from ..capabilities.registry import CapabilityRegistry
 
-            self._capability_registry = CapabilityRegistry(self, preferred_backends=prefs if isinstance(prefs, dict) else None)
+            self._capability_registry = CapabilityRegistry(self, preferred_backends=merged_prefs or None)
         return self._capability_registry
 
     @property

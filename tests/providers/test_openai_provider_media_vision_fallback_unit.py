@@ -46,11 +46,26 @@ def _make_provider(monkeypatch, *, model: str) -> OpenAIProvider:
     return OpenAIProvider(model=model, api_key="test")
 
 
+def _disable_vision_fallback(monkeypatch) -> None:
+    """Force vision fallback to behave as unconfigured (no external calls)."""
+    import abstractcore.media.vision_fallback as vision_fallback_module
+
+    def _raise_not_configured(self, *args, **kwargs):
+        raise vision_fallback_module.VisionNotConfiguredError("disabled for unit tests")
+
+    monkeypatch.setattr(
+        vision_fallback_module.VisionFallbackHandler,
+        "create_description_with_trace",
+        _raise_not_configured,
+    )
+
+
 def test_openai_provider_non_vision_does_not_silently_drop_images(monkeypatch):
     # Force "text-only" path deterministically.
     import abstractcore.architectures.detection as detection_module
 
     monkeypatch.setattr(detection_module, "supports_vision", lambda _name: False)
+    _disable_vision_fallback(monkeypatch)
 
     provider = _make_provider(monkeypatch, model="gpt-3.5-turbo")
 
@@ -103,6 +118,7 @@ def test_openai_provider_attaches_media_when_prompt_empty(monkeypatch):
     import abstractcore.architectures.detection as detection_module
 
     monkeypatch.setattr(detection_module, "supports_vision", lambda _name: False)
+    _disable_vision_fallback(monkeypatch)
 
     provider = _make_provider(monkeypatch, model="gpt-3.5-turbo")
 
@@ -187,4 +203,3 @@ def test_openai_provider_uses_native_multimodal_for_vision_models(monkeypatch):
     assert isinstance(content, list), "Expected native multimodal content list for vision-capable model"
     assert any(isinstance(b, dict) and b.get("type") == "image_url" for b in content), "Expected an image_url block"
     assert any(isinstance(b, dict) and b.get("type") == "text" for b in content), "Expected a text block"
-

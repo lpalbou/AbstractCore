@@ -34,6 +34,15 @@ pip install "abstractcore[openai,media,tools]"
 
 Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See [Prerequisites](prerequisites.md) for provider setup.
 
+Optional capability plugins (deterministic multimodal outputs):
+
+```bash
+pip install abstractvoice   # enables llm.voice / llm.audio (TTS/STT)
+pip install abstractvision  # enables llm.vision (generative vision; typically via an OpenAI-compatible images endpoint)
+```
+
+See: [Capabilities](capabilities.md) and [Server](server.md).
+
 ## Providers and models
 
 AbstractCore uses a provider ID plus a model name:
@@ -113,9 +122,9 @@ print(answer.bullets)
 
 See [Structured Output](structured-output.md) for strategy details and limitations.
 
-## Media and vision
+## Media input (images/audio/video + documents)
 
-Requires `pip install "abstractcore[media]"`.
+Images and document extraction require `pip install "abstractcore[media]"` (Pillow + PDF/Office deps).
 
 ```python
 from abstractcore import create_llm
@@ -125,7 +134,13 @@ resp = llm.generate("Describe the image.", media=["./image.png"])
 print(resp.content)
 ```
 
-If your main model is text-only, you can configure vision fallback (two-stage captioning) so images are automatically described and injected as text. See [Media Handling](media-handling-system.md) and [Centralized Config](centralized-config.md).
+Audio and video attachments are also supported, but they are **policy-driven** (no silent semantic changes):
+- audio: `audio_policy` (`native_only|speech_to_text|auto|caption`)
+- video: `video_policy` (`native_only|frames_caption|auto`)
+
+Speech-to-text fallback (`audio_policy="speech_to_text"`) typically requires installing `abstractvoice` (capability plugin).
+
+If your main model is text-only, you can configure vision fallback (two-stage captioning) so images are automatically described and injected as short observations. See [Media Handling](media-handling-system.md), [Vision Capabilities](vision-capabilities.md), and [Centralized Config](centralized-config.md).
 
 For long documents, AbstractCore can optionally apply Glyph visual-text compression. Install `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` for PDFs) and see [Glyph Visual-Text Compression](glyphs.md).
 

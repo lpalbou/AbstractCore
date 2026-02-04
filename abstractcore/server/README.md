@@ -20,6 +20,8 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/v1/responses` | POST | OpenAI Responses API | `model`, `input` |
 | `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model` |
 | `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `mask` |
+| `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file` (multipart) |
+| `/v1/audio/speech` | POST | Text-to-speech (optional) | `input`, `voice`, `format` |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
 
 ### Common Request Patterns
@@ -31,6 +33,8 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | **Vision** | `/v1/chat/completions` | `content: [text, image_url]` | Image analysis |
 | **Image Generation** | `/v1/images/generations` | `prompt` | Create images (optional) |
 | **Image Editing** | `/v1/images/edits` | `prompt`, `image` | Edit images (optional) |
+| **Speech-to-Text** | `/v1/audio/transcriptions` | `file` | Transcribe audio (optional) |
+| **Text-to-Speech** | `/v1/audio/speech` | `input` | Generate audio (optional) |
 | **Documents** | `/v1/chat/completions` | `content: [text, file_url]` | PDF/CSV processing |
 | **Tools** | `/v1/chat/completions` | `tools`, `tool_choice` | Function calling |
 | **Embeddings** | `/v1/embeddings` | `model`, `input` | Text embeddings |
@@ -40,6 +44,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | Media Type | MIME Types | Max Size | Processing |
 |------------|-----------|----------|------------|
 | **Images** | `image/*` | 10MB | Vision models |
+| **Audio** | `audio/*` | 10MB | STT via capability plugins (optional) |
 | **Documents** | `application/pdf`, `docx`, `xlsx` | 10MB | Text extraction |
 | **Data** | `text/csv`, `application/json` | 10MB | Rendering |
 | **Text** | `text/plain`, `text/html` | 10MB | Direct |

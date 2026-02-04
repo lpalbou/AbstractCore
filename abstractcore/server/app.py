@@ -129,6 +129,16 @@ try:
 except Exception as e:
     logger.debug(f"Vision endpoints not loaded: {e}")
 
+# Optional: OpenAI-compatible audio endpoints (/v1/audio/*).
+# These delegate to capability plugins (e.g. AbstractVoice) and degrade to 501 when unavailable.
+try:
+    from .audio_endpoints import router as _audio_router
+
+    app.include_router(_audio_router, prefix="/v1")
+    logger.info("🔊 Audio endpoints enabled at /v1/audio/*")
+except Exception as e:
+    logger.debug(f"Audio endpoints not loaded: {e}")
+
 # ============================================================================
 # Enhanced Error Handling and Logging Middleware
 # ============================================================================

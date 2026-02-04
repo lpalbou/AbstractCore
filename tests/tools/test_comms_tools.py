@@ -8,6 +8,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+def _repo_root() -> Path:
+    here = Path(__file__).resolve()
+    for p in [here] + list(here.parents):
+        if (p / "configs" / "emails.yaml").is_file():
+            return p
+    raise AssertionError("Could not find repo root containing configs/emails.yaml")
+
+
 def test_send_email_fails_when_no_accounts_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.comms_tools import send_email
 
@@ -40,6 +48,55 @@ def test_list_email_accounts_reports_env_fallback_account(monkeypatch: pytest.Mo
     assert out["success"] is True
     assert out["source"] == "env"
     assert any(a.get("account") == "primary" and a.get("can_read") and a.get("can_send") for a in out.get("accounts") or [])
+
+
+def test_accounts_config_default_file_interpolates_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    from abstractcore.tools.comms_tools import list_email_accounts
+
+    cfg_path = _repo_root() / "configs" / "emails.yaml"
+
+    monkeypatch.setenv("ABSTRACT_EMAIL_ACCOUNTS_CONFIG", str(cfg_path))
+
+    monkeypatch.setenv("DEFAULT_EMAIL_PASSWORD", "pw")
+
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_HOST", "imap.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_PORT", "993")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_IMAP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
+
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PORT", "587")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR", "DEFAULT_EMAIL_PASSWORD")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_STARTTLS", "1")
+
+    out = list_email_accounts()
+    assert out["success"] is True
+    assert out["source"] == "yaml"
+    assert out.get("default_account") == "default"
+    accounts = out.get("accounts")
+    assert isinstance(accounts, list) and len(accounts) == 1
+    assert accounts[0].get("account") == "default"
+    assert accounts[0].get("can_read") is True
+    assert accounts[0].get("can_send") is True
+
+
+def test_accounts_config_default_file_fails_fast_when_required_env_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from abstractcore.tools.comms_tools import list_email_accounts
+
+    cfg_path = _repo_root() / "configs" / "emails.yaml"
+    monkeypatch.setenv("ABSTRACT_EMAIL_ACCOUNTS_CONFIG", str(cfg_path))
+
+    monkeypatch.delenv("ABSTRACT_EMAIL_IMAP_HOST", raising=False)
+    monkeypatch.delenv("ABSTRACT_EMAIL_IMAP_USERNAME", raising=False)
+    monkeypatch.delenv("ABSTRACT_EMAIL_SMTP_HOST", raising=False)
+    monkeypatch.delenv("ABSTRACT_EMAIL_SMTP_USERNAME", raising=False)
+
+    out = list_email_accounts()
+    assert out["success"] is False
+    err = str(out.get("error") or "")
+    assert "missing env vars" in err.lower()
+    assert "ABSTRACT_EMAIL_IMAP_HOST" in err
 
 
 def test_send_email_uses_starttls_when_port_587(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,6 +139,25 @@ def test_send_email_uses_smtp_ssl_when_port_465_and_starttls_unset(monkeypatch: 
     smtp_ctor.assert_not_called()
     smtp_ssl_ctor.assert_called_once()
     smtp_ssl.login.assert_called_once_with("me@example.com", "pw")
+    smtp_ssl.send_message.assert_called_once()
+
+
+def test_send_email_accepts_literal_password_when_env_ref_is_not_identifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    from abstractcore.tools.comms_tools import send_email
+
+    # A non-identifier "env var name" is treated as a literal secret when no env var exists with that name.
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PORT", "465")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_USERNAME", "me@example.com")
+    monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_PASSWORD_ENV_VAR", "literal-secret-with-dash")
+    monkeypatch.delenv("literal-secret-with-dash", raising=False)
+
+    smtp_ssl = MagicMock()
+    with patch("smtplib.SMTP_SSL", return_value=smtp_ssl):
+        out = send_email(to="you@example.com", subject="Hello", body_text="Hi")
+
+    assert out["success"] is True
+    smtp_ssl.login.assert_called_once_with("me@example.com", "literal-secret-with-dash")
     smtp_ssl.send_message.assert_called_once()
 
 

@@ -30,7 +30,7 @@ pip install "abstractcore[mlx]"          # Apple Silicon only (heavy)
 pip install "abstractcore[vllm]"         # NVIDIA CUDA/ROCm only (heavy)
 
 # Optional features
-pip install "abstractcore[tools]"       # built-in web tools (fetch_url, web_search)
+pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
 pip install "abstractcore[media]"       # images, PDFs, Office docs
 pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
 pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
