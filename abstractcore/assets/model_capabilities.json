@@ -441,6 +441,107 @@
       "video_support": false,
       "video_input_mode": "frames"
     },
+    "cogito:3b": {
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Cogito v1 preview (Llama-based) 3B; 128k context; tool calling capable. Max output tokens not specified in model card (conservative 2048 default).",
+      "source": "DeepCogito HF model card + Ollama library",
+      "canonical_name": "cogito:3b",
+      "aliases": [
+        "cogito",
+        "cogito:3b-v1-preview-llama-q8_0",
+        "cogito-v1-preview-llama-3B",
+        "deepcogito/cogito-v1-preview-llama-3B"
+      ],
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "cogito:8b": {
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Cogito v1 preview (Llama-based) 8B; 128k context; hybrid reasoning model with standard and extended thinking modes; optimized for coding, STEM, instruction following, and tool calling.",
+      "source": "DeepCogito HF model card + Ollama library",
+      "canonical_name": "cogito:8b",
+      "aliases": [
+        "cogito:8b-v1-preview-llama",
+        "cogito-v1-preview-llama-8B",
+        "deepcogito/cogito-v1-preview-llama-8B"
+      ],
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "cogito:14b": {
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Cogito v1 preview (Qwen2-based) 14B; 128k context; hybrid reasoning model with standard and extended thinking modes; optimized for coding, STEM, instruction following, and tool calling.",
+      "source": "DeepCogito HF model card + Ollama library",
+      "canonical_name": "cogito:14b",
+      "aliases": [
+        "cogito:14b-v1-preview-qwen",
+        "cogito-v1-preview-qwen-14B",
+        "deepcogito/cogito-v1-preview-qwen-14B"
+      ],
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "cogito:32b": {
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Cogito v1 preview (Qwen-based) 32B; 128k context; hybrid reasoning model with standard and extended thinking modes; optimized for coding, STEM, instruction following, and tool calling.",
+      "source": "DeepCogito HF model card + Ollama library",
+      "canonical_name": "cogito:32b",
+      "aliases": [
+        "cogito:32b-v1-preview-qwen",
+        "cogito-v1-preview-qwen-32B",
+        "deepcogito/cogito-v1-preview-qwen-32B"
+      ],
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "cogito:70b": {
+      "max_output_tokens": 4096,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "notes": "Cogito v1 preview (Llama 3.1-based) 70B; 128k context; hybrid reasoning model with standard and extended thinking modes; optimized for coding, STEM, instruction following, and tool calling.",
+      "source": "DeepCogito HF model card + Ollama library",
+      "canonical_name": "cogito:70b",
+      "aliases": [
+        "cogito:70b-v1-preview-llama",
+        "cogito-v1-preview-llama-70B",
+        "deepcogito/cogito-v1-preview-llama-70B"
+      ],
+      "max_tokens": 128000,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
     "llama-3.2-1b": {
       "max_output_tokens": 2048,
       "tool_support": "native",

@@ -157,7 +157,7 @@ class CacheConfig:
 @dataclass
 class LoggingConfig:
     """Logging configuration settings."""
-    console_level: str = "WARNING"
+    console_level: str = "ERROR"
     file_level: str = "DEBUG"
     file_logging_enabled: bool = False
     log_base_dir: Optional[str] = None

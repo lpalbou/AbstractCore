@@ -62,25 +62,27 @@ from ..tools.syntax_rewriter import (
 # Configuration
 # ============================================================================
 
-# Initialize with default logging configuration (can be overridden later)
+# Initialize with default logging configuration (can be overridden later).
+#
+# IMPORTANT: default console verbosity is controlled by AbstractCore's centralized logging defaults
+# (and env overrides like ABSTRACTCORE_CONSOLE_LOG_LEVEL). The server must not force INFO-level
+# console logs on startup.
 debug_mode = os.getenv("ABSTRACTCORE_DEBUG", "false").lower() == "true"
 
-# Initial logging setup (will be reconfigured if --debug is used)
-# Check environment variable for debug mode
-initial_console_level = logging.DEBUG if debug_mode else logging.INFO
-configure_logging(
-    console_level=initial_console_level,
-    file_level=logging.DEBUG,
-    log_dir="logs",
-    verbatim_enabled=True,
-    console_json=False,
-    file_json=True
-)
+if debug_mode:
+    configure_logging(
+        console_level=logging.DEBUG,
+        file_level=logging.DEBUG,
+        log_dir="logs",
+        verbatim_enabled=True,
+        console_json=False,
+        file_json=True,
+    )
 
 # Get initial logger
 logger = get_logger("server")
 
-# Log initial startup with debug mode status
+# Log initial startup with debug mode status (may be suppressed by console level).
 logger.info("🚀 AbstractCore Server Initializing", version=__version__, debug_mode=debug_mode)
 
 def reconfigure_for_debug():
@@ -2855,7 +2857,7 @@ def convert_to_openai_response(
 def run_server(host: str = "0.0.0.0", port: int = 8000):
     """Run the server"""
     import uvicorn
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, log_level="error")
 
 # ============================================================================
 # Server Runner Function
@@ -2924,7 +2926,7 @@ Debug Mode:
         "app": app,
         "host": args.host,
         "port": args.port,
-        "log_level": "debug" if debug_mode else "info"
+        "log_level": "debug" if debug_mode else "error",
     }
 
     # In debug mode, enable more detailed uvicorn logging

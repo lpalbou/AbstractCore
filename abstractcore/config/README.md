@@ -134,7 +134,7 @@ class CacheConfig:
 @dataclass
 class LoggingConfig:
     """Logging behavior configuration."""
-    console_level: str = "WARNING"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    console_level: str = "ERROR"  # NONE, DEBUG, INFO, WARNING, ERROR, CRITICAL
     file_level: str = "DEBUG"
     file_logging_enabled: bool = False
     log_base_dir: Optional[str] = None
