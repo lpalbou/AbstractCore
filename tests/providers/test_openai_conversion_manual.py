@@ -9,7 +9,10 @@ This script demonstrates that the fix works correctly:
 
 import json
 import sys
-sys.path.insert(0, '/Users/albou/projects/abstractcore_core')
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "abstractcore"))
 
 from abstractcore.providers.streaming import UnifiedStreamProcessor
 

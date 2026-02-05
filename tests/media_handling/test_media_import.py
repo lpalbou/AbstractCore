@@ -37,7 +37,7 @@ def test_relative_import():
     import os
 
     # Add the providers directory to path to simulate the provider's context
-    providers_dir = "/Users/albou/projects/abstractcore/abstractcore/providers"
+    providers_dir = "abstractcore/providers"
     sys.path.insert(0, providers_dir)
 
     try:

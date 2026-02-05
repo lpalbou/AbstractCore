@@ -2,9 +2,11 @@
 
 import sys
 import os
+from pathlib import Path
 
 # Add the project root to the path
-sys.path.insert(0, '/Users/albou/projects/abstractcore')
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 def test_media_imports():
     """Test the exact imports that are failing in LMStudioProvider"""
@@ -39,12 +41,12 @@ def test_media_imports():
         original_path = sys.path[:]
         try:
             # Simulate being in providers/base.py
-            providers_dir = '/Users/albou/projects/abstractcore/abstractcore/providers'
+            providers_dir = ROOT / "abstractcore" / "providers"
             os.chdir(providers_dir)
 
             # This simulates the relative import from providers/base.py
             import importlib.util
-            spec = importlib.util.spec_from_file_location("base", f"{providers_dir}/base.py")
+            spec = importlib.util.spec_from_file_location("base", str(providers_dir / "base.py"))
 
             # Test the imports that base.py is trying to do
             try:
