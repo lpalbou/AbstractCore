@@ -57,7 +57,7 @@ def _get_config_defaults():
             "NONE": logging.CRITICAL + 10  # Higher than CRITICAL to effectively disable logging
         }
 
-        console_level = level_map.get(logging_config.console_level, logging.WARNING)
+        console_level = level_map.get(logging_config.console_level, logging.ERROR)
         file_level = level_map.get(logging_config.file_level, logging.DEBUG)
 
         # Use log_base_dir if file logging enabled
@@ -65,6 +65,27 @@ def _get_config_defaults():
         if logging_config.file_logging_enabled and logging_config.log_base_dir:
             # Expand user home directory
             log_dir = str(Path(logging_config.log_base_dir).expanduser())
+
+        # Environment overrides (optional)
+        env_console = os.getenv("ABSTRACTCORE_CONSOLE_LOG_LEVEL")
+        if isinstance(env_console, str) and env_console.strip():
+            env_level = env_console.strip().upper()
+            if env_level == "NONE":
+                console_level = None
+            else:
+                console_level = level_map.get(env_level, console_level)
+
+        env_file = os.getenv("ABSTRACTCORE_FILE_LOG_LEVEL")
+        if isinstance(env_file, str) and env_file.strip():
+            env_level = env_file.strip().upper()
+            if env_level == "NONE":
+                file_level = None
+            else:
+                file_level = level_map.get(env_level, file_level)
+
+        env_log_dir = os.getenv("ABSTRACTCORE_LOG_BASE_DIR")
+        if isinstance(env_log_dir, str) and env_log_dir.strip():
+            log_dir = str(Path(env_log_dir.strip()).expanduser())
 
         return {
             'console_level': console_level,
@@ -77,7 +98,7 @@ def _get_config_defaults():
     except Exception:
         # Fallback to hardcoded defaults if config unavailable
         return {
-            'console_level': logging.WARNING,
+            'console_level': logging.ERROR,
             'file_level': logging.DEBUG,
             'log_dir': None,
             'verbatim_enabled': True,
@@ -89,7 +110,7 @@ def _get_config_defaults():
 LOG_LEVEL_COLORS = {
     'DEBUG': Fore.CYAN + Style.DIM,           # Cyan, dimmed (less prominent)
     'INFO': Fore.GREEN,                       # Green (informational, good)
-    'WARNING': Fore.YELLOW + Style.BRIGHT,    # Bright yellow (attention)
+    'WARNING': "\033[38;5;214m" + Style.BRIGHT,  # Orange (attention)
     'ERROR': Fore.RED,                        # Red (error)
     'CRITICAL': Fore.RED + Style.BRIGHT       # Bright red (critical)
 }
@@ -215,7 +236,7 @@ class LogConfig:
         root_logger.handlers.clear()
 
         # Console handler
-        if self.console_level is not None:
+        if self.console_level is not None and self.console_level < (logging.CRITICAL + 10):
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setLevel(self.console_level)
 
@@ -260,8 +281,8 @@ class LogConfig:
         if effective_levels:
             root_logger.setLevel(min(effective_levels))
         else:
-            # No handlers enabled, set to WARNING as a safe default
-            root_logger.setLevel(logging.WARNING)
+            # No handlers enabled, set to ERROR as a safe default
+            root_logger.setLevel(logging.ERROR)
 
 
 # Global config instance
@@ -493,7 +514,7 @@ def get_logger(name: str) -> StructuredLogger:
 
 
 def configure_logging(
-    console_level: Optional[int] = logging.WARNING,
+    console_level: Optional[int] = logging.ERROR,
     file_level: Optional[int] = logging.DEBUG,
     log_dir: Optional[str] = None,
     verbatim_enabled: bool = True,

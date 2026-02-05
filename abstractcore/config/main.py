@@ -531,6 +531,26 @@ def interactive_configure():
                 config_manager.set_api_key(provider, key)
                 print(f"✅ Set {provider} API key")
 
+    # Ask about console log verbosity
+    print("\n4. Console Logging Verbosity")
+    print("Choose console verbosity level:")
+    print("  none | error | warning | info | debug")
+    level = input("Console log level [info]: ").strip().lower()
+    if not level:
+        level = "info"
+    level_map = {
+        "none": "NONE",
+        "error": "ERROR",
+        "warning": "WARNING",
+        "info": "INFO",
+        "debug": "DEBUG",
+    }
+    if level in level_map:
+        config_manager.set_console_log_level(level_map[level])
+        print(f"✅ Set console log level to: {level_map[level]}")
+    else:
+        print("⚠️  Invalid level; keeping existing console log level.")
+
     print("\n✅ Configuration complete! Run 'abstractcore --status' to see current settings.")
 
 def handle_commands(args) -> bool:
@@ -851,5 +871,5 @@ DOCUMENTATION: docs/centralized-config.md
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.ERROR)
     sys.exit(main())

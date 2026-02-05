@@ -510,10 +510,15 @@ Examples:
         print("❌ Error: --parallel-searches must be between 1 and 20")
         sys.exit(1)
     
-    # Configure logging level
-    if args.verbose:
-        import logging
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    # Configure logging level (default: ERROR-only).
+    import logging
+
+    log_level = logging.ERROR
+    if args.debug:
+        log_level = logging.DEBUG
+    elif args.verbose:
+        log_level = logging.INFO
+    logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
     
     try:
         # Initialize LLM

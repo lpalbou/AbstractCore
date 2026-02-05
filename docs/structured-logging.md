@@ -2,6 +2,8 @@
 
 AbstractCore uses Python logging throughout the library. You can control console verbosity and optional file logging via the centralized config CLI.
 
+Default behavior (no overrides): **console shows only ERROR and above**.
+
 ## Configure with the CLI
 
 ```bash

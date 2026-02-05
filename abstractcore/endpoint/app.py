@@ -451,7 +451,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     app = create_app(provider_name=cfg.provider, model=cfg.model)
     import uvicorn
 
-    uvicorn.run(app, host=cfg.host, port=cfg.port)
+    uvicorn.run(app, host=cfg.host, port=cfg.port, log_level="error")
 
 
 if __name__ == "__main__":  # pragma: no cover
