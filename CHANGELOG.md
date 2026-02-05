@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.3] - 2026-02-04
+
+### Changed
+- Updated the timeout settings (abstractcore config 3600s)
+
 ## [2.11.2] - 2026-02-04
 
 ### Added
