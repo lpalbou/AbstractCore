@@ -4,9 +4,11 @@ import sys
 import os
 import requests
 import json
+from pathlib import Path
 
 # Add the project root to the path
-sys.path.insert(0, '/Users/albou/projects/abstractcore')
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
 def test_server_request_debug():
     """Test the server request and capture detailed logs"""

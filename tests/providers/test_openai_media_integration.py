@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 SERVER_URL = "http://localhost:8000"
+MEDIA_DIR = Path(__file__).resolve().parents[1] / "media_examples"
 
 def encode_file_to_base64(file_path: str) -> str:
     """Encode a file to base64 for OpenAI Vision API format."""
@@ -61,14 +62,14 @@ def test_pdf_processing():
     """Test PDF processing using OpenAI Vision API format."""
     print("\n🧪 Testing PDF Processing with OpenAI Vision API Format")
 
-    pdf_path = "/Users/albou/projects/abstractcore/tests/media_examples/article.pdf"
-    if not os.path.exists(pdf_path):
+    pdf_path = MEDIA_DIR / "article.pdf"
+    if not pdf_path.exists():
         print(f"❌ PDF file not found: {pdf_path}")
         return False
 
     try:
         # Encode PDF to base64
-        pdf_data = encode_file_to_base64(pdf_path)
+        pdf_data = encode_file_to_base64(str(pdf_path))
 
         # Create OpenAI Vision API compatible request
         payload = {
@@ -145,14 +146,14 @@ def test_csv_processing():
     """Test CSV processing using OpenAI format."""
     print("\n🧪 Testing CSV Processing with OpenAI Vision API Format")
 
-    csv_path = "/Users/albou/projects/abstractcore/tests/media_examples/data.csv"
-    if not os.path.exists(csv_path):
+    csv_path = MEDIA_DIR / "data.csv"
+    if not csv_path.exists():
         print(f"❌ CSV file not found: {csv_path}")
         return False
 
     try:
         # For CSV, we can use either text content or base64
-        csv_data = encode_file_to_base64(csv_path)
+        csv_data = encode_file_to_base64(str(csv_path))
 
         payload = {
             "model": "ollama/qwen3:4b-instruct-2507-q4_K_M",  # Text model for data analysis
@@ -227,13 +228,13 @@ def test_excel_processing():
     """Test Excel file processing."""
     print("\n🧪 Testing Excel Processing with OpenAI Vision API Format")
 
-    xlsx_path = "/Users/albou/projects/abstractcore/tests/media_examples/data.xlsx"
-    if not os.path.exists(xlsx_path):
+    xlsx_path = MEDIA_DIR / "data.xlsx"
+    if not xlsx_path.exists():
         print(f"❌ Excel file not found: {xlsx_path}")
         return False
 
     try:
-        xlsx_data = encode_file_to_base64(xlsx_path)
+        xlsx_data = encode_file_to_base64(str(xlsx_path))
 
         payload = {
             "model": "ollama/qwen3:4b-instruct-2507-q4_K_M",
@@ -282,13 +283,13 @@ def test_docx_processing():
     """Test Word document processing."""
     print("\n🧪 Testing Word Document Processing with OpenAI Vision API Format")
 
-    docx_path = "/Users/albou/projects/abstractcore/tests/media_examples/false-report.docx"
-    if not os.path.exists(docx_path):
+    docx_path = MEDIA_DIR / "false-report.docx"
+    if not docx_path.exists():
         print(f"❌ Word document not found: {docx_path}")
         return False
 
     try:
-        docx_data = encode_file_to_base64(docx_path)
+        docx_data = encode_file_to_base64(str(docx_path))
 
         payload = {
             "model": "ollama/qwen2.5vl:7b",
@@ -337,13 +338,13 @@ def test_streaming_with_media():
     """Test streaming responses with media attachments."""
     print("\n🧪 Testing Streaming with Media")
 
-    csv_path = "/Users/albou/projects/abstractcore/tests/media_examples/data.csv"
-    if not os.path.exists(csv_path):
+    csv_path = MEDIA_DIR / "data.csv"
+    if not csv_path.exists():
         print(f"❌ CSV file not found: {csv_path}")
         return False
 
     try:
-        csv_data = encode_file_to_base64(csv_path)
+        csv_data = encode_file_to_base64(str(csv_path))
 
         payload = {
             "model": "ollama/qwen3:4b-instruct-2507-q4_K_M",

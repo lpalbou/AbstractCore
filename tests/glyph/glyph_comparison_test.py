@@ -7,7 +7,7 @@ with and without compression, measuring performance and response quality.
 
 Requirements:
 - LMStudio running with qwen3-next-80b model
-- PDF file: /Users/albou/projects/preserving_privacy.pdf
+- PDF file: preserving_privacy.pdf
 """
 
 import time
@@ -261,7 +261,7 @@ def save_results(results, performance_metrics, test_type, timestamp, pdf_analysi
         f.write(f"**Timestamp**: {timestamp}\n")
         f.write(f"**Test Type**: {test_type}\n")
         f.write(f"**Model**: LMStudio qwen/qwen3-next-80b\n")
-        f.write(f"**PDF**: /Users/albou/projects/preserving_privacy.pdf\n\n")
+        f.write(f"**PDF**: preserving_privacy.pdf\n\n")
         
         # PDF Analysis
         f.write("## PDF Analysis\n\n")
@@ -358,7 +358,7 @@ def main():
     print("=" * 50)
     
     # Configuration
-    pdf_path = "/Users/albou/projects/preserving_privacy.pdf"
+    pdf_path = "preserving_privacy.pdf"
     timestamp = get_timestamp()
     
     # Verify PDF exists

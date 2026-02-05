@@ -3,9 +3,11 @@
 import sys
 import os
 import tempfile
+from pathlib import Path
 
 # Add the project root to the path
-sys.path.insert(0, '/Users/albou/projects/abstractcore')
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
 def test_lmstudio_provider_media_processing():
     """Test the exact scenario that's failing in LMStudioProvider"""

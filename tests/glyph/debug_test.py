@@ -60,7 +60,7 @@ def test_pdf_processing():
         print("🔄 Testing PDF processing...")
         response = llm.generate(
             "What is this document about?",
-            media=["/Users/albou/projects/preserving_privacy.pdf"]
+            media=["preserving_privacy.pdf"]
         )
         
         print(f"Response type: {type(response)}")

@@ -3,9 +3,11 @@
 import sys
 import os
 import requests
+from pathlib import Path
 
 # Add the project root to the path
-sys.path.insert(0, '/Users/albou/projects/abstractcore')
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 def test_text_only_model_with_image():
     """Test how a text-only model responds to images with the improved system"""
