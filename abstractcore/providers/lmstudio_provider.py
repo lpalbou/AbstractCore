@@ -19,21 +19,23 @@ class LMStudioProvider(OpenAICompatibleProvider):
     API_KEY_ENV_VAR = None
     DEFAULT_BASE_URL = "http://localhost:1234/v1"
 
+    _TIMEOUT_UNSET = object()
+
     def __init__(
         self,
         model: str = "local-model",
         base_url: Optional[str] = None,
-        timeout: Optional[float] = None,
+        timeout: Any = _TIMEOUT_UNSET,
         **kwargs: Any,
     ):
-        # ADR-0027: Local LM Studio calls should default to no client-side timeout.
+        # ADR-0027: avoid silent low timeouts; timeouts must be explicit and attributable.
         #
-        # We intentionally treat "timeout omitted" as "unlimited" for this provider, rather
-        # than inheriting the global `abstractcore` default timeout (which may be tuned for
-        # remote providers). Operators can still override via:
-        # - explicit `timeout=...` when constructing the provider, or
-        # - runtime provider config (ConfigurationManager.configure_provider('lmstudio', timeout=...)).
-        if "timeout" in kwargs:
-            timeout = kwargs.pop("timeout")
+        # Semantics:
+        # - If the caller explicitly provides `timeout` (including `None`), we forward it.
+        # - If the caller omits `timeout`, BaseProvider will use AbstractCore config
+        #   `timeouts.default_timeout` (see `~/.abstractcore/config/abstractcore.json`).
+        super_kwargs = dict(kwargs)
+        if timeout is not self._TIMEOUT_UNSET:
+            super_kwargs["timeout"] = timeout
 
-        super().__init__(model=model, base_url=base_url, timeout=timeout, **kwargs)
+        super().__init__(model=model, base_url=base_url, **super_kwargs)

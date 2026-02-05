@@ -2,8 +2,8 @@ import pytest
 
 
 @pytest.mark.basic
-def test_lmstudio_provider_defaults_to_unlimited_timeout(monkeypatch):
-    """ADR-0027: LMStudioProvider should not inherit low global default timeouts."""
+def test_lmstudio_provider_inherits_global_default_timeout(monkeypatch):
+    """LMStudioProvider should use AbstractCore's global `timeouts.default_timeout` when omitted."""
 
     class DummyCfgMgr:
         def __init__(self):
@@ -21,13 +21,12 @@ def test_lmstudio_provider_defaults_to_unlimited_timeout(monkeypatch):
             return False
 
         def get_default_timeout(self):
-            return 1200.0
+            return 3600.0
 
         def get_tool_timeout(self):
             return 600.0
 
-    # BaseProvider consults the config manager when `timeout` is omitted. We patch it to a low
-    # value to ensure LMStudioProvider still forces `timeout=None` by default.
+    # BaseProvider consults the config manager when `timeout` is omitted.
     monkeypatch.setattr("abstractcore.config.manager.get_config_manager", lambda: DummyCfgMgr())
 
     from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
@@ -37,7 +36,7 @@ def test_lmstudio_provider_defaults_to_unlimited_timeout(monkeypatch):
     from abstractcore.providers.lmstudio_provider import LMStudioProvider
 
     provider = LMStudioProvider(model="qwen/qwen3-next-80b", base_url="http://localhost:1234/v1")
-    assert provider._timeout is None
+    assert provider._timeout == 3600.0
 
 
 @pytest.mark.basic
