@@ -320,6 +320,42 @@ class ConfigurationManager:
         except Exception:
             return False
 
+    def set_audio_strategy(self, strategy: str) -> bool:
+        """Set default audio handling strategy (native_only|speech_to_text|auto)."""
+        raw = str(strategy or "").strip().lower()
+        if raw in {"native"}:
+            raw = "native_only"
+        if raw in {"stt"}:
+            raw = "speech_to_text"
+        if raw not in {"native_only", "speech_to_text", "auto", "caption"}:
+            return False
+        try:
+            self.config.audio.strategy = raw
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_stt_backend_id(self, backend_id: Optional[str]) -> bool:
+        """Set preferred STT backend id for capability plugins (optional)."""
+        bid = str(backend_id or "").strip()
+        try:
+            self.config.audio.stt_backend_id = bid or None
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_stt_language(self, language: Optional[str]) -> bool:
+        """Set default STT language hint (optional)."""
+        lang = str(language or "").strip()
+        try:
+            self.config.audio.stt_language = lang or None
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
     def set_vision_caption(self, model: str) -> bool:
         """Set vision caption model (deprecated)."""
         # Auto-detect provider from model name
@@ -352,6 +388,11 @@ class ConfigurationManager:
                 "status": "✅ Ready" if self.config.vision.caption_provider else "❌ Not configured",
                 "caption_provider": self.config.vision.caption_provider,
                 "caption_model": self.config.vision.caption_model
+            },
+            "audio": {
+                "strategy": self.config.audio.strategy,
+                "stt_backend_id": self.config.audio.stt_backend_id,
+                "stt_language": self.config.audio.stt_language,
             },
             "video": {
                 "strategy": self.config.video.strategy,
