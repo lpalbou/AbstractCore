@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
+from types import SimpleNamespace
 
 
 @dataclass
@@ -20,10 +21,16 @@ class _DummyProvider:  # intentionally minimal; mixed in at runtime
 
 
 @pytest.mark.basic
-def test_default_audio_policy_is_native_only_and_does_not_silently_stt(tmp_path) -> None:
+def test_default_audio_policy_from_config_native_only_is_strict(tmp_path, monkeypatch) -> None:
     from abstractcore.core.types import GenerateResponse
     from abstractcore.exceptions import UnsupportedFeatureError
     from abstractcore.providers.base import BaseProvider
+
+    # Force config default policy regardless of environment/packages.
+    monkeypatch.setattr(
+        "abstractcore.config.manager.get_config_manager",
+        lambda: SimpleNamespace(config=SimpleNamespace(audio=SimpleNamespace(strategy="native_only"))),
+    )
 
     stub_audio = _StubAudioBackend()
 
@@ -62,6 +69,52 @@ def test_default_audio_policy_is_native_only_and_does_not_silently_stt(tmp_path)
 
 
 @pytest.mark.basic
+def test_default_audio_policy_from_config_auto_runs_stt_fallback(tmp_path, monkeypatch) -> None:
+    from abstractcore.core.types import GenerateResponse
+    from abstractcore.providers.base import BaseProvider
+
+    monkeypatch.setattr(
+        "abstractcore.config.manager.get_config_manager",
+        lambda: SimpleNamespace(config=SimpleNamespace(audio=SimpleNamespace(strategy="auto"))),
+    )
+
+    stub_audio = _StubAudioBackend()
+
+    class DummyProvider(BaseProvider):
+        def __init__(self):
+            super().__init__(model="qwen/qwen3-next-80b")
+            self._audio_backend = stub_audio
+            self.last_media = None
+
+        @property
+        def audio(self):
+            return self._audio_backend
+
+        def _generate_internal(self, prompt, messages=None, system_prompt=None, tools=None, media=None, stream=False, **kwargs):
+            _ = prompt, messages, system_prompt, tools, stream, kwargs
+            self.last_media = media
+            return GenerateResponse(content="ok", model=self.model, finish_reason="stop", metadata={})
+
+        def get_capabilities(self):
+            return []
+
+        def unload_model(self, model_name: str) -> None:
+            return None
+
+        def list_available_models(self, **kwargs):
+            return []
+
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"")
+
+    provider = DummyProvider()
+    resp = provider.generate("What is in this audio?", media=[str(audio_path)], stream=False)
+    assert resp.content == "ok"
+    assert stub_audio.calls == 1
+    assert provider.last_media == []
+
+
+@pytest.mark.basic
 def test_native_only_allows_audio_when_model_capabilities_claim_support(tmp_path) -> None:
     from abstractcore.core.types import GenerateResponse
     from abstractcore.providers.base import BaseProvider
@@ -94,4 +147,3 @@ def test_native_only_allows_audio_when_model_capabilities_claim_support(tmp_path
     assert resp.content == "ok"
     assert isinstance(provider.last_media, list)
     assert provider.last_media and provider.last_media[0].media_type.value == "audio"
-

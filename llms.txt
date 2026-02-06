@@ -49,6 +49,11 @@ Common extras (quote brackets for zsh):
 - [abstractcore/embeddings/](abstractcore/embeddings/): `EmbeddingManager` (optional)
 - [docs/mcp.md](docs/mcp.md): MCP tool servers (HTTP/stdio)
 
+Media fallbacks (requirements + config):
+- Images: `pip install "abstractcore[media]"` + a vision-capable model, or configure vision fallback: `abstractcore --set-vision-provider PROVIDER MODEL`
+- Video frames fallback: requires `ffmpeg`/`ffprobe` and image/vision handling; tune defaults via `abstractcore --set-video-*`
+- Audio STT fallback: install `abstractvoice` and use `audio_policy="auto"`/`"speech_to_text"` (or set default via `abstractcore --set-audio-strategy auto`)
+
 ## Server
 
 - [docs/server.md](docs/server.md): OpenAI-compatible HTTP endpoints

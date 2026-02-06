@@ -364,9 +364,9 @@ class LocalMediaHandler(BaseProviderMediaHandler):
                     self.logger.warning("Vision capability not configured for text-only models")
                     self.logger.warning("To enable image analysis with text-only models:")
                     self.logger.warning("🔸 EASIEST: Download BLIP vision model (990MB): abstractcore --download-vision-model")
-                    self.logger.warning("🔸 Use existing Ollama model: abstractcore --set-vision-caption qwen2.5vl:7b")
-                    self.logger.warning("🔸 Use cloud API: abstractcore --set-vision-provider openai --model gpt-4o")
-                    self.logger.warning("🔸 Interactive setup: abstractcore --configure")
+                    self.logger.warning("🔸 Use a local vision model: abstractcore --set-vision-provider ollama qwen2.5vl:7b")
+                    self.logger.warning("🔸 Use cloud API: abstractcore --set-vision-provider openai gpt-4o")
+                    self.logger.warning("🔸 Interactive setup: abstractcore --config")
                     self.logger.warning("Current status: abstractcore --status")
 
                     self.media_enrichment.append(

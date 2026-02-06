@@ -92,7 +92,13 @@ Media handling is opt-in:
 pip install "abstractcore[media]"
 ```
 
-Then pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). See **[Media Handling](media-handling-system.md)**.
+Then pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeline). Media behavior is **policy-driven**:
+
+- Images: use a vision-capable model, or configure vision fallback (caption → inject short observations).
+- Video: controlled by `video_policy` (native when supported; otherwise frame sampling via `ffmpeg` + vision handling).
+- Audio: controlled by `audio_policy` (native when supported; otherwise optional speech-to-text via `abstractvoice`).
+
+See **[Media Handling](media-handling-system.md)**, **[Vision Capabilities](vision-capabilities.md)**, and **[Centralized Config](centralized-config.md)**.
 
 ## HTTP API (optional)
 

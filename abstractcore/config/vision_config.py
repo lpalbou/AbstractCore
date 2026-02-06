@@ -54,7 +54,7 @@ def handle_set_vision_caption(handler: 'VisionFallbackHandler', model: str) -> b
     provider = detect_provider_from_model(model)
     if not provider:
         print("❌ Could not determine provider from model name.")
-        print("💡 Use --set-vision-provider instead: abstractcore --set-vision-provider ollama --model qwen2.5vl:7b")
+        print("💡 Use --set-vision-provider instead: abstractcore --set-vision-provider ollama qwen2.5vl:7b")
         return True
 
     success = handler.set_vision_provider(provider, model)
@@ -188,17 +188,17 @@ def handle_list_vision(handler: 'VisionFallbackHandler') -> bool:
     print("\n📖 CONFIGURATION COMMANDS")
     print("-" * 30)
     print("  abstractcore --set-vision-caption qwen2.5vl:7b")
-    print("  abstractcore --set-vision-provider ollama --model qwen2.5vl:7b")
-    print("  abstractcore --set-vision-provider openai --model gpt-4o")
+    print("  abstractcore --set-vision-provider ollama qwen2.5vl:7b")
+    print("  abstractcore --set-vision-provider openai gpt-4o")
     print("  abstractcore --download-vision-model")
     print("  abstractcore --download-vision-model blip-base-caption")
     print("  abstractcore --vision-status")
-    print("  abstractcore --configure vision")
+    print("  abstractcore --config")
 
     print("\n💡 QUICK START")
     print("-" * 30)
     print("  1. For local models: abstractcore --set-vision-caption qwen2.5vl:7b")
-    print("  2. For cloud APIs:   abstractcore --set-vision-provider openai --model gpt-4o")
+    print("  2. For cloud APIs:   abstractcore --set-vision-provider openai gpt-4o")
     print("  3. For offline use:  abstractcore --download-vision-model")
 
     print("=" * 60)

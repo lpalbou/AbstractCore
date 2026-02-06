@@ -6,9 +6,10 @@ Provides centralized configuration management for AbstractCore.
 
 import json
 import os
+import importlib.util
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 
 
 @dataclass
@@ -28,8 +29,10 @@ class VisionConfig:
 @dataclass
 class AudioConfig:
     """Audio configuration settings (input policy + optional fallback)."""
-    # Default: do not silently change semantics. Allow native audio when supported,
-    # otherwise error unless the caller explicitly requests STT/caption.
+    # Default (smart):
+    # - If `abstractvoice` is installed, treat the implicit default as "auto" so audio attachments
+    #   work seamlessly with text-only models (STT fallback).
+    # - Otherwise default to "native_only" (error on text-only models unless caller opts in).
     strategy: str = "native_only"  # native_only|speech_to_text|caption|auto
     # Optional preferred STT backend (capabilities plugin backend_id).
     stt_backend_id: Optional[str] = None
@@ -232,10 +235,51 @@ class ConfigurationManager:
     """Manages AbstractCore configuration."""
 
     def __init__(self):
+        # Backward-compatible meta flags (stored at top-level in the JSON file).
+        self._audio_strategy_explicit = False
+
         self.config_dir = Path.home() / ".abstractcore" / "config"
         self.config_file = self.config_dir / "abstractcore.json"
         self.config = self._load_config()
+        self._apply_smart_defaults()
         self._provider_config: Dict[str, Dict[str, Any]] = {}  # Runtime config (not persisted)
+
+    def _filter_dataclass_kwargs(self, cls, data: Any) -> Dict[str, Any]:
+        if not isinstance(data, dict):
+            return {}
+        allowed = {f.name for f in fields(cls)}
+        return {k: v for k, v in data.items() if k in allowed}
+
+    def _has_abstractvoice(self) -> bool:
+        try:
+            return importlib.util.find_spec("abstractvoice") is not None
+        except Exception:
+            return False
+
+    def _apply_smart_defaults(self) -> None:
+        """Apply non-persisted, environment-aware defaults.
+
+        Goal: if `abstractvoice` is installed and the user has not explicitly chosen an audio policy,
+        default to `audio.strategy="auto"` so STT fallback works out-of-the-box across apps.
+        """
+        try:
+            audio = getattr(self.config, "audio", None)
+            if audio is None:
+                return
+
+            # Respect explicit user choice.
+            if bool(getattr(self, "_audio_strategy_explicit", False)):
+                return
+
+            raw = str(getattr(audio, "strategy", "") or "").strip().lower()
+            has_av = bool(self._has_abstractvoice())
+            if has_av and raw in {"", "native_only", "native", "disabled"}:
+                audio.strategy = "auto"
+            elif (not has_av) and raw in {"auto", "speech_to_text", "stt"}:
+                audio.strategy = "native_only"
+        except Exception:
+            # Never fail config initialization due to smart defaults.
+            return
 
     def _load_config(self) -> AbstractCoreConfig:
         """Load configuration from file or create default."""
@@ -243,6 +287,14 @@ class ConfigurationManager:
             try:
                 with open(self.config_file, 'r') as f:
                     data = json.load(f)
+                # Backward compatible: accept both top-level and nested flags.
+                if isinstance(data, dict):
+                    if "audio_strategy_explicit" in data:
+                        self._audio_strategy_explicit = bool(data.get("audio_strategy_explicit"))
+                    else:
+                        nested = data.get("audio", {})
+                        if isinstance(nested, dict) and "strategy_explicit" in nested:
+                            self._audio_strategy_explicit = bool(nested.get("strategy_explicit"))
                 return self._dict_to_config(data)
             except Exception:
                 # If loading fails, return default config
@@ -253,20 +305,20 @@ class ConfigurationManager:
     def _dict_to_config(self, data: Dict[str, Any]) -> AbstractCoreConfig:
         """Convert dictionary to config object."""
         # Create config objects from dictionary data
-        vision = VisionConfig(**data.get('vision', {}))
-        audio = AudioConfig(**data.get('audio', {}))
-        video = VideoConfig(**data.get('video', {}))
-        embeddings = EmbeddingsConfig(**data.get('embeddings', {}))
-        app_defaults = AppDefaults(**data.get('app_defaults', {}))
-        default_models = DefaultModels(**data.get('default_models', {}))
-        api_keys = ApiKeysConfig(**data.get('api_keys', {}))
-        cache = CacheConfig(**data.get('cache', {}))
-        logging = LoggingConfig(**data.get('logging', {}))
-        streaming = StreamingConfig(**data.get('streaming', {}))
-        timeouts = TimeoutConfig(**data.get('timeouts', {}))
-        offline = OfflineConfig(**data.get('offline', {}))
-        maintenance = MaintenanceConfig(**data.get('maintenance', {}))
-        email_cfg = EmailConfig(**data.get('email', {}))
+        vision = VisionConfig(**self._filter_dataclass_kwargs(VisionConfig, data.get('vision', {})))
+        audio = AudioConfig(**self._filter_dataclass_kwargs(AudioConfig, data.get('audio', {})))
+        video = VideoConfig(**self._filter_dataclass_kwargs(VideoConfig, data.get('video', {})))
+        embeddings = EmbeddingsConfig(**self._filter_dataclass_kwargs(EmbeddingsConfig, data.get('embeddings', {})))
+        app_defaults = AppDefaults(**self._filter_dataclass_kwargs(AppDefaults, data.get('app_defaults', {})))
+        default_models = DefaultModels(**self._filter_dataclass_kwargs(DefaultModels, data.get('default_models', {})))
+        api_keys = ApiKeysConfig(**self._filter_dataclass_kwargs(ApiKeysConfig, data.get('api_keys', {})))
+        cache = CacheConfig(**self._filter_dataclass_kwargs(CacheConfig, data.get('cache', {})))
+        logging = LoggingConfig(**self._filter_dataclass_kwargs(LoggingConfig, data.get('logging', {})))
+        streaming = StreamingConfig(**self._filter_dataclass_kwargs(StreamingConfig, data.get('streaming', {})))
+        timeouts = TimeoutConfig(**self._filter_dataclass_kwargs(TimeoutConfig, data.get('timeouts', {})))
+        offline = OfflineConfig(**self._filter_dataclass_kwargs(OfflineConfig, data.get('offline', {})))
+        maintenance = MaintenanceConfig(**self._filter_dataclass_kwargs(MaintenanceConfig, data.get('maintenance', {})))
+        email_cfg = EmailConfig(**self._filter_dataclass_kwargs(EmailConfig, data.get('email', {})))
 
         return AbstractCoreConfig(
             vision=vision,
@@ -291,6 +343,8 @@ class ConfigurationManager:
 
         # Convert config to dictionary
         config_dict = {
+            # Meta flags (top-level for backward compatibility).
+            "audio_strategy_explicit": bool(getattr(self, "_audio_strategy_explicit", False)),
             'vision': asdict(self.config.vision),
             'audio': asdict(self.config.audio),
             'video': asdict(self.config.video),
@@ -331,6 +385,7 @@ class ConfigurationManager:
             return False
         try:
             self.config.audio.strategy = raw
+            self._audio_strategy_explicit = True
             self._save_config()
             return True
         except Exception:
@@ -351,6 +406,113 @@ class ConfigurationManager:
         lang = str(language or "").strip()
         try:
             self.config.audio.stt_language = lang or None
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_video_strategy(self, strategy: str) -> bool:
+        """Set default video handling strategy (native_only|frames_caption|auto)."""
+        raw = str(strategy or "").strip().lower()
+        if raw in {"native"}:
+            raw = "native_only"
+        if raw in {"frames", "frame_caption"}:
+            raw = "frames_caption"
+        if raw not in {"native_only", "frames_caption", "auto"}:
+            return False
+        try:
+            self.config.video.strategy = raw
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_video_max_frames(self, max_frames: int) -> bool:
+        """Set max sampled frames for video frames fallback (>= 1)."""
+        try:
+            n = int(max_frames)
+        except Exception:
+            return False
+        if n < 1:
+            return False
+        try:
+            self.config.video.max_frames = n
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_video_max_frames_native(self, max_frames_native: int) -> bool:
+        """Set max frames for native video-capable models (>= 1)."""
+        try:
+            n = int(max_frames_native)
+        except Exception:
+            return False
+        if n < 1:
+            return False
+        try:
+            self.config.video.max_frames_native = n
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_video_frame_format(self, frame_format: str) -> bool:
+        """Set extracted frame image format (jpg|png)."""
+        raw = str(frame_format or "").strip().lower()
+        if raw in {"jpeg"}:
+            raw = "jpg"
+        if raw not in {"jpg", "png"}:
+            return False
+        try:
+            self.config.video.frame_format = raw
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_video_sampling_strategy(self, sampling_strategy: str) -> bool:
+        """Set frame sampling strategy (uniform|keyframes)."""
+        raw = str(sampling_strategy or "").strip().lower()
+        if raw in {"keyframe"}:
+            raw = "keyframes"
+        if raw not in {"uniform", "keyframes"}:
+            return False
+        try:
+            self.config.video.sampling_strategy = raw
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_video_max_frame_side(self, max_frame_side: int) -> bool:
+        """Set max side length for extracted frames (preserves aspect ratio; never upscales)."""
+        try:
+            n = int(max_frame_side)
+        except Exception:
+            return False
+        if n < 1:
+            return False
+        try:
+            self.config.video.max_frame_side = n
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def set_video_max_video_size_bytes(self, max_video_size_bytes: Optional[int]) -> bool:
+        """Set maximum allowed video size for processing (bytes). Use 0/None to clear."""
+        if max_video_size_bytes is None:
+            value = None
+        else:
+            try:
+                value_i = int(max_video_size_bytes)
+            except Exception:
+                return False
+            value = None if value_i <= 0 else value_i
+
+        try:
+            self.config.video.max_video_size_bytes = value
             self._save_config()
             return True
         except Exception:
@@ -401,6 +563,7 @@ class ConfigurationManager:
                 "frame_format": self.config.video.frame_format,
                 "sampling_strategy": getattr(self.config.video, "sampling_strategy", None),
                 "max_frame_side": getattr(self.config.video, "max_frame_side", None),
+                "max_video_size_bytes": getattr(self.config.video, "max_video_size_bytes", None),
             },
             "app_defaults": {
                 "cli": {
@@ -470,8 +633,11 @@ class ConfigurationManager:
         """Reset all configuration to built-in defaults."""
         try:
             self.config = AbstractCoreConfig.default()
+            self._audio_strategy_explicit = False
             self._provider_config.clear()
             self._save_config()
+            # Re-apply environment-aware defaults for the current process (non-persisted).
+            self._apply_smart_defaults()
             return True
         except Exception:
             return False

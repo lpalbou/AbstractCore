@@ -62,8 +62,8 @@ Control logging behavior across all AbstractCore components:
 # Change console logging level (what you see in terminal)
 abstractcore --set-console-log-level DEBUG    # Show all messages
 abstractcore --set-console-log-level INFO     # Show info and above
-abstractcore --set-console-log-level WARNING  # Show warnings and errors only (default)
-abstractcore --set-console-log-level ERROR    # Show only errors
+abstractcore --set-console-log-level WARNING  # Show warnings and errors
+abstractcore --set-console-log-level ERROR    # Show only errors (default)
 abstractcore --set-console-log-level CRITICAL # Show only critical errors
 abstractcore --set-console-log-level NONE     # Disable all console logging
 
@@ -103,29 +103,68 @@ abstractcore --status  # Shows current levels with change commands
 **Log level descriptions:**
 - **DEBUG**: Show all messages including detailed diagnostics
 - **INFO**: Show informational messages and above
-- **WARNING**: Show warnings, errors, and critical messages (default for console)
+- **WARNING**: Show warnings, errors, and critical messages
 - **ERROR**: Show only errors and critical messages
 - **CRITICAL**: Show only critical errors
 - **NONE**: Disable all logging completely
 
 **Default logging settings:**
-- Console level: WARNING
+- Console level: ERROR
 - File level: DEBUG
 - File logging: Disabled by default
 - Log base directory: `~/.abstractcore/logs`
 
-### Vision Configuration
+### Vision (image fallback for text-only models)
 
-Configure vision fallback for text-only models:
+Configure **vision fallback** (two-stage caption → inject observations) for text-only models:
 
 ```bash
-# Set vision model
-abstractcore --set-vision-caption huggingface/Salesforce/blip-image-captioning-base
+# Set vision fallback provider/model
 abstractcore --set-vision-provider huggingface Salesforce/blip-image-captioning-base
+
+# Optional: add backups (used if the first vision backend fails)
+abstractcore --add-vision-fallback lmstudio qwen/qwen3-vl-4b
 
 # Disable vision fallback
 abstractcore --disable-vision
 ```
+
+Notes:
+- `abstractcore --set-vision-caption ...` is deprecated but kept for compatibility.
+- Vision fallback is only used for **image/video inputs** when the *main* model is text-only.
+
+### Audio (default policy + optional speech-to-text fallback)
+
+Audio attachments are controlled by `audio_policy` and are **strict by default** to avoid silent semantic changes:
+
+```bash
+# Enable speech-to-text fallback when audio is attached (requires an STT plugin backend)
+pip install abstractvoice
+abstractcore --set-audio-strategy auto
+
+# Optional: set a language hint (e.g. en, fr)
+abstractcore --set-stt-language fr
+```
+
+Notes:
+- `audio_policy="native_only"` errors on text-only models (default).
+- `audio_policy="speech_to_text"` forces STT and injects a transcript into the request.
+- `audio_policy="auto"` uses native audio when supported, otherwise STT when available.
+
+### Video (native vs frames fallback)
+
+Video attachments are controlled by `video_policy`. By default (`auto`), AbstractCore uses native video input when supported, otherwise it samples frames via `ffmpeg` and routes them through image/vision handling.
+
+```bash
+abstractcore --set-video-strategy auto
+abstractcore --set-video-max-frames 6
+abstractcore --set-video-sampling-strategy keyframes
+abstractcore --set-video-max-frame-side 1024
+```
+
+Notes:
+- Frame sampling requires `ffmpeg`/`ffprobe` available on `PATH`.
+- If your main model is text-only, frame fallback still requires **vision fallback** to be configured (see above).
 
 ### API Keys
 
@@ -221,7 +260,7 @@ This displays:
 Set up configuration interactively:
 
 ```bash
-abstractcore --configure
+abstractcore --config
 ```
 
 This guides you through:
@@ -307,6 +346,23 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
     ],
     "local_models_path": "~/.abstractcore/models/"
   },
+  "audio": {
+    "strategy": "native_only",
+    "stt_backend_id": null,
+    "stt_language": null,
+    "caption_provider": null,
+    "caption_model": null,
+    "fallback_chain": []
+  },
+  "video": {
+    "strategy": "auto",
+    "max_frames": 3,
+    "max_frames_native": 8,
+    "frame_format": "jpg",
+    "sampling_strategy": "uniform",
+    "max_frame_side": 1024,
+    "max_video_size_bytes": null
+  },
   "embeddings": {
     "provider": "huggingface",
     "model": "all-minilm-l6-v2"
@@ -342,7 +398,7 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
     "glyph_cache_dir": "~/.abstractcore/glyph_cache"
   },
   "logging": {
-    "console_level": "WARNING",
+    "console_level": "ERROR",
     "file_level": "DEBUG",
     "file_logging_enabled": false,
     "log_base_dir": null,
@@ -373,6 +429,20 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **caption_model**: Vision model name (e.g., `"Salesforce/blip-image-captioning-base"`)
 - **fallback_chain**: Array of backup vision models to try if primary fails
 - **local_models_path**: Directory for local vision model storage
+
+### Audio Section
+- **strategy**: Audio input strategy (`"native_only"`, `"speech_to_text"`, `"auto"`)
+- **stt_backend_id**: Optional preferred STT backend id (plugin-specific)
+- **stt_language**: Optional language hint for STT (e.g. `"en"`, `"fr"`)
+
+### Video Section
+- **strategy**: Video input strategy (`"native_only"`, `"frames_caption"`, `"auto"`)
+- **max_frames**: Frame budget for frames-based fallback
+- **max_frames_native**: Frame budget for native video-capable models
+- **sampling_strategy**: `"uniform"` or `"keyframes"`
+- **frame_format**: `"jpg"` or `"png"`
+- **max_frame_side**: Downscale extracted frames to this max side length (preserves aspect ratio)
+- **max_video_size_bytes**: Optional maximum video size allowed for processing (bytes)
 
 ### Default Models Section (Global Fallbacks)
 - **global_provider** / **global_model**: Default provider/model when app-specific not set (e.g., `"ollama"` / `"llama3:8b"`)
@@ -421,8 +491,8 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 ### Offline Section
 - **offline_first**: Default to offline-first behavior
 - **allow_network**: Allow network access when offline-first is enabled (for API providers)
-- **force_local_files_only**: Force HuggingFace `local_files_only` mode
-- **provider_preferences**: Additional provider-specific settings (key-value pairs)
+  - **force_local_files_only**: Force HuggingFace `local_files_only` mode
+  - **provider_preferences**: Additional provider-specific settings (key-value pairs)
 
 ## Common Configuration Tasks
 
@@ -512,7 +582,7 @@ If apps don't use configured defaults:
 3. Reset configuration if corrupted:
    ```bash
    rm ~/.abstractcore/config/abstractcore.json
-   abstractcore --configure
+   abstractcore --config
    ```
 
 ### Model Initialization Failures

@@ -175,6 +175,11 @@ Common provider IDs used by `create_llm(provider=..., model=...)`:
   - images: optional vision fallback (caption → inject short observations; config-driven)
 - Advanced PDF/Office extraction requires `abstractcore[media]` (PyMuPDF4LLM + unstructured).
 
+Requirements (quick checklist):
+- Images: `pip install "abstractcore[media]"` + a vision-capable model, or configure vision fallback via `abstractcore --set-vision-provider PROVIDER MODEL`
+- Video (frames fallback): requires `ffmpeg`/`ffprobe` + image/vision handling (vision-capable model or vision fallback configured); tune defaults via `abstractcore --set-video-*`
+- Audio (STT fallback): requires `pip install abstractvoice` + `audio_policy="auto"`/`"speech_to_text"` (or set default via `abstractcore --set-audio-strategy auto`)
+
 ### Capability plugins (voice/audio/vision)
 
 - `AbstractCoreInterface` exposes lazy facades:

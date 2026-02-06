@@ -158,7 +158,7 @@ graph TD
 1. **Advanced Processing**: Try specialized libraries (PyMuPDF4LLM, Unstructured)
 2. **Basic Processing**: Fall back to simple text extraction
 3. **Metadata Only**: If all else fails, provide file metadata
-4. **Graceful Degradation**: System never crashes, always provides some result
+4. **Graceful Degradation**: Best-effort results with clear errors (no silent semantic changes)
 
 **Example of Robust Error Handling:**
 ```python
@@ -173,7 +173,7 @@ except PDFProcessingError:
         # Ultimate fallback - provide metadata
         content = f"PDF file: {file.name} ({file.size} bytes)"
 
-# Result: User always gets meaningful information, never an error
+# Result: Callers get a best-effort output or a clear error message (no silent truncation).
 ```
 
 ## Supported File Types
@@ -183,13 +183,13 @@ except PDFProcessingError:
 - **Automatic**: Optimization, resizing, format conversion
 - **Features**: EXIF handling, quality optimization for vision models
 
-### Documents Production Ready
+### Documents
 - **Text Files**: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis
-- **PDF**: Full text extraction with PyMuPDF4LLM, preserves formatting and structure
-- **Office**: DOCX, XLSX, PPTX with complete content extraction using Unstructured library
-  - **Word**: Full document analysis with structure preservation
-  - **Excel**: Sheet-by-sheet extraction with data analysis
-  - **PowerPoint**: Slide content extraction with comprehensive analysis
+- **PDF**: Text extraction with PyMuPDF4LLM (when installed), with best-effort structure preservation
+- **Office**: DOCX, XLSX, PPTX via Unstructured (when installed), with best-effort extraction
+  - **Word**: section/paragraph extraction
+  - **Excel**: sheet-by-sheet extraction
+  - **PowerPoint**: slide-by-slide extraction
 
 ### Audio (policy-driven; optional STT fallback)
 - **Formats**: common `audio/*` types (WAV, MP3, M4A, …) as attachments via `media=[...]`
@@ -201,17 +201,25 @@ except PDFProcessingError:
 Transparency:
 - When STT fallback is used, `GenerateResponse.metadata.media_enrichment[]` records what was injected and which backend was used.
 
+Requirements:
+- **Native audio** requires an audio-capable model.
+- **STT fallback** requires installing an STT capability plugin (typically `pip install abstractvoice`) and using `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
+
 ### Video (policy-driven; native or frames fallback)
 - **Formats**: common `video/*` types as attachments via `media=[...]`
 - **Default behavior**: `video_policy="auto"` (native video when supported; otherwise sample frames and route through the vision pipeline)
 - **Budgets**: frame count and downscale are explicit and logged (see `abstractcore/providers/base.py`)
 
-### Processing Features All Working
+Requirements:
+- Frame sampling fallback requires **`ffmpeg`/`ffprobe`** available on `PATH`.
+- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and (for local frame attachments) `pip install "abstractcore[media]"` so Pillow-based image processing is available.
+
+### Processing Features
 - **Intelligent Detection**: Automatic file type recognition and processor selection
 - **Content Optimization**: Format-specific processing optimized for LLM consumption
 - **Robust Fallback**: Graceful degradation ensures users always get meaningful results
 - **Performance Optimized**: Lazy loading and efficient memory usage
-- **Production Tested**: All file types tested and working in CLI and Python API
+- **Testing status**: Coverage varies by provider and modality; see the test suite under `tests/media_handling/`
 
 ### Token Estimation & No Truncation Policy
 
@@ -328,7 +336,7 @@ response = llm.generate(
 )
 ```
 
-### Real-World CLI Usage (Production Ready)
+### CLI Usage
 
 **All these examples work correctly in AbstractCore CLI:**
 
@@ -439,73 +447,43 @@ if is_vision_model("gpt-4o"):
 if supports_images("claude-3.5-sonnet"):
     print("This model supports image analysis")
 
-# Current: Automatic fallback for non-vision models
-llm = create_llm("openai", model="gpt-4")  # Non-vision model
+# Text-only model + image input is policy-driven
+llm = create_llm("openai", model="gpt-4")  # text-only example
 response = llm.generate(
     "Analyze this image",
-    media=["photo.jpg"]  # Currently: Will extract basic metadata instead
+    media=["photo.jpg"],  # Errors unless vision fallback is configured; see below.
 )
 ```
 
-### Vision Fallback System (IMPLEMENTED ✅)
+### Vision fallback (optional; config-driven)
 
-AbstractCore now includes an **automatic vision fallback system** that enables text-only models to process images using a transparent two-stage pipeline:
+AbstractCore includes an optional **vision fallback** that enables text-only models to process images using a transparent two-stage pipeline (caption → inject short observations).
 
 #### How Vision Fallback Works
 
-When you use a text-only model with images, AbstractCore automatically:
+When vision fallback is configured and you use a text-only model with images, AbstractCore:
 
 1. **Detects Model Limitations**: Identifies when a text-only model receives an image
 2. **Uses Vision Fallback**: Employs a configured vision model to analyze the image
 3. **Provides Description**: Passes the image description to the text-only model
-4. **Returns Results**: User gets complete image analysis without knowing about the two-stage process
+4. **Returns Results**: Your text model answers using the injected observations (recorded in `metadata.media_enrichment[]`)
 
-#### Automatic Setup
+#### Example
 
-```python
-from abstractcore import create_llm
-
-# Text-only model with image - triggers helpful warnings
-llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No vision support
-response = llm.generate("What's in this image?", media=["photo.jpg"])
-
-# User sees helpful guidance in logs:
-# 🔸 EASIEST: Download BLIP vision model (990MB): abstractcore --download-vision-model
-# 🔸 Use existing Ollama model: abstractcore --set-vision-caption qwen2.5vl:7b
-# 🔸 Use cloud API: abstractcore --set-vision-provider openai --model gpt-4o
-```
-
-#### One-Command Setup
+Configure a vision captioner once:
 
 ```bash
-# Download and configure BLIP model automatically
-abstractcore --download-vision-model
-
-# Alternative: Use existing Ollama model
-abstractcore --set-vision-caption qwen2.5vl:7b
-
-# Alternative: Use cloud vision API
-abstractcore --set-vision-provider openai --model gpt-4o
+abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
 ```
 
-#### Working Example
+Then use any text model with images:
 
 ```python
 from abstractcore import create_llm
 
-# After running: abstractcore --set-vision-caption qwen2.5vl:7b
-
-# Text-only model now works seamlessly with images
-llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")
-response = llm.generate("What's in this image?", media=["whale_photo.jpg"])
-
-print(response.content)
-# Output: "The image shows a whale leaping or breaching out of the water.
-# This dramatic moment captures the whale in mid-air, often with spray and
-# water cascading around its body, highlighting its immense size and power.
-# Such behavior, known as 'breaching,' is commonly observed in species like
-# humpback whales and is thought to serve purposes such as communication,
-# play, or removing parasites..."
+llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # text-only
+resp = llm.generate("What's in this image?", media=["whale_photo.jpg"])
+print(resp.content)
 ```
 
 #### Behind the Scenes
@@ -520,21 +498,19 @@ What actually happens (transparent to user):
 # Check current status
 abstractcore --status
 
-# Download models (automatic setup)
+# Download local caption models (optional)
 abstractcore --download-vision-model              # BLIP base (990MB)
 abstractcore --download-vision-model vit-gpt2     # ViT-GPT2 (500MB, CPU-friendly)
 abstractcore --download-vision-model git-base     # GIT base (400MB, smallest)
 
-# Use existing provider models
-abstractcore --set-vision-caption qwen2.5vl:7b
-abstractcore --set-vision-caption llama3.2-vision:11b
-
-# Cloud APIs
-abstractcore --set-vision-provider openai --model gpt-4o
-abstractcore --set-vision-provider anthropic --model claude-3.5-sonnet
+# Use an existing vision-capable model as the fallback captioner
+abstractcore --set-vision-provider ollama qwen2.5vl:7b
+abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
+abstractcore --set-vision-provider openai gpt-4o
+abstractcore --set-vision-provider anthropic claude-sonnet-4-5
 
 # Interactive setup
-abstractcore --configure
+abstractcore --config
 
 # Advanced: Fallback chains
 abstractcore --add-vision-fallback ollama qwen2.5vl:7b
