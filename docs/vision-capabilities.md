@@ -4,6 +4,15 @@ This document describes **vision as an input modality** in AbstractCore (images 
 - **vision fallback** (caption → inject short observations), and
 - **generative vision** (image/video creation), which lives in `abstractvision`.
 
+## Quick requirements
+
+- **Images**: install `pip install "abstractcore[media]"` and use either:
+  - a **vision-capable model** (VLM/VL), or
+  - a text-only model with **vision fallback** configured (`abstractcore --set-vision-provider PROVIDER MODEL`).
+- **Video**: native video input is model/provider dependent. For the portable frame-sampling path (`video_policy="frames_caption"` / `"auto"` fallback), you need:
+  - `ffmpeg`/`ffprobe` available on `PATH`, and
+  - image/vision handling (a vision-capable model or configured vision fallback).
+
 ## 1) Image/video input modalities (owned by AbstractCore)
 
 Attach media to an LLM call using `media=[...]`:
@@ -29,6 +38,14 @@ resp = llm.generate(
 )
 ```
 
+You can tune frame sampling defaults via the config CLI:
+
+```bash
+abstractcore --set-video-strategy auto
+abstractcore --set-video-max-frames 6
+abstractcore --set-video-sampling-strategy keyframes
+```
+
 ## 2) Vision fallback for text-only models (optional; config-driven)
 
 When a user attaches an image to a text-only model, AbstractCore can optionally run a **two-stage fallback**:
@@ -42,6 +59,13 @@ This is:
 Code pointers:
 - Fallback handler: `abstractcore/media/vision_fallback.py`
 - Enrichment metadata: `abstractcore/media/enrichment.py`
+
+Configure vision fallback via the config CLI:
+
+```bash
+abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
+abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-base
+```
 
 ## 3) Generative vision output is not part of AbstractCore’s default install
 
@@ -59,7 +83,7 @@ This separation keeps `abstractcore` dependency-light (ADR-0001 / ADR-0028).
 
 - **“Image input is not supported by model …”**: choose a vision-capable model, or configure vision fallback.
 - **Vision fallback errors**: confirm your AbstractCore config enables it and that the configured backend is reachable/works.
-- **Video frame fallback issues**: frame extraction relies on `ffmpeg`/`ffprobe` availability in the runtime environment.
+- **Video frame fallback issues**: frame extraction relies on `ffmpeg`/`ffprobe` availability in the runtime environment, and requires image/vision handling (vision-capable model or configured vision fallback).
 
 ## Related
 - Media pipeline overview: `docs/media-handling-system.md`

@@ -18,7 +18,7 @@ This folder contains the **canonical user documentation** for AbstractCore. The 
 - **[Structured Output](structured-output.md)** — `response_model=...` strategies and limitations
 - **[Session Management](session.md)** — conversation state, persistence, compaction
 - **[Generation Parameters](generation-parameters.md)** — unified parameter vocabulary + provider quirks
-- **[Centralized Config](centralized-config.md)** — config file + config CLI (`abstractcore --configure`)
+- **[Centralized Config](centralized-config.md)** — config file + config CLI (`abstractcore --config`)
 - **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
 - **[Interaction Tracing](interaction-tracing.md)** — record prompts/responses/usage for debugging
 - **[Capabilities](capabilities.md)** — what AbstractCore can and cannot do

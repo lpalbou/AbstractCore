@@ -72,6 +72,35 @@ Cloud providers require API keys:
 - Anthropic: `ANTHROPIC_API_KEY`
 - OpenRouter: `OPENROUTER_API_KEY`
 
+## Media attachments (`@/path`)
+
+In `abstractcore-chat`, you can attach local files by referencing them in your prompt:
+
+```text
+what is in this image? @/path/to/photo.jpg
+what does it say? @/path/to/audio.wav
+summarize this clip @/path/to/video.mp4
+```
+
+Fallback behavior is explicit and policy-driven:
+
+- **Images**: a vision-capable model can process images natively. For text-only models, AbstractCore can use **vision fallback** (caption → inject short observations) when configured.
+- **Audio**: if the model is not audio-capable, `abstractcore-chat` defaults to `audio_policy="auto"` when audio is attached, so speech-to-text can run when `abstractvoice` is installed.
+- **Video**: `video_policy="auto"` uses native video when supported; otherwise it can sample frames via `ffmpeg`/`ffprobe` and route them through image/vision handling.
+
+Configure defaults (optional):
+
+```bash
+abstractcore --config
+abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
+abstractcore --set-audio-strategy auto            # requires: pip install abstractvoice
+abstractcore --set-video-strategy auto            # frames fallback requires ffmpeg
+```
+
+Per-run overrides:
+- `abstractcore-chat --audio-policy native_only|speech_to_text|auto`
+- `abstractcore-chat --audio-language en|fr|...` (STT hint)
+
 ## New Commands
 
 ### Token Controls (`/max-tokens`, `/max-output-tokens`)

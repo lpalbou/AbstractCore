@@ -24,36 +24,53 @@ import textwrap
 from datetime import datetime
 from urllib.parse import parse_qs, parse_qsl, urlencode, unquote, urljoin, urlparse, urlunparse
 import mimetypes
+from importlib.util import find_spec
 
-try:
-    import requests
-    REQUESTS_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    requests = None  # type: ignore[assignment]
-    REQUESTS_AVAILABLE = False
+# Optional heavy dependencies are lazily imported so that lightweight usage (and
+# tools unrelated to web parsing) doesn't pay import time for bs4/lxml/etc.
+requests = None  # type: ignore[assignment]
+BeautifulSoup = None  # type: ignore[assignment]
+XMLParsedAsHTMLWarning = None  # type: ignore[assignment]
+NavigableString = None  # type: ignore[assignment]
+Tag = None  # type: ignore[assignment]
 
-try:
-    from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
-    from bs4.element import NavigableString, Tag
-    BS4_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    BeautifulSoup = None  # type: ignore[assignment]
-    XMLParsedAsHTMLWarning = None  # type: ignore[assignment]
-    NavigableString = None  # type: ignore[assignment]
-    Tag = None  # type: ignore[assignment]
-    BS4_AVAILABLE = False
+REQUESTS_AVAILABLE = find_spec("requests") is not None
+BS4_AVAILABLE = find_spec("bs4") is not None
+BS4_PARSER = "lxml" if find_spec("lxml") is not None else "html.parser"
 
-try:
-    import lxml  # noqa: F401
-    BS4_PARSER = "lxml"
-except ImportError:
-    BS4_PARSER = "html.parser"
 
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
+def _ensure_requests() -> bool:
+    global requests, REQUESTS_AVAILABLE
+    if requests is not None:
+        return True
+    if not REQUESTS_AVAILABLE:
+        return False
+    try:
+        import requests as _requests  # type: ignore
+    except Exception:
+        REQUESTS_AVAILABLE = False
+        return False
+    requests = _requests
+    return True
+
+
+def _ensure_bs4() -> bool:
+    global BeautifulSoup, XMLParsedAsHTMLWarning, NavigableString, Tag, BS4_AVAILABLE
+    if BeautifulSoup is not None:
+        return True
+    if not BS4_AVAILABLE:
+        return False
+    try:
+        from bs4 import BeautifulSoup as _BeautifulSoup, XMLParsedAsHTMLWarning as _XMLParsedAsHTMLWarning  # type: ignore
+        from bs4.element import NavigableString as _NavigableString, Tag as _Tag  # type: ignore
+    except Exception:
+        BS4_AVAILABLE = False
+        return False
+    BeautifulSoup = _BeautifulSoup
+    XMLParsedAsHTMLWarning = _XMLParsedAsHTMLWarning
+    NavigableString = _NavigableString
+    Tag = _Tag
+    return True
 
 # Import our enhanced tool decorator
 from abstractcore.tools.core import tool
@@ -3568,7 +3585,7 @@ def web_search(
             url = "https://duckduckgo.com/html/"
             params: Dict[str, Any] = {"q": query, "kl": region}
             headers = {"User-Agent": "AbstractCore-WebSearch/1.0", "Accept-Language": region}
-            if not REQUESTS_AVAILABLE:
+            if not _ensure_requests():
                 payload: Dict[str, Any] = {
                     "engine": "duckduckgo",
                     "source": "duckduckgo.text",
@@ -3891,7 +3908,7 @@ def skim_url(
     if not u:
         return "Error: url is required"
 
-    if not REQUESTS_AVAILABLE or requests is None:
+    if not _ensure_requests():
         return (
             "Error: skim_url requires `requests`, which is not installed.\n"
             "Install with: pip install \"abstractcore[tools]\""
@@ -4014,7 +4031,7 @@ def skim_url(
                     main_type.startswith("text/") and _is_html_content(_decode_text_bytes(raw_bytes, content_type))
                 ):
                     html_text = _decode_text_bytes(raw_bytes, content_type)
-                    if BS4_AVAILABLE and BeautifulSoup is not None:
+                    if _ensure_bs4():
                         try:
                             parser = _get_appropriate_parser(html_text)
                             import warnings
@@ -4227,7 +4244,7 @@ def fetch_url(
         fetch_url("https://httpbin.org/post", method="POST", data={"test": "value"})  # POST request
         fetch_url("https://example.com/image.jpg", include_binary_preview=True)  # Fetch image with preview
     """
-    if not REQUESTS_AVAILABLE:
+    if not _ensure_requests():
         rendered = (
             "❌ Missing dependency: `requests`\n"
             "This tool fetches URLs using `requests`.\n"
@@ -5085,7 +5102,7 @@ def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str
     if not html_content:
         return "", "", ""
 
-    if not BS4_AVAILABLE or BeautifulSoup is None:
+    if not _ensure_bs4():
         stripped = re.sub(r"<[^>]+>", " ", str(html_content or ""))
         extracted = _normalize_extracted_text(stripped)
         return "", "", extracted
@@ -5554,7 +5571,7 @@ def _parse_html_content(
     if _is_xml_content(html_content):
         return _parse_xml_content(html_content, include_full_content)
 
-    if not BS4_AVAILABLE or BeautifulSoup is None:
+    if not _ensure_bs4():
         fallback = _normalize_extracted_text(re.sub(r"<[^>]+>", " ", str(html_content or "")))
         preview = fallback if include_full_content else fallback[:2000]
         if not include_full_content and len(fallback) > 2000:

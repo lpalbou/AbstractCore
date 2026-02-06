@@ -261,11 +261,11 @@ if result.success:
 # Download local vision model (990MB BLIP)
 abstractcore --download-vision-model
 
-# Configure external vision model
-abstractcore --set-vision-caption qwen2.5vl:7b
+# Configure a provider vision model
+abstractcore --set-vision-provider ollama qwen2.5vl:7b
 
 # Use cloud API
-abstractcore --set-vision-provider openai --model gpt-4o
+abstractcore --set-vision-provider openai gpt-4o
 ```
 
 **Usage**:
@@ -894,10 +894,10 @@ from abstractcore import create_llm
 # $ abstractcore --download-vision-model
 
 # Option 2: Use existing Ollama model
-# $ abstractcore --set-vision-caption qwen2.5vl:7b
+# $ abstractcore --set-vision-provider ollama qwen2.5vl:7b
 
 # Option 3: Use cloud API
-# $ abstractcore --set-vision-provider openai --model gpt-4o
+# $ abstractcore --set-vision-provider openai gpt-4o
 
 # Use text-only model with images
 llm = create_llm("ollama", model="llama3.2:3b")  # No vision support

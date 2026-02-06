@@ -359,9 +359,9 @@ class VisionFallbackHandler:
 
 To enable image analysis with text-only models:
 1. Download local model: abstractcore --download-vision-model
-2. Use existing model: abstractcore --set-vision-caption qwen2.5vl:7b
-3. Use cloud API: abstractcore --set-vision-provider openai --model gpt-4o
-4. Interactive setup: abstractcore --configure
+2. Use local vision model: abstractcore --set-vision-provider ollama qwen2.5vl:7b
+3. Use cloud API: abstractcore --set-vision-provider openai gpt-4o
+4. Interactive setup: abstractcore --config
 
 Current status: abstractcore --status"""
 

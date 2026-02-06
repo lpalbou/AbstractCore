@@ -155,6 +155,13 @@ Audio and video attachments are also supported, but they are **policy-driven** (
 
 Speech-to-text fallback (`audio_policy="speech_to_text"`) typically requires installing `abstractvoice` (capability plugin).
 
+What you need (quick checklist):
+- **Images**: `abstractcore[media]` + either a vision-capable model (VLM/VL) **or** configured vision fallback (`abstractcore --set-vision-provider PROVIDER MODEL`).
+- **Video**: `ffmpeg`/`ffprobe` on `PATH` + either a vision-capable model **or** configured vision fallback (for frame sampling). Native video input is model/provider dependent.
+- **Audio**: either an audio-capable model **or** speech-to-text fallback via `abstractvoice` + `audio_policy="auto"`/`"speech_to_text"`.
+
+Defaults can be configured via the config CLI (`abstractcore --config`, `abstractcore --status`). See [Centralized Config](centralized-config.md).
+
 If your main model is text-only, you can configure vision fallback (two-stage captioning) so images are automatically described and injected as short observations. See [Media Handling](media-handling-system.md), [Vision Capabilities](vision-capabilities.md), and [Centralized Config](centralized-config.md).
 
 For long documents, AbstractCore can optionally apply Glyph visual-text compression. Install `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` for PDFs) and see [Glyph Visual-Text Compression](glyphs.md).
@@ -177,7 +184,7 @@ asyncio.run(main())
 
 ```bash
 # Configure defaults and API keys
-abstractcore --configure
+abstractcore --config
 abstractcore --status
 
 # Interactive chat

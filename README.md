@@ -126,7 +126,7 @@ llm = create_llm(
 
 You can also persist settings (including API keys) via the config CLI:
 - `abstractcore --status`
-- `abstractcore --configure`
+- `abstractcore --configure` (alias: `--config`)
 - `abstractcore --set-api-key openai sk-...`
 
 ## What’s inside (quick tour)
@@ -181,7 +181,7 @@ answer = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 print(answer.bullets)
 ```
 
-## Media / vision input
+## Media input (images/audio/video)
 
 Requires `pip install "abstractcore[media]"`.
 
@@ -194,8 +194,18 @@ print(resp.content)
 ```
 
 Notes:
-- Audio/video attachments are policy-driven (`audio_policy`, `video_policy`) and fail loudly by default unless you configure or request a fallback.
-- Speech-to-text fallback for audio attachments typically requires installing `abstractvoice` (capability plugin).
+- **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
+- **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
+- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractvoice` for speech-to-text.
+
+Configure defaults (optional):
+
+```bash
+abstractcore --status
+abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
+abstractcore --set-audio-strategy auto
+abstractcore --set-video-strategy auto
+```
 
 See [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md).
 

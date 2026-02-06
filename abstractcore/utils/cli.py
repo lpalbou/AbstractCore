@@ -2021,7 +2021,15 @@ class SimpleCLI:
                 except Exception:
                     supports_audio = False
 
-                effective_policy = self.audio_policy or "auto"
+                effective_policy = self.audio_policy
+                if effective_policy is None:
+                    try:
+                        from ..config.manager import get_config_manager
+
+                        effective_policy = getattr(getattr(get_config_manager().config, "audio", None), "strategy", None)
+                    except Exception:
+                        effective_policy = "auto"
+                effective_policy = str(effective_policy or "auto").strip().lower()
                 if supports_audio:
                     print(f"🔊 Audio-capable model detected - will process {len(audio_files)} audio file(s)")
                 elif effective_policy in {"native_only", "native", "disabled"}:
@@ -2106,13 +2114,8 @@ class SimpleCLI:
                 else:
                     has_audio = False
 
-                audio_policy = self.audio_policy
-                if audio_policy is None and has_audio:
-                    # CLI default: when audio is attached, opt into "auto" so STT fallback can run
-                    # when the model is text-only and an audio capability plugin is installed.
-                    audio_policy = "auto"
-                if audio_policy is not None and has_audio:
-                    gen_kwargs["audio_policy"] = audio_policy
+                if self.audio_policy is not None and has_audio:
+                    gen_kwargs["audio_policy"] = self.audio_policy
                 if self.audio_language is not None and has_audio:
                     gen_kwargs["audio_language"] = self.audio_language
                 if self.thinking is not None:
@@ -2350,11 +2353,8 @@ class SimpleCLI:
         else:
             has_audio = False
 
-        audio_policy = self.audio_policy
-        if audio_policy is None and has_audio:
-            audio_policy = "auto"
-        if audio_policy is not None and has_audio:
-            gen_kwargs["audio_policy"] = audio_policy
+        if self.audio_policy is not None and has_audio:
+            gen_kwargs["audio_policy"] = self.audio_policy
         if self.audio_language is not None and has_audio:
             gen_kwargs["audio_language"] = self.audio_language
         if self.thinking is not None:

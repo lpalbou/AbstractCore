@@ -29,6 +29,7 @@ Features:
 - **Compression**: **Pillow** (glyph rendering)
 - **Server**: **fastapi**, **uvicorn**, **python-multipart**, **sse-starlette**
 - **Vision plugin integration**: **abstractvision**
+- **Voice/audio plugin integration**: **abstractvoice**
 - **Docs**: **mkdocs**, **mkdocs-material**, **mkdocstrings[python]**, **mkdocs-autorefs**
 - **Benchmarks**: **matplotlib** (MLX benchmark plots)
 

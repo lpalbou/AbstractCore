@@ -14,11 +14,17 @@ Usage:
     abstractcore --set-default-model ollama/llama3:8b
     abstractcore --set-default-provider ollama
     abstractcore --status
-    abstractcore --configure
+    abstractcore --configure  # alias: --config
 
-    # Vision configuration
-    abstractcore --set-vision-caption qwen2.5vl:7b
-    abstractcore --set-vision-provider ollama --model qwen2.5vl:7b
+    # Vision fallback (for text-only models)
+    abstractcore --set-vision-provider ollama qwen2.5vl:7b
+    abstractcore --disable-vision
+
+    # Audio/video defaults (attachments)
+    abstractcore --set-audio-strategy auto          # requires: pip install abstractvoice
+    abstractcore --set-stt-language fr              # optional STT hint
+    abstractcore --set-video-strategy auto          # frames fallback requires ffmpeg
+    abstractcore --set-video-max-frames 6
 
     # Embeddings configuration
     abstractcore --set-embeddings-model sentence-transformers/all-MiniLM-L6-v2
@@ -175,8 +181,12 @@ def add_arguments(parser: argparse.ArgumentParser):
     general_group = parser.add_argument_group('General Configuration')
     general_group.add_argument("--status", action="store_true",
                               help="Show current configuration status with change commands")
-    general_group.add_argument("--configure", action="store_true",
-                              help="Interactive guided setup for first-time users")
+    general_group.add_argument(
+        "--configure",
+        "--config",
+        action="store_true",
+        help="Interactive guided setup for first-time users (alias: --config)",
+    )
     general_group.add_argument("--reset", action="store_true",
                               help="Reset all configuration to built-in defaults")
 
@@ -211,7 +221,10 @@ def add_arguments(parser: argparse.ArgumentParser):
     media_group.add_argument(
         "--set-audio-strategy",
         choices=["native_only", "speech_to_text", "auto"],
-        help="Set default audio handling strategy for attachments (default: native_only).",
+        help=(
+            "Set default audio handling strategy for attachments "
+            "(default: auto when `abstractvoice` is installed; otherwise native_only)."
+        ),
     )
     media_group.add_argument(
         "--set-stt-backend-id",
@@ -222,6 +235,45 @@ def add_arguments(parser: argparse.ArgumentParser):
         "--set-stt-language",
         metavar="LANG",
         help="Set default STT language hint (optional; e.g. en, fr).",
+    )
+    media_group.add_argument(
+        "--set-video-strategy",
+        choices=["native_only", "frames_caption", "auto"],
+        help="Set default video handling strategy for attachments (default: auto).",
+    )
+    media_group.add_argument(
+        "--set-video-max-frames",
+        metavar="N",
+        type=int,
+        help="Set max frames sampled for video frame fallback (default: 3).",
+    )
+    media_group.add_argument(
+        "--set-video-max-frames-native",
+        metavar="N",
+        type=int,
+        help="Set max frames used for native video-capable models (default: 8).",
+    )
+    media_group.add_argument(
+        "--set-video-frame-format",
+        choices=["jpg", "png"],
+        help="Set extracted frame format for video frame fallback (default: jpg).",
+    )
+    media_group.add_argument(
+        "--set-video-sampling-strategy",
+        choices=["uniform", "keyframes"],
+        help="Set frame sampling strategy for video frame fallback (default: uniform).",
+    )
+    media_group.add_argument(
+        "--set-video-max-frame-side",
+        metavar="PX",
+        type=int,
+        help="Set max side length for extracted video frames (default: 1024).",
+    )
+    media_group.add_argument(
+        "--set-video-max-size-bytes",
+        metavar="BYTES",
+        type=int,
+        help="Set max allowed video size for processing (bytes). Use 0 to clear.",
     )
 
     # Embeddings group
@@ -374,19 +426,65 @@ def print_status():
     # Audio (STT fallback via capability plugins)
     audio = status.get("audio", {})
     audio_strategy = str(audio.get("strategy") or "native_only").strip()
+    abstractvoice_installed = False
+    try:
+        import importlib.util
+
+        abstractvoice_installed = importlib.util.find_spec("abstractvoice") is not None
+    except Exception:
+        abstractvoice_installed = False
     audio_desc = {
         "native_only": "Native audio only (errors on text-only models)",
         "speech_to_text": "Speech-to-text fallback (requires `abstractvoice`)",
         "auto": "Native when supported, otherwise STT (requires `abstractvoice`)",
+        "caption": "Audio caption fallback (reserved)",
     }
-    audio_status = "✅ Enabled" if audio_strategy in {"speech_to_text", "auto"} else "⚠️ Disabled"
-    print(f"│     🎧 Audio           {audio_status:<10} {audio_desc.get(audio_strategy, audio_strategy)}")
+    audio_strategy_norm = audio_strategy.strip().lower()
+    if audio_strategy_norm in {"speech_to_text", "auto"} and abstractvoice_installed:
+        audio_status = "✅ Enabled"
+    elif audio_strategy_norm in {"speech_to_text", "auto"} and not abstractvoice_installed:
+        audio_status = "⚠️ Disabled"
+    else:
+        audio_status = "⚠️ Disabled"
+    print(f"│     🎧 Audio           {audio_status:<10} {audio_desc.get(audio_strategy_norm, audio_strategy)}")
     stt_backend_id = audio.get("stt_backend_id")
     stt_language = audio.get("stt_language")
     if stt_backend_id:
         print(f"│     🔎 STT backend     {stt_backend_id}")
     if stt_language:
         print(f"│     🌐 STT language    {stt_language}")
+
+    # Video (native where supported; otherwise frames fallback via ffmpeg)
+    video = status.get("video", {})
+    video_strategy = str(video.get("strategy") or "auto").strip()
+    video_desc = {
+        "native_only": "Native video only (errors unless the model supports video input)",
+        "frames_caption": "Frames fallback (sample frames via ffmpeg; requires vision handling)",
+        "auto": "Native when supported, otherwise frames fallback (ffmpeg)",
+    }
+    video_status = "✅ Enabled" if video_strategy in {"frames_caption", "auto"} else "⚠️ Strict"
+    print(f"│     🎞️  Video           {video_status:<10} {video_desc.get(video_strategy, video_strategy)}")
+    max_frames = video.get("max_frames")
+    max_frames_native = video.get("max_frames_native")
+    frame_format = video.get("frame_format")
+    sampling_strategy = video.get("sampling_strategy")
+    max_frame_side = video.get("max_frame_side")
+    max_video_size_bytes = video.get("max_video_size_bytes")
+    details = []
+    if max_frames is not None:
+        details.append(f"max_frames={max_frames}")
+    if max_frames_native is not None:
+        details.append(f"max_frames_native={max_frames_native}")
+    if sampling_strategy:
+        details.append(f"sampling={sampling_strategy}")
+    if frame_format:
+        details.append(f"format={frame_format}")
+    if max_frame_side is not None:
+        details.append(f"max_side={max_frame_side}")
+    if max_video_size_bytes is not None:
+        details.append(f"max_bytes={max_video_size_bytes}")
+    if details:
+        print(f"│     🖼️  Video frames    {', '.join(details)}")
 
     # Embeddings
     print("│")
@@ -477,13 +575,17 @@ def print_status():
     print("\n┌─ QUICK CONFIGURATION COMMANDS")
     print("│")
     print("│  🚀 Common Tasks")
-    print("│     abstractcore --set-global-default PROVIDER MODEL")
+    print("│     abstractcore --set-global-default PROVIDER/MODEL")
     print("│     abstractcore --set-app-default APPNAME PROVIDER MODEL")
     print("│     abstractcore --set-api-key PROVIDER YOUR_KEY")
     print("│")
     print("│  🔧 Media & Behavior")
     print("│     abstractcore --set-vision-provider PROVIDER MODEL")
     print("│     abstractcore --download-vision-model  (local models)")
+    print("│     abstractcore --set-audio-strategy {native_only|speech_to_text|auto}")
+    print("│     abstractcore --set-stt-language LANG  (optional)")
+    print("│     abstractcore --set-video-strategy {native_only|frames_caption|auto}")
+    print("│     abstractcore --set-video-max-frames N  (frame fallback budget)")
     print("│     abstractcore --stream on/off")
     print("│     abstractcore --enable-streaming / --disable-streaming")
     print("│")
@@ -504,7 +606,7 @@ def print_status():
     print("│     abstractcore --set-embeddings-model PROVIDER/MODEL")
     print("│")
     print("│  🎛️  Advanced")
-    print("│     abstractcore --configure  (interactive setup)")
+    print("│     abstractcore --configure / --config  (interactive setup)")
     print("│     abstractcore --reset  (reset to defaults)")
     print("│     abstractcore --list-api-keys  (check API status)")
     print("│")
@@ -711,6 +813,66 @@ def handle_commands(args) -> bool:
                 print("✅ Cleared STT language")
         else:
             print("❌ Error: Failed to update STT language")
+        handled = True
+
+    # Video configuration (native video where supported; otherwise frames fallback via ffmpeg)
+    if getattr(args, "set_video_strategy", None):
+        ok = config_manager.set_video_strategy(args.set_video_strategy)
+        if ok:
+            print(f"✅ Set video strategy to: {args.set_video_strategy}")
+        else:
+            print(f"❌ Error: Invalid video strategy: {args.set_video_strategy}")
+        handled = True
+
+    if getattr(args, "set_video_max_frames", None) is not None:
+        ok = config_manager.set_video_max_frames(args.set_video_max_frames)
+        if ok:
+            print(f"✅ Set video max frames (fallback) to: {args.set_video_max_frames}")
+        else:
+            print(f"❌ Error: Invalid video max frames: {args.set_video_max_frames}")
+        handled = True
+
+    if getattr(args, "set_video_max_frames_native", None) is not None:
+        ok = config_manager.set_video_max_frames_native(args.set_video_max_frames_native)
+        if ok:
+            print(f"✅ Set video max frames (native) to: {args.set_video_max_frames_native}")
+        else:
+            print(f"❌ Error: Invalid video max frames native: {args.set_video_max_frames_native}")
+        handled = True
+
+    if getattr(args, "set_video_frame_format", None):
+        ok = config_manager.set_video_frame_format(args.set_video_frame_format)
+        if ok:
+            print(f"✅ Set video frame format to: {args.set_video_frame_format}")
+        else:
+            print(f"❌ Error: Invalid video frame format: {args.set_video_frame_format}")
+        handled = True
+
+    if getattr(args, "set_video_sampling_strategy", None):
+        ok = config_manager.set_video_sampling_strategy(args.set_video_sampling_strategy)
+        if ok:
+            print(f"✅ Set video sampling strategy to: {args.set_video_sampling_strategy}")
+        else:
+            print(f"❌ Error: Invalid video sampling strategy: {args.set_video_sampling_strategy}")
+        handled = True
+
+    if getattr(args, "set_video_max_frame_side", None) is not None:
+        ok = config_manager.set_video_max_frame_side(args.set_video_max_frame_side)
+        if ok:
+            print(f"✅ Set video max frame side to: {args.set_video_max_frame_side}")
+        else:
+            print(f"❌ Error: Invalid video max frame side: {args.set_video_max_frame_side}")
+        handled = True
+
+    if getattr(args, "set_video_max_size_bytes", None) is not None:
+        ok = config_manager.set_video_max_video_size_bytes(args.set_video_max_size_bytes)
+        if ok:
+            if int(args.set_video_max_size_bytes) <= 0:
+                print("✅ Cleared video max size")
+            else:
+                print(f"✅ Set video max size to: {args.set_video_max_size_bytes} bytes")
+        else:
+            print(f"❌ Error: Invalid video max size bytes: {args.set_video_max_size_bytes}")
         handled = True
 
     # Embeddings configuration

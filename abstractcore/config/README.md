@@ -430,7 +430,7 @@ abstractcore --status
 
 **Interactive Setup**:
 ```bash
-abstractcore --configure
+abstractcore --config
 ```
 
 **Reset to Defaults**:
@@ -692,7 +692,7 @@ client = httpx.Client(timeout=http_timeout)
 **First-Time Setup**:
 ```bash
 # Run interactive setup
-abstractcore --configure
+abstractcore --config
 
 # Or set specific values
 abstractcore --set-global-default ollama/llama3:8b

@@ -66,7 +66,7 @@ See [Prerequisites](prerequisites.md) for setup details and env var names.
 You can use environment variables, or persist settings via the config CLI:
 
 ```bash
-abstractcore --configure
+abstractcore --config
 abstractcore --set-api-key openai sk-...
 abstractcore --set-api-key anthropic sk-ant-...
 abstractcore --status
@@ -146,10 +146,18 @@ Then pass `media=[...]` to `generate()` or use the media pipeline. See [Media Ha
 
 Audio and video attachments are supported via `media=[...]`, but they are **policy-driven** by design:
 
-- Audio defaults to `audio_policy="native_only"` (fails loudly unless the model supports native audio input).
-- Video defaults to `video_policy="auto"` (native video when supported; otherwise sample frames and route through the vision pipeline).
+- **Audio** defaults to `audio_policy="native_only"` (fails loudly unless the model supports native audio input).
+- **Video** defaults to `video_policy="auto"` (native video when supported; otherwise sample frames and route through image/vision handling). Frame sampling requires `ffmpeg`/`ffprobe`.
 
-Speech-to-text fallback for audio (`audio_policy="speech_to_text"`) typically requires installing `abstractvoice` (capability plugin).
+Speech-to-text fallback for audio (`audio_policy="speech_to_text"` or `"auto"`) typically requires installing `abstractvoice` (capability plugin).
+
+You can set defaults via the config CLI:
+
+```bash
+abstractcore --set-audio-strategy auto
+abstractcore --set-video-strategy auto
+abstractcore --set-video-max-frames 6
+```
 
 See:
 - [Media Handling](media-handling-system.md) (policies + fallbacks)

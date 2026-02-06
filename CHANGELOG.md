@@ -5,6 +5,15 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.6] - 2026-02-06
+
+### Added
+- Config CLI: video defaults (`--set-video-*`) and `--config` alias for interactive setup.
+
+### Changed
+- Faster CLI startup by lazily importing optional web parsing deps in `abstractcore.tools.common_tools`.
+- Docs: clarified requirements and configuration for image/video/audio fallbacks (including `abstractcore --config`).
+
 ## [2.11.5] - 2026-02-06
 
 ### Changed

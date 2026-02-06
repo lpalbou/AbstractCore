@@ -173,7 +173,7 @@ This is critical for:
 
 ### 3. Media Handling System
 
-AbstractCore includes a production-ready media processing system that enables universal file attachment across all providers:
+AbstractCore includes a policy-driven media handling system that enables file attachments across all providers:
 
 ```mermaid
 graph TD
