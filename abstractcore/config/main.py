@@ -208,6 +208,21 @@ def add_arguments(parser: argparse.ArgumentParser):
                             help="Download local vision model (default: blip-base-caption, ~1GB)")
     media_group.add_argument("--disable-vision", action="store_true",
                             help="Disable vision fallback for text-only models")
+    media_group.add_argument(
+        "--set-audio-strategy",
+        choices=["native_only", "speech_to_text", "auto"],
+        help="Set default audio handling strategy for attachments (default: native_only).",
+    )
+    media_group.add_argument(
+        "--set-stt-backend-id",
+        metavar="BACKEND_ID",
+        help="Set preferred STT backend id for capability plugins (optional).",
+    )
+    media_group.add_argument(
+        "--set-stt-language",
+        metavar="LANG",
+        help="Set default STT language hint (optional; e.g. en, fr).",
+    )
 
     # Embeddings group
     embed_group = parser.add_argument_group('Embeddings Configuration')
@@ -355,6 +370,23 @@ def print_status():
     print(f"│     {vision_status:<12} {strategy_text}")
     if vision["caption_provider"] and vision["caption_model"]:
         print(f"│     📷 Vision Model     {vision['caption_provider']}/{vision['caption_model']}")
+
+    # Audio (STT fallback via capability plugins)
+    audio = status.get("audio", {})
+    audio_strategy = str(audio.get("strategy") or "native_only").strip()
+    audio_desc = {
+        "native_only": "Native audio only (errors on text-only models)",
+        "speech_to_text": "Speech-to-text fallback (requires `abstractvoice`)",
+        "auto": "Native when supported, otherwise STT (requires `abstractvoice`)",
+    }
+    audio_status = "✅ Enabled" if audio_strategy in {"speech_to_text", "auto"} else "⚠️ Disabled"
+    print(f"│     🎧 Audio           {audio_status:<10} {audio_desc.get(audio_strategy, audio_strategy)}")
+    stt_backend_id = audio.get("stt_backend_id")
+    stt_language = audio.get("stt_language")
+    if stt_backend_id:
+        print(f"│     🔎 STT backend     {stt_backend_id}")
+    if stt_language:
+        print(f"│     🌐 STT language    {stt_language}")
 
     # Embeddings
     print("│")
@@ -648,6 +680,37 @@ def handle_commands(args) -> bool:
             print(f"✅ Successfully downloaded and configured: {args.download_vision_model}")
         else:
             print(f"❌ Failed to download: {args.download_vision_model}")
+        handled = True
+
+    # Audio configuration (speech-to-text fallback via capability plugins, e.g. abstractvoice)
+    if getattr(args, "set_audio_strategy", None):
+        ok = config_manager.set_audio_strategy(args.set_audio_strategy)
+        if ok:
+            print(f"✅ Set audio strategy to: {args.set_audio_strategy}")
+        else:
+            print(f"❌ Error: Invalid audio strategy: {args.set_audio_strategy}")
+        handled = True
+
+    if getattr(args, "set_stt_backend_id", None) is not None:
+        ok = config_manager.set_stt_backend_id(args.set_stt_backend_id)
+        if ok:
+            if args.set_stt_backend_id:
+                print(f"✅ Set STT backend id to: {args.set_stt_backend_id}")
+            else:
+                print("✅ Cleared STT backend id")
+        else:
+            print("❌ Error: Failed to update STT backend id")
+        handled = True
+
+    if getattr(args, "set_stt_language", None) is not None:
+        ok = config_manager.set_stt_language(args.set_stt_language)
+        if ok:
+            if args.set_stt_language:
+                print(f"✅ Set STT language to: {args.set_stt_language}")
+            else:
+                print("✅ Cleared STT language")
+        else:
+            print("❌ Error: Failed to update STT language")
         handled = True
 
     # Embeddings configuration

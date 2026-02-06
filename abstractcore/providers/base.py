@@ -1004,7 +1004,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if not model_supports_audio:
                         raise UnsupportedFeatureError(
                             f"Audio input is not supported by model '{self.model}'. "
-                            "Choose an audio-capable model, or pass audio_policy='speech_to_text' "
+                            "Choose an audio-capable model, or pass audio_policy='auto' or audio_policy='speech_to_text' "
                             "(requires an STT capability plugin, e.g. install abstractvoice)."
                         )
                     # Keep audio media for provider-native handling (provider support may still vary).

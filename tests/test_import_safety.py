@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -33,7 +34,8 @@ targets = [
 print(json.dumps({m: (m in sys.modules) for m in targets}))
 """
 
-    out = subprocess.check_output([sys.executable, "-c", code], text=True).strip()
+    repo_root = Path(__file__).resolve().parents[1]
+    out = subprocess.check_output([sys.executable, "-c", code], text=True, cwd=str(repo_root)).strip()
     data = json.loads(out)
 
     # `pip install abstractcore` should stay import-safe and avoid eager optional deps.

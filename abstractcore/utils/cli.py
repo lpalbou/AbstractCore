@@ -70,17 +70,39 @@ class _NoPromptCacheProvider:
 
 
 class SimpleCLI:
-    """Simplified CLI REPL for AbstractCore"""
+    """Simplified CLI REPL for AbstractCore."""
 
-    def __init__(self, provider: str, model: str, stream: bool = False,
-                 max_tokens: int = None, max_output_tokens: int = None,
-                 debug: bool = False, show_banner: bool = True, **kwargs):
+    def __init__(
+        self,
+        provider: str,
+        model: str,
+        stream: bool = False,
+        max_tokens: int = None,
+        max_output_tokens: int = None,
+        debug: bool = False,
+        show_banner: bool = True,
+        audio_policy: Optional[str] = None,
+        audio_language: Optional[str] = None,
+        **kwargs,
+    ):
         self.provider_name = provider
         self.model_name = model
         self.stream_mode = stream
         self.debug_mode = debug
         self.single_prompt_mode = not show_banner  # Clean output for single-prompt mode
         self.kwargs = kwargs
+        self.audio_policy: Optional[str] = None
+        if audio_policy is not None:
+            normalized = str(audio_policy or "").strip().lower()
+            if normalized in {"native"}:
+                normalized = "native_only"
+            if normalized in {"stt"}:
+                normalized = "speech_to_text"
+            if normalized:
+                self.audio_policy = normalized
+        self.audio_language: Optional[str] = None
+        if isinstance(audio_language, str) and audio_language.strip():
+            self.audio_language = audio_language.strip()
 
         # Auto-detect max_tokens from model capabilities if not specified
         self.max_tokens_auto = max_tokens is None
@@ -1974,10 +1996,66 @@ class SimpleCLI:
                 except:
                     print(f"📷 Processing {len(image_files)} image(s)")
 
+            # Check for audio capabilities if audio is attached
+            audio_extensions = {
+                ".wav",
+                ".mp3",
+                ".m4a",
+                ".aac",
+                ".flac",
+                ".ogg",
+                ".opus",
+                ".wma",
+                ".aiff",
+                ".aif",
+                ".caf",
+            }
+            audio_files = [
+                f for f in media_files if os.path.splitext(f.lower())[1] in audio_extensions
+            ]
+            if audio_files:
+                try:
+                    from ..media.capabilities import get_media_capabilities
+
+                    supports_audio = bool(get_media_capabilities(self.model_name).audio_support)
+                except Exception:
+                    supports_audio = False
+
+                effective_policy = self.audio_policy or "auto"
+                if supports_audio:
+                    print(f"🔊 Audio-capable model detected - will process {len(audio_files)} audio file(s)")
+                elif effective_policy in {"native_only", "native", "disabled"}:
+                    print(
+                        "🎧 Text model - audio input is not supported (native_only). "
+                        "Use --audio-policy auto or speech_to_text (requires `pip install abstractvoice`)."
+                    )
+                else:
+                    stt_available = False
+                    try:
+                        stt_available = bool(
+                            self.provider.capabilities.status()
+                            .get("capabilities", {})
+                            .get("audio", {})
+                            .get("available", False)
+                        )
+                    except Exception:
+                        stt_available = False
+
+                    if stt_available:
+                        print(
+                            f"🎧 Text model - will use speech-to-text fallback for {len(audio_files)} audio file(s)"
+                        )
+                    else:
+                        print(
+                            "🎧 Text model - speech-to-text fallback requires installing `abstractvoice`: "
+                            'pip install abstractvoice (or pass --audio-policy native_only)'
+                        )
+
         return clean_input, media_files
 
     def generate_response(self, user_input: str):
         """Generate and display response with tool execution and file attachment support."""
+        import os
         import re
         start_time = time.time()
 
@@ -2008,6 +2086,35 @@ class SimpleCLI:
                     "media": media_files if media_files else None,
                     "max_output_tokens": self.max_output_tokens,
                 }
+                if media_files:
+                    audio_exts = {
+                        ".wav",
+                        ".mp3",
+                        ".m4a",
+                        ".aac",
+                        ".flac",
+                        ".ogg",
+                        ".opus",
+                        ".wma",
+                        ".aiff",
+                        ".aif",
+                        ".caf",
+                    }
+                    has_audio = any(
+                        os.path.splitext(str(f).lower())[1] in audio_exts for f in (media_files or [])
+                    )
+                else:
+                    has_audio = False
+
+                audio_policy = self.audio_policy
+                if audio_policy is None and has_audio:
+                    # CLI default: when audio is attached, opt into "auto" so STT fallback can run
+                    # when the model is text-only and an audio capability plugin is installed.
+                    audio_policy = "auto"
+                if audio_policy is not None and has_audio:
+                    gen_kwargs["audio_policy"] = audio_policy
+                if self.audio_language is not None and has_audio:
+                    gen_kwargs["audio_language"] = self.audio_language
                 if self.thinking is not None:
                     gen_kwargs["thinking"] = self.thinking
                 response = self.session.generate(clean_input, **gen_kwargs)
@@ -2206,6 +2313,8 @@ class SimpleCLI:
 
     def _generate_response_kv(self, prompt: str, *, media: Optional[list] = None):
         """Generate response using append-only KV cache mode (local providers only)."""
+        import os
+
         # Maintain a local transcript for UX, but do not send it to the model; the KV cache is source-of-truth.
         try:
             self.session.add_message("user", prompt)
@@ -2221,6 +2330,33 @@ class SimpleCLI:
             "stream": bool(self.stream_mode),
             "max_output_tokens": self.max_output_tokens,
         }
+        if media:
+            audio_exts = {
+                ".wav",
+                ".mp3",
+                ".m4a",
+                ".aac",
+                ".flac",
+                ".ogg",
+                ".opus",
+                ".wma",
+                ".aiff",
+                ".aif",
+                ".caf",
+            }
+            has_audio = any(
+                os.path.splitext(str(f).lower())[1] in audio_exts for f in (media or [])
+            )
+        else:
+            has_audio = False
+
+        audio_policy = self.audio_policy
+        if audio_policy is None and has_audio:
+            audio_policy = "auto"
+        if audio_policy is not None and has_audio:
+            gen_kwargs["audio_policy"] = audio_policy
+        if self.audio_language is not None and has_audio:
+            gen_kwargs["audio_language"] = self.audio_language
         if self.thinking is not None:
             gen_kwargs["thinking"] = self.thinking
         # Preserve session-level generation parameters for consistency.
@@ -2467,8 +2603,9 @@ Tools: list_files, search_files, read_file, write_file, execute_command
 
 File Attachments:
   Use @filename syntax to attach files: "Analyze @image.jpg and @doc.pdf"
-  Supports images, PDFs, Office docs, text files with automatic processing
-  Vision models analyze images directly; text models use vision fallback
+  Supports images, audio, PDFs, Office docs, and text files with automatic processing
+  Vision models analyze images directly; text models use vision fallback (configure via `abstractcore --set-vision-provider ...`)
+  For audio attachments, use --audio-policy auto|speech_to_text (speech-to-text requires `pip install abstractvoice`)
 
 Configuration:
   Set defaults with: abstractcore --set-app-default cli <provider> <model>
@@ -2497,6 +2634,17 @@ build custom solutions using the AbstractCore framework directly.
     parser.add_argument('--base-url', help='Base URL override (OpenAI-compatible /v1 servers, proxies, Ollama)')
     parser.add_argument('--api-key', help='API key')
     parser.add_argument('--temperature', type=float, default=0.7, help='Temperature (default: 0.7)')
+    parser.add_argument(
+        "--audio-policy",
+        choices=["native_only", "speech_to_text", "auto"],
+        default=None,
+        help="Audio attachment policy (default: auto when audio is attached).",
+    )
+    parser.add_argument(
+        "--audio-language",
+        default=None,
+        help="Optional language hint for speech-to-text (e.g. 'en', 'fr').",
+    )
 
     args = parser.parse_args()
 
@@ -2569,6 +2717,8 @@ build custom solutions using the AbstractCore framework directly.
         max_output_tokens=args.max_output_tokens,
         debug=args.debug,
         show_banner=not args.prompt,  # Hide banner in single-prompt mode
+        audio_policy=args.audio_policy,
+        audio_language=args.audio_language,
         **kwargs
     )
 
