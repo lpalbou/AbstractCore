@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCP Tools - AbstractCore</title>
-    <meta name="description" content="Use Model Context Protocol (MCP) servers as external tool sources in AbstractCore. Discover tools, normalize schemas, and execute via host/runtime boundaries.">
+    <title>MCP (Model Context Protocol) - AbstractCore</title>
+    <meta name="description" content="AbstractCore treats MCP as a tool-server protocol (not an LLM provider).">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,126 +21,84 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">MCP Tools (Model Context Protocol)</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Use MCP servers as a <strong>tool source</strong>: discover tool schemas via <code>tools/list</code>, inject them into LLM calls, and keep execution <strong>host-owned</strong>.
-                </p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">MCP (Model Context Protocol)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore treats MCP as a tool-server protocol (not an LLM provider).</p>
             </div>
 
-            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">Design principle</h2>
-                <p style="margin: 0; font-size: 1rem;">
-                    MCP is treated as a <strong>tool protocol</strong>, not an LLM provider.
-                    AbstractCore providers generate text/tool calls; your host/runtime decides what to execute and where.
-                </p>
-            </div>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-you-can-do-today" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What you can do today</a>
+<a href="#transports-supported" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Transports supported</a>
+<a href="#configuration-helpers" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration helpers</a>
+<a href="#current-limitations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Current limitations</a></div>
 
             <div class="doc-content">
-                <section id="discovery">
-                    <h2>Discover tool specs from an MCP server</h2>
-                    <p>AbstractCore converts MCP tool schemas into AbstractCore-compatible tool specs that you can pass to <code>tools=[...]</code>.</p>
 
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
-from abstractcore.mcp import McpClient, McpToolSource
 
-llm = create_llm("openai", model="gpt-4o-mini")
+<p>The <code>abstractcore.mcp</code> module provides:
+- a minimal MCP JSON-RPC client (Streamable HTTP) → <code>abstractcore.mcp.McpClient</code>
+- a minimal MCP stdio client (spawn a subprocess) → <code>abstractcore.mcp.McpStdioClient</code>
+- tool discovery (<code>tools/list</code>) and conversion into AbstractCore tool specs → <code>abstractcore.mcp.McpToolSource</code></p>
+<h2 id="what-you-can-do-today">What you can do today</h2>
+<h3 id="1-discover-tools-from-an-mcp-server">1) Discover tools from an MCP server</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.mcp import McpClient, McpToolSource
 
-# MCP Streamable HTTP transport (JSON-RPC over HTTP POST)
-client = McpClient(url="http://localhost:3000/mcp")
-tool_specs = McpToolSource(server_id="local", client=client).list_tool_specs()
+client = McpClient(url="http://localhost:3000")  # MCP streamable HTTP endpoint
+source = McpToolSource(server_id="local", client=client)
+tools = source.list_tool_specs()
+</code></pre></div>
+<p>Each returned tool spec is an AbstractCore-compatible dict you can pass to <code>tools=[...]</code> in
+<code>generate()</code>/<code>agenerate()</code>. Tool names are namespaced as:</p>
+<p><code>mcp::&lt;server_id&gt;::&lt;tool_name&gt;</code></p>
+<p>See <code>abstractcore/abstractcore/mcp/naming.py</code>.</p>
+<h3 id="2-execute-mcp-tools-in-your-hostruntime">2) Execute MCP tools in your host/runtime</h3>
+<p>AbstractCore’s default execution path is <strong>passthrough</strong> (<code>execute_tools=False</code>): the model can
+request tool calls and you execute them in your host/runtime.</p>
+<p>The built-in <code>abstractcore.tools.registry.execute_tools()</code> executes Python callables registered in
+the (deprecated) global registry; it does <strong>not</strong> automatically route MCP tool calls. For MCP, your
+host/runtime should detect names starting with <code>mcp::</code> and dispatch them to an MCP client.</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.mcp import McpClient, parse_namespaced_tool_name
 
-response = llm.generate("Call an MCP tool if needed.", tools=tool_specs)
-print(response.tool_calls)</code></pre>
-                    </div>
+client = McpClient(url="http://localhost:3000")
 
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
-                        <p style="margin: 0;">
-                            Tools are namespaced to avoid collisions:
-                            <code>mcp::&lt;server_id&gt;::&lt;tool_name&gt;</code>
-                        </p>
-                    </div>
-                </section>
-
-                <section id="execution" style="margin-top: 3rem;">
-                    <h2>Execute MCP tool calls (host/runtime)</h2>
-                    <p>By default, AbstractCore returns tool calls; it does not execute them. To execute MCP tool calls, parse the namespaced name and route to the correct server.</p>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.mcp import McpClient, parse_namespaced_tool_name
-
-client = McpClient(url="http://localhost:3000/mcp")
-
-for call in response.tool_calls or []:
+def execute_mcp_tool_call(call: dict) -&gt; dict:
     parsed = parse_namespaced_tool_name(call.get("name", ""))
     if not parsed:
-        continue
+        raise ValueError("Not an MCP tool call")
+    server_id, tool_name = parsed
+    return client.call_tool(name=tool_name, arguments=call.get("arguments") or {})
+</code></pre></div>
+<h2 id="transports-supported">Transports supported</h2>
+<h3 id="streamable-http">Streamable HTTP</h3>
+<p><code>McpClient</code> posts JSON-RPC to the server URL. It automatically sets an <code>Accept</code> header compatible
+with streamable HTTP (<code>application/json, text/event-stream</code>) and will capture <code>MCP-Session-Id</code>
+responses when provided.</p>
+<p>See <code>abstractcore/abstractcore/mcp/client.py</code>.</p>
+<h3 id="stdio">stdio</h3>
+<p><code>McpStdioClient</code> spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC,
+including a best-effort initialization handshake.</p>
+<p>See <code>abstractcore/abstractcore/mcp/stdio_client.py</code>.</p>
+<h2 id="configuration-helpers">Configuration helpers</h2>
+<p><code>create_mcp_client(config=...)</code> supports both HTTP and stdio config shapes:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.mcp import create_mcp_client
 
-    server_id, tool_name = parsed.server_id, parsed.tool_name
-    args = call.get("arguments") or {}
-
-    # In a real host/runtime: look up server_id → client/connection
-    result = client.call_tool(name=tool_name, arguments=args)
-    print(server_id, tool_name, result)</code></pre>
-                    </div>
-                </section>
-
-                <section id="security" style="margin-top: 3rem;">
-                    <h2>Security &amp; operational guidance</h2>
-                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1.5rem; margin: 1.5rem 0;">
-                        <ul style="margin: 0; padding-left: 1.5rem; color: #92400e;">
-                            <li><strong>Whitelist tool servers</strong>: only connect to trusted MCP endpoints.</li>
-                            <li><strong>Keep execution explicit</strong>: treat tool calls like untrusted user input; validate args and apply allowlists.</li>
-                            <li><strong>Separate privileges</strong>: run high-privilege tools on hardened hosts/containers; consider separate tool workers.</li>
-                            <li><strong>Auditability</strong>: log tool calls + results at the host boundary.</li>
-                        </ul>
-                    </div>
-                </section>
-
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling System</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">How tool calls are surfaced and executed</p>
-                        </a>
-                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server Guide</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible API (tool_calls + agent_format)</p>
-                        </a>
-                        <a href="tool-syntax-rewriting.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Syntax Rewriting</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">tool_call_tags vs agent_format</p>
-                        </a>
-                    </div>
-                </div>
+client = create_mcp_client(config={"url": "http://localhost:3000"})
+client = create_mcp_client(config={"transport": "stdio", "command": ["my-mcp-server", "--stdio"]})
+</code></pre></div>
+<p>See <code>abstractcore/abstractcore/mcp/factory.py</code>.</p>
+<h2 id="current-limitations">Current limitations</h2>
+<ul>
+<li>MCP is currently a <strong>library-level</strong> integration (tool discovery + clients). AbstractCore’s HTTP
+  server does not expose MCP management endpoints.</li>
+<li>Tool execution routing for <code>mcp::...</code> names is host/runtime responsibility.</li>
+</ul>
             </div>
         </div>
     </main>
@@ -151,4 +109,3 @@ for call in response.tool_calls or []:
     <script src="../assets/js/main.js"></script>
 </body>
 </html>
-

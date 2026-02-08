@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Events - AbstractCore</title>
-    <meta name="description" content="Subscribe to AbstractCore events for generation, tools, retries, sessions, and compaction. Use events for observability, progress reporting, and safety gates.">
+    <title>Event System - AbstractCore</title>
+    <meta name="description" content="AbstractCore emits lightweight events for generation, tool execution, retries, sessions, and compaction. You can subscribe to these events for observability, progress…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,24 +21,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
@@ -47,29 +30,18 @@
     <main style="padding-top: 5rem;">
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Events &amp; Observability</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Subscribe to lightweight runtime events for observability, progress reporting, and safety gates.
-                </p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Event System</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore emits lightweight events for generation, tool execution, retries, sessions, and compaction. You can subscribe to these events for observability, progress reporting, or custom telemetry.</p>
             </div>
 
+            
+
             <div class="doc-content">
-                <h2>Overview</h2>
-                <p>
-                    AbstractCore emits events for generation, tool execution, retries, sessions, and compaction. Use these hooks to
-                    build metrics, dashboards, or guardrails around tool usage without tying yourself to a specific provider.
-                </p>
 
-                <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.25rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <p style="margin: 0; color: var(--info-text);">
-                        Keep event handlers fast. If you need heavier work (I/O, uploads, analytics), enqueue to a background worker.
-                    </p>
-                </div>
 
-                <h2>Global event handlers</h2>
-                <p>Register a process-wide handler with <code>on_global()</code>:</p>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import create_llm
+<h2 id="global-event-handlers">Global event handlers</h2>
+<p>Use <code>on_global()</code> to register a process-wide handler:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 from abstractcore.events import EventType, on_global
 
 def on_event(event):
@@ -78,52 +50,19 @@ def on_event(event):
 on_global(EventType.GENERATION_COMPLETED, on_event)
 
 llm = create_llm("ollama", model="qwen3:4b")
-llm.generate("Say 'ok' and nothing else.")</code></pre>
-                </div>
-
-                <h2>Common event types</h2>
-                <ul>
-                    <li><code>EventType.GENERATION_STARTED</code> / <code>EventType.GENERATION_COMPLETED</code></li>
-                    <li><code>EventType.TOOL_STARTED</code> / <code>EventType.TOOL_PROGRESS</code> / <code>EventType.TOOL_COMPLETED</code></li>
-                    <li><code>EventType.RETRY_ATTEMPTED</code> / <code>EventType.RETRY_EXHAUSTED</code></li>
-                    <li><code>EventType.VALIDATION_FAILED</code></li>
-                    <li><code>EventType.COMPACTION_STARTED</code> / <code>EventType.COMPACTION_COMPLETED</code></li>
-                </ul>
-                <p>
-                    For the full list, see <a href="api-reference.html#event-system">API Reference (Event System)</a>.
-                </p>
-
-                <h2>Async handlers</h2>
-                <p>
-                    If you need async handlers, use <code>GlobalEventBus.on_async(...)</code> (or per-emitter <code>on_async(...)</code>) and emit events with the
-                    async emission methods. Most applications only need the sync hooks above.
-                </p>
-
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="structured-logging.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Structured Logging</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Configure console/file logging and verbatim capture</p>
-                        </a>
-
-                        <a href="token-management.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Token Management</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Budget validation and usage monitoring patterns</p>
-                        </a>
-
-                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Execution boundaries, approval gates, and tool safety</p>
-                        </a>
-
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Full API listing (incl. events)</p>
-                        </a>
-                    </div>
-                </div>
+llm.generate("Say 'ok' and nothing else.")
+</code></pre></div>
+<h2 id="common-event-types">Common event types</h2>
+<ul>
+<li><code>EventType.GENERATION_STARTED</code> / <code>EventType.GENERATION_COMPLETED</code></li>
+<li><code>EventType.TOOL_STARTED</code> / <code>EventType.TOOL_PROGRESS</code> / <code>EventType.TOOL_COMPLETED</code></li>
+<li><code>EventType.RETRY_ATTEMPTED</code> / <code>EventType.RETRY_EXHAUSTED</code></li>
+<li><code>EventType.VALIDATION_FAILED</code></li>
+<li><code>EventType.COMPACTION_STARTED</code> / <code>EventType.COMPACTION_COMPLETED</code></li>
+</ul>
+<p>For the full list, see <code>abstractcore/events/__init__.py</code> and the <a href="api-reference.html#eventtype">API Reference</a>.</p>
+<h2 id="async-handlers">Async handlers</h2>
+<p>If you need async handlers, use <code>GlobalEventBus.on_async(...)</code> (or per-emitter <code>on_async(...)</code>) and emit events with the async emission methods. Most application code only needs the sync hooks above.</p>
             </div>
         </div>
     </main>

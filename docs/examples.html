@@ -3,668 +3,1676 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Examples - AbstractCore</title>
-    <meta name="description" content="Real-world examples and use cases for AbstractCore. Learn from practical implementations.">
+    <title>Practical Examples - AbstractCore</title>
+    <meta name="description" content="This guide shows real-world use cases for AbstractCore with complete, copy-paste examples. All examples work across any provider - just change the provider name.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
-    
+
     <!-- Navbar Component -->
     <script src="../assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
-            <div class="doc-header" style="margin-bottom: 3rem; text-align: center;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Real-World Examples</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Learn from practical examples and use cases. All examples work across any provider.
-                </p>
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Practical Examples</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This guide shows real-world use cases for AbstractCore with complete, copy-paste examples. All examples work across any provider - just change the provider name.</p>
             </div>
 
-                <div class="examples-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 2rem;">
-                
-                <!-- Provider Flexibility Example -->
-                <div class="example-card" id="provider-flexibility">
-                    <div class="example-header">
-                        <h3 class="example-title">Provider Flexibility</h3>
-                        <span class="example-badge">Core Feature</span>
-                    </div>
-                    <p class="example-description">
-                        Switch between providers with identical code. Perfect for development vs production environments.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python"># Development (free, local) with deterministic outputs
-llm_dev = create_llm("ollama", model="qwen3:4b-instruct", seed=42, temperature=0.0)
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#table-of-contents" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Table of Contents</a>
+<a href="#basic-usage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Basic Usage</a>
+<a href="#glyph-visual-text-compression" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Glyph Visual-Text Compression</a>
+<a href="#tool-calling-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tool Calling Examples</a>
+<a href="#tool-call-syntax-rewriting-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tool Call Syntax Rewriting Examples</a>
+<a href="#structured-output-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Structured Output Examples</a>
+<a href="#streaming-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Streaming Examples</a>
+<a href="#session-management" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Session Management</a>
+<a href="#interaction-tracing-observability" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Interaction Tracing (Observability)</a>
+<a href="#production-patterns" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Production Patterns</a>
+<a href="#integration-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration Examples</a>
+<a href="#next-steps" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Next Steps</a></div>
 
-# Production (high quality, cloud) with same seed
-llm_prod = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
+            <div class="doc-content">
 
-# Same interface, deterministic results
-def ask_question(llm, question):
-    return llm.generate(question)
 
-# Reproducible outputs across providers
-dev_answer = ask_question(llm_dev, "What is Python?")
-prod_answer = ask_question(llm_prod, "What is Python?")
-# Both will give consistent, reproducible answers</code></pre>
-                    </div>
-                </div>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ul>
+<li><a href="#basic-usage">Basic Usage</a></li>
+<li><a href="#glyph-visual-text-compression">Glyph Visual-Text Compression</a></li>
+<li><a href="#tool-calling-examples">Tool Calling Examples</a></li>
+<li><a href="#tool-call-syntax-rewriting-examples">Tool Call Syntax Rewriting Examples</a></li>
+<li><a href="#structured-output-examples">Structured Output Examples</a></li>
+<li><a href="#streaming-examples">Streaming Examples</a></li>
+<li><a href="#session-management">Session Management</a></li>
+<li><a href="#interaction-tracing-observability">Interaction Tracing (Observability)</a></li>
+<li><a href="#production-patterns">Production Patterns</a></li>
+<li><a href="#integration-examples">Integration Examples</a></li>
+</ul>
+<h2 id="basic-usage">Basic Usage</h2>
+<h3 id="simple-qa">Simple Q&amp;A</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-                <!-- RAG Example -->
-                <div class="example-card" id="rag-embeddings">
-                    <div class="example-header">
-                        <h3 class="example-title">RAG with Embeddings</h3>
-                        <span class="example-badge">Advanced</span>
-                    </div>
-                    <p class="example-description">
-                        Build retrieval-augmented generation systems with built-in embedding support.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+# Works with any provider
+llm = create_llm("openai", model="gpt-4o-mini")  # or "anthropic", "ollama"...
+
+response = llm.generate("What is the difference between Python and JavaScript?")
+print(response.content)
+</code></pre></div>
+<h3 id="multiple-providers-comparison">Multiple Providers Comparison</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+providers = [
+    ("openai", "gpt-4o-mini"),
+    ("anthropic", "claude-haiku-4-5"),
+    ("ollama", "qwen3:4b-instruct")
+]
+
+question = "Explain Python list comprehensions with examples"
+
+for provider_name, model in providers:
+    try:
+        llm = create_llm(provider_name, model=model)
+        response = llm.generate(question)
+        print(f"\n--- {provider_name.upper()} ---")
+        print(response.content[:200] + "...")
+    except Exception as e:
+        print(f"{provider_name} failed: {e}")
+</code></pre></div>
+<h3 id="provider-fallback">Provider Fallback</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+def generate_with_fallback(prompt, **kwargs):
+    """Try multiple providers until one works."""
+    providers = [
+        ("openai", "gpt-4o-mini"),
+        ("anthropic", "claude-haiku-4-5"),
+        ("ollama", "qwen3:4b-instruct")
+    ]
+
+    for provider_name, model in providers:
+        try:
+            llm = create_llm(provider_name, model=model)
+            return llm.generate(prompt, **kwargs)
+        except Exception as e:
+            print(f"{provider_name} failed: {e}")
+            continue
+
+    raise Exception("All providers failed")
+
+# Usage
+response = generate_with_fallback("What is machine learning?")
+print(response.content)
+</code></pre></div>
+<h2 id="glyph-visual-text-compression">Glyph Visual-Text Compression</h2>
+<p>Glyph compression renders long text into images for vision-capable models to reduce effective token usage (often 3–4x on long text; depends on content/model).</p>
+<p>Requires <code>pip install "abstractcore[compression]"</code> (and <code>pip install "abstractcore[media]"</code> if you want PDF/Office text extraction).</p>
+<h3 id="automatic-compression-with-ollama">Automatic Compression with Ollama</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Use a vision-capable model - Glyph works automatically
+llm = create_llm("ollama", model="llama3.2-vision:11b")
+
+# Large documents are automatically compressed when beneficial
+response = llm.generate(
+    "What are the key findings and methodology in this research paper?",
+    media=["research_paper.pdf"]  # Automatically compressed if size &gt; threshold
+)
+
+print(f"Analysis: {response.content}")
+print(f"Processing time: {response.gen_time}ms")
+
+# Check if compression was used
+if response.metadata and response.metadata.get('compression_used'):
+    stats = response.metadata.get('compression_stats', {})
+    print(f"✅ Glyph compression used!")
+    print(f"Compression ratio: {stats.get('compression_ratio', 'N/A')}x")
+    print(f"Original tokens: {stats.get('original_tokens', 'N/A')}")
+    print(f"Compressed tokens: {stats.get('compressed_tokens', 'N/A')}")
+</code></pre></div>
+<h3 id="explicit-compression-control">Explicit Compression Control</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Force compression for testing
+llm = create_llm("ollama", model="qwen2.5vl:7b")
+
+# Always compress
+response = llm.generate(
+    "Summarize the main conclusions of this document",
+    media=["long_document.pdf"],
+    glyph_compression="always"  # Force compression
+)
+
+# Never compress (for comparison)
+response_no_compression = llm.generate(
+    "Summarize the main conclusions of this document", 
+    media=["long_document.pdf"],
+    glyph_compression="never"  # Disable compression
+)
+
+print(f"With compression: {response.gen_time}ms")
+print(f"Without compression: {response_no_compression.gen_time}ms")
+</code></pre></div>
+<h3 id="custom-configuration">Custom Configuration</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.compression import GlyphConfig
+
+# Configure compression behavior
+glyph_config = GlyphConfig(
+    enabled=True,
+    global_default="auto",           # "auto", "always", "never"
+    quality_threshold=0.95,          # Minimum quality score (0-1)
+    target_compression_ratio=3.0,    # Target compression ratio
+    provider_optimization=True,      # Enable provider-specific optimization
+    cache_enabled=True,             # Enable compression caching
+    provider_profiles={
+        "ollama": {
+            "dpi": 150,              # Higher DPI for better quality
+            "font_size": 9,          # Smaller font for more content
+            "quality_threshold": 0.95
+        }
+    }
+)
+
+llm = create_llm("ollama", model="granite3.2-vision:latest", glyph_config=glyph_config)
+
+response = llm.generate(
+    "Analyze the figures and tables in this academic paper",
+    media=["academic_paper.pdf"]
+)
+</code></pre></div>
+<h3 id="performance-benchmarking">Performance Benchmarking</h3>
+<div class="code-block"><pre><code class="language-python">import time
 from abstractcore import create_llm
 
-# Initialize components
-embedder = EmbeddingManager()
+def benchmark_glyph_compression(document_path, model_name="llama3.2-vision:11b"):
+    """Compare processing with and without Glyph compression"""
+
+    llm = create_llm("ollama", model=model_name)
+
+    # Test without compression
+    start = time.time()
+    response_no_glyph = llm.generate(
+        "Provide a detailed analysis of this document",
+        media=[document_path],
+        glyph_compression="never"
+    )
+    time_no_glyph = time.time() - start
+
+    # Test with compression
+    start = time.time()
+    response_glyph = llm.generate(
+        "Provide a detailed analysis of this document",
+        media=[document_path],
+        glyph_compression="always"
+    )
+    time_glyph = time.time() - start
+
+    # Compare results
+    print(f"📊 Glyph Compression Benchmark")
+    print(f"Document: {document_path}")
+    print(f"Model: {model_name}")
+    print(f"")
+    print(f"Without Glyph: {time_no_glyph:.2f}s")
+    print(f"With Glyph:    {time_glyph:.2f}s")
+    print(f"Speedup:       {time_no_glyph/time_glyph:.2f}x")
+    print(f"")
+    print(f"Response quality comparison:")
+    print(f"No Glyph length:  {len(response_no_glyph.content)} chars")
+    print(f"Glyph length:     {len(response_glyph.content)} chars")
+
+    return response_glyph, response_no_glyph
+
+# Run benchmark
+glyph_response, normal_response = benchmark_glyph_compression("large_document.pdf")
+</code></pre></div>
+<h3 id="multi-provider-testing">Multi-Provider Testing</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Test Glyph across different providers and models
+models_to_test = [
+    ("ollama", "llama3.2-vision:11b"),
+    ("ollama", "qwen2.5vl:7b"),
+    ("ollama", "granite3.2-vision:latest"),
+    # Add LMStudio if running
+    # ("lmstudio", "your-vision-model"),
+]
+
+document = "research_paper.pdf"
+question = "What are the key innovations presented in this paper?"
+
+for provider, model in models_to_test:
+    try:
+        print(f"\n🧪 Testing {provider} - {model}")
+
+        llm = create_llm(provider, model=model)
+
+        response = llm.generate(
+            question,
+            media=[document],
+            glyph_compression="auto"
+        )
+
+        print(f"✅ Success - {response.gen_time}ms")
+        print(f"Response: {response.content[:100]}...")
+
+        # Check compression usage
+        if response.metadata and response.metadata.get('compression_used'):
+            print(f"🎨 Glyph compression was used")
+        else:
+            print(f"📝 Standard processing was used")
+
+    except Exception as e:
+        print(f"❌ Failed: {e}")
+</code></pre></div>
+<p><strong>Key Benefits Demonstrated:</strong>
+- <strong>Automatic optimization</strong>: Glyph decides when compression is beneficial
+- <strong>Transparent integration</strong>: Works with existing media handling code
+- <strong>Quality preservation</strong>: No loss of analytical accuracy
+- <strong>Provider flexibility</strong>: Works across Ollama, LMStudio, and other vision providers</p>
+<p><a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/glyphs.md">Learn more about Glyph configuration and advanced features</a></p>
+<h2 id="tool-calling-examples">Tool Calling Examples</h2>
+<h3 id="weather-tool">Weather Tool</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+import requests
+
+def get_weather(city: str, units: str = "metric") -&gt; str:
+    """Get current weather for a city."""
+    # In production, use a real weather API
+    # This is a simulated implementation
+    temperatures = {
+        "paris": "22°C, sunny",
+        "london": "15°C, cloudy",
+        "tokyo": "28°C, humid",
+        "new york": "18°C, windy"
+    }
+    return temperatures.get(city.lower(), f"Weather data not available for {city}")
+
+# Tool definition
+weather_tool = {
+    "name": "get_weather",
+    "description": "Get current weather information for a city",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "city": {
+                "type": "string",
+                "description": "Name of the city"
+            },
+            "units": {
+                "type": "string",
+                "enum": ["metric", "imperial"],
+                "description": "Temperature units"
+            }
+        },
+        "required": ["city"]
+    }
+}
+
+# Works with any provider that supports tools
 llm = create_llm("openai", model="gpt-4o-mini")
 
-# Documents to search
-documents = [
-    "Python is great for data science and machine learning.",
-    "JavaScript powers modern web applications.",
-    "Rust ensures memory safety without garbage collection."
-]
-
-# Create embeddings
-doc_embeddings = embedder.embed_batch(documents)
-
-# User query
-query = "Tell me about web development"
-query_embedding = embedder.embed(query)
-
-# Find most similar document
-similarities = [
-    embedder.compute_similarity(query_embedding, doc_emb)
-    for doc_emb in doc_embeddings
-]
-
-best_doc_idx = similarities.index(max(similarities))
-context = documents[best_doc_idx]
-
-# Generate response with context
 response = llm.generate(
-    f"Context: {context}\n\nQuestion: {query}\n\nAnswer:"
+    "What's the weather like in Paris and London?",
+    tools=[weather_tool]
 )
-print(response.content)</code></pre>
-                    </div>
-                </div>
 
-                <!-- Universal API Server Example -->
-                <div class="example-card" id="api-server">
-                    <div class="example-header">
-                        <h3 class="example-title">Universal API Server</h3>
-                        <span class="example-badge">Server</span>
-                    </div>
-                    <p class="example-description">
-                        Run a single OpenAI-compatible <code>/v1</code> endpoint and route to any provider/model with <code>model="provider/model"</code>.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-bash">pip install "abstractcore[server]"
-python -m abstractcore.server.app --port 8000
+print(response.content)
+print(response.tool_calls)  # Structured tool call requests (host/runtime executes them)
+</code></pre></div>
+<h3 id="calculator-tool">Calculator Tool</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+import math
 
-curl http://localhost:8000/health</code></pre>
-                    </div>
-                    <div class="example-code">
-                        <pre><code class="language-python">from openai import OpenAI
+def calculate(expression: str) -&gt; str:
+    """Safely evaluate mathematical expressions."""
+    try:
+        # In production, use a proper expression parser
+        # This is simplified for demo purposes
+        allowed_chars = set('0123456789+-*/.() ')
+        if not all(c in allowed_chars for c in expression):
+            return "Error: Invalid characters in expression"
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
-resp = client.chat.completions.create(
-    model="ollama/qwen3:4b-instruct",
-    messages=[{"role": "user", "content": "Hello from the gateway!"}],
+        result = eval(expression)
+        return f"{expression} = {result}"
+    except Exception as e:
+        return f"Error calculating {expression}: {str(e)}"
+
+def sqrt(number: float) -&gt; str:
+    """Calculate square root."""
+    try:
+        result = math.sqrt(number)
+        return f"√{number} = {result}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+# Tool definitions
+tools = [
+    {
+        "name": "calculate",
+        "description": "Perform basic mathematical calculations",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {"type": "string", "description": "Mathematical expression"}
+            },
+            "required": ["expression"]
+        }
+    },
+    {
+        "name": "sqrt",
+        "description": "Calculate square root of a number",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "number": {"type": "number", "description": "Number to calculate square root of"}
+            },
+            "required": ["number"]
+        }
+    }
+]
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+response = llm.generate(
+    "What is 25 * 4 + 12, and what's the square root of 144?",
+    tools=tools
 )
-print(resp.choices[0].message.content)</code></pre>
-                    </div>
-                </div>
 
-                <!-- Tool Calling Example -->
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Advanced Tool Calling</h3>
-                        <span class="example-badge">Tools</span>
-                    </div>
-                    <p class="example-description">
-                        Create sophisticated tool-enabled applications that work across all providers.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from abstractcore import create_llm, tool
-import requests
-import json
+print(response.content)
+print(response.tool_calls)  # Structured tool call requests (host/runtime executes them)
+</code></pre></div>
+<h3 id="file-operations-tool">File Operations Tool</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from pathlib import Path
+import os
 
-@tool
-def search_web(query: str) -> str:
-    """Search the web for information."""
-    # Simplified example - use actual search API
-    return f"Search results for '{query}': [relevant information]"
+def list_files(directory: str = ".") -&gt; str:
+    """List files in a directory."""
+    try:
+        path = Path(directory)
+        if not path.exists():
+            return f"Directory {directory} does not exist"
 
-@tool
-def save_to_file(filename: str, content: str) -> str:
-    """Save content to a file."""
-    with open(filename, 'w') as f:
-        f.write(content)
-    return f"Saved content to {filename}"
+        files = []
+        for item in path.iterdir():
+            if item.is_file():
+                files.append(f"FILE: {item.name}")
+            elif item.is_dir():
+                files.append(f"DIR: {item.name}/")
 
-@tool
-def get_weather(city: str) -> str:
-    """Get current weather for a city."""
-    # Simplified example - use actual weather API
-    return f"Weather in {city}: 72°F, sunny"
+        return f"Contents of {directory}:\n" + "\n".join(sorted(files))
+    except Exception as e:
+        return f"Error listing files: {str(e)}"
 
-# Create LLM with tools
+def read_file(filename: str) -&gt; str:
+    """Read contents of a text file."""
+    try:
+        path = Path(filename)
+        if not path.exists():
+            return f"File {filename} does not exist"
+
+        content = path.read_text(encoding='utf-8')
+        return f"Contents of {filename}:\n{content}"
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
+
+# Tool definitions
+file_tools = [
+    {
+        "name": "list_files",
+        "description": "List files and directories in a given path",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "directory": {"type": "string", "description": "Directory path to list"}
+            }
+        }
+    },
+    {
+        "name": "read_file",
+        "description": "Read the contents of a text file",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string", "description": "Path to the file to read"}
+            },
+            "required": ["filename"]
+        }
+    }
+]
+
 llm = create_llm("anthropic", model="claude-haiku-4-5")
 
-# Complex multi-tool request
 response = llm.generate(
-    """
-    I need you to:
-    1. Search for information about Python web frameworks
-    2. Get the weather in San Francisco
-    3. Save a summary to a file called 'research.txt'
-    
-    Please complete these tasks in order.
-    """,
-    tools=[search_web, get_weather, save_to_file]
+    "List the files in the current directory and read the README.md file if it exists",
+    tools=file_tools
 )
 
-print(response.content)</code></pre>
-                    </div>
-                </div>
+print(response.content)
+print(response.tool_calls)  # Structured tool call requests (host/runtime executes them)
+</code></pre></div>
+<h2 id="tool-call-syntax-rewriting-examples">Tool Call Syntax Rewriting Examples</h2>
+<blockquote>
+<p><strong>Real-time tool call format conversion for agentic CLI compatibility</strong></p>
+</blockquote>
+<p>Tool call syntax rewriting enables AbstractCore to work seamlessly with any agentic CLI by converting tool calls to the expected format in real-time. This happens automatically during generation, including streaming.</p>
+<blockquote>
+<p><strong>Related</strong>: <a href="tool-syntax-rewriting.html">Tool Call Syntax Rewriting Guide</a></p>
+</blockquote>
+<h3 id="codex-cli-integration-qwen3-tags">Codex CLI Integration (Qwen3 Tags)</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-                <!-- Structured Output Example -->
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Complex Structured Output</h3>
-                        <span class="example-badge">Type Safe</span>
-                    </div>
-                    <p class="example-description">
-                        Extract complex structured data with automatic validation and retry.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from pydantic import BaseModel, Field
-from typing import List, Optional
-from abstractcore import create_llm
+# Define tools (standard JSON format)
+weather_tool = {
+    "name": "get_weather",
+    "description": "Get current weather for a city",
+    "parameters": {
+        "type": "object",
+        "properties": {"city": {"type": "string"}},
+        "required": ["city"]
+    }
+}
 
-class Address(BaseModel):
-    street: str
-    city: str
-    state: str
-    zip_code: str
+# Codex CLI expects qwen3-style tool-call tags in assistant content.
+# By default, AbstractCore strips tool-call markup from `response.content`;
+# pass `tool_call_tags` to preserve/emit the tags for downstream parsers.
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+response = llm.generate("What's the weather in Tokyo?", tools=[weather_tool], tool_call_tags="qwen3")
 
-class Person(BaseModel):
+print(response.content)
+print(response.tool_calls)
+# Content includes: &lt;|tool_call|&gt;{"name": "get_weather", "arguments": {"city": "Tokyo"}}&lt;/|tool_call|&gt;
+</code></pre></div>
+<h3 id="crush-cli-integration">Crush CLI Integration</h3>
+<div class="code-block"><pre><code class="language-python"># Crush CLI expects LLaMA3 format - just specify the format
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+response = llm.generate("Get weather for London", tools=[weather_tool], tool_call_tags="llama3")
+
+print(response.content)
+# Output includes: &lt;function_call&gt;{"name": "get_weather", "arguments": {"city": "London"}}&lt;/function_call&gt;
+</code></pre></div>
+<h3 id="custom-cli-format">Custom CLI Format</h3>
+<div class="code-block"><pre><code class="language-python"># Your custom CLI expects: [TOOL]...JSON...[/TOOL]
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+response = llm.generate("Check weather in Paris", tools=[weather_tool], tool_call_tags="[TOOL],[/TOOL]")
+
+print(response.content)
+# Output includes: [TOOL]{"name": "get_weather", "arguments": {"city": "Paris"}}[/TOOL]
+</code></pre></div>
+<h3 id="real-time-streaming-with-tag-rewriting">Real-Time Streaming with Tag Rewriting</h3>
+<div class="code-block"><pre><code class="language-python"># Streaming works seamlessly with any format
+calculator_tool = {
+    "name": "calculate",
+    "description": "Perform mathematical calculations",
+    "parameters": {
+        "type": "object",
+        "properties": {"expression": {"type": "string"}},
+        "required": ["expression"]
+    }
+}
+
+llm = create_llm("ollama", model="qwen3-coder:30b")
+
+print("AI: ", end="", flush=True)
+for chunk in llm.generate(
+    "Calculate 15 * 23 and explain the result",
+    tools=[calculator_tool],
+    stream=True,
+    tool_call_tags="llama3",
+):
+    print(chunk.content, end="", flush=True)
+
+    # Tool calls are surfaced in real-time (execution is host/runtime-owned)
+    if chunk.tool_calls:
+        for tool_call in chunk.tool_calls:
+            print(f"\n[TOOL CALL] {tool_call}")
+
+print("\n")
+# Shows: &lt;function_call&gt;{"name": "calculate", "arguments": {"expression": "15 * 23"}}&lt;/function_call&gt;
+# Tool execution is owned by the host/runtime.
+</code></pre></div>
+<h3 id="multiple-tools-with-different-formats">Multiple Tools with Different Formats</h3>
+<div class="code-block"><pre><code class="language-python"># Define multiple tools
+tools = [
+    {
+        "name": "get_weather",
+        "description": "Get weather information",
+        "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+        }
+    },
+    {
+        "name": "calculate",
+        "description": "Perform calculations",
+        "parameters": {
+            "type": "object",
+            "properties": {"expression": {"type": "string"}},
+            "required": ["expression"]
+        }
+    },
+    {
+        "name": "list_files",
+        "description": "List files in a directory",
+        "parameters": {
+            "type": "object",
+            "properties": {"directory": {"type": "string"}},
+            "required": ["directory"]
+        }
+    }
+]
+
+# Test with XML format for Gemini CLI
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+response = llm.generate(
+    "What's 2+2, weather in NYC, and files in current directory?",
+    tools=tools,
+    tool_call_tags="xml",
+)
+
+print(response.content)
+print(response.tool_calls)
+# All tool calls converted to: &lt;tool_call&gt;{"name": "...", "arguments": {...}}&lt;/tool_call&gt;
+</code></pre></div>
+<h3 id="session-based-format-configuration">Session-Based Format Configuration</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import BasicSession
+
+# Apply a consistent tool-call tag format across a session by reusing a variable
+tool_call_tags = "llama3"
+
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+session = BasicSession(provider=llm)
+
+session.generate("Calculate 10 * 5", tools=[calculator_tool], tool_call_tags=tool_call_tags)
+session.generate("What's the weather like?", tools=[weather_tool], tool_call_tags=tool_call_tags)
+session.generate("List files in documents", tools=[{
+    "name": "list_files",
+    "description": "List directory contents",
+    "parameters": {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"]
+    }
+}], tool_call_tags=tool_call_tags)
+
+# All responses contain: &lt;function_call&gt;...JSON...&lt;/function_call&gt;
+</code></pre></div>
+<h3 id="production-monitoring-with-events">Production Monitoring with Events</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
+
+# Monitor tool usage across different formats
+def log_tool_calls(event):
+    # Tool execution events are emitted when tools are executed (e.g., via ToolRegistry
+    # or when using `execute_tools=True` (deprecated)).
+    print(f"[TOOL EVENT] {event.type}: {event.data}")
+
+on_global(EventType.TOOL_COMPLETED, log_tool_calls)
+
+# Test with different formats
+for format_name in ["qwen3", "llama3", "xml"]:
+    llm = create_llm("ollama", model="qwen3:4b-instruct")
+    response = llm.generate("Calculate 5 * 5", tools=[calculator_tool], tool_call_tags=format_name)
+    print(f"{format_name} format result: {response.content[:100]}...")
+</code></pre></div>
+<p><strong>Key Benefits</strong>:
+- Per-call configuration: pass <code>tool_call_tags=...</code> when you need tool-call markup preserved/rewritten in <code>response.content</code>
+- Real-time processing: No post-processing delays
+- Streaming compatible: Works with streaming mode
+- Format flexibility: Predefined formats plus custom tags</p>
+<blockquote>
+<p><strong>Related</strong>: <a href="tool-syntax-rewriting.html">Tool Call Syntax Rewriting Guide</a> | <a href="architecture.html#unified-streaming-architecture">Unified Streaming Architecture</a></p>
+</blockquote>
+<h2 id="structured-output-examples">Structured Output Examples</h2>
+<blockquote>
+<p><strong>Complete Guide</strong>: <a href="structured-output.html">Structured Output Documentation</a> - Native vs prompted strategies, provider support, schema design best practices</p>
+</blockquote>
+<h3 id="user-profile-extraction">User Profile Extraction</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from pydantic import BaseModel, field_validator
+from typing import Optional
+
+class UserProfile(BaseModel):
     name: str
-    age: int = Field(gt=0, le=150)
-    email: Optional[str] = None
-    address: Address
-    skills: List[str]
+    age: int
+    email: str
+    occupation: Optional[str] = None
+    interests: list[str] = []
 
-class Company(BaseModel):
-    name: str
-    employees: List[Person]
-    founded_year: int
-    headquarters: Address
+    @field_validator('age')
+    @classmethod
+    def validate_age(cls, v):
+        if v &lt; 0 or v &gt; 150:
+            raise ValueError('Age must be between 0 and 150')
+        return v
+
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if '@' not in v:
+            raise ValueError('Invalid email format')
+        return v
 
 llm = create_llm("openai", model="gpt-4o-mini")
 
-# Extract complex nested data
-company_data = """
-TechCorp was founded in 2010 and is headquartered at 
-123 Tech Street, San Francisco, CA 94105. 
-
-Employees:
-- John Doe, 30, john@techcorp.com, lives at 456 Oak Ave, 
-  Palo Alto, CA 94301. Skills: Python, JavaScript, React.
-- Jane Smith, 28, jane@techcorp.com, lives at 789 Pine St, 
-  Mountain View, CA 94041. Skills: Go, Kubernetes, Docker.
+# Text with user information
+user_text = """
+Hi, I'm Sarah Johnson, I'm 28 years old and work as a software engineer.
+My email is sarah.johnson@techcorp.com. I love hiking, photography, and cooking.
 """
 
-company = llm.generate(
-    f"Extract company information: {company_data}",
-    response_model=Company
+# Extract structured data with automatic validation
+user = llm.generate(
+    f"Extract user profile from: {user_text}",
+    response_model=UserProfile
 )
 
-print(f"Company: {company.name}")
-print(f"Founded: {company.founded_year}")
-print(f"Employees: {len(company.employees)}")
-for emp in company.employees:
-    print(f"  - {emp.name}, {emp.age}, {emp.address.city}")
-    print(f"    Skills: {', '.join(emp.skills)}")</code></pre>
-                    </div>
-                </div>
+print(f"Name: {user.name}")
+print(f"Age: {user.age}")
+print(f"Email: {user.email}")
+print(f"Occupation: {user.occupation}")
+print(f"Interests: {', '.join(user.interests)}")
+</code></pre></div>
+<h3 id="product-catalog-extraction">Product Catalog Extraction</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from pydantic import BaseModel, field_validator
+from typing import List
+from enum import Enum
 
-                <!-- Streaming Example -->
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Real-Time Streaming</h3>
-                        <span class="example-badge">Streaming</span>
-                    </div>
-                    <p class="example-description">
-                        Build interactive applications with real-time streaming responses.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from abstractcore import create_llm, tool
+class ProductCategory(str, Enum):
+    ELECTRONICS = "electronics"
+    CLOTHING = "clothing"
+    BOOKS = "books"
+    HOME = "home"
+    SPORTS = "sports"
+
+class Product(BaseModel):
+    name: str
+    price: float
+    category: ProductCategory
+    description: str
+    in_stock: bool = True
+
+    @field_validator('price')
+    @classmethod
+    def validate_price(cls, v):
+        if v &lt;= 0:
+            raise ValueError('Price must be positive')
+        return v
+
+class ProductCatalog(BaseModel):
+    products: List[Product]
+    total_count: int
+
+    @field_validator('total_count')
+    @classmethod
+    def validate_count(cls, v, info):
+        products = info.data.get('products', [])
+        if v != len(products):
+            raise ValueError(f'Total count {v} does not match products length {len(products)}')
+        return v
+
+llm = create_llm("anthropic", model="claude-haiku-4-5")
+
+catalog_text = """
+Our store has these items:
+1. Gaming Laptop - $1299.99 - High-performance laptop for gaming and work
+2. Wireless Headphones - $199.99 - Noise-cancelling bluetooth headphones
+3. Python Programming Book - $49.99 - Complete guide to Python programming
+4. Coffee Maker - $89.99 - Automatic drip coffee maker, currently out of stock
+"""
+
+catalog = llm.generate(
+    f"Extract product catalog from: {catalog_text}",
+    response_model=ProductCatalog
+)
+
+print(f"Total products: {catalog.total_count}")
+for product in catalog.products:
+    status = "In Stock" if product.in_stock else "Out of Stock"
+    print(f"- {product.name}: ${product.price} ({product.category}) - {status}")
+</code></pre></div>
+<h3 id="code-review-analysis">Code Review Analysis</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from pydantic import BaseModel
+from typing import List
+from enum import Enum
+
+class Severity(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class CodeIssue(BaseModel):
+    line_number: int
+    severity: Severity
+    issue_type: str
+    description: str
+    suggestion: str
+
+class CodeReview(BaseModel):
+    language: str
+    overall_quality: str
+    issues: List[CodeIssue]
+    recommendations: List[str]
+
+llm = create_llm("ollama", model="qwen3:4b-instruct")
+
+code_to_review = '''
+def calculate_average(numbers):
+    total = 0
+    for num in numbers:
+        total += num
+    return total / len(numbers)
+
+def process_data(data):
+    if data == None:
+        return []
+    result = []
+    for item in data:
+        result.append(item * 2)
+    return result
+'''
+
+review = llm.generate(
+    f"Review this Python code for issues:\n{code_to_review}",
+    response_model=CodeReview
+)
+
+print(f"Language: {review.language}")
+print(f"Overall Quality: {review.overall_quality}")
+print(f"\nIssues Found ({len(review.issues)}):")
+for issue in review.issues:
+    print(f"  Line {issue.line_number}: [{issue.severity.upper()}] {issue.issue_type}")
+    print(f"    Problem: {issue.description}")
+    print(f"    Fix: {issue.suggestion}\n")
+
+print("Recommendations:")
+for rec in review.recommendations:
+    print(f"  - {rec}")
+</code></pre></div>
+<h2 id="streaming-examples">Streaming Examples</h2>
+<h3 id="basic-streaming-unified-2025">Basic Streaming (Unified 2025)</h3>
+<div class="code-block"><pre><code class="language-python"># Real-time streaming works identically across ALL providers
+from abstractcore import create_llm
+
+llm = create_llm("anthropic", model="claude-haiku-4-5")
+
+print("AI Story Generator: ", end="", flush=True)
+for chunk in llm.generate(
+    "Write a short story about a programmer who discovers their code is alive",
+    stream=True
+):
+    print(chunk.content, end="", flush=True)
+print("\n")
+</code></pre></div>
+<h3 id="advanced-streaming-with-progress-and-performance-tracking">Advanced Streaming with Progress and Performance Tracking</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 import time
 
-@tool
-def get_system_time() -> str:
-    """Get the current system time."""
-    return time.strftime("%Y-%m-%d %H:%M:%S")
-
-def interactive_chat():
+def streaming_with_insights(prompt):
+    # Supports any provider: OpenAI, Anthropic, Ollama, MLX
     llm = create_llm("openai", model="gpt-4o-mini")
-    
-    print("🤖 AI Assistant (type 'quit' to exit)")
-    print("=" * 40)
-    
-    while True:
-        user_input = input("\n👤 You: ")
-        if user_input.lower() == 'quit':
-            break
-            
-        print("🤖 AI: ", end="", flush=True)
-        
-        # Stream response with tool support
-        for chunk in llm.generate(
-            user_input,
-            tools=[get_system_time],
-            stream=True
-        ):
-            print(chunk.content, end="", flush=True)
-            
-            # Handle tool calls during streaming
-            if chunk.tool_calls:
-                print("\n🛠️  [Tool executed]", flush=True)
-                print("🤖 AI: ", end="", flush=True)
-        
-        print()  # New line after response
 
-# Run the interactive chat
-if __name__ == "__main__":
-    interactive_chat()</code></pre>
-                    </div>
-                </div>
+    print("Generating response...")
 
-                <!-- Media Handling - Image Analysis -->
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Image Analysis</h3>
-                        <span class="example-badge">Media</span>
-                    </div>
-                    <p class="example-description">
-                        Analyze images across all providers with automatic optimization and vision fallback.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from abstractcore import create_llm
+    start_time = time.time()
+    chunks = []
 
-# Works with any vision-capable provider
-llm = create_llm("openai", model="gpt-4o")
+    print("Response: ", end="", flush=True)
+    for chunk in llm.generate(prompt, stream=True):
+        chunks.append(chunk)
+        print(chunk.content, end="", flush=True)
 
-# Single image analysis
-response = llm.generate(
-    "What objects do you see in this image? Describe the scene.",
-    media=["photo.jpg"]
-)
-print(response.content)
+        # Optional real-time performance insights
+        if len(chunks) % 10 == 0:
+            current_time = time.time() - start_time
+            chars_generated = sum(len(c.content) for c in chunks)
+            print(f"\n[PROGRESS] {len(chunks)} chunks, {chars_generated} chars, {current_time:.1f}s")
 
-# Multiple images comparison
-response = llm.generate(
-    "Compare these three images and identify common themes",
-    media=["image1.jpg", "image2.jpg", "image3.jpg"]
-)
-print(response.content)
+    # Final performance summary
+    total_time = time.time() - start_time
+    total_chars = sum(len(chunk.content) for chunk in chunks)
 
-# Works with vision fallback for text-only models
-text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")
-response = text_llm.generate(
-    "Analyze this image",
-    media=["complex_scene.jpg"]
-)
-# Vision model analyzes → text model processes description
-print(response.content)</code></pre>
-                    </div>
-                </div>
+    print(f"\n\n[STATS] Streaming Performance:")
+    print(f"- Total Chunks: {len(chunks)}")
+    print(f"- Total Characters: {total_chars}")
+    print(f"- Duration: {total_time:.2f}s")
+    print(f"- Speed: {total_chars/total_time:.0f} chars/sec")
 
-                <!-- Media Handling - Document Processing -->
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Document Processing</h3>
-                        <span class="example-badge">Media</span>
-                    </div>
-                    <p class="example-description">
-                        Process PDFs, Office documents, and data files with the same simple API.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from abstractcore import create_llm
+# Usage with various prompts
+streaming_with_insights("Explain quantum computing in simple terms")
+</code></pre></div>
+<h3 id="real-time-streaming-with-tools-unified-implementation">Real-Time Streaming with Tools (Unified Implementation)</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from datetime import datetime
 
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+def get_current_time() -&gt; str:
+    """Get the current time."""
+    return datetime.now().strftime("%H:%M:%S")
 
-# PDF analysis
-response = llm.generate(
-    "Summarize the key findings in this report",
-    media=["annual_report.pdf"]
-)
-print(response.content)
+def get_weather(city: str) -&gt; str:
+    """Get current weather for a city."""
+    weather_data = {
+        "New York": "Sunny, 22°C",
+        "London": "Cloudy, 15°C",
+        "Tokyo": "Partly cloudy, 25°C"
+    }
+    return weather_data.get(city, f"Weather data unavailable for {city}")
 
-# Office documents
-response = llm.generate(
-    "Extract action items from this presentation",
-    media=["meeting_slides.pptx"]
-)
-print(response.content)
+time_tool = {
+    "name": "get_current_time",
+    "description": "Get the current time",
+    "parameters": {"type": "object", "properties": {}}
+}
 
-# Excel data analysis
-response = llm.generate(
-    "What trends do you see in this sales data?",
-    media=["sales_data.xlsx"]
-)
-print(response.content)
+weather_tool = {
+    "name": "get_weather",
+    "description": "Get current weather for a city",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "description": "Name of the city"}
+        }
+    }
+}
 
-# CSV analysis
-response = llm.generate(
-    "Calculate the average and identify outliers",
-    media=["metrics.csv"]
-)
-print(response.content)</code></pre>
-                    </div>
-                </div>
+# Works identically across providers
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 
-                <!-- Media Handling - Mixed Media -->
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Multi-Media Analysis</h3>
-                        <span class="example-badge">Media</span>
-                    </div>
-                    <p class="example-description">
-                        Combine images, documents, and data files in a single analysis request.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from abstractcore import create_llm
+print("AI Assistant: ", end="", flush=True)
+for chunk in llm.generate(
+    "What time is it right now? And can you tell me the weather in New York?",
+    tools=[time_tool, weather_tool],
+    stream=True
+):
+    # Real-time chunk processing and tool call detection
+    print(chunk.content, end="", flush=True)
 
-llm = create_llm("openai", model="gpt-4o")
+    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
+    if chunk.tool_calls:
+        print(f"\n[TOOL] Tool calls: {chunk.tool_calls}")
 
-# Mixed media: chart + spreadsheet + report
-response = llm.generate(
-    """
-    Compare the chart visualization with the raw data
-    in the spreadsheet and verify it matches the
-    findings in the PDF report. Identify any discrepancies.
-    """,
-    media=["quarterly_chart.png", "data.xlsx", "report.pdf"]
-)
-print(response.content)
+print("\n")  # Newline after streaming
 
-# Real-world use case: Product analysis
-response = llm.generate(
-    """
-    Analyze this product launch:
-    - Review the design mockups
-    - Check the market data
-    - Summarize the strategy document
+# Features:
+# - Real-time tool call detection
+# - Zero buffering overhead
+# - Works with OpenAI, Anthropic, Ollama, MLX
+# - Consistent behavior across all providers
+</code></pre></div>
+<h3 id="performance-optimized-streaming">Performance-Optimized Streaming</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+import time
 
-    Provide recommendations for launch timing.
-    """,
-    media=[
-        "product_mockup_1.jpg",
-        "product_mockup_2.jpg",
-        "market_research.csv",
-        "launch_strategy.docx"
+def compare_providers(prompt):
+    """Compare streaming performance across providers."""
+    providers = [
+        ("openai", "gpt-4o-mini"),
+        ("anthropic", "claude-haiku-4-5"),
+        ("ollama", "qwen3:4b-instruct")
     ]
-)
-print(response.content)</code></pre>
-                    </div>
-                </div>
 
-                <!-- Session Management Example -->
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Session Management</h3>
-                        <span class="example-badge">Memory</span>
-                    </div>
-                    <p class="example-description">
-                        Build applications with persistent conversation memory and analytics.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from abstractcore import create_llm, BasicSession
+    for provider, model in providers:
+        try:
+            llm = create_llm(provider, model=model)
+
+            print(f"\n[TEST] {provider.upper()} - {model}")
+            start_time = time.time()
+
+            chunks = []
+            for chunk in llm.generate(prompt, stream=True):
+                chunks.append(chunk)
+                print(chunk.content, end="", flush=True)
+
+            total_time = time.time() - start_time
+            total_chars = sum(len(chunk.content) for chunk in chunks)
+
+            print(f"\n\n[PERF] {provider.upper()} Performance:")
+            print(f"- Chunks: {len(chunks)}")
+            print(f"- Characters: {total_chars}")
+            print(f"- Duration: {total_time:.2f}s")
+            print(f"- Speed: {total_chars/total_time:.0f} chars/sec")
+
+        except Exception as e:
+            print(f"[ERROR] {provider} failed: {e}")
+
+# Compare streaming performance
+compare_providers("Write a creative short story about artificial intelligence")
+</code></pre></div>
+<p><strong>Streaming Features</strong>:
+- Time-to-first-token depends on provider/model/network
+- Unified strategy across all providers
+- Real-time tool call detection
+- Streams chunks as they arrive (minimal buffering)
+- Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
+- Robust error handling for malformed responses</p>
+<h2 id="session-management">Session Management</h2>
+<h3 id="basic-conversation">Basic Conversation</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, BasicSession
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(
+    provider=llm,
+    system_prompt="You are a helpful coding tutor. Always provide examples."
+)
+
+# Multi-turn conversation
+print("=== Conversation Start ===")
+
+response1 = session.generate("Hi, I'm learning Python. What are decorators?")
+print("User: Hi, I'm learning Python. What are decorators?")
+print(f"AI: {response1.content}\n")
+
+response2 = session.generate("Can you show me a practical example?")
+print("User: Can you show me a practical example?")
+print(f"AI: {response2.content}\n")
+
+response3 = session.generate("What was my first question?")
+print("User: What was my first question?")
+print(f"AI: {response3.content}\n")
+
+print(f"Total messages in conversation: {len(session.messages)}")
+</code></pre></div>
+<h3 id="session-persistence">Session Persistence</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, BasicSession
+from pathlib import Path
+
+# Create and use session
+llm = create_llm("anthropic", model="claude-haiku-4-5")
+session = BasicSession(
+    provider=llm,
+    system_prompt="You are a travel advisor. Help plan trips."
+)
+
+# Have a conversation
+session.generate("I want to plan a trip to Japan")
+session.generate("I'm interested in both modern cities and traditional culture")
+session.generate("My budget is around $3000 for 10 days")
+
+# Save session
+session_file = Path("travel_planning_session.json")
+session.save(session_file)
+print(f"Session saved to {session_file}")
+
+# Later: Load session and continue
+new_session = BasicSession.load(session_file, provider=llm)
+response = new_session.generate("What were we discussing?")
+print(f"AI remembers: {response.content}")
+
+# Clean up
+session_file.unlink()  # Delete the file
+</code></pre></div>
+<h3 id="context-management">Context Management</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, BasicSession
+
+def create_coding_assistant():
+    """Create a specialized coding assistant session."""
+    llm = create_llm("ollama", model="qwen3:4b-instruct")
+
+    system_prompt = """
+    You are an expert Python coding assistant. For each request:
+    1. Provide working code examples
+    2. Explain the code clearly
+    3. Mention potential issues or improvements
+    4. Keep responses concise but complete
+    """
+
+    return BasicSession(provider=llm, system_prompt=system_prompt)
+
+# Usage
+assistant = create_coding_assistant()
+
+# The assistant will remember the context throughout the conversation
+assistant.generate("I need a function to validate email addresses")
+assistant.generate("Now add logging to that function")
+assistant.generate("How would I test this function?")
+
+print(f"Conversation history: {len(assistant.messages)} messages")
+
+# Clear history but keep system prompt
+assistant.clear_history()
+print(f"After clearing: {len(assistant.messages)} messages")  # Just system prompt remains
+</code></pre></div>
+<h2 id="interaction-tracing-observability">Interaction Tracing (Observability)</h2>
+<h3 id="basic-tracing">Basic Tracing</h3>
+<p>Enable tracing to capture complete LLM interaction history for debugging and transparency:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Enable tracing on provider
+llm = create_llm(
+    'openai',
+    model='gpt-4o-mini',
+    enable_tracing=True,
+    max_traces=100  # Keep last 100 interactions (ring buffer)
+)
+
+# Generate with custom metadata
+response = llm.generate(
+    "Explain quantum computing",
+    temperature=0.7,
+    trace_metadata={
+        'user_id': 'user_123',
+        'session_type': 'educational',
+        'topic': 'quantum_physics'
+    }
+)
+
+# Access trace by ID
+trace_id = response.metadata['trace_id']
+trace = llm.get_traces(trace_id=trace_id)
+
+print(f"Trace ID: {trace['trace_id']}")
+print(f"Timestamp: {trace['timestamp']}")
+print(f"Prompt: {trace['prompt']}")
+print(f"Response: {trace['response']['content'][:100]}...")
+print(f"Tokens: {trace['response']['usage']['total_tokens']}")
+print(f"Time: {trace['response']['generation_time_ms']:.2f}ms")
+print(f"Custom metadata: {trace['metadata']}")
+</code></pre></div>
+<h3 id="session-level-tracing">Session-Level Tracing</h3>
+<p>Automatically track all interactions in a session with correlation:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+session = BasicSession(provider=llm, enable_tracing=True)
+
+# All interactions automatically traced
+session.generate("What is Python?")
+session.generate("Give me an example")
+session.generate("Explain list comprehensions")
+
+# Get all session traces
+traces = session.get_interaction_history()
+
+print(f"\nSession ID: {session.id}")
+print(f"Total interactions: {len(traces)}")
+
+for i, trace in enumerate(traces, 1):
+    print(f"\nInteraction {i}:")
+    print(f"  Prompt: {trace['prompt']}")
+    print(f"  Tokens: {trace['response']['usage']['total_tokens']}")
+    print(f"  Time: {trace['response']['generation_time_ms']:.0f}ms")
+    print(f"  Session ID: {trace['metadata']['session_id']}")
+</code></pre></div>
+<h3 id="multi-step-workflow-with-retries">Multi-Step Workflow with Retries</h3>
+<p>Track code generation workflows with retry attempts:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+session = BasicSession(provider=llm, enable_tracing=True)
+
+# Step 1: Generate code
+response = session.generate(
+    "Write a Python function to calculate fibonacci numbers",
+    system_prompt="You are a Python code generator. Only output code.",
+    step_type='code_generation',
+    attempt_number=1,
+    temperature=0
+)
+
+code = response.content
+success = False
+
+# Step 2-4: Execute with retry logic
+for attempt in range(1, 4):
+    try:
+        exec(code)  # Simulate execution
+        success = True
+        break
+    except Exception as e:
+        # Retry with error context
+        response = session.generate(
+            f"Previous code failed: {e}. Fix it.",
+            step_type='code_generation',
+            attempt_number=attempt + 1,
+            temperature=0
+        )
+        code = response.content
+
+# Get workflow summary
+traces = session.get_interaction_history()
+
+print(f"\nWorkflow Summary:")
+print(f"Total attempts: {len(traces)}")
+print(f"Final status: {'Success' if success else 'Failed'}")
+
+for trace in traces:
+    step = trace['metadata']['step_type']
+    attempt = trace['metadata']['attempt_number']
+    tokens = trace['response']['usage']['total_tokens']
+    print(f"  {step} (Attempt {attempt}): {tokens} tokens")
+</code></pre></div>
+<h3 id="export-traces">Export Traces</h3>
+<p>Export traces to different formats for analysis:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.utils import export_traces, summarize_traces
+
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+
+# Generate some interactions
+for i in range(5):
+    llm.generate(f"Question {i+1}", temperature=0)
+
+traces = llm.get_traces()
+
+# Export to JSONL (one JSON per line)
+export_traces(traces, format='jsonl', file_path='traces.jsonl')
+
+# Export to pretty JSON
+export_traces(traces, format='json', file_path='traces.json')
+
+# Export to Markdown report
+export_traces(traces, format='markdown', file_path='trace_report.md')
+
+# Get summary statistics
+summary = summarize_traces(traces)
+print(f"\nSummary:")
+print(f"  Total interactions: {summary['total_interactions']}")
+print(f"  Total tokens: {summary['total_tokens']}")
+print(f"  Average tokens: {summary['avg_tokens_per_interaction']:.0f}")
+print(f"  Total time: {summary['total_time_ms']:.2f}ms")
+print(f"  Average time: {summary['avg_time_ms']:.2f}ms")
+print(f"  Providers: {summary['providers']}")
+print(f"  Models: {summary['models']}")
+</code></pre></div>
+<h3 id="retrieve-specific-traces">Retrieve Specific Traces</h3>
+<p>Different ways to retrieve traces:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
+
+# Generate some interactions
+for i in range(10):
+    llm.generate(f"Test {i}", temperature=0)
+
+# Get all traces
+all_traces = llm.get_traces()
+print(f"Total traces: {len(all_traces)}")
+
+# Get last 5 traces
+recent = llm.get_traces(last_n=5)
+print(f"Last 5 prompts: {[t['prompt'] for t in recent]}")
+
+# Get specific trace by ID
+response = llm.generate("Specific query", temperature=0)
+trace_id = response.metadata['trace_id']
+trace = llm.get_traces(trace_id=trace_id)
+print(f"Specific trace: {trace['prompt']}")
+</code></pre></div>
+<p><a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/interaction-tracing.md">Learn more about Interaction Tracing</a></p>
+<h2 id="production-patterns">Production Patterns</h2>
+<h3 id="retry-and-error-handling">Retry and Error Handling</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.core.retry import RetryConfig
+from abstractcore.exceptions import ProviderAPIError, RateLimitError
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def create_production_llm():
+    """Create LLM with production-grade retry configuration."""
+    retry_config = RetryConfig(
+        max_attempts=3,
+        initial_delay=1.0,
+        max_delay=30.0,
+        use_jitter=True,
+        failure_threshold=5
+    )
+
+    return create_llm(
+        "openai",
+        model="gpt-4o-mini",
+        retry_config=retry_config,
+        timeout=30
+    )
+
+def safe_generate(prompt, **kwargs):
+    """Generate with comprehensive error handling."""
+    llm = create_production_llm()
+
+    try:
+        logger.info(f"Generating response for prompt: {prompt[:50]}...")
+        response = llm.generate(prompt, **kwargs)
+        logger.info(f"Response generated successfully: {len(response.content)} chars")
+        return response
+
+    except RateLimitError as e:
+        logger.warning(f"Rate limited: {e}")
+        raise
+
+    except ProviderAPIError as e:
+        logger.error(f"API error: {e}")
+        raise
+
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise
+
+# Usage
+try:
+    response = safe_generate("What is machine learning?")
+    print(response.content)
+except Exception as e:
+    print(f"Generation failed: {e}")
+</code></pre></div>
+<h3 id="cost-monitoring">Cost Monitoring</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.events import EventType, on_global
+from datetime import datetime
 import json
 
-def create_tutoring_session():
-    llm = create_llm("anthropic", model="claude-haiku-4-5")
-    
-    # Create session with system prompt
-    session = BasicSession(
-        provider=llm,
-        system_prompt="""
-        You are a helpful Python programming tutor. 
-        Remember the student's progress and adapt your 
-        teaching style to their level.
-        """
-    )
-    
-    # Simulate a tutoring conversation
-    topics = [
-        "I'm new to Python. Can you explain variables?",
-        "How do I create a list?",
-        "What's the difference between a list and a tuple?",
-        "Can you give me a practice exercise?",
-        "I'm confused about the exercise. Can you help?"
-    ]
-    
-    for i, topic in enumerate(topics, 1):
-        print(f"\n--- Session {i} ---")
-        print(f"Student: {topic}")
-        
-        response = session.generate(topic)
-        print(f"Tutor: {response.content[:100]}...")
-        
-        # Add metadata to track progress
-        session.add_message(
-            'user', 
-            topic, 
-            lesson_number=i,
-            topic_category="python_basics"
+class CostMonitor:
+    def __init__(self, budget_limit=10.0):
+        self.total_cost = 0.0
+        self.budget_limit = budget_limit
+        self.requests = []
+
+        # Register event handlers
+        on_global(EventType.GENERATION_COMPLETED, self.track_cost)
+
+    def track_cost(self, event):
+        """Track costs from generation events."""
+        cost = event.data.get("cost_usd")
+        if cost:
+            # NOTE: `cost_usd` is a best-effort estimate based on token usage.
+            cost_f = float(cost)
+            self.total_cost += cost_f
+            self.requests.append({
+                'timestamp': event.timestamp.isoformat(),
+                'provider': event.data.get('provider'),
+                'model': event.data.get('model'),
+                'cost_usd': cost_f,
+                'tokens_input': event.data.get('tokens_input'),
+                'tokens_output': event.data.get('tokens_output')
+            })
+
+            print(f"[COST] ${cost_f:.4f} | Total: ${self.total_cost:.4f}")
+
+            if self.total_cost &gt; self.budget_limit:
+                print(f"[WARN] BUDGET EXCEEDED: ${self.total_cost:.4f} &gt; ${self.budget_limit}")
+
+    def get_report(self):
+        """Get cost report."""
+        return {
+            'total_cost': self.total_cost,
+            'budget_limit': self.budget_limit,
+            'total_requests': len(self.requests),
+            'average_cost': self.total_cost / len(self.requests) if self.requests else 0,
+            'requests': self.requests
+        }
+
+# Usage
+monitor = CostMonitor(budget_limit=1.0)  # $1 budget
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Make some requests
+for i in range(3):
+    response = llm.generate(f"Tell me a fact about number {i+1}")
+    print(f"Fact {i+1}: {response.content[:100]}...\n")
+
+# Get report
+report = monitor.get_report()
+print(f"\n[REPORT] Final Cost Summary:")
+print(f"Total cost: ${report['total_cost']:.4f}")
+print(f"Requests: {report['total_requests']}")
+print(f"Average per request: ${report['average_cost']:.4f}")
+</code></pre></div>
+<h3 id="load-balancing">Load Balancing</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+import random
+import time
+from typing import List, Tuple
+
+class LoadBalancer:
+    def __init__(self, providers: List[Tuple[str, str]]):
+        """Initialize with list of (provider, model) tuples."""
+        self.providers = []
+        self.weights = []
+
+        for provider_name, model in providers:
+            try:
+                llm = create_llm(provider_name, model=model)
+                self.providers.append((llm, provider_name, model))
+                self.weights.append(1.0)  # Equal weight initially
+                print(f"[OK] {provider_name} ({model}) ready")
+            except Exception as e:
+                print(f"[FAIL] {provider_name} ({model}) failed: {e}")
+
+    def generate(self, prompt, **kwargs):
+        """Generate using weighted random selection."""
+        if not self.providers:
+            raise Exception("No providers available")
+
+        # Weighted random selection
+        provider_data = random.choices(
+            self.providers,
+            weights=self.weights,
+            k=1
+        )[0]
+
+        llm, provider_name, model = provider_data
+
+        try:
+            start_time = time.time()
+            response = llm.generate(prompt, **kwargs)
+            duration = time.time() - start_time
+
+            print(f"[OK] {provider_name} responded in {duration:.2f}s")
+            return response
+
+        except Exception as e:
+            print(f"[FAIL] {provider_name} failed: {e}")
+            # Remove failed provider temporarily
+            idx = self.providers.index(provider_data)
+            self.weights[idx] *= 0.1  # Reduce weight dramatically
+            raise
+
+# Usage
+balancer = LoadBalancer([
+    ("openai", "gpt-4o-mini"),
+    ("anthropic", "claude-haiku-4-5"),
+    ("ollama", "qwen3:4b-instruct")
+])
+
+# Make requests - they'll be distributed across available providers
+for i in range(5):
+    try:
+        response = balancer.generate(f"Tell me about topic number {i+1}")
+        print(f"Response {i+1}: {response.content[:50]}...\n")
+    except Exception as e:
+        print(f"Request {i+1} failed: {e}\n")
+</code></pre></div>
+<h2 id="integration-examples">Integration Examples</h2>
+<h3 id="fastapi-integration">FastAPI Integration</h3>
+<div class="code-block"><pre><code class="language-python">from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from abstractcore import create_llm, BasicSession
+from typing import Optional
+import uuid
+
+app = FastAPI(title="AbstractCore API")
+
+# Global LLM instance
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# Store sessions in memory (use Redis in production)
+sessions = {}
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    system_prompt: Optional[str] = None
+
+class ChatResponse(BaseModel):
+    response: str
+    session_id: str
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    try:
+        # Get or create session
+        if request.session_id and request.session_id in sessions:
+            session = sessions[request.session_id]
+        else:
+            session_id = request.session_id or str(uuid.uuid4())
+            session = BasicSession(
+                provider=llm,
+                system_prompt=request.system_prompt or "You are a helpful assistant."
+            )
+            sessions[session_id] = session
+
+        # Generate response
+        response = session.generate(request.message)
+
+        return ChatResponse(
+            response=response.content,
+            session_id=session_id
         )
-    
-    # Save session with analytics
-    session.save(
-        'tutoring_session.json',
-        summary=True,      # Generate conversation summary
-        assessment=True,   # Assess learning progress
-        facts=True        # Extract key facts learned
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/sessions/{session_id}")
+async def clear_session(session_id: str):
+    if session_id in sessions:
+        del sessions[session_id]
+        return {"message": "Session cleared"}
+    raise HTTPException(status_code=404, detail="Session not found")
+
+# Run with: uvicorn main:app --reload
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+</code></pre></div>
+<h3 id="gradio-web-interface">Gradio Web Interface</h3>
+<div class="code-block"><pre><code class="language-python">import gradio as gr
+from abstractcore import create_llm, BasicSession
+from typing import List, Tuple
+
+class ChatInterface:
+    def __init__(self):
+        self.llm = create_llm("anthropic", model="claude-haiku-4-5")
+        self.session = BasicSession(
+            provider=self.llm,
+            system_prompt="You are a helpful AI assistant."
+        )
+
+    def chat(self, message: str, history: List[Tuple[str, str]]) -&gt; Tuple[str, List[Tuple[str, str]]]:
+        """Handle chat interaction."""
+        try:
+            response = self.session.generate(message)
+            history.append((message, response.content))
+            return "", history
+        except Exception as e:
+            history.append((message, f"Error: {str(e)}"))
+            return "", history
+
+    def clear(self) -&gt; Tuple[str, List]:
+        """Clear conversation history."""
+        self.session.clear_history()
+        return "", []
+
+# Create interface
+chat_interface = ChatInterface()
+
+with gr.Blocks(title="AbstractCore Chat") as demo:
+    gr.Markdown("# AbstractCore Chat Interface")
+
+    chatbot = gr.Chatbot(label="Conversation", height=400)
+    msg = gr.Textbox(
+        label="Message",
+        placeholder="Type your message here...",
+        lines=2
     )
-    
-    print("\n📊 Session saved with analytics!")
-    
-    # Load and continue session later
-    loaded_session = BasicSession.load(
-        'tutoring_session.json', 
-        provider=llm
+
+    with gr.Row():
+        submit = gr.Button("Send", variant="primary")
+        clear = gr.Button("Clear", variant="secondary")
+
+    # Event handlers
+    msg.submit(
+        chat_interface.chat,
+        inputs=[msg, chatbot],
+        outputs=[msg, chatbot]
     )
-    
-    # Continue conversation
-    followup = loaded_session.generate(
-        "Can you summarize what we've covered so far?"
+
+    submit.click(
+        chat_interface.chat,
+        inputs=[msg, chatbot],
+        outputs=[msg, chatbot]
     )
-    print(f"\nSummary: {followup.content}")
+
+    clear.click(
+        chat_interface.clear,
+        outputs=[msg, chatbot]
+    )
 
 if __name__ == "__main__":
-    create_tutoring_session()</code></pre>
-                    </div>
-                </div>
+    demo.launch(share=True)
+</code></pre></div>
+<h3 id="jupyter-notebook-integration">Jupyter Notebook Integration</h3>
+<div class="code-block"><pre><code class="language-python"># Cell 1: Setup
+from abstractcore import create_llm
+from IPython.display import display, Markdown, HTML
+import json
 
-            </div>
+# Create LLM instance
+llm = create_llm("openai", model="gpt-4o-mini")
 
-            <!-- CLI Media Handling Section -->
-            <div style="margin-top: 4rem;">
-                <h2 style="text-align: center; margin-bottom: 1rem;">CLI Media Handling</h2>
-                <p style="text-align: center; color: var(--text-secondary); margin-bottom: 2rem;">
-                    Use the simple @filename syntax in CLI for instant file attachment
-                </p>
+def display_response(response, title="AI Response"):
+    """Pretty display for Jupyter notebooks."""
+    html = f"""
+    &lt;div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;"&gt;
+        &lt;h4 style="color: #333; margin-top: 0;"&gt;{title}&lt;/h4&gt;
+        &lt;p style="line-height: 1.6;"&gt;{response.content}&lt;/p&gt;
+    &lt;/div&gt;
+    """
+    display(HTML(html))
 
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; max-width: 900px; margin: 0 auto;">
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Image analysis
-python -m abstractcore.utils.cli --prompt "What's in @photo.jpg"
+print("AbstractCore setup complete!")
 
-# PDF document
-python -m abstractcore.utils.cli --prompt "Summarize @report.pdf"
+# Cell 2: Basic Usage
+response = llm.generate("Explain quantum computing in simple terms")
+display_response(response, "Quantum Computing Explanation")
 
-# Office documents
-python -m abstractcore.utils.cli --prompt "Extract key points from @slides.pptx"
-python -m abstractcore.utils.cli --prompt "What data is in @spreadsheet.xlsx"
+# Cell 3: Structured Output
+from pydantic import BaseModel
+from typing import List
 
-# Data files
-python -m abstractcore.utils.cli --prompt "Analyze trends in @sales_data.csv"
+class LearningPlan(BaseModel):
+    topic: str
+    difficulty: str
+    estimated_hours: int
+    prerequisites: List[str]
+    learning_steps: List[str]
 
-# Multiple files
-python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv"
+plan = llm.generate(
+    "Create a learning plan for someone who wants to learn machine learning",
+    response_model=LearningPlan
+)
 
-# Mixed media analysis
-python -m abstractcore.utils.cli --prompt "Verify @chart.png matches @data.xlsx and @report.pdf"</code></pre>
-                    </div>
-                </div>
-            </div>
+# Display as nice table
+display(HTML(f"""
+&lt;table style="border-collapse: collapse; width: 100%;"&gt;
+    &lt;tr&gt;&lt;td&gt;&lt;strong&gt;Topic:&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;{plan.topic}&lt;/td&gt;&lt;/tr&gt;
+    &lt;tr&gt;&lt;td&gt;&lt;strong&gt;Difficulty:&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;{plan.difficulty}&lt;/td&gt;&lt;/tr&gt;
+    &lt;tr&gt;&lt;td&gt;&lt;strong&gt;Estimated Hours:&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;{plan.estimated_hours}&lt;/td&gt;&lt;/tr&gt;
+    &lt;tr&gt;&lt;td&gt;&lt;strong&gt;Prerequisites:&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;{', '.join(plan.prerequisites)}&lt;/td&gt;&lt;/tr&gt;
+&lt;/table&gt;
+"""))
 
-            <!-- More Examples Section -->
-            <div style="margin-top: 4rem; text-align: center;">
-                <h2>More Examples</h2>
-                <p style="color: var(--text-secondary); margin-bottom: 2rem;">
-                    Find more examples in the GitHub repository
-                </p>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
-                        <h4 style="margin: 0 0 0.5rem 0;">🚀 Progressive Examples</h4>
-                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Step-by-step learning path</p>
-                        <a href="https://github.com/lpalbou/abstractcore/tree/main/examples/progressive" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
-                    </div>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
-                        <h4 style="margin: 0 0 0.5rem 0;">🏭 Production Examples</h4>
-                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Enterprise deployment patterns</p>
-                        <a href="https://github.com/lpalbou/abstractcore/tree/main/examples/example_06_production" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
-                    </div>
-                    
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
-                        <h4 style="margin: 0 0 0.5rem 0;">🔧 Complete RAG</h4>
-                        <p style="margin: 0 0 1rem 0; color: var(--text-secondary); font-size: 0.875rem;">Full RAG implementation</p>
-                        <a href="https://github.com/lpalbou/abstractcore/blob/main/examples/complete_rag_example.py" target="_blank" style="color: var(--primary-color); font-weight: 500;">View on GitHub →</a>
-                    </div>
-                </div>
-            </div>
+display(Markdown("### Learning Steps:"))
+for i, step in enumerate(plan.learning_steps, 1):
+    display(Markdown(f"{i}. {step}"))
+</code></pre></div>
+<h3 id="discord-bot-integration">Discord Bot Integration</h3>
+<div class="code-block"><pre><code class="language-python">import discord
+from discord.ext import commands
+from abstractcore import create_llm, BasicSession
+import asyncio
 
-            <!-- Related Documentation -->
-            <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                <h2 style="margin: 0 0 1.5rem 0; text-align: center;">Related Documentation</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                    <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
-                    </a>
+# Bot setup
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-                    <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Centralized Configuration</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global defaults and settings</p>
-                    </a>
-
-                    <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Media Handling</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment system</p>
-                    </a>
-
-                    <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Vision Capabilities</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
-                    </a>
-
-                    <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
-                    </a>
-
-                    <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API</p>
-                    </a>
-                </div>
-
-                <!-- Built-in Tools Example -->
-                <div class="example-card">
-                    <div class="example-header">
-                        <h3 class="example-title">Built-in Tools</h3>
-                        <span class="example-badge">New</span>
-                    </div>
-                    <p class="example-description">
-                        Use AbstractCore's comprehensive built-in tools for web scraping, file operations, and system tasks.
-                    </p>
-                    <div class="example-code">
-                        <pre><code class="language-python">from abstractcore import create_llm
-from abstractcore.tools.common_tools import fetch_url, search_files, read_file
-
-# Use built-in tools with any provider
+# LLM setup
 llm = create_llm("anthropic", model="claude-haiku-4-5")
+sessions = {}  # Store user sessions
 
-# Web content analysis
-response = llm.generate(
-    "Analyze this API and summarize the key endpoints",
-    tools=[fetch_url]
-)
+@bot.event
+async def on_ready():
+    print(f'{bot.user} has connected to Discord!')
 
-# File system operations
-response = llm.generate(
-    "Find all Python functions in this project and list their purposes",
-    tools=[search_files, read_file]
-)
+@bot.command(name='ask')
+async def ask(ctx, *, question):
+    """Ask the AI a question."""
+    user_id = ctx.author.id
 
-# Built-in tools include:
-# - fetch_url: Intelligent web content fetching
-# - search_files: Regex search in files  
-# - read_file: Read file contents
-# - write_file: Write to files
-# - edit_file: Pattern-based file editing
-# - web_search: DuckDuckGo search
-# - execute_command: Safe shell execution</code></pre>
-                    </div>
-                </div>
+    # Get or create session for user
+    if user_id not in sessions:
+        sessions[user_id] = BasicSession(
+            provider=llm,
+            system_prompt="You are a helpful Discord bot assistant. Keep responses concise."
+        )
 
+    try:
+        # Show typing indicator
+        async with ctx.typing():
+            response = sessions[user_id].generate(question)
+
+        # Discord has a 2000 character limit
+        content = response.content
+        if len(content) &gt; 2000:
+            content = content[:1997] + "..."
+
+        await ctx.reply(content)
+
+    except Exception as e:
+        await ctx.reply(f"Sorry, I encountered an error: {str(e)}")
+
+@bot.command(name='clear')
+async def clear_session(ctx):
+    """Clear your conversation history."""
+    user_id = ctx.author.id
+    if user_id in sessions:
+        sessions[user_id].clear_history()
+        await ctx.reply("Your conversation history has been cleared!")
+    else:
+        await ctx.reply("You don't have an active session to clear.")
+
+@bot.command(name='stats')
+async def stats(ctx):
+    """Show session statistics."""
+    user_id = ctx.author.id
+    if user_id in sessions:
+        session = sessions[user_id]
+        message_count = len(session.messages)
+        await ctx.reply(f"Your session has {message_count} messages.")
+    else:
+        await ctx.reply("You don't have an active session.")
+
+# Run bot (add your Discord bot token)
+# bot.run('YOUR_DISCORD_BOT_TOKEN')
+</code></pre></div>
+<h2 id="next-steps">Next Steps</h2>
+<p>These examples show AbstractCore's versatility across different use cases. To continue learning:</p>
+<ol>
+<li><strong>Start with basics</strong> - Try the simple Q&amp;A examples</li>
+<li><strong>Add tools</strong> - Experiment with the tool calling examples</li>
+<li><strong>Structure output</strong> - Use Pydantic models for type-safe responses</li>
+<li><strong>Go production</strong> - Implement error handling and monitoring</li>
+<li><strong>Build apps</strong> - Use the integration examples as starting points</li>
+</ol>
+<p>For more information:
+- <a href="getting-started.html">Getting Started</a> - Basic setup and usage
+- <a href="capabilities.html">Capabilities</a> - What AbstractCore can do
+- <a href="prerequisites.html">Prerequisites</a> - Provider setup and configuration
+- <a href="api-reference.html">API Reference</a> - Complete API documentation</p>
+<hr/>
+<p><strong>Remember</strong>: All these examples work with any provider - just change the <code>create_llm()</code> call to switch between OpenAI, Anthropic, Ollama, MLX, and others!</p>
             </div>
         </div>
     </main>

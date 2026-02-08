@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Async/Await Guide - AbstractCore</title>
-    <meta name="description" content="How to use AbstractCore with async/await: agenerate, async streaming, and concurrent requests across providers.">
+    <meta name="description" content="Complete guide to using async/await with AbstractCore for concurrent LLM operations.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,154 +21,586 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Async/Await Guide</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Use <code>agenerate()</code>, async streaming, and <code>asyncio.gather()</code> to run concurrent LLM calls with the same unified API across providers.
-                </p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">Complete guide to using async/await with AbstractCore for concurrent LLM operations.</p>
             </div>
 
-            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">What you get</h2>
-                <ul style="margin: 0; padding-left: 1.5rem; font-size: 1rem;">
-                    <li style="margin-bottom: 0.5rem;"><strong>Async generation</strong>: <code>await llm.agenerate(...)</code></li>
-                    <li style="margin-bottom: 0.5rem;"><strong>Async streaming</strong>: <code>await llm.agenerate(..., stream=True)</code> → <code>async for</code> chunks</li>
-                    <li style="margin-bottom: 0;"><strong>Async sessions</strong>: <code>await session.agenerate(...)</code> preserves history</li>
-                </ul>
-            </div>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#provider-support" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider support</a>
+<a href="#basic-usage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Basic Usage</a>
+<a href="#async-streaming" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Async Streaming</a>
+<a href="#session-async" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Session Async</a>
+<a href="#multi-provider-comparisons" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Multi-Provider Comparisons</a>
+<a href="#fastapi-integration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">FastAPI Integration</a>
+<a href="#batch-document-processing" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Batch Document Processing</a>
+<a href="#error-handling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Error Handling</a>
+<a href="#practical-tips" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Practical tips</a>
+<a href="#common-patterns" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Common Patterns</a>
+<a href="#why-mlxhuggingface-use-fallback" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why MLX/HuggingFace Use Fallback</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#learning-resources" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Learning Resources</a>
+<a href="#summary" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Summary</a></div>
 
             <div class="doc-content">
-                <section id="single-async">
-                    <h2>Single async request</h2>
-                    <div class="code-block">
-                        <pre><code class="language-python">import asyncio
+
+
+<h2 id="overview">Overview</h2>
+<p>AbstractCore exposes <code>agenerate()</code> for async generation across providers.</p>
+<ul>
+<li><strong>HTTP-based providers</strong> (OpenAI-compatible endpoints, OpenRouter, Ollama, LMStudio, vLLM, etc.) implement native async I/O.</li>
+<li><strong>In-process local inference</strong> providers (MLX, HuggingFace) use an <code>asyncio.to_thread()</code> fallback to avoid blocking the event loop.</li>
+</ul>
+<p>Concurrency can improve throughput when requests are <strong>I/O-bound</strong> (network calls). For local inference, throughput is limited by your hardware and the model runtime.</p>
+<h2 id="provider-support">Provider support</h2>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Async implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>openai</code>, <code>anthropic</code></td>
+<td>Native async SDK clients (when installed)</td>
+</tr>
+<tr>
+<td>HTTP-based providers (<code>ollama</code>, <code>lmstudio</code>, <code>openrouter</code>, <code>vllm</code>, <code>openai-compatible</code>, …)</td>
+<td><code>httpx.AsyncClient</code> (native async HTTP)</td>
+</tr>
+<tr>
+<td><code>mlx</code>, <code>huggingface</code></td>
+<td><code>asyncio.to_thread()</code> fallback (keeps the event loop responsive)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="basic-usage">Basic Usage</h2>
+<h3 id="single-async-request">Single Async Request</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
 from abstractcore import create_llm
 
 async def main():
     llm = create_llm("openai", model="gpt-4o-mini")
-    response = await llm.agenerate("Explain Python in one paragraph.")
+
+    # Single async request
+    response = await llm.agenerate("What is Python?")
     print(response.content)
 
-asyncio.run(main())</code></pre>
-                    </div>
-                </section>
-
-                <section id="concurrent" style="margin-top: 3rem;">
-                    <h2>Concurrent requests with <code>asyncio.gather()</code></h2>
-                    <p>Run multiple calls concurrently (especially useful for local gateways or when doing many small prompts).</p>
-                    <div class="code-block">
-                        <pre><code class="language-python">import asyncio
+asyncio.run(main())
+</code></pre></div>
+<h3 id="concurrent-requests">Concurrent Requests</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
 from abstractcore import create_llm
 
 async def main():
-    llm = create_llm("ollama", model="qwen3:4b-instruct")
+    llm = create_llm("ollama", model="qwen3:4b")
 
+    # Execute 3 requests concurrently
     tasks = [
-        llm.agenerate("Summarize Python in 1 sentence."),
-        llm.agenerate("Summarize JavaScript in 1 sentence."),
-        llm.agenerate("Summarize Rust in 1 sentence."),
+        llm.agenerate(f"Summarize {topic}")
+        for topic in ["Python", "JavaScript", "Rust"]
     ]
 
+    # Gather runs all tasks concurrently
     responses = await asyncio.gather(*tasks)
-    for r in responses:
-        print("-", r.content.strip())
 
-asyncio.run(main())</code></pre>
-                    </div>
-                </section>
+    for i, response in enumerate(responses):
+        print(f"\n{['Python', 'JavaScript', 'Rust'][i]}:")
+        print(response.content)
 
-                <section id="async-streaming" style="margin-top: 3rem;">
-                    <h2>Async streaming</h2>
-                    <p>When <code>stream=True</code>, <code>agenerate()</code> returns an async iterator of chunks.</p>
-                    <div class="code-block">
-                        <pre><code class="language-python">import asyncio
+asyncio.run(main())
+</code></pre></div>
+<h2 id="async-streaming">Async Streaming</h2>
+<h3 id="basic-streaming">Basic Streaming</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
 from abstractcore import create_llm
 
 async def main():
     llm = create_llm("anthropic", model="claude-haiku-4-5")
 
-    stream = await llm.agenerate("Write a haiku about coding.", stream=True)
-    async for chunk in stream:
+    # Step 1: await the generator
+    stream_gen = await llm.agenerate(
+        "Write a haiku about coding",
+        stream=True
+    )
+
+    # Step 2: async for over the chunks
+    async for chunk in stream_gen:
         if chunk.content:
             print(chunk.content, end="", flush=True)
     print()
 
-asyncio.run(main())</code></pre>
-                    </div>
-                </section>
+asyncio.run(main())
+</code></pre></div>
+<h3 id="concurrent-streaming">Concurrent Streaming</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
 
-                <section id="async-session" style="margin-top: 3rem;">
-                    <h2>Async sessions</h2>
-                    <p><code>BasicSession</code> supports async while preserving conversation history.</p>
-                    <div class="code-block">
-                        <pre><code class="language-python">import asyncio
-from abstractcore import create_llm, BasicSession
+async def stream_response(llm, topic, label):
+    """Stream a single response with label."""
+    print(f"\n{label}:")
+
+    stream_gen = await llm.agenerate(f"Explain {topic} in one sentence", stream=True)
+
+    async for chunk in stream_gen:
+        if chunk.content:
+            print(chunk.content, end="", flush=True)
+    print()
 
 async def main():
     llm = create_llm("openai", model="gpt-4o-mini")
-    session = BasicSession(provider=llm, system_prompt="You are a helpful assistant.")
 
-    r1 = await session.agenerate("My name is Alice.")
-    r2 = await session.agenerate("What is my name?")
-    print(r2.content)
+    # Stream 3 responses concurrently
+    await asyncio.gather(
+        stream_response(llm, "Python", "Python"),
+        stream_response(llm, "JavaScript", "JavaScript"),
+        stream_response(llm, "Rust", "Rust")
+    )
 
-asyncio.run(main())</code></pre>
-                    </div>
-                </section>
+asyncio.run(main())
+</code></pre></div>
+<h2 id="session-async">Session Async</h2>
+<h3 id="async-conversation-management">Async Conversation Management</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
 
-                <section id="provider-support" style="margin-top: 3rem;">
-                    <h2>Provider support notes</h2>
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
-                        <ul style="margin: 0; padding-left: 1.5rem;">
-                            <li><strong>Native async HTTP</strong> is used where available (OpenAI, Anthropic, Ollama, LMStudio, OpenRouter, openai-compatible, vLLM).</li>
-                            <li><strong>Fallback async</strong> may use threads for local in-process providers (e.g., MLX, some HuggingFace backends) to keep the event loop responsive.</li>
-                        </ul>
-                    </div>
-                </section>
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+    session = BasicSession(provider=llm)
 
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Sync/async API surface</p>
-                        </a>
-                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling System</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Tools + streaming patterns</p>
-                        </a>
-                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server Guide</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible gateway usage</p>
-                        </a>
-                    </div>
-                </div>
+    # Maintain conversation history with async
+    response1 = await session.agenerate("What is Python?")
+    print(response1.content)
+
+    response2 = await session.agenerate("What are its main use cases?")
+    print(response2.content)
+
+    # Session tracks full conversation history
+    print(f"\nConversation length: {len(session.conversation_history)} messages")
+
+asyncio.run(main())
+</code></pre></div>
+<h3 id="concurrent-sessions">Concurrent Sessions</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+
+async def chat_session(llm, topic, name):
+    """Run independent chat session."""
+    session = BasicSession(provider=llm)
+
+    response1 = await session.agenerate(f"What is {topic}?")
+    response2 = await session.agenerate("Give me a simple example")
+
+    print(f"\n{name}:")
+    print(f"  Question 1: {response1.content[:50]}...")
+    print(f"  Question 2: {response2.content[:50]}...")
+
+async def main():
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
+
+    # Run 3 independent conversations concurrently
+    await asyncio.gather(
+        chat_session(llm, "Python", "Session 1"),
+        chat_session(llm, "JavaScript", "Session 2"),
+        chat_session(llm, "Rust", "Session 3")
+    )
+
+asyncio.run(main())
+</code></pre></div>
+<h2 id="multi-provider-comparisons">Multi-Provider Comparisons</h2>
+<h3 id="concurrent-provider-queries">Concurrent Provider Queries</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def query_provider(provider_name, model, prompt):
+    """Query a single provider."""
+    llm = create_llm(provider_name, model=model)
+    response = await llm.agenerate(prompt)
+    return {
+        "provider": provider_name,
+        "model": model,
+        "response": response.content
+    }
+
+async def main():
+    prompt = "What is the capital of France?"
+
+    # Query multiple providers simultaneously
+    results = await asyncio.gather(
+        query_provider("openai", "gpt-4o-mini", prompt),
+        query_provider("anthropic", "claude-haiku-4-5", prompt),
+        query_provider("ollama", "qwen3:4b", prompt)
+    )
+
+    for result in results:
+        print(f"\n{result['provider']} ({result['model']}):")
+        print(result['response'])
+
+asyncio.run(main())
+</code></pre></div>
+<h3 id="provider-consensus">Provider Consensus</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def main():
+    prompt = "Is the Earth flat? Answer yes or no."
+
+    # Get consensus from 3 providers
+    llm_openai = create_llm("openai", model="gpt-4o-mini")
+    llm_anthropic = create_llm("anthropic", model="claude-haiku-4-5")
+    llm_ollama = create_llm("ollama", model="qwen3:4b")
+
+    responses = await asyncio.gather(
+        llm_openai.agenerate(prompt),
+        llm_anthropic.agenerate(prompt),
+        llm_ollama.agenerate(prompt)
+    )
+
+    answers = [r.content.strip().lower() for r in responses]
+    print(f"Answers: {answers}")
+    print(f"Consensus: {'Yes' if answers.count('no') &gt;= 2 else 'No'}")
+
+asyncio.run(main())
+</code></pre></div>
+<h2 id="fastapi-integration">FastAPI Integration</h2>
+<h3 id="async-http-endpoints">Async HTTP Endpoints</h3>
+<div class="code-block"><pre><code class="language-python">from fastapi import FastAPI
+from abstractcore import create_llm
+
+app = FastAPI()
+llm = create_llm("openai", model="gpt-4o-mini")
+
+@app.post("/generate")
+async def generate(prompt: str):
+    """Non-blocking LLM generation endpoint."""
+    response = await llm.agenerate(prompt)
+    return {"response": response.content}
+
+@app.post("/batch")
+async def batch_generate(prompts: list[str]):
+    """Process multiple prompts concurrently."""
+    tasks = [llm.agenerate(p) for p in prompts]
+    responses = await asyncio.gather(*tasks)
+
+    return {
+        "responses": [r.content for r in responses]
+    }
+
+# Run with: uvicorn your_app:app --reload
+</code></pre></div>
+<h3 id="streaming-endpoint">Streaming Endpoint</h3>
+<div class="code-block"><pre><code class="language-python">from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from abstractcore import create_llm
+import asyncio
+
+app = FastAPI()
+llm = create_llm("anthropic", model="claude-haiku-4-5")
+
+async def stream_response(prompt: str):
+    """Generate streaming response."""
+    stream_gen = await llm.agenerate(prompt, stream=True)
+
+    async for chunk in stream_gen:
+        if chunk.content:
+            yield f"data: {chunk.content}\n\n"
+
+@app.post("/stream")
+async def stream_generate(prompt: str):
+    """Streaming LLM generation endpoint."""
+    return StreamingResponse(
+        stream_response(prompt),
+        media_type="text/event-stream"
+    )
+</code></pre></div>
+<h2 id="batch-document-processing">Batch Document Processing</h2>
+<h3 id="concurrent-document-summaries">Concurrent Document Summaries</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+from abstractcore.processing import Summarizer
+
+async def summarize_document(summarizer, doc_path):
+    """Summarize single document."""
+    result = summarizer.summarize(
+        input_source=doc_path,
+        style="executive",
+        length="brief"
+    )
+    return {
+        "path": doc_path,
+        "summary": result.summary
+    }
+
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+    summarizer = Summarizer(llm)
+
+    documents = [
+        "report1.pdf",
+        "report2.pdf",
+        "report3.pdf"
+    ]
+
+    # Summarize all documents concurrently
+    tasks = [summarize_document(summarizer, doc) for doc in documents]
+    results = await asyncio.gather(*tasks)
+
+    for result in results:
+        print(f"\n{result['path']}:")
+        print(result['summary'])
+
+asyncio.run(main())
+</code></pre></div>
+<h2 id="error-handling">Error Handling</h2>
+<h3 id="graceful-error-recovery">Graceful Error Recovery</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+from abstractcore.exceptions import ProviderAPIError
+
+async def safe_generate(llm, prompt, label):
+    """Generate with error handling."""
+    try:
+        response = await llm.agenerate(prompt)
+        return {"label": label, "content": response.content, "error": None}
+    except ProviderAPIError as e:
+        return {"label": label, "content": None, "error": str(e)}
+
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+
+    # Some requests may fail - continue processing others
+    results = await asyncio.gather(
+        safe_generate(llm, "Valid prompt 1", "Task 1"),
+        safe_generate(llm, "Valid prompt 2", "Task 2"),
+        safe_generate(llm, "Valid prompt 3", "Task 3")
+    )
+
+    for result in results:
+        if result["error"]:
+            print(f"{result['label']}: ERROR - {result['error']}")
+        else:
+            print(f"{result['label']}: {result['content']}")
+
+asyncio.run(main())
+</code></pre></div>
+<h2 id="practical-tips">Practical tips</h2>
+<h3 id="1-prefer-native-async-providers-when-possible">1. Prefer native-async providers when possible</h3>
+<div class="code-block"><pre><code class="language-python"># ✅ Native async HTTP (I/O-bound)
+llm = create_llm("ollama", model="qwen3:4b")
+
+# ✅ Native async SDK (cloud APIs)
+llm = create_llm("openai", model="gpt-4o-mini")
+
+# ⚠️ Fallback: runs sync generation in a thread (keeps the event loop responsive)
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
+</code></pre></div>
+<h3 id="2-batch-similar-operations">2. Batch Similar Operations</h3>
+<div class="code-block"><pre><code class="language-python"># ✅ GOOD: Single gather for all tasks
+tasks = [llm.agenerate(f"Task {i}") for i in range(10)]
+results = await asyncio.gather(*tasks)
+
+# ❌ BAD: Sequential awaits lose concurrency benefit
+results = []
+for i in range(10):
+    result = await llm.agenerate(f"Task {i}")
+    results.append(result)
+</code></pre></div>
+<h3 id="3-mix-async-with-sync-io">3. Mix Async with Sync I/O</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("anthropic", model="claude-haiku-4-5")
+
+    # Concurrent: LLM generation + file I/O
+    llm_task = llm.agenerate("Explain async")
+    file_task = asyncio.to_thread(read_large_file, "data.txt")
+
+    response, data = await asyncio.gather(llm_task, file_task)
+    # Both completed concurrently!
+</code></pre></div>
+<h2 id="common-patterns">Common Patterns</h2>
+<h3 id="retry-with-exponential-backoff">Retry with Exponential Backoff</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def generate_with_retry(llm, prompt, max_retries=3):
+    """Generate with exponential backoff retry."""
+    for attempt in range(max_retries):
+        try:
+            return await llm.agenerate(prompt)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+
+            wait_time = 2 ** attempt
+            print(f"Retry {attempt + 1} after {wait_time}s...")
+            await asyncio.sleep(wait_time)
+
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+    response = await generate_with_retry(llm, "What is Python?")
+    print(response.content)
+
+asyncio.run(main())
+</code></pre></div>
+<h3 id="rate-limiting">Rate Limiting</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+class RateLimiter:
+    def __init__(self, max_per_second):
+        self.max_per_second = max_per_second
+        self.semaphore = asyncio.Semaphore(max_per_second)
+        self.reset_task = None
+
+    async def acquire(self):
+        await self.semaphore.acquire()
+
+        # Release after 1 second
+        if not self.reset_task or self.reset_task.done():
+            self.reset_task = asyncio.create_task(self._release_after_delay())
+
+    async def _release_after_delay(self):
+        await asyncio.sleep(1.0)
+        self.semaphore.release()
+
+async def main():
+    llm = create_llm("openai", model="gpt-4o-mini")
+    limiter = RateLimiter(max_per_second=5)
+
+    # Process 20 requests with 5 requests/second limit
+    async def limited_generate(prompt):
+        await limiter.acquire()
+        return await llm.agenerate(prompt)
+
+    tasks = [limited_generate(f"Task {i}") for i in range(20)]
+    results = await asyncio.gather(*tasks)
+
+asyncio.run(main())
+</code></pre></div>
+<h3 id="progress-tracking">Progress Tracking</h3>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import create_llm
+
+async def generate_with_progress(llm, prompts):
+    """Generate with real-time progress tracking."""
+    completed = 0
+    total = len(prompts)
+
+    async def track_task(prompt):
+        nonlocal completed
+        response = await llm.agenerate(prompt)
+        completed += 1
+        print(f"Progress: {completed}/{total} ({completed/total*100:.1f}%)")
+        return response
+
+    tasks = [track_task(p) for p in prompts]
+    return await asyncio.gather(*tasks)
+
+async def main():
+    llm = create_llm("ollama", model="qwen3:4b")
+    prompts = [f"Task {i}" for i in range(10)]
+
+    results = await generate_with_progress(llm, prompts)
+    print(f"\nCompleted {len(results)} tasks!")
+
+asyncio.run(main())
+</code></pre></div>
+<h2 id="why-mlxhuggingface-use-fallback">Why MLX/HuggingFace Use Fallback</h2>
+<p>MLX and HuggingFace providers use <code>asyncio.to_thread()</code> fallback because:</p>
+<ol>
+<li><strong>No Async Library APIs</strong>: Neither <code>mlx_lm</code> nor <code>transformers</code> expose async Python APIs</li>
+<li><strong>Direct Function Calls</strong>: No HTTP layer to enable concurrent I/O</li>
+<li><strong>Industry Standard</strong>: Same pattern used by LangChain, Pydantic-AI for CPU-bound operations</li>
+<li><strong>Event Loop Responsive</strong>: Fallback keeps event loop responsive for mixing with I/O</li>
+</ol>
+<div class="code-block"><pre><code class="language-python"># MLX/HF async example (fallback keeps event loop responsive)
+import asyncio
+from abstractcore import create_llm
+
+async def main():
+    llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
+
+    # Can mix MLX inference with async I/O
+    inference_task = llm.agenerate("What is Python?")
+    io_task = fetch_data_from_api()  # Async I/O
+
+    # Both run concurrently - event loop not blocked!
+    response, data = await asyncio.gather(inference_task, io_task)
+
+asyncio.run(main())
+</code></pre></div>
+<p>If you run local inference behind an OpenAI-compatible HTTP server (for example, via LM Studio), you can use the <code>lmstudio</code> (or <code>openai-compatible</code>) provider for native async I/O to the server:</p>
+<div class="code-block"><pre><code class="language-python">llm = create_llm("lmstudio", model="local-model", base_url="http://localhost:1234/v1")
+</code></pre></div>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="1-always-use-asynciogather-for-concurrent-tasks">1. Always Use asyncio.gather() for Concurrent Tasks</h3>
+<div class="code-block"><pre><code class="language-python"># ✅ CORRECT: All tasks run concurrently
+results = await asyncio.gather(*[llm.agenerate(p) for p in prompts])
+
+# ❌ WRONG: Sequential execution (no concurrency)
+results = [await llm.agenerate(p) for p in prompts]
+</code></pre></div>
+<h3 id="2-await-stream-generator-first">2. Await Stream Generator First</h3>
+<div class="code-block"><pre><code class="language-python"># ✅ CORRECT: Two-step pattern
+stream_gen = await llm.agenerate(prompt, stream=True)
+async for chunk in stream_gen:
+    print(chunk.content, end="")
+
+# ❌ WRONG: Missing await before async for
+async for chunk in llm.agenerate(prompt, stream=True):  # Error!
+    print(chunk.content, end="")
+</code></pre></div>
+<h3 id="3-close-resources-properly">3. Close Resources Properly</h3>
+<div class="code-block"><pre><code class="language-python"># ✅ GOOD: Clean shutdown
+llm = create_llm("openai", model="gpt-4o-mini")
+try:
+    response = await llm.agenerate("Test")
+finally:
+    llm.unload_model(llm.model)  # Closes async client
+</code></pre></div>
+<h3 id="4-handle-errors-in-concurrent-operations">4. Handle Errors in Concurrent Operations</h3>
+<div class="code-block"><pre><code class="language-python"># ✅ GOOD: Catch errors per-task
+async def safe_task(prompt):
+    try:
+        return await llm.agenerate(prompt)
+    except Exception as e:
+        return f"Error: {e}"
+
+results = await asyncio.gather(*[safe_task(p) for p in prompts])
+</code></pre></div>
+<h2 id="learning-resources">Learning Resources</h2>
+<ul>
+<li><strong>Educational Demo</strong>: <a href="../examples/async_cli_demo.py">examples/async_cli_demo.py</a> - 8 core async/await patterns</li>
+<li><strong>Test Suite</strong>: <code>tests/async/test_async_providers.py</code> - real implementation examples</li>
+<li><strong>Concurrency &amp; Throughput</strong>: <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/concurrency.md">concurrency.md</a> - practical guidance for local inference</li>
+</ul>
+<h2 id="summary">Summary</h2>
+<ul>
+<li>✅ <code>agenerate()</code> works across providers</li>
+<li>✅ Use <code>asyncio.gather()</code> for concurrent (I/O-bound) requests</li>
+<li>✅ HTTP-based providers use native async; MLX/HuggingFace use a thread fallback to keep the event loop responsive</li>
+<li>✅ Async streaming uses a 2-step pattern: <code>stream_gen = await llm.agenerate(..., stream=True)</code> then <code>async for ...</code></li>
+<li>✅ Works well in FastAPI and other async frameworks</li>
+</ul>
+<p><strong>Get Started</strong>:</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractcore
+
+# Try the educational async demo
+python examples/async_cli_demo.py --provider ollama --model qwen3:4b
+</code></pre></div>
             </div>
         </div>
     </main>
@@ -179,4 +611,3 @@ asyncio.run(main())</code></pre>
     <script src="../assets/js/main.js"></script>
 </body>
 </html>
-

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FAQ - AbstractCore</title>
-    <meta name="description" content="Frequently asked questions about AbstractCore installs, providers, tools, structured output, media, embeddings, and the server.">
+    <meta name="description" content="The default install is intentionally lightweight. It includes the core API ( create_llm , BasicSession , tool definitions, structured output plumbing) and uses only small…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,24 +21,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
@@ -48,154 +31,118 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">FAQ</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Common questions about installs, providers, tools, structured output, media, embeddings, and the server.
-                </p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">The default install is intentionally lightweight. It includes the core API ( create_llm , BasicSession , tool definitions, structured output plumbing) and uses only small dependencies ( pydantic , httpx ).</p>
             </div>
 
-            <!-- Table of Contents -->
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">Table of Contents</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem;">
-                    <div>
-                        <a href="#install" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Install & Extras</a>
-                        <a href="#providers" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Providers & Models</a>
-                        <a href="#tools" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tools</a>
-                    </div>
-                    <div>
-                        <a href="#structured-output" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Structured Output</a>
-                        <a href="#media" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Media / Vision</a>
-                        <a href="#embeddings" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Embeddings</a>
-                    </div>
-                    <div>
-                        <a href="#server" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">HTTP Server</a>
-                        <a href="#debugging" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Debugging & Downloads</a>
-                        <a href="#scope" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Scope & Philosophy</a>
-                    </div>
-                </div>
-            </div>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-do-i-get-with-pip-install-abstractcore" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What do I get with pip install abstractcore ?</a>
+<a href="#which-extra-do-i-need-for-my-provider" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Which extra do I need for my provider?</a>
+<a href="#how-do-i-combine-extras" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I combine extras?</a>
+<a href="#why-did-my-install-pull-torch-take-a-long-time" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why did my install pull torch / take a long time?</a>
+<a href="#whats-the-difference-between-provider-and-model" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What’s the difference between “provider” and “model”?</a>
+<a href="#how-do-i-connect-to-a-local-server-ollama-lmstudio-vllm-llamacpp-localai" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?</a>
+<a href="#why-do-gateway-providers-return-unsupported-parameter-errors-temperaturemaxtokens" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?</a>
+<a href="#how-do-i-set-api-keys-and-defaults" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I set API keys and defaults?</a>
+<a href="#why-arent-tools-executed-automatically" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why aren’t tools executed automatically?</a>
+<a href="#whats-the-difference-between-websearch-skimwebsearch-skimurl-and-fetchurl" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What’s the difference between web_search , skim_websearch , skim_url , and fetch_url ?</a>
+<a href="#how-do-i-preserve-tool-call-markup-in-responsecontent-for-agentic-clis" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I preserve tool-call markup in response.content for agentic CLIs?</a>
+<a href="#how-do-i-get-structured-output-typed-objects-instead-of-parsing-json" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I get structured output (typed objects) instead of parsing JSON?</a>
+<a href="#why-does-structured-output-retry-or-fail-validation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why does structured output retry or fail validation?</a>
+<a href="#why-do-pdfs-office-docs-images-not-work" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why do PDFs / Office docs / images not work?</a>
+<a href="#how-do-i-attach-audio-or-video" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I attach audio or video?</a>
+<a href="#how-do-i-do-speech-to-text-stt-or-text-to-speech-tts" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I do speech-to-text (STT) or text-to-speech (TTS)?</a>
+<a href="#how-do-i-generate-or-edit-images" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I generate or edit images?</a>
+<a href="#what-are-glyphs-and-what-do-they-require" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What are “glyphs” and what do they require?</a>
+<a href="#how-do-i-use-embeddings" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I use embeddings?</a>
+<a href="#do-i-need-the-http-server" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Do I need the HTTP server?</a>
+<a href="#where-are-logs-and-traces" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Where are logs and traces?</a>
+<a href="#im-getting-http-timeouts-what-should-i-change" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">I’m getting HTTP timeouts. What should I change?</a>
+<a href="#huggingface-wont-download-models-why" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">HuggingFace won’t download models — why?</a>
+<a href="#is-abstractcore-a-full-agentrag-framework" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Is AbstractCore a full agent/RAG framework?</a></div>
 
             <div class="doc-content">
-                <section id="install">
-                    <h2>Install & Extras</h2>
 
-                    <h3>What do I get with <code>pip install abstractcore</code>?</h3>
-                    <p>
-                        The default install is intentionally lightweight. It includes the core API (<code>create_llm</code>,
-                        <code>BasicSession</code>, tool definitions, structured output plumbing) and small dependencies.
-                        Heavy dependencies live behind install extras.
-                    </p>
-                    <p>
-                        See <a href="getting-started.html">Getting Started</a> and <a href="prerequisites.html">Prerequisites</a>.
-                    </p>
+<h2 id="what-do-i-get-with-pip-install-abstractcore">What do I get with <code>pip install abstractcore</code>?</h2>
 
-                    <h3>Which extra do I need for my provider?</h3>
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
-pip install "abstractcore[vllm]"         # GPU server integration (heavy)</code></pre>
-                    </div>
+<p>Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, web scraping deps, the HTTP server) is behind install extras. See <a href="getting-started.html">Getting Started</a> and <a href="prerequisites.html">Prerequisites</a>.</p>
+<h2 id="which-extra-do-i-need-for-my-provider">Which extra do I need for my provider?</h2>
+<ul>
+<li>OpenAI: <code>pip install "abstractcore[openai]"</code></li>
+<li>Anthropic: <code>pip install "abstractcore[anthropic]"</code></li>
+<li>HuggingFace (transformers/torch; heavy): <code>pip install "abstractcore[huggingface]"</code></li>
+<li>MLX (Apple Silicon; heavy): <code>pip install "abstractcore[mlx]"</code></li>
+<li>vLLM integration (GPU; heavy): <code>pip install "abstractcore[vllm]"</code></li>
+</ul>
+<p>These providers work with the core install (no provider extra): <code>ollama</code>, <code>lmstudio</code>, <code>openrouter</code>, <code>openai-compatible</code>.</p>
+<h2 id="how-do-i-combine-extras">How do I combine extras?</h2>
+<div class="code-block"><pre><code class="language-bash"># zsh: keep quotes
+pip install "abstractcore[openai,media,tools]"
+</code></pre></div>
+<p>For “turnkey” installs, see <code>README.md</code> (<code>all-apple</code>, <code>all-non-mlx</code>, <code>all-gpu</code>).</p>
+<h2 id="why-did-my-install-pull-torch-take-a-long-time">Why did my install pull <code>torch</code> / take a long time?</h2>
+<p>You probably installed a heavy extra (most commonly <code>abstractcore[huggingface]</code>, <code>abstractcore[mlx]</code>, or <code>abstractcore[all-*]</code>). The core install (<code>pip install abstractcore</code>) does not include torch/transformers.</p>
+<h2 id="whats-the-difference-between-provider-and-model">What’s the difference between “provider” and “model”?</h2>
+<ul>
+<li><strong>Provider</strong>: a backend adapter (<code>openai</code>, <code>anthropic</code>, <code>ollama</code>, <code>lmstudio</code>, …)</li>
+<li><strong>Model</strong>: a provider-specific model name (for example <code>gpt-4o-mini</code> or <code>qwen3:4b-instruct-2507-q4_K_M</code>)</li>
+</ul>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+llm = create_llm("openai", model="gpt-4o-mini")
+</code></pre></div>
+<h2 id="how-do-i-connect-to-a-local-server-ollama-lmstudio-vllm-llamacpp-localai">How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?</h2>
+<p>Use the matching provider and set <code>base_url</code> (or the provider’s base-url env var).
+We recommend open-source/local providers first; cloud and gateway providers are optional.</p>
+<p>Examples:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-                    <p>These providers work with the core install (no provider extra): <code>ollama</code>, <code>lmstudio</code>, <code>openrouter</code>, <code>openai-compatible</code>.</p>
-
-                    <h3>How do I combine extras?</h3>
-                    <div class="code-block">
-                        <pre><code class="language-bash"># zsh: keep quotes
-pip install "abstractcore[openai,media,tools]"</code></pre>
-                    </div>
-
-                    <p>For turnkey installs, see the project README (extras like <code>all-apple</code>, <code>all-non-mlx</code>, <code>all-gpu</code>).</p>
-
-                    <h3>Why did my install pull <code>torch</code> / take a long time?</h3>
-                    <p>
-                        You probably installed a heavy extra (most commonly <code>abstractcore[huggingface]</code>, <code>abstractcore[mlx]</code>, or a turnkey <code>all-*</code> extra).
-                        The core install (<code>pip install abstractcore</code>) does not include torch/transformers.
-                    </p>
-                </section>
-
-                <section id="providers" style="margin-top: 3rem;">
-                    <h2>Providers & Models</h2>
-
-                    <h3>What’s the difference between “provider” and “model”?</h3>
-                    <ul>
-                        <li><strong>Provider</strong>: a backend adapter (<code>openai</code>, <code>anthropic</code>, <code>ollama</code>, <code>lmstudio</code>, …)</li>
-                        <li><strong>Model</strong>: a provider-specific model name (for example <code>gpt-4o-mini</code> or <code>qwen3:4b-instruct</code>)</li>
-                    </ul>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
-
-llm = create_llm("openai", model="gpt-4o-mini")</code></pre>
-                    </div>
-
-                    <h3>How do I connect to a local server (Ollama / LMStudio / vLLM / OpenAI-compatible)?</h3>
-                    <p>Use the matching provider and set <code>base_url</code> (or the provider’s base-url env var).</p>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
-
-llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434")
+llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", base_url="http://localhost:11434")
 llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
 llm = create_llm("vllm", model="Qwen/Qwen3-Coder-30B-A3B-Instruct", base_url="http://localhost:8000/v1")
-
-# Generic OpenAI-compatible endpoint
-llm = create_llm("openai-compatible", model="my-model", base_url="http://localhost:1234/v1")</code></pre>
-                    </div>
-
-                    <p>See <a href="prerequisites.html">Prerequisites</a> for setup details and env var names.</p>
-
-                    <h3>How do I set API keys and defaults?</h3>
-                    <p>Use env vars, or persist settings via the config CLI:</p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">abstractcore --configure
+</code></pre></div>
+<p>For a generic OpenAI-compatible endpoint, use <code>openai-compatible</code>:</p>
+<div class="code-block"><pre><code class="language-python">llm = create_llm("openai-compatible", model="my-model", base_url="http://localhost:1234/v1")
+</code></pre></div>
+<p>See <a href="prerequisites.html">Prerequisites</a> for setup details and env var names.</p>
+<h2 id="why-do-gateway-providers-return-unsupported-parameter-errors-temperaturemaxtokens">Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?</h2>
+<p>Gateways like Portkey and OpenRouter forward your payload to the routed backend model, and strict families (for example OpenAI reasoning models like gpt-5/o1) reject unsupported parameters.</p>
+<p>In AbstractCore’s gateway providers:
+- Portkey uses <code>PORTKEY_API_KEY</code> and <code>PORTKEY_CONFIG</code> (config id) for routing.
+- Optional params (<code>temperature</code>, <code>top_p</code>, <code>max_output_tokens</code>) are only sent when you explicitly set them.
+- Reasoning families (gpt-5/o1) drop <code>temperature</code>/<code>top_p</code> and use <code>max_completion_tokens</code> instead of <code>max_tokens</code>.</p>
+<p>If you still see errors, confirm:
+- You aren’t mixing routing modes (config vs virtual key vs provider-direct).
+- You’re not injecting parameters via Portkey config overrides that the backend rejects.</p>
+<h2 id="how-do-i-set-api-keys-and-defaults">How do I set API keys and defaults?</h2>
+<p>You can use environment variables, or persist settings via the config CLI:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore --config
 abstractcore --set-api-key openai sk-...
 abstractcore --set-api-key anthropic sk-ant-...
-abstractcore --status</code></pre>
-                    </div>
-                    <p>Config is stored in <code>~/.abstractcore/config/abstractcore.json</code>. See <a href="centralized-config.html">Centralized Configuration</a>.</p>
-                </section>
-
-                <section id="tools" style="margin-top: 3rem;">
-                    <h2>Tools</h2>
-
-                    <h3>Why aren’t tools executed automatically?</h3>
-                    <p>
-                        By default, AbstractCore runs in <strong>pass-through</strong> mode (<code>execute_tools=False</code>): it returns tool calls in
-                        <code>resp.tool_calls</code>, and your host/runtime decides whether/how to execute them.
-                    </p>
-                    <p>Automatic execution (<code>execute_tools=True</code>) exists but is deprecated for most use cases. See <a href="tool-calling.html">Tool Calling</a>.</p>
-
-                    <h3>What’s the difference between <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, and <code>fetch_url</code>?</h3>
-                    <p>These built-in web tools live in <code>abstractcore.tools.common_tools</code> and require:</p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[tools]"</code></pre>
-                    </div>
-                    <ul>
-                        <li><code>web_search</code>: fuller DuckDuckGo result set (good when you want breadth or more options).</li>
-                        <li><code>skim_websearch</code>: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results and truncates long snippets.</li>
-                        <li><code>skim_url</code>: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). Defaults: <code>max_bytes=200_000</code>, <code>max_preview_chars=1200</code>, <code>max_headings=8</code>.</li>
-                        <li><code>fetch_url</code>: full fetch + parsing for text-first types (HTML→Markdown, JSON/XML/text). For PDFs/images/other binaries it returns metadata and optional previews; it does <strong>not</strong> do full PDF text extraction. It downloads up to 10MB by default; use <code>include_full_content=False</code> for smaller outputs.</li>
-                    </ul>
-                    <p>Recommended workflow: <code>skim_websearch</code> → <code>skim_url</code> → <code>fetch_url</code> (use <code>include_full_content=False</code> when you want a smaller <code>fetch_url</code> output).</p>
-
-                    <h3>How do I preserve tool-call markup in <code>response.content</code> for agentic CLIs?</h3>
-                    <p>Use tool-call syntax rewriting:</p>
-                    <ul>
-                        <li>Python: pass <code>tool_call_tags=...</code> to <code>generate()</code> / <code>agenerate()</code></li>
-                        <li>Server: set <code>agent_format</code> in requests</li>
-                    </ul>
-                    <p>See <a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a>.</p>
-                </section>
-
-                <section id="structured-output" style="margin-top: 3rem;">
-                    <h2>Structured Output</h2>
-
-                    <h3>How do I get structured output (typed objects) instead of parsing JSON?</h3>
-                    <p>Pass a Pydantic model via <code>response_model=...</code>:</p>
-                    <div class="code-block">
-                        <pre><code class="language-python">from pydantic import BaseModel
+abstractcore --status
+</code></pre></div>
+<p>Config is stored in <code>~/.abstractcore/config/abstractcore.json</code>. See <a href="centralized-config.html">Centralized Config</a>.</p>
+<h2 id="why-arent-tools-executed-automatically">Why aren’t tools executed automatically?</h2>
+<p>By default, AbstractCore runs in <strong>pass-through</strong> mode (<code>execute_tools=False</code>): it returns tool calls in <code>resp.tool_calls</code>, and your host/runtime decides whether/how to execute them.</p>
+<p>Automatic execution (<code>execute_tools=True</code>) exists but is deprecated for most use cases. See <a href="tool-calling.html">Tool Calling</a>.</p>
+<h2 id="whats-the-difference-between-websearch-skimwebsearch-skimurl-and-fetchurl">What’s the difference between <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, and <code>fetch_url</code>?</h2>
+<p>These built-in web tools live in <code>abstractcore.tools.common_tools</code> and require:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[tools]"
+</code></pre></div>
+<ul>
+<li><code>web_search</code>: fuller DuckDuckGo result set (good when you want breadth or more options).</li>
+<li><code>skim_websearch</code>: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results and truncates long snippets.</li>
+<li><code>skim_url</code>: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). Defaults: <code>max_bytes=200_000</code>, <code>max_preview_chars=1200</code>, <code>max_headings=8</code>.</li>
+<li><code>fetch_url</code>: full fetch + parsing for text-first types (HTML→Markdown, JSON/XML/text). For PDFs/images/other binaries it returns metadata and optional previews; it does <strong>not</strong> do full PDF text extraction. It downloads up to 10MB by default; use <code>include_full_content=False</code> for smaller outputs.</li>
+</ul>
+<p>Recommended workflow: <code>skim_websearch</code> → <code>skim_url</code> → <code>fetch_url</code> (use <code>include_full_content=False</code> when you want a smaller <code>fetch_url</code> output).</p>
+<h2 id="how-do-i-preserve-tool-call-markup-in-responsecontent-for-agentic-clis">How do I preserve tool-call markup in <code>response.content</code> for agentic CLIs?</h2>
+<p>Use tool-call syntax rewriting:</p>
+<ul>
+<li>Python: pass <code>tool_call_tags=...</code> to <code>generate()</code> / <code>agenerate()</code></li>
+<li>Server: set <code>agent_format</code> in requests</li>
+</ul>
+<p>See <a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a>.</p>
+<h2 id="how-do-i-get-structured-output-typed-objects-instead-of-parsing-json">How do I get structured output (typed objects) instead of parsing JSON?</h2>
+<p>Pass a Pydantic model via <code>response_model=...</code>:</p>
+<div class="code-block"><pre><code class="language-python">from pydantic import BaseModel
 from abstractcore import create_llm
 
 class Answer(BaseModel):
@@ -204,181 +151,108 @@ class Answer(BaseModel):
 
 llm = create_llm("openai", model="gpt-4o-mini")
 result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
-print(result.bullets)</code></pre>
-                    </div>
-                    <p>See <a href="structured-output.html">Structured Output</a>.</p>
+</code></pre></div>
+<p>See <a href="structured-output.html">Structured Output</a>.</p>
+<h2 id="why-does-structured-output-retry-or-fail-validation">Why does structured output retry or fail validation?</h2>
+<p>Structured output is validated against your schema. If validation fails, AbstractCore retries with feedback (up to the configured retry limit). Common fixes:</p>
+<ul>
+<li>simplify schemas (fewer nested structures; fewer strict constraints)</li>
+<li>tighten prompts (be explicit about allowed values and ranges)</li>
+<li>increase timeouts for slow backends</li>
+</ul>
+<p>See <a href="structured-output.html">Structured Output</a> and <a href="troubleshooting.html">Troubleshooting</a>.</p>
+<h2 id="why-do-pdfs-office-docs-images-not-work">Why do PDFs / Office docs / images not work?</h2>
+<p>Those require the media extra:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[media]"
+</code></pre></div>
+<p>Then pass <code>media=[...]</code> to <code>generate()</code> or use the media pipeline. See <a href="media-handling-system.html">Media Handling</a>.</p>
+<h2 id="how-do-i-attach-audio-or-video">How do I attach audio or video?</h2>
+<p>Audio and video attachments are supported via <code>media=[...]</code>, but they are <strong>policy-driven</strong> by design:</p>
+<ul>
+<li><strong>Audio</strong> defaults to <code>audio_policy="native_only"</code> (fails loudly unless the model supports native audio input).</li>
+<li><strong>Video</strong> defaults to <code>video_policy="auto"</code> (native video when supported; otherwise sample frames and route through image/vision handling). Frame sampling requires <code>ffmpeg</code>/<code>ffprobe</code>.</li>
+</ul>
+<p>Speech-to-text fallback for audio (<code>audio_policy="speech_to_text"</code> or <code>"auto"</code>) typically requires installing <code>abstractvoice</code> (capability plugin).</p>
+<p>You can set defaults via the config CLI:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore --set-audio-strategy auto
+abstractcore --set-video-strategy auto
+abstractcore --set-video-max-frames 6
+</code></pre></div>
+<p>See:
+- <a href="media-handling-system.html">Media Handling</a> (policies + fallbacks)
+- <a href="vision-capabilities.html">Vision Capabilities</a> (image/video input + fallback behavior)</p>
+<h2 id="how-do-i-do-speech-to-text-stt-or-text-to-speech-tts">How do I do speech-to-text (STT) or text-to-speech (TTS)?</h2>
+<p>Install the optional capability plugin package:</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractvoice
+</code></pre></div>
+<p>Then use the deterministic capability surfaces:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-                    <h3>Why does structured output retry or fail validation?</h3>
-                    <p>Validation failures trigger retries with schema feedback (up to the configured retry limit). Common fixes:</p>
-                    <ul>
-                        <li>Simplify schemas (fewer nested structures, fewer strict constraints)</li>
-                        <li>Tighten prompts (explicit allowed values and ranges)</li>
-                        <li>Increase timeouts for slow backends</li>
-                    </ul>
-                    <p>See <a href="structured-output.html">Structured Output</a> and <a href="troubleshooting.html">Troubleshooting</a>.</p>
-                </section>
-
-                <section id="media" style="margin-top: 3rem;">
-                    <h2>Media / Vision</h2>
-
-                    <h3>Why do PDFs / Office docs / images not work?</h3>
-                    <p>Those require the media extra:</p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[media]"</code></pre>
-                    </div>
-                    <p>Then pass <code>media=[...]</code> to <code>generate()</code> or use the media pipeline. See <a href="media-handling-system.html">Media Handling</a>.</p>
-
-                    <h3>How do I attach audio or video?</h3>
-                    <p>
-                        Audio and video attachments are supported via <code>media=[...]</code>, but they are <strong>policy-driven</strong> by design:
-                    </p>
-                    <ul>
-                        <li>Audio defaults to <code>audio_policy="native_only"</code> (fails unless the selected model supports native audio input).</li>
-                        <li>Video defaults to <code>video_policy="auto"</code> (native when supported; otherwise samples frames and routes them through vision handling).</li>
-                    </ul>
-                    <p>
-                        For speech audio, use <code>audio_policy="speech_to_text"</code> (typically requires installing <code>abstractvoice</code>).
-                        See <a href="media-handling-system.html">Media Handling</a>, <a href="vision-capabilities.html">Vision Capabilities</a>, and <a href="audio.html">Audio &amp; Voice</a>.
-                    </p>
-
-                    <h3>How do I do speech-to-text (STT) or text-to-speech (TTS)?</h3>
-                    <p>Install the optional capability plugin package:</p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install abstractvoice</code></pre>
-                    </div>
-                    <p>Then use the deterministic capability surfaces:</p>
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
-
-llm = create_llm("openai", model="gpt-4o-mini")  # provider/model is for LLM calls; STT/TTS are deterministic
-print(llm.capabilities.status())  # availability + selected backend ids + install hints
+llm = create_llm("openai", model="gpt-4o-mini")  # provider/model is only for LLM calls; STT/TTS are deterministic
+print(llm.capabilities.status())  # shows which capability backends are available/selected
 
 wav_bytes = llm.voice.tts("Hello", format="wav")
-text = llm.audio.transcribe("speech.wav")</code></pre>
-                    </div>
-                    <p>
-                        If you run the optional HTTP server, you can also use OpenAI-compatible endpoints
-                        (<code>POST /v1/audio/transcriptions</code>, <code>POST /v1/audio/speech</code>). See <a href="server.html">Server</a>.
-                    </p>
-
-                    <h3>How do I generate or edit images?</h3>
-                    <p>Generative vision is intentionally not part of AbstractCore’s default install. Use <code>abstractvision</code>:</p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install abstractvision</code></pre>
-                    </div>
-                    <p>
-                        You can use it through AbstractCore’s <code>llm.vision.*</code> capability plugin surface, or via AbstractCore Server’s optional endpoints
-                        (<code>POST /v1/images/generations</code>, <code>POST /v1/images/edits</code>). See <a href="server.html">Server</a> and <a href="capabilities.html">Capabilities</a>.
-                    </p>
-
-                    <h3>What are “glyphs” and what do they require?</h3>
-                    <p>
-                        Glyph visual-text compression is an optional feature for long documents. Until this website includes a dedicated page,
-                        see the GitHub docs:
-                        <a href="https://github.com/lpalbou/abstractcore/blob/main/docs/glyphs.md" target="_blank" rel="noopener noreferrer">Glyph Visual-Text Compression</a>.
-                    </p>
-                </section>
-
-                <section id="embeddings" style="margin-top: 3rem;">
-                    <h2>Embeddings</h2>
-
-                    <h3>How do I use embeddings?</h3>
-                    <p>Embeddings are opt-in:</p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[embeddings]"</code></pre>
-                    </div>
-                    <p>Then import and use the embeddings module:</p>
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager</code></pre>
-                    </div>
-                    <p>See <a href="embeddings.html">Embeddings</a>.</p>
-                </section>
-
-                <section id="server" style="margin-top: 3rem;">
-                    <h2>HTTP Server</h2>
-
-                    <h3>Do I need the HTTP server?</h3>
-                    <p>No. The server is optional and is mainly for:</p>
-                    <ul>
-                        <li>Exposing one OpenAI-compatible <code>/v1</code> endpoint that can route to multiple providers/models</li>
-                        <li>Integrating with OpenAI-compatible clients and agentic CLIs</li>
-                    </ul>
-                    <p>Install and run:</p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[server]"
-python -m abstractcore.server.app</code></pre>
-                    </div>
-                    <p>See <a href="server.html">HTTP Server Guide</a>.</p>
-                </section>
-
-                <section id="debugging" style="margin-top: 3rem;">
-                    <h2>Debugging & Downloads</h2>
-
-                    <h3>Where are logs and traces?</h3>
-                    <ul>
-                        <li>Logging: configured via the config CLI and config file.</li>
-                        <li>Interaction tracing: opt-in (<code>enable_tracing=True</code>).</li>
-                    </ul>
-                    <p>
-                        See <a href="structured-logging.html">Structured Logging</a> and (for tracing)
-                        <a href="https://github.com/lpalbou/abstractcore/blob/main/docs/interaction-tracing.md" target="_blank" rel="noopener noreferrer">Interaction Tracing</a>.
-                    </p>
-
-                    <h3>I’m getting HTTP timeouts. What should I change?</h3>
-                    <ul>
-                        <li>Per-provider: pass <code>timeout=...</code> to <code>create_llm(...)</code> (<code>timeout=None</code> means unlimited).</li>
-                        <li>Process-wide default: <code>abstractcore --set-default-timeout 0</code> (0 = unlimited).</li>
-                    </ul>
-                    <p>See <a href="troubleshooting.html">Troubleshooting</a> and <a href="centralized-config.html">Centralized Config</a>.</p>
-
-                    <h3>HuggingFace won’t download models — why?</h3>
-                    <p>
-                        The HuggingFace provider respects offline-first settings. If you want it to fetch from the Hub, update
-                        <code>~/.abstractcore/config/abstractcore.json</code>:
-                    </p>
-                    <ul>
-                        <li>Set <code>"offline_first": false</code></li>
-                        <li>Set <code>"force_local_files_only": false</code></li>
-                    </ul>
-                    <p>Restart your Python process after changing this (the provider reads these settings at import time).</p>
-                </section>
-
-                <section id="scope" style="margin-top: 3rem;">
-                    <h2>Scope & Philosophy</h2>
-
-                    <h3>Is AbstractCore a full agent/RAG framework?</h3>
-                    <p>
-                        AbstractCore focuses on provider abstraction + infrastructure (tools, structured output, media handling, tracing).
-                        It does not ship a full RAG pipeline or multi-step agent orchestration framework.
-                    </p>
-                    <p>See <a href="capabilities.html">Capabilities</a> for current scope and limitations.</p>
-                </section>
-
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">First call + core concepts</p>
-                        </a>
-
-                        <a href="prerequisites.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Prerequisites</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Provider setup + env vars</p>
-                        </a>
-
-                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Passthrough tool calls + safety boundaries</p>
-                        </a>
-
-                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible gateway</p>
-                        </a>
-                    </div>
-                </div>
+text = llm.audio.transcribe("speech.wav")
+</code></pre></div>
+<p>If you run the optional HTTP server, you can also use OpenAI-compatible endpoints:
+- <code>POST /v1/audio/transcriptions</code>
+- <code>POST /v1/audio/speech</code></p>
+<p>See: <a href="server.html">Server</a> and <a href="capabilities.html">Capabilities</a>.</p>
+<h2 id="how-do-i-generate-or-edit-images">How do I generate or edit images?</h2>
+<p>Generative vision is intentionally not part of AbstractCore’s default install. Use <code>abstractvision</code>:</p>
+<div class="code-block"><pre><code class="language-bash">pip install abstractvision
+</code></pre></div>
+<p>You can use it through AbstractCore’s <code>llm.vision.*</code> capability plugin surface (typically configured via an OpenAI-compatible images endpoint), or through AbstractCore Server’s optional endpoints:
+- <code>POST /v1/images/generations</code>
+- <code>POST /v1/images/edits</code></p>
+<p>See: <a href="server.html">Server</a>, <a href="capabilities.html">Capabilities</a>, and <code>abstractvision/docs/reference/abstractcore-integration.md</code> (in the AbstractVision repo).</p>
+<h2 id="what-are-glyphs-and-what-do-they-require">What are “glyphs” and what do they require?</h2>
+<p>Glyph visual-text compression is an optional feature for long documents. Install:</p>
+<ul>
+<li><code>pip install "abstractcore[compression]"</code> (renderer)</li>
+<li>plus <code>pip install "abstractcore[media]"</code> if you want PDF extraction support</li>
+</ul>
+<p>See <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/glyphs.md">Glyph Visual-Text Compression</a>.</p>
+<h2 id="how-do-i-use-embeddings">How do I use embeddings?</h2>
+<p>Embeddings are opt-in:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[embeddings]"
+</code></pre></div>
+<p>Then import from the embeddings module:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+</code></pre></div>
+<p>See <a href="embeddings.html">Embeddings</a>.</p>
+<h2 id="do-i-need-the-http-server">Do I need the HTTP server?</h2>
+<p>No. The server is optional and is mainly for:</p>
+<ul>
+<li>exposing one OpenAI-compatible <code>/v1</code> endpoint that can route to multiple providers/models</li>
+<li>integrating with OpenAI-compatible clients and agentic CLIs</li>
+</ul>
+<p>Install and run:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[server]"
+python -m abstractcore.server.app
+</code></pre></div>
+<p>See <a href="server.html">Server</a>.</p>
+<h2 id="where-are-logs-and-traces">Where are logs and traces?</h2>
+<ul>
+<li>Logging (console/file) is configured via the config CLI and config file. See <a href="structured-logging.html">Structured Logging</a>.</li>
+<li>Interaction tracing is opt-in (<code>enable_tracing=True</code>). See <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/interaction-tracing.md">Interaction Tracing</a>.</li>
+</ul>
+<h2 id="im-getting-http-timeouts-what-should-i-change">I’m getting HTTP timeouts. What should I change?</h2>
+<ul>
+<li>Per-provider: pass <code>timeout=...</code> to <code>create_llm(...)</code> (<code>timeout=None</code> means unlimited).</li>
+<li>Process-wide default: set <code>abstractcore --set-default-timeout 0</code> (0 = unlimited), or set a larger value.</li>
+<li>Some CLI apps have their own <code>--timeout</code> flags; run <code>--help</code> for the exact behavior.</li>
+</ul>
+<p>See <a href="troubleshooting.html">Troubleshooting</a> and <a href="centralized-config.html">Centralized Config</a>.</p>
+<h2 id="huggingface-wont-download-models-why">HuggingFace won’t download models — why?</h2>
+<p>The HuggingFace provider respects AbstractCore’s offline-first settings. If you want HuggingFace to fetch from the Hub, update <code>~/.abstractcore/config/abstractcore.json</code>:</p>
+<ul>
+<li>set <code>"offline_first": false</code></li>
+<li>set <code>"force_local_files_only": false</code></li>
+</ul>
+<p>Restart your Python process after changing this (the provider reads these settings at import time).</p>
+<h2 id="is-abstractcore-a-full-agentrag-framework">Is AbstractCore a full agent/RAG framework?</h2>
+<p>AbstractCore focuses on provider abstraction + infrastructure (tools, structured output, media handling, tracing). It does not ship a full RAG pipeline or multi-step agent orchestration. See <a href="capabilities.html">Capabilities</a>.</p>
             </div>
         </div>
     </main>

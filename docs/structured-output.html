@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Structured Output - AbstractCore</title>
-    <meta name="description" content="Generate validated Pydantic objects from LLMs with automatic schema enforcement and retries across providers.">
+    <meta name="description" content="AbstractCore implements structured output generation using Pydantic models with automatic schema validation and provider-specific optimizations. The system employs a…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,51 +21,56 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Structured Output</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Get <strong>typed Python objects</strong> from LLMs using Pydantic, with automatic schema enforcement and retries across providers.
-                </p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore implements structured output generation using Pydantic models with automatic schema validation and provider-specific optimizations. The system employs a dual-strategy architecture that adapts to provider capabilities, delivering reliable schema compliance across all supported LLM providers.</p>
             </div>
 
-            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">Core idea</h2>
-                <p style="margin: 0; font-size: 1rem;">
-                    Pass <code>response_model=YourPydanticModel</code> to <code>generate()</code> and receive a validated instance (or a validation error after retries).
-                </p>
-            </div>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#table-of-contents" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Table of Contents</a>
+<a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#architecture" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Architecture</a>
+<a href="#provider-implementation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider Implementation</a>
+<a href="#usage-guide" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Usage Guide</a>
+<a href="#schema-design" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Schema Design</a>
+<a href="#performance-characteristics" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Characteristics</a>
+<a href="#error-handling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Error Handling</a>
+<a href="#production-deployment" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Production Deployment</a>
+<a href="#api-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">API Reference</a>
+<a href="#related-documentation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related Documentation</a>
+<a href="#references" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">References</a>
+<a href="#testing-and-validation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Testing and Validation</a></div>
 
             <div class="doc-content">
-                <section id="basic-example">
-                    <h2>Basic example</h2>
-                    <div class="code-block">
-                        <pre><code class="language-python">from pydantic import BaseModel
-from abstractcore import create_llm
+
+
+<hr/>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#architecture">Architecture</a></li>
+<li><a href="#provider-implementation">Provider Implementation</a></li>
+<li><a href="#usage-guide">Usage Guide</a></li>
+<li><a href="#schema-design">Schema Design</a></li>
+<li><a href="#performance-characteristics">Performance Characteristics</a></li>
+<li><a href="#error-handling">Error Handling</a></li>
+<li><a href="#production-deployment">Production Deployment</a></li>
+<li><a href="#api-reference">API Reference</a></li>
+</ol>
+<hr/>
+<h2 id="overview">Overview</h2>
+<h3 id="what-is-structured-output">What is Structured Output?</h3>
+<p>Structured output constrains LLM responses to conform to predefined schemas, enabling direct deserialization into typed objects. AbstractCore uses Pydantic BaseModel classes to define schemas and validate responses.</p>
+<h3 id="basic-example">Basic Example</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from pydantic import BaseModel
 
 class Person(BaseModel):
     name: str
@@ -75,112 +80,771 @@ class Person(BaseModel):
 llm = create_llm("openai", model="gpt-4o-mini")
 person = llm.generate(
     "Extract: John Doe, 35 years old, john@example.com",
-    response_model=Person,
+    response_model=Person
 )
 
+# person is a validated Person instance
 assert isinstance(person, Person)
-print(person.name, person.age, person.email)</code></pre>
-                    </div>
+assert person.name == "John Doe"
+assert person.age == 35
+</code></pre></div>
+<h3 id="key-benefits">Key Benefits</h3>
+<ul>
+<li><strong>Type Safety</strong>: Responses are validated Pydantic instances with full IDE support</li>
+<li><strong>Schema Compliance</strong>: Automatic validation ensures data conforms to defined structure</li>
+<li><strong>Provider Agnostic</strong>: Identical API across OpenAI, Anthropic, Ollama, LMStudio, HuggingFace, MLX</li>
+<li><strong>Automatic Strategy Selection</strong>: Framework selects optimal implementation based on provider capabilities</li>
+<li><strong>Test Coverage</strong>: Supported strategies are exercised by the repository test suite (see <code>tests/structured/</code>)</li>
+</ul>
+<hr/>
+<h2 id="architecture">Architecture</h2>
+<h3 id="dual-strategy-design">Dual-Strategy Design</h3>
+<p>AbstractCore implements two distinct strategies for structured output generation:</p>
+<h4 id="strategy-1-native-structured-output-server-side-enforcement">Strategy 1: Native Structured Output (Server-Side Enforcement)</h4>
+<p><strong>Mechanism</strong>: Provider API accepts JSON schema and enforces compliance before returning response.</p>
+<p><strong>Providers</strong>:
+- OpenAI (via <code>response_format</code> parameter)
+- Anthropic (via tool-calling mechanism)
+- Ollama (via <code>format</code> parameter)
+- LMStudio (via <code>response_format</code> parameter)
+- HuggingFace GGUF models (via <code>response_format</code> parameter with llama-cpp-python)</p>
+<p><strong>Characteristics</strong>:
+- Server-side schema validation
+- Zero client-side validation retries required
+- Deterministic schema compliance
+- Optimal performance for production workloads</p>
+<p><strong>Validation</strong>:
+- Structured output behavior is covered by automated tests in this repo (see <code>tests/structured/</code>).
+- Exact success rates and latency depend on provider/model/schema complexity.</p>
+<h4 id="strategy-2-prompted-with-validation-client-side-enforcement">Strategy 2: Prompted with Validation (Client-Side Enforcement)</h4>
+<p><strong>Mechanism</strong>: Schema embedded in system prompt; response extracted, validated, and retried if necessary.</p>
+<p><strong>Providers</strong>:
+- HuggingFace (Transformers models)
+- MLX
+- Any provider without native support</p>
+<p><strong>Characteristics</strong>:
+- Schema injected into enhanced prompt
+- Client-side Pydantic validation
+- Automatic retry with error feedback (up to 3 attempts)
+- Fallback for providers without native support</p>
+<h3 id="automatic-strategy-selection">Automatic Strategy Selection</h3>
+<p>The <code>StructuredOutputHandler</code> selects the appropriate strategy automatically:</p>
+<div class="code-block"><pre><code class="language-python">def _has_native_support(self, provider) -&gt; bool:
+    """Detect native structured output capability"""
+    provider_name = provider.__class__.__name__
 
-                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
-                        <p style="margin: 0; color: #1e40af;"><strong>Note:</strong> Structured output is designed for non-streaming calls (use <code>stream=False</code>, the default).</p>
-                    </div>
-                </section>
+    # Ollama and LMStudio always have native support
+    if provider_name in ['OllamaProvider', 'LMStudioProvider']:
+        return True
 
-                <section id="retry" style="margin-top: 3rem;">
-                    <h2>Automatic validation + retry</h2>
-                    <p>When a provider cannot enforce the schema natively, AbstractCore can retry with validation feedback.</p>
+    # HuggingFace GGUF models (via llama-cpp-python)
+    if provider_name == 'HuggingFaceProvider':
+        if hasattr(provider, 'model_type') and provider.model_type == 'gguf':
+            return True
 
-                    <div class="code-block">
-                        <pre><code class="language-python">from pydantic import BaseModel
-from abstractcore import create_llm
-from abstractcore.structured import FeedbackRetry
+    # Check model capabilities for other providers
+    capabilities = getattr(provider, 'model_capabilities', {})
+    return capabilities.get("structured_output") == "native"
+</code></pre></div>
+<p>No configuration required—the framework handles strategy selection transparently.</p>
+<hr/>
+<h2 id="provider-implementation">Provider Implementation</h2>
+<h3 id="openai">OpenAI</h3>
+<p><strong>Implementation</strong>: Native support via <code>response_format</code> parameter</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore implementation (simplified)
+payload["response_format"] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": response_model.__name__,
+        "schema": response_model.model_json_schema()
+    }
+}
+</code></pre></div>
+<p><strong>Models with Native Support</strong>:
+- gpt-4o, gpt-4o-mini
+- gpt-4-turbo
+- gpt-3.5-turbo</p>
+<p><strong>Reference</strong>: <a href="https://platform.openai.com/docs/guides/structured-outputs">OpenAI Structured Outputs Documentation</a></p>
+<hr/>
+<h3 id="anthropic">Anthropic</h3>
+<p><strong>Implementation</strong>: Native support via tool-calling mechanism</p>
+<p>The provider forces execution of a tool whose input schema matches the desired output structure.</p>
+<p><strong>Models with Native Support</strong>:
+- claude-haiku-4-5
+- claude-sonnet-4-5
+- claude-opus-4-5</p>
+<p><strong>Reference</strong>: <a href="https://docs.anthropic.com/">Anthropic API Documentation</a></p>
+<hr/>
+<h3 id="ollama">Ollama</h3>
+<p><strong>Implementation</strong>: Native support via <code>format</code> parameter</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore implementation (abstractcore/providers/ollama_provider.py:147-152)
+if response_model and PYDANTIC_AVAILABLE:
+    json_schema = response_model.model_json_schema()
+    payload["format"] = json_schema  # Full schema, server-side validation
+</code></pre></div>
+<p><strong>Mechanism</strong>:
+1. Full JSON schema passed to Ollama API
+2. Server-side constrained sampling enforces schema compliance
+3. Response is expected to follow the schema (provider/model dependent)</p>
+<p><strong>Notes</strong>:
+- Native structured output depends on the Ollama server/build and the selected model.
+- For example coverage, see <code>tests/structured/</code>.</p>
+<p><strong>Supported Models</strong>: Many models, including:
+- Llama 3.1, 3.2, 3.3 family
+- Qwen 2.5, 3, 3-coder family
+- Gemma 2b, 7b, gemma2, gemma3
+- Mistral, Phi-3, Phi-4, GLM-4, DeepSeek-R1</p>
+<p><strong>Reference</strong>: <a href="https://github.com/ollama/ollama/blob/main/docs/api.md">Ollama API Documentation</a></p>
+<hr/>
+<h3 id="lmstudio">LMStudio</h3>
+<p><strong>Implementation</strong>: Native support via OpenAI-compatible <code>response_format</code> parameter</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore implementation (abstractcore/providers/lmstudio_provider.py:211-222)
+if response_model and PYDANTIC_AVAILABLE:
+    json_schema = response_model.model_json_schema()
+    payload["response_format"] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": response_model.__name__,
+            "schema": json_schema
+        }
+    }
+</code></pre></div>
+<p><strong>Mechanism</strong>:
+1. OpenAI-compatible format passed to LMStudio server
+2. Server-side schema enforcement via underlying inference engine
+3. Response is expected to follow the schema (server/model dependent)</p>
+<p><strong>Notes</strong>:
+- Behavior depends on the LMStudio server version and underlying model/runtime.
+- For example coverage, see <code>tests/structured/</code>.</p>
+<p><strong>Reference</strong>: <a href="https://lmstudio.ai/docs">LMStudio Documentation</a></p>
+<hr/>
+<h3 id="huggingface">HuggingFace</h3>
+<p><strong>Implementation</strong>: Dual strategy based on model type</p>
+<h4 id="gguf-models-native-support">GGUF Models (Native Support)</h4>
+<p><strong>Backend</strong>: llama-cpp-python with native structured output</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore implementation (abstractcore/providers/huggingface_provider.py:669-680)
+if response_model and PYDANTIC_AVAILABLE:
+    json_schema = response_model.model_json_schema()
+    generation_kwargs["response_format"] = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": response_model.__name__,
+            "schema": json_schema
+        }
+    }
+</code></pre></div>
+<p><strong>Notes</strong>:
+- GGUF structured output support depends on the llama-cpp-python backend and model.
+- For example coverage, see <code>tests/structured/</code>.</p>
+<h4 id="transformers-models-native-via-outlines">Transformers Models (Native via Outlines)</h4>
+<p><strong>Backend</strong>: Hugging Face Transformers library with Outlines</p>
+<p><strong>Implementation</strong>: Native support via Outlines constrained generation</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore implementation (abstractcore/providers/huggingface_provider.py:514-548)
+if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
+    # Cache Outlines model wrapper
+    if not hasattr(self, '_outlines_model'):
+        self._outlines_model = outlines.from_transformers(
+            self.model_instance,
+            self.tokenizer
+        )
 
-class Company(BaseModel):
+    # Generate with constrained decoding
+    generator = self._outlines_model(
+        input_text,
+        outlines.json_schema(response_model),
+        max_tokens=max_tokens
+    )
+
+    # Return validated instance
+    validated_obj = response_model.model_validate(generator)
+</code></pre></div>
+<p><strong>Mechanism</strong>:
+1. Outlines wraps transformers model and tokenizer
+2. JSON schema passed to constrained generator
+3. Server-side logit filtering ensures only valid tokens are sampled
+4. Schema compliance is enforced via constrained decoding (provider/model dependent)
+5. Automatic fallback to prompted approach if Outlines unavailable</p>
+<p><strong>Installation</strong>:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[huggingface]"  # Includes Outlines automatically
+</code></pre></div>
+<p><strong>Characteristics</strong>:
+- Schema compliance via constrained decoding (still validated client-side)
+- Zero or minimal validation retries when supported
+- Works with many transformers-compatible models
+- Automatic detection and activation when Outlines is installed
+- Graceful fallback to prompted approach if Outlines is missing</p>
+<p><strong>Fallback behavior</strong>:
+- If Outlines isn't available (or a backend doesn't support constrained decoding), AbstractCore falls back to prompted structured output with validation and retries.
+- Exact success rates and latency depend on provider/model/hardware/schema complexity.</p>
+<hr/>
+<h3 id="mlx-apple-silicon">MLX (Apple Silicon)</h3>
+<p><strong>Implementation</strong>: Native via Outlines</p>
+<p><strong>Backend</strong>: MLX with Outlines constrained generation</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore implementation (abstractcore/providers/mlx_provider.py:165-197)
+if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
+    # Cache Outlines MLX model wrapper
+    if not hasattr(self, '_outlines_model'):
+        self._outlines_model = outlines_models.mlxlm(self.model)
+
+    # Generate with constrained decoding
+    generator = self._outlines_model(
+        full_prompt,
+        outlines.json_schema(response_model),
+        max_tokens=max_tokens
+    )
+
+    # Return validated instance
+    validated_obj = response_model.model_validate(generator)
+</code></pre></div>
+<p><strong>Mechanism</strong>:
+1. Outlines MLX backend wraps mlx-lm model
+2. JSON schema converted to token constraints
+3. Constrained sampling on Apple Silicon hardware
+4. Server-side schema enforcement
+5. Automatic fallback to prompted approach if Outlines unavailable</p>
+<p><strong>Installation</strong>:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[mlx]"  # Includes Outlines automatically
+</code></pre></div>
+<p><strong>Models</strong>:
+- mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+- mlx-community/Meta-Llama-3.1-8B-Instruct-4bit
+- All MLX-compatible models</p>
+<p><strong>Characteristics</strong>:
+- Schema compliance via constrained decoding (still validated client-side)
+- Zero or minimal validation retries when supported
+- Optimized for Apple M-series processors
+- Automatic detection and activation when Outlines installed
+- Graceful fallback to prompted approach if Outlines missing</p>
+<p><strong>Performance notes</strong>:
+- Prompted structured output (validation + retry) is the default fallback and is often the simplest to run.
+- Constrained decoding can be slower or faster depending on backend/model/schema; benchmark on your hardware if it matters.</p>
+<hr/>
+<h2 id="usage-guide">Usage Guide</h2>
+<h3 id="basic-usage">Basic Usage</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from pydantic import BaseModel
+
+class ExtractedData(BaseModel):
     name: str
-    website: str
+    age: int
+    email: str
 
-llm = create_llm("ollama", model="qwen3:4b-instruct")
-company = llm.generate(
-    "Extract: ACME Corp, https://acme.example",
-    response_model=Company,
-    retry_strategy=FeedbackRetry(max_attempts=3),
-)</code></pre>
-                    </div>
-                </section>
+llm = create_llm("ollama", model="qwen3:4b")
+result = llm.generate(
+    "Extract: Alice Johnson, 28, alice@example.com",
+    response_model=ExtractedData,
+    temperature=0  # Recommended for deterministic output
+)
 
-                <section id="provider-notes" style="margin-top: 3rem;">
-                    <h2>Provider notes (native vs prompted)</h2>
-                    <p>AbstractCore selects a strategy automatically based on provider/model capabilities.</p>
+print(f"{result.name} ({result.age}): {result.email}")
+</code></pre></div>
+<h3 id="using-enums">Using Enums</h3>
+<p>Enums provide type-safe categorical values:</p>
+<div class="code-block"><pre><code class="language-python">from enum import Enum
+from pydantic import BaseModel
 
-                    <div style="overflow-x: auto; margin: 1.5rem 0;">
-                        <table style="width: 100%; border-collapse: collapse;">
-                            <thead>
-                                <tr style="background: var(--background-secondary);">
-                                    <th style="padding: 0.75rem; text-align: left; border: 1px solid var(--border-light);">Provider</th>
-                                    <th style="padding: 0.75rem; text-align: left; border: 1px solid var(--border-light);">Typical strategy</th>
-                                    <th style="padding: 0.75rem; text-align: left; border: 1px solid var(--border-light);">How</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">OpenAI</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Native</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Schema passed to API (<code>response_format</code>)</td>
-                                </tr>
-                                <tr style="background: var(--background-secondary);">
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Anthropic</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Native</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Schema enforced via tool-calling mechanism</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Ollama</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Native</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Schema passed via <code>format</code></td>
-                                </tr>
-                                <tr style="background: var(--background-secondary);">
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">LMStudio / OpenAI-compatible</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Native (when supported by backend)</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">OpenAI-style schema payload</td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">MLX / HuggingFace</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Prompted + retry</td>
-                                    <td style="padding: 0.75rem; border: 1px solid var(--border-light);">Schema prompt + validation feedback loop (or native when available)</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
+class Priority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
-                <section id="tools-hybrid" style="margin-top: 3rem;">
-                    <h2>Tools + structured output (hybrid)</h2>
-                    <p>If you pass both <code>tools=[...]</code> and <code>response_model=...</code>, AbstractCore can use a hybrid flow (tool use, then structured follow-up).</p>
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
-                        <p style="margin: 0; color: var(--text-secondary);">
-                            For complex agent workflows, keep tool execution host-owned (<code>execute_tools=false</code>, default) and validate schemas at the boundary.
-                        </p>
-                    </div>
-                </section>
+class Task(BaseModel):
+    title: str
+    priority: Priority
+    estimated_hours: float
 
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">response_model and retry_strategy parameters</p>
-                        </a>
-                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling System</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">How tool calls are surfaced and executed</p>
-                        </a>
-                        <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Copy/paste patterns (tools + structured output)</p>
-                        </a>
-                    </div>
-                </div>
+llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507")
+task = llm.generate(
+    "Create task: Fix authentication bug, critical priority, 8 hours estimated",
+    response_model=Task
+)
+
+assert isinstance(task.priority, Priority)
+print(f"Priority: {task.priority.value}")  # "critical"
+</code></pre></div>
+<p><strong>Notes</strong>: Enums are supported and exercised by tests; exact behavior depends on provider/model.</p>
+<h3 id="nested-objects">Nested Objects</h3>
+<div class="code-block"><pre><code class="language-python">from typing import List
+from pydantic import BaseModel
+
+class Address(BaseModel):
+    street: str
+    city: str
+    postal_code: str
+
+class Person(BaseModel):
+    name: str
+    email: str
+    address: Address
+
+llm = create_llm("openai", model="gpt-4o-mini")
+person = llm.generate(
+    """Extract: John Smith, john@example.com
+    Address: 123 Main St, Boston, MA 02101""",
+    response_model=Person
+)
+
+assert isinstance(person.address, Address)
+</code></pre></div>
+<h3 id="complex-hierarchies">Complex Hierarchies</h3>
+<p>Complex schemas with multiple nesting levels are supported:</p>
+<div class="code-block"><pre><code class="language-python">from enum import Enum
+from typing import List, Optional
+from pydantic import BaseModel
+
+class Department(str, Enum):
+    ENGINEERING = "engineering"
+    SALES = "sales"
+    MARKETING = "marketing"
+
+class EmployeeLevel(str, Enum):
+    JUNIOR = "junior"
+    MID = "mid"
+    SENIOR = "senior"
+
+class Skill(BaseModel):
+    name: str
+    proficiency: int  # 1-10 scale
+    years_experience: float
+
+class Employee(BaseModel):
+    name: str
+    email: str
+    department: Department
+    level: EmployeeLevel
+    skills: List[Skill]
+    manager_email: Optional[str] = None
+
+class Team(BaseModel):
+    name: str
+    department: Department
+    lead: Employee
+    members: List[Employee]
+
+class Organization(BaseModel):
+    company_name: str
+    founded_year: int
+    teams: List[Team]
+    total_employees: int
+
+llm = create_llm("anthropic", model="claude-haiku-4-5")
+org = llm.generate(
+    """Create organization: TechCorp, founded 2020
+    Team: Platform (engineering)
+    Lead: Sarah Chen (sarah@tech.com, senior, Python-9/10-5yrs, AWS-8/10-4yrs)
+    Member: Bob Lee (bob@tech.com, mid, JavaScript-7/10-3yrs, manager: sarah@tech.com)
+    Total employees: 2""",
+    response_model=Organization
+)
+</code></pre></div>
+<p><strong>Notes</strong>: Deeply nested schemas are supported; validate against your target provider/model and see <code>tests/structured/</code> for examples.</p>
+<h3 id="direct-handler-usage">Direct Handler Usage</h3>
+<p>For advanced use cases requiring custom retry configuration:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.structured import StructuredOutputHandler, FeedbackRetry
+
+# Configure custom retry strategy
+handler = StructuredOutputHandler(
+    retry_strategy=FeedbackRetry(max_attempts=5)
+)
+
+result = handler.generate_structured(
+    provider=llm,
+    prompt="Extract complex data from document...",
+    response_model=ComplexSchema,
+    temperature=0
+)
+</code></pre></div>
+<hr/>
+<h2 id="schema-design">Schema Design</h2>
+<h3 id="design-principles">Design Principles</h3>
+<p>Well-designed schemas improve validation success rates and reduce response times.</p>
+<h4 id="1-clear-field-naming">1. Clear Field Naming</h4>
+<p>Use descriptive, unambiguous field names:</p>
+<div class="code-block"><pre><code class="language-python"># Recommended
+class Employee(BaseModel):
+    employee_id: str
+    hire_date: str
+    department: str
+    annual_salary: float
+
+# Avoid
+class Employee(BaseModel):
+    id: str  # Ambiguous
+    date: str  # What date?
+    dept: str  # Abbreviation unclear
+    salary: float  # Currency? Period?
+</code></pre></div>
+<h4 id="2-leverage-enums-for-categorical-data">2. Leverage Enums for Categorical Data</h4>
+<p>Enums provide validation and type safety:</p>
+<div class="code-block"><pre><code class="language-python"># Recommended
+class Status(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    PENDING = "pending"
+
+class User(BaseModel):
+    status: Status  # Only valid enum values accepted
+
+# Avoid
+class User(BaseModel):
+    status: str  # Any string accepted, no validation
+</code></pre></div>
+<h4 id="3-use-optional-fields-appropriately">3. Use Optional Fields Appropriately</h4>
+<p>Distinguish required from optional fields:</p>
+<div class="code-block"><pre><code class="language-python">from typing import Optional, List
+
+class Task(BaseModel):
+    # Required fields
+    title: str
+    created_at: str
+
+    # Optional with defaults
+    description: str = ""
+    tags: List[str] = []
+
+    # Truly optional (may be None)
+    assigned_to: Optional[str] = None
+    due_date: Optional[str] = None
+</code></pre></div>
+<h4 id="4-logical-hierarchy">4. Logical Hierarchy</h4>
+<p>Group related fields into nested objects:</p>
+<div class="code-block"><pre><code class="language-python"># Recommended
+class ContactInfo(BaseModel):
+    email: str
+    phone: str
+    address: str
+
+class Person(BaseModel):
+    name: str
+    contact: ContactInfo  # Logical grouping
+
+# Avoid flat structure
+class Person(BaseModel):
+    name: str
+    email: str
+    phone: str
+    address: str
+</code></pre></div>
+<h3 id="complexity-guidelines">Complexity Guidelines</h3>
+<p>Schema complexity affects latency and cost; keep schemas as small as practical.</p>
+<h4 id="simple-schemas-10-fields-1-level">Simple Schemas (&lt; 10 fields, 1 level)</h4>
+<p><strong>Example</strong>:</p>
+<div class="code-block"><pre><code class="language-python">class PersonInfo(BaseModel):
+    name: str
+    age: int
+    email: str
+    occupation: str
+</code></pre></div>
+<p><strong>Recommended for</strong>: User profiles, data extraction, form processing</p>
+<h4 id="medium-schemas-10-30-fields-1-2-levels">Medium Schemas (10-30 fields, 1-2 levels)</h4>
+<p><strong>Example</strong>:</p>
+<div class="code-block"><pre><code class="language-python">class Project(BaseModel):
+    name: str
+    description: str
+    start_date: str
+    tasks: List[Task]  # Nested objects
+    total_hours: float
+</code></pre></div>
+<p><strong>Recommended for</strong>: Project management, task tracking, structured data extraction</p>
+<h4 id="complex-schemas-30-fields-3-levels">Complex Schemas (30+ fields, 3+ levels)</h4>
+<p><strong>Example</strong>:</p>
+<div class="code-block"><pre><code class="language-python">class Organization(BaseModel):
+    company_name: str
+    teams: List[Team]  # Level 2
+    # Team contains:
+    #   lead: Employee  # Level 3
+    #   members: List[Employee]  # Level 3
+    #     # Employee contains:
+    #     #   skills: List[Skill]  # Level 4
+</code></pre></div>
+<p><strong>Recommended for</strong>: Organizational hierarchies, knowledge graphs, complex data models</p>
+<h3 id="anti-patterns">Anti-Patterns</h3>
+<p>Avoid these patterns that can degrade performance or reliability:</p>
+<h4 id="1-excessive-nesting-depth-4-levels">1. Excessive Nesting Depth (&gt;4 levels)</h4>
+<div class="code-block"><pre><code class="language-python"># Avoid
+class Level1(BaseModel):
+    level2: Level2
+    # Level2 -&gt; Level3 -&gt; Level4 -&gt; Level5 (too deep)
+</code></pre></div>
+<p><strong>Impact</strong>: Increased token usage, longer response times</p>
+<h4 id="2-ambiguous-enum-values">2. Ambiguous Enum Values</h4>
+<div class="code-block"><pre><code class="language-python"># Avoid
+class Status(str, Enum):
+    ONE = "1"
+    TWO = "2"
+    THREE = "3"
+
+# Recommended
+class Status(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+</code></pre></div>
+<h4 id="3-overly-long-field-names">3. Overly Long Field Names</h4>
+<div class="code-block"><pre><code class="language-python"># Avoid
+class Data(BaseModel):
+    very_long_and_descriptive_field_name_that_uses_many_tokens: str
+
+# Recommended
+class Data(BaseModel):
+    user_email: str  # Clear but concise
+</code></pre></div>
+<p><strong>Impact</strong>: Increases token count, affecting cost and context window</p>
+<hr/>
+<h2 id="performance-characteristics">Performance Characteristics</h2>
+<p>Structured output performance is highly dependent on:
+- Provider/backend strategy (native constrained decoding vs prompted validation/retry)
+- Schema complexity (field count + nesting depth)
+- Model choice, server configuration, and hardware
+- Sampling settings (use <code>temperature=0</code> when you care about schema fidelity)</p>
+<p>If performance matters, benchmark on your target provider/model/hardware.
+Historical benchmark notes (non-authoritative) may exist under <code>docs/reports/</code>.</p>
+<h3 id="temperature-settings">Temperature Settings</h3>
+<p><strong>Recommendation</strong>: Use <code>temperature=0</code> for structured outputs</p>
+<p><strong>Rationale</strong>:
+- Deterministic responses
+- Consistent schema compliance
+- Reduced sampling overhead</p>
+<p><strong>When to increase temperature</strong>:
+- Creative content generation within schema constraints
+- Diverse response generation for the same prompt
+- Exploratory data generation</p>
+<hr/>
+<h2 id="error-handling">Error Handling</h2>
+<h3 id="error-categories">Error Categories</h3>
+<h4 id="1-infrastructure-errors-retriable">1. Infrastructure Errors (Retriable)</h4>
+<p>Network failures, timeouts, server unavailability—retry with exponential backoff:</p>
+<div class="code-block"><pre><code class="language-python">import time
+from requests.exceptions import ConnectionError, Timeout
+
+def generate_with_retry(llm, prompt, response_model, max_retries=3):
+    """Retry infrastructure errors with exponential backoff"""
+    for attempt in range(max_retries):
+        try:
+            return llm.generate(
+                prompt,
+                response_model=response_model,
+                temperature=0
+            )
+        except (ConnectionError, Timeout) as e:
+            if attempt &lt; max_retries - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                time.sleep(wait_time)
+                continue
+            raise
+
+result = generate_with_retry(llm, "Extract data...", DataModel)
+</code></pre></div>
+<p><strong>Retriable errors</strong>:
+- <code>ConnectionError</code>: Network connectivity issues
+- <code>TimeoutError</code>: Request timeout
+- HTTP 5xx: Server errors
+- Token limit exceeded (retry with simplified schema or chunking)</p>
+<h4 id="2-validation-errors-non-retriable">2. Validation Errors (Non-Retriable)</h4>
+<p>Schema validation failures indicate schema or prompt issues—do not retry:</p>
+<div class="code-block"><pre><code class="language-python">from pydantic import ValidationError
+
+try:
+    result = llm.generate(
+        "Extract user data...",
+        response_model=UserModel
+    )
+except ValidationError as e:
+    # Log validation errors
+    print("Schema validation failed:")
+    for error in e.errors():
+        field = " -&gt; ".join(str(loc) for loc in error['loc'])
+        print(f"  {field}: {error['msg']}")
+
+    # Fix schema or prompt—do not retry
+    raise
+</code></pre></div>
+<p><strong>Common validation errors</strong>:
+- Missing required fields: Schema too strict or prompt unclear
+- Type mismatches: Field type incompatible with LLM output
+- Enum validation failures: LLM returned invalid enum value</p>
+<p><strong>Resolution</strong>: Revise schema or improve prompt clarity</p>
+<h4 id="3-token-limit-errors">3. Token Limit Errors</h4>
+<p>Context window exceeded—simplify schema or split request:</p>
+<div class="code-block"><pre><code class="language-python">try:
+    result = llm.generate(prompt, response_model=ComplexModel)
+except Exception as e:
+    if "token" in str(e).lower() or "context" in str(e).lower():
+        print("Token limit exceeded. Options:")
+        print("1. Simplify schema (reduce fields or nesting)")
+        print("2. Split into multiple requests")
+        print("3. Use model with larger context window")
+        raise
+</code></pre></div>
+<h3 id="retry-strategy-details">Retry Strategy Details</h3>
+<p>The default <code>FeedbackRetry</code> strategy:</p>
+<ol>
+<li><strong>Maximum attempts</strong>: 3 (configurable)</li>
+<li><strong>Retry condition</strong>: Only <code>ValidationError</code> exceptions</li>
+<li><strong>Feedback mechanism</strong>: Provides detailed error descriptions to LLM</li>
+</ol>
+<p><strong>Example error feedback</strong>:</p>
+<div class="code-block"><pre><code>Your previous response had validation errors:
+• Missing required field: 'department'
+• Field 'employee_level': Expected one of: junior, mid, senior
+• Field 'age': Expected integer, received string
+</code></pre></div>
+<p>The LLM uses this feedback to self-correct on subsequent attempts.</p>
+<p><strong>Configuration</strong>:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.structured import StructuredOutputHandler, FeedbackRetry
+
+handler = StructuredOutputHandler(
+    retry_strategy=FeedbackRetry(max_attempts=5)
+)
+</code></pre></div>
+<hr/>
+<h2 id="production-deployment">Production Deployment</h2>
+<h3 id="pre-deployment-checklist">Pre-Deployment Checklist</h3>
+<p>Before deploying structured outputs to production:</p>
+<ul>
+<li>[ ] Schema validated locally with Pydantic: <code>Model.model_validate(test_data)</code></li>
+<li>[ ] Success rate measured with target model (target: &gt;95%)</li>
+<li>[ ] Response time benchmarked under expected load</li>
+<li>[ ] Error handling implemented for infrastructure failures</li>
+<li>[ ] Logging configured for validation errors and retries</li>
+<li>[ ] Monitoring configured for success rates and latencies</li>
+<li>[ ] Fallback strategy defined for structured output failures</li>
+<li>[ ] Token limits verified: <code>len(prompt) + len(schema) + len(response) &lt; context_window</code></li>
+</ul>
+<h3 id="monitoring-metrics">Monitoring Metrics</h3>
+<p>Track these metrics in production:</p>
+<p><strong>Success Metrics</strong>:
+- Validation success rate (target: &gt;95%)
+- First-attempt success rate
+- Average retry count</p>
+<p><strong>Performance Metrics</strong>:
+- p50, p95, p99 response times
+- Response time by schema complexity
+- Token usage statistics</p>
+<p><strong>Error Metrics</strong>:
+- Validation error rate by field
+- Infrastructure error rate
+- Token limit exceeded rate</p>
+<h3 id="configuration-best-practices">Configuration Best Practices</h3>
+<p><strong>Temperature</strong>: Set to 0 for deterministic structured outputs</p>
+<div class="code-block"><pre><code class="language-python">llm.generate(prompt, response_model=Model, temperature=0)
+</code></pre></div>
+<p><strong>Timeout</strong>: Configure appropriate timeouts based on schema complexity</p>
+<div class="code-block"><pre><code class="language-python"># Simple schemas: 30s
+# Medium schemas: 60s
+# Complex schemas: 120s
+</code></pre></div>
+<p><strong>Provider Selection</strong>:
+- Development: Use local providers (Ollama, LMStudio) for cost efficiency
+- Production: Select based on performance requirements and budget</p>
+<h3 id="schema-versioning">Schema Versioning</h3>
+<p>Maintain schema version compatibility:</p>
+<div class="code-block"><pre><code class="language-python">from pydantic import BaseModel, Field
+
+class UserV1(BaseModel):
+    name: str
+    email: str
+
+class UserV2(BaseModel):
+    name: str
+    email: str
+    department: str = Field(default="unassigned")  # Backward compatible
+</code></pre></div>
+<p>Use optional fields with defaults for backward-compatible schema evolution.</p>
+<hr/>
+<h2 id="api-reference">API Reference</h2>
+<h3 id="core-function">Core Function</h3>
+<div class="code-block"><pre><code class="language-python">llm.generate(
+    prompt: str,
+    response_model: Type[BaseModel],
+    temperature: float = 0.0,
+    **kwargs
+) -&gt; BaseModel
+</code></pre></div>
+<p><strong>Parameters</strong>:
+- <code>prompt</code> (str): Input prompt describing extraction/generation task
+- <code>response_model</code> (Type[BaseModel]): Pydantic model class defining output schema
+- <code>temperature</code> (float): Sampling temperature (0.0 = deterministic, 1.0 = creative)
+- <code>**kwargs</code>: Additional provider-specific parameters</p>
+<p><strong>Returns</strong>:
+- Instance of <code>response_model</code>, validated and type-safe</p>
+<p><strong>Raises</strong>:
+- <code>ValidationError</code>: Schema validation failed after all retry attempts
+- <code>ConnectionError</code>: Network/infrastructure error
+- <code>TimeoutError</code>: Request timeout</p>
+<p><strong>Example</strong>:</p>
+<div class="code-block"><pre><code class="language-python">person = llm.generate(
+    "Extract: John Doe, age 35",
+    response_model=Person,
+    temperature=0
+)
+</code></pre></div>
+<h3 id="structuredoutputhandler">StructuredOutputHandler</h3>
+<p>Advanced handler for custom retry strategies:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.structured import StructuredOutputHandler
+
+handler = StructuredOutputHandler(retry_strategy=None)
+</code></pre></div>
+<p><strong>Methods</strong>:</p>
+<div class="code-block"><pre><code class="language-python">handler.generate_structured(
+    provider: LLMProvider,
+    prompt: str,
+    response_model: Type[BaseModel],
+    **kwargs
+) -&gt; BaseModel
+</code></pre></div>
+<p>Generates structured output with automatic strategy selection (native or prompted).</p>
+<h3 id="retry-strategies">Retry Strategies</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.structured import FeedbackRetry
+
+retry = FeedbackRetry(max_attempts=3)
+</code></pre></div>
+<p><strong>Parameters</strong>:
+- <code>max_attempts</code> (int): Maximum retry attempts including initial attempt</p>
+<p><strong>Methods</strong>:
+- <code>should_retry(attempt, error)</code>: Returns True if retry should occur
+- <code>prepare_retry_prompt(prompt, error, attempt)</code>: Creates retry prompt with validation feedback</p>
+<hr/>
+<h2 id="related-documentation">Related Documentation</h2>
+<ul>
+<li><a href="getting-started.html#structured-output">Getting Started</a> - Quick introduction</li>
+<li><a href="api-reference.html">API Reference</a> - Complete API documentation</li>
+<li><a href="examples.html#structured-output-examples">Examples</a> - Real-world usage patterns</li>
+<li><a href="https://github.com/lpalbou/AbstractCore/blob/main/structured-response-keyword.md">Response Model Parameter Analysis</a> - Why <code>response_model</code></li>
+<li><a href="https://github.com/lpalbou/AbstractCore/blob/main/improved-structured-response.md">Native Implementation Test Results</a> - Detailed test data</li>
+</ul>
+<hr/>
+<h2 id="references">References</h2>
+<ul>
+<li><a href="https://platform.openai.com/docs/guides/structured-outputs">OpenAI Structured Outputs</a></li>
+<li><a href="https://docs.anthropic.com/">Anthropic API Documentation</a></li>
+<li><a href="https://github.com/ollama/ollama/blob/main/docs/api.md">Ollama API Documentation</a></li>
+<li><a href="https://docs.pydantic.dev/">Pydantic Documentation</a></li>
+</ul>
+<hr/>
+<hr/>
+<h2 id="testing-and-validation">Testing and Validation</h2>
+<p>Structured output behavior is exercised by automated tests under <code>tests/structured/</code>.</p>
+<h3 id="running-tests">Running tests</h3>
+<p>From this repository:</p>
+<div class="code-block"><pre><code class="language-bash">pip install -e ".[test]"
+pytest tests/structured -q
+</code></pre></div>
+<p>Some provider-specific tests require additional extras:</p>
+<ul>
+<li>HuggingFace / Outlines: <code>pip install -e ".[huggingface]"</code></li>
+<li>MLX: <code>pip install -e ".[mlx]"</code> (macOS + Apple Silicon only)</li>
+</ul>
+<p>If you're installing from PyPI and just want the test dependencies:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[test]"
+pytest -q
+</code></pre></div>
+<h3 id="notes">Notes</h3>
+<ul>
+<li>Performance and success rates vary widely by provider/model/schema complexity and are not guaranteed.</li>
+<li>If performance matters, benchmark on your target hardware/provider setup.</li>
+</ul>
             </div>
         </div>
     </main>
@@ -191,4 +855,3 @@ company = llm.generate(
     <script src="../assets/js/main.js"></script>
 </body>
 </html>
-

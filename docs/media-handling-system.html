@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Media Handling System - AbstractCore</title>
-    <meta name="description" content="Universal media handling across all LLM providers - attach images, PDFs, Office docs, and more with simple syntax.">
+    <meta name="description" content="AbstractCore provides a production-ready unified media handling system that enables seamless file attachment and processing across all LLM providers and models. The system…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -16,66 +16,53 @@
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Media Handling System</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Attach any file type to your LLM requests. One simple API works across all providers with intelligent processing and graceful fallback.
-                </p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore provides a production-ready unified media handling system that enables seamless file attachment and processing across all LLM providers and models. The system automatically processes images, documents, and other media files using the same simple API, with intelligent provider-specific formatting and graceful fallback handling.</p>
             </div>
 
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#key-benefits" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Key Benefits</a>
+<a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#how-it-works-behind-the-scenes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How It Works Behind the Scenes</a>
+<a href="#supported-file-types" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Supported File Types</a>
+<a href="#provider-compatibility" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider Compatibility</a>
+<a href="#usage-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Usage Examples</a>
+<a href="#advanced-features" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Advanced Features</a>
+<a href="#recommended-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Recommended Practices</a>
+<a href="#model-specific-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Model-Specific Examples</a>
+<a href="#installation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Installation</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a>
+<a href="#api-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">API Reference</a>
+<a href="#next-steps" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Next Steps</a></div>
+
             <div class="doc-content">
-                <h2>Overview</h2>
-                <p>
-                    AbstractCore provides a production-ready unified media handling system that enables seamless file attachment and processing across all LLM providers. The system automatically processes images, documents, and other media files (including audio/video inputs via explicit policies) using the same simple API, with intelligent provider-specific formatting and graceful fallback handling.
-                </p>
 
-                <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">Key Features</h3>
-                    <ul style="margin: 0; padding-left: 1.5rem;">
-                        <li><strong>Universal API</strong> - Same <code>media=[]</code> parameter works across all providers</li>
-                        <li><strong>CLI Integration</strong> - Simple <code>@filename</code> syntax for instant file attachment</li>
-                        <li><strong>Intelligent Processing</strong> - Automatic file type detection with specialized processors</li>
-                        <li><strong>Provider Adaptation</strong> - Automatic formatting for each provider's API requirements</li>
-                        <li><strong>Robust Fallback</strong> - Graceful degradation when advanced processing fails</li>
-                        <li><strong>Cross-Format Support</strong> - Images, PDFs, Office docs, audio/video, CSV/TSV all work (policy-driven for audio/video)</li>
-                    </ul>
-                </div>
 
-                <h2>Quick Start</h2>
-
-                <h3>Python API</h3>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import create_llm
+<h2 id="key-benefits">Key Benefits</h2>
+<ul>
+<li><strong>Universal API</strong>: Same <code>media=[]</code> parameter works across all providers (OpenAI, Anthropic, Ollama, LMStudio, etc.)</li>
+<li><strong>Intelligent Processing</strong>: Automatic file type detection with specialized processors for each format</li>
+<li><strong>Provider Adaptation</strong>: Automatic formatting for each provider's API requirements (JSON for OpenAI, XML for Anthropic, etc.)</li>
+<li><strong>Robust Fallback</strong>: Graceful degradation when advanced processing fails, always provides meaningful results</li>
+<li><strong>CLI Integration</strong>: Simple <code>@filename</code> syntax in CLI for instant file attachment</li>
+<li><strong>Production Quality</strong>: Comprehensive error handling, logging, and performance optimization</li>
+<li><strong>Cross-Format Support</strong>: Images, PDFs, Office documents, CSV/TSV, text files all work seamlessly</li>
+</ul>
+<h2 id="quick-start">Quick Start</h2>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Works with any provider - just change the provider name
 llm = create_llm("openai", model="gpt-4o", api_key="your-key")
@@ -83,99 +70,58 @@ response = llm.generate(
     "What's in this image and document?",
     media=["photo.jpg", "report.pdf"]
 )
+print(response.content)
 
-# Same code works with any provider
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+# Same code works with Anthropic
+llm = create_llm("anthropic", model="claude-3.5-sonnet", api_key="your-key")
 response = llm.generate(
     "Analyze these materials",
-    media=["chart.png", "data.csv", "presentation.pptx"]
-)</code></pre>
-                </div>
+    media=["chart.png", "data.csv", "presentation.ppt"]
+)
 
-                <h3>CLI Integration</h3>
-                <p>Use the simple <code>@filename</code> syntax to attach any file type:</p>
+# Or with local models
+llm = create_llm("ollama", model="qwen2.5vl:7b")
+response = llm.generate(
+    "Describe this image",
+    media=["screenshot.png"]
+)
+</code></pre></div>
+<h2 id="how-it-works-behind-the-scenes">How It Works Behind the Scenes</h2>
+<p>AbstractCore's media system uses a sophisticated multi-layer architecture that seamlessly processes any file type and formats it correctly for each LLM provider:</p>
+<h3 id="1-file-attachment-processing">1. File Attachment Processing</h3>
+<p><strong>CLI Integration (<code>@filename</code> syntax):</strong></p>
+<div class="code-block"><pre><code class="language-python"># User types: "Analyze this @report.pdf and @chart.png"
+# MessagePreprocessor extracts files and cleans text:
+clean_text = "Analyze this  and"  # File references removed
+media_files = ["report.pdf", "chart.png"]  # Extracted file paths
+</code></pre></div>
+<p><strong>Python API:</strong></p>
+<div class="code-block"><pre><code class="language-python"># Direct media parameter usage
+llm.generate("Analyze these files", media=["report.pdf", "chart.png"])
+</code></pre></div>
+<h3 id="2-intelligent-file-processing-pipeline">2. Intelligent File Processing Pipeline</h3>
+<p><strong>AutoMediaHandler Coordination:</strong></p>
+<div class="code-block"><pre><code class="language-python"># 1. Detect file types automatically
+MediaType.IMAGE     -&gt; ImageProcessor (PIL-based)
+MediaType.DOCUMENT  -&gt; PDFProcessor (PyMuPDF4LLM) or OfficeProcessor (Unstructured)
+MediaType.TEXT      -&gt; TextProcessor (pandas for CSV/TSV)
 
-                <div class="code-block">
-                    <pre><code class="language-bash"># PDF Analysis
-python -m abstractcore.utils.cli --prompt "What is this document about? @report.pdf"
-
-# Office Documents
-python -m abstractcore.utils.cli --prompt "Summarize this presentation @slides.pptx"
-python -m abstractcore.utils.cli --prompt "What data is in @spreadsheet.xlsx"
-python -m abstractcore.utils.cli --prompt "Analyze this document @contract.docx"
-
-# Data Files
-python -m abstractcore.utils.cli --prompt "What patterns are in @sales_data.csv"
-
-# Images
-python -m abstractcore.utils.cli --prompt "What's in this image? @screenshot.png"
-
-# Mixed Media
-python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and explain trends"</code></pre>
-                </div>
-
-                <h2>Supported File Types</h2>
-
-                <h3>Images (Vision Models)</h3>
-                <ul>
-                    <li><strong>Formats:</strong> PNG, JPEG, GIF, WEBP, BMP, TIFF</li>
-                    <li><strong>Features:</strong> Automatic optimization, resizing, format conversion, EXIF handling</li>
-                    <li><strong>Max Size:</strong> Automatically resized for optimal model performance</li>
-                </ul>
-
-                <h3>Documents</h3>
-                <ul>
-                    <li><strong>PDF:</strong> Full text extraction with PyMuPDF4LLM, preserves formatting and structure</li>
-                    <li><strong>Word (DOCX):</strong> Full document analysis with structure preservation</li>
-                    <li><strong>Excel (XLSX):</strong> Sheet-by-sheet extraction with data analysis</li>
-                    <li><strong>PowerPoint (PPTX):</strong> Slide content extraction with comprehensive analysis</li>
-                </ul>
-
-                <h3>Data Files</h3>
-                <ul>
-                    <li><strong>Text Files:</strong> TXT, MD with intelligent parsing</li>
-                    <li><strong>Data:</strong> CSV, TSV with data analysis</li>
-                    <li><strong>Structured:</strong> JSON with intelligent parsing</li>
-                </ul>
-
-                <h3>Audio (policy-driven)</h3>
-                <ul>
-                    <li><strong>Formats:</strong> MP3, WAV, M4A, OGG, FLAC, AAC</li>
-                    <li><strong>Default policy:</strong> <code>audio_policy="native_only"</code> (fails unless the selected model supports native audio input)</li>
-                    <li><strong>Speech-to-text fallback:</strong> <code>audio_policy="speech_to_text"</code> injects a transcript (typically requires <code>pip install abstractvoice</code>)</li>
-                    <li><strong>Auto:</strong> <code>audio_policy="auto"</code> uses native audio when supported, otherwise STT when configured, otherwise errors</li>
-                    <li><strong>Reserved:</strong> <code>audio_policy="caption"</code> is not configured in v0 (must error)</li>
-                    <li><strong>Transparency:</strong> <code>response.metadata.media_enrichment[]</code> records what was injected and which backend was used</li>
-                    <li><strong>See:</strong> <a href="audio.html">Audio &amp; Voice (STT/TTS)</a></li>
-                </ul>
-
-                <h3>Video (policy-driven)</h3>
-                <ul>
-                    <li><strong>Formats:</strong> MP4, MOV, MKV, WEBM, AVI, WMV</li>
-                    <li><strong>Default policy:</strong> <code>video_policy="auto"</code> (native when supported; otherwise samples frames and routes them through vision/image handling)</li>
-                    <li><strong>Frames fallback:</strong> <code>video_policy="frames_caption"</code> always samples frames (portable across providers)</li>
-                    <li><strong>Strict:</strong> <code>video_policy="native_only"</code> fails unless the selected model supports native video input</li>
-                    <li><strong>Budgets:</strong> frame count + downscale are explicit and logged (<code>video_max_frames</code>, <code>video_max_frame_side</code>)</li>
-                    <li><strong>Note:</strong> frame extraction may require <code>ffmpeg</code>/<code>ffprobe</code> on your PATH</li>
-                </ul>
-
-                <h2>How It Works</h2>
-
-                <p>The media system uses a sophisticated multi-layer architecture:</p>
-
-                <ol>
-                    <li><strong>File Attachment Processing</strong> - CLI <code>@filename</code> syntax and Python <code>media=[]</code> parameter</li>
-                    <li><strong>Intelligent Processing</strong> - AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text, Audio, Video)</li>
-                    <li><strong>Provider Formatting</strong> - Same content formatted differently for each provider's API</li>
-                    <li><strong>Graceful Fallback</strong> - Multi-level fallback ensures users always get meaningful results</li>
-                </ol>
-
-                <h3>Provider-Specific Formatting Example</h3>
-                <p>AbstractCore automatically formats the same content differently for each provider:</p>
-
-                <div class="code-block">
-                    <pre><code class="language-python"># OpenAI Format (JSON)
-{
+# 2. Process each file with specialized processor
+pdf_content = PDFProcessor.process("report.pdf")      # → Markdown text
+image_content = ImageProcessor.process("chart.png")   # → Base64 + metadata
+</code></pre></div>
+<p><strong>Graceful Fallback System:</strong></p>
+<div class="code-block"><pre><code class="language-python">try:
+    # Advanced processing (PyMuPDF4LLM, Unstructured)
+    content = advanced_processor.process(file)
+except Exception:
+    # Always falls back to basic processing
+    content = basic_text_extraction(file)  # Never fails
+</code></pre></div>
+<h3 id="3-provider-specific-formatting">3. Provider-Specific Formatting</h3>
+<p><strong>The same processed content gets formatted differently for each provider:</strong></p>
+<p><strong>OpenAI Format (JSON):</strong></p>
+<div class="code-block"><pre><code class="language-json">{
   "role": "user",
   "content": [
     {"type": "text", "text": "Analyze these files"},
@@ -183,256 +129,624 @@ python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and 
     {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
   ]
 }
-
-# Anthropic Format (Messages API)
-{
+</code></pre></div>
+<p><strong>Anthropic Format (Messages API):</strong></p>
+<div class="code-block"><pre><code class="language-json">{
   "role": "user",
   "content": [
     {"type": "text", "text": "Analyze these files"},
     {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "iVBORw0..."}},
     {"type": "text", "text": "PDF Content: # Report Title\n\nExecutive Summary..."}
   ]
-}</code></pre>
-                </div>
+}
+</code></pre></div>
+<p><strong>Local Models (Text Embedding):</strong></p>
+<div class="code-block"><pre><code class="language-python"># For local models without native multimodal support
+combined_prompt = """
+Analyze these files:
 
-                <h3>Text-only models and vision fallback</h3>
-                <p>
-                    For vision-capable models (for example <code>gpt-4o</code>), AbstractCore sends native multimodal message blocks.
-                    For text-only models, AbstractCore can optionally run a configured vision backend to produce short grounded observations and inject them as text:
-                </p>
-                <ul>
-                    <li><strong>Vision fallback (recommended):</strong> route images through your configured vision model and inject a short description</li>
-                    <li><strong>No fallback configured:</strong> the model will receive a minimal placeholder marker, and <code>media_enrichment</code> will record that enrichment was skipped</li>
-                </ul>
-                <p>
-                    In both cases, you can inspect <code>response.metadata.media_enrichment</code> for transparency about what was injected or skipped.
-                </p>
+Image Analysis: [A business chart showing quarterly revenue trends...]
+PDF Content: # Report Title
 
-                <h3>Media with conversation history (<code>messages</code>)</h3>
-                <p>
-                    If you're supplying OpenAI-style <code>messages=[...]</code>, keep <code>prompt=""</code> to avoid duplicating the final user turn.
-                    AbstractCore will attach media to the most recent user message.
-                </p>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import create_llm
+Executive Summary...
+"""
+</code></pre></div>
+<h3 id="4-cross-provider-workflow">4. Cross-Provider Workflow</h3>
+<div class="mermaid">graph TD
+    A[User Input with @files] --&gt; B[MessagePreprocessor]
+    B --&gt; C[Extract Files + Clean Text]
+    C --&gt; D[AutoMediaHandler]
+    D --&gt; E{File Type?}
+    E --&gt;|Image| F[ImageProcessor]
+    E --&gt;|PDF| G[PDFProcessor]
+    E --&gt;|Office| H[OfficeProcessor]
+    E --&gt;|Text| I[TextProcessor]
+    F --&gt; J[MediaContent Objects]
+    G --&gt; J
+    H --&gt; J
+    I --&gt; J
+    J --&gt; K{Provider Type?}
+    K --&gt;|OpenAI| L[OpenAIMediaHandler]
+    K --&gt;|Anthropic| M[AnthropicMediaHandler]
+    K --&gt;|Local| N[LocalMediaHandler]
+    L --&gt; O[Provider-Specific API Format]
+    M --&gt; O
+    N --&gt; O
+    O --&gt; P[LLM API Call]
+    P --&gt; Q[Response to User]
+</div>
+<h3 id="5-error-handling-resilience">5. Error Handling &amp; Resilience</h3>
+<p><strong>Multi-Level Fallback Strategy:</strong>
+1. <strong>Advanced Processing</strong>: Try specialized libraries (PyMuPDF4LLM, Unstructured)
+2. <strong>Basic Processing</strong>: Fall back to simple text extraction
+3. <strong>Metadata Only</strong>: If all else fails, provide file metadata
+4. <strong>Graceful Degradation</strong>: Best-effort results with clear errors (no silent semantic changes)</p>
+<p><strong>Example of Robust Error Handling:</strong></p>
+<div class="code-block"><pre><code class="language-python">try:
+    # Try advanced PDF processing with PyMuPDF4LLM
+    content = pdf_processor.extract_with_formatting(file)
+except PDFProcessingError:
+    try:
+        # Fall back to basic text extraction
+        content = pdf_processor.extract_basic_text(file)
+    except Exception:
+        # Ultimate fallback - provide metadata
+        content = f"PDF file: {file.name} ({file.size} bytes)"
 
-llm = create_llm("openai", model="gpt-4o-mini")
+# Result: Callers get a best-effort output or a clear error message (no silent truncation).
+</code></pre></div>
+<h2 id="supported-file-types">Supported File Types</h2>
+<h3 id="images-vision-models">Images (Vision Models)</h3>
+<ul>
+<li><strong>Formats</strong>: PNG, JPEG, GIF, WEBP, BMP, TIFF</li>
+<li><strong>Automatic</strong>: Optimization, resizing, format conversion</li>
+<li><strong>Features</strong>: EXIF handling, quality optimization for vision models</li>
+</ul>
+<h3 id="documents">Documents</h3>
+<ul>
+<li><strong>Text Files</strong>: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis</li>
+<li><strong>PDF</strong>: Text extraction with PyMuPDF4LLM (when installed), with best-effort structure preservation</li>
+<li><strong>Office</strong>: DOCX, XLSX, PPTX via Unstructured (when installed), with best-effort extraction</li>
+<li><strong>Word</strong>: section/paragraph extraction</li>
+<li><strong>Excel</strong>: sheet-by-sheet extraction</li>
+<li><strong>PowerPoint</strong>: slide-by-slide extraction</li>
+</ul>
+<h3 id="audio-policy-driven-optional-stt-fallback">Audio (policy-driven; optional STT fallback)</h3>
+<ul>
+<li><strong>Formats</strong>: common <code>audio/*</code> types (WAV, MP3, M4A, …) as attachments via <code>media=[...]</code></li>
+<li><strong>Default behavior</strong>: <code>audio_policy="native_only"</code> (fails loudly unless the model supports native audio input)</li>
+<li><strong>Speech-to-text</strong>: <code>audio_policy="speech_to_text"</code> runs STT via the capability plugin layer (<code>llm.audio.transcribe(...)</code>; typically install <code>abstractvoice</code>) and injects a transcript into the main request</li>
+<li><strong>Auto</strong>: <code>audio_policy="auto"</code> uses native audio when supported, otherwise STT when configured, otherwise errors</li>
+<li><strong>Reserved</strong>: <code>audio_policy="caption"</code> is not configured in v0 (must error; non-speech audio analysis needs an explicit capability)</li>
+</ul>
+<p>Transparency:
+- When STT fallback is used, <code>GenerateResponse.metadata.media_enrichment[]</code> records what was injected and which backend was used.</p>
+<p>Requirements:
+- <strong>Native audio</strong> requires an audio-capable model.
+- <strong>STT fallback</strong> requires installing an STT capability plugin (typically <code>pip install abstractvoice</code>) and using <code>audio_policy="auto"</code>/<code>"speech_to_text"</code> (or setting a default via <code>abstractcore --set-audio-strategy ...</code>).</p>
+<h3 id="video-policy-driven-native-or-frames-fallback">Video (policy-driven; native or frames fallback)</h3>
+<ul>
+<li><strong>Formats</strong>: common <code>video/*</code> types as attachments via <code>media=[...]</code></li>
+<li><strong>Default behavior</strong>: <code>video_policy="auto"</code> (native video when supported; otherwise sample frames and route through the vision pipeline)</li>
+<li><strong>Budgets</strong>: frame count and downscale are explicit and logged (see <code>abstractcore/providers/base.py</code>)</li>
+</ul>
+<p>Requirements:
+- Frame sampling fallback requires <strong><code>ffmpeg</code>/<code>ffprobe</code></strong> available on <code>PATH</code>.
+- For the sampled-frame path, you also need <strong>image/vision handling</strong>: either a vision-capable main model or configured vision fallback, and (for local frame attachments) <code>pip install "abstractcore[media]"</code> so Pillow-based image processing is available.</p>
+<h3 id="processing-features">Processing Features</h3>
+<ul>
+<li><strong>Intelligent Detection</strong>: Automatic file type recognition and processor selection</li>
+<li><strong>Content Optimization</strong>: Format-specific processing optimized for LLM consumption</li>
+<li><strong>Robust Fallback</strong>: Graceful degradation ensures users always get meaningful results</li>
+<li><strong>Performance Optimized</strong>: Lazy loading and efficient memory usage</li>
+<li><strong>Testing status</strong>: Coverage varies by provider and modality; see the test suite under <code>tests/media_handling/</code></li>
+</ul>
+<h3 id="token-estimation-no-truncation-policy">Token Estimation &amp; No Truncation Policy</h3>
+<p>AbstractCore processors <strong>do not silently truncate content</strong>. This design decision ensures:</p>
+<ol>
+<li><strong>No data loss</strong>: Full file content is always preserved</li>
+<li><strong>User control</strong>: Callers decide how to handle large files (summarize, chunk, error)</li>
+<li><strong>Model flexibility</strong>: Works correctly across models with different context limits (8K to 200K+)</li>
+</ol>
+<p><strong>Token estimation</strong> is automatically added to <code>MediaContent.metadata</code>:</p>
+<div class="code-block"><pre><code class="language-python">result = processor.process_file("data.csv")
+print(result.media_content.metadata['estimated_tokens'])  # e.g., 1500
+print(result.media_content.metadata['content_length'])    # e.g., 6000 chars
+</code></pre></div>
+<p><strong>Handlers use this for validation</strong>:</p>
+<div class="code-block"><pre><code class="language-python">handler = OpenAIMediaHandler()
+tokens = handler.estimate_tokens_for_media(media_content)
+# Uses metadata['estimated_tokens'] if available, falls back to heuristic
+</code></pre></div>
+<p>For large files that exceed model context limits, use <code>BasicSummarizer</code> or implement custom chunking at the application layer.</p>
+<h2 id="provider-compatibility">Provider Compatibility</h2>
+<h3 id="vision-enabled-providers">Vision-Enabled Providers</h3>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Vision Models</th>
+<th>Image Support</th>
+<th>Document Support</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OpenAI</strong></td>
+<td>GPT-4o, GPT-4 Turbo with Vision</td>
+<td>Supported: Multi-image</td>
+<td>Supported: All formats</td>
+</tr>
+<tr>
+<td><strong>Anthropic</strong></td>
+<td>Claude 3.5 Sonnet, Claude 4 series</td>
+<td>Supported: Up to 20 images</td>
+<td>Supported: All formats</td>
+</tr>
+<tr>
+<td><strong>Ollama</strong></td>
+<td>qwen2.5vl:7b, gemma3:4b, llama3.2-vision:11b</td>
+<td>Supported: Single image</td>
+<td>Supported: All formats</td>
+</tr>
+<tr>
+<td><strong>LMStudio</strong></td>
+<td>qwen2.5-vl-7b, gemma-3n-e4b, magistral-small-2509</td>
+<td>Supported: Multiple images</td>
+<td>Supported: All formats</td>
+</tr>
+</tbody>
+</table>
+<h3 id="text-only-providers">Text-Only Providers</h3>
+<p>All providers support document processing even without vision capabilities:</p>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Document Processing</th>
+<th>Text Extraction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HuggingFace</strong></td>
+<td>Supported: All formats</td>
+<td>Supported: Embedded in prompt</td>
+</tr>
+<tr>
+<td><strong>MLX</strong></td>
+<td>Supported: All formats</td>
+<td>Supported: Embedded in prompt</td>
+</tr>
+<tr>
+<td><strong>Any Provider</strong></td>
+<td>Supported: Automatic fallback</td>
+<td>Supported: Text extraction</td>
+</tr>
+</tbody>
+</table>
+<h3 id="model-compatibility-notes-updated-2025-10-17">⚠️ Model Compatibility Notes (Updated: 2025-10-17)</h3>
+<p>Some newer vision models may not be immediately available due to rapid development:</p>
+<p><strong>LMStudio Limitations:</strong>
+- <code>qwen3-vl</code> models (8B, 30B) - Not yet supported in LMStudio
+- Use <code>qwen2.5-vl-7b</code> as a proven alternative</p>
+<p><strong>HuggingFace Limitations:</strong>
+- <code>Qwen3-VL</code> models - Require newer transformers architecture
+- Install latest transformers: <code>pip install --upgrade transformers</code>
+- Or use bleeding edge: <code>pip install git+https://github.com/huggingface/transformers.git</code></p>
+<p><strong>Recommended Stable Models (2025-10-17):</strong>
+- <strong>LMStudio</strong>: <code>qwen/qwen2.5-vl-7b</code>, <code>google/gemma-3n-e4b</code>, <code>mistralai/magistral-small-2509</code>
+- <strong>Ollama</strong>: <code>qwen2.5vl:7b</code>, <code>gemma3:4b</code>, <code>llama3.2-vision:11b</code>
+- <strong>OpenAI</strong>: <code>gpt-4o</code>, <code>gpt-4-turbo-with-vision</code>
+- <strong>Anthropic</strong>: <code>claude-3.5-sonnet</code>, <code>claude-4-series</code></p>
+<h2 id="usage-examples">Usage Examples</h2>
+<h3 id="vision-analysis">Vision Analysis</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-resp = llm.generate(
-    prompt="",
-    messages=[{"role": "user", "content": "What's in this image?"}],
-    media=["photo.jpg"],
-)
-print(resp.content)</code></pre>
-                </div>
-
-                <h3>Audio inputs (speech-to-text)</h3>
-                <p>
-                    Audio is handled via an explicit policy to avoid silently changing semantics. For speech audio, use
-                    <code>audio_policy="speech_to_text"</code> (requires <code>pip install abstractvoice</code>).
-                </p>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import create_llm
-
-llm = create_llm("openai", model="gpt-4o-mini")
-resp = llm.generate(
-    "Summarize this call.",
-    media=["./call.wav"],
-    audio_policy="speech_to_text",
-)
-print(resp.content)</code></pre>
-                </div>
-                <p>See <a href="audio.html">Audio &amp; Voice (STT/TTS)</a> for configuration and server endpoints.</p>
-
-                <h2>Token Estimation &amp; No Truncation Policy</h2>
-                <p>
-                    AbstractCore processors do <strong>not</strong> silently truncate content. When available, token estimates are added to media metadata so you can
-                    make an explicit choice (summarize, chunk, error) at the application layer.
-                </p>
-                <div class="code-block">
-                    <pre><code class="language-python"># Example (metadata shape varies by processor)
-from abstractcore.media.processors import TextProcessor
-
-processor = TextProcessor()
-result = processor.process_file("data.csv")
-media_content = result.media_content
-
-print(media_content.metadata.get("estimated_tokens"))
-print(media_content.metadata.get("content_length"))</code></pre>
-                </div>
-                <p style="color: var(--text-secondary);">
-                    For large files that exceed model context limits, use a summarizer workflow or implement custom chunking.
-                </p>
-
-                <h2>Common Use Cases</h2>
-
-                <h3>Document Analysis</h3>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import create_llm
-
+# Analyze images with any vision model
 llm = create_llm("openai", model="gpt-4o")
 
-# Analyze PDF
+# Single image analysis
 response = llm.generate(
-    "Summarize the key findings in this research paper",
+    "What's happening in this image?",
+    media=["photo.jpg"]
+)
+
+# Multiple images comparison
+response = llm.generate(
+    "Compare these two charts and explain the trends",
+    media=["chart1.png", "chart2.png"]
+)
+
+# Mixed media analysis
+response = llm.generate(
+    "Summarize the report and relate it to what you see in the image",
+    media=["financial_report.pdf", "stock_chart.png"]
+)
+</code></pre></div>
+<h3 id="document-processing">Document Processing</h3>
+<div class="code-block"><pre><code class="language-python"># PDF analysis
+response = llm.generate(
+    "Summarize the key findings from this research paper",
     media=["research_paper.pdf"]
 )
 
-# Extract data from Excel
+# Office document processing
 response = llm.generate(
-    "What are the top 5 sales regions by revenue?",
-    media=["sales_report.xlsx"]
+    "Create a summary of this presentation and spreadsheet",
+    media=["quarterly_results.ppt", "financial_data.xlsx"]
 )
 
-# Analyze PowerPoint
+# CSV data analysis
 response = llm.generate(
-    "List the main talking points from this presentation",
-    media=["quarterly_review.pptx"]
-)</code></pre>
-                </div>
+    "What patterns do you see in this sales data?",
+    media=["sales_data.csv"]
+)
+</code></pre></div>
+<h3 id="cli-usage">CLI Usage</h3>
+<p><strong>All these examples work correctly in AbstractCore CLI:</strong></p>
+<div class="code-block"><pre><code class="language-bash"># PDF Analysis - Working
+python -m abstractcore.utils.cli --prompt "What is this document about? @report.pdf"
 
-                <h3>Multi-File Analysis</h3>
-                <div class="code-block">
-                    <pre><code class="language-python"># Compare multiple files
+# Office Documents - Working
+python -m abstractcore.utils.cli --prompt "Summarize this presentation @slides.pptx"
+python -m abstractcore.utils.cli --prompt "What data is in @spreadsheet.xlsx"
+python -m abstractcore.utils.cli --prompt "Analyze this document @contract.docx"
+
+# Data Files - Working
+python -m abstractcore.utils.cli --prompt "What patterns are in @sales_data.csv"
+python -m abstractcore.utils.cli --prompt "Analyze this data @metrics.tsv"
+
+# Images - Working
+python -m abstractcore.utils.cli --prompt "What's in this image? @screenshot.png"
+
+# Mixed Media - Working
+python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and explain trends"
+</code></pre></div>
+<h3 id="cross-provider-consistency-verified">Cross-Provider Consistency Verified</h3>
+<div class="code-block"><pre><code class="language-python"># Same media processing works identically across all providers
+media_files = ["report.pdf", "chart.png", "data.xlsx"]
+prompt = "Analyze these business documents and provide insights"
+
+# OpenAI - Verified
+openai_llm = create_llm("openai", model="gpt-4o")
+openai_response = openai_llm.generate(prompt, media=media_files)
+
+# Anthropic - Verified
+anthropic_llm = create_llm("anthropic", model="claude-3.5-sonnet")
+anthropic_response = anthropic_llm.generate(prompt, media=media_files)
+
+# Local models - Verified
+lmstudio_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")
+lmstudio_response = lmstudio_llm.generate(prompt, media=media_files)
+
+# Result: All providers work identically with the same strong results!
+</code></pre></div>
+<h3 id="streaming-with-media">Streaming with Media</h3>
+<div class="code-block"><pre><code class="language-python"># Real-time streaming responses with media
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+
+for chunk in llm.generate(
+    "Describe this image in detail",
+    media=["complex_diagram.png"],
+    stream=True
+):
+    print(chunk.content, end="", flush=True)
+</code></pre></div>
+<h2 id="advanced-features">Advanced Features</h2>
+<h3 id="maximum-resolution-optimization-new">Maximum Resolution Optimization (NEW)</h3>
+<p>AbstractCore automatically optimizes image resolution for each model's maximum capability, ensuring optimal vision results:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Images are automatically optimized for each model's maximum resolution
+llm = create_llm("openai", model="gpt-4o")
 response = llm.generate(
-    "Compare the financial data across these three reports",
-    media=["q1_report.pdf", "q2_report.pdf", "q3_report.pdf"]
+    "Analyze this image in detail",
+    media=["photo.jpg"]  # Auto-resized to 4096x4096 for GPT-4o
 )
 
-# Mixed media types
+# Different model, different optimization
+llm = create_llm("ollama", model="qwen2.5vl:7b")
 response = llm.generate(
-    "Verify that the chart matches the data in the spreadsheet",
-    media=["sales_chart.png", "sales_data.csv"]
-)</code></pre>
-                </div>
+    "What's in this image?",
+    media=["photo.jpg"]  # Auto-resized to 3584x3584 for qwen2.5vl
+)
+</code></pre></div>
+<p><strong>Model-Specific Resolution Limits:</strong>
+- <strong>GPT-4o</strong>: Up to 4096x4096 pixels
+- <strong>Claude 3.5 Sonnet</strong>: Up to 1568x1568 pixels
+- <strong>qwen2.5vl:7b</strong>: Up to 3584x3584 pixels
+- <strong>gemma3:4b</strong>: Up to 896x896 pixels
+- <strong>llama3.2-vision:11b</strong>: Up to 560x560 pixels</p>
+<p><strong>Benefits:</strong>
+- <strong>Better Accuracy</strong>: Higher resolution means more detail for the model to analyze
+- <strong>Automatic</strong>: No manual configuration required
+- <strong>Provider-Aware</strong>: Adapts to each provider's optimal settings
+- <strong>Quality Optimization</strong>: Increased JPEG quality (90%) for better compression</p>
+<h3 id="capability-detection">Capability Detection</h3>
+<p>The system automatically detects model capabilities and adapts accordingly:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.media.capabilities import is_vision_model, supports_images
 
-                <h3>Image Analysis with Documents</h3>
-                <div class="code-block">
-                    <pre><code class="language-python"># Combine images and documents
+# Check if a model supports vision
+if is_vision_model("gpt-4o"):
+    print("This model can process images")
+
+if supports_images("claude-3.5-sonnet"):
+    print("This model supports image analysis")
+
+# Text-only model + image input is policy-driven
+llm = create_llm("openai", model="gpt-4")  # text-only example
 response = llm.generate(
-    "Compare the architectural designs with the specifications",
-    media=["design1.jpg", "design2.jpg", "specifications.pdf"]
-)</code></pre>
-                </div>
+    "Analyze this image",
+    media=["photo.jpg"],  # Errors unless vision fallback is configured; see below.
+)
+</code></pre></div>
+<h3 id="vision-fallback-optional-config-driven">Vision fallback (optional; config-driven)</h3>
+<p>AbstractCore includes an optional <strong>vision fallback</strong> that enables text-only models to process images using a transparent two-stage pipeline (caption → inject short observations).</p>
+<h4 id="how-vision-fallback-works">How Vision Fallback Works</h4>
+<p>When vision fallback is configured and you use a text-only model with images, AbstractCore:</p>
+<ol>
+<li><strong>Detects Model Limitations</strong>: Identifies when a text-only model receives an image</li>
+<li><strong>Uses Vision Fallback</strong>: Employs a configured vision model to analyze the image</li>
+<li><strong>Provides Description</strong>: Passes the image description to the text-only model</li>
+<li><strong>Returns Results</strong>: Your text model answers using the injected observations (recorded in <code>metadata.media_enrichment[]</code>)</li>
+</ol>
+<h4 id="example">Example</h4>
+<p>Configure a vision captioner once:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
+</code></pre></div>
+<p>Then use any text model with images:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-                <h2>HTTP Server Support</h2>
-                <p>The media handling system is fully integrated with the OpenAI-compatible HTTP server:</p>
+llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # text-only
+resp = llm.generate("What's in this image?", media=["whale_photo.jpg"])
+print(resp.content)
+</code></pre></div>
+<h4 id="behind-the-scenes">Behind the Scenes</h4>
+<p>What actually happens (transparent to user):
+1. <strong>Stage 1</strong>: <code>qwen2.5vl:7b</code> (vision model) analyzes <code>whale_photo.jpg</code> → detailed description
+2. <strong>Stage 2</strong>: <code>qwen/qwen3-next-80b</code> (text-only) processes description + user question → final analysis</p>
+<h4 id="configuration-commands">Configuration Commands</h4>
+<div class="code-block"><pre><code class="language-bash"># Check current status
+abstractcore --status
 
-                <h3>Using @filename Syntax</h3>
-                <div class="code-block">
-                    <pre><code class="language-python">import openai
+# Download local caption models (optional)
+abstractcore --download-vision-model              # BLIP base (990MB)
+abstractcore --download-vision-model vit-gpt2     # ViT-GPT2 (500MB, CPU-friendly)
+abstractcore --download-vision-model git-base     # GIT base (400MB, smallest)
 
-client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+# Use an existing vision-capable model as the fallback captioner
+abstractcore --set-vision-provider ollama qwen2.5vl:7b
+abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
+abstractcore --set-vision-provider openai gpt-4o
+abstractcore --set-vision-provider anthropic claude-sonnet-4-5
 
-response = client.chat.completions.create(
-    model="openai/gpt-4o",
-    messages=[{"role": "user", "content": "Analyze @report.pdf and @chart.png"}]
-)</code></pre>
-                </div>
+# Interactive setup
+abstractcore --config
 
-                <h3>Using OpenAI Responses API Format</h3>
-                <div class="code-block">
-                    <pre><code class="language-python">import requests
+# Advanced: Fallback chains
+abstractcore --add-vision-fallback ollama qwen2.5vl:7b
+abstractcore --add-vision-fallback openai gpt-4o
+</code></pre></div>
+<h4 id="benefits-of-vision-fallback">Benefits of Vision Fallback</h4>
+<ul>
+<li><strong>Universal Compatibility</strong>: Any text-only model can now process images</li>
+<li><strong>Cost Optimization</strong>: Use cheaper text models for reasoning, vision models only for description</li>
+<li><strong>Transparent Operation</strong>: Users don't need to change their code</li>
+<li><strong>Flexible Configuration</strong>: Local models, cloud APIs, or hybrid setups</li>
+<li><strong>Offline-First</strong>: Works without internet after downloading local models</li>
+<li><strong>Automatic Fallback</strong>: Graceful degradation when vision not configured</li>
+</ul>
+<h4 id="supported-vision-models">Supported Vision Models</h4>
+<p><strong>Local Models (Downloaded):</strong>
+- <strong>BLIP Base</strong>: 990MB, high quality, CPU/GPU compatible
+- <strong>ViT-GPT2</strong>: 500MB, CPU-friendly, good performance
+- <strong>GIT Base</strong>: 400MB, smallest size, basic quality</p>
+<p><strong>Provider Models:</strong>
+- <strong>Ollama</strong>: <code>qwen2.5vl:7b</code>, <code>llama3.2-vision:11b</code>, <code>gemma3:4b</code>
+- <strong>LMStudio</strong>: <code>qwen/qwen2.5-vl-7b</code>, <code>google/gemma-3n-e4b</code>
+- <strong>OpenAI</strong>: <code>gpt-4o</code>, <code>gpt-4-turbo-with-vision</code>
+- <strong>Anthropic</strong>: <code>claude-3.5-sonnet</code>, <code>claude-4-series</code></p>
+<h3 id="custom-processing-options">Custom Processing Options</h3>
+<div class="code-block"><pre><code class="language-python"># Advanced image processing
+from abstractcore.media.processors import ImageProcessor
 
-response = requests.post(
-    "http://localhost:8000/v1/responses",
-    json={
-        "model": "gpt-4o",
-        "input": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": "Analyze this document"},
-                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
-                ]
-            }
-        ]
-    }
-)</code></pre>
-                </div>
+processor = ImageProcessor(
+    optimize_for_vision=True,
+    max_dimension=1024,
+    quality=85
+)
 
-                <h2>Error Handling and Fallback</h2>
-                <p>AbstractCore provides robust error handling with graceful degradation:</p>
+# Advanced PDF processing
+from abstractcore.media.processors import PDFProcessor
 
-                <ul>
-                    <li><strong>Format Detection Failure</strong> - Falls back to basic text extraction</li>
-                    <li><strong>Processing Errors</strong> - Returns partial content with error indication</li>
-                    <li><strong>Unsupported Files</strong> - Clear error messages with supported format list</li>
-                    <li><strong>Size Limits</strong> - Automatic chunking for large documents</li>
-                </ul>
+pdf_processor = PDFProcessor(
+    extract_images=True,
+    markdown_output=True,
+    preserve_tables=True
+)
+</code></pre></div>
+<h3 id="direct-media-processing">Direct Media Processing</h3>
+<div class="code-block"><pre><code class="language-python"># Process files directly (without LLM)
+from abstractcore.media import process_file
 
-                <h2>Best Practices</h2>
+# Process any supported file
+result = process_file("document.pdf")
+if result.success:
+    print(f"Content: {result.media_content.content}")
+    print(f"Type: {result.media_content.media_type}")
+    print(f"Metadata: {result.media_content.metadata}")
+</code></pre></div>
+<h2 id="recommended-practices">Recommended Practices</h2>
+<h3 id="file-size-and-limits">File Size and Limits</h3>
+<div class="code-block"><pre><code class="language-python"># Check model-specific limits
+from abstractcore.media.capabilities import get_media_capabilities
 
-                <ul>
-                    <li><strong>File Size</strong> - Keep individual files under 10MB for optimal performance</li>
-                    <li><strong>Image Quality</strong> - Use high-quality images but let AbstractCore handle optimization</li>
-                    <li><strong>Multiple Files</strong> - Limit to 5-10 files per request to avoid token limits</li>
-                    <li><strong>File Types</strong> - Stick to supported formats for reliable processing</li>
-                    <li><strong>Clear Prompts</strong> - Specify what you want to extract or analyze from the files</li>
-                </ul>
+caps = get_media_capabilities("gpt-4o")
+print(f"Max images per message: {caps.max_images}")
+print(f"Supported formats: {caps.supported_formats}")
+</code></pre></div>
+<h3 id="error-handling">Error Handling</h3>
+<div class="code-block"><pre><code class="language-python">try:
+    response = llm.generate(
+        "Analyze this file",
+        media=["large_document.pdf"]
+    )
+except Exception as e:
+    print(f"Media processing error: {e}")
+    # Fallback to text-only processing
+    response = llm.generate("Analyze the uploaded document content")
+</code></pre></div>
+<h3 id="performance-tips">Performance Tips</h3>
+<div class="code-block"><pre><code class="language-python"># For large documents, consider chunking
+from abstractcore.media.processors import PDFProcessor
 
-                <h2>Installation</h2>
-                <p>To use media handling features, install the media extras:</p>
+processor = PDFProcessor(chunk_size=8000)  # Process in chunks
 
-                <div class="code-block">
-                    <pre><code class="language-bash"># Install with media support
-pip install abstractcore
+# For multiple images, process in batches
+image_files = ["img1.jpg", "img2.jpg", "img3.jpg"]
+for batch in [image_files[i:i+3] for i in range(0, len(image_files), 3)]:
+    response = llm.generate("Analyze these images", media=batch)
+</code></pre></div>
+<h2 id="model-specific-examples">Model-Specific Examples</h2>
+<h3 id="openai-gpt-4o">OpenAI GPT-4o</h3>
+<div class="code-block"><pre><code class="language-python"># Multi-image analysis with high detail
+llm = create_llm("openai", model="gpt-4o")
+response = llm.generate(
+    "Compare these architectural photos and identify the styles",
+    media=["building1.jpg", "building2.jpg", "building3.jpg"]
+)
+</code></pre></div>
+<h3 id="anthropic-claude-35-sonnet">Anthropic Claude 3.5 Sonnet</h3>
+<div class="code-block"><pre><code class="language-python"># Document analysis with specialized prompts
+llm = create_llm("anthropic", model="claude-3.5-sonnet")
+response = llm.generate(
+    "Provide a comprehensive analysis of this research paper",
+    media=["academic_paper.pdf"]
+)
+</code></pre></div>
+<h3 id="local-vision-models">Local Vision Models</h3>
+<div class="code-block"><pre><code class="language-python"># Ollama with qwen2.5-vl
+ollama_llm = create_llm("ollama", model="qwen2.5vl:7b")
+response = ollama_llm.generate(
+    "What objects do you see in this image?",
+    media=["scene.jpg"]
+)
+
+# LMStudio with qwen2.5-vl
+lmstudio_llm = create_llm("lmstudio", model="qwen/qwen2.5-vl-7b")
+response = lmstudio_llm.generate(
+    "Describe this chart and its trends",
+    media=["business_chart.png"]
+)
+
+# Ollama with Llama 3.2 Vision
+llama_llm = create_llm("ollama", model="llama3.2-vision:11b")
+response = llama_llm.generate(
+    "Analyze this document layout",
+    media=["document.jpg"]
+)
+</code></pre></div>
+<h2 id="installation">Installation</h2>
+<h3 id="basic-installation">Basic Installation</h3>
+<div class="code-block"><pre><code class="language-bash"># Core media handling (images, text, basic documents)
 pip install "abstractcore[media]"
+</code></pre></div>
+<h3 id="full-installation">Full Installation</h3>
+<div class="code-block"><pre><code class="language-bash"># Media features (PDF + Office docs) are covered by `abstractcore[media]`.
+# If you want the full framework install (providers + tools + server + docs), pick one:
+pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+</code></pre></div>
+<p>Advanced: If you prefer to install only the pieces you need (instead of <code>abstractcore[media]</code>),
+these are the main libraries AbstractCore uses:</p>
+<ul>
+<li><code>Pillow</code> (images)</li>
+<li><code>pymupdf4llm</code> + <code>pymupdf-layout</code> (PDF extraction)</li>
+<li><code>unstructured[docx,pptx,xlsx,odt,rtf]</code> (Office docs)</li>
+<li><code>pandas</code> (tabular helpers)</li>
+</ul>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<p><strong>Media not processed:</strong></p>
+<div class="code-block"><pre><code class="language-python"># Check if media dependencies are installed
+try:
+    response = llm.generate("Test", media=["test.jpg"])
+except ImportError as e:
+    print(f"Missing dependency: {e}")
+    print("Install with: pip install \"abstractcore[media]\"")
+</code></pre></div>
+<p><strong>Vision model not detecting images:</strong></p>
+<div class="code-block"><pre><code class="language-python"># Verify model capabilities
+from abstractcore.media.capabilities import is_vision_model
 
-# Combine extras (zsh: keep quotes)
-pip install "abstractcore[openai,media]"</code></pre>
-                </div>
+if not is_vision_model("your-model"):
+    print("This model doesn't support vision")
+    print("Try: gpt-4o, claude-3.5-sonnet, qwen2.5vl:7b, or llama3.2-vision:11b")
+</code></pre></div>
+<p><strong>Large file processing:</strong></p>
+<div class="code-block"><pre><code class="language-python"># For large files, check size limits
+import os
+file_size = os.path.getsize("large_file.pdf")
+if file_size &gt; 10 * 1024 * 1024:  # 10MB
+    print("File may be too large for some providers")
+</code></pre></div>
+<h3 id="validation">Validation</h3>
+<div class="code-block"><pre><code class="language-bash"># Test your installation
+python validate_media_system.py
 
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
-                        </a>
+# Run comprehensive tests
+python -m pytest tests/media_handling/ -v
+</code></pre></div>
+<h2 id="api-reference">API Reference</h2>
+<h3 id="core-functions">Core Functions</h3>
+<div class="code-block"><pre><code class="language-python"># Main generation with media
+llm.generate(prompt, media=files, **kwargs)
 
-                        <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Vision Capabilities</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis across providers</p>
-                        </a>
+# Direct file processing
+from abstractcore.media import process_file
+result = process_file(file_path)
 
-                        <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Centralized Configuration</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global defaults and settings</p>
-                        </a>
+# Capability detection
+from abstractcore.media.capabilities import (
+    is_vision_model,
+    supports_images,
+    get_media_capabilities
+)
+</code></pre></div>
+<h3 id="media-types">Media Types</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.media.types import MediaType, ContentFormat
 
-                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible REST API</p>
-                        </a>
-
-                        <a href="internal-cli.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Internal CLI</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Built-in CLI with @filename syntax</p>
-                        </a>
-
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API</p>
-                        </a>
-                    </div>
-                </div>
+# MediaType.IMAGE, MediaType.DOCUMENT, MediaType.TEXT
+# ContentFormat.BASE64, ContentFormat.TEXT, ContentFormat.BINARY
+</code></pre></div>
+<h3 id="processors">Processors</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.media.processors import (
+    ImageProcessor,    # Images with PIL
+    TextProcessor,     # Text, CSV, JSON with pandas
+    PDFProcessor,      # PDFs with PyMuPDF4LLM
+    OfficeProcessor    # DOCX, XLSX, PPT with unstructured
+)
+</code></pre></div>
+<h2 id="next-steps">Next Steps</h2>
+<ul>
+<li><strong><a href="getting-started.html">Getting Started Guide</a></strong> - Complete AbstractCore tutorial</li>
+<li><strong><a href="api-reference.html">API Reference</a></strong> - Full Python API documentation</li>
+<li><strong><a href="../examples/glyph_complete_example.py">Glyph + Vision Example</a></strong> - End-to-end document analysis with a vision model</li>
+<li><strong><a href="../examples/list_supported_formats.py">Supported Formats Utility</a></strong> - Inspect available processors and supported formats</li>
+</ul>
+<hr/>
+<p>The media handling system makes AbstractCore multimodal while maintaining the same "write once, run everywhere" philosophy. Focus on your application logic while AbstractCore handles the complexity of different provider APIs and media formats.</p>
             </div>
         </div>
     </main>
 
-    <!-- Footer -->
-    <footer class="footer" style="margin-top: 5rem;">
-        <div class="container" style="text-align: center; padding: 2rem 0; border-top: 1px solid var(--border-color);">
-            <p style="color: var(--text-secondary); margin: 0;">
-                &copy; 2025 AbstractCore. Licensed under MIT License.
-            </p>
-        </div>
-    </footer>
-
     <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
 </body>
 </html>

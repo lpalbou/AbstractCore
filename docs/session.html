@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Session Management - AbstractCore</title>
-    <meta name="description" content="Learn how to use BasicSession for persistent conversations, compaction, analytics, and serialization.">
+    <title>Session Management and Serialization - AbstractCore</title>
+    <meta name="description" content="AbstractCore provides comprehensive session management with complete serialization capabilities, preserving every aspect of your conversations including metadata, tool…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,127 +21,289 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 900px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Session Management</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Use <code>BasicSession</code> to keep conversation state, compact history, and serialize sessions for audits or continuation.
-                </p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Session Management and Serialization</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore provides comprehensive session management with complete serialization capabilities, preserving every aspect of your conversations including metadata, tool executions, and optional analytics.</p>
             </div>
 
-            <div class="doc-content">
-                <h2>Quick Start</h2>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import create_llm, BasicSession
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#api-design-two-methods-for-different-purposes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">API Design: Two Methods for Different Purposes</a>
+<a href="#session-serialization" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Session Serialization</a>
+<a href="#usage-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Usage Examples</a>
+<a href="#schema-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Schema Reference</a>
+<a href="#cli-integration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">CLI Integration</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#migration-and-compatibility" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Migration and Compatibility</a></div>
 
-llm = create_llm("openai", model="gpt-4o-mini")
-session = BasicSession(
-    provider=llm,
-    system_prompt="You are a helpful assistant."
+            <div class="doc-content">
+
+
+<h2 id="overview">Overview</h2>
+<p>A <strong>BasicSession</strong> represents a complete conversation with an LLM, including:
+- All messages with timestamps and metadata
+- Tool calls and their results (inline with conversation flow)
+- Session configuration and settings
+- Optional analytics: summary, assessment, and extracted facts</p>
+<h2 id="api-design-two-methods-for-different-purposes">API Design: Two Methods for Different Purposes</h2>
+<p>The <code>BasicSession</code> provides two main methods for managing conversation history:</p>
+<h3 id="generate-for-normal-conversations-recommended"><code>generate()</code> - For Normal Conversations (Recommended)</h3>
+<p>Use this for typical chat interactions where you want the LLM to respond:</p>
+<div class="code-block"><pre><code class="language-python"># Normal conversation flow
+response = session.generate("What is Python?", name="alice")
+# This automatically:
+# 1. Adds your message to history
+# 2. Calls the LLM provider
+# 3. Adds the assistant's response to history
+# 4. Returns a GenerateResponse object with full metadata
+
+# Access the response data
+print(f"Response: {response.content}")           # Generated text
+print(f"Tokens used: {response.total_tokens}")  # Token count
+print(f"Generation time: {response.gen_time}ms") # Performance metrics
+</code></pre></div>
+<h3 id="addmessage-for-manual-history-management"><code>add_message()</code> - For Manual History Management</h3>
+<p>Use this when you need fine-grained control over conversation history:</p>
+<div class="code-block"><pre><code class="language-python"># Add system messages
+session.add_message('system', 'You are a helpful assistant.')
+
+# Add messages without triggering LLM generation
+session.add_message('user', 'Hello!', name='alice')
+session.add_message('assistant', 'Hi there!')
+
+# Add tool messages
+session.add_message('tool', '{"result": "success"}')
+</code></pre></div>
+<p><strong>Key Difference</strong>: <code>generate()</code> triggers LLM response generation, <code>add_message()</code> only adds to history.</p>
+<p><strong>Parameter Consistency</strong>: Both methods use <code>name</code> parameter, which aligns with the <code>metadata.name</code> field in the serialization schema.</p>
+<h2 id="session-serialization">Session Serialization</h2>
+<h3 id="why-serialize-sessions">Why Serialize Sessions?</h3>
+<p>Session serialization enables:
+- <strong>Persistence</strong>: Save and restore conversations across application restarts
+- <strong>Portability</strong>: Share conversations between different environments
+- <strong>Analytics</strong>: Generate summaries, assessments, and fact extractions
+- <strong>Auditing</strong>: Complete conversation history with tool executions
+- <strong>Memory Management</strong>: Load partial conversation windows while preserving full history</p>
+<h3 id="serialization-format">Serialization Format</h3>
+<p>Sessions are serialized as JSON with a versioned schema for future compatibility:</p>
+<div class="code-block"><pre><code class="language-json">{
+  "schema_version": "session-archive/v1",
+  "session": {
+    "id": "sess_01J8...",
+    "created_at": "2025-10-13T14:52:46Z",
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "system_prompt": "You are a helpful AI assistant.",
+    "settings": { "auto_compact": true },
+
+    "summary": { /* optional */ },
+    "assessment": { /* optional */ },
+    "facts": { /* optional */ }
+  },
+  "messages": [ /* complete conversation history */ ]
+}
+</code></pre></div>
+<h3 id="field-descriptions">Field Descriptions</h3>
+<h4 id="session-fields">Session Fields</h4>
+<ul>
+<li><strong><code>id</code></strong>: Unique session identifier for tracking and correlation</li>
+<li><strong><code>created_at</code></strong>: ISO timestamp of session creation</li>
+<li><strong><code>provider</code></strong>: LLM provider used (openai, anthropic, ollama, etc.)</li>
+<li><strong><code>model</code></strong>: Specific model name (gpt-4o-mini, claude-haiku-4-5, etc.)</li>
+<li><strong><code>model_params</code></strong>: Model parameters used (temperature, max_tokens, etc.)</li>
+<li><strong><code>system_prompt</code></strong>: The system prompt that guides the assistant's behavior</li>
+<li><strong><code>tool_registry</code></strong>: Available tools with their schemas (declarative, no executable code)</li>
+<li><strong><code>settings</code></strong>: Session configuration (auto_compact, thresholds, etc.)</li>
+</ul>
+<h4 id="optional-analytics-fields">Optional Analytics Fields</h4>
+<ul>
+<li><strong><code>summary</code></strong> <em>(optional)</em>: Compressed representation of the entire conversation</li>
+<li><code>created_at</code>: When the summary was generated</li>
+<li><code>preserve_recent</code>: Number of recent messages preserved during compaction</li>
+<li><code>focus</code>: Summary focus (e.g., "technical decisions", "key outcomes")</li>
+<li><code>text</code>: The actual summary content</li>
+<li>
+<p><code>metrics</code>: Compression statistics (tokens before/after, ratio)</p>
+</li>
+<li>
+<p><strong><code>assessment</code></strong> <em>(optional)</em>: Quality evaluation of the entire conversation</p>
+</li>
+<li><code>created_at</code>: When the assessment was generated</li>
+<li><code>criteria</code>: Evaluation criteria used (clarity, coherence, relevance, etc.)</li>
+<li><code>overall_score</code>: Numeric score (typically 1-5)</li>
+<li><code>judge_summary</code>: Brief assessment summary</li>
+<li><code>strengths</code>: List of conversation strengths</li>
+<li>
+<p><code>actionable_feedback</code>: Suggestions for improvement</p>
+</li>
+<li>
+<p><strong><code>facts</code></strong> <em>(optional)</em>: Extracted facts and knowledge from the conversation</p>
+</li>
+<li><code>extracted_at</code>: When facts were extracted</li>
+<li><code>simple_triples</code>: Array of [subject, predicate, object] fact triples</li>
+<li><code>jsonld</code>: Optional JSON-LD structured data</li>
+<li><code>statistics</code>: Extraction statistics (entity count, relationship count)</li>
+</ul>
+<h4 id="message-structure">Message Structure</h4>
+<p>Each message preserves the complete conversational flow:</p>
+<div class="code-block"><pre><code class="language-json">{
+  "id": "msg_01J8...",
+  "role": "user|assistant|system|tool",
+  "timestamp": "2025-10-13T14:55:20.123Z",
+  "content": "Message content",
+  "metadata": {
+    "name": "alice",
+    "location": "London, UK",
+    "custom_field": "value"
+  }
+}
+</code></pre></div>
+<p><strong>Message Fields:</strong>
+- <strong><code>id</code></strong>: Unique message identifier
+- <strong><code>role</code></strong>: Message role (user, assistant, system, tool)
+- <strong><code>timestamp</code></strong>: When the message was created (auto-generated)
+- <strong><code>content</code></strong>: The actual message content
+- <strong><code>metadata</code></strong>: Flexible container for additional context
+  - <code>name</code>: Username (defaults to "user" for user messages)
+  - <code>location</code>: Geographic or contextual location
+  - Any additional custom fields</p>
+<h4 id="tool-execution-flow">Tool Execution Flow</h4>
+<p>Tool calls are preserved inline with the conversation to maintain sequence:</p>
+<div class="code-block"><pre><code class="language-json">[
+  {
+    "role": "assistant",
+    "content": "Let me read that file for you.",
+    "metadata": {
+      "requested_tool_calls": [
+        {
+          "call_id": "tc_01K",
+          "name": "read_file",
+          "arguments": { "path": "README.md" }
+        }
+      ]
+    }
+  },
+  {
+    "role": "tool",
+    "content": "File contents...",
+    "metadata": {
+      "call_id": "tc_01K",
+      "name": "read_file",
+      "arguments": { "path": "README.md" },
+      "status": "ok",
+      "duration_ms": 120,
+      "stderr": null
+    }
+  }
+]
+</code></pre></div>
+<p>This approach:
+- Preserves exact execution order
+- Links tool calls to results via <code>call_id</code>
+- Captures execution metadata (duration, status, errors)
+- Maintains human-readable conversation flow</p>
+<h2 id="usage-examples">Usage Examples</h2>
+<h3 id="basic-session-persistence">Basic Session Persistence</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import BasicSession, create_llm
+
+# Create and use session
+provider = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(provider, system_prompt="You are a helpful assistant.")
+
+session.add_message('user', 'Hello!', name='alice', location='Paris')
+response = session.generate('What is Python?')
+
+# Save complete session
+session.save('conversation.json')
+
+# Load session later
+loaded_session = BasicSession.load('conversation.json', provider=provider)
+</code></pre></div>
+<h3 id="session-with-analytics">Session with Analytics</h3>
+<div class="code-block"><pre><code class="language-python"># Generate optional analytics
+session.generate_summary(focus="technical discussion")
+session.generate_assessment(criteria=["clarity", "completeness"])
+session.extract_facts()
+
+# Save with all analytics
+session.save('analyzed_conversation.json')
+</code></pre></div>
+<h3 id="memory-window-management">Memory Window Management</h3>
+<div class="code-block"><pre><code class="language-python"># Get recent messages for LLM context
+recent_messages = session.get_window(last_n=10)
+
+# Get messages within time range
+today_messages = session.get_window(
+    since="2025-10-13T00:00:00Z",
+    until="2025-10-13T23:59:59Z"
 )
 
-print(session.generate("Give me 3 bakery name ideas.").content)
-print(session.generate("Pick the best one and explain why.").content)</code></pre>
-                </div>
+# Get messages with token budget
+windowed = session.get_window(
+    token_budget=4000,
+    include_summary=True  # Prepend summary if context trimmed
+)
+</code></pre></div>
+<h2 id="schema-reference">Schema Reference</h2>
+<p>The complete JSON schema is available at: <code>abstractcore/assets/session_schema.json</code></p>
+<p>This schema can be used for:
+- Validation of serialized sessions
+- Integration with other tools and systems
+- Documentation generation
+- API contract definition</p>
+<h2 id="cli-integration">CLI Integration</h2>
+<p>The CLI provides convenient commands for session management:</p>
+<div class="code-block"><pre><code class="language-bash"># Save session with basic serialization
+/session save my_conversation
 
-                <h2><code>generate()</code> vs <code>add_message()</code></h2>
-                <p>
-                    Use <code>generate()</code> for normal chat (it appends your message, calls the model, appends the assistant reply).
-                    Use <code>add_message()</code> when you need manual control over history (e.g. injecting system/tool messages).
-                </p>
-                <div class="code-block">
-                    <pre><code class="language-python"># Normal conversation (recommended)
-resp = session.generate("What is Python?", name="alice")
-print(resp.content)
+# Save with optional analytics
+/session save analyzed_session --summary --assessment --facts
 
-# Manual history edits
-session.add_message("system", "You are terse.")
-session.add_message("user", "Hello!", name="alice")
-session.add_message("assistant", "Hi.")</code></pre>
-                </div>
+# Load session
+/session load my_conversation
 
-                <h2>Compaction (Keep Context, Reduce Tokens)</h2>
-                <p>
-                    Compaction summarizes older messages while preserving recent turns. You can do it manually (<code>force_compact</code>)
-                    or enable auto-compaction when the session grows beyond a token threshold.
-                </p>
-                <div class="code-block">
-                    <pre><code class="language-python"># Manual compaction (in-place)
-session.force_compact(preserve_recent=6, focus="key decisions")
+# Generate analytics on demand
+/facts
+/judge
 
-# Automatic compaction
-session.enable_auto_compact(threshold=6000)  # tokens (estimate)</code></pre>
-                </div>
-
-                <h2>Optional Analytics</h2>
-                <p>Generate a summary, assessment, or extracted facts and store them on the session.</p>
-                <div class="code-block">
-                    <pre><code class="language-python">summary = session.generate_summary(focus="key outcomes")
-assessment = session.generate_assessment(criteria={"clarity": True, "helpfulness": True})
-facts = session.extract_facts(output_format="triples")  # or "jsonld"</code></pre>
-                </div>
-
-                <h2>Serialization (Save / Load)</h2>
-                <p>
-                    Sessions serialize to a versioned JSON schema (<code>session-archive/v1</code>).
-                    Providers/tools are not serialized (they may contain non-serializable state), so you pass them back when loading.
-                </p>
-                <div class="code-block">
-                    <pre><code class="language-python"># Save (includes analytics only if generated)
-session.save("conversation.json")
-
-# Load (provide provider + tools again)
-llm = create_llm("openai", model="gpt-4o-mini")
-loaded = BasicSession.load("conversation.json", provider=llm)
-
-print(loaded.generate("Continue the conversation.").content)</code></pre>
-                </div>
-
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">First calls + core concepts</p>
-                        </a>
-                        <a href="token-management.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Token Management</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Budgets, limits, and estimates</p>
-                        </a>
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Full Python API</p>
-                        </a>
-                        <a href="structured-output.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Structured Output</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Typed responses with Pydantic</p>
-                        </a>
-                    </div>
-                </div>
+# Optional: persist local prompt/KV cache (MLX only)
+/cache save chat_cache
+/cache load chat_cache
+</code></pre></div>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="when-to-use-analytics">When to Use Analytics</h3>
+<ul>
+<li><strong>Summary</strong>: For long conversations that need compaction</li>
+<li><strong>Assessment</strong>: For evaluating conversation quality and outcomes</li>
+<li><strong>Facts</strong>: For knowledge extraction and structured data needs</li>
+</ul>
+<h3 id="performance-considerations">Performance Considerations</h3>
+<ul>
+<li>Analytics are optional and computed on-demand</li>
+<li>Large conversations benefit from windowing for active memory</li>
+<li>JSON format balances human readability with performance</li>
+<li>Consider compression (gzip/zstd) for very large sessions</li>
+</ul>
+<h3 id="security-and-privacy">Security and Privacy</h3>
+<ul>
+<li>Sessions contain complete conversation history</li>
+<li>Metadata may include sensitive information (usernames, locations)</li>
+<li>If your host/runtime appends tool results into the conversation, those results will be preserved (and may contain file contents, etc.)</li>
+<li>Store sessions securely and consider data retention policies</li>
+</ul>
+<h2 id="migration-and-compatibility">Migration and Compatibility</h2>
+<p>The versioned schema (<code>session-archive/v1</code>) ensures:
+- Backward compatibility with older session formats
+- Forward compatibility through graceful field handling
+- Safe evolution of the serialization format</p>
+<p>Legacy sessions are automatically migrated on load, preserving all available data while upgrading to the current schema.</p>
             </div>
         </div>
     </main>
@@ -152,4 +314,3 @@ print(loaded.generate("Continue the conversation.").content)</code></pre>
     <script src="../assets/js/main.js"></script>
 </body>
 </html>
-

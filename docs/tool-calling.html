@@ -4,41 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tool Calling System - AbstractCore</title>
-    <meta name="description" content="Comprehensive guide to AbstractCore's universal tool calling system that works across all LLM providers.">
+    <meta name="description" content="AbstractCore provides a universal tool calling system that works across all LLM providers, even those without native tool support.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
-    
+
     <!-- Navbar Component -->
     <script src="../assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
@@ -48,98 +31,53 @@
         <div class="container" style="max-width: 1300px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Tool Calling System</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    AbstractCore provides a universal tool calling system that works across <strong>all</strong> LLM providers, 
-                    even those without native tool support. This is one of AbstractCore's most powerful features.
-                </p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore provides a universal tool calling system that works across all LLM providers, even those without native tool support.</p>
             </div>
 
-            <!-- Navigation Schema -->
-            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1.5rem 0;">🔄 How Tool Calling Works</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
-                        <h3 style="margin: 0 0 1rem 0;">A) Tool Detection</h3>
-                        <p style="margin: 0; font-size: 0.9rem;">AbstractCore automatically detects different tool call syntaxes:</p>
-                        <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
-                            <li>Qwen3: <code>&lt;|tool_call|&gt;...&lt;/|tool_call|&gt;</code></li>
-                            <li>LLaMA3: <code>&lt;function_call&gt;...&lt;/function_call&gt;</code></li>
-                            <li>XML: <code>&lt;tool_call&gt;...&lt;/tool_call&gt;</code></li>
-                            <li>OpenAI/Anthropic: Native API calls</li>
-                        </ul>
-                    </div>
-                    
-                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
-                        <h3 style="margin: 0 0 1rem 0;">B) Syntax Rewriting</h3>
-                        <p style="margin: 0; font-size: 0.9rem;">Optionally preserve/rewrite tool-call syntax for downstream consumers:</p>
-                        <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
-                            <li><strong>Python API:</strong> <code>tool_call_tags="qwen3|llama3|xml|gemma"</code> keeps tool markup in <code>response.content</code></li>
-                            <li><strong>HTTP server:</strong> request <code>agent_format="codex|llama3|xml|gemma|..."</code> (see Server docs)</li>
-                            <li><strong>Default:</strong> tool markup is stripped from <code>content</code>; canonical calls stay in <code>tool_calls</code></li>
-                        </ul>
-                    </div>
-                    
-                    <div style="background: rgba(255, 255, 255, 0.1); padding: 1.5rem; border-radius: 0.5rem;">
-                        <h3 style="margin: 0 0 1rem 0;">C) Optional Execution</h3>
-                        <p style="margin: 0; font-size: 0.9rem;">Define where tools execute (recommended: host/runtime boundary):</p>
-                        <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
-                            <li><code>execute_tools=false</code> (default) → Return tool calls only (recommended)</li>
-                            <li><code>execute_tools=true</code> → Legacy local execution (deprecated)</li>
-                            <li>Event system for security control</li>
-                            <li>Error handling and validation</li>
-                        </ul>
-                    </div>
-                </div>
-                
-                <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(255, 255, 255, 0.1); border-radius: 0.5rem;">
-                    <p style="margin: 0; text-align: center; font-weight: 500;">
-                        🎯 <strong>Key Insight:</strong> One tool definition works everywhere - AbstractCore handles all the complexity of different formats and execution models automatically.
-                    </p>
-                </div>
-            </div>
-
-            <!-- Table of Contents -->
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">Table of Contents</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
-                    <div>
-                        <a href="#quick-start" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Quick Start</a>
-                        <a href="#tool-decorator" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">The @tool Decorator</a>
-                        <a href="#universal-support" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Universal Tool Support</a>
-                        <a href="#built-in-tools" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Built-in Tools</a>
-                        <a href="#tool-definition" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Tool Definition</a>
-                    </div>
-                    <div>
-                        <a href="#tool-execution" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Tool Execution</a>
-                        <a href="#advanced-patterns" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Advanced Patterns</a>
-                        <a href="#error-handling" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Error Handling</a>
-                        <a href="#performance-optimization" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Performance Optimization</a>
-                    </div>
-                    <div>
-                        <a href="#syntax-rewriting" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Tool Syntax Rewriting</a>
-                        <a href="#event-integration" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Event System Integration</a>
-                        <a href="#best-practices" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Best Practices</a>
-                        <a href="#troubleshooting" style="display: block; padding: 0.5rem 0; color: var(--primary-color);">Troubleshooting</a>
-                    </div>
-                </div>
-            </div>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#table-of-contents" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Table of Contents</a>
+<a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#the-tool-decorator" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">The @tool Decorator</a>
+<a href="#universal-tool-support" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Universal Tool Support</a>
+<a href="#tool-definition" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tool Definition</a>
+<a href="#tool-execution" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tool Execution</a>
+<a href="#advanced-patterns" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Advanced Patterns</a>
+<a href="#error-handling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Error Handling</a>
+<a href="#performance-optimization" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Optimization</a>
+<a href="#tool-syntax-rewriting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tool Syntax Rewriting</a>
+<a href="#event-system-integration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Event System Integration</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a>
+<a href="#examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Examples</a>
+<a href="#related-documentation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related Documentation</a></div>
 
             <div class="doc-content">
-                <section id="quick-start">
-                    <h2>Quick Start</h2>
-                    <p>The simplest way to create and use tools is with the <code>@tool</code> decorator:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm, tool
+
+
+<h2 id="table-of-contents">Table of Contents</h2>
+<ul>
+<li><a href="#quick-start">Quick Start</a></li>
+<li><a href="#the-tool-decorator">The @tool Decorator</a></li>
+<li><a href="#universal-tool-support">Universal Tool Support</a></li>
+<li><a href="#tool-definition">Tool Definition</a></li>
+<li><a href="#tool-execution">Tool Execution</a></li>
+<li><a href="#advanced-patterns">Advanced Patterns</a></li>
+<li><a href="#error-handling">Error Handling</a></li>
+<li><a href="#performance-optimization">Performance Optimization</a></li>
+<li><a href="#tool-syntax-rewriting">Tool Syntax Rewriting</a></li>
+<li><a href="#event-system-integration">Event System Integration</a></li>
+</ul>
+<h2 id="quick-start">Quick Start</h2>
+<p>The simplest way to create and use tools is with the <code>@tool</code> decorator:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
-def get_weather(city: str) -> str:
+def get_weather(city: str) -&gt; str:
     """Get current weather for a specified city."""
     # In a real scenario, you'd call an actual weather API
     return f"The weather in {city} is sunny, 72°F"
 
 @tool
-def calculate(expression: str) -> float:
+def calculate(expression: str) -&gt; float:
     """Perform a mathematical calculation."""
     try:
         result = eval(expression)  # Simplified for demo - don't use eval in production!
@@ -154,146 +92,42 @@ response = llm.generate(
     tools=[get_weather, calculate]  # Pass functions directly
 )
 
-# By default (`execute_tools=False`), AbstractCore does not execute tools.
-# It returns a clean assistant message plus structured tool call requests.
 print(response.content)
-print(response.tool_calls)</code></pre>
-                    </div>
+# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
 
-                    <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
-                        <p style="margin: 0;"><strong>Recommended:</strong> execute tool calls in your host/runtime and apply your own safety policy (approval gates, allowlists, timeouts) before sending tool results back to the model in a follow-up turn.</p>
-                    </div>
-                </section>
+# By default (`execute_tools=False`), AbstractCore does not execute tools.
+# Instead, it returns structured tool calls (if the model chose to call tools).
+print(f"Tool calls requested: {len(response.tool_calls) if response.tool_calls else 0}")
+print(f"Generation time: {response.gen_time}ms")
+print(f"Summary: {response.get_summary()}")  # Includes tool count
 
-                <section id="built-in-tools">
-                    <h2>Built-in Tools</h2>
-                    <p>AbstractCore includes a comprehensive set of ready-to-use tools in <code>abstractcore.tools.common_tools</code> (requires <code>pip install "abstractcore[tools]"</code>):</p>
-
-                    <p style="color: var(--text-secondary);">
-                        Web tools (notably <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, <code>fetch_url</code>) require
-                        <code>abstractcore[tools]</code> so runtime dependencies like <code>requests</code>/<code>bs4</code> are available:
-                    </p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[tools]"</code></pre>
-                    </div>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
-from abstractcore.tools.common_tools import (
-    analyze_code,
-    skim_url,
-    skim_websearch,
-    fetch_url,
-    search_files,
-    read_file,
-    list_files,
-)
-
-# Code navigation (recommended before editing)
-outline = analyze_code("src/app.py")
-print(outline)
-
-# Quick URL preview (fast, small)
-preview = skim_url("https://example.com/article")
-
-# Smaller/filtered web search (compact output)
-results = skim_websearch("HTTP caching best practices")
-
-	# Full web content fetching and parsing (HTML→Markdown, JSON/XML/text)
-	result = fetch_url("https://api.github.com/repos/python/cpython")
-	# For PDFs/images/other binaries, fetch_url returns metadata (and optional previews), not full extraction.
-
-# File system operations
-files = search_files("def.*fetch", ".", file_pattern="*.py")  # Find function definitions
-content = read_file("config.json")  # Read file contents
-directory_listing = list_files(".", pattern="*.py", recursive=True)
-
-# Use with any LLM
-llm = create_llm("anthropic", model="claude-haiku-4-5")
-response = llm.generate(
-    "Analyze this API response and summarize the key information",
-    tools=[fetch_url]
-)</code></pre>
-                    </div>
-
-                    <h3>Available Built-in Tools</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-	                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">🌐 Web & Network</h4>
-	                            <ul style="margin: 0; padding-left: 1.5rem;">
-	                                <li><code>skim_url</code> - Fast URL skim (title/description/headings + short preview)</li>
-	                                <li><code>fetch_url</code> - Fetch + parse common text-first types (HTML→Markdown, JSON/XML/text); binaries return metadata + optional previews</li>
-	                                <li><code>web_search</code> - Search the web using DuckDuckGo</li>
-	                                <li><code>skim_websearch</code> - Smaller/filtered web search (compact result list)</li>
-	                            </ul>
-	                        </div>
-                        
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">📁 File Operations</h4>
-                            <ul style="margin: 0; padding-left: 1.5rem;">
-                                <li><code>analyze_code</code> - Structured outline of Python/JavaScript code (imports/classes/functions with line ranges)</li>
-                                <li><code>search_files</code> - Search for text patterns inside files using regex</li>
-                                <li><code>list_files</code> - Find and list files by names/paths using glob patterns</li>
-                                <li><code>read_file</code> - Read file contents with optional line range selection</li>
-                                <li><code>write_file</code> - Write content to files with directory creation</li>
-                                <li><code>edit_file</code> - Edit files using pattern matching and replacement</li>
-                            </ul>
-                        </div>
-                        
-	                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-	                            <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">⚙️ System Operations</h4>
-	                            <ul style="margin: 0; padding-left: 1.5rem;">
-	                                <li><code>execute_command</code> - Execute shell commands safely with security controls</li>
-	                            </ul>
-	                        </div>
-	                    </div>
-
-                        <h3>Suggested web workflow (agent-friendly)</h3>
-                        <ol style="color: var(--text-secondary);">
-                            <li><code>skim_websearch(...)</code> → get a small set of candidate URLs</li>
-                            <li><code>skim_url(...)</code> → quickly decide what’s worth fetching</li>
-                            <li><code>fetch_url(...)</code> → parse the selected URL(s); set <code>include_full_content=False</code> when you want a smaller output</li>
-                        </ol>
-                        <p style="color: var(--text-secondary); margin-top: 0;">
-                            Tip: you can measure output footprint/latency locally with <code>python examples/skim_tools_benchmark.py --help</code>.
-                        </p>
-
-	                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
-	                        <p style="margin: 0; color: #1e40af;"><strong>Note:</strong> Built-in tools include error handling, security controls, and work with all providers and tool syntax rewriting.</p>
-	                    </div>
-	                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin: 1rem 0;">
-	                        <p style="margin: 0; color: #92400e;"><strong>Side effects:</strong> For real email/WhatsApp sending, see <a href="communication-tools.html">Communication Tools</a>. Keep these behind an approval boundary.</p>
-	                    </div>
-                </section>
-
-                <section id="tool-decorator">
-                    <h2>The @tool Decorator</h2>
-                    <p>The <code>@tool</code> decorator is the primary way to create tools in AbstractCore. It automatically extracts function metadata and creates proper tool definitions.</p>
-                    
-                    <h3>Basic Usage</h3>
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import tool
+# Inspect tool calls (host/runtime executes them)
+if response.tool_calls:
+    for call in response.tool_calls:
+        print(f"Tool: {call.get('name')} args={call.get('arguments')}")
+</code></pre></div>
+<h2 id="the-tool-decorator">The @tool Decorator</h2>
+<p>The <code>@tool</code> decorator is the primary way to create tools in AbstractCore. It automatically extracts function metadata and creates proper tool definitions.</p>
+<h3 id="basic-usage">Basic Usage</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import tool
 
 @tool
-def list_files(directory: str = ".", pattern: str = "*") -> str:
+def list_files(directory: str = ".", pattern: str = "*") -&gt; str:
     """List files in a directory matching a pattern."""
     import os
     import fnmatch
-    
+
     try:
         files = [f for f in os.listdir(directory) 
                 if fnmatch.fnmatch(f, pattern)]
         return "\n".join(files) if files else "No files found"
     except Exception as e:
-        return f"Error: {str(e)}"</code></pre>
-                    </div>
-
-                    <h3>Type Annotations</h3>
-                    <p>The decorator automatically infers parameter types from type annotations:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">@tool
-def create_user(name: str, age: int, is_admin: bool = False) -> str:
+        return f"Error: {str(e)}"
+</code></pre></div>
+<h3 id="type-annotations">Type Annotations</h3>
+<p>The decorator automatically infers parameter types from type annotations:</p>
+<div class="code-block"><pre><code class="language-python">@tool
+def create_user(name: str, age: int, is_admin: bool = False) -&gt; str:
     """Create a new user with the specified details."""
     user_data = {
         "name": name,
@@ -301,14 +135,11 @@ def create_user(name: str, age: int, is_admin: bool = False) -> str:
         "is_admin": is_admin,
         "created_at": "2025-01-14"
     }
-    return f"Created user: {user_data}"</code></pre>
-                    </div>
-
-                    <h3>Enhanced Metadata</h3>
-                    <p>The <code>@tool</code> decorator supports rich metadata for prompted tool calling. For native tool calling, only standard tool schema fields (<code>name</code>, <code>description</code>, <code>parameters</code>) are sent to provider APIs; custom keys are omitted for compatibility.</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">@tool(
+    return f"Created user: {user_data}"
+</code></pre></div>
+<h3 id="enhanced-metadata">Enhanced Metadata</h3>
+<p>The <code>@tool</code> decorator supports rich metadata that gets automatically injected into system prompts for prompted models and passed to native APIs:</p>
+<div class="code-block"><pre><code class="language-python">@tool(
     description="Search the database for records matching the query",
     tags=["database", "search", "query"],
     when_to_use="When the user asks for specific data from the database or wants to find records",
@@ -323,40 +154,62 @@ def create_user(name: str, age: int, is_admin: bool = False) -> str:
         {
             "description": "Search for products under $50",
             "arguments": {
-                "query": "price<50", 
+                "query": "price&lt;50", 
                 "table": "products"
             }
         },
         {
             "description": "Find recent orders",
             "arguments": {
-                "query": "date>2025-01-01",
+                "query": "date&gt;2025-01-01",
                 "table": "orders"
             }
         }
     ]
 )
-def search_database(query: str, table: str = "users") -> str:
+def search_database(query: str, table: str = "users") -&gt; str:
     """Search the database for records matching the query."""
     # Implementation here
-    return f"Searching {table} for: {query}"</code></pre>
-                    </div>
-                    
-                    <div style="background: var(--background-tertiary); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
-                        <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">🎯 How This Metadata is Used:</h4>
-                        <ul style="margin: 0;">
-                            <li><strong>Prompted tool calling</strong>: the tool formatter injects tool name/description/args into the system prompt. To keep prompts small, <code>when_to_use</code> is included only for small tool sets and a few high-impact tools (edit/write/execute + web triage tools), and tool examples are globally capped.</li>
-                            <li><strong>Native tool calling</strong>: only standard fields (<code>name</code>, <code>description</code>, <code>parameters</code>) are sent to provider APIs (unknown/custom fields are intentionally omitted for compatibility).</li>
-                        </ul>
-                    </div>
-                </section>
+    return f"Searching {table} for: {query}"
+</code></pre></div>
+<p><strong>How This Metadata is Used:</strong>
+- <strong>Prompted tool calling</strong>: the tool formatter injects tool name/description/args into the system prompt. To keep prompts small, <code>when_to_use</code> is included only for small tool sets and a few high-impact tools (edit/write/execute + web triage tools), and tool examples are globally capped.
+- <strong>Native tool calling</strong>: only standard fields (<code>name</code>, <code>description</code>, <code>parameters</code>) are sent to provider APIs (unknown/custom fields are intentionally omitted for compatibility).</p>
+<h3 id="built-in-tools">Built-in Tools</h3>
+<p>AbstractCore includes a comprehensive set of ready-to-use tools in <code>abstractcore.tools.common_tools</code> (requires <code>pip install "abstractcore[tools]"</code>):</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.tools.common_tools import skim_url, fetch_url, search_files, read_file, list_files
 
-                <section id="real-world-example">
-                    <h2>Real-World Example from AbstractCore</h2>
-                    <p>Here's an actual example from AbstractCore's codebase showing the full power of the enhanced `@tool` decorator:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">@tool(
+# Quick URL preview (fast, small)
+preview = skim_url("https://example.com/article")
+
+# Full web content fetching and parsing (HTML→Markdown, JSON/XML/text)
+result = fetch_url("https://api.github.com/repos/python/cpython")
+# For PDFs/images/other binaries, fetch_url returns metadata (and optional previews), not full extraction.
+
+# File system operations  
+files = search_files("def.*fetch", ".", file_pattern="*.py")
+content = read_file("config.json")
+directory_listing = list_files(".", pattern="*.py", recursive=True)
+</code></pre></div>
+<p><strong>Available Built-in Tools:</strong>
+- <code>skim_url</code> - Fast URL skim (title/description/headings + short preview)
+- <code>fetch_url</code> - Fetch + parse common text-first types (HTML→Markdown, JSON/XML/text); binaries return metadata + optional previews
+- <code>search_files</code> - Search for text patterns inside files using regex
+- <code>list_files</code> - Find and list files by names/paths using glob patterns
+- <code>read_file</code> - Read file contents with optional line range selection
+- <code>write_file</code> - Write content to files with directory creation
+- <code>edit_file</code> - Edit files using pattern matching and replacement
+- <code>web_search</code> - Search the web using DuckDuckGo
+- <code>skim_websearch</code> - Smaller/filtered web search (compact result list)
+- <code>execute_command</code> - Execute shell commands safely with security controls</p>
+<p><strong>Suggested web workflow (agent-friendly):</strong>
+1. <code>skim_websearch(...)</code> → get a small set of candidate URLs
+2. <code>skim_url(...)</code> → quickly decide what’s worth fetching
+3. <code>fetch_url(...)</code> → parse the selected URL(s); set <code>include_full_content=False</code> when you want a smaller output</p>
+<p>Tip: you can measure output footprint/latency locally with <code>python examples/skim_tools_benchmark.py --help</code>.</p>
+<h3 id="real-world-example">Real-World Example</h3>
+<p>Here's an example from AbstractCore's codebase showing the enhanced <code>@tool</code> decorator:</p>
+<div class="code-block"><pre><code class="language-python">@tool(
     description="Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)",
     tags=["file", "directory", "listing", "filesystem"],
     when_to_use="When you need to find files by their names, paths, or file extensions (NOT for searching file contents)",
@@ -402,7 +255,7 @@ def search_database(query: str, table: str = "users") -> str:
         }
     ]
 )
-def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = False, include_hidden: bool = False, head_limit: Optional[int] = 50) -> str:
+def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = False, include_hidden: bool = False, head_limit: Optional[int] = 50) -&gt; str:
     """
     List files and directories in a specified directory with pattern matching (case-insensitive).
 
@@ -419,215 +272,171 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         Formatted string with file and directory listings or error message.
         When head_limit is applied, shows "showing X of Y files" in the header.
     """
-    # Implementation here...</code></pre>
-                    </div>
-                    
-                    <div style="background: linear-gradient(135deg, #1e40af, #7c3aed); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0; color: white;">
-                        <h3 style="margin: 0 0 1rem 0; color: #ffffff;">🔄 How This Gets Transformed</h3>
-                        <p style="margin: 0 0 1rem 0; color: #e5e7eb;">When you use this tool with a prompted model (like Ollama), AbstractCore automatically generates a system prompt like this:</p>
-                        
-                        <div style="background: #1f2937; padding: 1rem; border-radius: 0.5rem; font-family: monospace; font-size: 0.875rem; border-left: 4px solid #60a5fa; color: #f3f4f6;">
-                            <strong style="color: #ffffff;">You are a helpful AI assistant with access to the following tools:</strong><br><br>
-                            
-                            <strong style="color: #fbbf24;">**list_files**</strong><span style="color: #e5e7eb;">: Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)</span><br>
-                            <span style="color: #a78bfa;">• </span><strong style="color: #10b981;">When to use</strong><span style="color: #e5e7eb;">: When you need to find files by their names, paths, or file extensions (NOT for searching file contents)</span><br>
-                            <span style="color: #a78bfa;">• </span><strong style="color: #10b981;">Tags</strong><span style="color: #e5e7eb;">: file, directory, listing, filesystem</span><br>
-                            <span style="color: #a78bfa;">• </span><strong style="color: #10b981;">Parameters</strong><span style="color: #e5e7eb;">: {"directory_path": {"type": "string", "default": "."}, "pattern": {"type": "string", "default": "*"}, ...}</span><br><br>
-                            
-                            <strong style="color: #ffffff;">To use a tool, respond with this EXACT format:</strong><br>
-                            <span style="color: #f59e0b;">&lt;|tool_call|&gt;</span><br>
-                            <span style="color: #e5e7eb;">{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}</span><br>
-                            <span style="color: #f59e0b;">&lt;/|tool_call|&gt;</span><br><br>
-                            
-                            <strong style="color: #ffffff;">**EXAMPLES:**</strong><br><br>
-                            <strong style="color: #fbbf24;">**list_files Examples:**</strong><br>
-                            <span style="color: #e5e7eb;">1. List all files in current directory:</span><br>
-                            <span style="color: #f59e0b;">&lt;|tool_call|&gt;</span><br>
-                            <span style="color: #e5e7eb;">{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*"}}</span><br>
-                            <span style="color: #f59e0b;">&lt;/|tool_call|&gt;</span><br><br>
-                            
-                            <span style="color: #e5e7eb;">2. Find all Python files recursively:</span><br>
-                            <span style="color: #f59e0b;">&lt;|tool_call|&gt;</span><br>
-                            <span style="color: #e5e7eb;">{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*.py", "recursive": true}}</span><br>
-                            <span style="color: #f59e0b;">&lt;/|tool_call|&gt;</span><br><br>
-                            
-                            <em style="color: #9ca3af;">... and 3 more examples with proper formatting ...</em>
-                        </div>
-                    </div>
-                </section>
+    # Implementation here...
+</code></pre></div>
+<p><strong>How This Gets Transformed</strong></p>
+<p>When you use this tool with a prompted model (like Ollama), AbstractCore automatically generates a system prompt like this:</p>
+<div class="code-block"><pre><code>You are a helpful AI assistant with access to the following tools:
 
-                <section id="universal-support">
-                    <h2>Universal Tool Support</h2>
-                    <p>AbstractCore's tool system works across <strong>all</strong> providers through two mechanisms:</p>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h3 style="margin: 0 0 1rem 0; color: var(--primary-color);">1. Native Tool Support</h3>
-                            <p style="margin: 0 0 1rem 0;">For providers with native tool APIs (OpenAI, Anthropic):</p>
-                            <div class="code-block">
-                                <pre><code class="language-python"># OpenAI with native tool support
+**list_files**: Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)
+• When to use: When you need to find files by their names, paths, or file extensions (NOT for searching file contents)
+• Tags: file, directory, listing, filesystem
+• Parameters: {"directory_path": {"type": "string", "default": "."}, "pattern": {"type": "string", "default": "*"}, ...}
+
+To use a tool, respond with this EXACT format:
+&lt;|tool_call|&gt;
+{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
+&lt;/|tool_call|&gt;
+
+**EXAMPLES:**
+
+**list_files Examples:**
+1. List all files in current directory:
+&lt;|tool_call|&gt;
+{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*"}}
+&lt;/|tool_call|&gt;
+
+2. Find all Python files recursively:
+&lt;|tool_call|&gt;
+{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*.py", "recursive": true}}
+&lt;/|tool_call|&gt;
+
+... and 3 more examples with proper formatting ...
+</code></pre></div>
+<h2 id="universal-tool-support">Universal Tool Support</h2>
+<p>AbstractCore's tool system works across all providers through two mechanisms:</p>
+<h3 id="control-tokens-vs-tool-transcript-tags-important">Control Tokens vs Tool Transcript Tags (Important)</h3>
+<p>It’s easy to conflate two separate layers:</p>
+<p>1) <strong>Chat-template control tokens</strong> (provider responsibility)
+   - These are the hidden/model-specific role separators that turn <code>{role:"system"}</code> vs <code>{role:"user"}</code> into the model’s expected prompt template.
+   - Examples (model-dependent): Llama role headers, Qwen <code>im_start</code> blocks, etc.
+   - When you use a messages API (OpenAI-compatible, Anthropic, Ollama, LMStudio), the server usually applies these automatically.</p>
+<p>2) <strong>Tool-call transcript tags</strong> (prompted strategy)
+   - These are literal strings the model emits in <em>assistant content</em> that we parse, such as:
+     - Qwen-style: <code>&lt;|tool_call|&gt;…&lt;/|tool_call|&gt;</code>
+     - LLaMA-style: <code>&lt;function_call&gt;…&lt;/function_call&gt;</code>
+     - XML-ish: <code>&lt;tool_call&gt;…&lt;/tool_call&gt;</code>
+   - They may correspond to special tokens in some tokenizers, but in prompted mode we still treat them as transcript text and parse them from the output.</p>
+<p>Native tool calling uses structured request/response fields (<code>tools</code> / <code>tool_calls</code> / Anthropic <code>tool_use</code>) and relies on the provider/server to apply the correct chat template; prompted tool calling describes tools in the system prompt and expects transcript tags in assistant text.</p>
+<h3 id="1-native-tool-support">1. Native Tool Support</h3>
+<p>For providers with native tool APIs (OpenAI, Anthropic):</p>
+<div class="code-block"><pre><code class="language-python"># OpenAI with native tool support
 llm = create_llm("openai", model="gpt-4o-mini")
-response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
-                            </div>
-                        </div>
-                        
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">2. Intelligent Prompting</h3>
-                            <p style="margin: 0 0 1rem 0;">For providers without native tool support (Ollama, MLX, LMStudio):</p>
-                            <div class="code-block">
-                                <pre><code class="language-python"># Ollama without native tool support
-# AbstractCore handles this automatically
+response = llm.generate("What's the weather?", tools=[get_weather])
+</code></pre></div>
+<h3 id="2-intelligent-prompting">2. Intelligent Prompting</h3>
+<p>For providers without native tool support (Ollama, MLX, LMStudio):</p>
+<div class="code-block"><pre><code class="language-python"># Ollama without native tool support - AbstractCore handles this automatically
 llm = create_llm("ollama", model="qwen3:4b-instruct")
-response = llm.generate("What's the weather?", tools=[get_weather])</code></pre>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section id="tool-definition">
-                    <h2>Tool Definition</h2>
-                    <p>
-                        In most cases, define tools with <code>@tool</code>. Under the hood, tools are represented as
-                        <code>ToolDefinition</code> objects (manual definitions are rarely needed).
-                    </p>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.tools import ToolDefinition
-
-def get_weather_function(city: str) -> str:
-    return f"{city}: 22°C and sunny"
+response = llm.generate("What's the weather?", tools=[get_weather])
+# AbstractCore automatically:
+# 1. Detects the model architecture (Qwen3)
+# 2. Formats tools with examples into system prompt
+# 3. Parses tool calls from response using &lt;|tool_call|&gt; format
+# 4. Returns structured tool call requests in response.tool_calls
+</code></pre></div>
+<h2 id="tool-definition">Tool Definition</h2>
+<p>Tools are defined using the <code>ToolDefinition</code> class, but the <code>@tool</code> decorator handles this automatically:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.tools import ToolDefinition
 
 # Manual tool definition (rarely needed)
 tool_def = ToolDefinition(
     name="get_weather",
     description="Get current weather for a city",
     parameters={
-        "city": {"type": "string", "description": "The city name"}
+        "city": {
+            "type": "string",
+            "description": "The city name"
+        }
     },
-    function=get_weather_function,
-)</code></pre>
-                    </div>
-
-                    <h3>Parameter Types</h3>
-                    <p>AbstractCore derives tool schemas from Python type hints (including nested objects).</p>
-                    <div style="background: var(--background-secondary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
-                        <ul style="margin: 0;">
-                            <li><code>string</code>, <code>integer</code>, <code>number</code>, <code>boolean</code></li>
-                            <li><code>array</code> (lists) and <code>object</code> (dicts / nested structures)</li>
-                        </ul>
-                    </div>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import tool
-
-@tool
+    function=get_weather_function
+)
+</code></pre></div>
+<h3 id="parameter-types">Parameter Types</h3>
+<p>Supported parameter types:</p>
+<ul>
+<li><code>string</code> - Text values</li>
+<li><code>integer</code> - Whole numbers</li>
+<li><code>number</code> - Floating-point numbers</li>
+<li><code>boolean</code> - True/false values</li>
+<li><code>array</code> - Lists of values</li>
+<li><code>object</code> - Complex nested structures</li>
+</ul>
+<div class="code-block"><pre><code class="language-python">@tool
 def complex_tool(
     text: str,
     count: int,
     threshold: float,
     enabled: bool,
-    tags: list[str],
-    config: dict,
-) -> str:
+    tags: list,
+    config: dict
+) -&gt; str:
     """Tool with various parameter types."""
-    return f"Processed: {text} with {count} items"</code></pre>
-                    </div>
-                </section>
-
-                <section id="tool-execution">
-                    <h2>Tool Execution</h2>
-
-                    <h3>Execution Modes</h3>
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
-                        <ul style="margin: 0;">
-                            <li><strong>Passthrough mode (default):</strong> <code>execute_tools=False</code> → tool calls are returned in <code>response.tool_calls</code> for your host/runtime to execute.</li>
-                            <li><strong>Direct execution (deprecated):</strong> <code>execute_tools=True</code> → AbstractCore executes tools locally and appends results (avoid in server/untrusted environments).</li>
-                        </ul>
-                    </div>
-
-                    <h3>Recommended: Host/runtime execution</h3>
-                    <p>In passthrough mode, treat tool calls as untrusted requests. Execute only what you allow.</p>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm, tool
-from abstractcore.tools import ToolCall, ToolRegistry
-
-@tool
-def get_weather(city: str) -> str:
-    return f"{city}: 22°C and sunny"
-
-dangerous = {"execute_command", "edit_file", "send_email"}
-
-registry = ToolRegistry()
-registry.register(get_weather)
-
-llm = create_llm("openai", model="gpt-4o-mini")
-resp = llm.generate("What's the weather in Paris? Use the tool.", tools=[get_weather])
-
-for call in resp.tool_calls or []:
-    name = call.get("name")
-    if name in dangerous:
-        continue
-    result = registry.execute_tool(
-        ToolCall(
-            name=name,
-            arguments=call.get("arguments") or {},
-            call_id=call.get("call_id") or call.get("id"),
-        )
-    )
-    print(result)</code></pre>
-                    </div>
-
-                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 1rem; margin: 1rem 0;">
-                        <p style="margin: 0; color: #92400e;"><strong>Safety tip:</strong> keep side-effect tools behind an approval boundary (especially filesystem, shell, and messaging tools).</p>
-                    </div>
-
-                    <h3>Architecture-Aware Tool Call Detection</h3>
-                    <p>AbstractCore automatically detects model architecture and uses the appropriate tool call format:</p>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 2rem 0;">
-                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
-                            <h4 style="margin: 0 0 0.5rem 0;">Qwen3 Architecture</h4>
-                            <code>&lt;|tool_call|&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/|tool_call|&gt;</code>
-                        </div>
-                        
-                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
-                            <h4 style="margin: 0 0 0.5rem 0;">LLaMA3 Architecture</h4>
-                            <code>&lt;function_call&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/function_call&gt;</code>
-                        </div>
-                        
-                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
-                            <h4 style="margin: 0 0 0.5rem 0;">OpenAI/Anthropic</h4>
-                            <code>Native API tool calls (structured JSON)</code>
-                        </div>
-                        
-                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
-                            <h4 style="margin: 0 0 0.5rem 0;">XML-based Models</h4>
-                            <code>&lt;tool_call&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/tool_call&gt;</code>
-                        </div>
-                    </div>
-                    
-                    <div style="background: var(--background-tertiary); padding: 1.5rem; border-radius: 0.5rem; margin: 1rem 0;">
-                        <p style="margin: 0;"><strong>🎯 Key Point:</strong> You never need to worry about these formats! AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.</p>
-                    </div>
-                </section>
-
-                <section id="advanced-patterns">
-                    <h2>Advanced Patterns</h2>
-                    
-                    <h3>Tool Chaining</h3>
-                    <p>Tools can call other tools or return data that triggers additional tool calls:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">@tool
-def get_user_location(user_id: str) -> str:
+    return f"Processed: {text} with {count} items"
+</code></pre></div>
+<h2 id="tool-execution">Tool Execution</h2>
+<h3 id="execution-modes">Execution Modes</h3>
+<ul>
+<li><strong>Passthrough mode (default)</strong>: <code>execute_tools=False</code></li>
+<li>AbstractCore returns structured tool calls in <code>GenerateResponse.tool_calls</code>.</li>
+<li>By default (<code>tool_call_tags is None</code>), tool-call markup is stripped from <code>GenerateResponse.content</code>.</li>
+<li>
+<p>A host/runtime executes tools (recommended for servers and agent loops).</p>
+</li>
+<li>
+<p><strong>Direct execution mode (deprecated)</strong>: <code>execute_tools=True</code></p>
+</li>
+<li>AbstractCore parses and executes tools locally via the tool registry and appends results to <code>content</code>.</li>
+<li>Intended for simple scripts only; avoid in server/untrusted environments.</li>
+</ul>
+<h3 id="architecture-aware-tool-call-detection">Architecture-Aware Tool Call Detection</h3>
+<p>AbstractCore automatically detects model architecture and uses the appropriate tool call format:</p>
+<table>
+<thead>
+<tr>
+<th>Architecture</th>
+<th>Format</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Qwen3</strong></td>
+<td><code>&lt;|tool_call|&gt;...JSON...&lt;/|tool_call|&gt;</code></td>
+<td><code>&lt;|tool_call|&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/|tool_call|&gt;</code></td>
+</tr>
+<tr>
+<td><strong>LLaMA3</strong></td>
+<td><code>&lt;function_call&gt;...JSON...&lt;/function_call&gt;</code></td>
+<td><code>&lt;function_call&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/function_call&gt;</code></td>
+</tr>
+<tr>
+<td><strong>OpenAI/Anthropic</strong></td>
+<td>Native API tool calls</td>
+<td>Structured JSON in API response</td>
+</tr>
+<tr>
+<td><strong>XML-based</strong></td>
+<td><code>&lt;tool_call&gt;...JSON...&lt;/tool_call&gt;</code></td>
+<td><code>&lt;tool_call&gt;{"name": "get_weather", "arguments": {"city": "Paris"}}&lt;/tool_call&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Note:</strong> AbstractCore handles architecture detection, prompt formatting, and response parsing automatically. Your tools work the same way across all providers.</p>
+<h3 id="execution-responsibility-recommended">Execution Responsibility (Recommended)</h3>
+<p>In passthrough mode, <code>response.tool_calls</code> are tool call <em>requests</em>. Execute them in your host/runtime (and apply your own safety policy) before sending tool results back to the model in a follow-up turn.</p>
+<h2 id="advanced-patterns">Advanced Patterns</h2>
+<h3 id="tool-chaining">Tool Chaining</h3>
+<p>Tools can call other tools or return data that triggers additional tool calls:</p>
+<div class="code-block"><pre><code class="language-python">@tool
+def get_user_location(user_id: str) -&gt; str:
     """Get the location of a user."""
-    # Mock implementation
+    # Simulated implementation
     locations = {"user123": "Paris", "user456": "Tokyo"}
     return locations.get(user_id, "Unknown")
 
 @tool
-def get_weather(city: str) -> str:
+def get_weather(city: str) -&gt; str:
     """Get weather for a city."""
     return f"Weather in {city}: 72°F, sunny"
 
@@ -636,27 +445,21 @@ response = llm.generate(
     "What's the weather like for user123?",
     tools=[get_user_location, get_weather]
 )
-# In an agent loop, your host executes tool calls and feeds results back so the model can chain.</code></pre>
-                    </div>
+# In an agent loop, your host/runtime can execute tool calls and feed tool results back into the model for multi-step chaining.
+</code></pre></div>
+<h3 id="conditional-tool-execution-recommended">Conditional Tool Execution (Recommended)</h3>
+<p>In passthrough mode, your host/runtime decides which tool calls to execute:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.tools import ToolCall, ToolRegistry
 
-                    <h3>Conditional Tool Execution (Recommended)</h3>
-                    <p>In passthrough mode, your host/runtime decides which tool calls to execute:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.tools import ToolCall, ToolRegistry
-
-dangerous_tools = {"execute_command", "edit_file", "send_email"}
+dangerous_tools = {"delete_file", "system_command", "send_email"}
 
 registry = ToolRegistry()
 registry.register(get_user_location)
 registry.register(get_weather)
 
-resp = llm.generate(
-    "What's the weather like for user123?",
-    tools=[get_user_location, get_weather],
-)
+response = llm.generate("What's the weather like for user123?", tools=[get_user_location, get_weather])
 
-for call in resp.tool_calls or []:
+for call in response.tool_calls or []:
     name = call.get("name")
     if name in dangerous_tools:
         continue
@@ -667,19 +470,34 @@ for call in resp.tool_calls or []:
             call_id=call.get("call_id") or call.get("id"),
         )
     )
-    print(result)</code></pre>
-                    </div>
-                </section>
+    print(result)
+</code></pre></div>
+<h3 id="async-tool-support">Async Tool Support</h3>
+<p>For tools that need to perform async operations:</p>
+<div class="code-block"><pre><code class="language-python">import asyncio
 
-                <section id="error-handling">
-                    <h2>Error Handling</h2>
-                    
-                    <h3>Tool-Level Error Handling</h3>
-                    <p>Handle errors within tools:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">@tool
-def safe_division(a: float, b: float) -> str:
+@tool
+def fetch_data(url: str) -&gt; str:
+    """Fetch data from a URL."""
+    async def async_fetch():
+        # Simulate async HTTP request
+        await asyncio.sleep(0.1)
+        return f"Data from {url}"
+
+    # Run async function in sync context
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        result = loop.run_until_complete(async_fetch())
+        return result
+    finally:
+        loop.close()
+</code></pre></div>
+<h2 id="error-handling">Error Handling</h2>
+<h3 id="tool-level-error-handling">Tool-Level Error Handling</h3>
+<p>Handle errors within tools:</p>
+<div class="code-block"><pre><code class="language-python">@tool
+def safe_division(a: float, b: float) -&gt; str:
     """Safely divide two numbers."""
     try:
         if b == 0:
@@ -687,123 +505,108 @@ def safe_division(a: float, b: float) -> str:
         result = a / b
         return f"{a} ÷ {b} = {result}"
     except Exception as e:
-        return f"Error: {str(e)}"</code></pre>
-                    </div>
-
-                    <h3>System-Level Error Handling</h3>
-                    <p>AbstractCore provides comprehensive error handling:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.exceptions import ToolExecutionError
+        return f"Error: {str(e)}"
+</code></pre></div>
+<h3 id="system-level-error-handling">System-Level Error Handling</h3>
+<p>AbstractCore provides comprehensive error handling:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.exceptions import ToolExecutionError
 
 try:
     response = llm.generate("Use the broken tool", tools=[broken_tool])
 except ToolExecutionError as e:
     print(f"Tool execution failed: {e}")
     print(f"Failed tool: {e.tool_name}")
-    print(f"Error details: {e.error_details}")</code></pre>
-                    </div>
-                </section>
+    print(f"Error details: {e.error_details}")
+</code></pre></div>
+<h3 id="validation-and-sanitization">Validation and Sanitization</h3>
+<p>Validate tool inputs:</p>
+<div class="code-block"><pre><code class="language-python">@tool
+def create_file(filename: str, content: str) -&gt; str:
+    """Create a file with the given content."""
+    import os
+    import re
 
-                <section id="performance-optimization">
-                    <h2>Performance Optimization</h2>
+    # Validate filename
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', filename):
+        return "Error: Invalid filename. Use only letters, numbers, dots, dashes, and underscores."
 
-                    <h3>Tool Registry</h3>
-                    <p>For many tools, register once and reuse definitions instead of rebuilding them each call:</p>
+    # Prevent directory traversal
+    if '..' in filename or filename.startswith('/'):
+        return "Error: Invalid filename. No directory traversal allowed."
 
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.tools import ToolRegistry
+    try:
+        with open(filename, 'w') as f:
+            f.write(content)
+        return f"File '{filename}' created successfully"
+    except Exception as e:
+        return f"Error creating file: {str(e)}"
+</code></pre></div>
+<h2 id="performance-optimization">Performance Optimization</h2>
+<h3 id="tool-registry">Tool Registry</h3>
+<p>Use the tool registry for better performance with many tools:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.tools import ToolRegistry, register_tool
 
-# Register tools once and reuse the registry
-registry = ToolRegistry()
-registry.register(get_weather)
-registry.register(calculate)
+# Register tools globally
+register_tool(get_weather)
+register_tool(calculate)
+register_tool(list_files)
 
-resp = llm.generate("Help me with weather and math.", tools=registry.list_tools())</code></pre>
-                    </div>
+# Use registered tools
+registry = ToolRegistry.get_instance()
+available_tools = registry.get_all_tools()
 
-                    <h3>Lazy Loading</h3>
-                    <p>Load expensive resources only when the tool is invoked:</p>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">class DatabaseTool:
+response = llm.generate(
+    "Help me with weather and calculations",
+    tools=available_tools
+)
+</code></pre></div>
+<h3 id="lazy-loading">Lazy Loading</h3>
+<p>Load expensive resources only when needed:</p>
+<div class="code-block"><pre><code class="language-python">class DatabaseTool:
     def __init__(self):
         self._connection = None
 
     @property
     def connection(self):
         if self._connection is None:
+            # Expensive database connection
             self._connection = create_database_connection()
         return self._connection
 
-db = DatabaseTool()</code></pre>
-                    </div>
+db_tool = DatabaseTool()
 
-                    <h3>Caching Results</h3>
-                    <div class="code-block">
-                        <pre><code class="language-python">from functools import lru_cache
-from abstractcore import tool
+@tool
+def query_database(sql: str) -&gt; str:
+    """Execute a SQL query."""
+    try:
+        result = db_tool.connection.execute(sql)
+        return str(result)
+    except Exception as e:
+        return f"Database error: {str(e)}"
+</code></pre></div>
+<h3 id="caching-results">Caching Results</h3>
+<p>Cache expensive tool results:</p>
+<div class="code-block"><pre><code class="language-python">from functools import lru_cache
 
 @tool
 @lru_cache(maxsize=100)
-def expensive_calculation(input_data: str) -> str:
-    return run_expensive_step(input_data)</code></pre>
-                    </div>
-                </section>
-
-                <section id="syntax-rewriting">
-                    <h2>Tool Syntax Rewriting</h2>
-                    <p>AbstractCore can rewrite tool call formats for compatibility with different agentic CLIs:</p>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0;">Qwen3 tags (<code>qwen3</code>)</h4>
-                            <div class="code-block">
-                                <pre><code class="language-python">response = llm.generate(
-    "What's the weather?", 
-    tools=[get_weather],
-    tool_call_tags="qwen3"
-)
-# Output: <|tool_call|>{"name": "get_weather"}...</|tool_call|></code></pre>
-                            </div>
-                        </div>
-                        
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0;">LLaMA3 tags (<code>llama3</code>)</h4>
-                            <div class="code-block">
-                                <pre><code class="language-python">response = llm.generate(
-    "What's the weather?", 
-    tools=[get_weather],
-    tool_call_tags="llama3"
-)
-# Output: <function_call>{"name": "get_weather"}...</function_call></code></pre>
-                            </div>
-                        </div>
-                        
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h4 style="margin: 0 0 1rem 0;">XML tags (<code>xml</code>)</h4>
-                            <div class="code-block">
-                                <pre><code class="language-python">response = llm.generate(
-    "What's the weather?", 
-    tools=[get_weather],
-    tool_call_tags="xml"
-)
-# Output: <tool_call>{"name": "get_weather"}...</tool_call></code></pre>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
-                        <p style="margin: 0; color: #1e40af;"><strong>HTTP clients:</strong> When consuming tool calls through the OpenAI-compatible server, prefer <code>agent_format</code> on the request body (see <a href="server.html">Server Guide</a>).</p>
-                    </div>
-                </section>
-
-                <section id="event-integration">
-                    <h2>Event System Integration</h2>
-                    <p>Observe tool calling and (optional) tool execution through events (event payload shapes may vary by emitter):</p>
-                    
-                    <h3>Cost Monitoring</h3>
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.events import EventType, on_global
+def expensive_calculation(input_data: str) -&gt; str:
+    """Perform an expensive calculation with caching."""
+    import time
+    time.sleep(1)  # Simulate expensive operation
+    return f"Result for {input_data}"
+</code></pre></div>
+<h2 id="tool-syntax-rewriting">Tool Syntax Rewriting</h2>
+<p>AbstractCore can rewrite tool-call syntax for downstream agents/clients:</p>
+<ul>
+<li><strong>Python API</strong>: pass <code>tool_call_tags=...</code> to <code>generate()</code> / <code>agenerate()</code> / <code>BasicSession.generate()</code> to preserve and rewrite tool-call markup in <code>content</code>.</li>
+<li><strong>HTTP server</strong>: set the <code>agent_format</code> request field (or rely on auto-detection based on <code>User-Agent</code> + model name).</li>
+</ul>
+<p>See: <a href="tool-syntax-rewriting.html">Tool Call Syntax Rewriting</a></p>
+<h2 id="event-system-integration">Event System Integration</h2>
+<p>Observe tool calling and (optional) tool execution through events:</p>
+<h3 id="cost-monitoring">Cost Monitoring</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
 
 def monitor_tool_costs(event):
     """Monitor costs of tool executions."""
@@ -811,155 +614,141 @@ def monitor_tool_costs(event):
         if call.get("name") in {"expensive_api_call", "premium_service"}:
             print(f"Warning: Using expensive tool {call.get('name')}")
 
-on_global(EventType.TOOL_STARTED, monitor_tool_costs)</code></pre>
-                    </div>
-
-                    <h3>Performance Tracking</h3>
-                    <div class="code-block">
-                        <pre><code class="language-python">def track_tool_outcomes(event):
+on_global(EventType.TOOL_STARTED, monitor_tool_costs)
+</code></pre></div>
+<h3 id="performance-tracking">Performance Tracking</h3>
+<div class="code-block"><pre><code class="language-python">def track_tool_performance(event):
     """Track tool execution outcomes (shape varies by emitter)."""
     for result in event.data.get("tool_results", []) or []:
         if result.get("success") is False:
             print(f"Tool failed: {result.get('name')} error={result.get('error')}")
 
-on_global(EventType.TOOL_COMPLETED, track_tool_outcomes)</code></pre>
-                    </div>
-                </section>
+on_global(EventType.TOOL_COMPLETED, track_tool_performance)
+</code></pre></div>
+<h3 id="security-auditing">Security Auditing</h3>
+<div class="code-block"><pre><code class="language-python">def audit_tool_usage(event):
+    """Audit all tool usage for security."""
+    for call in event.data.get("tool_calls", []) or []:
+        print(f"Tool requested: {call.get('name')} args={call.get('arguments')}")
+        # Log to security audit system
+        security_log(call.get("name"), call.get("arguments"))
 
-                <section id="best-practices">
-                    <h2>Best Practices</h2>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin: 2rem 0;">
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h3 style="margin: 0 0 1rem 0;">1. Clear Documentation</h3>
-                            <p style="margin: 0 0 1rem 0;">Always provide clear docstrings for your tools:</p>
-                            <div class="code-block">
-                                <pre><code class="language-python">from typing import Any, Dict, Optional
+on_global(EventType.TOOL_STARTED, audit_tool_usage)
+</code></pre></div>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="1-clear-documentation">1. Clear Documentation</h3>
+<p>Always provide clear docstrings for your tools:</p>
+<div class="code-block"><pre><code class="language-python">@tool
+def send_email(to: str, subject: str, body: str) -&gt; str:
+    """Send an email to the specified recipient.
 
-@tool
-def send_email(
-    to: Any,
-    subject: str,
-    *,
-    account: Optional[str] = None,
-    body_text: Optional[str] = None,
-    body_html: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Send an email from an operator-configured account.
+    Args:
+        to: Email address of the recipient
+        subject: Subject line of the email
+        body: Main content of the email
+
+    Returns:
+        Success message or error description
 
     Note:
-        - SMTP/IMAP settings are configured by the operator (not passed via tool args).
-        - Use with caution as it sends real emails; keep behind an approval boundary.
+        This tool requires email configuration to be set up.
+        Use with caution as it sends actual emails.
     """
-    # Implementation here</code></pre>
-                            </div>
-                        </div>
-                        
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                            <h3 style="margin: 0 0 1rem 0;">2. Input Validation</h3>
-                            <p style="margin: 0 0 1rem 0;">Always validate and sanitize inputs:</p>
-                            <div class="code-block">
-                                <pre><code class="language-python">@tool
-def process_user_input(user_data: str) -> str:
+    # Implementation here
+</code></pre></div>
+<h3 id="2-input-validation">2. Input Validation</h3>
+<p>Always validate and sanitize inputs:</p>
+<div class="code-block"><pre><code class="language-python">@tool
+def process_user_input(user_data: str) -&gt; str:
     """Process user input safely."""
     # Validate input length
-    if len(user_data) > 1000:
+    if len(user_data) &gt; 1000:
         return "Error: Input too long (max 1000 characters)"
-    
+
     # Sanitize input
     import html
     safe_data = html.escape(user_data)
-    
+
     # Process safely
-    return f"Processed: {safe_data}"</code></pre>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section id="troubleshooting">
-                    <h2>Troubleshooting</h2>
-                    
-                    <h3>Common Issues</h3>
-                    <div style="background: var(--background-tertiary); padding: 1.5rem; border-radius: 0.75rem; margin: 1rem 0;">
-                        <ol>
-                            <li><strong>Tool not being called</strong>: Check tool description and parameter names</li>
-                            <li><strong>Invalid JSON in tool calls</strong>: Ensure proper error handling in tools</li>
-                            <li><strong>Tools timing out</strong>: Implement proper timeout handling</li>
-                            <li><strong>Memory issues with large tools</strong>: Use streaming or chunking</li>
-                        </ol>
-                    </div>
-
-                    <h3>Debug Mode</h3>
-                    <p>Enable debug mode to see tool execution details:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python">import logging
+    return f"Processed: {safe_data}"
+</code></pre></div>
+<h3 id="3-error-recovery">3. Error Recovery</h3>
+<p>Provide meaningful error messages and recovery suggestions:</p>
+<div class="code-block"><pre><code class="language-python">@tool
+def connect_to_service(endpoint: str) -&gt; str:
+    """Connect to an external service."""
+    try:
+        # Attempt connection
+        result = make_connection(endpoint)
+        return f"Connected successfully: {result}"
+    except ConnectionError:
+        return "Error: Could not connect to service. Please check the endpoint URL and try again."
+    except TimeoutError:
+        return "Error: Connection timed out. The service may be temporarily unavailable."
+    except Exception as e:
+        return f"Error: Unexpected error occurred: {str(e)}"
+</code></pre></div>
+<h3 id="4-resource-management">4. Resource Management</h3>
+<p>Clean up resources properly:</p>
+<div class="code-block"><pre><code class="language-python">@tool
+def process_large_file(filename: str) -&gt; str:
+    """Process a large file efficiently."""
+    try:
+        with open(filename, 'r') as file:
+            # Process file in chunks
+            result = ""
+            while True:
+                chunk = file.read(1024)
+                if not chunk:
+                    break
+                result += process_chunk(chunk)
+        return f"Processed file: {filename}"
+    except FileNotFoundError:
+        return f"Error: File '{filename}' not found"
+    except MemoryError:
+        return "Error: File too large to process"
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<ol>
+<li><strong>Tool not being called</strong>: Check tool description and parameter names</li>
+<li><strong>Invalid JSON in tool calls</strong>: Ensure proper error handling in tools</li>
+<li><strong>Tools timing out</strong>: Implement proper timeout handling</li>
+<li><strong>Memory issues with large tools</strong>: Use streaming or chunking</li>
+</ol>
+<h3 id="debug-mode">Debug Mode</h3>
+<p>Enable debug mode to see tool execution details:</p>
+<div class="code-block"><pre><code class="language-python">import logging
 logging.basicConfig(level=logging.DEBUG)
 
 # Tool execution details will be logged
-response = llm.generate("Use tools", tools=[debug_tool])</code></pre>
-                    </div>
-
-                    <h3>Testing Tools</h3>
-                    <p>Test tools independently:</p>
-                    
-                    <div class="code-block">
-                        <pre><code class="language-python"># Test tool directly
+response = llm.generate("Use tools", tools=[debug_tool])
+</code></pre></div>
+<h3 id="testing-tools">Testing Tools</h3>
+<p>Test tools independently:</p>
+<div class="code-block"><pre><code class="language-python"># Test tool directly
 result = get_weather("Paris")
 print(f"Direct call result: {result}")
 
 # Test with LLM
 response = llm.generate("What's the weather in Paris?", tools=[get_weather])
-print(f"LLM result: {response.content}")</code></pre>
-                    </div>
-                </section>
-
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API documentation</p>
-                        </a>
-                        
-                        <a href="tool-syntax-rewriting.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Syntax Rewriting</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Format conversion details</p>
-                        </a>
-
-                        <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Centralized Configuration</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global defaults and settings</p>
-                        </a>
-
-                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Media Handling</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment</p>
-                        </a>
-
-                        <a href="architecture.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Architecture</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">System design and tool execution flow</p>
-                        </a>
-
-                        <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world tool usage examples</p>
-                        </a>
-
-                        <a href="mcp.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">MCP Tools</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Discover external tools via Model Context Protocol</p>
-                        </a>
-
-                        <a href="communication-tools.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Communication Tools</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Email + WhatsApp tools (opt-in; safety-first)</p>
-                        </a>
-                    </div>
-                </div>
+print(f"LLM result: {response.content}")
+</code></pre></div>
+<h2 id="examples">Examples</h2>
+<p>See the <a href="../examples/">examples directory</a> for comprehensive tool usage examples:</p>
+<ul>
+<li><a href="../examples/tool_usage_basic.py">Basic Tool Usage</a></li>
+<li><a href="../examples/tool_usage_advanced.py">Advanced Tool Patterns</a></li>
+<li><a href="../examples/progressive/example_3_tool_calling.py">Tool Chaining Examples</a></li>
+</ul>
+<h2 id="related-documentation">Related Documentation</h2>
+<ul>
+<li><a href="api-reference.html">API Reference</a> - Complete API documentation</li>
+<li><a href="api-reference.html#event-system">Event System</a> - Event-driven tool control</li>
+<li><a href="architecture.html">Architecture</a> - System design and tool execution flow</li>
+<li><a href="server.html">Server Guide</a> - HTTP server and REST API</li>
+<li><a href="getting-started.html">Getting Started</a> - Quick start guide</li>
+</ul>
             </div>
         </div>
     </main>

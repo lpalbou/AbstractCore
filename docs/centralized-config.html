@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Centralized Configuration - AbstractCore</title>
-    <meta name="description" content="AbstractCore centralized configuration system - set global defaults, app-specific preferences, and never specify providers repeatedly again.">
+    <title>AbstractCore Centralized Configuration - AbstractCore</title>
+    <meta name="description" content="AbstractCore provides a unified configuration system that manages default models, cache directories, logging settings, and other package-wide preferences from a single location.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -16,287 +16,562 @@
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Centralized Configuration</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Set up once, use everywhere. AbstractCore's centralized configuration system eliminates repetitive provider and model specifications across your projects.
-                </p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">AbstractCore Centralized Configuration</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore provides a unified configuration system that manages default models, cache directories, logging settings, and other package-wide preferences from a single location.</p>
             </div>
 
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#configuration-file-location" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration File Location</a>
+<a href="#configuration-sections" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration Sections</a>
+<a href="#priority-system" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Priority System</a>
+<a href="#debug-mode" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Debug Mode</a>
+<a href="#configuration-status" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration Status</a>
+<a href="#interactive-configuration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Interactive Configuration</a>
+<a href="#example-workflows" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Example Workflows</a>
+<a href="#configuration-file-format" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration File Format</a>
+<a href="#configuration-parameter-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration Parameter Reference</a>
+<a href="#common-configuration-tasks" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Common Configuration Tasks</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a></div>
+
             <div class="doc-content">
-                <h2>Overview</h2>
-                <p>
-                    AbstractCore provides a unified configuration system that manages default models, cache directories, logging settings, and API keys from a single location: <code>~/.abstractcore/config/abstractcore.json</code>
-                </p>
-                <p>
-                    This eliminates the need to specify providers and models repeatedly and provides consistent behavior across all applications.
-                </p>
 
-                <h2>Quick Start</h2>
-                <div class="code-block">
-                    <pre><code class="language-bash"># Check current configuration status
+
+<h2 id="configuration-file-location">Configuration File Location</h2>
+<p>Configuration is stored in: <code>~/.abstractcore/config/abstractcore.json</code></p>
+<h2 id="configuration-sections">Configuration Sections</h2>
+<h3 id="application-defaults">Application Defaults</h3>
+<p>Set default providers and models for specific AbstractCore applications:</p>
+<div class="code-block"><pre><code class="language-bash"># Set defaults for individual apps
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default cli anthropic claude-haiku-4-5
+abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+abstractcore --set-app-default intent lmstudio qwen/qwen3-4b-2507
+
+# View current app defaults
 abstractcore --status
+</code></pre></div>
+<h3 id="global-defaults">Global Defaults</h3>
+<p>Set fallback defaults when app-specific configurations are not available:</p>
+<div class="code-block"><pre><code class="language-bash"># Set global fallback model
+abstractcore --set-global-default ollama/llama3:8b
 
-# Set global fallback model (used when no app-specific default)
-abstractcore --set-global-default ollama/qwen3:4b-instruct
-
-# Set app-specific defaults for optimal performance
-abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-app-default cli ollama qwen3:4b-instruct
-
-# Set API keys
-abstractcore --set-api-key openai sk-your-key-here
-abstractcore --set-api-key anthropic your-anthropic-key
-
-# Configure logging
-abstractcore --set-console-log-level WARNING</code></pre>
-                </div>
-
-                <h2>Configuration Priority System</h2>
-                <p>AbstractCore uses a clear priority hierarchy to determine which model to use:</p>
-
-                <ol>
-                    <li><strong>Explicit Parameters</strong> (highest priority)
-                        <div class="code-block">
-                            <pre><code class="language-bash">summarizer document.txt --provider openai --model gpt-4o-mini</code></pre>
-                        </div>
-                    </li>
-
-                    <li><strong>App-Specific Configuration</strong>
-                        <div class="code-block">
-                            <pre><code class="language-bash">abstractcore --set-app-default summarizer openai gpt-4o-mini</code></pre>
-                        </div>
-                    </li>
-
-                    <li><strong>Global Configuration</strong>
-                        <div class="code-block">
-                            <pre><code class="language-bash">abstractcore --set-global-default openai/gpt-4o-mini</code></pre>
-                        </div>
-                    </li>
-
-                    <li><strong>Hardcoded Defaults</strong> (lowest priority)
-                        <p>Current default: <code>huggingface/unsloth/Qwen3-4B-Instruct-2507-GGUF</code></p>
-                    </li>
-                </ol>
-
-                <h2>Application-Specific Defaults</h2>
-                <p>Set different providers and models for different AbstractCore applications:</p>
-
-                <div class="code-block">
-                    <pre><code class="language-bash"># Fast local model for CLI testing
-abstractcore --set-app-default cli ollama qwen3:4b-instruct
-
-# High-quality cloud model for document summarization
-abstractcore --set-app-default summarizer openai gpt-4o-mini
-
-# Balanced model for extraction tasks
-abstractcore --set-app-default extractor anthropic claude-haiku-4-5
-
-# Analytical model for evaluation
-abstractcore --set-app-default judge anthropic claude-haiku-4-5</code></pre>
-                </div>
-
-                <h2>Vision Fallback Configuration</h2>
-                <p>Enable text-only models to process images through smart vision fallback:</p>
-
-                <div class="code-block">
-                    <pre><code class="language-bash"># Download local vision model (recommended)
-abstractcore --download-vision-model
-
-# Or use existing Ollama model
-abstractcore --set-vision-provider ollama qwen2.5vl:7b
-
-# Or use cloud API
-abstractcore --set-vision-provider openai gpt-4o
-
-# Disable vision fallback
-abstractcore --disable-vision</code></pre>
-                </div>
-
-                <h2>Logging Configuration</h2>
-                <p>Control logging behavior across all AbstractCore components:</p>
-
-                <div class="code-block">
-                    <pre><code class="language-bash"># Set console logging level
-abstractcore --set-console-log-level DEBUG    # Show all messages
-abstractcore --set-console-log-level INFO     # Show info and above
-abstractcore --set-console-log-level WARNING  # Show warnings and errors (default)
-abstractcore --set-console-log-level ERROR    # Show only errors
-abstractcore --set-console-log-level NONE     # Disable console logging
-
-# File logging controls
-abstractcore --enable-file-logging      # Start saving logs to files
-abstractcore --disable-file-logging     # Stop saving logs to files
-abstractcore --set-log-base-dir ~/.abstractcore/logs
-
-# Quick commands
-abstractcore --enable-debug-logging     # Sets both console and file to DEBUG
-abstractcore --disable-console-logging  # Keeps file logging if enabled</code></pre>
-                </div>
-
-                <h2>Cache and Storage Configuration</h2>
-                <div class="code-block">
-                    <pre><code class="language-bash"># Set cache directories
+# Set specialized defaults
+abstractcore --set-chat-model openai/gpt-4o-mini
+abstractcore --set-code-model anthropic/claude-haiku-4-5
+</code></pre></div>
+<h3 id="cache-directories">Cache Directories</h3>
+<p>Configure cache locations for different components:</p>
+<div class="code-block"><pre><code class="language-bash"># Set cache directories
 abstractcore --set-default-cache-dir ~/.cache/abstractcore
 abstractcore --set-huggingface-cache-dir ~/.cache/huggingface
-abstractcore --set-local-models-cache-dir ~/.abstractcore/models</code></pre>
-                </div>
+abstractcore --set-local-models-cache-dir ~/.abstractcore/models
+</code></pre></div>
+<p><strong>Default cache locations:</strong>
+- Default cache: <code>~/.cache/abstractcore</code>
+- HuggingFace cache: <code>~/.cache/huggingface</code>
+- Local models: <code>~/.abstractcore/models</code></p>
+<h3 id="logging-configuration">Logging Configuration</h3>
+<p>Control logging behavior across all AbstractCore components:</p>
+<h4 id="setting-log-levels">Setting Log Levels</h4>
+<div class="code-block"><pre><code class="language-bash"># Change console logging level (what you see in terminal)
+abstractcore --set-console-log-level DEBUG    # Show all messages
+abstractcore --set-console-log-level INFO     # Show info and above
+abstractcore --set-console-log-level WARNING  # Show warnings and errors
+abstractcore --set-console-log-level ERROR    # Show only errors (default)
+abstractcore --set-console-log-level CRITICAL # Show only critical errors
+abstractcore --set-console-log-level NONE     # Disable all console logging
 
-                <h2>Configuration Status Dashboard</h2>
-                <p>View complete configuration with helpful change commands:</p>
+# Change file logging level (when file logging is enabled)
+abstractcore --set-file-log-level DEBUG
+abstractcore --set-file-log-level INFO
+abstractcore --set-file-log-level NONE       # Disable all file logging
+</code></pre></div>
+<h4 id="file-logging-controls">File Logging Controls</h4>
+<div class="code-block"><pre><code class="language-bash"># Enable/disable file logging
+abstractcore --enable-file-logging      # Start saving logs to files
+abstractcore --disable-file-logging     # Stop saving logs to files
 
-                <div class="code-block">
-                    <pre><code class="language-bash">abstractcore --status</code></pre>
-                </div>
+# Set log file location
+abstractcore --set-log-base-dir ~/.abstractcore/logs
+abstractcore --set-log-base-dir /var/log/abstractcore
+</code></pre></div>
+<h4 id="quick-logging-commands">Quick Logging Commands</h4>
+<div class="code-block"><pre><code class="language-bash"># Enable debug mode (sets both console and file to DEBUG)
+abstractcore --enable-debug-logging
 
-                <p>This displays a hierarchical dashboard showing:</p>
-                <ul>
-                    <li>🎯 Application Defaults (CLI, Summarizer, Extractor, Judge)</li>
-                    <li>🌐 Global Fallback settings</li>
-                    <li>👁️ Media Processing configuration</li>
-                    <li>🔑 Provider Access (API key status)</li>
-                    <li>📝 Logging configuration</li>
-                    <li>💾 Storage locations</li>
-                </ul>
+# Disable console output (keeps file logging if enabled)
+abstractcore --disable-console-logging
 
-                <h2>Common Configuration Workflows</h2>
+# Check current logging settings
+abstractcore --status  # Shows current levels with change commands
+</code></pre></div>
+<p><strong>Available log levels:</strong> DEBUG, INFO, WARNING, ERROR, CRITICAL, NONE</p>
+<p><strong>Log level descriptions:</strong>
+- <strong>DEBUG</strong>: Show all messages including detailed diagnostics
+- <strong>INFO</strong>: Show informational messages and above
+- <strong>WARNING</strong>: Show warnings, errors, and critical messages
+- <strong>ERROR</strong>: Show only errors and critical messages
+- <strong>CRITICAL</strong>: Show only critical errors
+- <strong>NONE</strong>: Disable all logging completely</p>
+<p><strong>Default logging settings:</strong>
+- Console level: ERROR
+- File level: DEBUG
+- File logging: Disabled by default
+- Log base directory: <code>~/.abstractcore/logs</code></p>
+<h3 id="vision-image-fallback-for-text-only-models">Vision (image fallback for text-only models)</h3>
+<p>Configure <strong>vision fallback</strong> (two-stage caption → inject observations) for text-only models:</p>
+<div class="code-block"><pre><code class="language-bash"># Set vision fallback provider/model
+abstractcore --set-vision-provider huggingface Salesforce/blip-image-captioning-base
 
-                <h3>First-Time Setup</h3>
-                <div class="code-block">
-                    <pre><code class="language-bash"># Check what's available
-abstractcore --status
+# Optional: add backups (used if the first vision backend fails)
+abstractcore --add-vision-fallback lmstudio qwen/qwen3-vl-4b
 
-# Configure for development (free local models)
-abstractcore --set-global-default ollama/qwen3:4b-instruct
-abstractcore --set-console-log-level WARNING
+# Disable vision fallback
+abstractcore --disable-vision
+</code></pre></div>
+<p>Notes:
+- <code>abstractcore --set-vision-caption ...</code> is deprecated but kept for compatibility.
+- Vision fallback is only used for <strong>image/video inputs</strong> when the <em>main</em> model is text-only.</p>
+<h3 id="audio-default-policy-optional-speech-to-text-fallback">Audio (default policy + optional speech-to-text fallback)</h3>
+<p>Audio attachments are controlled by <code>audio_policy</code> and are <strong>strict by default</strong> to avoid silent semantic changes:</p>
+<div class="code-block"><pre><code class="language-bash"># Enable speech-to-text fallback when audio is attached (requires an STT plugin backend)
+pip install abstractvoice
+abstractcore --set-audio-strategy auto
 
-# Add API keys when ready for cloud providers
+# Optional: set a language hint (e.g. en, fr)
+abstractcore --set-stt-language fr
+</code></pre></div>
+<p>Notes:
+- <code>audio_policy="native_only"</code> errors on text-only models (default).
+- <code>audio_policy="speech_to_text"</code> forces STT and injects a transcript into the request.
+- <code>audio_policy="auto"</code> uses native audio when supported, otherwise STT when available.</p>
+<h3 id="video-native-vs-frames-fallback">Video (native vs frames fallback)</h3>
+<p>Video attachments are controlled by <code>video_policy</code>. By default (<code>auto</code>), AbstractCore uses native video input when supported, otherwise it samples frames via <code>ffmpeg</code> and routes them through image/vision handling.</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore --set-video-strategy auto
+abstractcore --set-video-max-frames 6
+abstractcore --set-video-sampling-strategy keyframes
+abstractcore --set-video-max-frame-side 1024
+</code></pre></div>
+<p>Notes:
+- Frame sampling requires <code>ffmpeg</code>/<code>ffprobe</code> available on <code>PATH</code>.
+- If your main model is text-only, frame fallback still requires <strong>vision fallback</strong> to be configured (see above).</p>
+<h3 id="api-keys">API Keys</h3>
+<p>Manage API keys for different providers:</p>
+<div class="code-block"><pre><code class="language-bash"># Set API keys
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic your-anthropic-key
+abstractcore --set-api-key openrouter your-openrouter-key
 
-# Verify everything works
-abstractcore --status</code></pre>
-                </div>
+# List API key status
+abstractcore --list-api-keys
+</code></pre></div>
+<h3 id="streaming-configuration">Streaming Configuration</h3>
+<p>Configure default streaming behavior for CLI:</p>
+<div class="code-block"><pre><code class="language-bash"># Set streaming behavior
+abstractcore --stream on           # Enable streaming by default
+abstractcore --stream off          # Disable streaming by default
 
-                <h3>Development Environment</h3>
-                <div class="code-block">
-                    <pre><code class="language-bash"># Optimize for local development
-abstractcore --set-global-default ollama/qwen3:4b-instruct  # Free local models
-abstractcore --enable-debug-logging                 # Detailed logs for debugging
-abstractcore --set-app-default cli ollama qwen3:4b-instruct  # Fast model for CLI testing</code></pre>
-                </div>
+# Alternative commands
+abstractcore --enable-streaming    # Enable streaming by default
+abstractcore --disable-streaming   # Disable streaming by default
+</code></pre></div>
+<p><strong>Note</strong>: Streaming only affects CLI behavior. Apps (summarizer, extractor, judge, intent) don't support streaming because they need complete structured outputs.</p>
+<h2 id="priority-system">Priority System</h2>
+<p>AbstractCore uses a clear priority hierarchy for configuration:</p>
+<ol>
+<li>
+<p><strong>Explicit Parameters</strong> (highest priority)
+   <code>bash
+   summarizer document.txt --provider openai --model gpt-4o-mini</code></p>
+</li>
+<li>
+<p><strong>App-Specific Configuration</strong>
+<code>bash
+   abstractcore --set-app-default summarizer openai gpt-4o-mini</code></p>
+</li>
+<li>
+<p><strong>Global Configuration</strong>
+<code>bash
+   abstractcore --set-global-default openai/gpt-4o-mini</code></p>
+</li>
+<li>
+<p><strong>Hardcoded Defaults</strong> (lowest priority)
+   - Used when no configuration is available
+   - Current default: <code>huggingface/unsloth/Qwen3-4B-Instruct-2507-GGUF</code></p>
+</li>
+</ol>
+<h2 id="debug-mode">Debug Mode</h2>
+<p>The <code>--debug</code> parameter overrides configured logging levels and shows detailed diagnostics:</p>
+<div class="code-block"><pre><code class="language-bash"># Enable debug mode in apps
+summarizer document.txt --debug
+extractor data.txt --debug
 
-                <h3>Production Environment</h3>
-                <div class="code-block">
-                    <pre><code class="language-bash"># Configure for production reliability and performance
-abstractcore --set-global-default openai/gpt-4o-mini  # Reliable cloud provider
-abstractcore --set-console-log-level WARNING          # Reduce noise
-abstractcore --enable-file-logging                    # Persistent logs
-abstractcore --set-app-default summarizer openai gpt-4o-mini  # Optimize for quality</code></pre>
-                </div>
+# Debug output shows:
+# 🐛 Debug - Configuration details:
+#    Provider: huggingface
+#    Model: unsloth/Qwen3-4B-Instruct-2507-GGUF
+#    Config source: configured defaults
+#    Max tokens: 32000
+#    ...
+</code></pre></div>
+<h2 id="configuration-status">Configuration Status</h2>
+<p>View complete configuration status:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore --status
+</code></pre></div>
+<p>This displays:
+- Application defaults for each app
+- Global fallback settings
+- Vision configuration
+- Embeddings settings
+- API key status
+- Cache directories
+- Logging configuration
+- Configuration file location</p>
+<h2 id="interactive-configuration">Interactive Configuration</h2>
+<p>Set up configuration interactively:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore --config
+</code></pre></div>
+<p>This guides you through:
+- Default model selection
+- Vision fallback setup
+- API key configuration</p>
+<h2 id="example-workflows">Example Workflows</h2>
+<h3 id="initial-setup">Initial Setup</h3>
+<div class="code-block"><pre><code class="language-bash"># 1. Check current status
+abstractcore --status
 
-                <h3>Multi-Environment Approach</h3>
-                <div class="code-block">
-                    <pre><code class="language-bash"># Use different providers for different applications
-abstractcore --set-app-default cli ollama qwen3:4b-instruct           # Fast for development
-abstractcore --set-app-default summarizer openai gpt-4o-mini # Quality for documents
-abstractcore --set-app-default judge anthropic claude-haiku-4-5 # Detailed analysis</code></pre>
-                </div>
+# 2. Set global fallback
+abstractcore --set-global-default ollama/llama3:8b
 
-                <h2>Configuration File Location</h2>
-                <p>Configuration is stored in: <code>~/.abstractcore/config/abstractcore.json</code></p>
-                <p>You can directly edit this file if needed, but using the CLI commands is recommended for safety and validation.</p>
+# 3. Configure specific apps for optimal performance
+abstractcore --set-app-default summarizer openai gpt-4o-mini
+abstractcore --set-app-default extractor ollama qwen3:4b-instruct
+abstractcore --set-app-default judge anthropic claude-haiku-4-5
 
-                <h2>Benefits</h2>
-                <ul>
-                    <li><strong>No Repetition</strong> - Set your preferences once, use them everywhere</li>
-                    <li><strong>Environment-Specific</strong> - Different settings for dev, staging, production</li>
-                    <li><strong>App-Optimized</strong> - Different models for different tasks automatically</li>
-                    <li><strong>Centralized API Keys</strong> - Manage all provider credentials in one place</li>
-                    <li><strong>Consistent Logging</strong> - Unified logging behavior across all components</li>
-                    <li><strong>Easy Switching</strong> - Change providers globally with one command</li>
-                </ul>
+# 4. Set API keys as needed
+abstractcore --set-api-key openai sk-your-key-here
+abstractcore --set-api-key anthropic your-anthropic-key
+# Optional (only if you plan to use the OpenRouter provider):
+abstractcore --set-api-key openrouter your-openrouter-key
 
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">First steps with AbstractCore</p>
-                        </a>
+# 5. Configure logging for development
+abstractcore --enable-debug-logging
+abstractcore --enable-file-logging
 
-                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Media Handling</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment system</p>
-                        </a>
+# 6. Enable streaming for interactive CLI
+abstractcore --stream on
 
-                        <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Vision Capabilities</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
-                        </a>
+# 7. Verify configuration
+abstractcore --status
+</code></pre></div>
+<h3 id="development-environment">Development Environment</h3>
+<div class="code-block"><pre><code class="language-bash"># Enable verbose logging for development
+abstractcore --set-console-log-level DEBUG
+abstractcore --enable-file-logging
+abstractcore --set-log-base-dir ./logs
 
-                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible REST API</p>
-                        </a>
+# Use local models to avoid API costs
+abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-app-default summarizer ollama qwen3:4b-instruct
+</code></pre></div>
+<h3 id="production-environment">Production Environment</h3>
+<div class="code-block"><pre><code class="language-bash"># Use production API services
+abstractcore --set-global-default openai/gpt-4o-mini
+abstractcore --set-api-key openai $OPENAI_API_KEY
 
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API</p>
-                        </a>
+# Set production logging
+abstractcore --set-console-log-level WARNING
+abstractcore --set-file-log-level INFO
+abstractcore --enable-file-logging
+abstractcore --set-log-base-dir /var/log/abstractcore
+</code></pre></div>
+<h2 id="configuration-file-format">Configuration File Format</h2>
+<p>The configuration is stored as JSON in <code>~/.abstractcore/config/abstractcore.json</code>:</p>
+<div class="code-block"><pre><code class="language-json">{
+  "vision": {
+    "strategy": "two_stage",
+    "caption_provider": "huggingface",
+    "caption_model": "Salesforce/blip-image-captioning-base",
+    "fallback_chain": [
+      {
+        "provider": "huggingface",
+        "model": "Salesforce/blip-image-captioning-base"
+      }
+    ],
+    "local_models_path": "~/.abstractcore/models/"
+  },
+  "audio": {
+    "strategy": "native_only",
+    "stt_backend_id": null,
+    "stt_language": null,
+    "caption_provider": null,
+    "caption_model": null,
+    "fallback_chain": []
+  },
+  "video": {
+    "strategy": "auto",
+    "max_frames": 3,
+    "max_frames_native": 8,
+    "frame_format": "jpg",
+    "sampling_strategy": "uniform",
+    "max_frame_side": 1024,
+    "max_video_size_bytes": null
+  },
+  "embeddings": {
+    "provider": "huggingface",
+    "model": "all-minilm-l6-v2"
+  },
+  "app_defaults": {
+    "cli_provider": "huggingface",
+    "cli_model": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "summarizer_provider": "openai",
+    "summarizer_model": "gpt-4o-mini",
+    "extractor_provider": "ollama",
+    "extractor_model": "qwen3:4b-instruct",
+    "judge_provider": "anthropic",
+    "judge_model": "claude-haiku-4-5",
+    "intent_provider": "lmstudio",
+    "intent_model": "qwen/qwen3-4b-2507"
+  },
+  "default_models": {
+    "global_provider": "ollama",
+    "global_model": "llama3:8b",
+    "chat_model": null,
+    "code_model": null
+  },
+  "api_keys": {
+    "openai": null,
+    "anthropic": null,
+    "openrouter": null,
+    "google": null
+  },
+  "cache": {
+    "default_cache_dir": "~/.cache/abstractcore",
+    "huggingface_cache_dir": "~/.cache/huggingface",
+    "local_models_cache_dir": "~/.abstractcore/models",
+    "glyph_cache_dir": "~/.abstractcore/glyph_cache"
+  },
+  "logging": {
+    "console_level": "ERROR",
+    "file_level": "DEBUG",
+    "file_logging_enabled": false,
+    "log_base_dir": null,
+    "verbatim_enabled": true,
+    "console_json": false,
+    "file_json": true
+  },
+  "timeouts": {
+    "default_timeout": 7200.0,
+    "tool_timeout": 600.0
+  },
+  "offline": {
+    "offline_first": true,
+    "allow_network": false,
+    "force_local_files_only": true
+  },
+  "streaming": {
+    "cli_stream_default": false
+  }
+}
+</code></pre></div>
+<h2 id="configuration-parameter-reference">Configuration Parameter Reference</h2>
+<h3 id="vision-section">Vision Section</h3>
+<ul>
+<li><strong>strategy</strong>: Vision fallback strategy (<code>"two_stage"</code>, <code>"disabled"</code>, <code>"basic_metadata"</code>)</li>
+<li><strong>caption_provider</strong>: Provider for vision model (e.g., <code>"huggingface"</code>, <code>"ollama"</code>)</li>
+<li><strong>caption_model</strong>: Vision model name (e.g., <code>"Salesforce/blip-image-captioning-base"</code>)</li>
+<li><strong>fallback_chain</strong>: Array of backup vision models to try if primary fails</li>
+<li><strong>local_models_path</strong>: Directory for local vision model storage</li>
+</ul>
+<h3 id="audio-section">Audio Section</h3>
+<ul>
+<li><strong>strategy</strong>: Audio input strategy (<code>"native_only"</code>, <code>"speech_to_text"</code>, <code>"auto"</code>)</li>
+<li><strong>stt_backend_id</strong>: Optional preferred STT backend id (plugin-specific)</li>
+<li><strong>stt_language</strong>: Optional language hint for STT (e.g. <code>"en"</code>, <code>"fr"</code>)</li>
+</ul>
+<h3 id="video-section">Video Section</h3>
+<ul>
+<li><strong>strategy</strong>: Video input strategy (<code>"native_only"</code>, <code>"frames_caption"</code>, <code>"auto"</code>)</li>
+<li><strong>max_frames</strong>: Frame budget for frames-based fallback</li>
+<li><strong>max_frames_native</strong>: Frame budget for native video-capable models</li>
+<li><strong>sampling_strategy</strong>: <code>"uniform"</code> or <code>"keyframes"</code></li>
+<li><strong>frame_format</strong>: <code>"jpg"</code> or <code>"png"</code></li>
+<li><strong>max_frame_side</strong>: Downscale extracted frames to this max side length (preserves aspect ratio)</li>
+<li><strong>max_video_size_bytes</strong>: Optional maximum video size allowed for processing (bytes)</li>
+</ul>
+<h3 id="default-models-section-global-fallbacks">Default Models Section (Global Fallbacks)</h3>
+<ul>
+<li><strong>global_provider</strong> / <strong>global_model</strong>: Default provider/model when app-specific not set (e.g., <code>"ollama"</code> / <code>"llama3:8b"</code>)</li>
+<li><strong>chat_model</strong>: Specialized model for chat applications (optional, <code>provider/model</code>)</li>
+<li><strong>code_model</strong>: Specialized model for code generation (optional, <code>provider/model</code>)</li>
+</ul>
+<h3 id="app-defaults-section-per-application">App Defaults Section (Per-Application)</h3>
+<ul>
+<li><strong>cli_provider</strong> / <strong>cli_model</strong>: Default for CLI utility</li>
+<li><strong>summarizer_provider</strong> / <strong>summarizer_model</strong>: Default for document summarization</li>
+<li><strong>extractor_provider</strong> / <strong>extractor_model</strong>: Default for entity extraction</li>
+<li><strong>judge_provider</strong> / <strong>judge_model</strong>: Default for text evaluation</li>
+<li><strong>intent_provider</strong> / <strong>intent_model</strong>: Default for intent analysis</li>
+</ul>
+<h3 id="embeddings-section">Embeddings Section</h3>
+<ul>
+<li><strong>provider</strong>: Embeddings provider (<code>"huggingface"</code>, <code>"openai"</code>, etc.)</li>
+<li><strong>model</strong>: Embeddings model name (e.g., <code>"all-minilm-l6-v2"</code>)</li>
+</ul>
+<h3 id="api-keys-section">API Keys Section</h3>
+<ul>
+<li><strong>openai</strong>: OpenAI API key</li>
+<li><strong>anthropic</strong>: Anthropic API key</li>
+<li><strong>openrouter</strong>: OpenRouter API key</li>
+<li><strong>google</strong>: Google API key</li>
+</ul>
+<h3 id="cache-section">Cache Section</h3>
+<ul>
+<li><strong>default_cache_dir</strong>: General cache directory for AbstractCore (<code>~/.cache/abstractcore</code>)</li>
+<li><strong>huggingface_cache_dir</strong>: HuggingFace models cache (<code>~/.cache/huggingface</code>)</li>
+<li><strong>local_models_cache_dir</strong>: Local models storage (<code>~/.abstractcore/models</code>)</li>
+<li><strong>glyph_cache_dir</strong>: Glyph cache directory (<code>~/.abstractcore/glyph_cache</code>)</li>
+</ul>
+<h3 id="logging-section">Logging Section</h3>
+<ul>
+<li><strong>console_level</strong>: Console log level (<code>"DEBUG"</code>, <code>"INFO"</code>, <code>"WARNING"</code>, <code>"ERROR"</code>, <code>"CRITICAL"</code>, <code>"NONE"</code>)</li>
+<li><strong>file_level</strong>: File log level (same options as console_level)</li>
+<li><strong>log_base_dir</strong>: Directory for log files (<code>~/.abstractcore/logs</code>)</li>
+<li><strong>file_logging_enabled</strong>: Whether to save logs to files (<code>true</code>/<code>false</code>)</li>
+<li><strong>verbatim_enabled</strong>: Whether to capture full prompts/responses (<code>true</code>/<code>false</code>)</li>
+<li><strong>console_json</strong>: Use JSON format for console output (<code>true</code>/<code>false</code>)</li>
+<li><strong>file_json</strong>: Use JSON format for file output (<code>true</code>/<code>false</code>)</li>
+</ul>
+<h3 id="streaming-section">Streaming Section</h3>
+<ul>
+<li><strong>cli_stream_default</strong>: Default streaming mode for CLI (<code>true</code>/<code>false</code>)</li>
+</ul>
+<h3 id="timeouts-section">Timeouts Section</h3>
+<ul>
+<li><strong>default_timeout</strong>: Default HTTP timeout for provider calls (seconds)</li>
+<li><strong>tool_timeout</strong>: Default tool execution timeout (seconds)</li>
+</ul>
+<h3 id="offline-section">Offline Section</h3>
+<ul>
+<li><strong>offline_first</strong>: Default to offline-first behavior</li>
+<li><strong>allow_network</strong>: Allow network access when offline-first is enabled (for API providers)</li>
+<li><strong>force_local_files_only</strong>: Force HuggingFace <code>local_files_only</code> mode</li>
+<li><strong>provider_preferences</strong>: Additional provider-specific settings (key-value pairs)</li>
+</ul>
+<h2 id="common-configuration-tasks">Common Configuration Tasks</h2>
+<h3 id="how-to-change-console-log-level">How to Change Console Log Level</h3>
+<p>If you see "Console Level: DEBUG" in the status and want to change it:</p>
+<div class="code-block"><pre><code class="language-bash"># To reduce console output (recommended for normal use)
+abstractcore --set-console-log-level WARNING
 
-                        <a href="apps.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Built-in Apps</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">CLI tools (Summarizer, Extractor, Judge)</p>
-                        </a>
-                    </div>
-                </div>
+# To see more information during development
+abstractcore --set-console-log-level INFO
+
+# To see all debug information
+abstractcore --set-console-log-level DEBUG
+
+# To completely disable console logging
+abstractcore --set-console-log-level NONE
+
+# Verify the change
+abstractcore --status
+</code></pre></div>
+<h3 id="how-to-enable-file-logging">How to Enable File Logging</h3>
+<p>To start saving logs to files:</p>
+<div class="code-block"><pre><code class="language-bash"># Enable file logging (saves to ~/.abstractcore/logs by default)
+abstractcore --enable-file-logging
+
+# Optional: change log directory first
+abstractcore --set-log-base-dir /path/to/your/logs
+abstractcore --enable-file-logging
+
+# Verify file logging is enabled
+abstractcore --status
+</code></pre></div>
+<h3 id="how-to-set-up-debug-mode">How to Set Up Debug Mode</h3>
+<p>For troubleshooting, enable debug mode:</p>
+<div class="code-block"><pre><code class="language-bash"># Enable debug for both console and file logging
+abstractcore --enable-debug-logging
+
+# This is equivalent to:
+# abstractcore --set-console-log-level DEBUG
+# abstractcore --set-file-log-level DEBUG
+# abstractcore --enable-file-logging
+</code></pre></div>
+<h3 id="how-to-completely-disable-logging">How to Completely Disable Logging</h3>
+<p>To turn off all logging output:</p>
+<div class="code-block"><pre><code class="language-bash"># Disable console logging completely
+abstractcore --set-console-log-level NONE
+
+# Disable file logging completely (if enabled)
+abstractcore --set-file-log-level NONE
+abstractcore --disable-file-logging
+
+# Note: --debug parameter in apps will still override NONE
+# This maintains the priority system: explicit parameters &gt; config defaults
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="configuration-not-loading">Configuration Not Loading</h3>
+<p>If apps don't use configured defaults:</p>
+<ol>
+<li>
+<p>Check configuration file exists:
+   <code>bash
+   ls -la ~/.abstractcore/config/abstractcore.json</code></p>
+</li>
+<li>
+<p>Verify configuration content:
+   <code>bash
+   abstractcore --status</code></p>
+</li>
+<li>
+<p>Reset configuration if corrupted:
+   <code>bash
+   rm ~/.abstractcore/config/abstractcore.json
+   abstractcore --config</code></p>
+</li>
+</ol>
+<h3 id="model-initialization-failures">Model Initialization Failures</h3>
+<p>When models fail to initialize, apps show configuration guidance:</p>
+<div class="code-block"><pre><code>[ERROR] Failed to initialize LLM 'openai/gpt-4o-mini': API key not configured
+
+[INFO] Solutions:
+   - Set API key: abstractcore --set-api-key openai sk-...
+   - Use different provider: summarizer document.txt --provider ollama --model llama3:8b
+
+🔧 Or configure a different default:
+   - abstractcore --set-app-default summarizer ollama llama3:8b
+   - abstractcore --status
+</code></pre></div>
+<h3 id="debug-information">Debug Information</h3>
+<p>Use <code>--debug</code> to see detailed configuration information:</p>
+<div class="code-block"><pre><code class="language-bash">summarizer document.txt --debug
+</code></pre></div>
+<p>This shows:
+- Which configuration source is being used
+- Exact provider and model values
+- All parameter values
+- Configuration file location</p>
             </div>
         </div>
     </main>
 
-    <!-- Footer -->
-    <footer class="footer" style="margin-top: 5rem;">
-        <div class="container" style="text-align: center; padding: 2rem 0; border-top: 1px solid var(--border-color);">
-            <p style="color: var(--text-secondary); margin: 0;">
-                &copy; 2025 AbstractCore. Licensed under MIT License.
-            </p>
-        </div>
-    </footer>
-
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
 </body>
 </html>
