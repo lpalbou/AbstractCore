@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 
 def test_render_email_digest_text_is_deterministic() -> None:
-    from abstractcore.comms.email_digests import render_email_digest_text
+    from abstractcore.tools.email_digests import render_email_digest_text
 
     body = render_email_digest_text(
         title="Daily Digest",
@@ -17,7 +17,7 @@ def test_render_email_digest_text_is_deterministic() -> None:
 
 
 def test_send_email_digest_uses_send_email_defaults(monkeypatch) -> None:
-    from abstractcore.comms.email_digests import send_email_digest
+    from abstractcore.tools.email_digests import send_email_digest
 
     monkeypatch.setenv("DEFAULT_EMAIL_PASSWORD", "pw")
     monkeypatch.setenv("ABSTRACT_EMAIL_SMTP_HOST", "smtp.example.com")
