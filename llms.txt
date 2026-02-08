@@ -1,85 +1,56 @@
 # AbstractCore
 
-> Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + docs), embeddings, and an optional OpenAI-compatible HTTP server. The default install is lightweight; features are enabled via extras.
+> Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-Core install:
-- `pip install abstractcore`
+This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
-Common extras (quote brackets for zsh):
-- `pip install "abstractcore[openai]"` / `"abstractcore[anthropic]"`
-- `pip install "abstractcore[huggingface]"` / `"abstractcore[mlx]"` / `"abstractcore[vllm]"`
-- `pip install "abstractcore[tools]"` / `"abstractcore[media]"` / `"abstractcore[embeddings]"` / `"abstractcore[compression]"`
-- `pip install "abstractcore[server]"` / `"abstractcore[tokens]"`
+Quick start:
+- Install: `pip install abstractcore`
+- First steps: `docs/getting-started.md` -> `docs/prerequisites.md`
+- Run the server: `pip install "abstractcore[server]"` then `python -m abstractcore.server.app`
+- Repo/dev checks: `pip install -e ".[dev]"` ; `pytest -q` ; `black .` ; `ruff check .`
 
-## Start Here
+## Read First
 
-- [README.md](README.md): project overview, install matrix, quickstart
-- [docs/README.md](docs/README.md): docs index and reading paths
-- [docs/getting-started.md](docs/getting-started.md): 5-minute intro (`create_llm`, `generate`)
-- [docs/prerequisites.md](docs/prerequisites.md): provider setup + install extras
-- [docs/faq.md](docs/faq.md): common questions and setup gotchas
-- [docs/api.md](docs/api.md): public API map and patterns
-- [docs/api-reference.md](docs/api-reference.md): public API reference
+- [README](README.md): what AbstractCore is + install matrix
+- [Docs index](docs/README.md): recommended reading paths
+- [Getting Started](docs/getting-started.md): `create_llm(...)`, `generate(...)`, streaming, tools, structured output, media
+- [Prerequisites](docs/prerequisites.md): provider setup (keys/base URLs) + local hardware notes
+- [FAQ](docs/faq.md): common issues + setup gotchas
 
-## Core API
+## Core API + Concepts
 
-- [abstractcore/__init__.py](abstractcore/__init__.py): lightweight public exports
-- [abstractcore/core/factory.py](abstractcore/core/factory.py): `create_llm(...)`
-- [abstractcore/providers/registry.py](abstractcore/providers/registry.py): provider IDs + install extras
-- [abstractcore/providers/base.py](abstractcore/providers/base.py): shared generate logic (tools/media/structured output)
-- [docs/centralized-config.md](docs/centralized-config.md): config defaults + API key management
+- [API (Python)](docs/api.md): public API map and common patterns
+- [API Reference](docs/api-reference.md): full function/class listing
+- [Generation parameters](docs/generation-parameters.md): max tokens / thinking / temperature semantics across providers
+- [Tool calling](docs/tool-calling.md): `@tool`, passthrough vs execution, built-in tools
+- [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
+- [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
+- [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins
+- [Centralized config](docs/centralized-config.md): `abstractcore --config`, defaults, keys, logging, vision/audio/video strategies
 
-## Gateway providers (OpenRouter, Portkey)
+## Providers (IDs + setup)
 
-- OpenRouter: `create_llm("openrouter", model="openai/gpt-4o-mini")` with `OPENROUTER_API_KEY`
-- Portkey: `create_llm("portkey", model="gpt-4o-mini", config_id="pcfg_...")` with `PORTKEY_API_KEY` (+ `PORTKEY_CONFIG` or `config_id`); optional `PORTKEY_BASE_URL` for custom gateways
-- See [docs/api.md](docs/api.md) and [docs/faq.md](docs/faq.md) for gateway setup details
+- [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
+- [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
 
-## Features
+## Server (OpenAI-compatible `/v1`)
 
-- [docs/tool-calling.md](docs/tool-calling.md): `@tool`, passthrough vs execution
-- [abstractcore/tools/](abstractcore/tools/): tool system (core/registry/parser/handler)
-- [abstractcore/tools/common_tools.py](abstractcore/tools/common_tools.py): built-in tools (web_search/skim_websearch/skim_url/fetch_url + filesystem helpers; requires `abstractcore[tools]`)
-- [examples/skim_tools_benchmark.py](examples/skim_tools_benchmark.py): benchmark output footprint/latency for skim_* vs fetch_*
-- [docs/tool-syntax-rewriting.md](docs/tool-syntax-rewriting.md): tool-call format rewriting (`tool_call_tags`, server `agent_format`)
-- [docs/structured-output.md](docs/structured-output.md): `response_model=...`
-- [docs/events.md](docs/events.md): global event bus (`on_global`)
-- [docs/structured-logging.md](docs/structured-logging.md): configure console/file logging
-- [docs/media-handling-system.md](docs/media-handling-system.md): `media=[...]` + file processing
-- [docs/vision-capabilities.md](docs/vision-capabilities.md): image/video input + vision fallback (and how this differs from generative vision)
-- [abstractcore/capabilities/registry.py](abstractcore/capabilities/registry.py): capability plugins (`core.voice/core.audio/core.vision`) + `status()` discovery
-- [abstractcore/media/](abstractcore/media/): media pipeline (optional deps behind extras)
-- [docs/glyphs.md](docs/glyphs.md): glyph compression
-- [abstractcore/compression/](abstractcore/compression/): glyph compression (optional)
-- [docs/embeddings.md](docs/embeddings.md): embeddings usage
-- [abstractcore/embeddings/](abstractcore/embeddings/): `EmbeddingManager` (optional)
-- [docs/mcp.md](docs/mcp.md): MCP tool servers (HTTP/stdio)
+- [Server docs](docs/server.md): run + env vars + endpoints and extensions (`api_key`, `base_url`, `agent_format`)
+- [Server implementation](abstractcore/server/app.py): FastAPI gateway source
 
-Media fallbacks (requirements + config):
-- Images: `pip install "abstractcore[media]"` + a vision-capable model, or configure vision fallback: `abstractcore --set-vision-provider PROVIDER MODEL`
-- Video frames fallback: requires `ffmpeg`/`ffprobe` and image/vision handling; tune defaults via `abstractcore --set-video-*`
-- Audio STT fallback: install `abstractvoice` and use `audio_policy="auto"`/`"speech_to_text"` (or set default via `abstractcore --set-audio-strategy auto`)
+## Contributing
 
-## Server
-
-- [docs/server.md](docs/server.md): OpenAI-compatible HTTP endpoints
-- [abstractcore/server/app.py](abstractcore/server/app.py): FastAPI implementation
-
-Notes:
-- `/v1/images/*` endpoints are optional and require `abstractvision`.
-- `/v1/audio/*` endpoints are optional and require an audio/voice capability plugin (typically `abstractvoice`).
-
-## Development
-
-- [pyproject.toml](pyproject.toml): dependencies + extras (keep default small)
-- [CHANGELOG.md](CHANGELOG.md): release notes and upgrade guidance
-- [SECURITY.md](SECURITY.md): responsible vulnerability reporting
-- [CONTRIBUTING.md](CONTRIBUTING.md): contributor workflow
-- [tests/](tests/): pytest suite
+- [Contributing](CONTRIBUTING.md): formatting/lint/test + release checklist
+- [Changelog](CHANGELOG.md): version history + upgrade notes
+- [pyproject.toml](pyproject.toml): extras + console scripts
 
 ## Optional
 
-- [docs/reports/README.md](docs/reports/README.md): non-authoritative engineering notes
-- [docs/research/README.md](docs/research/README.md): non-authoritative research/experiments
-- [docs/archive/README.md](docs/archive/README.md): historical/superseded documentation
-- [llms-full.txt](llms-full.txt): standalone repo context for LLMs
+- [Architecture](docs/architecture.md): core/provider/session/tool/media/capabilities design
+- [Examples](docs/examples.md): end-to-end recipes
+- [Troubleshooting](docs/troubleshooting.md): common errors and fixes
+- [Embeddings](docs/embeddings.md): EmbeddingManager (optional)
+- [Capabilities](docs/capabilities.md): `llm.voice` / `llm.audio` / `llm.vision` plugin model
+- [MCP](docs/mcp.md): MCP tool servers (HTTP/stdio)
+- [llms-full](llms-full.txt): self-contained agent handbook (this repo)

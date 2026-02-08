@@ -10,9 +10,13 @@ This guide walks you through setting up AbstractCore with different LLM provider
 
 **Have Apple Silicon Mac?** → [MLX Setup](#mlx-setup) (optimized for M1/M2/M3/M4 chips)
 
-**Have NVIDIA GPU?** → [vLLM Setup](#vllm-setup-nvidia-cuda-only) (production GPU inference, tensor parallelism)
+**Have NVIDIA GPU?** → [vLLM Setup](#vllm-setup) (production GPU inference; NVIDIA CUDA only)
 
 **Want a GUI for local models?** → [LMStudio Setup](#lmstudio-setup) (easiest local setup)
+
+**Want a gateway/proxy?** → [Gateway Provider Setup](#gateway-provider-setup-openrouter-portkey) (OpenRouter/Portkey routing + governance)
+
+**Using a custom OpenAI-compatible `/v1` endpoint?** → [OpenAI-Compatible Setup](#openai-compatible-setup)
 
 ## Core Installation
 
@@ -128,6 +132,60 @@ print(response.content)
 ```
 
 **Model names**: Use any model supported by your account (examples: `claude-haiku-4-5`, `claude-sonnet-4-5`).
+
+### Gateway Provider Setup (OpenRouter, Portkey)
+
+**Best for**: routing, observability/governance, and unified billing across multiple backends.
+
+Gateways expose an OpenAI-compatible `/v1` endpoint and forward your payload to the routed backend model. Because some backends are strict (for example OpenAI reasoning families like gpt-5/o1 reject unsupported parameters), AbstractCore’s gateway providers forward optional generation parameters (like `temperature`, `top_p`, `max_output_tokens`) **only when explicitly set**.
+
+#### OpenRouter Setup
+
+1. Create an API key: https://openrouter.ai/keys
+2. Set the environment variable:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-..."
+# Optional override (default: https://openrouter.ai/api/v1)
+export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+```
+
+3. Test:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openrouter", model="openai/gpt-4o-mini")
+resp = llm.generate("Say hello in French")
+print(resp.content)
+```
+
+#### Portkey Setup
+
+Portkey routes requests using a **config id** (commonly `pcfg_...`).
+
+1. Create an API key and config in Portkey, then copy:
+   - `PORTKEY_API_KEY`
+   - `PORTKEY_CONFIG` (config id)
+
+2. Set environment variables:
+
+```bash
+export PORTKEY_API_KEY="pk_..."
+export PORTKEY_CONFIG="pcfg_..."
+# Optional override (default: https://api.portkey.ai/v1)
+export PORTKEY_BASE_URL="https://api.portkey.ai/v1"
+```
+
+3. Test:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("portkey", model="gpt-4o-mini", config_id="pcfg_...")
+resp = llm.generate("Say hello in French")
+print(resp.content)
+```
 
 ## Local Provider Setup
 
@@ -304,7 +362,7 @@ print(response.content)
 - `facebook/blenderbot-400M-distill` - Conversational AI
 - `microsoft/CodeBERT-base` - Code understanding
 
-### vLLM Setup (NVIDIA CUDA Only)
+### vLLM Setup
 
 **Best for**: Production GPU deployments, high-throughput inference, tensor parallelism
 
@@ -314,6 +372,8 @@ print(response.content)
 - CUDA 12.1+ installed
 - 16GB+ VRAM recommended
 - **NOT compatible with**: Apple Silicon, AMD GPUs, CPU-only systems
+
+**NVIDIA CUDA only.** If you’re on Apple Silicon, use MLX. If you’re on CPU-only, use Ollama/HuggingFace.
 
 #### ⚠️ Hardware Compatibility Warning
 
@@ -493,6 +553,32 @@ export HF_HOME="~/.cache/huggingface"
 - Any HuggingFace model compatible with vLLM
 
 **Performance notes**: Throughput depends on model size, context length, concurrency, quantization, and GPU. See vLLM docs for tuning knobs (`--tensor-parallel-size`, `--max-model-len`, `--max-num-seqs`, …).
+
+### OpenAI-Compatible Setup
+
+**Best for**: any OpenAI-compatible `/v1` endpoint (llama.cpp servers, LocalAI, text-generation-webui, custom proxies, etc.)
+
+AbstractCore supports a generic OpenAI-compatible provider plus specific convenience providers (LM Studio, vLLM, OpenRouter, Portkey).
+
+#### 1. Get the endpoint base URL
+
+You must include `/v1` for OpenAI-compatible servers:
+
+```bash
+export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+# Optional (if your endpoint requires auth)
+export OPENAI_COMPATIBLE_API_KEY="your-api-key"
+```
+
+#### 2. Test Setup
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai-compatible", model="default", base_url="http://localhost:1234/v1")
+resp = llm.generate("Say hello in French")
+print(resp.content)
+```
 
 ## Troubleshooting
 
