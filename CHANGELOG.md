@@ -5,6 +5,30 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.8] - 2026-02-08
+
+### Added
+- **Portkey provider**: OpenAI-compatible gateway with config-based routing (env: `PORTKEY_API_KEY`, `PORTKEY_CONFIG`; optional `PORTKEY_BASE_URL`).
+- **Tests**: Portkey provider payload adaptation, reasoning model restrictions, explicit-None handling, and base URL validation.
+
+### Changed
+- **Portkey payload hygiene**: forward optional generation parameters only when explicitly set.
+- **Token parameter mapping**: use `max_completion_tokens` for OpenAI reasoning families (gpt-5/o1); keep legacy `max_tokens` for other backends.
+- **Reasoning model compatibility**: drop unsupported parameters (temperature/top_p/penalties) with structured logging.
+- **Error diagnostics**: base URL validation and improved DNS/connectivity hints.
+- **Server logging**: route Python warnings through structured logging; avoid raw stderr warnings at default ERROR verbosity.
+- **Server UX**: print internal/external access URLs outside logging on startup.
+- **OpenAPI schema**: normalize request examples to prevent `/openapi.json` validation failures.
+
+### Fixed
+- Config CLI: interactive vision fallback now accepts any provider/model and uses provider-agnostic guidance.
+- Config CLI: interactive console logging default now uses ERROR to match package defaults.
+
+### Documentation
+- Portkey usage guidance added across core docs.
+- Media docs: clarified vision fallback examples as provider-agnostic.
+- Server docs: moved interactive API docs links to the top of the page.
+
 ## [2.11.6] - 2026-02-06
 
 ### Added
@@ -13,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Faster CLI startup by lazily importing optional web parsing deps in `abstractcore.tools.common_tools`.
 - Docs: clarified requirements and configuration for image/video/audio fallbacks (including `abstractcore --config`).
+
 
 ## [2.11.5] - 2026-02-06
 

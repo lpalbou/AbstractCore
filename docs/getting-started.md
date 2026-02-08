@@ -59,6 +59,19 @@ llm = create_llm("openai", model="gpt-4o-mini")
 
 Tip: you can omit `model=...`, but it’s usually better to pass an explicit model to avoid surprises when defaults change.
 
+Open-source-first: start with local providers (Ollama, LMStudio, MLX, HuggingFace), then add cloud or gateway providers as needed.
+
+Gateway providers (OpenRouter, Portkey) examples:
+
+```python
+from abstractcore import create_llm
+
+llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")
+llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY", config_id="pcfg_...")
+```
+
+Note: gateway providers only forward optional generation params (e.g. `temperature`, `top_p`, `max_output_tokens`) when you explicitly set them.
+
 ## Your first call
 
 OpenAI example (requires `pip install "abstractcore[openai]"`):

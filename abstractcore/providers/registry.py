@@ -205,6 +205,21 @@ class ProviderRegistry:
             import_path="..providers.openrouter_provider"
         ))
 
+        # Portkey Provider
+        self.register_provider(ProviderInfo(
+            name="portkey",
+            display_name="Portkey",
+            provider_class=None,
+            description="OpenAI-compatible AI gateway with header-driven routing and governance",
+            default_model="default",
+            supported_features=["chat", "completion", "embeddings", "prompted_tools", "streaming",
+                               "structured_output"],
+            authentication_required=False,  # API key is common, but self-hosted deployments may omit it.
+            local_provider=False,
+            installation_extras=None,
+            import_path="..providers.portkey_provider"
+        ))
+
 
     def register_provider(self, provider_info: ProviderInfo):
         """Register a provider in the registry."""
@@ -265,6 +280,9 @@ class ProviderRegistry:
             elif provider_info.name == "openrouter":
                 from ..providers.openrouter_provider import OpenRouterProvider
                 return OpenRouterProvider
+            elif provider_info.name == "portkey":
+                from ..providers.portkey_provider import PortkeyProvider
+                return PortkeyProvider
             else:
                 raise ImportError(f"No import logic for provider: {provider_info.name}")
         except ImportError as e:
@@ -307,7 +325,7 @@ class ProviderRegistry:
             provider_class = self.get_provider_class(provider_name)
 
             # Handle providers that need instance for model listing
-            if provider_name in ["anthropic", "ollama", "lmstudio", "openai-compatible"]:
+            if provider_name in ["anthropic", "ollama", "lmstudio", "openai-compatible", "portkey"]:
                 provider_info = self.get_provider_info(provider_name)
                 # Create minimal instance for API access
                 instance = provider_class(model=provider_info.default_model, **kwargs)

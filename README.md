@@ -116,13 +116,18 @@ llm = create_llm(
 
 ## Providers (common)
 
+Open-source-first: local providers (Ollama, LMStudio, vLLM, openai-compatible, HuggingFace, MLX) are first-class. Cloud and gateway providers are optional.
+
 - `openai`: `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`
 - `anthropic`: `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL`
 - `openrouter`: `OPENROUTER_API_KEY`, optional `OPENROUTER_BASE_URL` (default: `https://openrouter.ai/api/v1`)
+- `portkey`: `PORTKEY_API_KEY`, `PORTKEY_CONFIG` (config id), optional `PORTKEY_BASE_URL` (default: `https://api.portkey.ai/v1`)
 - `ollama`: local server at `OLLAMA_BASE_URL` (or legacy `OLLAMA_HOST`)
 - `lmstudio`: OpenAI-compatible local server at `LMSTUDIO_BASE_URL` (default: `http://localhost:1234/v1`)
 - `vllm`: OpenAI-compatible server at `VLLM_BASE_URL` (default: `http://localhost:8000/v1`)
 - `openai-compatible`: generic OpenAI-compatible endpoints via `OPENAI_COMPATIBLE_BASE_URL` (default: `http://localhost:1234/v1`)
+- `huggingface`: local models via Transformers (optional `HUGGINGFACE_TOKEN` for gated downloads)
+- `mlx`: Apple Silicon local models (optional `HUGGINGFACE_TOKEN` for gated downloads)
 
 You can also persist settings (including API keys) via the config CLI:
 - `abstractcore --status`

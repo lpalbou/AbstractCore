@@ -29,6 +29,12 @@ Common extras (quote brackets for zsh):
 - [abstractcore/providers/base.py](abstractcore/providers/base.py): shared generate logic (tools/media/structured output)
 - [docs/centralized-config.md](docs/centralized-config.md): config defaults + API key management
 
+## Gateway providers (OpenRouter, Portkey)
+
+- OpenRouter: `create_llm("openrouter", model="openai/gpt-4o-mini")` with `OPENROUTER_API_KEY`
+- Portkey: `create_llm("portkey", model="gpt-4o-mini", config_id="pcfg_...")` with `PORTKEY_API_KEY` (+ `PORTKEY_CONFIG` or `config_id`); optional `PORTKEY_BASE_URL` for custom gateways
+- See [docs/api.md](docs/api.md) and [docs/faq.md](docs/faq.md) for gateway setup details
+
 ## Features
 
 - [docs/tool-calling.md](docs/tool-calling.md): `@tool`, passthrough vs execution

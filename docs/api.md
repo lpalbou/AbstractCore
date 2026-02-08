@@ -16,6 +16,20 @@ resp = llm.generate("Hello!")
 print(resp.content)
 ```
 
+### Gateway providers (OpenRouter, Portkey)
+
+```python
+from abstractcore import create_llm
+
+llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")
+llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY", config_id="pcfg_...")
+```
+
+Gateway notes:
+- OpenRouter uses `OPENROUTER_API_KEY` (model names like `openai/...`).
+- Portkey uses `PORTKEY_API_KEY` plus a config id (`PORTKEY_CONFIG`).
+- Optional generation parameters (`temperature`, `top_p`, `max_output_tokens`, etc.) are only forwarded when explicitly set.
+
 ### `BasicSession`
 
 Keep conversation state:

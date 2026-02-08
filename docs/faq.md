@@ -42,6 +42,7 @@ llm = create_llm("openai", model="gpt-4o-mini")
 ## How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?
 
 Use the matching provider and set `base_url` (or the provider’s base-url env var).
+We recommend open-source/local providers first; cloud and gateway providers are optional.
 
 Examples:
 
@@ -60,6 +61,19 @@ llm = create_llm("openai-compatible", model="my-model", base_url="http://localho
 ```
 
 See [Prerequisites](prerequisites.md) for setup details and env var names.
+
+## Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?
+
+Gateways like Portkey and OpenRouter forward your payload to the routed backend model, and strict families (for example OpenAI reasoning models like gpt-5/o1) reject unsupported parameters.
+
+In AbstractCore’s gateway providers:
+- Portkey uses `PORTKEY_API_KEY` and `PORTKEY_CONFIG` (config id) for routing.
+- Optional params (`temperature`, `top_p`, `max_output_tokens`) are only sent when you explicitly set them.
+- Reasoning families (gpt-5/o1) drop `temperature`/`top_p` and use `max_completion_tokens` instead of `max_tokens`.
+
+If you still see errors, confirm:
+- You aren’t mixing routing modes (config vs virtual key vs provider-direct).
+- You’re not injecting parameters via Portkey config overrides that the backend rejects.
 
 ## How do I set API keys and defaults?
 

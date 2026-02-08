@@ -26,7 +26,7 @@ pip install "abstractcore[vllm]"         # heavy (GPU server integration)
 ```
 
 Notes:
-- Providers like `ollama`, `lmstudio`, `openrouter`, and `openai-compatible` use the core dependencies only (no provider-specific extra required).
+- Providers like `ollama`, `lmstudio`, `openrouter`, `portkey`, and `openai-compatible` use the core dependencies only (no provider-specific extra required).
 
 ### Optional features
 
@@ -151,8 +151,37 @@ Packaging:
 ### Provider IDs (factory names)
 
 Common provider IDs used by `create_llm(provider=..., model=...)`:
-- Cloud: `openai`, `anthropic`, `openrouter`
+- Cloud: `openai`, `anthropic`
+- Gateways: `openrouter`, `portkey`
 - Local/self-hosted: `ollama`, `lmstudio`, `mlx`, `huggingface`, `vllm`, `openai-compatible`
+
+### Gateway providers (OpenRouter, Portkey)
+
+OpenRouter example:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openrouter", model="openai/gpt-4o-mini")
+```
+
+Portkey example (config mode):
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("portkey", model="gpt-4o-mini", config_id="pcfg_...")
+```
+
+Portkey auth and routing basics:
+- Required: `PORTKEY_API_KEY`
+- Config mode: set `PORTKEY_CONFIG` or pass `config_id=...`
+- Virtual-key mode: set `PORTKEY_VIRTUAL_KEY` or pass `virtual_key=...`
+- Provider-direct mode: pass `portkey_provider=...` and `provider_api_key=...`
+- Optional: `PORTKEY_BASE_URL` for custom gateways
+
+Pick one routing mode at a time (config, virtual-key, or provider-direct).
+See `docs/api.md` and `docs/faq.md` for gateway setup details.
 
 ### Tool calling
 

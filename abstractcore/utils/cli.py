@@ -20,6 +20,7 @@ Usage:
     python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5 --prompt "What is Python?"
     python -m abstractcore.utils.cli --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
     python -m abstractcore.utils.cli --provider openrouter --model openai/gpt-4o-mini
+    python -m abstractcore.utils.cli --provider portkey --model gpt-4o-mini --base-url https://api.portkey.ai/v1
 """
 
 import argparse
@@ -2582,6 +2583,7 @@ Examples:
   python -m abstractcore.utils.cli --provider anthropic --model claude-haiku-4-5
   python -m abstractcore.utils.cli --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
   python -m abstractcore.utils.cli --provider openrouter --model openai/gpt-4o-mini
+  python -m abstractcore.utils.cli --provider portkey --model gpt-4o-mini --base-url https://api.portkey.ai/v1
   python -m abstractcore.utils.cli --prompt "What is Python?"  # Uses configured defaults
 
 Key Commands:
@@ -2619,7 +2621,7 @@ build custom solutions using the AbstractCore framework directly.
 
     # Optional arguments (no longer required - will use configured defaults)
     parser.add_argument('--provider',
-                       choices=['openai', 'anthropic', 'openrouter', 'openai-compatible', 'vllm', 'ollama', 'huggingface', 'mlx', 'lmstudio'],
+                       choices=['openai', 'anthropic', 'openrouter', 'portkey', 'openai-compatible', 'vllm', 'ollama', 'huggingface', 'mlx', 'lmstudio'],
                        help='LLM provider to use (optional - uses configured default)')
     parser.add_argument('--model', help='Model name to use (optional - uses configured default)')
 

@@ -145,6 +145,7 @@ class ApiKeysConfig:
     openai: Optional[str] = None
     anthropic: Optional[str] = None
     openrouter: Optional[str] = None
+    portkey: Optional[str] = None
     google: Optional[str] = None
 
 
@@ -620,6 +621,7 @@ class ConfigurationManager:
                 "openai": "✅ Set" if self.config.api_keys.openai else "❌ Not set",
                 "anthropic": "✅ Set" if self.config.api_keys.anthropic else "❌ Not set",
                 "openrouter": "✅ Set" if self.config.api_keys.openrouter else "❌ Not set",
+                "portkey": "✅ Set" if self.config.api_keys.portkey else "❌ Not set",
                 "google": "✅ Set" if self.config.api_keys.google else "❌ Not set"
             },
             "offline": {
@@ -931,6 +933,8 @@ class ConfigurationManager:
                 self.config.api_keys.anthropic = key
             elif provider == "openrouter":
                 self.config.api_keys.openrouter = key
+            elif provider == "portkey":
+                self.config.api_keys.portkey = key
             elif provider == "google":
                 self.config.api_keys.google = key
             else:

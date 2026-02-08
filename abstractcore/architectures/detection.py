@@ -43,6 +43,7 @@ _KNOWN_PROVIDER_PREFIXES = {
     "openai",
     "openai-compatible",
     "openrouter",
+    "portkey",
     "together",
     "vllm",
 }
