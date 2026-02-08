@@ -77,7 +77,7 @@ class TestProviderRegistry:
         registry = ProviderRegistry()
 
         # Check that standard providers are registered
-        expected_providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface"]
+        expected_providers = ["openai", "anthropic", "ollama", "lmstudio", "mlx", "huggingface", "portkey"]
         registered_providers = registry.list_provider_names()
 
         for provider in expected_providers:

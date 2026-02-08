@@ -4,7 +4,7 @@ This folder contains the **canonical user documentation** for AbstractCore. The 
 
 ## Start here (recommended reading order)
 
-1. **[Prerequisites](prerequisites.md)** — install/configure providers (OpenAI, Anthropic, Ollama, LMStudio, …)
+1. **[Prerequisites](prerequisites.md)** — install/configure providers (Ollama, LMStudio, vLLM, HuggingFace, MLX, OpenAI, Anthropic, OpenRouter, Portkey, …)
 2. **[Getting Started](getting-started.md)** — first call (`create_llm`, `generate`), streaming, tools, structured output
 3. **[FAQ](faq.md)** — install extras, local servers, common gotchas
 4. **[Troubleshooting](troubleshooting.md)** — actionable fixes for common failures

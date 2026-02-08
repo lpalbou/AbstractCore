@@ -9,9 +9,8 @@ Handles CLI commands for vision fallback configuration:
 - abstractcore --download-vision-model
 """
 
-import os
 import argparse
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
 
 def handle_vision_commands(args) -> bool:
@@ -136,43 +135,22 @@ def handle_vision_status(handler: 'VisionFallbackHandler') -> bool:
 
 def handle_list_vision(handler: 'VisionFallbackHandler') -> bool:
     """Handle --list-vision command."""
-    print("📋 Available Vision Configuration Options")
+    print("📋 Vision Configuration Examples (non-exhaustive)")
     print("=" * 60)
 
-    print("\n🔧 PROVIDERS & MODELS")
+    print("\n🔧 EXAMPLE PROVIDER/MODEL PAIRS")
     print("-" * 30)
 
-    # Common vision models by provider
-    options = {
-        "ollama": [
-            "qwen2.5vl:7b - Qwen 2.5 Vision 7B (recommended)",
-            "llama3.2-vision:11b - LLaMA 3.2 Vision 11B",
-            "granite3.2-vision:2b - IBM Granite Vision 2B"
-        ],
-        "openai": [
-            "gpt-4o - GPT-4 Omni (premium)",
-            "gpt-4o-mini - GPT-4 Omni Mini (cost-effective)",
-            "gpt-4-turbo-with-vision - GPT-4 Turbo Vision"
-        ],
-        "anthropic": [
-            "claude-haiku-4-5 - Claude Haiku 4.5 (vision, cost-effective)",
-            "claude-sonnet-4-5 - Claude Sonnet 4.5 (vision)",
-            "claude-opus-4-5 - Claude Opus 4.5 (vision)"
-        ],
-        "huggingface": [
-            "unsloth/Qwen2.5-VL-7B-Instruct-GGUF - GGUF format",
-        ],
-        "lmstudio": [
-            "qwen/qwen2.5-vl-7b - Qwen 2.5 Vision 7B",
-            "google/gemma-3n-e4b - Gemma 3n Vision",
-            "mistralai/magistral-small-2509 - Mistral Vision"
-        ]
-    }
-
-    for provider, models in options.items():
-        print(f"\n{provider.upper()}:")
-        for model in models:
-            print(f"  • {model}")
+    examples = [
+        "lmstudio/qwen/qwen2.5-vl-7b",
+        "huggingface/Salesforce/blip-image-captioning-base",
+        "mlx/<vision-model>",
+        "openai/gpt-4o",
+        "anthropic/claude-3-5-sonnet",
+        "openai-compatible/my-vision-model",
+    ]
+    for example in examples:
+        print(f"  • {example}")
 
     print("\n💾 DOWNLOADABLE MODELS")
     print("-" * 30)
@@ -187,9 +165,9 @@ def handle_list_vision(handler: 'VisionFallbackHandler') -> bool:
 
     print("\n📖 CONFIGURATION COMMANDS")
     print("-" * 30)
-    print("  abstractcore --set-vision-caption qwen2.5vl:7b")
-    print("  abstractcore --set-vision-provider ollama qwen2.5vl:7b")
-    print("  abstractcore --set-vision-provider openai gpt-4o")
+    print("  abstractcore --set-vision-provider PROVIDER MODEL")
+    print("  abstractcore --add-vision-fallback PROVIDER MODEL")
+    print("  abstractcore --disable-vision")
     print("  abstractcore --download-vision-model")
     print("  abstractcore --download-vision-model blip-base-caption")
     print("  abstractcore --vision-status")
@@ -197,9 +175,12 @@ def handle_list_vision(handler: 'VisionFallbackHandler') -> bool:
 
     print("\n💡 QUICK START")
     print("-" * 30)
-    print("  1. For local models: abstractcore --set-vision-caption qwen2.5vl:7b")
-    print("  2. For cloud APIs:   abstractcore --set-vision-provider openai gpt-4o")
-    print("  3. For offline use:  abstractcore --download-vision-model")
+    print("  1. Choose any provider/model:")
+    print("     abstractcore --set-vision-provider PROVIDER MODEL")
+    print("  2. (Optional) Download an offline caption model:")
+    print("     abstractcore --download-vision-model blip-base-caption")
+    print("  3. Verify:")
+    print("     abstractcore --vision-status")
 
     print("=" * 60)
     return True
@@ -295,30 +276,47 @@ def handle_download_vision_model(handler: 'VisionFallbackHandler', model_name: s
 
     return True
 
+def _prompt_provider_and_model() -> Optional[Tuple[str, str]]:
+    """Prompt for provider/model with provider-agnostic guidance."""
+    print("Vision fallback supports any provider and any model (local or cloud).")
+    print("Examples (non-exhaustive):")
+    print("  lmstudio/qwen/qwen2.5-vl-7b, huggingface/Salesforce/blip-image-captioning-base, mlx/<vision-model>")
+    print("  openai/gpt-4o, anthropic/claude-3-5-sonnet, openai-compatible/my-vision-model")
+    print("Tip: use `abstractcore --download-vision-model` for offline caption models.")
+
+    provider_raw = input("Enter vision provider id (or provider/model): ").strip()
+    model = input("Enter vision model name (or leave blank if provider/model): ").strip()
+    if provider_raw and not model and "/" in provider_raw:
+        provider, model = provider_raw.split("/", 1)
+    else:
+        provider = provider_raw
+    if not provider or not model:
+        print("❌ Provider and model are required")
+        return None
+    return provider, model
+
+
 def handle_configure_vision(handler: 'VisionFallbackHandler') -> bool:
     """Handle --configure vision command (interactive setup)."""
     print("🔧 Interactive Vision Configuration")
     print("=" * 50)
 
     print("\nChoose your vision configuration strategy:")
-    print("1. Use existing local model (Ollama/LMStudio)")
-    print("2. Use cloud API (OpenAI/Anthropic)")
-    print("3. Download lightweight local model")
-    print("4. Show current status")
-    print("5. Disable vision fallback")
+    print("1. Set provider/model (any provider)")
+    print("2. Download lightweight local model")
+    print("3. Show current status")
+    print("4. Disable vision fallback")
 
     try:
-        choice = input("\nEnter choice (1-5): ").strip()
+        choice = input("\nEnter choice (1-4): ").strip()
 
         if choice == "1":
-            return configure_local_provider(handler)
+            return configure_provider(handler)
         elif choice == "2":
-            return configure_cloud_provider(handler)
-        elif choice == "3":
             return configure_download_model(handler)
-        elif choice == "4":
+        elif choice == "3":
             return handle_vision_status(handler)
-        elif choice == "5":
+        elif choice == "4":
             handler.disable()
             print("✅ Vision fallback disabled")
             return True
@@ -330,104 +328,34 @@ def handle_configure_vision(handler: 'VisionFallbackHandler') -> bool:
         print("\n👋 Configuration cancelled")
         return True
 
-def configure_local_provider(handler: 'VisionFallbackHandler') -> bool:
-    """Interactive configuration for local providers."""
-    print("\n🔧 Configure Local Provider")
+def configure_provider(handler: 'VisionFallbackHandler') -> bool:
+    """Interactive configuration for any provider/model pair."""
+    print("\n🔧 Configure Vision Provider")
     print("-" * 30)
-
-    providers = ["ollama", "lmstudio", "huggingface"]
-    print("Available providers:")
-    for i, provider in enumerate(providers, 1):
-        print(f"{i}. {provider}")
-
     try:
-        provider_choice = input("Choose provider (1-3): ").strip()
-        provider_idx = int(provider_choice) - 1
-
-        if provider_idx < 0 or provider_idx >= len(providers):
-            print("❌ Invalid provider choice")
+        result = _prompt_provider_and_model()
+        if not result:
             return True
-
-        provider = providers[provider_idx]
-
-        # Suggest models based on provider
-        model_suggestions = {
-            "ollama": ["qwen2.5vl:7b", "llama3.2-vision:11b", "granite3.2-vision:2b"],
-            "lmstudio": ["qwen/qwen2.5-vl-7b", "google/gemma-3n-e4b"],
-            "huggingface": ["unsloth/Qwen2.5-VL-7B-Instruct-GGUF"]
-        }
-
-        print(f"\nSuggested models for {provider}:")
-        for i, model in enumerate(model_suggestions[provider], 1):
-            print(f"{i}. {model}")
-
-        model = input(f"Enter model name: ").strip()
-        if not model:
-            print("❌ Model name required")
-            return True
-
+        provider, model = result
         success = handler.set_vision_provider(provider, model)
         if success:
             print(f"✅ Vision provider configured: {provider}/{model}")
         else:
             print(f"❌ Failed to configure {provider}/{model}")
-
     except (ValueError, KeyboardInterrupt):
         print("❌ Invalid input or cancelled")
 
     return True
+
+
+def configure_local_provider(handler: 'VisionFallbackHandler') -> bool:
+    """Legacy wrapper (kept for backward compatibility)."""
+    return configure_provider(handler)
+
 
 def configure_cloud_provider(handler: 'VisionFallbackHandler') -> bool:
-    """Interactive configuration for cloud providers."""
-    print("\n☁️ Configure Cloud Provider")
-    print("-" * 30)
-
-    providers = ["openai", "anthropic"]
-    print("Available cloud providers:")
-    for i, provider in enumerate(providers, 1):
-        print(f"{i}. {provider}")
-
-    try:
-        provider_choice = input("Choose provider (1-2): ").strip()
-        provider_idx = int(provider_choice) - 1
-
-        if provider_idx < 0 or provider_idx >= len(providers):
-            print("❌ Invalid provider choice")
-            return True
-
-        provider = providers[provider_idx]
-
-        # Suggest models based on provider
-        model_suggestions = {
-            "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo-with-vision"],
-            "anthropic": ["claude-haiku-4-5", "claude-sonnet-4-5", "claude-opus-4-5"]
-        }
-
-        print(f"\nSuggested models for {provider}:")
-        for i, model in enumerate(model_suggestions[provider], 1):
-            print(f"{i}. {model}")
-
-        model = input(f"Enter model name: ").strip()
-        if not model:
-            print("❌ Model name required")
-            return True
-
-        # Check for API key
-        api_key_var = f"{provider.upper()}_API_KEY"
-        if not os.getenv(api_key_var):
-            print(f"⚠️  {api_key_var} environment variable not set")
-            print(f"💡 Set it with: export {api_key_var}=your_api_key")
-
-        success = handler.set_vision_provider(provider, model)
-        if success:
-            print(f"✅ Vision provider configured: {provider}/{model}")
-        else:
-            print(f"❌ Failed to configure {provider}/{model}")
-
-    except (ValueError, KeyboardInterrupt):
-        print("❌ Invalid input or cancelled")
-
-    return True
+    """Legacy wrapper (kept for backward compatibility)."""
+    return configure_provider(handler)
 
 def configure_download_model(handler: 'VisionFallbackHandler') -> bool:
     """Interactive configuration for downloading models."""

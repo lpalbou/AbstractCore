@@ -34,6 +34,8 @@ import argparse
 import sys
 import logging
 import threading
+import warnings
+import socket
 import httpx
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
@@ -79,8 +81,23 @@ if debug_mode:
         file_json=True,
     )
 
+def _configure_warning_logging() -> None:
+    """Route Python warnings through structured logging."""
+    def _showwarning(message, category, filename, lineno, file=None, line=None):
+        log = get_logger("server")
+        log.warning(
+            "Python warning",
+            category=getattr(category, "__name__", str(category)),
+            warning_message=str(message),
+            location=f"{filename}:{lineno}",
+        )
+
+    warnings.showwarning = _showwarning
+
+
 # Get initial logger
 logger = get_logger("server")
+_configure_warning_logging()
 
 # Log initial startup with debug mode status (may be suppressed by console level).
 logger.info("🚀 AbstractCore Server Initializing", version=__version__, debug_mode=debug_mode)
@@ -103,6 +120,7 @@ def reconfigure_for_debug():
 
     # Update logger instance
     logger = get_logger("server")
+    _configure_warning_logging()
 
     return logger
 
@@ -555,15 +573,15 @@ class ChatCompletionRequest(BaseModel):
     api_key: Optional[str] = Field(
         default=None,
         description="API key for the provider (AbstractCore-specific feature). "
-                    "Supports all providers requiring authentication: openai, anthropic, openrouter, openai-compatible, huggingface. "
+                    "Supports all providers requiring authentication: openai, anthropic, openrouter, portkey, openai-compatible, huggingface. "
                     "If not specified, falls back to provider-specific environment variables "
-                    "(e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY).",
+                    "(e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, PORTKEY_API_KEY).",
         example=None
     )
     base_url: Optional[str] = Field(
         default=None,
         description="Base URL for the provider API endpoint (AbstractCore-specific feature). "
-                    "Useful for OpenAI-compatible providers (lmstudio, vllm, openrouter, openai-compatible) and custom/proxied endpoints. "
+                    "Useful for OpenAI-compatible providers (lmstudio, vllm, openrouter, portkey, openai-compatible) and custom/proxied endpoints. "
                     "Example: 'http://localhost:1234/v1' for LMStudio, 'http://localhost:8080/v1' for llama.cpp. "
                     "If not specified, uses provider's default or environment variable.",
         example="http://localhost:1234/v1"
@@ -589,7 +607,7 @@ class ChatCompletionRequest(BaseModel):
 
     class Config:
         json_schema_extra = {
-            "examples": {
+            "examples": list({
                 "basic_text": {
                     "summary": "Basic Text Chat",
                     "description": "Simple text-based conversation",
@@ -810,7 +828,7 @@ class ChatCompletionRequest(BaseModel):
                         "max_tokens": 500
                     }
                 }
-            }
+            }.values())
         }
 
 class EmbeddingRequest(BaseModel):
@@ -883,7 +901,7 @@ class ResponsesAPIRequest(BaseModel):
                     "$ref": "#/components/schemas/ChatCompletionRequest"
                 }
             ],
-            "examples": {
+            "examples": list({
                 "openai_format": {
                     "summary": "OpenAI Responses API Format",
                     "description": "Use input array with input_text and input_file objects",
@@ -912,7 +930,7 @@ class ResponsesAPIRequest(BaseModel):
                         "stream": False
                     }
                 }
-            }
+            }.values())
         }
 
 # ============================================================================
@@ -2854,6 +2872,17 @@ def convert_to_openai_response(
 # Server Runner
 # ============================================================================
 
+def _resolve_external_host(bind_host: str) -> str:
+    """Best-effort external host for display when binding to 0.0.0.0."""
+    if bind_host in {"0.0.0.0", "::", "[::]"}:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(("8.8.8.8", 80))
+                return sock.getsockname()[0]
+        except Exception:
+            return bind_host
+    return bind_host
+
 def run_server(host: str = "0.0.0.0", port: int = 8000):
     """Run the server"""
     import uvicorn
@@ -2920,6 +2949,13 @@ Debug Mode:
         debug=debug_mode,
         version=__version__
     )
+
+    # Print access URLs (outside logging)
+    internal_url = f"http://127.0.0.1:{args.port}"
+    external_host = _resolve_external_host(args.host)
+    external_url = f"http://{external_host}:{args.port}"
+    print(f"Internal URL: {internal_url}")
+    print(f"External URL: {external_url}")
 
     # Enhanced uvicorn configuration for debug mode
     uvicorn_config = {

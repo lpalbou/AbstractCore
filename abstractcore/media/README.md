@@ -893,10 +893,9 @@ from abstractcore import create_llm
 # Option 1: Download local model
 # $ abstractcore --download-vision-model
 
-# Option 2: Use existing Ollama model
+# Option 2: Use any provider/model (local or cloud)
 # $ abstractcore --set-vision-provider ollama qwen2.5vl:7b
-
-# Option 3: Use cloud API
+# $ abstractcore --set-vision-provider lmstudio qwen/qwen2.5-vl-7b
 # $ abstractcore --set-vision-provider openai gpt-4o
 
 # Use text-only model with images

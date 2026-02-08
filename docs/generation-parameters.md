@@ -80,6 +80,14 @@ if "seed" in params:
     self.logger.debug(f"Seed {params['seed']} requested but not supported - logged for debugging")
 ```
 
+### Portkey gateway (pass-through)
+
+Portkey is a routing gateway that forwards payloads to **many** backends (OpenAI, Anthropic, Gemini, Grok, etc.). To avoid sending defaults that strict models reject, the Portkey provider:
+
+- Forwards optional generation parameters **only when explicitly set** by the user (constructor or `generate()` kwargs).
+- Drops unsupported parameters for OpenAI reasoning families (gpt-5/o1), and uses `max_completion_tokens` instead of `max_tokens` for those models.
+- Keeps legacy `max_tokens` for non-reasoning families to preserve compatibility with older backends.
+
 ## Thinking / Reasoning Control (Unified)
 
 Modern models may expose “thinking”/“reasoning effort” as either:

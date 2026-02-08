@@ -30,6 +30,7 @@ _LAZY_ATTRS: Dict[str, Tuple[str, str]] = {
     "VLLMProvider": ("abstractcore.providers.vllm_provider", "VLLMProvider"),
     "OpenAICompatibleProvider": ("abstractcore.providers.openai_compatible_provider", "OpenAICompatibleProvider"),
     "OpenRouterProvider": ("abstractcore.providers.openrouter_provider", "OpenRouterProvider"),
+    "PortkeyProvider": ("abstractcore.providers.portkey_provider", "PortkeyProvider"),
 
     # Provider registry helpers
     "ProviderRegistry": ("abstractcore.providers.registry", "ProviderRegistry"),
@@ -69,4 +70,3 @@ def __dir__() -> list[str]:  # pragma: no cover
 
 
 __all__ = list(_LAZY_ATTRS.keys())
-

@@ -2,6 +2,12 @@
 
 Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.
 
+## Interactive API docs (start here)
+
+Visit while the server is running:
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+
 ## Quick Start
 
 ### Install and Run (2 minutes)
@@ -910,14 +916,6 @@ cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
 # Monitor specific model
 grep '"model": "qwen3-coder:30b"' logs/verbatim_*.jsonl
 ```
-
-### Interactive Documentation
-
-Visit while server is running:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-
----
 
 ## Common Patterns
 

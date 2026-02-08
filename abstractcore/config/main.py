@@ -33,6 +33,7 @@ Usage:
     # API keys
     abstractcore --set-api-key openai sk-...
     abstractcore --set-api-key anthropic ant_...
+    abstractcore --set-api-key portkey pk_...
 """
 
 import sys
@@ -204,7 +205,7 @@ def add_arguments(parser: argparse.ArgumentParser):
     # Authentication group
     auth_group = parser.add_argument_group('Authentication')
     auth_group.add_argument("--set-api-key", nargs=2, metavar=("PROVIDER", "KEY"),
-                           help="Set API key for cloud providers (openai, anthropic, google, etc.)")
+                           help="Set API key for cloud providers (openai, anthropic, openrouter, portkey, google, etc.)")
     auth_group.add_argument("--list-api-keys", action="store_true",
                            help="Show which providers have API keys configured")
 
@@ -637,29 +638,31 @@ def interactive_configure():
     print("\n2. Vision Fallback Setup")
     vision_choice = input("Configure vision fallback for text-only models? [y/N]: ").lower().strip()
     if vision_choice == 'y':
-        print("Choose vision setup method:")
-        print("  1. Use existing Ollama model (e.g., qwen2.5vl:7b)")
-        print("  2. Use cloud API (OpenAI/Anthropic)")
-        print("  3. Download local model (coming soon)")
+        print("Vision fallback supports any provider and any model (local or cloud).")
+        print("Examples (non-exhaustive):")
+        print("  lmstudio/qwen/qwen2.5-vl-7b, huggingface/Salesforce/blip-image-captioning-base, mlx/<vision-model>")
+        print("  openai/gpt-4o, anthropic/claude-3-5-sonnet, openai-compatible/my-vision-model")
+        print("Tip: use `abstractcore --download-vision-model` for offline caption models.")
 
-        method = input("Choice [1-3]: ").strip()
-        if method == "1":
-            model = input("Enter Ollama model name: ").strip()
-            if model:
-                config_manager.set_vision_caption(model)
-                print(f"✅ Set vision model to: {model}")
-        elif method == "2":
-            provider = input("Enter provider (openai/anthropic): ").strip()
-            model = input("Enter model name: ").strip()
-            if provider and model:
-                config_manager.set_vision_provider(provider, model)
-                print(f"✅ Set vision to: {provider}/{model}")
+        provider_raw = input("Enter vision provider id (or provider/model): ").strip()
+        model = input("Enter vision model name (or leave blank if provider/model): ").strip()
+        # Allow provider/model in a single input to keep the prompt flexible.
+        if provider_raw and not model and "/" in provider_raw:
+            provider, model = provider_raw.split("/", 1)
+        else:
+            provider = provider_raw
+        if provider and model:
+            # Keep the vision fallback provider-agnostic to match runtime capabilities.
+            config_manager.set_vision_provider(provider, model)
+            print(f"✅ Set vision to: {provider}/{model}")
+        else:
+            print("⚠️  Skipped vision fallback (provider and model are required).")
 
     # Ask about API keys
     print("\n3. API Keys Setup")
     api_choice = input("Configure API keys? [y/N]: ").lower().strip()
     if api_choice == 'y':
-        for provider in ["openai", "anthropic", "openrouter", "google"]:
+        for provider in ["openai", "anthropic", "openrouter", "portkey", "google"]:
             key = input(f"Enter {provider} API key (or press Enter to skip): ").strip()
             if key:
                 config_manager.set_api_key(provider, key)
@@ -669,9 +672,9 @@ def interactive_configure():
     print("\n4. Console Logging Verbosity")
     print("Choose console verbosity level:")
     print("  none | error | warning | info | debug")
-    level = input("Console log level [info]: ").strip().lower()
+    level = input("Console log level [error]: ").strip().lower()
     if not level:
-        level = "info"
+        level = "error"
     level_map = {
         "none": "NONE",
         "error": "ERROR",

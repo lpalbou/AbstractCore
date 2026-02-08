@@ -162,6 +162,7 @@ def _maybe_strip_provider_prefix(model: str) -> str:
             "openai",
             "anthropic",
             "openrouter",
+            "portkey",
             "ollama",
             "lmstudio",
             "vllm",
