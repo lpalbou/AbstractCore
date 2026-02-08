@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Security Policy - AbstractCore</title>
-    <meta name="description" content="Responsible vulnerability reporting for AbstractCore.">
+    <meta name="description" content="We take security issues seriously and appreciate responsible disclosure.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
 
     <!-- Navbar Component -->
     <script src="../assets/js/navbar-component.js"></script>
@@ -20,24 +21,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
@@ -47,51 +31,42 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Security Policy</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Responsible vulnerability reporting for AbstractCore.
-                </p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">We take security issues seriously and appreciate responsible disclosure.</p>
             </div>
 
+            
+
             <div class="doc-content">
-                <h2>Reporting a vulnerability</h2>
-                <p>Please <strong>do not</strong> open a public GitHub issue for security reports.</p>
 
-                <p>Instead, use one of these private channels:</p>
-                <ul>
-                    <li><strong>GitHub Security Advisories (preferred):</strong> open a private advisory in the repository.</li>
-                    <li><strong>Email:</strong> send a report to <a href="mailto:contact@abstractcore.ai">contact@abstractcore.ai</a> with subject <strong>"Security report: AbstractCore"</strong>.</li>
-                </ul>
 
-                <p>Include as much of the following as possible:</p>
-                <ul>
-                    <li>A clear description of the issue and why it matters.</li>
-                    <li>Steps to reproduce (proof-of-concept code is welcome).</li>
-                    <li>The affected version(s) (see <code>abstractcore.__version__</code>).</li>
-                    <li>Any suggested fix or mitigation, if you have one.</li>
-                </ul>
-
-                <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 0.75rem 0; color: var(--primary-color);">Quick links</h3>
-                    <ul style="margin: 0;">
-                        <li><a href="https://github.com/lpalbou/abstractcore/security/advisories" target="_blank" rel="noopener noreferrer">GitHub Security Advisories</a></li>
-                        <li><a href="https://github.com/lpalbou/abstractcore/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md (source of truth)</a></li>
-                    </ul>
-                </div>
-
-                <h2>What to expect</h2>
-                <ul>
-                    <li>We will acknowledge receipt of your report within <strong>72 hours</strong>.</li>
-                    <li>We will assess impact, determine a fix, and coordinate a disclosure timeline.</li>
-                </ul>
-
-                <h2>Supported versions</h2>
-                <p>Security fixes are typically released for the latest published version.</p>
+<h2 id="reporting-a-vulnerability">Reporting a Vulnerability</h2>
+<p>Please <strong>do not</strong> open a public GitHub issue for security reports.</p>
+<p>Instead, use one of these private channels:</p>
+<ul>
+<li><strong>GitHub Security Advisories</strong> (preferred): open a private advisory in the repository.</li>
+<li><strong>Email</strong>: send a report to <code>contact@abstractcore.ai</code> with the subject <strong>"Security report: AbstractCore"</strong>.</li>
+</ul>
+<p>Include as much of the following as possible:</p>
+<ul>
+<li>A clear description of the issue and why it matters.</li>
+<li>Steps to reproduce (proof-of-concept code is welcome).</li>
+<li>The affected version(s) (see <code>abstractcore.__version__</code>).</li>
+<li>Any suggested fix or mitigation, if you have one.</li>
+</ul>
+<h2 id="what-to-expect">What to Expect</h2>
+<ul>
+<li>We will acknowledge receipt of your report within <strong>72 hours</strong>.</li>
+<li>We will work with you to assess impact, determine a fix, and coordinate a disclosure timeline.</li>
+</ul>
+<h2 id="supported-versions">Supported Versions</h2>
+<p>Security fixes are typically released for the latest published version.</p>
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>
 </body>
 </html>
-

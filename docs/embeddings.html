@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vector Embeddings - AbstractCore</title>
-    <meta name="description" content="Vector embeddings for semantic search and RAG across HuggingFace, Ollama, and LMStudio.">
+    <title>Vector Embeddings Guide - AbstractCore</title>
+    <meta name="description" content="AbstractCore includes built-in support for vector embeddings with multiple providers (HuggingFace, Ollama, LMStudio). This guide shows you how to use embeddings for semantic…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,287 +21,631 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Vector Embeddings</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Generate high-quality embeddings for semantic search, clustering, and RAG with a unified API.
-                </p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Vector Embeddings Guide</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore includes built-in support for vector embeddings with multiple providers (HuggingFace, Ollama, LMStudio). This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.</p>
             </div>
 
-            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">What you get</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.25rem;">
-                    <div style="background: rgba(255, 255, 255, 0.12); padding: 1.25rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 0.5rem 0;">Multi-provider</h3>
-                        <p style="margin: 0; opacity: 0.95;">Use HuggingFace (local), Ollama, or LMStudio with the same code.</p>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.12); padding: 1.25rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 0.5rem 0;">Simple API</h3>
-                        <p style="margin: 0; opacity: 0.95;"><code>embed()</code>, <code>embed_batch()</code>, and similarity helpers.</p>
-                    </div>
-                    <div style="background: rgba(255, 255, 255, 0.12); padding: 1.25rem; border-radius: 0.75rem;">
-                        <h3 style="margin: 0 0 0.5rem 0;">RAG-ready</h3>
-                        <p style="margin: 0; opacity: 0.95;">Build semantic search + context injection patterns in minutes.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Table of Contents -->
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">Table of Contents</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 0.75rem;">
-                    <div>
-                        <a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
-                        <a href="#providers" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Providers & Models</a>
-                        <a href="#core-api" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Core API</a>
-                    </div>
-                    <div>
-                        <a href="#semantic-search" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Semantic Search</a>
-                        <a href="#rag" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Simple RAG Pipeline</a>
-                        <a href="#server-api" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Server /v1/embeddings</a>
-                    </div>
-                    <div>
-                        <a href="#performance" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Tips</a>
-                    </div>
-                </div>
-            </div>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#available-providers-models" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Available Providers &amp; Models</a>
+<a href="#core-features" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Core Features</a>
+<a href="#practical-applications" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Practical Applications</a>
+<a href="#performance-optimization" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Optimization</a>
+<a href="#integration-with-llm-providers" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration with LLM Providers</a>
+<a href="#production-considerations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Production Considerations</a>
+<a href="#when-to-use-embeddings" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">When to Use Embeddings</a>
+<a href="#using-embeddings-via-rest-api" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Using Embeddings via REST API</a>
+<a href="#provider-specific-features" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider-Specific Features</a>
+<a href="#next-steps" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Next Steps</a>
+<a href="#related-documentation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related Documentation</a></div>
 
             <div class="doc-content">
-                <section id="quick-start">
-                    <h2>Quick Start</h2>
-                    <p>Install embeddings support:</p>
 
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[embeddings]"</code></pre>
-                    </div>
 
-                    <p>Generate your first embeddings:</p>
+<p><strong>Two ways to use embeddings:</strong>
+1. <strong>Python Library</strong> (this guide) - Direct programmatic usage via <code>EmbeddingManager</code>
+2. <strong>REST API</strong> - HTTP endpoints via AbstractCore server (see <a href="server.html#embeddings">Server API Reference</a>)</p>
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="installation">Installation</h3>
+<div class="code-block"><pre><code class="language-bash"># Install with embeddings support
+pip install "abstractcore[embeddings]"
+</code></pre></div>
+<h3 id="first-embeddings">First Embeddings</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
 
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+# Option 1: HuggingFace (default) - Local models with optional ONNX acceleration
+embedder = EmbeddingManager()  # Uses all-MiniLM-L6-v2 by default
 
-# Option 1: HuggingFace (default) - local models
-embedder = EmbeddingManager()  # all-MiniLM-L6-v2 by default
+# Option 2: Ollama - Local models via Ollama API
+embedder = EmbeddingManager(
+    provider="ollama",
+    model="granite-embedding:278m"
+)
 
-# Option 2: Ollama - local models via Ollama API
-# embedder = EmbeddingManager(provider="ollama", model="granite-embedding:278m")
+# Option 3: LMStudio - Local models via LMStudio API
+embedder = EmbeddingManager(
+    provider="lmstudio",
+    model="text-embedding-all-minilm-l6-v2"
+)
 
-# Option 3: LMStudio - local models via LMStudio API
-# embedder = EmbeddingManager(provider="lmstudio", model="text-embedding-all-minilm-l6-v2")
-
+# Generate embedding for a single text (works with all providers)
 embedding = embedder.embed("Machine learning transforms how we process information")
-print(f"Embedding dimension: {len(embedding)}")
+print(f"Embedding dimension: {len(embedding)}")  # 384 for MiniLM
 
-similarity = embedder.compute_similarity("artificial intelligence", "machine learning")
-print(f"Similarity: {similarity:.3f}")</code></pre>
-                    </div>
-                </section>
-
-                <section id="providers" style="margin-top: 3rem;">
-                    <h2>Providers & Models</h2>
-                    <p>AbstractCore supports multiple embedding providers. Pick what matches your environment:</p>
-
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 1.5rem 0;">
-                        <div style="background: var(--background-secondary); padding: 1.25rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
-                            <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HuggingFace (default)</h3>
-                            <p style="margin: 0;">Local sentence-transformers models. Great default for development and production.</p>
-                        </div>
-                        <div style="background: var(--background-secondary); padding: 1.25rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
-                            <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Ollama</h3>
-                            <p style="margin: 0;">Local embeddings via the Ollama API (requires Ollama running).</p>
-                        </div>
-                        <div style="background: var(--background-secondary); padding: 1.25rem; border-radius: 0.75rem; border: 1px solid var(--border-light);">
-                            <h3 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">LMStudio</h3>
-                            <p style="margin: 0;">Local embeddings via LM Studio (GUI-friendly model management).</p>
-                        </div>
-                    </div>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
-
-# HuggingFace (default)
+# Compute similarity between texts (works with all providers)
+similarity = embedder.compute_similarity(
+    "artificial intelligence",
+    "machine learning"
+)
+print(f"Similarity: {similarity:.3f}")  # 0.847
+</code></pre></div>
+<h2 id="available-providers-models">Available Providers &amp; Models</h2>
+<p>AbstractCore supports multiple embedding providers:</p>
+<h3 id="huggingface-provider-default">HuggingFace Provider (Default)</h3>
+<p>Local sentence-transformers models with optional ONNX acceleration (when available).</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Size</th>
+<th>Dimensions</th>
+<th>Languages</th>
+<th>Primary Use Cases</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>all-minilm</strong> (default)</td>
+<td>90M</td>
+<td>384</td>
+<td>English</td>
+<td>Fast local development, testing</td>
+</tr>
+<tr>
+<td><strong>qwen3-embedding</strong></td>
+<td>1.5B</td>
+<td>1536</td>
+<td>100+</td>
+<td>Qwen-based multilingual, instruction-tuned</td>
+</tr>
+<tr>
+<td><strong>embeddinggemma</strong></td>
+<td>300M</td>
+<td>768</td>
+<td>100+</td>
+<td>General purpose, multilingual</td>
+</tr>
+<tr>
+<td><strong>granite</strong></td>
+<td>278M</td>
+<td>768</td>
+<td>100+</td>
+<td>Enterprise applications</td>
+</tr>
+</tbody>
+</table>
+<div class="code-block"><pre><code class="language-python"># Default: all-MiniLM-L6-v2 (fast and lightweight)
 embedder = EmbeddingManager()
 
-# Ollama
-embedder = EmbeddingManager(provider="ollama", model="granite-embedding:278m")
+# Qwen-based embedding model for multilingual support
+embedder = EmbeddingManager(model="qwen3-embedding")
 
-# LMStudio
-embedder = EmbeddingManager(provider="lmstudio", model="text-embedding-all-minilm-l6-v2")</code></pre>
-                    </div>
-                </section>
+# Google's EmbeddingGemma for multilingual support
+embedder = EmbeddingManager(model="embeddinggemma")
 
-                <section id="core-api" style="margin-top: 3rem;">
-                    <h2>Core API</h2>
-                    <p>Key methods you’ll use most often:</p>
-                    <ul>
-                        <li><code>embed(text)</code> → a single embedding vector</li>
-                        <li><code>embed_batch(texts)</code> → batch embeddings (faster)</li>
-                        <li><code>compute_similarity(a, b)</code> → cosine similarity for two strings</li>
-                        <li><code>compute_similarities(query, docs)</code> → one-to-many similarity</li>
-                        <li><code>compute_similarities_matrix(a, b=None)</code> → similarity matrix</li>
-                    </ul>
+# Direct HuggingFace model ID
+embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
+</code></pre></div>
+<h3 id="ollama-provider">Ollama Provider</h3>
+<p>Local embedding models via Ollama API. Requires Ollama running locally.</p>
+<div class="code-block"><pre><code class="language-python"># Setup: Install Ollama and pull an embedding model
+# ollama pull granite-embedding:278m
 
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+# Use Ollama embeddings
+embedder = EmbeddingManager(
+    provider="ollama",
+    model="granite-embedding:278m"
+)
 
-embedder = EmbeddingManager()
+# Other popular Ollama embedding models:
+# - nomic-embed-text (274MB)
+# - granite-embedding:107m (smaller, faster)
+</code></pre></div>
+<h3 id="lmstudio-provider">LMStudio Provider</h3>
+<p>Local embedding models via LMStudio API. Requires LMStudio running with a loaded model.</p>
+<div class="code-block"><pre><code class="language-python"># Setup: Start LMStudio and load an embedding model
 
-texts = [
+# Use LMStudio embeddings
+embedder = EmbeddingManager(
+    provider="lmstudio",
+    model="text-embedding-all-minilm-l6-v2"
+)
+</code></pre></div>
+<h3 id="provider-comparison">Provider Comparison</h3>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Speed</th>
+<th>Setup</th>
+<th>Privacy</th>
+<th>Cost</th>
+<th>Primary Use Cases</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HuggingFace</strong></td>
+<td>Fast</td>
+<td>Easy</td>
+<td>Full</td>
+<td>Free</td>
+<td>Development, production</td>
+</tr>
+<tr>
+<td><strong>Ollama</strong></td>
+<td>Medium</td>
+<td>Medium</td>
+<td>Full</td>
+<td>Free</td>
+<td>Privacy, custom models</td>
+</tr>
+<tr>
+<td><strong>LMStudio</strong></td>
+<td>Medium</td>
+<td>Easy (GUI)</td>
+<td>Full</td>
+<td>Free</td>
+<td>GUI management, testing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="core-features">Core Features</h2>
+<h3 id="single-text-embeddings">Single Text Embeddings</h3>
+<div class="code-block"><pre><code class="language-python">embedder = EmbeddingManager()
+
+text = "Python is a versatile programming language"
+embedding = embedder.embed(text)
+
+print(f"Text: {text}")
+print(f"Embedding: {len(embedding)} dimensions")
+print(f"First 5 values: {embedding[:5]}")
+</code></pre></div>
+<h3 id="batch-processing-more-efficient">Batch Processing (More Efficient)</h3>
+<div class="code-block"><pre><code class="language-python">texts = [
     "Python programming language",
     "JavaScript for web development",
     "Machine learning with Python",
+    "Data science and analytics"
 ]
 
+# Process multiple texts at once (much faster)
 embeddings = embedder.embed_batch(texts)
+
 print(f"Generated {len(embeddings)} embeddings")
+for i, embedding in enumerate(embeddings):
+    print(f"Text {i+1}: {len(embedding)} dimensions")
+</code></pre></div>
+<h3 id="similarity-analysis">Similarity Analysis</h3>
+<div class="code-block"><pre><code class="language-python"># Basic similarity between two texts
+similarity = embedder.compute_similarity("cat", "kitten")
+print(f"Similarity: {similarity:.3f}")  # 0.804
 
-query = "learn python"
-scores = embedder.compute_similarities(query, texts)
-print([round(s, 3) for s in scores])</code></pre>
-                    </div>
-                </section>
+# NEW: Batch similarity - compare one text against many
+query = "Python programming"
+docs = ["Learn Python basics", "JavaScript guide", "Cooking recipes", "Data science with Python"]
+similarities = embedder.compute_similarities(query, docs)
+print(f"Batch similarities: {[f'{s:.3f}' for s in similarities]}")
+# Output: ['0.785', '0.155', '0.145', '0.580']
 
-                <section id="semantic-search" style="margin-top: 3rem;">
-                    <h2>Semantic Search</h2>
-                    <p>A minimal semantic search loop:</p>
+# NEW: Similarity matrix - compare all texts against all texts
+texts = ["Python programming", "JavaScript development", "Python data science", "Web frameworks"]
+matrix = embedder.compute_similarities_matrix(texts)
+print(f"Matrix shape: {matrix.shape}")  # (4, 4) symmetric matrix
 
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+# NEW: Asymmetric matrix for query-document matching
+queries = ["Learn Python", "Web development guide"]
+knowledge_base = ["Python tutorial", "JavaScript guide", "React framework", "Python for beginners"]
+search_matrix = embedder.compute_similarities_matrix(queries, knowledge_base)
+print(f"Search matrix: {search_matrix.shape}")  # (2, 4) - 2 queries × 4 documents
+</code></pre></div>
+<h2 id="practical-applications">Practical Applications</h2>
+<h3 id="semantic-search">Semantic Search</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
 
 embedder = EmbeddingManager()
 
+# Document collection
 documents = [
     "Python is strong for data science and machine learning applications",
     "JavaScript enables interactive web pages and modern frontend development",
+    "React is a popular library for building user interfaces with JavaScript",
     "SQL databases store and query structured data efficiently",
+    "Machine learning algorithms can predict patterns from historical data"
 ]
 
-def semantic_search(query: str, docs: list[str], top_k: int = 2):
-    scored = [(i, embedder.compute_similarity(query, doc), doc) for i, doc in enumerate(docs)]
-    scored.sort(key=lambda t: t[1], reverse=True)
-    return scored[:top_k]
+def semantic_search(query, documents, top_k=3):
+    """Find most relevant documents for a query."""
+    similarities = []
 
-for i, score, doc in semantic_search("web development frameworks", documents):
-    print(f"{score:.3f} → {doc}")</code></pre>
-                    </div>
-                </section>
+    for i, doc in enumerate(documents):
+        similarity = embedder.compute_similarity(query, doc)
+        similarities.append((i, similarity, doc))
 
-                <section id="rag" style="margin-top: 3rem;">
-                    <h2>Simple RAG Pipeline</h2>
-                    <p>Retrieve relevant context with embeddings, then pass it to any LLM provider:</p>
+    # Sort by similarity (highest first)
+    similarities.sort(key=lambda x: x[1], reverse=True)
 
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
+    return similarities[:top_k]
+
+# Search for relevant documents
+query = "web development frameworks"
+results = semantic_search(query, documents)
+
+print(f"Query: {query}\n")
+for rank, (idx, similarity, doc) in enumerate(results, 1):
+    print(f"{rank}. Score: {similarity:.3f}")
+    print(f"   {doc}\n")
+</code></pre></div>
+<h3 id="simple-rag-pipeline">Simple RAG Pipeline</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 from abstractcore.embeddings import EmbeddingManager
 
+# Setup
 embedder = EmbeddingManager()
 llm = create_llm("openai", model="gpt-4o-mini")
 
+# Knowledge base
 knowledge_base = [
     "The Eiffel Tower is 330 meters tall and was completed in 1889.",
     "Paris is the capital city of France with over 2 million inhabitants.",
-    "The Louvre Museum in Paris houses the Mona Lisa painting.",
+    "The Louvre Museum in Paris houses the famous Mona Lisa painting.",
+    "French cuisine is known for its wine, cheese, and pastries.",
+    "The Seine River flows through central Paris."
 ]
 
-def rag_answer(question: str) -> str:
-    scored = sorted(
-        ((embedder.compute_similarity(question, doc), doc) for doc in knowledge_base),
-        reverse=True,
-    )
-    context = "\n".join([doc for _, doc in scored[:2]])
+def rag_query(question, knowledge_base, llm, embedder):
+    """Answer question using relevant context from knowledge base."""
+
+    # Step 1: Find most relevant context
+    similarities = []
+    for doc in knowledge_base:
+        similarity = embedder.compute_similarity(question, doc)
+        similarities.append((similarity, doc))
+
+    # Get top 2 most relevant documents
+    similarities.sort(reverse=True)
+    top_contexts = [doc for _, doc in similarities[:2]]
+    context = "\n".join(top_contexts)
+
+    # Step 2: Generate answer using context
     prompt = f"""Context:
 {context}
 
 Question: {question}
-Answer:"""
-    return llm.generate(prompt).content
 
-print(rag_answer("How tall is the Eiffel Tower?"))</code></pre>
-                    </div>
-                </section>
+Based on the context above, please answer the question:"""
 
-                <section id="server-api" style="margin-top: 3rem;">
-                    <h2>Server: OpenAI-compatible <code>/v1/embeddings</code></h2>
-                    <p>If you run the AbstractCore HTTP server, you can also generate embeddings over REST.</p>
+    response = llm.generate(prompt)
+    return response.content, top_contexts
 
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[server]"
-python -m abstractcore.server.app --port 8000</code></pre>
-                    </div>
+# Usage
+question = "How tall is the Eiffel Tower?"
+answer, contexts = rag_query(question, knowledge_base, llm, embedder)
 
-                    <div class="code-block">
-                        <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/embeddings \
+print(f"Question: {question}")
+print(f"Answer: {answer}")
+print(f"\nUsed context:")
+for ctx in contexts:
+    print(f"- {ctx}")
+</code></pre></div>
+<h3 id="document-clustering-new">Document Clustering (NEW)</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+
+embedder = EmbeddingManager()
+
+# Documents to cluster
+documents = [
+    "Python programming tutorial for beginners",
+    "Introduction to machine learning concepts",
+    "JavaScript web development guide",
+    "Advanced Python data structures",
+    "Machine learning with neural networks",
+    "Building web apps with JavaScript",
+    "Python for data analysis",
+    "Deep learning fundamentals",
+    "React.js frontend development",
+    "Statistical analysis with Python"
+]
+
+# NEW: Automatic semantic clustering
+clusters = embedder.find_similar_clusters(
+    documents,
+    threshold=0.6,      # 60% similarity required
+    min_cluster_size=2  # At least 2 documents per cluster
+)
+
+print(f"Found {len(clusters)} clusters:")
+for i, cluster in enumerate(clusters):
+    print(f"\nCluster {i+1} ({len(cluster)} documents):")
+    for idx in cluster:
+        print(f"  - {documents[idx]}")
+
+# Example output:
+# Cluster 1 (4 documents): Python-related content
+# Cluster 2 (2 documents): JavaScript-related content
+# Cluster 3 (2 documents): Machine learning content
+</code></pre></div>
+<h2 id="performance-optimization">Performance Optimization</h2>
+<h3 id="onnx-backend-optional">ONNX Backend (optional)</h3>
+<div class="code-block"><pre><code class="language-python"># Enable ONNX for faster inference
+embedder = EmbeddingManager(
+    model="embeddinggemma",
+    backend="onnx"  # optional
+)
+
+# Performance comparison
+import time
+
+texts = ["Sample text for performance testing"] * 100
+
+# Time the embedding generation
+start_time = time.time()
+embeddings = embedder.embed_batch(texts)
+duration = time.time() - start_time
+
+print(f"Generated {len(embeddings)} embeddings in {duration:.2f} seconds")
+print(f"Speed: {len(embeddings)/duration:.1f} embeddings/second")
+</code></pre></div>
+<h3 id="dimension-truncation-memoryspeed-trade-off">Dimension Truncation (Memory/Speed Trade-off)</h3>
+<div class="code-block"><pre><code class="language-python"># Truncate embeddings for faster processing
+embedder = EmbeddingManager(
+    model="embeddinggemma",
+    output_dims=256  # Reduce from 768 to 256 dimensions
+)
+
+embedding = embedder.embed("Test text")
+print(f"Truncated embedding dimension: {len(embedding)}")  # 256
+</code></pre></div>
+<h3 id="advanced-caching-new">Advanced Caching (NEW)</h3>
+<div class="code-block"><pre><code class="language-python"># Configure dual-layer caching system
+embedder = EmbeddingManager(
+    cache_size=5000,  # Larger memory cache
+    cache_dir="./embeddings_cache"  # Persistent disk cache
+)
+
+# Regular embedding with standard caching
+embedding1 = embedder.embed("Machine learning text")
+
+# NEW: Normalized embedding with dedicated cache (unit-length vectors for cosine similarity)
+normalized = embedder.embed_normalized("Machine learning text")
+print(f"Normalized embedding length: {sum(x*x for x in normalized)**0.5:.3f}")  # 1.0 (unit length)
+
+# Check comprehensive cache stats
+stats = embedder.get_cache_stats()
+print(f"Regular cache: {stats['persistent_cache_size']} embeddings")
+print(f"Normalized cache: {stats['normalized_cache_size']} embeddings")
+print(f"Memory cache hits: {stats['memory_cache_info']['hits']}")
+</code></pre></div>
+<h2 id="integration-with-llm-providers">Integration with LLM Providers</h2>
+<h3 id="enhanced-context-selection">Enhanced Context Selection</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.embeddings import EmbeddingManager
+
+def smart_context_selection(query, documents, max_context_length=2000):
+    """Select most relevant context that fits within token limits."""
+    embedder = EmbeddingManager()
+
+    # Score all documents
+    scored_docs = []
+    for doc in documents:
+        similarity = embedder.compute_similarity(query, doc)
+        scored_docs.append((similarity, doc))
+
+    # Sort by relevance
+    scored_docs.sort(reverse=True)
+
+    # Select documents that fit within context limit
+    selected_context = ""
+    for similarity, doc in scored_docs:
+        test_context = selected_context + "\n" + doc
+        if len(test_context) &lt;= max_context_length:
+            selected_context = test_context
+        else:
+            break
+
+    return selected_context.strip()
+
+# Usage with LLM
+llm = create_llm("anthropic", model="claude-haiku-4-5")
+
+documents = [
+    "Long document about machine learning...",
+    "Another document about data science...",
+    # ... many more documents
+]
+
+query = "What is supervised learning?"
+context = smart_context_selection(query, documents)
+
+response = llm.generate(f"Context: {context}\n\nQuestion: {query}")
+print(response.content)
+</code></pre></div>
+<h3 id="multi-language-support">Multi-language Support</h3>
+<div class="code-block"><pre><code class="language-python"># EmbeddingGemma supports 100+ languages
+embedder = EmbeddingManager(model="embeddinggemma")
+
+# Cross-language similarity
+similarity = embedder.compute_similarity(
+    "Hello world",      # English
+    "Bonjour le monde"  # French
+)
+print(f"Cross-language similarity: {similarity:.3f}")
+
+# Multilingual semantic search
+documents_multilingual = [
+    "Machine learning is transforming technology",  # English
+    "L'intelligence artificielle change le monde",  # French
+    "人工智能正在改变世界",                        # Chinese
+    "Künstliche Intelligenz verändert die Welt"    # German
+]
+
+query = "artificial intelligence"
+for doc in documents_multilingual:
+    similarity = embedder.compute_similarity(query, doc)
+    print(f"{similarity:.3f}: {doc}")
+</code></pre></div>
+<h2 id="production-considerations">Production Considerations</h2>
+<h3 id="error-handling">Error Handling</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
+
+def safe_embedding(text, embedder, fallback_value=None):
+    """Generate embedding with error handling."""
+    try:
+        return embedder.embed(text)
+    except Exception as e:
+        print(f"Embedding failed for text: {text[:50]}...")
+        print(f"Error: {e}")
+        return fallback_value or [0.0] * 768  # Return zero vector as fallback
+
+embedder = EmbeddingManager()
+
+# Safe embedding generation
+text = "Some text that might cause issues"
+embedding = safe_embedding(text, embedder)
+
+if embedding:
+    print(f"Successfully generated embedding: {len(embedding)} dimensions")
+else:
+    print("Using fallback embedding")
+</code></pre></div>
+<h3 id="monitoring-and-metrics">Monitoring and Metrics</h3>
+<div class="code-block"><pre><code class="language-python">import time
+from abstractcore.embeddings import EmbeddingManager
+
+class MonitoredEmbeddingManager:
+    def __init__(self, *args, **kwargs):
+        self.embedder = EmbeddingManager(*args, **kwargs)
+        self.stats = {
+            'total_calls': 0,
+            'total_time': 0,
+            'cache_hits': 0,
+            'cache_misses': 0
+        }
+
+    def embed(self, text):
+        start_time = time.time()
+        result = self.embedder.embed(text)
+        duration = time.time() - start_time
+
+        self.stats['total_calls'] += 1
+        self.stats['total_time'] += duration
+
+        return result
+
+    def get_stats(self):
+        avg_time = self.stats['total_time'] / max(self.stats['total_calls'], 1)
+        return {
+            **self.stats,
+            'average_time': avg_time,
+            'calls_per_second': 1 / avg_time if avg_time &gt; 0 else 0
+        }
+
+# Usage
+monitored_embedder = MonitoredEmbeddingManager()
+
+# Generate some embeddings
+for i in range(10):
+    monitored_embedder.embed(f"Test text number {i}")
+
+# Check performance
+stats = monitored_embedder.get_stats()
+print(f"Total calls: {stats['total_calls']}")
+print(f"Average time per call: {stats['average_time']:.3f}s")
+print(f"Calls per second: {stats['calls_per_second']:.1f}")
+</code></pre></div>
+<h2 id="when-to-use-embeddings">When to Use Embeddings</h2>
+<h3 id="good-use-cases">Good Use Cases</h3>
+<ul>
+<li><strong>Semantic Search</strong>: Find relevant documents based on meaning, not keywords</li>
+<li><strong>RAG Applications</strong>: Select relevant context for language model queries</li>
+<li><strong>Content Recommendation</strong>: Find similar articles, products, or content</li>
+<li><strong>Clustering</strong>: Group similar documents or texts together</li>
+<li><strong>Duplicate Detection</strong>: Find near-duplicate content</li>
+<li><strong>Multi-language Search</strong>: Search across different languages</li>
+</ul>
+<h3 id="not-ideal-for">Not Ideal For</h3>
+<ul>
+<li><strong>Exact Matching</strong>: Use traditional text search for exact matches</li>
+<li><strong>Structured Data</strong>: Use SQL databases for structured queries</li>
+<li><strong>Real-time Critical Applications</strong>: Embedding computation has latency</li>
+<li><strong>Very Short Texts</strong>: Embeddings work better with meaningful content</li>
+<li><strong>High-frequency Operations</strong>: Consider caching for repeated queries</li>
+</ul>
+<h2 id="using-embeddings-via-rest-api">Using Embeddings via REST API</h2>
+<p>If you prefer HTTP endpoints over Python code, use the AbstractCore server:</p>
+<div class="code-block"><pre><code class="language-bash"># Start the server
+pip install "abstractcore[server]"
+python -m abstractcore.server.app
+</code></pre></div>
+<p><strong>HTTP Request:</strong></p>
+<div class="code-block"><pre><code class="language-bash">curl -X POST http://localhost:8000/v1/embeddings \
   -H "Content-Type: application/json" \
   -d '{
-    "input": ["text 1", "text 2", "text 3"],
-    "model": "ollama/granite-embedding:278m"
-  }'</code></pre>
-                    </div>
-
-                    <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
-                        <p style="margin: 0;"><strong>Tip:</strong> See the <a href="server.html">Server guide</a> for model discovery (<code>/v1/models</code>) and provider status (<code>/providers</code>).</p>
-                    </div>
-                </section>
-
-                <section id="performance" style="margin-top: 3rem;">
-                    <h2>Performance Tips</h2>
-                    <ul>
-                        <li>Prefer <code>embed_batch()</code> when embedding many texts.</li>
-                        <li>Cache embeddings for your knowledge base; only re-embed changed documents.</li>
-                        <li>For local providers, keep the embedding model “warm” (avoid frequent reloads).</li>
-                    </ul>
-                </section>
-
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">First LLM call + core concepts</p>
-                        </a>
-
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">EmbeddingManager API</p>
-                        </a>
-
-                        <a href="examples.html#rag-embeddings" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">RAG example and recipes</p>
-                        </a>
-
-                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Expose embeddings via OpenAI-compatible endpoints</p>
-                        </a>
-                    </div>
-                </div>
+    "input": "Machine learning is fascinating",
+    "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+  }'
+</code></pre></div>
+<p><strong>Model IDs via REST API (examples):</strong>
+- <code>huggingface/model-name</code>
+- <code>ollama/model-name</code>
+- <code>lmstudio/model-name</code></p>
+<p><strong>Complete REST API documentation:</strong> <a href="server.html#embeddings">Server API Reference</a></p>
+<h2 id="provider-specific-features">Provider-Specific Features</h2>
+<h3 id="huggingface-features">HuggingFace Features</h3>
+<ul>
+<li><strong>ONNX Acceleration</strong> (when available)</li>
+<li><strong>Matryoshka Truncation</strong>: Reduce dimensions for efficiency</li>
+<li><strong>Persistent Caching</strong>: Automatic disk caching of embeddings</li>
+</ul>
+<h3 id="ollama-features">Ollama Features</h3>
+<ul>
+<li><strong>Simple Setup</strong>: Just <code>ollama pull &lt;model&gt;</code></li>
+<li><strong>Full Privacy</strong>: No data leaves your machine</li>
+<li><strong>Custom Models</strong>: Use any Ollama-compatible model</li>
+</ul>
+<h3 id="lmstudio-features">LMStudio Features</h3>
+<ul>
+<li><strong>GUI Management</strong>: Easy model loading via GUI</li>
+<li><strong>Testing Friendly</strong>: Suitable for experimentation</li>
+<li><strong>OpenAI Compatible</strong>: Standard API format</li>
+</ul>
+<h2 id="next-steps">Next Steps</h2>
+<ul>
+<li><strong>Start Simple</strong>: Try the semantic search example with your own data</li>
+<li><strong>Experiment with Providers</strong>: Compare HuggingFace, Ollama, and LMStudio</li>
+<li><strong>Optimize Performance</strong>: Use batch processing and caching for production</li>
+<li><strong>Build RAG</strong>: Combine embeddings with AbstractCore LLMs for RAG applications</li>
+<li><strong>Use REST API</strong>: Deploy embeddings as HTTP service with the server</li>
+</ul>
+<h2 id="related-documentation">Related Documentation</h2>
+<p><strong>Core Library:</strong>
+- <strong><a href="api-reference.html">Python API Reference</a></strong> - Complete EmbeddingManager API
+- <strong><a href="getting-started.html">Getting Started</a></strong> - Basic AbstractCore setup
+- <strong><a href="examples.html">Examples</a></strong> - More practical examples</p>
+<p><strong>Server (REST API):</strong>
+- <strong><a href="server.html">Server Guide</a></strong> - Server setup and deployment
+- <strong><a href="server.html">Server API Reference</a></strong> - REST API endpoints including embeddings
+- <strong><a href="troubleshooting.html">Troubleshooting</a></strong> - Common embedding issues</p>
+<hr/>
+<p><strong>Remember</strong>: Embeddings are the foundation for semantic understanding. Combined with AbstractCore's multi-provider LLM capabilities, you can build sophisticated AI applications that understand meaning, not just keywords.</p>
             </div>
         </div>
     </main>

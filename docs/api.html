@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Overview - AbstractCore</title>
-    <meta name="description" content="User-facing map of AbstractCore’s public Python API: create_llm, BasicSession, tool calling, structured output, media, and the server.">
+    <title>API (Python) - AbstractCore</title>
+    <meta name="description" content="This page is a user-facing map of the public Python API . For a complete listing of functions/classes (including events), see API Reference .">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,24 +21,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
@@ -47,74 +30,76 @@
     <main style="padding-top: 5rem;">
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">API Overview (Python)</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    A user-facing map of the public Python API. For a complete listing (including events), see the
-                    <a href="api-reference.html">API Reference</a>.
-                </p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">API (Python)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This page is a user-facing map of the public Python API . For a complete listing of functions/classes (including events), see API Reference .</p>
             </div>
 
-            <div class="doc-content">
-                <h2>Core entrypoints</h2>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#core-entrypoints" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Core entrypoints</a>
+<a href="#responses-generateresponse" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Responses ( GenerateResponse )</a>
+<a href="#tool-calling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tool calling</a>
+<a href="#structured-output" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Structured output</a>
+<a href="#media-input" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Media input</a>
+<a href="#http-api-optional" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">HTTP API (optional)</a></div>
 
-                <h3><code>create_llm(...)</code></h3>
-                <p>Create a provider instance:</p>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import create_llm
+            <div class="doc-content">
+
+
+<h2 id="core-entrypoints">Core entrypoints</h2>
+<h3 id="createllm"><code>create_llm(...)</code></h3>
+<p>Create a provider instance:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")  # requires: pip install "abstractcore[openai]"
 resp = llm.generate("Hello!")
-print(resp.content)</code></pre>
-                </div>
+print(resp.content)
+</code></pre></div>
+<h3 id="gateway-providers-openrouter-portkey">Gateway providers (OpenRouter, Portkey)</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-                <h3><code>BasicSession</code></h3>
-                <p>Keep conversation state:</p>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import BasicSession, create_llm
+llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")
+llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY", config_id="pcfg_...")
+</code></pre></div>
+<p>Gateway notes:
+- OpenRouter uses <code>OPENROUTER_API_KEY</code> (model names like <code>openai/...</code>).
+- Portkey uses <code>PORTKEY_API_KEY</code> plus a config id (<code>PORTKEY_CONFIG</code>).
+- Optional generation parameters (<code>temperature</code>, <code>top_p</code>, <code>max_output_tokens</code>, etc.) are only forwarded when explicitly set.</p>
+<h3 id="basicsession"><code>BasicSession</code></h3>
+<p>Keep conversation state:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import BasicSession, create_llm
 
-session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))
+session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # requires: abstractcore[anthropic]
 print(session.generate("Give me 3 name ideas.").content)
-print(session.generate("Pick the best one.").content)</code></pre>
-                </div>
-
-                <h2>Responses (<code>GenerateResponse</code>)</h2>
-                <p>Most calls return a <code>GenerateResponse</code> object (or an iterator for streaming). Common fields:</p>
-                <ul>
-                    <li><code>content</code>: cleaned assistant text</li>
-                    <li><code>tool_calls</code>: structured tool calls (pass-through by default)</li>
-                    <li><code>usage</code>: token usage (provider-dependent)</li>
-                    <li><code>metadata</code>: provider/model-specific fields (for example extracted reasoning text when configured)</li>
-                </ul>
-
-                <h2>Tool calling</h2>
-                <p>Tools are passed explicitly to <code>generate()</code> / <code>agenerate()</code>:</p>
-                <div class="code-block">
-                    <pre><code class="language-python">from abstractcore import create_llm, tool
+print(session.generate("Pick the best one.").content)
+</code></pre></div>
+<h2 id="responses-generateresponse">Responses (<code>GenerateResponse</code>)</h2>
+<p>Most calls return a <code>GenerateResponse</code> object (or an iterator of them for streaming). Common fields:</p>
+<ul>
+<li><code>content</code>: cleaned assistant text</li>
+<li><code>tool_calls</code>: structured tool calls (pass-through by default)</li>
+<li><code>usage</code>: token usage (provider-dependent)</li>
+<li><code>metadata</code>: provider/model specific fields (for example extracted reasoning text when configured)</li>
+</ul>
+<h2 id="tool-calling">Tool calling</h2>
+<p>Tools are passed explicitly to <code>generate()</code> / <code>agenerate()</code>:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
-def get_weather(city: str) -> str:
+def get_weather(city: str) -&gt; str:
     return f"{city}: 22°C and sunny"
 
 llm = create_llm("openai", model="gpt-4o-mini")
 resp = llm.generate("Use the tool.", tools=[get_weather])
-print(resp.tool_calls)</code></pre>
-                </div>
-                <p>See <a href="tool-calling.html">Tool Calling</a> and <a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a>.</p>
-
-                <h3>Built-in tools (optional)</h3>
-                <p>If you want a ready-made toolset (web + filesystem helpers), install:</p>
-                <div class="code-block">
-                    <pre><code class="language-bash">pip install "abstractcore[tools]"</code></pre>
-                </div>
-                <p>
-                    Then import from <code>abstractcore.tools.common_tools</code> (for example <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, <code>fetch_url</code>).
-                    See <a href="tool-calling.html">Tool Calling</a> for usage patterns and when to use <code>skim_*</code> vs <code>fetch_*</code>.
-                </p>
-
-                <h2>Structured output</h2>
-                <p>Pass a Pydantic model via <code>response_model=...</code> to receive a typed result:</p>
-                <div class="code-block">
-                    <pre><code class="language-python">from pydantic import BaseModel
+print(resp.tool_calls)
+</code></pre></div>
+<p>See <strong><a href="tool-calling.html">Tool Calling</a></strong> and <strong><a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a></strong>.</p>
+<h3 id="built-in-tools-optional">Built-in tools (optional)</h3>
+<p>If you want a ready-made toolset (web + filesystem helpers), install:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[tools]"
+</code></pre></div>
+<p>Then import from <code>abstractcore.tools.common_tools</code> (for example <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, <code>fetch_url</code>). See <strong><a href="tool-calling.html">Tool Calling</a></strong> for usage patterns and when to use <code>skim_*</code> vs <code>fetch_*</code>.</p>
+<h2 id="structured-output">Structured output</h2>
+<p>Pass a Pydantic model via <code>response_model=...</code> to receive a typed result:</p>
+<div class="code-block"><pre><code class="language-python">from pydantic import BaseModel
 from abstractcore import create_llm
 
 class Answer(BaseModel):
@@ -123,60 +108,26 @@ class Answer(BaseModel):
 
 llm = create_llm("openai", model="gpt-4o-mini")
 result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
-print(result.bullets)</code></pre>
-                </div>
-                <p>See <a href="structured-output.html">Structured Output</a>.</p>
-
-                <h2>Media input</h2>
-                <p>Media handling is opt-in:</p>
-                <div class="code-block">
-                    <pre><code class="language-bash">pip install "abstractcore[media]"</code></pre>
-                </div>
-                <p>Then pass <code>media=[...]</code> to <code>generate()</code> / <code>agenerate()</code>. See <a href="media-handling-system.html">Media Handling</a>.</p>
-
-                <h2>Audio &amp; voice (optional)</h2>
-                <p>
-                    Audio inputs are handled via an explicit policy to avoid silent semantic changes. For speech audio, use
-                    <code>audio_policy="speech_to_text"</code> (requires a capability plugin such as <code>abstractvoice</code>).
-                </p>
-                <div class="code-block">
-                    <pre><code class="language-bash">pip install abstractvoice</code></pre>
-                </div>
-                <p>See <a href="audio.html">Audio &amp; Voice (STT/TTS)</a> for usage, configuration defaults, and server endpoints.</p>
-
-                <h2>HTTP API (optional)</h2>
-                <p>If you want an OpenAI-compatible <code>/v1</code> gateway, install and run the server:</p>
-                <div class="code-block">
-                    <pre><code class="language-bash">pip install "abstractcore[server]"
-python -m abstractcore.server.app</code></pre>
-                </div>
-                <p>See <a href="server.html">HTTP Server Guide</a>.</p>
-
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Full API listing (incl. events)</p>
-                        </a>
-
-                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">5-minute setup and first call</p>
-                        </a>
-
-                        <a href="faq.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">FAQ</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Common questions and setup gotchas</p>
-                        </a>
-
-                        <a href="audio.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Audio &amp; Voice</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">STT fallback and optional TTS</p>
-                        </a>
-                    </div>
-                </div>
+print(result.bullets)
+</code></pre></div>
+<p>See <strong><a href="structured-output.html">Structured Output</a></strong>.</p>
+<h2 id="media-input">Media input</h2>
+<p>Media handling is opt-in:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[media]"
+</code></pre></div>
+<p>Then pass <code>media=[...]</code> to <code>generate()</code> / <code>agenerate()</code> (or use the media pipeline). Media behavior is <strong>policy-driven</strong>:</p>
+<ul>
+<li>Images: use a vision-capable model, or configure vision fallback (caption → inject short observations).</li>
+<li>Video: controlled by <code>video_policy</code> (native when supported; otherwise frame sampling via <code>ffmpeg</code> + vision handling).</li>
+<li>Audio: controlled by <code>audio_policy</code> (native when supported; otherwise optional speech-to-text via <code>abstractvoice</code>).</li>
+</ul>
+<p>See <strong><a href="media-handling-system.html">Media Handling</a></strong>, <strong><a href="vision-capabilities.html">Vision Capabilities</a></strong>, and <strong><a href="centralized-config.html">Centralized Config</a></strong>.</p>
+<h2 id="http-api-optional">HTTP API (optional)</h2>
+<p>If you want an OpenAI-compatible <code>/v1</code> gateway, install and run the server:</p>
+<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[server]"
+python -m abstractcore.server.app
+</code></pre></div>
+<p>See <strong><a href="server.html">Server</a></strong>.</p>
             </div>
         </div>
     </main>

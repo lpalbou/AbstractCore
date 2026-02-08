@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Internal CLI - AbstractCore</title>
-    <meta name="description" content="Interactive CLI for testing and exploring AbstractCore providers, tools, media, and token controls.">
+    <title>AbstractCore CLI (acore-cli) - AbstractCore</title>
+    <meta name="description" content="AbstractCore includes a built-in CLI tool for testing, demonstration, and interactive conversations. This is AbstractCore&#x27;s internal testing CLI, not to be confused with…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,215 +21,554 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Internal CLI</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    A lightweight interactive CLI for testing and exploring providers, tools, media, and token controls.
-                    This is AbstractCore’s internal chat CLI—not an external agentic CLI.
-                </p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">AbstractCore CLI (acore-cli)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore includes a built-in CLI tool for testing, demonstration, and interactive conversations. This is AbstractCore&#x27;s internal testing CLI, not to be confused with external agentic CLIs like Codex or Gemini CLI.</p>
             </div>
 
-            <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 3rem;">
-                <p style="margin: 0; color: var(--info-text);">
-                    <strong>Using Codex / Gemini CLI / Crush?</strong>
-                    Use the OpenAI-compatible server instead: see the <a href="server.html" style="color: var(--info-text); text-decoration: underline; font-weight: 600;">HTTP Server Guide</a>.
-                </p>
-            </div>
-
-            <!-- Table of Contents -->
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">Table of Contents</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 0.75rem;">
-                    <div>
-                        <a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
-                        <a href="#token-controls" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Token Controls</a>
-                        <a href="#thinking" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Thinking / Reasoning</a>
-                    </div>
-                    <div>
-                        <a href="#commands" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Built-in Commands</a>
-                        <a href="#media" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Media Attachments</a>
-                        <a href="#async-demo" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Async Demo (Educational)</a>
-                    </div>
-                </div>
-            </div>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#async-cli-demo-educational-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Async CLI Demo (Educational Reference)</a>
+<a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#media-attachments-path" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Media attachments ( @/path )</a>
+<a href="#new-commands" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">New Commands</a>
+<a href="#usage-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Usage Examples</a></div>
 
             <div class="doc-content">
-                <section id="quick-start">
-                    <h2>Quick Start</h2>
-                    <p>The internal CLI is installed as <code>abstractcore-chat</code>.</p>
 
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Local provider (Ollama)
-abstractcore-chat --provider ollama --model qwen3:4b-instruct
 
-# Cloud providers
+<h2 id="overview">Overview</h2>
+<p>The AbstractCore internal CLI provides chat history management and system control commands for interactive testing of LLM providers.</p>
+<p><strong>Looking for external agentic CLI integration (Codex, Gemini CLI, Crush)?</strong>
+→ <strong>See <a href="server.html">Server Documentation</a></strong> for complete setup guides.</p>
+<h2 id="async-cli-demo-educational-reference">Async CLI Demo (Educational Reference)</h2>
+<p>⚠️ <strong>For developers learning async patterns in AbstractCore</strong></p>
+<p>AbstractCore includes an educational async CLI demo that illustrates 8 core async/await patterns:</p>
+<div class="code-block"><pre><code class="language-bash"># Run the async demo (educational only)
+python examples/async_cli_demo.py --provider ollama --model qwen3:4b
+python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b --stream
+</code></pre></div>
+<p><strong>What it demonstrates:</strong>
+1. Event-driven progress (GlobalEventBus)
+2. Async event handlers (on_async)
+3. Non-blocking animations (create_task)
+4. Async sleep for cooperative multitasking
+5. Parallel execution (asyncio.gather)
+6. Sync tools in async context (asyncio.to_thread)
+7. Async streaming (await + async for)
+8. Non-blocking input (asyncio.to_thread)</p>
+<p><strong>Key features:</strong>
+- ✅ Real-time spinners during tool execution
+- ✅ Parallel tool execution with asyncio.gather()
+- ✅ Proper async streaming pattern (await first, then async for)
+- ✅ Event-driven progress feedback
+- ✅ Extensively commented code explaining each pattern</p>
+<p><strong>This is for LEARNING ONLY.</strong> For production use, stick with the standard CLI below.</p>
+<p><a href="../examples/async_cli_demo.py">View the demo code →</a></p>
+<h2 id="quick-start">Quick Start</h2>
+<div class="code-block"><pre><code class="language-bash"># Start the internal CLI (installed as `abstractcore-chat`)
+abstractcore-chat --provider ollama --model qwen3-coder:30b
+
+# Or with any provider
 abstractcore-chat --provider openai --model gpt-4o-mini
 abstractcore-chat --provider anthropic --model claude-haiku-4-5
+abstractcore-chat --provider openrouter --model openai/gpt-4o-mini
 
-# OpenAI-compatible local servers
-# Note: include /v1 in the base URL.
+# With streaming enabled (--stream flag)
+abstractcore-chat --provider ollama --model qwen3-coder:30b --stream
+
+# OpenAI-compatible /v1 endpoints (LM Studio, vLLM, custom proxies)
+# Note: include `/v1` in the base URL for OpenAI-compatible servers.
 abstractcore-chat --provider lmstudio --model qwen/qwen3-4b-2507 --base-url http://localhost:1234/v1
 abstractcore-chat --provider openai-compatible --model local-model --base-url http://localhost:1234/v1
 
-# Streaming
-abstractcore-chat --provider ollama --model qwen3:4b-instruct --stream</code></pre>
-                    </div>
-
-                    <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
-                        <p style="margin: 0;">
-                            <strong>Tip:</strong> <code>python -m abstractcore.utils.cli ...</code> is equivalent if you prefer module execution.
-                        </p>
-                    </div>
-
-                    <h3>API keys</h3>
-                    <p>Cloud providers require API keys in your environment:</p>
-                    <ul>
-                        <li>OpenAI: <code>OPENAI_API_KEY</code></li>
-                        <li>Anthropic: <code>ANTHROPIC_API_KEY</code></li>
-                        <li>OpenRouter: <code>OPENROUTER_API_KEY</code></li>
-                    </ul>
-                </section>
-
-                <section id="token-controls" style="margin-top: 3rem;">
-                    <h2>Token Controls</h2>
-                    <p>Set token budgets at startup or adjust them inside the REPL.</p>
-
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Startup flags
-abstractcore-chat --provider openai --model gpt-4o-mini --max-tokens 16384 --max-output-tokens 1024</code></pre>
-                    </div>
-
-                    <div class="code-block">
-                        <pre><code class="language-bash"># In the REPL
-/max-tokens 16384
+# Control token budgets
+abstractcore-chat --provider lmstudio --model qwen/qwen3-4b-2507 --max-tokens 16384 --max-output-tokens 1024
+</code></pre></div>
+<p>Tip: <code>python -m abstractcore.utils.cli ...</code> is equivalent if you prefer module execution.</p>
+<p>Cloud providers require API keys:
+- OpenAI: <code>OPENAI_API_KEY</code>
+- Anthropic: <code>ANTHROPIC_API_KEY</code>
+- OpenRouter: <code>OPENROUTER_API_KEY</code></p>
+<h2 id="media-attachments-path">Media attachments (<code>@/path</code>)</h2>
+<p>In <code>abstractcore-chat</code>, you can attach local files by referencing them in your prompt:</p>
+<div class="code-block"><pre><code class="language-text">what is in this image? @/path/to/photo.jpg
+what does it say? @/path/to/audio.wav
+summarize this clip @/path/to/video.mp4
+</code></pre></div>
+<p>Fallback behavior is explicit and policy-driven:</p>
+<ul>
+<li><strong>Images</strong>: a vision-capable model can process images natively. For text-only models, AbstractCore can use <strong>vision fallback</strong> (caption → inject short observations) when configured.</li>
+<li><strong>Audio</strong>: if the model is not audio-capable, <code>abstractcore-chat</code> defaults to <code>audio_policy="auto"</code> when audio is attached, so speech-to-text can run when <code>abstractvoice</code> is installed.</li>
+<li><strong>Video</strong>: <code>video_policy="auto"</code> uses native video when supported; otherwise it can sample frames via <code>ffmpeg</code>/<code>ffprobe</code> and route them through image/vision handling.</li>
+</ul>
+<p>Configure defaults (optional):</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore --config
+abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
+abstractcore --set-audio-strategy auto            # requires: pip install abstractvoice
+abstractcore --set-video-strategy auto            # frames fallback requires ffmpeg
+</code></pre></div>
+<p>Per-run overrides:
+- <code>abstractcore-chat --audio-policy native_only|speech_to_text|auto</code>
+- <code>abstractcore-chat --audio-language en|fr|...</code> (STT hint)</p>
+<h2 id="new-commands">New Commands</h2>
+<h3 id="token-controls-max-tokens-max-output-tokens">Token Controls (<code>/max-tokens</code>, <code>/max-output-tokens</code>)</h3>
+<p>Adjust token limits during a CLI session:</p>
+<div class="code-block"><pre><code class="language-bash">/max-tokens 16384
 /max-output-tokens 1024
 /max-tokens auto
-/max-output-tokens auto</code></pre>
-                    </div>
-                </section>
-
-                <section id="thinking" style="margin-top: 3rem;">
-                    <h2>Thinking / Reasoning</h2>
-                    <p>Toggle unified thinking/reasoning mode (best-effort across providers/models):</p>
-
-                    <div class="code-block">
-                        <pre><code class="language-bash">/thinking auto
+/max-output-tokens auto
+</code></pre></div>
+<h3 id="thinking-reasoning-control-thinking">Thinking / Reasoning Control (<code>/thinking</code>)</h3>
+<p>Toggle unified thinking/reasoning mode (best-effort across providers/models):</p>
+<div class="code-block"><pre><code class="language-bash">/thinking auto
 /thinking on
 /thinking off
 /thinking low
 /thinking medium
-/thinking high</code></pre>
-                    </div>
-
-                    <p>Control whether reasoning (when available) is displayed separately:</p>
-
-                    <div class="code-block">
-                        <pre><code class="language-bash">/show-reasoning auto
+/thinking high
+</code></pre></div>
+<p>Notes:
+- Not every provider/model supports request-side control; unsupported requests may warn and be ignored.
+- Some models expose reasoning in <code>response.metadata["reasoning"]</code> (and AbstractCore normalizes/strips it from visible content when configured).</p>
+<h3 id="reasoning-display-show-reasoning">Reasoning Display (<code>/show-reasoning</code>)</h3>
+<p>Control whether <code>abstractcore-chat</code> displays captured reasoning separately from the assistant answer.</p>
+<div class="code-block"><pre><code class="language-bash">/show-reasoning auto
 /show-reasoning on
-/show-reasoning off</code></pre>
-                    </div>
-                </section>
+/show-reasoning off
+</code></pre></div>
+<p>Notes:
+- <code>auto</code> shows reasoning whenever the provider returns it (unless you set <code>/thinking off</code> or <code>/show-reasoning off</code>).
+- Reasoning is printed in a visually distinct style (best-effort: grey/italic when the terminal supports it).
+- When shown, reasoning is printed <strong>before</strong> the assistant answer.
+- In <code>--stream</code> mode, <code>abstractcore-chat</code> may buffer output for reasoning-capable models to preserve “reasoning first” display.</p>
+<h3 id="compact-chat-history-compaction"><code>/compact</code> - Chat History Compaction</h3>
+<p>Compacts your chat history using the fast local <code>gemma3:1b</code> model to create a summary while preserving recent exchanges.</p>
+<div class="code-block"><pre><code class="language-bash"># In the CLI
+/compact
 
-                <section id="commands" style="margin-top: 3rem;">
-                    <h2>Built-in Commands</h2>
-                    <p>A few useful commands shipped with the CLI:</p>
-                    <ul>
-                        <li><code>/compact</code> — compacts chat history (fast local summarizer model)</li>
-                        <li><code>/facts [file]</code> — extract facts as triples (optionally save JSON-LD)</li>
-                        <li><code>/judge</code> — evaluate discussion quality (LLM-as-a-judge demonstrator)</li>
-                        <li><code>/intent [participant]</code> — intent analysis (optionally per participant)</li>
-                    </ul>
-                </section>
+# Output example:
+[COMPACT] Compacting chat history...
+   Before: 15 messages (~450 tokens)
+   Using gemma3:1b for compaction...
+[OK] Compaction completed in 3.2s
+   After: 5 messages (~280 tokens)
+   Structure:
+   1. [SYS] System prompt
+   2. [SUMMARY] Conversation summary (1,200 chars)
+   3. User: How do I handle errors in Python?
+   4. Assistant: You can use try/except blocks...
+   5. User: What about logging?
+   [NOTE] Note: Token count may increase initially due to detailed summary
+       but will decrease significantly as conversation continues
+</code></pre></div>
+<p><strong>When to use:</strong>
+- Long conversations that slow down responses
+- When you want to preserve context but reduce memory usage
+- Before switching to a different topic</p>
+<h3 id="facts-file-extract-facts-from-conversation"><code>/facts [file]</code> - Extract Facts from Conversation</h3>
+<p>Extracts facts from your conversation history as simple triples (subject-predicate-object). Display them in chat or save as structured JSON-LD.</p>
+<h3 id="judge-evaluate-conversation-quality"><code>/judge</code> - Evaluate Conversation Quality</h3>
+<p><strong>NEW</strong>: Evaluates the quality and interest of the current discussion using LLM-as-a-judge. This is a demonstrator showing objective assessment capabilities with constructive feedback.</p>
+<div class="code-block"><pre><code class="language-bash"># In the CLI
+/judge
 
-                <section id="media" style="margin-top: 3rem;">
-                    <h2>Media Attachments (<code>@filename</code>)</h2>
-                    <p>Attach files directly in your prompt using <code>@path/to/file</code> (requires media extras):</p>
+# Output example:
+[JUDGE] Evaluating conversation quality...
+   Analyzing 450 characters of conversation...
+[OK] Evaluation completed in 35.2s
 
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install "abstractcore[media]"</code></pre>
-                    </div>
+[STATS] Overall Discussion Quality: 4/5
 
-                    <div class="code-block">
-                        <pre><code class="language-bash"># Image analysis
-abstractcore-chat --provider openai --model gpt-4o --prompt "What's in @photo.jpg?"
+[METRICS] Quality Dimensions:
+   Clarity      : 5/5
+   Coherence    : 4/5
+   Actionability: 3/5
+   Relevance    : 5/5
+   Completeness : 4/5
+   Soundness    : 4/5
+   Simplicity   : 5/5
 
-# PDF document analysis
-abstractcore-chat --provider anthropic --model claude-haiku-4-5 --prompt "Summarize @report.pdf"
+[OK] Conversation Strengths:
+   • The discussion maintains clear focus and addresses questions directly
+   • Explanations are well-structured and easy to follow
+   • Technical concepts are explained in accessible language
 
-# Office documents and data files
-abstractcore-chat --provider openai --model gpt-4o --prompt "Extract action items from @slides.pptx"
-abstractcore-chat --provider openai --model gpt-4o --prompt "Analyze @spreadsheet.xlsx"
-abstractcore-chat --provider openai --model gpt-4o-mini --prompt "Spot anomalies in @metrics.csv"</code></pre>
-                    </div>
+[NOTE] Suggestions for Better Discussions:
+   • Include more specific examples to illustrate key points
+   • Add actionable next steps or recommendations where appropriate
+   • Consider exploring alternative approaches or edge cases
 
-                    <h3>Supported file types</h3>
-                    <ul>
-                        <li><strong>Images:</strong> PNG, JPEG, GIF, WEBP, BMP, TIFF</li>
-                        <li><strong>Documents:</strong> PDF, DOCX, XLSX, PPTX</li>
-                        <li><strong>Data/Text:</strong> CSV, TSV, TXT, MD, JSON, XML</li>
-                    </ul>
-                </section>
+[ANALYSIS] Assessment Summary:
+   The conversation demonstrates strong clarity and relevance with well-structured exchanges.
 
-                <section id="async-demo" style="margin-top: 3rem;">
-                    <h2>Async CLI Demo (Educational)</h2>
-                    <p>AbstractCore includes an educational async CLI demo to learn async patterns. This is for learning, not production.</p>
+[INFO] Note: This is a demonstrator showing LLM-as-a-judge capabilities for objective assessment.
+</code></pre></div>
+<h3 id="intent-participant-analyze-conversation-intents"><code>/intent [participant]</code> - Analyze Conversation Intents</h3>
+<p><strong>NEW</strong>: Analyzes the psychological intents and motivations behind conversation messages, including deception detection. This provides insights into communication patterns and underlying goals.</p>
+<div class="code-block"><pre><code class="language-bash"># In the CLI
+/intent                    # Analyze all participants
+/intent user              # Focus on user intents only
+/intent assistant         # Focus on assistant intents only
 
-                    <div class="code-block">
-                        <pre><code class="language-bash">python examples/async_cli_demo.py --provider ollama --model qwen3:4b
-python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b --stream</code></pre>
-                    </div>
-                </section>
+# Output example:
+[INTENT] Analyzing user intents in conversation...
+   Processing 8 messages...
+[OK] Intent analysis completed in 45.3s
 
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="apps.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">CLI Apps</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Summarizer, Extractor, Judge, Intent, DeepSearch</p>
-                        </a>
+[INTENT] CONVERSATION INTENT ANALYSIS
+============================================================
 
-                        <a href="token-management.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Token Management</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Unified budgets and validation</p>
-                        </a>
+User: USER INTENTS:
+────────────────────────────────────────
+[INTENT] Primary Intent: Problem Solving
+   Description: The user is seeking to resolve a technical issue by requesting specific guidance and clarification.
+   Underlying Goal: To gain competence and confidence in handling similar problems independently.
+   Emotional Undertone: Curious and determined
+   Confidence: 0.95 | Urgency: 0.70
 
-                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Media Handling</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Images, PDFs, Office docs + fallback</p>
-                        </a>
+[DETECT] DECEPTION ANALYSIS:
+   Deception Likelihood: 0.05
+   Narrative Consistency: 0.95
+   Temporal Coherence: 0.98
+   Emotional Congruence: 0.92
+   Evidence Indicating Authenticity:
+     • Direct questions show genuine information-seeking
+     • Consistent follow-up questions demonstrate engagement
+     • Acknowledgment of gaps in knowledge
 
-                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible gateway for agentic CLIs</p>
-                        </a>
-                    </div>
-                </div>
+[SECONDARY] Secondary Intents:
+   1. Validation Seeking
+      Goal: To confirm understanding and receive reassurance about approach
+      Confidence: 0.80
+   2. Relationship Building
+      Goal: To establish rapport and demonstrate engagement
+      Confidence: 0.65
+
+[NOTE] Suggested Response Approach:
+   Provide clear, step-by-step guidance with examples. Acknowledge their learning progress and offer additional resources for independent exploration.
+
+[STATS] Analysis: 45 words | Complexity: 0.60 | Confidence: 0.92 | Time: 45.3s
+
+============================================================
+[NOTE] Note: This analysis identifies underlying motivations and goals behind communication
+</code></pre></div>
+<p><strong>Key Features:</strong>
+- <strong>17 Intent Types</strong>: From basic information-seeking to complex psychological patterns like face-saving and blame deflection
+- <strong>Deception Detection</strong>: Authenticity assessment with narrative consistency analysis
+- <strong>Multi-Participant Support</strong>: Analyze conversations with multiple participants separately
+- <strong>Psychological Depth</strong>: Surface, underlying, or comprehensive analysis levels
+- <strong>Evidence-Based</strong>: Concrete textual evidence supporting assessments</p>
+<p><strong>When to use:</strong>
+- Understanding customer communication patterns and needs
+- Analyzing team dynamics and collaboration effectiveness<br/>
+- Detecting potential deception or authenticity in communications
+- Improving response strategies based on underlying motivations
+- Training and research in communication analysis</p>
+<div class="code-block"><pre><code class="language-bash"># In the CLI
+/facts
+
+# Output example:
+[DETECT] Extracting facts from conversation history...
+   Processing 415 characters of conversation...
+[OK] Fact extraction completed in 4.5s
+
+[FACTS] Facts extracted from conversation:
+==================================================
+ 1. OpenAI creates GPT-4
+ 2. Microsoft Copilot uses GPT-4
+ 3. Google develops TensorFlow
+==================================================
+[STATS] Found 3 entities and 2 relationships
+</code></pre></div>
+<div class="code-block"><pre><code class="language-bash"># Save to JSON-LD file
+/facts myconversation
+
+# Output example:
+[DETECT] Extracting facts from conversation history...
+   Processing 415 characters of conversation...
+[OK] Fact extraction completed in 3.3s
+[SAVE] Facts saved to myconversation.jsonld
+[STATS] Saved 3 entities and 2 relationships as JSON-LD
+</code></pre></div>
+<p><strong>When to use:</strong>
+- Extract key information discussed in the conversation
+- Create structured knowledge from chat sessions
+- Document facts for later reference or analysis
+- Generate semantic data for knowledge graphs</p>
+<h3 id="stream-toggle-streaming-mode"><code>/stream</code> - Toggle Streaming Mode</h3>
+<p>Toggle real-time streaming of responses. You can also start with streaming enabled using the <code>--stream</code> flag.</p>
+<div class="code-block"><pre><code class="language-bash"># Toggle streaming mode in CLI
+/stream
+
+# Output examples:
+[STREAM] Stream mode: ON
+[STREAM] Stream mode: OFF
+</code></pre></div>
+<p><strong>Two ways to enable streaming:</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Method 1: Start with streaming enabled
+abstractcore-chat --provider ollama --model qwen3-coder:30b --stream
+
+# Method 2: Toggle during conversation
+User: You: /stream
+[STREAM] Stream mode: ON
+User: You: Write a haiku about programming
+Assistant: Assistant: Code flows like a stream... [appears word by word]
+</code></pre></div>
+<p><strong>When to use:</strong>
+- Real-time response display for better user experience
+- Immediate feedback during long responses
+- Interactive conversations where responsiveness matters</p>
+<h3 id="history-n-show-conversation-history"><code>/history [n]</code> - Show Conversation History</h3>
+<p>Shows conversation history verbatim without truncation or numbering.</p>
+<div class="code-block"><pre><code class="language-bash"># Show all conversation history
+/history
+
+# Show last 2 interactions (4 messages: Q, A, Q, A)
+/history 2
+
+# Show last 1 interaction (2 messages: Q, A)
+/history 1
+</code></pre></div>
+<p><strong>Output example:</strong></p>
+<div class="code-block"><pre><code class="language-bash">/history 2
+
+📜 Last 2 interactions:
+
+User: You:
+How do I create a function in Python?
+
+Assistant: Assistant:
+You create functions in Python using the 'def' keyword:
+
+def my_function(parameter1, parameter2):
+    result = parameter1 + parameter2
+    return result
+
+Functions help organize code and avoid repetition.
+
+User: You:
+What about error handling?
+
+Assistant: Assistant:
+Python uses try/except blocks for error handling:
+
+try:
+    risky_operation()
+except Exception as e:
+    print(f"Error occurred: {e}")
+
+This allows you to handle errors gracefully.
+
+[STATS] Total tokens estimate: ~150
+</code></pre></div>
+<p><strong>After using /compact, /history shows both summary and recent messages:</strong></p>
+<div class="code-block"><pre><code class="language-bash">/history
+
+📜 Conversation History:
+
+[SUMMARY] Earlier Conversation Summary:
+──────────────────────────────────────────────────
+The conversation covered Python basics, including variable types,
+control structures, and recommended practices for writing clean code. The
+user asked about functions and we discussed function definition,
+parameters, and return values in detail.
+──────────────────────────────────────────────────
+
+💬 Recent Conversation:
+
+User: You:
+What about error handling?
+
+Assistant: Assistant:
+Python uses try/except blocks for error handling:
+
+try:
+    risky_operation()
+except Exception as e:
+    print(f"Error occurred: {e}")
+
+This allows you to handle errors gracefully.
+
+[STATS] Total tokens estimate: ~850
+</code></pre></div>
+<p><strong>Features:</strong>
+- <strong>Verbatim display</strong> - Shows complete messages without truncation
+- <strong>Summary visibility</strong> - Displays compacted conversation summaries when available
+- <strong>Clean formatting</strong> - No message numbers, just clean conversation flow
+- <strong>Full content</strong> - Preserves code blocks, formatting, and long responses
+- <strong>Flexible viewing</strong> - Show all history or specific number of interactions
+- <strong>Context continuity</strong> - Always shows earlier conversation context after compaction</p>
+<p><strong>When to use:</strong>
+- Review recent conversation context in full detail
+- Copy/paste previous responses or code examples
+- Verify exact wording of previous exchanges</p>
+<h3 id="system-prompt-system-prompt-management"><code>/system [prompt]</code> - System Prompt Management</h3>
+<p>Control the system prompt that guides the AI's behavior.</p>
+<div class="code-block"><pre><code class="language-bash"># Show current system prompt
+/system
+
+# Change system prompt
+/system You are a Python expert focused on data science and machine learning.
+
+# Output example for show:
+[SYS] Current System Prompt:
+==================================================
+📝 Fixed Part:
+You are a helpful AI assistant.
+
+🔧 Full Prompt (as seen by LLM):
+System Message 1 (Base):
+You are a helpful AI assistant.
+==================================================
+
+# Output example for change:
+[OK] System prompt updated!
+📝 Old: You are a helpful AI assistant.
+📝 New: You are a Python expert focused on data science and machine learning.
+</code></pre></div>
+<p><strong>Features:</strong>
+- <strong>Show current prompt</strong> - Displays both fixed part and full prompt seen by LLM
+- <strong>Change prompt</strong> - Updates the system prompt while preserving tool configurations
+- <strong>Full visibility</strong> - Shows all system messages including summaries from compaction
+- <strong>Safe updates</strong> - Only changes the core prompt, preserves conversation history</p>
+<p><strong>When to use:</strong>
+- Adapt AI behavior for specific tasks (coding, writing, analysis)
+- Review what instructions the AI is currently following
+- Switch between different AI personas during conversation
+- Debug unexpected AI behavior by checking the active system prompt</p>
+<h3 id="tooltag-openingtag-closingtag-test-tool-call-tag-rewriting"><code>/tooltag &lt;opening_tag&gt; &lt;closing_tag&gt;</code> - Test Tool Call Tag Rewriting</h3>
+<p>Test tool call tag rewriting with custom tags to verify compatibility with different agentic CLIs.</p>
+<div class="code-block"><pre><code class="language-bash"># Test LLaMA3 format (Crush CLI)
+/tooltag '&lt;function_call&gt;' '&lt;/function_call&gt;'
+
+# Test XML format (Gemini CLI)
+/tooltag '&lt;tool_call&gt;' '&lt;/tool_call&gt;'
+
+# Test Qwen3 format (Codex CLI)
+/tooltag '&lt;|tool_call|&gt;' '&lt;/|tool_call|&gt;'
+
+# Test Gemma format
+/tooltag '```tool_code' '```'
+
+# Test custom format
+/tooltag '&lt;my_tool&gt;' '&lt;/my_tool&gt;'
+</code></pre></div>
+<p><strong>Features:</strong>
+- Tests custom tool call tag formats
+- Compares with default behavior
+- Works with both streaming and non-streaming modes
+- Verifies tag rewriting functionality
+- Shows detailed results and analysis</p>
+<p><strong>Example Output:</strong></p>
+<div class="code-block"><pre><code>🏷️ Testing Tool Call Tag Rewriting
+📝 Opening Tag: '&lt;function_call&gt;'
+📝 Closing Tag: '&lt;/function_call&gt;'
+============================================================
+Assistant: Testing with openai:gpt-4o-mini
+[STREAM] Streaming: OFF
+📝 Prompt: Please help me with two tasks:
+1. Get the current weather for Paris
+2. Calculate what 15 * 23 equals
+
+Use the available tools to help me with these tasks.
+
+============================================================
+🔧 Testing with custom tool call tags...
+Assistant: Assistant (with custom tags): &lt;function_call&gt;{"name": "get_weather", "arguments": {"location": "Paris"}}&lt;/function_call&gt;
+
+🔧 Testing without custom tags (default behavior)...
+Assistant: Assistant (default): &lt;|tool_call|&gt;{"name": "get_weather", "arguments": {"location": "Paris"}}&lt;/|tool_call|&gt;
+
+============================================================
+[STATS] Summary:
+   Model: openai:gpt-4o-mini
+   Streaming: OFF
+   Custom tags: '&lt;function_call&gt;'...'&lt;/function_call&gt;'
+   Custom tags found: [OK] YES
+   Default tags found: [OK] YES
+</code></pre></div>
+<p><strong>When to use:</strong>
+- Test compatibility with specific agentic CLIs (Codex, Crush, Gemini CLI)
+- Verify tool call tag rewriting works correctly
+- Debug tool call format issues
+- Compare different tag formats side by side
+- Test both streaming and non-streaming modes</p>
+<h2 id="usage-examples">Usage Examples</h2>
+<h3 id="starting-the-cli-with-auto-compact">Starting the CLI with Auto-Compact</h3>
+<div class="code-block"><pre><code class="language-bash"># Start CLI with a model that supports auto-compaction
+abstractcore-chat --provider ollama --model gemma3:1b
+
+# Have a long conversation...
+User: You: What is Python?
+Assistant: Assistant: Python is a high-level programming language...
+
+User: You: What about data types?
+Assistant: Assistant: Python has several built-in data types...
+
+# Check history
+User: You: /history 2
+
+# Change system prompt for specific task
+User: You: /system You are an expert Python tutor focused on data science.
+
+# Compact when needed
+User: You: /compact
+
+# Extract facts from the conversation
+User: You: /facts
+
+# Continue conversation with preserved context and new system prompt
+User: You: Can you explain more about functions?
+Assistant: Assistant: [Responds as Python tutor, refers to previous conversation context]
+</code></pre></div>
+<h3 id="best-practices">Best Practices</h3>
+<ol>
+<li><strong>Regular History Checks</strong>: Use <code>/history n</code> to review recent context</li>
+<li><strong>Strategic Compaction</strong>: Use <code>/compact</code> when:
+   - Conversation becomes slow
+   - You've covered multiple topics
+   - Before switching contexts</li>
+<li><strong>System Prompt Control</strong>: Use <code>/system</code> to:
+   - Prevent unwanted tool calls with specific instructions
+   - Adapt AI behavior for different tasks
+   - Debug unexpected responses by checking active prompts</li>
+<li><strong>Context Verification</strong>: After compaction, use <code>/history</code> to verify preserved context</li>
+</ol>
+<h3 id="controlling-tool-usage">Controlling Tool Usage</h3>
+<p>If the AI is calling tools unnecessarily (like the example where it called <code>list_files</code> just to demonstrate capabilities):</p>
+<div class="code-block"><pre><code class="language-bash"># Check current system prompt to understand behavior
+User: You: /system
+
+# Update to prevent unnecessary tool calls
+User: You: /system You are a helpful AI assistant. Only use tools when explicitly requested by the user or when necessary to answer a specific question. Do not demonstrate tool capabilities unprompted.
+
+# Now the AI will be less likely to call tools unnecessarily
+User: You: Who are you?
+Assistant: Assistant: I am an AI assistant. [No tool calls]
+</code></pre></div>
+<h3 id="technical-details">Technical Details</h3>
+<ul>
+<li><strong>Compaction Model</strong>: Uses <code>gemma3:1b</code> for fast, local processing</li>
+<li><strong>Preservation</strong>: Keeps last 6 messages (3 exchanges) by default</li>
+<li><strong>Fallback</strong>: If <code>gemma3:1b</code> unavailable, uses current provider</li>
+<li><strong>Token Estimation</strong>: Provides accurate token count estimates using centralized TokenUtils</li>
+<li><strong>Message Types</strong>: Distinguishes between system, user, and assistant messages</li>
+</ul>
+<h3 id="error-handling">Error Handling</h3>
+<p>The commands gracefully handle various scenarios:
+- Not enough history to compact
+- Invalid parameters for <code>/last</code>
+- Missing models or providers
+- Empty conversation history</p>
+<p>All errors are clearly reported with helpful messages.</p>
             </div>
         </div>
     </main>

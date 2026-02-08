@@ -3,106 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Capabilities - AbstractCore</title>
-    <meta name="description" content="What AbstractCore can and cannot do. Understand when to use AbstractCore and when to look elsewhere.">
+    <title>AbstractCore Capabilities - AbstractCore</title>
+    <meta name="description" content="This document clearly explains what AbstractCore can and cannot do , helping you understand when to use it and when to look elsewhere.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
-    
+
     <!-- Navbar Component -->
     <script src="../assets/js/navbar-component.js"></script>
 </head>
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">AbstractCore Capabilities</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    This document clearly explains what AbstractCore <strong>can and cannot do</strong>, 
-                    helping you understand when to use it and when to look elsewhere.
-                </p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document clearly explains what AbstractCore can and cannot do , helping you understand when to use it and when to look elsewhere.</p>
             </div>
 
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-abstractcore-is" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What AbstractCore IS</a>
+<a href="#optional-capability-plugins-voiceaudiovision" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Optional capability plugins (voice/audio/vision)</a>
+<a href="#what-abstractcore-does-well" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What AbstractCore Does Well</a>
+<a href="#what-abstractcore-does-not-do" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What AbstractCore Does NOT Do</a>
+<a href="#when-to-choose-abstractcore" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">When to Choose AbstractCore</a>
+<a href="#abstractcore-in-the-ecosystem" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">AbstractCore in the Ecosystem</a>
+<a href="#decision-tree" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Decision Tree</a>
+<a href="#capabilities-summary" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Capabilities Summary</a>
+<a href="#next-steps" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Next Steps</a></div>
+
             <div class="doc-content">
-                <section>
-                    <h2>What AbstractCore IS</h2>
-                    <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin: 2rem 0;">
-                        <p style="margin: 0; font-size: 1.125rem; font-weight: 500;">
-                            AbstractCore is <strong>production-ready LLM infrastructure</strong>. 
-                            It provides a unified, reliable interface to language models with essential features built-in.
-                        </p>
-                    </div>
 
-                    <h3>Core Philosophy</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0;">
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; text-align: center;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Infrastructure</h4>
-                            <p style="margin: 0; font-size: 0.875rem;">Not application logic</p>
-                        </div>
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; text-align: center;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Reliability</h4>
-                            <p style="margin: 0; font-size: 0.875rem;">Over features</p>
-                        </div>
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; text-align: center;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Simplicity</h4>
-                            <p style="margin: 0; font-size: 0.875rem;">Over complexity</p>
-                        </div>
-                        <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; text-align: center;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Provider Agnostic</h4>
-                            <p style="margin: 0; font-size: 0.875rem;">Works everywhere</p>
-                        </div>
-                    </div>
-                </section>
 
-                <section>
-                    <h2>Optional capability plugins (voice/audio/vision)</h2>
-                    <p>
-                        AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in
-                        optional packages and are exposed through the capability plugin layer:
-                    </p>
-                    <ul>
-                        <li>Install <code>abstractvoice</code> → <code>llm.voice</code> / <code>llm.audio</code> (TTS/STT)</li>
-                        <li>Install <code>abstractvision</code> → <code>llm.vision</code> (text→image, image→image, …)</li>
-                    </ul>
-
-                    <div class="code-block">
-                        <pre><code class="language-bash">pip install abstractvoice
-pip install abstractvision</code></pre>
-                    </div>
-
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
+<h2 id="what-abstractcore-is">What AbstractCore IS</h2>
+<p>AbstractCore is <strong>production-ready LLM infrastructure</strong>. It provides a unified, reliable interface to language models with essential features built-in.</p>
+<h3 id="core-philosophy">Core Philosophy</h3>
+<ul>
+<li><strong>Infrastructure, not application logic</strong></li>
+<li><strong>Reliability over features</strong></li>
+<li><strong>Simplicity over complexity</strong></li>
+<li><strong>Provider agnostic</strong></li>
+</ul>
+<h2 id="optional-capability-plugins-voiceaudiovision">Optional capability plugins (voice/audio/vision)</h2>
+<p>AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in <strong>optional packages</strong> and are exposed through the capability plugin layer:</p>
+<ul>
+<li>Install <code>abstractvoice</code> → <code>llm.voice</code> / <code>llm.audio</code> (TTS/STT)</li>
+<li>Install <code>abstractvision</code> → <code>llm.vision</code> (text→image, image→image, …)</li>
+</ul>
+<div class="code-block"><pre><code class="language-bash">pip install abstractvoice
+pip install abstractvision
+</code></pre></div>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")  # example; pick a provider/model you have access to
 print(llm.capabilities.status())  # availability + selected backend ids + install hints
@@ -112,23 +75,12 @@ wav_bytes = llm.voice.tts("Hello", format="wav")
 text = llm.audio.transcribe("speech.wav")
 
 # Vision (requires vision_base_url / ABSTRACTVISION_BASE_URL)
-# png_bytes = llm.vision.t2i("a red square")</code></pre>
-                    </div>
-
-                    <p style="color: var(--text-secondary);">
-                        See <a href="audio.html">Audio &amp; Voice</a>, <a href="vision-capabilities.html">Vision Capabilities</a>, and <a href="server.html">Server</a>.
-                    </p>
-                </section>
-
-                <section>
-                    <h2>✅ What AbstractCore Does Exceptionally Well</h2>
-                    
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">1. Universal LLM Provider Interface</h3>
-                        <p><strong>What it does</strong>: Provides identical APIs across all major LLM providers.</p>
-                        
-                        <div class="code-block">
-                            <pre><code class="language-python"># Same code works with any provider
+# png_bytes = llm.vision.t2i("a red square")
+</code></pre></div>
+<h2 id="what-abstractcore-does-well">What AbstractCore Does Well</h2>
+<h3 id="1-universal-llm-provider-interface">1. Universal LLM Provider Interface</h3>
+<p><strong>What it does</strong>: Provides identical APIs across all major LLM providers.</p>
+<div class="code-block"><pre><code class="language-python"># Same code works with any provider
 def ask_llm(provider_name, question):
     llm = create_llm(provider_name, model="default")
     return llm.generate(question)
@@ -136,186 +88,62 @@ def ask_llm(provider_name, question):
 # All of these work identically
 ask_llm("openai", "What is Python?")
 ask_llm("anthropic", "What is Python?")
-ask_llm("ollama", "What is Python?")</code></pre>
-                        </div>
-                        
-                        <p><strong>Key benefit</strong>: Identical API across all providers eliminates provider-specific code.</p>
-                    </div>
-
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">2. Production-Grade Reliability</h3>
-                        <p><strong>What it does</strong>: Handles failures gracefully with retry logic, circuit breakers, and comprehensive error handling.</p>
-                        
-                        <ul>
-                            <li><strong>Automatic retries</strong> with exponential backoff for rate limits and network errors</li>
-                            <li><strong>Circuit breakers</strong> prevent cascade failures when providers go down</li>
-                            <li><strong>Smart error classification</strong> - retries recoverable errors, fails fast on auth errors</li>
-                            <li><strong>Event system</strong> for monitoring and alerting</li>
-                        </ul>
-                        
-                        <p><strong>Key benefit</strong>: Includes error handling, retries, and monitoring required for production use.</p>
-                    </div>
-
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">3. Universal Tool Calling</h3>
-                        <p><strong>What it does</strong>: Tools work consistently across ALL providers, even those without native tool support.</p>
-                        
-                        <div class="code-block">
-                            <pre><code class="language-python">from abstractcore import create_llm, tool
-
-@tool
-def get_weather(city: str) -> str:
-    """Get weather for a city."""
-    return f"Weather in {city}: 72°F, sunny"
+ask_llm("ollama", "What is Python?")
+</code></pre></div>
+<p><strong>Why this helps</strong>: Provides consistent tool calling, streaming, and structured output across all providers.</p>
+<h3 id="2-production-grade-reliability">2. Production-Grade Reliability</h3>
+<p><strong>What it does</strong>: Handles failures gracefully with retry logic, circuit breakers, and comprehensive error handling.</p>
+<ul>
+<li><strong>Automatic retries</strong> with exponential backoff for rate limits and network errors</li>
+<li><strong>Circuit breakers</strong> prevent cascade failures when providers go down</li>
+<li><strong>Smart error classification</strong> - retries recoverable errors, fails fast on auth errors</li>
+<li><strong>Event system</strong> for monitoring and alerting</li>
+</ul>
+<p><strong>Why this helps</strong>: Includes production reliability features like retry logic and error handling.</p>
+<h3 id="3-universal-tool-calling">3. Universal Tool Calling</h3>
+<p><strong>What it does</strong>: Tools work consistently across ALL providers, even those without native tool support.</p>
+<div class="code-block"><pre><code class="language-python">tools = [{"name": "get_weather", "description": "Get weather", ...}]
 
 # Works with providers that have native tool support
-openai_response = openai_llm.generate("Weather in Paris?", tools=[get_weather])
+openai_response = openai_llm.generate("Weather in Paris?", tools=tools)
 
 # Also works with providers that don't (via intelligent prompting)
-ollama_response = ollama_llm.generate("Weather in Paris?", tools=[get_weather])</code></pre>
-                        </div>
-                        
-                        <p><strong>Key benefit</strong>: Works with providers that lack native tool support through intelligent prompting.</p>
-                    </div>
+ollama_response = ollama_llm.generate("Weather in Paris?", tools=tools)
+</code></pre></div>
+<p><strong>Why this helps</strong>: Tools work with any provider, including those without native tool support.</p>
+<h3 id="4-tool-call-tag-rewriting-for-agentic-cli-compatibility">4. Tool Call Tag Rewriting for Agentic CLI Compatibility</h3>
+<p><strong>What it does</strong>: Automatically rewrites tool call tags to match different agentic CLI requirements in real-time.</p>
+<div class="code-block"><pre><code class="language-python"># Rewrite tool calls for different CLIs
+# Use a prompted-tools provider (tool-call markup lives in assistant content)
+llm = create_llm("ollama", model="qwen3:4b-instruct")
 
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">4. Centralized Configuration System</h3>
-                        <p><strong>What it does</strong>: Single source of truth for all settings with clear priority hierarchy.</p>
-
-                        <div class="code-block">
-                            <pre><code class="language-bash"># One-time configuration
-abstractcore --status
-abstractcore --set-global-default ollama/qwen3:4b-instruct
-abstractcore --set-app-default summarizer openai gpt-4o-mini
-abstractcore --set-api-key openai sk-your-key-here
-abstractcore --download-vision-model
-
-# Now use anywhere without repeating config
-summarizer document.pdf  # Uses configured defaults
-python -m abstractcore.utils.cli --prompt "Hello"  # Uses CLI default</code></pre>
-                        </div>
-
-                        <p><strong>Key benefit</strong>: Configuration hierarchy (Explicit > App-Specific > Global > Default) reduces repetitive parameter passing.</p>
-                    </div>
-
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">5. Deterministic Generation</h3>
-                        <p><strong>What it does</strong>: Provides consistent, reproducible outputs across all providers using seed parameters.</p>
-
-                        <div class="code-block">
-                            <pre><code class="language-python"># Deterministic outputs with seed + temperature=0
-llm = create_llm("openai", model="gpt-4o-mini", seed=42, temperature=0.0)
-
-# These will produce identical outputs
-response1 = llm.generate("Write exactly 3 words about coding")
-response2 = llm.generate("Write exactly 3 words about coding")
-# response1.content == response2.content (identical outputs)
-
-# Works across providers with same interface
-ollama_llm = create_llm("ollama", model="qwen3:4b-instruct", seed=42, temperature=0.0)
-mlx_llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit", seed=42, temperature=0.0)</code></pre>
-                        </div>
-
-                        <p><strong>Provider Support</strong>:</p>
-                        <ul>
-                            <li>✅ <strong>Native SEED:</strong> OpenAI, Ollama, LMStudio, MLX, HuggingFace</li>
-                            <li>⚠️ <strong>Warning:</strong> Anthropic (doesn't support seed but issues warning; use temperature=0.0 for consistency)</li>
-                        </ul>
-
-                        <p><strong>Key benefit</strong>: Consistent seed parameter support enables reproducible outputs for testing and debugging.</p>
-                    </div>
-
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">6. Universal Media Handling System</h3>
-                        <p><strong>What it does</strong>: Attach files to your LLM requests with simple <code>@filename</code> syntax or <code>media=[]</code> parameter. Images and documents are handled automatically; audio/video inputs are supported via explicit policies (no silent semantic changes).</p>
-
-                        <div class="code-block">
-                            <pre><code class="language-python"># Python API - works across ALL providers
-llm = create_llm("openai", model="gpt-4o")
-response = llm.generate(
-    "Compare the chart with the data and summarize the document",
-    media=["chart.png", "data.csv", "report.pdf"]
-)
-
-# CLI - same simplicity
-# python -m abstractcore.utils.cli --prompt "Analyze @report.pdf and @chart.png"
-
-# Supported: Images (PNG, JPEG, GIF, WEBP, BMP, TIFF)
-#            Documents (PDF, DOCX, XLSX, PPTX)
-#            Data (CSV, TSV, TXT, MD, JSON)
-#            Audio (MP3, WAV, M4A, OGG, FLAC, AAC) via audio_policy (e.g. speech_to_text)
-#            Video (MP4, MOV, MKV, WEBM, AVI, WMV) via video_policy (frames sampling)</code></pre>
-                        </div>
-
-                        <p><strong>Key benefit</strong>: Same code works across all providers with automatic format detection and processing, plus explicit policy controls for audio/video.</p>
-
-                        <div style="background: var(--background-tertiary); padding: 1.25rem; border-radius: 0.75rem; margin: 1rem 0;">
-                            <p style="margin: 0;">
-                                Audio is <strong>policy-driven</strong> by default: attaching an audio file will fail unless you opt into a fallback.
-                                For speech audio, use <code>audio_policy="speech_to_text"</code> (requires <code>pip install abstractvoice</code>).
-                                See <a href="audio.html">Audio &amp; Voice (STT/TTS)</a>.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">7. Vision Capabilities with Intelligent Fallback</h3>
-                        <p><strong>What it does</strong>: Image analysis across all providers with automatic resolution optimization. Text-only models can process images through transparent vision fallback.</p>
-
-                        <div class="code-block">
-                            <pre><code class="language-python"># Works with vision-capable models
-llm = create_llm("openai", model="gpt-4o")
-response = llm.generate(
-    "What's in this image?",
-    media=["photo.jpg"]
-)
-
-# Also works with text-only models via vision fallback
-text_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")  # No native vision
-response = text_llm.generate(
-    "Analyze this image",
-    media=["complex_scene.jpg"]
-)
-# Transparent: vision model analyzes → text model processes description</code></pre>
-                        </div>
-
-                        <p><strong>Key benefit</strong>: Automatic image optimization and vision fallback enables image processing with text-only models.</p>
-                    </div>
-
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">8. Tool-Call Syntax Rewriting</h3>
-                        <p><strong>What it does</strong>: Preserve/rewrite tool-call markup in assistant content when a downstream consumer needs text-based tool parsing.</p>
-                        
-                        <div class="code-block">
-                            <pre><code class="language-python">llm = create_llm("openai", model="gpt-4o-mini")
-
-# Qwen3 tags
+# For Codex CLI (Qwen3 format)
 response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="qwen3")
-# Output: <|tool_call|>{"name": "get_weather", ...}</|tool_call|>
+# Output: &lt;|tool_call|&gt;{"name": "get_weather", "arguments": {"location": "Paris"}}&lt;/|tool_call|&gt;
 
-# LLaMA3 tags
+# For Crush CLI (LLaMA3 format)  
 response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="llama3")
-# Output: <function_call>{"name": "get_weather", ...}</function_call>
+# Output: &lt;function_call&gt;{"name": "get_weather", "arguments": {"location": "Paris"}}&lt;/function_call&gt;
 
-# XML tags
+# For Gemini CLI (XML format)
 response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
-# Output: <tool_call>{"name": "get_weather", ...}</tool_call>
+# Output: &lt;tool_call&gt;{"name": "get_weather", "arguments": {"location": "Paris"}}&lt;/tool_call&gt;
+</code></pre></div>
+<p><strong>Why this helps</strong>: Works with different agentic CLIs without code changes.</p>
+<h3 id="5-tool-execution-control">5. Tool Execution Control</h3>
+<p><strong>What it does</strong>: Control whether AbstractCore executes tools automatically or lets the agent handle execution.</p>
+<div class="code-block"><pre><code class="language-python"># Default (recommended): passthrough mode (tools are *not* executed in AbstractCore)
+llm = create_llm("openai", model="gpt-4o-mini")
+response = llm.generate("Weather in Paris?", tools=tools)
+# response.tool_calls contains structured tool call requests; host/runtime executes them
 
-# Default (recommended): tool markup is stripped from content; use response.tool_calls instead.</code></pre>
-                        </div>
-                        
-                        <p><strong>Key benefit</strong>: Lets you interop with systems that only parse tool calls from text without changing tool definitions.</p>
-                        <p><strong>HTTP server note</strong>: If you consume tool calls via the OpenAI-compatible server, prefer <code>agent_format</code> (see <a href="server.html">Server Guide</a>).</p>
-                    </div>
-
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">9. Structured Output with Automatic Retry</h3>
-                        <p><strong>What it does</strong>: Gets typed Python objects from LLMs with automatic validation and retry on failures.</p>
-                        
-                        <div class="code-block">
-                            <pre><code class="language-python">from pydantic import BaseModel
-
-class Product(BaseModel):
+# Optional (deprecated): direct execution in AbstractCore for simple scripts only
+# llm = create_llm("openai", model="gpt-4o-mini", execute_tools=True)
+</code></pre></div>
+<p><strong>Why this helps</strong>: Allows flexible tool execution control for different deployment scenarios.</p>
+<h3 id="6-structured-output-with-automatic-retry">6. Structured Output with Automatic Retry</h3>
+<p><strong>What it does</strong>: Gets typed Python objects from LLMs with automatic validation and retry on failures.</p>
+<div class="code-block"><pre><code class="language-python">class Product(BaseModel):
     name: str
     price: float
 
@@ -323,60 +151,64 @@ class Product(BaseModel):
 product = llm.generate(
     "Extract: Gaming laptop for $1200",
     response_model=Product
-)</code></pre>
-                        </div>
-                        
-                        <p><strong>Key benefit</strong>: Automatic validation and retry reduces manual error handling.</p>
-                    </div>
+)
+</code></pre></div>
+<p><strong>Why this helps</strong>: Built-in validation retry reduces manual error handling.</p>
+<blockquote>
+<p><strong>See</strong>: <a href="structured-output.html">Structured Output Guide</a> for native vs prompted strategies, schema design, and production deployment</p>
+</blockquote>
+<h3 id="5-streaming-with-tool-support">5. Streaming with Tool Support</h3>
+<p><strong>What it does</strong>: Real-time response streaming that properly handles tool calls.</p>
+<div class="code-block"><pre><code class="language-python"># Streams content in real-time, executes tools at the end
+for chunk in llm.generate("Tell me about Paris weather", tools=tools, stream=True):
+    print(chunk.content, end="", flush=True)
+</code></pre></div>
+<p><strong>Why this helps</strong>: Streaming works correctly with tool calls.</p>
+<h3 id="6-event-driven-observability">6. Event-Driven Observability</h3>
+<p><strong>What it does</strong>: Comprehensive events for monitoring, debugging, and control.</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
 
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">10. MCP Tool Discovery (Model Context Protocol)</h3>
-                        <p><strong>What it does</strong>: Discover external tool schemas from an MCP server and inject them into any LLM call (MCP is a tool protocol, not a provider).</p>
+def cost_monitor(event):
+    if event.type != EventType.GENERATION_COMPLETED:
+        return
+    cost = event.data.get("cost_usd")
+    if isinstance(cost, (int, float)) and cost &gt; 0.10:
+        # NOTE: `cost_usd` is a best-effort estimate based on token usage.
+        alert(f"High estimated cost: ${cost:.2f}")
 
-                        <div class="code-block">
-                            <pre><code class="language-python">from abstractcore import create_llm
-from abstractcore.mcp import McpClient, McpToolSource
+on_global(EventType.GENERATION_COMPLETED, cost_monitor)
+</code></pre></div>
+<p><strong>Why this helps</strong>: Provides built-in observability for monitoring and debugging.</p>
+<h3 id="7-built-in-production-applications">7. Built-in Production Applications</h3>
+<p><strong>What it does</strong>: Provides ready-to-use command-line applications for common LLM tasks without any programming.</p>
+<div class="code-block"><pre><code class="language-bash"># Document summarization with multiple strategies
+summarizer document.pdf --style executive --length brief
+summarizer report.txt --focus "technical details" --output summary.txt
 
-llm = create_llm("openai", model="gpt-4o-mini")
+# Entity and relationship extraction
+extractor research_paper.pdf --format json-ld --focus technology
+extractor article.txt --entity-types person,organization,location
 
-client = McpClient(url="http://localhost:3000/mcp")  # example MCP endpoint
-tool_specs = McpToolSource(server_id="local", client=client).list_tool_specs()
+# Text evaluation and scoring
+judge essay.txt --criteria clarity,accuracy,coherence --context "academic writing"
+judge code.py --context "code review" --format plain
 
-response = llm.generate("Use an external tool if needed.", tools=tool_specs)
-print(response.tool_calls)  # names like: mcp::local::tool_name</code></pre>
-                        </div>
-
-                        <p><strong>Key benefit</strong>: Standardizes tool discovery across ecosystems while keeping execution explicit and host-owned.</p>
-                        <p><strong>Docs</strong>: <a href="mcp.html">MCP Tools</a></p>
-                    </div>
-
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: var(--secondary-color);">11. Communication Tools (Email + WhatsApp)</h3>
-                        <p><strong>What it does</strong>: Optional side-effecting tools for email (SMTP/IMAP) and WhatsApp (Twilio) that you can expose to agents behind an approval boundary.</p>
-
-                        <div class="code-block">
-                            <pre><code class="language-python">from abstractcore.tools.comms_tools import send_email, list_emails, read_email, send_whatsapp_message
-
-# Pass tools like any other tool set (execution remains host/runtime-owned by default)
-response = llm.generate("Send a daily digest email.", tools=[send_email])</code></pre>
-                        </div>
-
-                        <p><strong>Key benefit</strong>: Practical “real-world actions” with secrets resolved via env vars at execution time.</p>
-                        <p><strong>Docs</strong>: <a href="communication-tools.html">Communication Tools</a></p>
-                    </div>
-                </section>
-
-                <section>
-                    <h2>❌ What AbstractCore Does NOT Do</h2>
-                    <p style="color: var(--text-secondary); margin-bottom: 2rem;">Understanding limitations is crucial for choosing the right tool.</p>
-                    
-                    <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 2rem; border-radius: 0.5rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: #991b1b;">1. RAG Pipelines (Use Specialized Tools)</h3>
-                        <p style="color: #1f2937;"><strong>What AbstractCore provides</strong>: Vector embeddings via <code>EmbeddingManager</code></p>
-                        <p style="color: #1f2937;"><strong>What it doesn't provide</strong>: Document chunking, vector databases, retrieval strategies</p>
-                        
-                        <div class="code-block">
-                            <pre><code class="language-python"># AbstractCore gives you this
+# Intent analysis and deception detection
+intent conversation.txt --focus-participant user --depth comprehensive
+intent email.txt --format plain --context document --verbose
+</code></pre></div>
+<p><strong>Available Applications:</strong>
+- <strong>Summarizer</strong>: Document summarization with customizable styles and focus areas
+- <strong>Extractor</strong>: Entity and relationship extraction with multiple output formats
+- <strong>Judge</strong>: Text evaluation with custom criteria and scoring rubrics
+- <strong>Intent Analyzer</strong>: Psychological intent analysis with deception detection</p>
+<p><strong>Why this helps</strong>: Provides ready-to-use CLI tools that work with any LLM provider.</p>
+<h2 id="what-abstractcore-does-not-do">What AbstractCore Does NOT Do</h2>
+<p>Understanding limitations is crucial for choosing the right tool.</p>
+<h3 id="1-rag-pipelines-use-specialized-tools">1. RAG Pipelines (Use Specialized Tools)</h3>
+<p><strong>What AbstractCore provides</strong>: Vector embeddings via <code>EmbeddingManager</code>
+<strong>What it doesn't provide</strong>: Document chunking, vector databases, retrieval strategies</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore gives you this
 from abstractcore.embeddings import EmbeddingManager
 embedder = EmbeddingManager()
 similarity = embedder.compute_similarity("query", "document")
@@ -387,23 +219,15 @@ def rag_pipeline(query, documents):
     # 2. Store in vector DB - YOU implement
     # 3. Retrieve relevant chunks - YOU implement
     # 4. Construct prompt - YOU implement
-    return llm.generate(prompt)</code></pre>
-                        </div>
-
-                        <p style="color: #1f2937;"><strong>Better alternatives</strong>:</p>
-                        <ul style="color: #1f2937;">
-                            <li><strong><a href="https://github.com/run-llama/llama_index" target="_blank" style="color: #2563eb;">LlamaIndex</a></strong> - Full RAG framework</li>
-                            <li><strong><a href="https://github.com/langchain-ai/langchain" target="_blank" style="color: #2563eb;">LangChain</a></strong> - RAG components and chains</li>
-                        </ul>
-                    </div>
-
-                    <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 2rem; border-radius: 0.5rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0; color: #991b1b;">2. Complex Agent Workflows (Use Agent Frameworks)</h3>
-                        <p style="color: #1f2937;"><strong>What AbstractCore provides</strong>: Single LLM calls with tool execution</p>
-                        <p style="color: #1f2937;"><strong>What it doesn't provide</strong>: Multi-step agent reasoning, planning, memory persistence</p>
-                        
-                        <div class="code-block">
-                            <pre><code class="language-python"># AbstractCore is great for this
+    return llm.generate(prompt)
+</code></pre></div>
+<p><strong>Better alternatives</strong>:
+- <strong><a href="https://github.com/run-llama/llama_index">LlamaIndex</a></strong> - Full RAG framework
+- <strong><a href="https://github.com/langchain-ai/langchain">LangChain</a></strong> - RAG components and chains</p>
+<h3 id="2-complex-agent-workflows-use-agent-frameworks">2. Complex Agent Workflows (Use Agent Frameworks)</h3>
+<p><strong>What AbstractCore provides</strong>: Single LLM calls with tool execution
+<strong>What it doesn't provide</strong>: Multi-step agent reasoning, planning, memory persistence</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore is great for this
 response = llm.generate("What's 2+2?", tools=[calculator_tool])
 
 # AbstractCore is NOT for this
@@ -412,164 +236,219 @@ def complex_agent():
     # 2. Execute steps with memory - NOT provided
     # 3. Reflect and re-plan - NOT provided
     # 4. Persist agent state - NOT provided
-    pass</code></pre>
-                        </div>
+    pass
+</code></pre></div>
+<p><strong>Better alternatives</strong>:
+- <strong><a href="https://github.com/lpalbou/AbstractAgent">AbstractAgent</a></strong> - Built on AbstractCore
+- <strong><a href="https://github.com/langchain-ai/langgraph">LangGraph</a></strong> - Agent orchestration
+- <strong><a href="https://github.com/Significant-Gravitas/AutoGPT">AutoGPT</a></strong> - Autonomous agents</p>
+<h3 id="3-advanced-memory-systems-use-memory-frameworks">3. Advanced Memory Systems (Use Memory Frameworks)</h3>
+<p><strong>What AbstractCore provides</strong>: Basic conversation history via <code>BasicSession</code>
+<strong>What it doesn't provide</strong>: Semantic memory, long-term memory, knowledge graphs</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore provides basic sessions
+session = BasicSession(provider=llm)
+session.generate("My name is Alice")
+session.generate("What's my name?")  # Remembers within session
 
-                        <p style="color: #1f2937;"><strong>Better alternatives</strong>:</p>
-                        <ul style="color: #1f2937;">
-                            <li><strong><a href="https://github.com/lpalbou/AbstractAgent" target="_blank" style="color: #2563eb;">AbstractAgent</a></strong> - Built on AbstractCore</li>
-                            <li><strong><a href="https://github.com/langchain-ai/langgraph" target="_blank" style="color: #2563eb;">LangGraph</a></strong> - Agent orchestration</li>
-                            <li><strong><a href="https://github.com/Significant-Gravitas/AutoGPT" target="_blank" style="color: #2563eb;">AutoGPT</a></strong> - Autonomous agents</li>
-                        </ul>
-                    </div>
-                </section>
+# For advanced memory, use specialized tools
+temporal_graph = AbstractMemory()  # Persistent, semantic memory
+temporal_graph.add_memory("Alice likes Python programming", context="conversation")
+</code></pre></div>
+<p><strong>Better alternatives</strong>:
+- <strong><a href="https://github.com/lpalbou/AbstractMemory">AbstractMemory</a></strong> - Temporal knowledge graphs
+- <strong><a href="https://github.com/mem0ai/mem0">Mem0</a></strong> - Personalized memory layer</p>
+<h3 id="4-prompt-template-management-use-template-libraries">4. Prompt Template Management (Use Template Libraries)</h3>
+<p><strong>What AbstractCore provides</strong>: Direct prompt strings
+<strong>What it doesn't provide</strong>: Template engines, prompt optimization, A/B testing</p>
+<div class="code-block"><pre><code class="language-python"># AbstractCore expects you to handle prompts
+prompt = f"Translate '{text}' to {language}"
+response = llm.generate(prompt)
 
-                <section>
-                    <h2>When to Choose AbstractCore</h2>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
-                        <div>
-                            <h3 style="color: var(--secondary-color);">✅ Choose AbstractCore When You Need:</h3>
-                            <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem;">
-                                <ol>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Reliable LLM Infrastructure</strong>
-                                        <ul style="margin-top: 0.5rem;">
-                                            <li>Production-ready error handling and retry logic</li>
-                                            <li>Consistent interface across different providers</li>
-                                            <li>Built-in monitoring and observability</li>
-                                        </ul>
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Provider Flexibility</strong>
-                                        <ul style="margin-top: 0.5rem;">
-                                            <li>Easy switching between OpenAI, Anthropic, Ollama, etc.</li>
-                                            <li>Provider-agnostic code that runs anywhere</li>
-                                            <li>Local and cloud provider support</li>
-                                        </ul>
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Universal Tool Calling</strong>
-                                        <ul style="margin-top: 0.5rem;">
-                                            <li>Tools that work across ALL providers</li>
-                                            <li>Consistent tool execution regardless of native support</li>
-                                            <li>Event-driven tool control and monitoring</li>
-                                        </ul>
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Centralized Configuration</strong>
-                                        <ul style="margin-top: 0.5rem;">
-                                            <li>Single source of truth for all settings</li>
-                                            <li>Clear priority hierarchy (Explicit > App > Global > Default)</li>
-                                            <li>No repetitive parameter passing</li>
-                                        </ul>
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Universal Media Handling</strong>
-                                        <ul style="margin-top: 0.5rem;">
-                                            <li>Attach images, PDFs, Office docs, data files</li>
-                                            <li>Same API across all providers</li>
-                                            <li>Automatic processing and formatting</li>
-                                        </ul>
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Deterministic Generation</strong>
-                                        <ul style="margin-top: 0.5rem;">
-                                            <li>Reproducible outputs with seed parameters</li>
-                                            <li>Empirically verified across all providers</li>
-                                            <li>Essential for testing and debugging</li>
-                                        </ul>
-                                    </li>
-                                    <li>
-                                        <strong>Vision Capabilities</strong>
-                                        <ul style="margin-top: 0.5rem;">
-                                            <li>Image analysis across all providers</li>
-                                            <li>Automatic resolution optimization</li>
-                                            <li>Vision fallback for text-only models</li>
-                                        </ul>
-                                    </li>
-                                </ol>
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <h3 style="color: #991b1b;">❌ Don't Choose AbstractCore When You Need:</h3>
-                            <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 1.5rem; border-radius: 0.5rem;">
-                                <ol style="color: #1f2937;">
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Full RAG Frameworks</strong> → Use LlamaIndex or LangChain
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Complex Agent Workflows</strong> → Use AbstractAgent or LangGraph
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Advanced Memory Systems</strong> → Use AbstractMemory or Mem0
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Prompt Template Management</strong> → Use Jinja2 or LangChain Prompts
-                                    </li>
-                                    <li style="margin-bottom: 1rem;">
-                                        <strong>Model Training/Fine-tuning</strong> → Use Transformers or Axolotl
-                                    </li>
-                                    <li>
-                                        <strong>Multi-Agent Systems</strong> → Use CrewAI or AutoGen
-                                    </li>
-                                </ol>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+# For advanced templating, use other tools
+template = PromptTemplate("Translate '{text}' to {language}")  # Not provided
+</code></pre></div>
+<p><strong>Better alternatives</strong>:
+- <strong><a href="https://jinja.palletsprojects.com/">Jinja2</a></strong> - Template engine
+- <strong><a href="https://python.langchain.com/docs/modules/model_io/prompts/">LangChain Prompts</a></strong> - Prompt management
+- <strong><a href="https://github.com/guidance-ai/guidance">Guidance</a></strong> - Prompt programming</p>
+<h3 id="5-training-and-fine-tuning-use-ml-frameworks">5. Training and Fine-tuning (Use ML Frameworks)</h3>
+<p><strong>What AbstractCore provides</strong>: Interface to existing models
+<strong>What it doesn't provide</strong>: Model training, fine-tuning, or optimization</p>
+<p><strong>Better alternatives</strong>:
+- <strong><a href="https://github.com/huggingface/transformers">Transformers</a></strong> - Model training
+- <strong><a href="https://github.com/OpenAccess-AI-Collective/axolotl">Axolotl</a></strong> - Fine-tuning framework
+- <strong><a href="https://github.com/unslothai/unsloth">Unsloth</a></strong> - Fast fine-tuning</p>
+<h3 id="6-multi-agent-orchestration-use-orchestration-frameworks">6. Multi-Agent Orchestration (Use Orchestration Frameworks)</h3>
+<p><strong>What AbstractCore provides</strong>: Single agent with tools
+<strong>What it doesn't provide</strong>: Agent-to-agent communication, hierarchical agents</p>
+<p><strong>Better alternatives</strong>:
+- <strong><a href="https://github.com/joaomdmoura/crewAI">CrewAI</a></strong> - Multi-agent teams
+- <strong><a href="https://github.com/microsoft/autogen">AutoGen</a></strong> - Agent conversations
+- <strong><a href="https://github.com/langchain-ai/langgraph">LangGraph</a></strong> - Agent networks</p>
+<h2 id="when-to-choose-abstractcore">When to Choose AbstractCore</h2>
+<h3 id="choose-abstractcore-when-you-need">Choose AbstractCore When You Need:</h3>
+<ol>
+<li>
+<p><strong>Reliable LLM Infrastructure</strong>
+   - Production-ready error handling and retry logic
+   - Consistent interface across different providers
+   - Built-in monitoring and observability</p>
+</li>
+<li>
+<p><strong>Provider Flexibility</strong>
+   - Easy switching between OpenAI, Anthropic, Ollama, etc.
+   - Provider-agnostic code that runs anywhere
+   - Local and cloud provider support</p>
+</li>
+<li>
+<p><strong>Universal Tool Calling</strong>
+   - Tools that work across ALL providers
+   - Consistent tool execution regardless of native support
+   - Event-driven tool control and monitoring</p>
+</li>
+<li>
+<p><strong>Structured Output Reliability</strong>
+   - Type-safe responses with automatic validation
+   - Built-in retry logic for validation failures
+   - Production-grade error handling</p>
+</li>
+<li>
+<p><strong>Streaming with Tools</strong>
+   - Real-time responses that handle tools correctly
+   - Proper streaming implementation across providers</p>
+</li>
+</ol>
+<h3 id="dont-choose-abstractcore-when-you-need">Don't Choose AbstractCore When You Need:</h3>
+<ol>
+<li><strong>Full RAG Frameworks</strong> → Use LlamaIndex or LangChain</li>
+<li><strong>Complex Agent Workflows</strong> → Use AbstractAgent or LangGraph</li>
+<li><strong>Advanced Memory Systems</strong> → Use AbstractMemory or Mem0</li>
+<li><strong>Prompt Template Management</strong> → Use Jinja2 or LangChain Prompts</li>
+<li><strong>Model Training/Fine-tuning</strong> → Use Transformers or Axolotl</li>
+<li><strong>Multi-Agent Systems</strong> → Use CrewAI or AutoGen</li>
+</ol>
+<h2 id="abstractcore-in-the-ecosystem">AbstractCore in the Ecosystem</h2>
+<p>AbstractCore is designed to be <strong>the foundation</strong> that other tools build on:</p>
+<div class="mermaid">graph TD
+    A[Your Application] --&gt; B[AbstractAgent]
+    A --&gt; C[AbstractMemory]
+    A --&gt; D[Custom RAG Pipeline]
 
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">5-minute quick start guide</p>
-                        </a>
+    B --&gt; E[AbstractCore]
+    C --&gt; E
+    D --&gt; E
 
-                        <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Centralized Configuration</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global settings and defaults</p>
-                        </a>
+    E --&gt; F[OpenAI]
+    E --&gt; G[Anthropic]
+    E --&gt; H[Ollama]
+    E --&gt; I[MLX]
 
-                        <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Media Handling</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment</p>
-                        </a>
-
-                        <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Vision Capabilities</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
-                        </a>
-
-                        <a href="audio.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Audio &amp; Voice</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">STT fallback, TTS outputs, and server endpoints</p>
-                        </a>
-
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete Python API documentation</p>
-                        </a>
-
-                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system guide</p>
-                        </a>
-
-                        <a href="examples.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Examples</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Real-world usage examples</p>
-                        </a>
-                    </div>
-                </div>
+    style E fill:#e1f5fe
+    style A fill:#fff3e0
+</div>
+<p><strong>AbstractCore</strong> = The reliable foundation
+<strong>AbstractAgent</strong> = Agent workflows and planning
+<strong>AbstractMemory</strong> = Advanced memory and knowledge graphs
+<strong>Your Application</strong> = Business logic and user interface</p>
+<h2 id="decision-tree">Decision Tree</h2>
+<div class="code-block"><pre><code>Need LLM functionality?
+├── Simple LLM calls with reliability? → AbstractCore ✅
+├── Complex agents with planning? → AbstractAgent (built on AbstractCore)
+├── Advanced memory/knowledge graphs? → AbstractMemory (with AbstractCore)
+├── Full RAG with document management? → LlamaIndex or LangChain
+├── Multi-agent conversations? → CrewAI or AutoGen
+└── Just API compatibility? → LiteLLM
+</code></pre></div>
+<h2 id="capabilities-summary">Capabilities Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>AbstractCore</th>
+<th>When You Need More</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LLM Provider Interface</strong></td>
+<td>✅ Universal</td>
+<td>Covers most use cases</td>
+</tr>
+<tr>
+<td><strong>Production Reliability</strong></td>
+<td>✅ Built-in</td>
+<td>Covers most use cases</td>
+</tr>
+<tr>
+<td><strong>Tool Calling</strong></td>
+<td>✅ Universal</td>
+<td>Multi-step reasoning → AbstractAgent</td>
+</tr>
+<tr>
+<td><strong>Structured Output</strong></td>
+<td>✅ With retry</td>
+<td>Complex validation → Custom logic</td>
+</tr>
+<tr>
+<td><strong>Streaming</strong></td>
+<td>✅ With tools</td>
+<td>Covers most use cases</td>
+</tr>
+<tr>
+<td><strong>Basic Memory</strong></td>
+<td>✅ Sessions</td>
+<td>Semantic memory → AbstractMemory</td>
+</tr>
+<tr>
+<td><strong>Vector Embeddings</strong></td>
+<td>✅ SOTA models</td>
+<td>Full RAG → LlamaIndex</td>
+</tr>
+<tr>
+<td><strong>Events/Monitoring</strong></td>
+<td>✅ Comprehensive</td>
+<td>Covers most use cases</td>
+</tr>
+<tr>
+<td><strong>Agent Workflows</strong></td>
+<td>❌ Single calls</td>
+<td>Complex agents → AbstractAgent</td>
+</tr>
+<tr>
+<td><strong>Advanced Memory</strong></td>
+<td>❌ Session only</td>
+<td>Knowledge graphs → AbstractMemory</td>
+</tr>
+<tr>
+<td><strong>RAG Pipelines</strong></td>
+<td>❌ Embeddings only</td>
+<td>Document processing → LlamaIndex</td>
+</tr>
+<tr>
+<td><strong>Prompt Templates</strong></td>
+<td>❌ Raw strings</td>
+<td>Template management → Jinja2</td>
+</tr>
+</tbody>
+</table>
+<h2 id="next-steps">Next Steps</h2>
+<p>Based on your needs:</p>
+<ul>
+<li><strong>Start with AbstractCore</strong>: <a href="getting-started.html">Getting Started Guide</a></li>
+<li><strong>Need agents</strong>: Check out <a href="https://github.com/lpalbou/AbstractAgent">AbstractAgent</a></li>
+<li><strong>Need advanced memory</strong>: Check out <a href="https://github.com/lpalbou/AbstractMemory">AbstractMemory</a></li>
+<li><strong>Compare frameworks</strong>: Read <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/comparison.md">Framework Comparison</a></li>
+<li><strong>See real examples</strong>: Browse <a href="examples.html">Examples</a></li>
+</ul>
+<hr/>
+<p><strong>Remember</strong>: AbstractCore is infrastructure, not a full framework. It focuses on LLM provider abstraction and integrates with specialized tools for other needs.</p>
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

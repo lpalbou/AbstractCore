@@ -3,803 +3,848 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Architecture Overview - AbstractCore</title>
-    <meta name="description" content="Interactive architecture overview of AbstractCore's system design, components, and data flow.">
+    <title>AbstractCore Architecture - AbstractCore</title>
+    <meta name="description" content="AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works internally and why it&#x27;s…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
-    
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
     <!-- Navbar Component -->
     <script src="../assets/js/navbar-component.js"></script>
-    
-    <style>
-        .architecture-diagram {
-            background: var(--background-secondary);
-            border-radius: 0.75rem;
-            padding: 2rem;
-            margin: 2rem 0;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .component {
-            background: var(--background);
-            border: 2px solid var(--border-light);
-            border-radius: 0.5rem;
-            padding: 1rem;
-            margin: 0.5rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-        }
-        
-        .component:hover {
-            border-color: var(--primary-color);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.15);
-        }
-        
-        .component.active {
-            border-color: var(--primary-color);
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(147, 51, 234, 0.1));
-        }
-        
-        .component-title {
-            font-weight: 600;
-            color: var(--text-primary);
-            margin: 0 0 0.5rem 0;
-        }
-        
-        .component-description {
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            margin: 0;
-        }
-        
-        .flow-arrow {
-            position: absolute;
-            width: 2px;
-            background: linear-gradient(to bottom, var(--primary-color), var(--secondary-color));
-            opacity: 0.6;
-            transition: opacity 0.3s ease;
-        }
-        
-        .flow-arrow.active {
-            opacity: 1;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        .detail-panel {
-            background: var(--background);
-            border: 1px solid var(--border-light);
-            border-radius: 0.75rem;
-            padding: 2rem;
-            margin: 2rem 0;
-            display: none;
-            animation: slideIn 0.3s ease;
-        }
-        
-        .detail-panel.active {
-            display: block;
-        }
-        
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        .system-overview {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin: 2rem 0;
-        }
-        
-        .provider-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 1rem;
-            margin: 1rem 0;
-        }
-        
-        .provider-item {
-            background: var(--background-secondary);
-            padding: 1rem;
-            border-radius: 0.5rem;
-            text-align: center;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        
-        .provider-item:hover {
-            background: var(--primary-color);
-            color: white;
-            transform: scale(1.05);
-        }
-        
-        .interactive-flow {
-            position: relative;
-            background: var(--background-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: 0.75rem;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-        }
-        
-        .flow-step {
-            background: var(--background);
-            border: 2px solid var(--border-color);
-            border-radius: 0.5rem;
-            padding: 1rem;
-            margin: 0.75rem 0;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-            color: var(--text-primary);
-        }
-        
-        .flow-step:hover {
-            border-color: var(--primary-color);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
-        }
-        
-        .flow-step.active {
-            border-color: var(--primary-color);
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(147, 51, 234, 0.05));
-        }
-        
-        .flow-step::after {
-            content: '↓';
-            position: absolute;
-            bottom: -1.5rem;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 1.5rem;
-            color: var(--primary-color);
-            opacity: 0.6;
-        }
-        
-        .flow-step:last-child::after {
-            display: none;
-        }
-        
-        .flow-step h3 {
-            color: var(--text-primary);
-            margin: 0 0 0.25rem 0;
-            font-weight: 600;
-            font-size: 1.1rem;
-        }
-        
-        .flow-step p {
-            color: var(--text-primary);
-            margin: 0;
-            line-height: 1.4;
-            font-weight: 500;
-            font-size: 0.9rem;
-        }
-    </style>
 </head>
 <body>
     <!-- Navigation -->
     <div class="navbar-placeholder"></div>
-    
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1200px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Architecture Overview</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    Interactive exploration of AbstractCore's system design, components, and data flow.
-                    Click on components to learn more about how they work together.
-                </p>
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">AbstractCore Architecture</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works internally and why it&#x27;s designed this way.</p>
             </div>
 
-            <!-- System Overview -->
-            <section style="margin-bottom: 4rem;">
-                <h2 style="color: var(--text-primary); font-size: 2rem; margin-bottom: 1.5rem;">🏗️ System Overview</h2>
-                <p style="color: var(--text-secondary); font-size: 1.125rem; margin-bottom: 2rem;">AbstractCore operates as both a Python library and an optional HTTP server with centralized configuration, universal media handling, and cross-provider vision capabilities. Click on components to explore their functionality:</p>
-                
-                <div class="architecture-diagram">
-                    <!-- Top Layer: Client Applications -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; position: relative;">
-                <div class="component" data-component="app" onclick="showComponentDetails('app')">
-                    <h3 class="component-title">🐍 Your Python App</h3>
-                    <p class="component-description">Direct library integration</p>
-                </div>
-                
-                <div class="component" data-component="http" onclick="showComponentDetails('http')">
-                    <h3 class="component-title">🌐 HTTP Clients</h3>
-                    <p class="component-description">REST API consumers</p>
-                </div>
-                        
-                        <!-- Arrow pointing down -->
-                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 25%; height: 40px;"></div>
-                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 75%; height: 40px;"></div>
-                    </div>
-                    
-            <!-- Middle Layer: AbstractCore Components -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 2rem 0; position: relative;">
-                <div class="component" data-component="core" onclick="showComponentDetails('core')">
-                    <h3 class="component-title">🎯 AbstractCore API</h3>
-                    <p class="component-description">Unified interface layer</p>
-                </div>
-                
-                <div class="component" data-component="server" onclick="showComponentDetails('server')">
-                    <h3 class="component-title">🖥️ AbstractCore Server</h3>
-                    <p class="component-description">OpenAI-compatible REST API</p>
-                </div>
-                        
-                        <!-- Horizontal arrow connecting core and server -->
-                        <div class="diagram-arrow arrow-horizontal" style="top: 50%; right: -70px;"></div>
-                        
-                        <!-- Arrows pointing down -->
-                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 25%; height: 40px;"></div>
-                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 75%; height: 40px;"></div>
-                    </div>
-                    
-                    <!-- Core Systems Layer -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 3rem 0; position: relative;">
-                        <div class="component" data-component="providers">
-                            <h3 class="component-title">🔌 Provider Interface</h3>
-                            <p class="component-description">Common abstraction layer</p>
-                        </div>
-                        
-                        <div class="component" data-component="systems">
-                            <h3 class="component-title">⚙️ Core Systems</h3>
-                            <p class="component-description">Events, Tools, Retry, Streaming</p>
-                        </div>
-                        
-                        <!-- Arrow pointing down -->
-                        <div class="diagram-arrow arrow-vertical" style="top: 100%; left: 50%; height: 40px;"></div>
-                    </div>
-                    
-                    <!-- Bottom Layer: LLM Providers -->
-                    <div style="margin-top: 3rem;">
-                        <h4 style="text-align: center; color: var(--text-primary); margin-bottom: 1.5rem; font-size: 1.25rem;">🤖 LLM Providers</h4>
-                        <div class="provider-grid">
-                            <div class="provider-item">OpenAI</div>
-                            <div class="provider-item">Anthropic</div>
-                            <div class="provider-item">OpenRouter</div>
-                            <div class="provider-item">Ollama</div>
-                            <div class="provider-item">MLX</div>
-                            <div class="provider-item">LMStudio</div>
-                            <div class="provider-item">HuggingFace</div>
-                            <div class="provider-item">vLLM</div>
-                            <div class="provider-item">OpenAI-Compatible</div>
-                        </div>
-                    </div>
-                </div>
-            </section>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#system-overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">System Overview</a>
+<a href="#design-principles" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Design Principles</a>
+<a href="#core-components" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Core Components</a>
+<a href="#architecture-benefits" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Architecture Benefits</a>
+<a href="#extension-points" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Extension Points</a>
+<a href="#performance-characteristics" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Characteristics</a>
+<a href="#security-considerations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Security Considerations</a>
+<a href="#testing-strategy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Testing Strategy</a>
+<a href="#integration-with-abstract-framework" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration with Abstract Framework</a>
+<a href="#summary" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Summary</a></div>
 
-            <!-- Component Details -->
-            <div id="component-details">
-                <div class="detail-panel" id="detail-app">
-                    <h3>🚀 Your Application</h3>
-                    <p>Your Python application uses AbstractCore through the simple factory pattern:</p>
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
+            <div class="doc-content">
 
-# Factory creates the right provider
-llm = create_llm("openai", model="gpt-4o-mini")
-response = llm.generate("Hello, world!")</code></pre>
-                    </div>
-                    <p><strong>Benefits:</strong> Same interface for all providers, automatic reliability, built-in tool support.</p>
-                </div>
-                
-                <div class="detail-panel" id="detail-http">
-                    <h3>🌐 HTTP Clients</h3>
-                    <p>Any HTTP client can use AbstractCore through the OpenAI-compatible REST API:</p>
-                    <div class="code-block">
-                        <pre><code class="language-bash">curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}'</code></pre>
-                    </div>
-                    <p><strong>Benefits:</strong> Drop-in OpenAI replacement, universal provider access, tool call format conversion.</p>
-                </div>
-                
-                <div class="detail-panel" id="detail-core">
-                    <h3>🎯 AbstractCore API</h3>
-                    <p>The unified interface that provides consistent behavior across all providers:</p>
-                    <ul>
-                        <li><strong>Provider Abstraction:</strong> Same methods for all LLM providers</li>
-                        <li><strong>Universal Tools:</strong> Tools work everywhere, even without native support</li>
-                        <li><strong>Streaming:</strong> Unified streaming with real-time tool detection</li>
-                        <li><strong>Structured Output:</strong> Type-safe responses with automatic validation</li>
-                    </ul>
-                </div>
-                
-                <div class="detail-panel" id="detail-server">
-                    <h3>🖥️ AbstractCore Server</h3>
-                    <p>FastAPI-based HTTP server providing OpenAI-compatible endpoints:</p>
-                    <ul>
-                        <li><code>/v1/chat/completions</code> - Chat completions with streaming</li>
-                        <li><code>/v1/embeddings</code> - Multi-provider embeddings</li>
-                        <li><code>/v1/models</code> - Dynamic model discovery</li>
-                        <li><code>/providers</code> - Provider status and capabilities</li>
-                    </ul>
-                </div>
-                
-                <div class="detail-panel" id="detail-providers">
-                    <h3>🔌 Provider Interface</h3>
-                    <p>Common abstraction layer ensuring consistent behavior:</p>
-                    <div class="provider-grid">
-                        <div class="provider-item">OpenAI</div>
-                        <div class="provider-item">Anthropic</div>
-                        <div class="provider-item">OpenRouter</div>
-                        <div class="provider-item">Ollama</div>
-                        <div class="provider-item">MLX</div>
-                        <div class="provider-item">LMStudio</div>
-                        <div class="provider-item">HuggingFace</div>
-                        <div class="provider-item">vLLM</div>
-                        <div class="provider-item">OpenAI-Compatible</div>
-                    </div>
-                    <p><strong>Features:</strong> Memory management, capability detection, unified error handling.</p>
-                </div>
-                
-                <div class="detail-panel" id="detail-systems">
-                    <h3>⚙️ Core Systems</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
-                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
-                            <h4>Event System</h4>
-                            <p>Observability and control through comprehensive events</p>
-                        </div>
-                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
-                            <h4>Tool System</h4>
-                            <p>Universal tool execution with format conversion</p>
-                        </div>
-                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
-                            <h4>Retry System</h4>
-                            <p>Production-grade reliability with circuit breakers</p>
-                        </div>
-                        <div style="background: var(--background-secondary); padding: 1rem; border-radius: 0.5rem;">
-                            <h4>Streaming</h4>
-                            <p>Unified streaming with real-time tool detection</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Request Lifecycle -->
-            <section style="margin-bottom: 4rem;">
-                <h2 style="color: var(--text-primary); font-size: 2rem; margin-bottom: 1.5rem;">🔄 Request Lifecycle</h2>
-                <p style="color: var(--text-secondary); font-size: 1.125rem; margin-bottom: 2rem;">Click on each step to see how requests flow through the system:</p>
-                
-                <div class="interactive-flow">
-                    <div class="flow-step" data-step="1">
-                        <h3>1. Request Initiation</h3>
-                        <p>Your app calls <code>llm.generate()</code> or HTTP client sends request</p>
-                    </div>
-                    
-                    <div class="flow-step" data-step="2">
-                        <h3>2. Event Emission</h3>
-                        <p>System emits <code>GENERATION_STARTED</code> event for monitoring</p>
-                    </div>
-                    
-                    <div class="flow-step" data-step="3">
-                        <h3>3. Provider Call</h3>
-                        <p>Request routed to appropriate provider with retry logic</p>
-                    </div>
-                    
-                    <div class="flow-step" data-step="4">
-                        <h3>4. Tool Detection</h3>
-                        <p>Response parsed for tool calls using architecture-specific patterns</p>
-                    </div>
-                    
-                    <div class="flow-step" data-step="5">
-                        <h3>5. Tool Execution</h3>
-                        <p>Tools executed locally with security controls and error handling</p>
-                    </div>
-                    
-                    <div class="flow-step" data-step="6">
-                        <h3>6. Response Assembly</h3>
-                        <p>Final response assembled with tool results and metadata</p>
-                    </div>
-                </div>
-            </section>
+<p>Related docs (user-facing):
+- Media inputs (images/audio/video + documents): <code>docs/media-handling-system.md</code>
+- Vision input + fallback: <code>docs/vision-capabilities.md</code>
+- Capability plugins (voice/audio/vision): <code>docs/capabilities.md</code>
+- OpenAI-compatible server endpoints: <code>docs/server.md</code></p>
+<h2 id="system-overview">System Overview</h2>
+<p>AbstractCore operates as both a Python library and an optional HTTP server:</p>
+<div class="mermaid">graph TD
+    A[Your Application] --&gt; B[AbstractCore API]
+    AA[HTTP Clients] --&gt; BB[AbstractCore Server]
+    BB --&gt; B
 
-            <!-- Media Handling System Architecture -->
-            <section style="margin-bottom: 4rem;">
-                <h2>📎 Media Handling System Architecture</h2>
-                <p>AbstractCore provides a production-ready unified media handling system with intelligent processing and graceful fallback.</p>
+    B --&gt; C[Provider Interface]
+    C --&gt; D[Event System]
+    C --&gt; E[Tool System]
+    C --&gt; F[Retry System]
+    C --&gt; G[Provider Implementations]
 
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0;">Multi-Layer Architecture</h3>
-                    <div class="interactive-flow">
-                        <div class="flow-step">
-                            <h3>1. File Attachment Processing</h3>
-                            <p>CLI <code>@filename</code> syntax and Python <code>media=[]</code> parameter</p>
-                        </div>
+    G --&gt; H[OpenAI Provider]
+    G --&gt; HH[OpenAI-Compatible Provider]
+    G --&gt; I[Anthropic Provider]
+    G --&gt; J[Ollama Provider]
+    G --&gt; K[MLX Provider]
+    G --&gt; L[LMStudio Provider]
+    G --&gt; M[HuggingFace Provider]
+    G --&gt; MM[vLLM Provider]
+    G --&gt; MN[OpenRouter Provider]
+    G --&gt; MP[Portkey Provider]
 
-                        <div class="flow-step">
-                            <h3>2. Intelligent Processing</h3>
-                            <p>AutoMediaHandler selects appropriate processors (Image, PDF, Office, Text, Audio, Video)</p>
-                        </div>
+    H --&gt; N[OpenAI API]
+    HH --&gt; NN[OpenAI-Compatible /v1 Endpoint]
+    I --&gt; O[Anthropic API]
+    J --&gt; P[Ollama Server]
+    K --&gt; Q[MLX Models]
+    L --&gt; R[LMStudio Server]
+    M --&gt; S[HuggingFace Models]
+    MM --&gt; RR[vLLM Server]
+    MN --&gt; RO[OpenRouter API]
+    MP --&gt; RP[Portkey API Gateway]
 
-                        <div class="flow-step">
-                            <h3>3. Provider Formatting</h3>
-                            <p>Same content formatted differently for each provider's API requirements</p>
-                        </div>
+    style B fill:#e1f5fe
+    style BB fill:#4caf50
+    style C fill:#f3e5f5
+    style G fill:#fff3e0
+</div>
+<h2 id="design-principles">Design Principles</h2>
+<h3 id="1-provider-abstraction">1. Provider Abstraction</h3>
+<p><strong>Goal</strong>: Same interface for all providers
+<strong>Implementation</strong>: Common interface with provider-specific implementations</p>
+<h3 id="2-production-reliability">2. Production Reliability</h3>
+<p><strong>Goal</strong>: Handle real-world failures gracefully
+<strong>Implementation</strong>: Built-in retry logic, circuit breakers, comprehensive error handling</p>
+<h3 id="3-universal-tool-support">3. Universal Tool Support</h3>
+<p><strong>Goal</strong>: Tools work everywhere, even with providers that don't support them natively
+<strong>Implementation</strong>: Native support where available, intelligent prompting as fallback</p>
+<h3 id="4-simplicity-over-features">4. Simplicity Over Features</h3>
+<p><strong>Goal</strong>: Clean, focused API that's easy to understand
+<strong>Implementation</strong>: Minimal core with clear extension points</p>
+<h3 id="5-optional-http-access">5. Optional HTTP Access</h3>
+<p><strong>Goal</strong>: Flexible deployment as library or server
+<strong>Implementation</strong>: OpenAI-compatible REST API built on core library</p>
+<h2 id="core-components">Core Components</h2>
+<h3 id="1-factory-pattern-createllm">1. Factory Pattern (<code>create_llm</code>)</h3>
+<p>The main entry point uses the factory pattern for clean provider instantiation:</p>
+<div class="mermaid">graph LR
+    A[create_llm] --&gt; B{Provider Type}
+    B --&gt; C[OpenAI Provider]
+    B --&gt; D[Anthropic Provider]
+    B --&gt; E[Ollama Provider]
+    B --&gt; F[Other Providers...]
 
-                        <div class="flow-step">
-                            <h3>4. Graceful Fallback</h3>
-                            <p>Multi-level fallback ensures users always get meaningful results</p>
-                        </div>
-                    </div>
+    C --&gt; G[Configured Instance]
+    D --&gt; G
+    E --&gt; G
+    F --&gt; G
 
-                    <h4 style="margin: 2rem 0 1rem 0;">Supported File Types</h4>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--primary-color);">
-                            <h5>Images</h5>
-                            <p style="font-size: 0.9rem;">PNG, JPEG, GIF, WEBP, BMP, TIFF with automatic optimization</p>
-                        </div>
+    style A fill:#4caf50
+    style G fill:#2196f3
+</div>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--secondary-color);">
-                            <h5>Documents</h5>
-                            <p style="font-size: 0.9rem;">PDF, DOCX, XLSX, PPTX with intelligent extraction</p>
-                        </div>
+# Factory creates the right provider with proper configuration
+llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7)
 
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--primary-color);">
-                            <h5>Data/Text</h5>
-                            <p style="font-size: 0.9rem;">CSV, TSV, TXT, MD, JSON with parsing and analysis</p>
-                        </div>
+# OpenAI-compatible /v1 endpoints (LMStudio, vLLM, custom proxies)
+llm_local = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
+llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")  # requires OPENROUTER_API_KEY
+llm_portkey = create_llm("portkey", model="gpt-4o-mini", config_id="pcfg_...")  # requires PORTKEY_API_KEY + PORTKEY_CONFIG
+</code></pre></div>
+<p>Gateway providers (OpenRouter/Portkey) route to external backends; AbstractCore forwards only <strong>explicit</strong> generation parameters to avoid sending defaults that strict backends reject.</p>
+<h3 id="2-provider-interface">2. Provider Interface</h3>
+<p>All providers implement <code>AbstractCoreInterface</code>:</p>
+<div class="code-block"><pre><code class="language-python">class AbstractCoreInterface(ABC):
+    @abstractmethod
+    def generate(self, prompt: str, **kwargs) -&gt; GenerateResponse:
+        """Generate response from LLM"""
 
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--secondary-color);">
-                            <h5>Audio</h5>
-                            <p style="font-size: 0.9rem;">Policy-driven inputs (STT fallback via capability plugins, e.g. abstractvoice)</p>
-                        </div>
+    @abstractmethod
+    def get_capabilities(self) -&gt; List[str]:
+        """Get provider capabilities"""
 
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--primary-color);">
-                            <h5>Video</h5>
-                            <p style="font-size: 0.9rem;">Policy-driven inputs (native when supported; otherwise frames sampling)</p>
-                        </div>
-                    </div>
-                </div>
+    def unload_model(self, model_name: str) -&gt; None:
+        """Unload/cleanup resources for a specific model (best-effort)"""
+</code></pre></div>
+<p>This ensures:
+- <strong>Consistency</strong>: Same methods across all providers
+- <strong>Reliability</strong>: Standardized error handling
+- <strong>Extensibility</strong>: Easy to add new providers
+- <strong>Memory Management</strong>: Explicit control over model lifecycle</p>
+<h4 id="response-normalization-model-output-cleanup">Response Normalization (Model Output Cleanup)</h4>
+<p><code>BaseProvider</code> also applies <strong>asset-driven response normalization</strong> so downstream code sees clean, consistent output across providers:</p>
+<ul>
+<li><strong>Output wrappers</strong>: Strip configured leading/trailing wrapper tokens (e.g., GLM <code>&lt;|begin_of_box|&gt;…&lt;|end_of_box|&gt;</code>)</li>
+<li><strong>Harmony transcripts (GPT-OSS)</strong>: Extract <code>&lt;|channel|&gt;final</code> into <code>GenerateResponse.content</code> and capture <code>&lt;|channel|&gt;analysis</code> as <code>GenerateResponse.metadata["reasoning"]</code> (non-streaming)</li>
+<li><strong>Thinking tags</strong>: Extract inline <code>&lt;think&gt;...&lt;/think&gt;</code> blocks into <code>GenerateResponse.metadata["reasoning"]</code> (when configured)</li>
+</ul>
+<p><strong>Why this belongs in <code>BaseProvider</code> (even for streaming):</strong>
+- These artifacts are <strong>model/template-specific</strong>, not provider-specific (the same model can be served via Ollama, vLLM, LMStudio, HF, or MLX)
+- In streaming mode, wrappers often appear in the first/last chunks; stripping them incrementally avoids leaking markup into UIs and tool parsers without buffering the full response</p>
+<p>Configuration comes from <code>abstractcore/assets/architecture_formats.json</code> and <code>abstractcore/assets/model_capabilities.json</code>; implementation lives in <code>abstractcore/architectures/response_postprocessing.py</code>.</p>
+<h4 id="memory-management">Memory Management</h4>
+<p>The <code>unload_model(model_name)</code> method is a <strong>best-effort resource cleanup hook</strong>.</p>
+<ul>
+<li><strong>API providers</strong> (OpenAI, Anthropic): typically a no-op (safe to call).</li>
+<li><strong>Local / self-hosted providers</strong>: behavior is provider-specific:</li>
+<li>some can actively release memory (or request server-side eviction),</li>
+<li>others can only close client connections and rely on server-side TTL/auto-eviction.</li>
+<li>Example: <strong>LMStudio</strong> does not expose an explicit “unload model” API; <code>unload_model()</code> closes HTTP clients and relies on LMStudio TTL/auto-evict.</li>
+</ul>
+<p>In the OpenAI-compatible AbstractCore server (<code>abstractcore.server.app</code>), requests can set <code>unload_after</code> (default <code>false</code>)
+to call <code>llm.unload_model(model)</code> after the request completes. For providers that can unload shared server state (e.g. Ollama),
+this is disabled by default and must be explicitly enabled by the server operator.</p>
+<div class="code-block"><pre><code class="language-python"># Load model, use it, then free memory
+llm = create_llm("ollama", model="large-model")
+response = llm.generate("Hello")
+llm.unload_model(llm.model)  # Explicitly free memory
+del llm
+</code></pre></div>
+<p>This is critical for:
+- Test suites that load multiple models sequentially
+- Memory-constrained environments (&lt;32GB RAM)
+- Production systems serving different models sequentially</p>
+<h3 id="3-media-handling-system">3. Media Handling System</h3>
+<p>AbstractCore includes a policy-driven media handling system that enables file attachments across all providers:</p>
+<div class="mermaid">graph TD
+    A[User Input: @file.pdf] --&gt; B[MessagePreprocessor]
+    B --&gt; C[Extract Files + Clean Text]
+    C --&gt; D[AutoMediaHandler]
+    D --&gt; E{File Type Detection}
+    E --&gt;|Images| F[ImageProcessor]
+    E --&gt;|PDFs| G[PDFProcessor]
+    E --&gt;|Office| H[OfficeProcessor]
+    E --&gt;|Text/CSV| I[TextProcessor]
 
-                <div style="background: var(--info-bg); border: 1px solid var(--info-text); padding: 1.5rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <p style="margin: 0; color: var(--info-text);">
-                        <strong>Policy-driven modalities:</strong> Audio/video handling is explicit (no silent semantic changes), and enrichments are recorded in
-                        <code>response.metadata.media_enrichment[]</code>. Text-only models can process images via an optional vision fallback pipeline (caption → inject short observations).
-                        See <a href="media-handling-system.html" style="color: inherit; text-decoration: underline;">Media Handling</a> and <a href="audio.html" style="color: inherit; text-decoration: underline;">Audio &amp; Voice</a>.
-                    </p>
-                </div>
-            </section>
+    F --&gt; J[MediaContent Objects]
+    G --&gt; J
+    H --&gt; J
+    I --&gt; J
 
-            <!-- Tool System Architecture -->
-            <section style="margin-bottom: 4rem;">
-                <h2>🛠️ Tool System Architecture</h2>
-                
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3>Universal Tool Support</h3>
-                    <p>AbstractCore provides tool calling across all providers through two mechanisms:</p>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin: 2rem 0;">
-                        <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; border-left: 4px solid var(--primary-color);">
-                            <h4>Native Tool Support</h4>
-                            <p>For providers with native tool APIs (OpenAI, Anthropic)</p>
-                            <ul>
-                                <li>Direct API integration</li>
-                                <li>Optimal performance</li>
-                                <li>Full feature support</li>
-                            </ul>
-                        </div>
-                        
-                        <div style="background: var(--background); padding: 1.5rem; border-radius: 0.5rem; border-left: 4px solid var(--secondary-color);">
-                            <h4>Intelligent Prompting</h4>
-                            <p>For providers without native support (Ollama, MLX, LMStudio)</p>
-                            <ul>
-                                <li>Automatic prompt injection</li>
-                                <li>Architecture-aware formatting</li>
-                                <li>Format conversion support</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-                
-                <div style="background: var(--background-secondary); border: 2px solid var(--border-color); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
-                    <h3 style="color: var(--text-primary); margin: 0 0 0.75rem 0;">🔄 Tool Call Format Conversion</h3>
-                    <p style="color: var(--text-secondary); margin-bottom: 1rem;">AbstractCore automatically converts between different tool call formats:</p>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin: 0.75rem 0;">
-                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 0.75rem; border-radius: 0.5rem;">
-                            <h4 style="color: var(--text-primary); margin: 0 0 0.25rem 0; font-size: 0.95rem;">Qwen3 Format</h4>
-                            <code style="color: var(--primary-color); font-size: 0.8rem;">&lt;|tool_call|&gt;...&lt;/|tool_call|&gt;</code>
-                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">Compatible with Codex CLI</p>
-                        </div>
-                        
-                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 0.75rem; border-radius: 0.5rem;">
-                            <h4 style="color: var(--text-primary); margin: 0 0 0.25rem 0; font-size: 0.95rem;">LLaMA3 Format</h4>
-                            <code style="color: var(--primary-color); font-size: 0.8rem;">&lt;function_call&gt;...&lt;/function_call&gt;</code>
-                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">Compatible with Crush CLI</p>
-                        </div>
-                        
-                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 0.75rem; border-radius: 0.5rem;">
-                            <h4 style="color: var(--text-primary); margin: 0 0 0.25rem 0; font-size: 0.95rem;">XML Format</h4>
-                            <code style="color: var(--primary-color); font-size: 0.8rem;">&lt;tool_call&gt;...&lt;/tool_call&gt;</code>
-                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">Compatible with Gemini CLI</p>
-                        </div>
-                        
-                        <div style="background: var(--background); border: 1px solid var(--border-light); padding: 0.75rem; border-radius: 0.5rem;">
-                            <h4 style="color: var(--text-primary); margin: 0 0 0.25rem 0; font-size: 0.95rem;">Custom Format</h4>
-                            <code style="color: var(--primary-color); font-size: 0.8rem;">[TOOL]...JSON...[/TOOL]</code>
-                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-secondary);">User-defined formats</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
+    J --&gt; K{Provider Type}
+    K --&gt;|OpenAI| L[OpenAI Format]
+    K --&gt;|Anthropic| M[Anthropic Format]
+    K --&gt;|Local| N[Text Embedding]
 
-            <!-- Centralized Configuration System -->
-            <section style="margin-bottom: 4rem;">
-                <h2>⚙️ Centralized Configuration System</h2>
-                <p>Global configuration stored in <code>~/.abstractcore/config/abstractcore.json</code> with clear priority hierarchy.</p>
+    L --&gt; O[Provider API Call]
+    M --&gt; O
+    N --&gt; O
 
-                <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                    <h3 style="margin: 0 0 1rem 0;">Configuration Priority Hierarchy</h3>
-                    <div style="display: grid; gap: 1rem;">
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--success-text);">
-                            <strong>1. Explicit Parameters</strong> (highest priority) - Passed directly to functions
-                        </div>
+    style D fill:#4caf50
+    style J fill:#2196f3
+    style O fill:#ff9800
+</div>
+<h4 id="media-system-architecture">Media System Architecture</h4>
+<p><strong>Core Components:</strong>
+- <strong>MessagePreprocessor</strong>: Parses <code>@filename</code> syntax in CLI and extracts file references
+- <strong>AutoMediaHandler</strong>: Intelligent coordinator that selects appropriate processors
+- <strong>Specialized Processors</strong>:
+  - <code>ImageProcessor</code> (PIL-based for images)
+  - <code>PDFProcessor</code> (PyMuPDF4LLM for documents)
+  - <code>OfficeProcessor</code> (Unstructured for DOCX/XLSX/PPTX)
+  - <code>TextProcessor</code> (pandas for CSV/TSV data analysis)
+- <strong>Provider Handlers</strong>: Format media content for each provider's API requirements</p>
+<p><strong>Provider-Specific Formatting:</strong></p>
+<div class="code-block"><pre><code class="language-python"># Same MediaContent gets formatted differently:
 
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--info-text);">
-                            <strong>2. App-Specific Configuration</strong> - Per-application defaults (CLI, Summarizer, etc.)
-                        </div>
+# OpenAI (JSON with image_url):
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Analyze this"},
+    {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+  ]
+}
 
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--warning-text);">
-                            <strong>3. Global Configuration</strong> - Global fallback model and settings
-                        </div>
+# Anthropic (Messages API with source):
+{
+  "role": "user",
+  "content": [
+    {"type": "text", "text": "Analyze this"},
+    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "..."}}
+  ]
+}
 
-                        <div style="background: var(--background); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--text-secondary);">
-                            <strong>4. Hardcoded Defaults</strong> (lowest priority) - Built-in fallback values
-                        </div>
-                    </div>
-                </div>
+# Local (Text embedding):
+"Analyze this\n\nImage description: A chart showing quarterly trends..."
+</code></pre></div>
+<p><strong>Graceful Fallback Strategy:</strong>
+1. <strong>Advanced Processing</strong>: PyMuPDF4LLM, Unstructured libraries
+2. <strong>Basic Processing</strong>: Simple text extraction
+3. <strong>Metadata Fallback</strong>: File information and properties
+4. <strong>Degrades gracefully for documents</strong>: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
+5. <strong>Policy-driven for true multimodal inputs</strong>: for image/audio/video message parts, behavior is policy-driven; unsupported requests fail loudly unless an explicit enrichment fallback is configured (see ADR-0028).</p>
+<h4 id="unified-media-api">Unified Media API</h4>
+<p>The same <code>media=[]</code> parameter works across all providers:</p>
+<div class="code-block"><pre><code class="language-python"># Universal API - works with any provider
+llm = create_llm("openai", model="gpt-4o")  # or "anthropic", "ollama", etc.
+response = llm.generate(
+    "Analyze these files",
+    media=["report.pdf", "chart.png", "data.xlsx"]
+)
+</code></pre></div>
+<p><strong>CLI Integration:</strong></p>
+<div class="code-block"><pre><code class="language-bash"># Simple @filename syntax works everywhere
+python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jpg"
+</code></pre></div>
+<h4 id="capability-plugins-voiceaudiovision">Capability plugins (voice/audio/vision)</h4>
+<p>To keep <code>abstractcore</code> dependency-light (ADR-0001) while still enabling “must work” deterministic modality APIs, AbstractCore supports optional <strong>capability plugins</strong> (ADR-0028):
+- <code>abstractvoice</code> provides <code>core.voice</code> + <code>core.audio</code> (TTS/STT).
+- <code>abstractvision</code> provides <code>core.vision</code> (T2I/I2I/T2V/I2V; backend-pluggable).</p>
+<p>Discovery:
+- <code>llm.capabilities.status()</code> returns a JSON-safe snapshot (which backends are available/selected, plus install hints).
+- Convenience facades exist as properties: <code>llm.voice</code>, <code>llm.audio</code>, <code>llm.vision</code> (lazy; missing plugins raise actionable errors).</p>
+<h3 id="4-request-lifecycle">4. Request Lifecycle</h3>
+<div class="mermaid">sequenceDiagram
+    participant App as Your App
+    participant Core as AbstractCore
+    participant Events as Event System
+    participant Retry as Retry Logic
+    participant Provider as LLM Provider
+    participant Tools as Tool System
 
-                <h4 style="margin: 2rem 0 1rem 0;">Managed Settings</h4>
-                <ul>
-                    <li><strong>Default Models:</strong> Global and app-specific model defaults</li>
-                    <li><strong>API Keys:</strong> Secure provider authentication</li>
-                    <li><strong>Vision Fallback:</strong> Vision model for text-only models</li>
-                    <li><strong>Logging:</strong> Console and file logging configuration</li>
-                    <li><strong>Storage:</strong> Cache directories and model storage</li>
-                </ul>
-            </section>
+    App-&gt;&gt;Core: generate("prompt", tools=tools)
+    Core-&gt;&gt;Events: emit(GENERATION_STARTED)
+    Core-&gt;&gt;Retry: wrap_with_retry()
 
-            <!-- Design Principles -->
-            <section style="margin-bottom: 4rem;">
-                <h2>🎯 Design Principles</h2>
+    alt Provider Call Success
+        Retry-&gt;&gt;Provider: API call
+        Provider-&gt;&gt;Retry: response
+        Retry-&gt;&gt;Core: successful response
+    else Provider Call Fails
+        Retry-&gt;&gt;Provider: API call (attempt 1)
+        Provider-&gt;&gt;Retry: rate limit error
+        Retry-&gt;&gt;Retry: wait with backoff
+        Retry-&gt;&gt;Provider: API call (attempt 2)
+        Provider-&gt;&gt;Retry: success
+        Retry-&gt;&gt;Core: successful response
+    end
 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0;">
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="color: var(--primary-color);">Provider Abstraction</h3>
-                        <p><strong>Goal:</strong> Same interface for all providers</p>
-                        <p><strong>Implementation:</strong> Common interface with provider-specific implementations</p>
-                    </div>
+    alt Has Tool Calls
+        Core-&gt;&gt;Events: emit(TOOL_STARTED)
+        Core-&gt;&gt;Tools: execute_tools()
+        Tools-&gt;&gt;Core: tool results
+        Core-&gt;&gt;Events: emit(TOOL_COMPLETED)
+    end
 
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="color: var(--secondary-color);">Production Reliability</h3>
-                        <p><strong>Goal:</strong> Handle real-world failures gracefully</p>
-                        <p><strong>Implementation:</strong> Built-in retry logic, circuit breakers, comprehensive error handling</p>
-                    </div>
+    Core-&gt;&gt;Events: emit(GENERATION_COMPLETED)
+    Core-&gt;&gt;App: GenerateResponse
+</div>
+<h3 id="4-tool-system-architecture">4. Tool System Architecture</h3>
+<p>The tool system provides universal tool execution across all providers:</p>
+<div class="mermaid">graph TD
+    A[LLM Response] --&gt; B{Has Tool Calls?}
+    B --&gt;|No| C[Return Response]
+    B --&gt;|Yes| D[Parse Tool Calls]
+    D --&gt; E[Event: TOOL_STARTED]
+    E --&gt; F{Event Prevented?}
+    F --&gt;|Yes| G[Skip Tool Execution]
+    F --&gt;|No| H[Execute Tools]
+    H --&gt; I[Collect Results]
+    I --&gt; J[Event: TOOL_COMPLETED]
+    J --&gt; K[Append Results to Response]
+    K --&gt; C
 
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="color: var(--primary-color);">Universal Media Handling</h3>
-                        <p><strong>Goal:</strong> Same code for images, documents, and data</p>
-                        <p><strong>Implementation:</strong> Intelligent processors with automatic provider formatting</p>
-                    </div>
+    style D fill:#ffeb3b
+    style H fill:#4caf50
+    style E fill:#ff9800
+</div>
+<h4 id="tool-execution-flow">Tool Execution Flow</h4>
+<ol>
+<li><strong>Tool Detection</strong>: Parse tool calls from LLM response</li>
+<li><strong>Event Emission</strong>: Emit <code>TOOL_STARTED</code> (preventable)</li>
+<li><strong>Local Execution</strong>: Execute tools in AbstractCore (not by provider)</li>
+<li><strong>Result Collection</strong>: Gather results and error information</li>
+<li><strong>Event Emission</strong>: Emit <code>TOOL_COMPLETED</code> with results</li>
+<li><strong>Response Integration</strong>: Append tool results to original response</li>
+</ol>
+<h4 id="provider-specific-tool-handling-with-tag-rewriting">Provider-Specific Tool Handling with Tag Rewriting</h4>
+<div class="mermaid">graph LR
+    A[Tool Definition] --&gt; B{Provider Type}
+    B --&gt; C[OpenAI: Native JSON]
+    B --&gt; D[Anthropic: Native XML]
+    B --&gt; E[Ollama: Architecture-specific]
+    B --&gt; F[Others: Prompted Format]
 
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="color: var(--secondary-color);">Universal Tool Support</h3>
-                        <p><strong>Goal:</strong> Tools work everywhere</p>
-                        <p><strong>Implementation:</strong> Native support where available, intelligent prompting as fallback</p>
-                    </div>
+    C --&gt; G[LLM Generation]
+    D --&gt; G
+    E --&gt; G
+    F --&gt; G
 
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="color: var(--primary-color);">Centralized Configuration</h3>
-                        <p><strong>Goal:</strong> Single source of truth for settings</p>
-                        <p><strong>Implementation:</strong> Hierarchical config with clear priority and easy management</p>
-                    </div>
+    G --&gt; H[Tool Call Tag Rewriter]
+    H --&gt; I[Target Format Conversion]
+    I --&gt; J[Universal Tool Parser]
+    J --&gt; K[Local Tool Execution]
 
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem;">
-                        <h3 style="color: var(--secondary-color);">Simplicity Over Features</h3>
-                        <p><strong>Goal:</strong> Clean, focused API</p>
-                        <p><strong>Implementation:</strong> Minimal core with clear extension points</p>
-                    </div>
-                </div>
-            </section>
+    style A fill:#e1f5fe
+    style H fill:#ff9800
+    style I fill:#9c27b0
+    style K fill:#4caf50
+</div>
+<h4 id="tool-call-tag-rewriting-system">Tool Call Tag Rewriting System</h4>
+<p>AbstractCore includes a sophisticated tag rewriting system that enables compatibility with any agentic CLI:</p>
+<p><strong>Rewriting Pipeline</strong>:</p>
+<div class="mermaid">graph TD
+    A[Raw LLM Response] --&gt; B[Pattern Detection]
+    B --&gt; C{Tag Format Needed?}
+    C --&gt;|No| D[Default Qwen3 Format]
+    C --&gt;|Yes| E[Target Format Conversion]
 
-            <!-- Performance Characteristics -->
-            <section style="margin-bottom: 4rem;">
-                <h2 style="color: var(--text-primary); font-size: 2rem; margin-bottom: 1.5rem;">⚡ Performance Characteristics</h2>
-                
-                <div class="performance-grid">
-                    <div class="performance-card" style="background: var(--background); border: 2px solid var(--success-text);">
-                        <h3 style="color: var(--success-text);">💾 Memory Usage</h3>
-                        <ul style="color: var(--text-primary);">
-                            <li><strong>Core:</strong> ~15MB base</li>
-                            <li><strong>Per Provider:</strong> ~2-5MB</li>
-                            <li><strong>Scaling:</strong> Linear with requests</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="performance-card" style="background: var(--background); border: 2px solid var(--info-text);">
-                        <h3 style="color: var(--info-text);">⚡ Latency Overhead</h3>
-                        <ul style="color: var(--text-primary);">
-                            <li><strong>Provider abstraction:</strong> ~1-2ms</li>
-                            <li><strong>Event system:</strong> ~0.5ms per event</li>
-                            <li><strong>Tool parsing:</strong> ~1-5ms</li>
-                        </ul>
-                    </div>
-                    
-                    <div class="performance-card" style="background: var(--background); border: 2px solid var(--warning-text);">
-                        <h3 style="color: var(--warning-text);">🚀 Throughput</h3>
-                        <ul style="color: var(--text-primary);">
-                            <li><strong>Single instance:</strong> 100+ req/sec</li>
-                            <li><strong>Bottleneck:</strong> Usually the LLM provider</li>
-                            <li><strong>Scaling:</strong> Horizontal scaling</li>
-                        </ul>
-                    </div>
-                </div>
-            </section>
+    E --&gt; F{Format Type}
+    F --&gt;|Predefined| G[llama3, xml, gemma, etc.]
+    F --&gt;|Custom| H[User-defined Tags]
 
-            <!-- Related Documentation -->
-            <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                    <a href="getting-started.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Getting Started</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Quick setup guide</p>
-                    </a>
+    G --&gt; I[Rewritten Tool Call]
+    H --&gt; I
+    D --&gt; I
 
-                    <a href="centralized-config.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Centralized Configuration</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Global settings and defaults</p>
-                    </a>
+    I --&gt; J[Tool Execution]
 
-                    <a href="media-handling-system.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Media Handling</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal file attachment</p>
-                    </a>
+    style B fill:#2196f3
+    style E fill:#ff9800
+    style I fill:#4caf50
+</div>
+<p><strong>Supported Formats</strong>:
+- <strong>Default (Qwen3)</strong>: <code>&lt;|tool_call|&gt;...JSON...&lt;/|tool_call|&gt;</code> - Compatible with Codex CLI
+- <strong>LLaMA3</strong>: <code>&lt;function_call&gt;...JSON...&lt;/function_call&gt;</code> - Compatible with Crush CLI
+- <strong>XML</strong>: <code>&lt;tool_call&gt;...JSON...&lt;/tool_call&gt;</code> - Compatible with Gemini CLI
+- <strong>Gemma</strong>: <code>tool_code...JSON...</code> - Compatible with Gemma models
+- <strong>Custom</strong>: Any user-defined format (e.g., <code>[TOOL]...JSON...[/TOOL]</code>)</p>
+<p><strong>Real-Time Integration</strong>:
+- <strong>Streaming Compatible</strong>: Works seamlessly with unified streaming architecture
+- <strong>Zero Latency</strong>: No additional processing delays
+- <strong>Universal Detection</strong>: Automatically detects source format from any model
+- <strong>Graceful Fallback</strong>: Returns original content if rewriting fails</p>
+<h3 id="5-retry-and-reliability-system">5. Retry and Reliability System</h3>
+<p>Production-grade error handling with multiple layers:</p>
+<div class="mermaid">graph TD
+    A[LLM Request] --&gt; B[Retry Manager]
+    B --&gt; C{Error Type}
+    C --&gt;|Rate Limit| D[Exponential Backoff]
+    C --&gt;|Network Error| D
+    C --&gt;|Timeout| D
+    C --&gt;|Auth Error| E[Fail Fast]
+    C --&gt;|Invalid Request| E
 
-                    <a href="vision-capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Vision Capabilities</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Image analysis with fallback</p>
-                    </a>
+    D --&gt; F{Max Attempts?}
+    F --&gt;|No| G[Wait + Jitter]
+    G --&gt; H[Retry Request]
+    H --&gt; B
+    F --&gt;|Yes| I[Circuit Breaker]
 
-                    <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Complete API docs</p>
-                    </a>
+    I --&gt; J{Failure Threshold?}
+    J --&gt;|No| K[Return Error]
+    J --&gt;|Yes| L[Open Circuit]
+    L --&gt; M[Fail Fast for Duration]
 
-                    <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tool system</p>
-                    </a>
+    style D fill:#ff9800
+    style I fill:#f44336
+    style L fill:#d32f2f
+</div>
+<h4 id="retry-configuration">Retry Configuration</h4>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.core.retry import RetryConfig
 
-                    <a href="capabilities.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                        <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Capabilities</h4>
-                        <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">What AbstractCore can do</p>
-                    </a>
-                </div>
+config = RetryConfig(
+    max_attempts=3,           # Try up to 3 times
+    initial_delay=1.0,        # Start with 1 second delay
+    max_delay=60.0,           # Cap at 1 minute
+    use_jitter=True,          # Add randomness
+    failure_threshold=5,      # Circuit breaker after 5 failures
+    recovery_timeout=60.0     # Test recovery after 1 minute
+)
+
+llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
+</code></pre></div>
+<h3 id="6-event-system">6. Event System</h3>
+<p>Observability hooks through events:</p>
+<div class="mermaid">graph TD
+    A[LLM Operation] --&gt; B[Event Emission]
+    B --&gt; C[Global Event Bus]
+    C --&gt; D[Event Listeners]
+
+    D --&gt; E[Monitoring]
+    D --&gt; F[Logging]
+    D --&gt; G[Cost Tracking]
+    D --&gt; H[Tool Control]
+    D --&gt; I[Custom Logic]
+
+    E --&gt; J[Metrics Dashboard]
+    F --&gt; K[Log Files]
+    G --&gt; L[Cost Alerts]
+    H --&gt; M[Security Gates]
+    I --&gt; N[Business Logic]
+
+    style B fill:#9c27b0
+    style C fill:#673ab7
+    style H fill:#f44336
+</div>
+<h4 id="event-types-and-use-cases">Event Types and Use Cases</h4>
+<div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
+
+# Cost monitoring (best-effort estimate; based on token usage)
+def monitor_costs(event):
+    if event.type != EventType.GENERATION_COMPLETED:
+        return
+    cost = event.data.get("cost_usd")
+    if isinstance(cost, (int, float)) and cost &gt; 0.10:
+        alert(f"High estimated cost: ${cost:.2f}")
+
+# Tool monitoring
+def log_tools(event):
+    if event.type == EventType.TOOL_COMPLETED:
+        log(f"Tool completed: {event.data.get('tool_name')}")
+
+# Performance tracking
+def track_performance(event):
+    if event.type != EventType.GENERATION_COMPLETED:
+        return
+    duration_ms = event.data.get("duration_ms")
+    if isinstance(duration_ms, (int, float)) and duration_ms &gt; 10_000:
+        log(f"Slow request: {float(duration_ms):.0f}ms")
+
+on_global(EventType.GENERATION_COMPLETED, monitor_costs)
+on_global(EventType.TOOL_COMPLETED, log_tools)
+on_global(EventType.GENERATION_COMPLETED, track_performance)
+</code></pre></div>
+<h3 id="7-structured-output-system-with-streaming-integration">7. Structured Output System with Streaming Integration</h3>
+<p>Type-safe responses with automatic validation, retry, and unified streaming:</p>
+<div class="mermaid">graph TD
+    A[LLM Generate] --&gt; B{Streaming Mode?}
+    B --&gt;|Yes| C[Unified Streaming Processor]
+    B --&gt;|No| D[Standard JSON Parsing]
+
+    C --&gt; E[Incremental Tool Detector]
+    E --&gt; F[Real-time Chunk Processing]
+    F --&gt; G[Tool Call Detection]
+    G --&gt; H[Mid-Stream Tool Execution]
+
+    D --&gt; I[Parse JSON]
+    I --&gt; J{Valid JSON?}
+    J --&gt;|No| K[Retry with Error Feedback]
+    J --&gt;|Yes| L[Pydantic Validation]
+
+    L --&gt; M{Valid Model?}
+    M --&gt;|No| K
+    M --&gt;|Yes| N[Return Typed Object]
+
+    K --&gt; O{Max Retries?}
+    O --&gt;|No| A
+    O --&gt;|Yes| P[Raise ValidationError]
+
+    style C fill:#4caf50
+    style E fill:#2196f3
+    style F fill:#ff9800
+    style G fill:#9c27b0
+    style K fill:#f44336
+</div>
+<h4 id="unified-streaming-architecture">Unified Streaming Architecture</h4>
+<p>AbstractCore's streaming system provides high-performance, character-by-character streaming with real-time tool detection:</p>
+<p><strong>Architecture Components</strong>:</p>
+<div class="mermaid">graph TD
+    A[Stream Input] --&gt; B[UnifiedStreamProcessor]
+    B --&gt; C[IncrementalToolDetector]
+    C --&gt; D[Tag Rewriter]
+    D --&gt; E[Tool Execution]
+    E --&gt; F[Stream Output]
+
+    B --&gt; G[Character-by-Character Handling]
+    G --&gt; H[Intelligent Buffering]
+    H --&gt; C
+
+    style B fill:#4caf50
+    style C fill:#2196f3
+    style D fill:#ff9800
+    style E fill:#9c27b0
+</div>
+<p><strong>Key Features</strong>:</p>
+<ol>
+<li>
+<p><strong>Unified Streaming Strategy</strong>
+   - Single consistent approach across all providers
+   - First chunk delivery in &lt;10ms
+   - Minimal code complexity</p>
+</li>
+<li>
+<p><strong>Incremental Tool Detection</strong>
+   - Real-time tool call detection during streaming
+   - Emits <code>chunk.tool_calls</code> as soon as a full tool call is detected
+   - Handles partial tool calls across chunk boundaries</p>
+</li>
+<li>
+<p><strong>Character-by-Character Streaming</strong>
+   - Handles micro-chunking from providers (22+ tiny chunks per tool call)
+   - Intelligent buffering for partial tool calls
+   - Robust parsing with auto-repair for malformed JSON</p>
+</li>
+<li>
+<p><strong>Tool Call Tag Rewriting Integration</strong>
+   - Real-time format conversion during streaming
+   - Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)
+   - Zero buffering overhead for tag conversion</p>
+</li>
+</ol>
+<p><strong>Streaming with Tag Rewriting Example</strong>:</p>
+<div class="code-block"><pre><code class="language-python"># Real-time streaming with automatic tool call format conversion
+for chunk in llm.generate(
+    "Create a Python function and analyze it",
+    stream=True,
+    tools=[code_analysis_tool],
+    tool_call_tags="llama3"  # Convert to Crush CLI format
+):
+    # Immediate character-by-character output
+    print(chunk.content, end="", flush=True)
+
+    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
+    if chunk.tool_calls:
+        print(f"\nTool calls: {chunk.tool_calls}")
+
+# Output format: &lt;function_call&gt;{"name": "analyze_code"}...&lt;/function_call&gt;
+</code></pre></div>
+<p><strong>Performance Characteristics</strong>:
+- <strong>First Chunk Latency</strong>: &lt;10ms across all providers
+- <strong>Tool Detection Overhead</strong>: &lt;1ms per chunk
+- <strong>Memory Efficiency</strong>: Linear, bounded growth
+- <strong>Character-by-Character Support</strong>: Handles extreme micro-chunking
+- <strong>Tag Rewriting</strong>: Zero additional latency</p>
+<h4 id="automatic-error-feedback">Automatic Error Feedback</h4>
+<p>When validation fails, AbstractCore provides detailed feedback to the LLM:</p>
+<div class="code-block"><pre><code class="language-python"># If LLM returns invalid data, AbstractCore automatically retries with:
+"""
+IMPORTANT: Your previous response had validation errors:
+• Field 'age': Age must be positive (got -25)
+• Field 'email': Invalid email format
+
+Please correct these errors and provide valid JSON.
+"""
+</code></pre></div>
+<h3 id="8-session-management">8. Session Management</h3>
+<p>Simple conversation memory without complexity:</p>
+<div class="mermaid">graph LR
+    A[BasicSession] --&gt; B[Message History]
+    A --&gt; C[System Prompt]
+    A --&gt; D[Provider Reference]
+
+    B --&gt; E[generate()]
+    C --&gt; E
+    D --&gt; E
+
+    E --&gt; F[Add to History]
+    F --&gt; G[Return Response]
+
+    A --&gt; H[save()/load()]
+    H --&gt; I[JSON Persistence]
+
+    style A fill:#2196f3
+    style B fill:#4caf50
+</div>
+<h3 id="9-server-architecture-optional-component">9. Server Architecture (Optional Component)</h3>
+<p>The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:</p>
+<div class="mermaid">    graph TD
+        A[HTTP Client] --&gt; B[FastAPI Server]
+        B --&gt; C{Endpoint Router}
+
+        C --&gt; D[/v1/chat/completions]
+        C --&gt; E[/v1/embeddings]
+        C --&gt; F[/v1/models]
+        C --&gt; G[/providers]
+        C --&gt; Img[/v1/images/* (optional)]
+        C --&gt; Aud[/v1/audio/* (optional)]
+        C --&gt; Cache[/acore/prompt_cache/*]
+
+    D --&gt; H[Request Validation]
+    E --&gt; H
+    F --&gt; I[Provider Discovery]
+    G --&gt; I
+
+    H --&gt; J[AbstractCore Library]
+    I --&gt; J
+
+    J --&gt; K[Provider Interface]
+    K --&gt; L[LLM Providers]
+
+    style B fill:#4caf50
+    style J fill:#e1f5fe
+    style K fill:#f3e5f5
+</div>
+<p><strong>Architecture Layers</strong>:</p>
+<ol>
+<li><strong>HTTP Layer</strong>: FastAPI-based REST API with request validation</li>
+<li><strong>Translation Layer</strong>: Converts HTTP requests to AbstractCore library calls</li>
+<li><strong>Core Layer</strong>: Uses the full AbstractCore provider system</li>
+<li><strong>Response Layer</strong>: Transforms responses to OpenAI-compatible format</li>
+</ol>
+<p><strong>Key Capabilities</strong>:</p>
+<ul>
+<li><strong>OpenAI Compatibility</strong>: Drop-in replacement for OpenAI API clients</li>
+<li><strong>Universal Provider Access</strong>: Single API for all providers (OpenAI, Anthropic, Ollama, etc.)</li>
+<li><strong>Format Conversion</strong>: Automatic tool call format conversion for agentic CLIs</li>
+<li><strong>Streaming Support</strong>: Server-sent events for real-time responses</li>
+<li><strong>Model Discovery</strong>: Dynamic model listing across all providers</li>
+<li><strong>Embedding Support</strong>: Multi-provider embedding generation (HuggingFace, Ollama, LMStudio)</li>
+<li><strong>Optional Vision Endpoints</strong>: OpenAI-compatible <code>/v1/images/generations</code> and <code>/v1/images/edits</code> (plus <code>/v1/vision/*</code> control plane) delegated to <code>abstractvision</code> (safe-by-default; requires explicit config).</li>
+<li><strong>Optional Audio Endpoints</strong>: OpenAI-compatible <code>/v1/audio/transcriptions</code> and <code>/v1/audio/speech</code> delegated to capability plugins (typically <code>abstractvoice</code>).</li>
+<li><strong>Prompt Cache Control Plane</strong>: <code>/acore/prompt_cache/*</code> proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an <code>abstractcore.endpoint</code> upstream).</li>
+</ul>
+<p><strong>Request Flow Example</strong>:</p>
+<div class="mermaid">sequenceDiagram
+    participant Client
+    participant Server as FastAPI Server
+    participant Core as AbstractCore
+    participant Provider as LLM Provider
+
+    Client-&gt;&gt;Server: POST /v1/chat/completions
+    Server-&gt;&gt;Server: Validate Request
+    Server-&gt;&gt;Core: create_llm(provider, model)
+    Server-&gt;&gt;Core: llm.generate(messages, tools)
+    Core-&gt;&gt;Provider: API call with retry logic
+    Provider-&gt;&gt;Core: Response
+    Core-&gt;&gt;Core: Execute tools if needed
+    Core-&gt;&gt;Server: GenerateResponse
+    Server-&gt;&gt;Server: Convert to OpenAI format
+    Server-&gt;&gt;Client: HTTP Response (streaming or complete)
+</div>
+<p><strong>Server Features</strong>:</p>
+<ul>
+<li><strong>Automatic Retry</strong>: Built-in retry logic from core library</li>
+<li><strong>Event System</strong>: Full observability through events</li>
+<li><strong>Debug Logging</strong>: Comprehensive request/response logging</li>
+<li><strong>Health Checks</strong>: <code>/health</code> endpoint for monitoring</li>
+<li><strong>Interactive Docs</strong>: Auto-generated Swagger UI at <code>/docs</code></li>
+<li><strong>Multi-Worker Support</strong>: Production deployment with multiple workers</li>
+</ul>
+<h2 id="architecture-benefits">Architecture Benefits</h2>
+<h3 id="1-provider-agnostic">1. Provider Agnostic</h3>
+<ul>
+<li><strong>Same code works everywhere</strong>: Switch providers by changing one line</li>
+<li><strong>No vendor lock-in</strong>: Easy migration between cloud and local providers</li>
+<li><strong>Consistent behavior</strong>: Tools, streaming, structured output work identically</li>
+</ul>
+<h3 id="2-production-ready">2. Production Ready</h3>
+<ul>
+<li><strong>Automatic reliability</strong>: Built-in retry logic and circuit breakers</li>
+<li><strong>Comprehensive observability</strong>: Events for every operation</li>
+<li><strong>Error handling</strong>: Proper error classification and handling</li>
+</ul>
+<h3 id="3-extensible">3. Extensible</h3>
+<ul>
+<li><strong>Event system</strong>: Hook into any operation</li>
+<li><strong>Tool system</strong>: Add new tools easily</li>
+<li><strong>Provider system</strong>: Add new providers with minimal code</li>
+</ul>
+<h3 id="4-performance-optimized">4. Performance Optimized</h3>
+<ul>
+<li><strong>Lazy loading</strong>: Providers loaded only when needed</li>
+<li><strong>Connection pooling</strong>: Reuse HTTP connections</li>
+<li><strong>Efficient parsing</strong>: Optimized JSON and tool parsing</li>
+</ul>
+<h2 id="extension-points">Extension Points</h2>
+<p>AbstractCore is designed to be extended:</p>
+<h3 id="adding-a-new-provider">Adding a New Provider</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.providers.base import BaseProvider
+
+class MyProvider(BaseProvider):
+    def generate(self, prompt: str, **kwargs) -&gt; GenerateResponse:
+        # Implement provider-specific logic
+        return GenerateResponse(content="...")
+
+    def get_capabilities(self) -&gt; List[str]:
+        return ["text_generation", "streaming"]
+</code></pre></div>
+<h3 id="adding-tools">Adding Tools</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import tool
+
+@tool
+def my_custom_tool(param: str) -&gt; str:
+    """Custom tool that does something useful."""
+    return f"Processed: {param}"
+</code></pre></div>
+<h2 id="performance-characteristics">Performance Characteristics</h2>
+<p>AbstractCore’s overhead is usually small compared to model inference and network latency. If performance matters, benchmark on your target provider/model/hardware.</p>
+<p>Common levers:
+- Provider choice and base URL latency
+- Concurrency (async + connection pooling)
+- Streaming vs non-streaming
+- Structured output (schema size, retry behavior)
+- Tool execution strategy (pass-through vs host execution)</p>
+<h2 id="security-considerations">Security Considerations</h2>
+<h3 id="1-tool-execution-safety">1. Tool Execution Safety</h3>
+<ul>
+<li><strong>Local execution</strong>: Tools run in AbstractCore, not by providers</li>
+<li><strong>Event prevention</strong>: Stop dangerous tools before execution</li>
+<li><strong>Input validation</strong>: Validate tool parameters</li>
+</ul>
+<h3 id="2-api-key-management">2. API Key Management</h3>
+<ul>
+<li><strong>Environment variables</strong>: Secure key storage</li>
+<li><strong>No logging</strong>: Keys never appear in logs</li>
+<li><strong>Provider isolation</strong>: Keys scoped to specific providers</li>
+</ul>
+<h3 id="3-data-privacy">3. Data Privacy</h3>
+<ul>
+<li><strong>Local options</strong>: Support for local providers (Ollama, MLX)</li>
+<li><strong>No data retention</strong>: AbstractCore doesn't store conversation data</li>
+<li><strong>Transparent processing</strong>: All operations are observable through events</li>
+</ul>
+<h2 id="testing-strategy">Testing Strategy</h2>
+<h3 id="1-no-mocking-philosophy">1. No Mocking Philosophy</h3>
+<ul>
+<li><strong>Real implementations</strong>: Test against actual providers</li>
+<li><strong>Real models</strong>: Use actual LLM models in tests</li>
+<li><strong>Real scenarios</strong>: Test real-world usage patterns</li>
+</ul>
+<h3 id="2-provider-coverage">2. Provider Coverage</h3>
+<ul>
+<li><strong>All providers tested</strong>: Every provider has comprehensive tests</li>
+<li><strong>Cross-provider consistency</strong>: Same tests run across all providers</li>
+<li><strong>Feature parity</strong>: Ensure consistent behavior</li>
+</ul>
+<h3 id="3-reliability-testing">3. Reliability Testing</h3>
+<ul>
+<li><strong>Failure scenarios</strong>: Test retry logic and error handling</li>
+<li><strong>Performance tests</strong>: Measure latency and throughput</li>
+<li><strong>Integration tests</strong>: Test with real external dependencies</li>
+</ul>
+<h2 id="integration-with-abstract-framework">Integration with Abstract Framework</h2>
+<p>AbstractCore is the foundation layer for the Abstract Framework stack:</p>
+<div class="mermaid">graph TD
+    subgraph "UI Layer (peers)"
+        A[AbstractCode&lt;br/&gt;Terminal CLI]
+        B[AbstractFlow Visual Editor&lt;br/&gt;React + ReactFlow]
+    end
+
+    A -.-&gt;|optional| F[AbstractFlow Engine]
+    B --&gt; F
+
+    F --&gt; C[AbstractAgent]
+    A --&gt; C
+    C --&gt; D[AbstractRuntime]
+    D --&gt; E[AbstractCore]
+    E --&gt; G[LLM Providers]
+
+    style E fill:#e1f5fe
+    style A fill:#fff3e0
+    style B fill:#fff3e0
+    style F fill:#f3e5f5
+    style C fill:#f3e5f5
+    style D fill:#f3e5f5
+</div>
+<h3 id="framework-layers">Framework Layers</h3>
+<ul>
+<li><strong>UI Layer</strong> (peers):</li>
+<li>AbstractCode: Terminal CLI for interactive sessions</li>
+<li>AbstractFlow Visual Editor: Web-based diagram editor (React + ReactFlow + FastAPI)</li>
+<li><strong>AbstractFlow</strong>: Multi-agent orchestration engine + visual editor</li>
+<li><strong>AbstractAgent</strong>: Agent patterns (ReactAgent, CodeActAgent) with durable execution</li>
+<li><strong>AbstractRuntime</strong>: Effect system, workflows, state persistence</li>
+</ul>
+<p>AbstractCode can optionally use AbstractFlow for running flows. AbstractFlow includes its own visual editor for designing workflows.</p>
+<h2 id="summary">Summary</h2>
+<p>AbstractCore's architecture prioritizes:</p>
+<ol>
+<li><strong>Reliability</strong> - Production-grade error handling and retry logic</li>
+<li><strong>Simplicity</strong> - Clean APIs that are easy to understand and use</li>
+<li><strong>Universality</strong> - Same interface and features across all providers</li>
+<li><strong>Extensibility</strong> - Clear extension points for advanced features</li>
+<li><strong>Observability</strong> - Comprehensive events for monitoring and control</li>
+<li><strong>Flexibility</strong> - Deploy as Python library or OpenAI-compatible HTTP server</li>
+</ol>
+<p>The result is a foundation that works reliably in production while remaining simple enough to learn quickly and flexible enough to build advanced applications on top of.</p>
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>
-    <script>
-        // Interactive architecture functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            // Component interaction
-            const components = document.querySelectorAll('.component');
-            const detailPanels = document.querySelectorAll('.detail-panel');
-            
-            components.forEach(component => {
-                component.addEventListener('click', function() {
-                    const componentType = this.dataset.component;
-                    
-                    // Remove active class from all components and panels
-                    components.forEach(c => c.classList.remove('active'));
-                    detailPanels.forEach(p => p.classList.remove('active'));
-                    
-                    // Add active class to clicked component
-                    this.classList.add('active');
-                    
-                    // Show corresponding detail panel
-                    const detailPanel = document.getElementById(`detail-${componentType}`);
-                    if (detailPanel) {
-                        detailPanel.classList.add('active');
-                    }
-                });
-            });
-            
-            // Flow step interaction
-            const flowSteps = document.querySelectorAll('.flow-step');
-            
-            flowSteps.forEach(step => {
-                step.addEventListener('click', function() {
-                    // Remove active class from all steps
-                    flowSteps.forEach(s => s.classList.remove('active'));
-                    
-                    // Add active class to clicked step
-                    this.classList.add('active');
-                    
-                    // Add visual feedback
-                    this.style.transform = 'scale(1.02)';
-                    setTimeout(() => {
-                        this.style.transform = '';
-                    }, 200);
-                });
-            });
-            
-            // Component interaction function
-            window.showComponentDetails = function(componentType) {
-                // Remove active class from all components
-                document.querySelectorAll('.component').forEach(c => c.classList.remove('active'));
-                
-                // Add active class to clicked component
-                const component = document.querySelector(`[data-component="${componentType}"]`);
-                if (component) {
-                    component.classList.add('active');
-                    
-                    // Add visual feedback
-                    component.style.transform = 'scale(1.05)';
-                    setTimeout(() => {
-                        component.style.transform = '';
-                    }, 300);
-                }
-                
-                console.log('Component clicked:', componentType);
-            };
-            
-            // Provider item hover effects
-            const providerItems = document.querySelectorAll('.provider-item');
-            
-            providerItems.forEach(item => {
-                item.addEventListener('click', function() {
-                    // Add click animation
-                    this.style.transform = 'scale(1.1) rotate(5deg)';
-                    setTimeout(() => {
-                        this.style.transform = '';
-                    }, 300);
-                });
-            });
-        });
-    </script>
 </body>
 </html>

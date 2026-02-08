@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tool Syntax Rewriting - AbstractCore</title>
-    <meta name="description" content="Convert tool-call syntax across providers and clients. Learn how tool_call_tags (Python) and agent_format (server) work in AbstractCore.">
+    <title>Tool Call Syntax Rewriting - AbstractCore</title>
+    <meta name="description" content="AbstractCore can convert tool-call syntax to help different runtimes/clients consume tool calls consistently.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -21,86 +21,64 @@
         document.addEventListener('DOMContentLoaded', function() {
             createNavbar({
                 basePath: '',
-                menuItems: [
-                    { text: 'Features', href: '/docs/capabilities.html' },
-                    { text: 'Quick Start', href: '/docs/getting-started.html' },
-                    { text: 'Documentation', href: '/#docs' },
-                    { text: 'Examples', href: '/docs/examples.html' },
-                    {
-                        text: 'GitHub',
-                        href: 'https://github.com/lpalbou/abstractcore',
-                        target: '_blank',
-                        icon: 'github'
-                    },
-                    {
-                        text: 'PyPI',
-                        href: 'https://pypi.org/project/abstractcore/',
-                        target: '_blank',
-                        icon: 'pypi'
-                    }
-                ]
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
             });
         });
     </script>
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Tool Call Syntax Rewriting</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">
-                    AbstractCore can <strong>preserve</strong> and <strong>rewrite</strong> tool-call syntax so downstream clients can consume tool calls consistently,
-                    even when models emit different tag formats.
-                </p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore can convert tool-call syntax to help different runtimes/clients consume tool calls consistently.</p>
             </div>
 
-            <div style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)); padding: 2rem; border-radius: 0.75rem; color: white; margin-bottom: 3rem;">
-                <h2 style="margin: 0 0 1rem 0;">Two Related Features</h2>
-                <ul style="margin: 0; padding-left: 1.5rem; font-size: 1rem;">
-                    <li style="margin-bottom: 0.75rem;"><strong>Python API (<code>tool_call_tags</code>)</strong>: preserve/rewrite tool-call markup inside <code>response.content</code> (mostly for prompted-tool models).</li>
-                    <li style="margin-bottom: 0.75rem;"><strong>HTTP Server (<code>agent_format</code>)</strong>: convert/synthesize tool-call syntax for HTTP clients while keeping <code>tool_calls</code> structured.</li>
-                    <li style="margin-bottom: 0;"><strong>Canonical representation</strong>: use structured <code>tool_calls</code> for execution; rewriting is formatting, not execution.</li>
-                </ul>
-            </div>
+            
 
             <div class="doc-content">
-                <section id="python-tool-call-tags">
-                    <h2>1) Python API: <code>tool_call_tags</code></h2>
 
-                    <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;">
-                        <h3 style="margin: 0 0 1rem 0;">Default behavior (recommended)</h3>
-                        <ul style="margin: 0; padding-left: 1.5rem;">
-                            <li><code>tool_call_tags=None</code> (default): tool-call markup is removed from <code>response.content</code> for clean UX.</li>
-                            <li>Tool calls are still surfaced in <code>response.tool_calls</code> (structured dicts).</li>
-                        </ul>
-                    </div>
 
-                    <h3>When to set <code>tool_call_tags</code></h3>
-                    <p>Set <code>tool_call_tags</code> when a downstream consumer needs tool calls in text form (for example, a runtime that parses tool calls from assistant content).</p>
-
-                    <h3>Supported values</h3>
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
-                        <ul style="margin: 0; padding-left: 1.5rem;">
-                            <li><code>qwen3</code> → <code>&lt;|tool_call|&gt;...JSON...&lt;/|tool_call|&gt;</code></li>
-                            <li><code>llama3</code> → <code>&lt;function_call&gt;...JSON...&lt;/function_call&gt;</code></li>
-                            <li><code>xml</code> → <code>&lt;tool_call&gt;...JSON...&lt;/tool_call&gt;</code></li>
-                            <li><code>gemma</code> → <code>```tool_code ...JSON... ```</code></li>
-                            <li>Custom tags: <code>"START,END"</code> or <code>"MYTAG"</code> (auto-wrapped).</li>
-                        </ul>
-                    </div>
-
-                    <h3>Example (non-streaming)</h3>
-                    <div class="code-block">
-                        <pre><code class="language-python">from abstractcore import create_llm
+<p>There are two related but distinct features:</p>
+<ol>
+<li><strong>Python API (<code>tool_call_tags</code>)</strong>: preserve and rewrite <em>tool-call markup inside assistant content</em> (mostly for prompted-tool models).</li>
+<li><strong>HTTP Server (<code>agent_format</code>)</strong>: convert/synthesize tool-call syntax for HTTP clients (Codex, other agentic CLIs), while keeping <code>tool_calls</code> structured.</li>
+</ol>
+<h2 id="1-python-api-toolcalltags-per-call">1) Python API: <code>tool_call_tags</code> (per-call)</h2>
+<p><code>tool_call_tags</code> is passed to <code>generate()</code> / <code>agenerate()</code> / <code>BasicSession.generate()</code> as a <strong>per-call kwarg</strong>.</p>
+<h3 id="default-behavior-recommended">Default behavior (recommended)</h3>
+<ul>
+<li>When <code>tool_call_tags is None</code> (default):</li>
+<li><code>response.tool_calls</code> is populated when tool calls are detected (native tools or prompted tags).</li>
+<li>Tool-call markup is stripped from <code>response.content</code> for clean UX/history.</li>
+</ul>
+<h3 id="when-to-set-toolcalltags">When to set <code>tool_call_tags</code></h3>
+<p>Set <code>tool_call_tags</code> when you want <strong>tool-call markup kept in <code>content</code></strong> so a downstream consumer can parse it from text.</p>
+<p>This is most useful for <strong>prompted-tool</strong> providers (tool calls are emitted in assistant content), e.g.:
+- <code>ollama</code>
+- <code>lmstudio</code>
+- <code>mlx</code>
+- <code>huggingface</code>
+- <code>openai-compatible</code> (and compatible endpoints like vLLM / LM Studio)</p>
+<p>For <strong>native tool</strong> providers (OpenAI/Anthropic), tool calls are primarily consumed from <code>response.tool_calls</code> (structured), not from tags embedded in <code>content</code>.</p>
+<h3 id="supported-values">Supported values</h3>
+<ul>
+<li>Predefined formats:</li>
+<li><code>qwen3</code> → <code>&lt;|tool_call|&gt;...JSON...&lt;/|tool_call|&gt;</code></li>
+<li><code>llama3</code> → <code>&lt;function_call&gt;...JSON...&lt;/function_call&gt;</code></li>
+<li><code>xml</code> → <code>&lt;tool_call&gt;...JSON...&lt;/tool_call&gt;</code></li>
+<li><code>gemma</code> → <code>tool_code\n...JSON...\n</code></li>
+<li>Custom tags:</li>
+<li>Comma-separated start/end: <code>"START,END"</code> or <code>"[TOOL],[/TOOL]"</code></li>
+<li>Single tag name: <code>"MYTAG"</code> → <code>&lt;MYTAG&gt;...JSON...&lt;/MYTAG&gt;</code></li>
+</ul>
+<h3 id="example-non-streaming">Example (non-streaming)</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 tool = {
     "name": "get_weather",
     "description": "Get weather for a city",
-    "parameters": {
-        "type": "object",
-        "properties": {"city": {"type": "string"}},
-        "required": ["city"],
-    },
+    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
 }
 
 llm = create_llm("ollama", model="qwen3:4b-instruct")
@@ -111,13 +89,10 @@ response = llm.generate(
 )
 
 print(response.content)     # contains &lt;function_call&gt;...&lt;/function_call&gt;
-print(response.tool_calls)  # structured dicts for host/runtime execution</code></pre>
-                    </div>
-
-                    <h3>Example (streaming)</h3>
-                    <div class="code-block">
-                        <pre><code class="language-python">tool_calls = []
-
+print(response.tool_calls)  # always structured dicts for host/runtime execution
+</code></pre></div>
+<h3 id="example-streaming">Example (streaming)</h3>
+<div class="code-block"><pre><code class="language-python">tool_calls = []
 for chunk in llm.generate(
     "Weather in Paris?",
     tools=[tool],
@@ -126,29 +101,27 @@ for chunk in llm.generate(
 ):
     print(chunk.content, end="", flush=True)
     if chunk.tool_calls:
-        tool_calls.extend(chunk.tool_calls)</code></pre>
-                    </div>
-                </section>
-
-                <section id="server-agent-format" style="margin-top: 4rem;">
-                    <h2>2) HTTP Server: <code>agent_format</code></h2>
-                    <p>When using the OpenAI-compatible server (<code>/v1/chat/completions</code>), request a target syntax format with <code>agent_format</code>.</p>
-
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
-                        <p style="margin: 0;"><strong>Important:</strong> The server runs in passthrough mode by default (<code>execute_tools=false</code>): it returns tool calls; it does not execute them.</p>
-                    </div>
-
-                    <h3>Supported values</h3>
-                    <div style="background: var(--background-secondary); padding: 1.5rem; border-radius: 0.75rem; margin: 1.5rem 0;">
-                        <ul style="margin: 0; padding-left: 1.5rem;">
-                            <li><code>auto</code> (default): auto-detect using <code>User-Agent</code> + model patterns</li>
-                            <li><code>openai</code>, <code>codex</code>, <code>qwen3</code>, <code>llama3</code>, <code>xml</code>, <code>gemma</code>, <code>passthrough</code></li>
-                        </ul>
-                    </div>
-
-                    <h3>Example (curl)</h3>
-                    <div class="code-block">
-                        <pre><code class="language-bash">curl -sS http://localhost:8000/v1/chat/completions \
+        tool_calls.extend(chunk.tool_calls)
+</code></pre></div>
+<h2 id="2-http-server-agentformat">2) HTTP Server: <code>agent_format</code></h2>
+<p>When using the AbstractCore server (<code>/v1/chat/completions</code>), you can request a target tool-call syntax via <code>agent_format</code>.</p>
+<ul>
+<li><code>agent_format</code> affects how tool calls are represented in the response for a given client.</li>
+<li>The server always runs in passthrough mode (<code>execute_tools=False</code>): it returns tool calls; it does not execute them.</li>
+</ul>
+<h3 id="supported-values_1">Supported values</h3>
+<ul>
+<li><code>auto</code> (default): auto-detect based on <code>User-Agent</code> + model name patterns</li>
+<li><code>openai</code></li>
+<li><code>codex</code></li>
+<li><code>qwen3</code></li>
+<li><code>llama3</code></li>
+<li><code>xml</code></li>
+<li><code>gemma</code></li>
+<li><code>passthrough</code></li>
+</ul>
+<h3 id="example">Example</h3>
+<div class="code-block"><pre><code class="language-bash">curl -sS http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "ollama/qwen3:4b-instruct",
@@ -162,40 +135,13 @@ for chunk in llm.generate(
       }
     }],
     "agent_format": "codex"
-  }'</code></pre>
-                    </div>
-
-                    <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 1rem; margin: 1rem 0;">
-                        <p style="margin: 0; color: #1e40af;"><strong>See also:</strong> <a href="server.html">Server Guide</a> for endpoint details and provider/model naming.</p>
-                    </div>
-                </section>
-
-                <section id="notes" style="margin-top: 4rem;">
-                    <h2>Notes</h2>
-                    <ul>
-                        <li><code>tool_call_tags</code> and <code>agent_format</code> are formatting controls, not tool execution.</li>
-                        <li>Use <code>response.tool_calls</code> (Python) or <code>message.tool_calls</code> (server/OpenAI format) as the canonical tool-call representation.</li>
-                    </ul>
-                </section>
-
-                <!-- Related Documentation -->
-                <div style="margin-top: 4rem; padding: 2rem; background: var(--background-secondary); border-radius: 0.75rem;">
-                    <h2 style="margin: 0 0 1.5rem 0;">Related Documentation</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
-                        <a href="tool-calling.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">Tool Calling System</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Universal tools across all providers</p>
-                        </a>
-                        <a href="server.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">HTTP Server Guide</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">OpenAI-compatible REST API</p>
-                        </a>
-                        <a href="api-reference.html" style="display: block; padding: 1rem; background: var(--background); border-radius: 0.5rem; text-decoration: none; border: 1px solid var(--border-light); transition: all 0.15s ease;">
-                            <h4 style="margin: 0 0 0.5rem 0; color: var(--primary-color);">API Reference</h4>
-                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.875rem;">Sync/async, streaming, response objects</p>
-                        </a>
-                    </div>
-                </div>
+  }'
+</code></pre></div>
+<h2 id="notes">Notes</h2>
+<ul>
+<li><code>tool_call_tags</code> is <strong>formatting</strong>, not execution: it only changes how tool calls are represented in <code>content</code>.</li>
+<li>The canonical machine-readable representation remains <code>GenerateResponse.tool_calls</code> (Python) or <code>message.tool_calls</code> (server/OpenAI format).</li>
+</ul>
             </div>
         </div>
     </main>
@@ -206,4 +152,3 @@ for chunk in llm.generate(
     <script src="../assets/js/main.js"></script>
 </body>
 </html>
-
