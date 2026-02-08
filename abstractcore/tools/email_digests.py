@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 
 def _as_str(value: Any) -> str:
@@ -132,3 +132,4 @@ def send_email_digest(
         subject=subject,
         body_text=body_text,
     )
+
