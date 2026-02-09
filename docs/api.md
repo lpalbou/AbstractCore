@@ -2,6 +2,8 @@
 
 This page is a user-facing map of the **public Python API** exposed from `abstractcore` (see `abstractcore/__init__.py`). For a complete listing of functions/classes (including events), see **[API Reference](api-reference.md)**.
 
+New to AbstractCore? Start with **[Getting Started](getting-started.md)**.
+
 Implementation pointers (source of truth):
 - `create_llm`: `abstractcore/core/factory.py` → `abstractcore/providers/registry.py`
 - `BasicSession`: `abstractcore/core/session.py`

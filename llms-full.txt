@@ -433,8 +433,8 @@ from abstractcore import tool
 
 @tool
 def get_weather(city: str) -> str:
-    \"\"\"Return a short weather string for a city.\"\"\"
-    return f\"{city}: 22C and sunny\"
+    """Return a short weather string for a city."""
+    return f"{city}: 22C and sunny"
 ```
 
 ### Pass-through is the default
@@ -483,13 +483,13 @@ Some agent runtimes want tool calls preserved in `response.content` using custom
 - Python: pass `tool_call_tags=...` to `generate()` / `agenerate()`
 - Server: set `agent_format` in requests
 
-This is documented as \"tool syntax rewriting\" and is designed to keep tool-call markup stable across providers.
+This is documented as `tool syntax rewriting` and is designed to keep tool-call markup stable across providers.
 
 ---
 
 ## 7) Structured output (`response_model=...`)
 
-Structured output turns \"return JSON\" prompts into typed objects.
+Structured output turns `return JSON` prompts into typed objects.
 
 ```python
 from pydantic import BaseModel
@@ -592,7 +592,7 @@ Server note:
 
 ### Glyph visual-text compression (optional, experimental)
 
-If you need to squeeze long text into smaller \"vision-friendly\" inputs, AbstractCore supports glyph compression.
+If you need to squeeze long text into smaller vision-friendly inputs, AbstractCore supports glyph compression.
 
 ```bash
 pip install "abstractcore[compression]"
@@ -1874,6 +1874,8 @@ This setup guide should get you running with any AbstractCore provider. Choose w
 # API (Python)
 
 This page is a user-facing map of the **public Python API** exposed from `abstractcore` (see `abstractcore/__init__.py`). For a complete listing of functions/classes (including events), see **API Reference**.
+
+New to AbstractCore? Start with **Getting Started**.
 
 Implementation pointers (source of truth):
 - `create_llm`: `abstractcore/core/factory.py` → `abstractcore/providers/registry.py`
@@ -5682,7 +5684,7 @@ try:
     response = llm.generate("Test", media=["test.jpg"])
 except ImportError as e:
     print(f"Missing dependency: {e}")
-    print("Install with: pip install \"abstractcore[media]\"")
+    print('Install with: pip install "abstractcore[media]"')
 ```
 
 **Vision model not detecting images:**
@@ -8127,29 +8129,29 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 
 Understanding common pitfalls helps prevent issues before they occur.
 
-### Top 3 Critical Mistakes
+### Top mistakes (fast fixes)
 
-1. **🔑 Incorrect Provider Configuration**
+1. **Incorrect provider configuration**
    - *Symptom*: Authentication failures, no model response
-   - *Quick Fix*: Always set API keys as environment variables
+   - *Quick Fix*: Set API keys via environment variables (or persist them with `abstractcore --set-api-key ...`)
    - See: Authentication Errors
 
-2. **🧩 Mishandling Tool Calls**
+2. **Not handling tool calls**
    - *Symptom*: Tools not executing, streaming interruptions
    - *Quick Fix*: Use `@tool` decorator and handle tool calls properly
    - See: Tool Calls Not Working
 
-3. **💻 Provider Dependency Confusion**
+3. **Missing provider extras**
    - *Symptom*: `ModuleNotFoundError` for providers
    - *Quick Fix*: Install provider-specific packages with `pip install "abstractcore[provider]"`
    - See: ModuleNotFoundError
 
-4. **🖥️ LM Studio Server Not Enabled**
+4. **LM Studio server not enabled**
    - *Symptom*: Connection refused, no response from LM Studio
    - *Quick Fix*: Enable "Status: Running" toggle in LM Studio GUI
    - See: LM Studio Server Not Enabled
 
-5. **📏 Context Length Too Small (LM Studio/Ollama)**
+5. **Context length too small (LM Studio/Ollama)**
    - *Symptom*: 400 Bad Request, truncated responses, errors with long inputs
    - *Quick Fix*: Set "Default Context Length" to "Model Maximum" in LM Studio
    - See: Context Length Too Small
@@ -9348,6 +9350,10 @@ AbstractCore focuses on provider abstraction + infrastructure (tools, structured
 
 AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works internally and why it's designed this way.
 
+If you're new to AbstractCore and want to start building quickly, read:
+- `docs/getting-started.md`
+- `docs/api.md`
+
 Related docs (user-facing):
 - Media inputs (images/audio/video + documents): `docs/media-handling-system.md`
 - Vision input + fallback: `docs/vision-capabilities.md`
@@ -9974,17 +9980,21 @@ graph TD
 
 **Streaming with Tag Rewriting Example**:
 ```python
-# Real-time streaming with automatic tool call format conversion
-for chunk in llm.generate(
-    "Create a Python function and analyze it",
-    stream=True,
-    tools=[code_analysis_tool],
-    tool_call_tags="llama3"  # Convert to Crush CLI format
-):
-    # Immediate character-by-character output
-    print(chunk.content, end="", flush=True)
+from abstractcore import create_llm, tool
 
-    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
+@tool
+def analyze_code(code: str) -> str:
+    """Return a small, deterministic analysis."""
+    return f"chars={len(code)}"
+
+llm = create_llm("ollama", model="qwen3:4b-instruct")  # requires Ollama running (default: http://localhost:11434)
+for chunk in llm.generate(
+    "Write a Python function, then call analyze_code on it.",
+    stream=True,
+    tools=[analyze_code],
+    tool_call_tags="llama3",  # Emit <function_call>...</function_call> style tags
+):
+    print(chunk.content or "", end="", flush=True)
     if chunk.tool_calls:
         print(f"\nTool calls: {chunk.tool_calls}")
 

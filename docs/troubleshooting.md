@@ -20,29 +20,29 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 
 Understanding common pitfalls helps prevent issues before they occur.
 
-### Top 3 Critical Mistakes
+### Top mistakes (fast fixes)
 
-1. **🔑 Incorrect Provider Configuration**
+1. **Incorrect provider configuration**
    - *Symptom*: Authentication failures, no model response
-   - *Quick Fix*: Always set API keys as environment variables
+   - *Quick Fix*: Set API keys via environment variables (or persist them with `abstractcore --set-api-key ...`)
    - See: [Authentication Errors](#issue-authentication-errors)
 
-2. **🧩 Mishandling Tool Calls**
+2. **Not handling tool calls**
    - *Symptom*: Tools not executing, streaming interruptions
    - *Quick Fix*: Use `@tool` decorator and handle tool calls properly
    - See: [Tool Calls Not Working](#issue-tool-calls-not-working)
 
-3. **💻 Provider Dependency Confusion**
+3. **Missing provider extras**
    - *Symptom*: `ModuleNotFoundError` for providers
    - *Quick Fix*: Install provider-specific packages with `pip install "abstractcore[provider]"`
    - See: [ModuleNotFoundError](#issue-modulenotfounderror)
 
-4. **🖥️ LM Studio Server Not Enabled**
+4. **LM Studio server not enabled**
    - *Symptom*: Connection refused, no response from LM Studio
    - *Quick Fix*: Enable "Status: Running" toggle in LM Studio GUI
    - See: [LM Studio Server Not Enabled](#issue-lm-studio-server-not-enabled)
 
-5. **📏 Context Length Too Small (LM Studio/Ollama)**
+5. **Context length too small (LM Studio/Ollama)**
    - *Symptom*: 400 Bad Request, truncated responses, errors with long inputs
    - *Quick Fix*: Set "Default Context Length" to "Model Maximum" in LM Studio
    - See: [Context Length Too Small](#issue-context-length-too-small-400-bad-request-truncated-responses)

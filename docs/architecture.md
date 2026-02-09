@@ -2,6 +2,10 @@
 
 AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works internally and why it's designed this way.
 
+If you're new to AbstractCore and want to start building quickly, read:
+- `docs/getting-started.md`
+- `docs/api.md`
+
 Related docs (user-facing):
 - Media inputs (images/audio/video + documents): `docs/media-handling-system.md`
 - Vision input + fallback: `docs/vision-capabilities.md`
@@ -628,17 +632,21 @@ graph TD
 
 **Streaming with Tag Rewriting Example**:
 ```python
-# Real-time streaming with automatic tool call format conversion
-for chunk in llm.generate(
-    "Create a Python function and analyze it",
-    stream=True,
-    tools=[code_analysis_tool],
-    tool_call_tags="llama3"  # Convert to Crush CLI format
-):
-    # Immediate character-by-character output
-    print(chunk.content, end="", flush=True)
+from abstractcore import create_llm, tool
 
-    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
+@tool
+def analyze_code(code: str) -> str:
+    """Return a small, deterministic analysis."""
+    return f"chars={len(code)}"
+
+llm = create_llm("ollama", model="qwen3:4b-instruct")  # requires Ollama running (default: http://localhost:11434)
+for chunk in llm.generate(
+    "Write a Python function, then call analyze_code on it.",
+    stream=True,
+    tools=[analyze_code],
+    tool_call_tags="llama3",  # Emit <function_call>...</function_call> style tags
+):
+    print(chunk.content or "", end="", flush=True)
     if chunk.tool_calls:
         print(f"\nTool calls: {chunk.tool_calls}")
 
