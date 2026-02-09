@@ -704,7 +704,7 @@ try:
     response = llm.generate("Test", media=["test.jpg"])
 except ImportError as e:
     print(f"Missing dependency: {e}")
-    print("Install with: pip install \"abstractcore[media]\"")
+    print('Install with: pip install "abstractcore[media]"')
 ```
 
 **Vision model not detecting images:**
