@@ -464,7 +464,8 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **openai**: OpenAI API key
 - **anthropic**: Anthropic API key
 - **openrouter**: OpenRouter API key
-- **google**: Google API key
+- **portkey**: Portkey API key
+- **google**: Google API key (reserved for future integrations; not required for current built-in providers)
 
 ### Cache Section
 - **default_cache_dir**: General cache directory for AbstractCore (`~/.cache/abstractcore`)
@@ -491,8 +492,7 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 ### Offline Section
 - **offline_first**: Default to offline-first behavior
 - **allow_network**: Allow network access when offline-first is enabled (for API providers)
-  - **force_local_files_only**: Force HuggingFace `local_files_only` mode
-  - **provider_preferences**: Additional provider-specific settings (key-value pairs)
+- **force_local_files_only**: Force HuggingFace `local_files_only` mode
 
 ## Common Configuration Tasks
 

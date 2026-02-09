@@ -1,6 +1,12 @@
 # API (Python)
 
-This page is a user-facing map of the **public Python API**. For a complete listing of functions/classes (including events), see **[API Reference](api-reference.md)**.
+This page is a user-facing map of the **public Python API** exposed from `abstractcore` (see `abstractcore/__init__.py`). For a complete listing of functions/classes (including events), see **[API Reference](api-reference.md)**.
+
+Implementation pointers (source of truth):
+- `create_llm`: `abstractcore/core/factory.py` → `abstractcore/providers/registry.py`
+- `BasicSession`: `abstractcore/core/session.py`
+- Response/types: `abstractcore/core/types.py`
+- Tool decorator: `abstractcore/tools/core.py`
 
 ## Core entrypoints
 
@@ -15,6 +21,8 @@ llm = create_llm("openai", model="gpt-4o-mini")  # requires: pip install "abstra
 resp = llm.generate("Hello!")
 print(resp.content)
 ```
+
+Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`.
 
 ### Gateway providers (OpenRouter, Portkey)
 
@@ -42,6 +50,22 @@ print(session.generate("Give me 3 name ideas.").content)
 print(session.generate("Pick the best one.").content)
 ```
 
+### `tool` (decorator)
+
+Define tools in Python with a decorator, then pass them to `generate()` / `agenerate()`:
+
+```python
+from abstractcore import create_llm, tool
+
+@tool
+def get_weather(city: str) -> str:
+    return f"{city}: 22°C and sunny"
+
+llm = create_llm("openai", model="gpt-4o-mini")
+resp = llm.generate("Use the tool.", tools=[get_weather])
+print(resp.tool_calls)
+```
+
 ## Responses (`GenerateResponse`)
 
 Most calls return a `GenerateResponse` object (or an iterator of them for streaming). Common fields:
@@ -50,6 +74,29 @@ Most calls return a `GenerateResponse` object (or an iterator of them for stream
 - `tool_calls`: structured tool calls (pass-through by default)
 - `usage`: token usage (provider-dependent)
 - `metadata`: provider/model specific fields (for example extracted reasoning text when configured)
+
+## Model downloads (`download_model`, optional)
+
+`download_model(...)` is an **async generator** that yields `DownloadProgress` updates while a model is being fetched.
+
+Supported providers:
+- `ollama`: pulls via the Ollama HTTP API (`/api/pull`)
+- `huggingface` / `mlx`: downloads from HuggingFace Hub (requires `pip install "abstractcore[huggingface]"`; pass `token=` for gated models)
+
+Example:
+
+```python
+import asyncio
+from abstractcore import download_model
+
+async def main():
+    async for p in download_model("ollama", "qwen3:4b-instruct-2507-q4_K_M"):
+        print(p.status.value, p.message)
+
+asyncio.run(main())
+```
+
+Implementation: `abstractcore/download.py`. For provider setup and base URLs, see [Prerequisites](prerequisites.md).
 
 ## Tool calling
 

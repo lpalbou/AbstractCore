@@ -1,5 +1,8 @@
 # AbstractCore Server - Complete Configuration Reference
 
+> **Archived (historical)**: This document is kept for reference and may be outdated.
+> For current, supported configuration see **[Server](../server.md)**.
+
 ## Environment Variables
 
 ### Core Server Configuration

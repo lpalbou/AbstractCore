@@ -4,11 +4,16 @@
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
+Ecosystem note:
+- AbstractCore is part of **AbstractFramework** (umbrella: https://github.com/lpalbou/AbstractFramework).
+- In the ecosystem, **AbstractRuntime** is the recommended runtime for executing `response.tool_calls` durably (policy, retries, persistence): https://github.com/lpalbou/abstractruntime
+
 Quick start:
 - Install: `pip install abstractcore`
 - First steps: `docs/getting-started.md` -> `docs/prerequisites.md`
-- Run the server: `pip install "abstractcore[server]"` then `python -m abstractcore.server.app`
-- Repo/dev checks: `pip install -e ".[dev]"` ; `pytest -q` ; `black .` ; `ruff check .`
+- Run the gateway server: `pip install "abstractcore[server]"` then `python -m abstractcore.server.app`
+- Run the single-model endpoint: `pip install "abstractcore[server]"` then `abstractcore-endpoint --help` (see `docs/endpoint.md`)
+- Repo/dev checks: `pip install -e ".[dev,test]"` ; `pytest -q` ; `black .` ; `ruff check .`
 
 ## Read First
 
@@ -38,6 +43,8 @@ Quick start:
 
 - [Server docs](docs/server.md): run + env vars + endpoints and extensions (`api_key`, `base_url`, `agent_format`)
 - [Server implementation](abstractcore/server/app.py): FastAPI gateway source
+- [Endpoint docs](docs/endpoint.md): single-model OpenAI-compatible endpoint (`abstractcore-endpoint`)
+- [Endpoint implementation](abstractcore/endpoint/app.py): endpoint server source
 
 ## Contributing
 

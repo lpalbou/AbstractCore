@@ -465,28 +465,21 @@ kill -9 $(lsof -t -i:8000)  # Linux/Mac
 uvicorn abstractcore.server.app:app --port 3000
 ```
 
-### Issue: ABSTRACTCORE_API_KEY Error
+### Issue: Client complains about missing API key
 
 **Symptoms:**
-```
-Error: Missing environment variable: ABSTRACTCORE_API_KEY
-```
+- Your OpenAI-compatible client/CLI refuses to run without an API key (even though your server is local).
 
 **Solutions:**
 
 ```bash
-# Set the required variable
-export ABSTRACTCORE_API_KEY="unused"
-
-# For Codex CLI, set ALL three:
+# Most OpenAI-compatible clients accept a dummy key for local servers.
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
-export ABSTRACTCORE_API_KEY="unused"
 
 # Verify they're set
-echo $OPENAI_BASE_URL
-echo $OPENAI_API_KEY
-echo $ABSTRACTCORE_API_KEY
+echo "$OPENAI_BASE_URL"
+echo "$OPENAI_API_KEY"
 ```
 
 ### Issue: Server Running but No Response
@@ -553,24 +546,22 @@ curl http://localhost:1234/v1/models  # Should return models
 **Solutions:**
 
 ```bash
-# Set correct tool format for your CLI
+# AbstractCore Server controls tool-call syntax via `agent_format` (request field) or auto-detection.
+# - OpenAI/Codex style: structured tool calls are returned in `tool_calls` fields.
+# - Tag-based formats: tool calls are emitted as tagged content for clients that parse from assistant text.
 
-# For Codex CLI (qwen3 format - default)
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# For Crush CLI (llama3 format)
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# For Gemini CLI (xml format)
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Restart server after changing environment variables
-pkill -f "abstractcore.server.app"
+# If you control requests (curl/custom client), force a format with `agent_format`:
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3:4b-instruct-2507-q4_K_M",
+    "messages": [{"role": "user", "content": "Use the tool."}],
+    "tools": [{"type":"function","function":{"name":"get_weather","description":"...","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}],
+    "agent_format": "llama3"
+  }'
 ```
+
+See [Server](server.md#agentic-cli-integration) for details and supported formats.
 
 ---
 

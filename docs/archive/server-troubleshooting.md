@@ -1,5 +1,8 @@
 # AbstractCore Server - Troubleshooting & Debug Guide
 
+> **Archived (historical)**: This document is kept for reference and may be outdated.
+> For current troubleshooting see **[Troubleshooting](../troubleshooting.md)** and **[Server](../server.md)**.
+
 ## Quick Diagnosis
 
 Before diving deep, run these quick checks:

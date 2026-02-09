@@ -2,6 +2,14 @@
 
 This folder contains the **canonical user documentation** for AbstractCore. The codebase is the source of truth; if you spot a mismatch, please open an issue.
 
+## AbstractFramework ecosystem
+
+AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
+
+- **AbstractFramework (umbrella)**: https://github.com/lpalbou/AbstractFramework
+- **AbstractCore (this package)**: unified LLM interface + cross-provider infrastructure (tools, streaming, structured output, media policies)
+- **AbstractRuntime**: durable tool/effect execution, workflows, and state persistence (recommended runtime for executing `response.tool_calls`) — https://github.com/lpalbou/abstractruntime
+
 ## Start here (recommended reading order)
 
 1. **[Prerequisites](prerequisites.md)** — install/configure providers (Ollama, LMStudio, vLLM, HuggingFace, MLX, OpenAI, Anthropic, OpenRouter, Portkey, …)
@@ -35,6 +43,7 @@ This folder contains the **canonical user documentation** for AbstractCore. The 
 ## Server (optional HTTP API)
 
 - **[Server](server.md)** — OpenAI-compatible `/v1` gateway (install `pip install "abstractcore[server]"`)
+- **[Endpoint](endpoint.md)** — single-model OpenAI-compatible `/v1` endpoint (install `pip install "abstractcore[server]"`; run `abstractcore-endpoint`)
 
 ## Built-in CLI apps
 

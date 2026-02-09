@@ -6,11 +6,16 @@ Related docs (user-facing):
 - Media inputs (images/audio/video + documents): `docs/media-handling-system.md`
 - Vision input + fallback: `docs/vision-capabilities.md`
 - Capability plugins (voice/audio/vision): `docs/capabilities.md`
-- OpenAI-compatible server endpoints: `docs/server.md`
+- OpenAI-compatible gateway server: `docs/server.md`
+- Single-model OpenAI-compatible endpoint: `docs/endpoint.md`
+- Tool calling semantics (passthrough vs execution): `docs/tool-calling.md`
 
 ## System Overview
 
-AbstractCore operates as both a Python library and an optional HTTP server:
+AbstractCore operates as a Python library and can also be exposed via **optional OpenAI-compatible HTTP servers**:
+
+- **Gateway server (multi-provider)**: `abstractcore.server.app` (docs: `docs/server.md`)
+- **Endpoint server (single-model)**: `abstractcore.endpoint.app` (docs: `docs/endpoint.md`)
 
 ```mermaid
 graph TD
@@ -113,20 +118,31 @@ Gateway providers (OpenRouter/Portkey) route to external backends; AbstractCore 
 
 ### 2. Provider Interface
 
-All providers implement `AbstractCoreInterface`:
+All providers implement `AbstractCoreInterface` (see `abstractcore/core/interface.py`):
 
 ```python
 class AbstractCoreInterface(ABC):
     @abstractmethod
-    def generate(self, prompt: str, **kwargs) -> GenerateResponse:
-        """Generate response from LLM"""
+    def generate(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List[Union[str, Dict[str, Any], "MediaContent"]]] = None,
+        stream: bool = False,
+        thinking: Optional[Union[bool, str]] = None,
+        **kwargs,
+    ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        """Generate a response (or a stream of chunks)."""
 
     @abstractmethod
     def get_capabilities(self) -> List[str]:
         """Get provider capabilities"""
 
+    @abstractmethod
     def unload_model(self, model_name: str) -> None:
-        """Unload/cleanup resources for a specific model (best-effort)"""
+        """Unload/cleanup resources for a specific model (best-effort)."""
 ```
 
 This ensures:
@@ -253,7 +269,7 @@ graph TD
 2. **Basic Processing**: Simple text extraction
 3. **Metadata Fallback**: File information and properties
 4. **Degrades gracefully for documents**: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
-5. **Policy-driven for true multimodal inputs**: for image/audio/video message parts, behavior is policy-driven; unsupported requests fail loudly unless an explicit enrichment fallback is configured (see ADR-0028).
+5. **Policy-driven for true multimodal inputs**: for image/audio/video message parts, behavior is policy-driven; unsupported requests fail loudly unless an explicit enrichment fallback is configured (see `docs/media-handling-system.md` and `docs/vision-capabilities.md`).
 
 #### Unified Media API
 
@@ -275,7 +291,7 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 ```
 
 #### Capability plugins (voice/audio/vision)
-To keep `abstractcore` dependency-light (ADR-0001) while still enabling “must work” deterministic modality APIs, AbstractCore supports optional **capability plugins** (ADR-0028):
+To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
 - `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
 
@@ -322,9 +338,11 @@ sequenceDiagram
     Core->>App: GenerateResponse
 ```
 
-### 4. Tool System Architecture
+Note: in the Python API, `execute_tools` defaults to `False` (**pass-through**). Tool calls are returned in `GenerateResponse.tool_calls` for your host/runtime to execute. `execute_tools=True` exists for simple demos but is deprecated for most production use cases. The optional HTTP gateway server runs in pass-through mode.
 
-The tool system provides universal tool execution across all providers:
+### 5. Tool System Architecture
+
+The tool system provides universal tool-call detection (and optional local execution) across all providers:
 
 ```mermaid
 graph TD
@@ -349,7 +367,7 @@ graph TD
 
 1. **Tool Detection**: Parse tool calls from LLM response
 2. **Event Emission**: Emit `TOOL_STARTED` (preventable)
-3. **Local Execution**: Execute tools in AbstractCore (not by provider)
+3. **Optional local execution (deprecated)**: execute tools inside AbstractCore when `execute_tools=True` (providers never execute arbitrary local tools)
 4. **Result Collection**: Gather results and error information
 5. **Event Emission**: Emit `TOOL_COMPLETED` with results
 6. **Response Integration**: Append tool results to original response
@@ -421,7 +439,7 @@ graph TD
 - **Universal Detection**: Automatically detects source format from any model
 - **Graceful Fallback**: Returns original content if rewriting fails
 
-### 5. Retry and Reliability System
+### 6. Retry and Reliability System
 
 Production-grade error handling with multiple layers:
 
@@ -469,7 +487,7 @@ config = RetryConfig(
 llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
 ```
 
-### 6. Event System
+### 7. Event System
 
 Observability hooks through events:
 
@@ -527,7 +545,7 @@ on_global(EventType.TOOL_COMPLETED, log_tools)
 on_global(EventType.GENERATION_COMPLETED, track_performance)
 ```
 
-### 7. Structured Output System with Streaming Integration
+### 8. Structured Output System with Streaming Integration
 
 Type-safe responses with automatic validation, retry, and unified streaming:
 
@@ -564,7 +582,7 @@ graph TD
 
 #### Unified Streaming Architecture
 
-AbstractCore's streaming system provides high-performance, character-by-character streaming with real-time tool detection:
+AbstractCore’s streaming system provides character-by-character streaming with incremental tool detection and optional tool-call syntax rewriting.
 
 **Architecture Components**:
 
@@ -573,7 +591,7 @@ graph TD
     A[Stream Input] --> B[UnifiedStreamProcessor]
     B --> C[IncrementalToolDetector]
     C --> D[Tag Rewriter]
-    D --> E[Tool Execution]
+    D --> E[Tool Execution (optional)]
     E --> F[Stream Output]
 
     B --> G[Character-by-Character Handling]
@@ -590,8 +608,8 @@ graph TD
 
 1. **Unified Streaming Strategy**
    - Single consistent approach across all providers
-   - First chunk delivery in <10ms
-   - Minimal code complexity
+   - Best-effort time-to-first-token (TTFT) telemetry for debugging
+   - Minimal buffering (incremental parsing)
 
 2. **Incremental Tool Detection**
    - Real-time tool call detection during streaming
@@ -599,14 +617,14 @@ graph TD
    - Handles partial tool calls across chunk boundaries
 
 3. **Character-by-Character Streaming**
-   - Handles micro-chunking from providers (22+ tiny chunks per tool call)
+   - Handles micro-chunking from providers (very small deltas)
    - Intelligent buffering for partial tool calls
    - Robust parsing with auto-repair for malformed JSON
 
 4. **Tool Call Tag Rewriting Integration**
    - Real-time format conversion during streaming
    - Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)
-   - Zero buffering overhead for tag conversion
+   - Designed to avoid large buffering while keeping tool calls structured
 
 **Streaming with Tag Rewriting Example**:
 ```python
@@ -627,12 +645,9 @@ for chunk in llm.generate(
 # Output format: <function_call>{"name": "analyze_code"}...</function_call>
 ```
 
-**Performance Characteristics**:
-- **First Chunk Latency**: <10ms across all providers
-- **Tool Detection Overhead**: <1ms per chunk
-- **Memory Efficiency**: Linear, bounded growth
-- **Character-by-Character Support**: Handles extreme micro-chunking
-- **Tag Rewriting**: Zero additional latency
+Implementation pointers (source of truth):
+- Unified streaming + tool detection: `abstractcore/providers/streaming.py`
+- Streaming wrapper + TTFT metadata: `abstractcore/providers/base.py`
 
 #### Automatic Error Feedback
 
@@ -649,7 +664,7 @@ Please correct these errors and provide valid JSON.
 """
 ```
 
-### 8. Session Management
+### 9. Session Management
 
 Simple conversation memory without complexity:
 
@@ -673,7 +688,7 @@ graph LR
     style B fill:#4caf50
 ```
 
-### 9. Server Architecture (Optional Component)
+### 10. Server Architecture (Optional Component)
 
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
 
@@ -760,7 +775,7 @@ sequenceDiagram
 ### 1. Provider Agnostic
 - **Same code works everywhere**: Switch providers by changing one line
 - **No vendor lock-in**: Easy migration between cloud and local providers
-- **Consistent behavior**: Tools, streaming, structured output work identically
+- **Consistent semantics**: tools, streaming, and structured output follow the same API surface (provider/model differences still apply)
 
 ### 2. Production Ready
 - **Automatic reliability**: Built-in retry logic and circuit breakers
@@ -820,40 +835,40 @@ Common levers:
 ## Security Considerations
 
 ### 1. Tool Execution Safety
-- **Local execution**: Tools run in AbstractCore, not by providers
+- **Local execution (optional)**: tool execution is local (never executed by the provider); by default tool calls are returned for your host/runtime to execute
 - **Event prevention**: Stop dangerous tools before execution
 - **Input validation**: Validate tool parameters
 
 ### 2. API Key Management
 - **Environment variables**: Secure key storage
-- **No logging**: Keys never appear in logs
+- **Avoid logging**: treat logs as sensitive; do not log secrets (AbstractCore tries to avoid printing keys in logs)
 - **Provider isolation**: Keys scoped to specific providers
 
 ### 3. Data Privacy
 - **Local options**: Support for local providers (Ollama, MLX)
-- **No data retention**: AbstractCore doesn't store conversation data
+- **No persistent storage by default**: conversation state lives in memory (for example `BasicSession`) unless you explicitly save it or enable tracing/logging
 - **Transparent processing**: All operations are observable through events
 
 ## Testing Strategy
 
-### 1. No Mocking Philosophy
-- **Real implementations**: Test against actual providers
-- **Real models**: Use actual LLM models in tests
-- **Real scenarios**: Test real-world usage patterns
+The repo uses a mix of unit tests and integration tests. Some tests are provider-/network-/hardware-dependent and are opt-in.
 
-### 2. Provider Coverage
-- **All providers tested**: Every provider has comprehensive tests
-- **Cross-provider consistency**: Same tests run across all providers
-- **Feature parity**: Ensure consistent behavior
+Quick pointers:
+- Run: `pytest -q`
+- Vision tests: `tests/README_VISION_TESTING.md`
+- Seed tests: `tests/README_SEED_TESTING.md`
+- Streaming/tool parsing tests: `tests/streaming/` and `tests/test_agentic_cli_compatibility.py`
+- Server/endpoint tests: `tests/server/` and `tests/test_abstractendpoint_singleton_provider.py`
 
-### 3. Reliability Testing
-- **Failure scenarios**: Test retry logic and error handling
-- **Performance tests**: Measure latency and throughput
-- **Integration tests**: Test with real external dependencies
+## Integration with AbstractFramework
 
-## Integration with Abstract Framework
+AbstractCore is a core package in the **AbstractFramework** ecosystem:
 
-AbstractCore is the foundation layer for the Abstract Framework stack:
+- AbstractFramework (umbrella): https://github.com/lpalbou/AbstractFramework
+- AbstractCore (this repo): https://github.com/lpalbou/AbstractCore
+- AbstractRuntime: https://github.com/lpalbou/abstractruntime
+
+In this ecosystem, AbstractCore focuses on **LLM I/O + provider abstraction**, while AbstractRuntime focuses on **durable execution** (effects/tools/workflows/state). AbstractCore remains usable standalone; when you need durability/policy/sandboxing around tools, plug it into a runtime (for example AbstractRuntime).
 
 ```mermaid
 graph TD

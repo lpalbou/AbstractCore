@@ -25,6 +25,25 @@ First-class support for:
 
 Docs: [Getting Started](docs/getting-started.md) · [FAQ](docs/faq.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
 
+## AbstractFramework ecosystem
+
+AbstractCore is part of the **AbstractFramework** ecosystem:
+
+- **AbstractFramework (umbrella)**: https://github.com/lpalbou/AbstractFramework
+- **AbstractCore (this package)**: provider-agnostic LLM I/O + reliability primitives
+- **AbstractRuntime**: durable tool/effect execution, workflows, and state persistence (recommended host runtime) — https://github.com/lpalbou/abstractruntime
+
+By default, AbstractCore is **pass-through for tools** (`execute_tools=False`): it returns structured tool calls in `response.tool_calls`, and your runtime decides *whether/how* to execute them (policy, sandboxing, retries, persistence). See [Tool Calling](docs/tool-calling.md) and [Architecture](docs/architecture.md).
+
+```mermaid
+graph LR
+  APP[Your app] --> AC[AbstractCore]
+  AC --> P[Provider adapter]
+  P --> LLM[LLM backend]
+  AC -. tool_calls .-> RT[AbstractRuntime (optional)]
+  RT -. tool results .-> AC
+```
+
 ## Install
 
 ```bash
@@ -235,6 +254,8 @@ print(resp.choices[0].message.content)
 ```
 
 See [Server](docs/server.md).
+
+Single-model `/v1` endpoint (one provider/model per worker): see [Endpoint](docs/endpoint.md) (`abstractcore-endpoint`).
 
 ## CLI (optional)
 

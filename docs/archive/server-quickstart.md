@@ -1,5 +1,8 @@
 # AbstractCore Server - 5-Minute Quick Start
 
+> **Archived (historical)**: This document is kept for reference and may be outdated.
+> For current, supported instructions see **[Server](../server.md)** and **[Troubleshooting](../troubleshooting.md)**.
+
 ## What You'll Achieve
 
 In 5 minutes, you'll have a universal LLM gateway running locally that:

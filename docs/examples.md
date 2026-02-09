@@ -834,7 +834,7 @@ for rec in review.recommendations:
 ### Basic Streaming (Unified 2025)
 
 ```python
-# Real-time streaming works identically across ALL providers
+# Streaming uses a unified processor across providers (exact chunking depends on the backend)
 from abstractcore import create_llm
 
 llm = create_llm("anthropic", model="claude-haiku-4-5")
@@ -844,7 +844,7 @@ for chunk in llm.generate(
     "Write a short story about a programmer who discovers their code is alive",
     stream=True
 ):
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or "", end="", flush=True)
 print("\n")
 ```
 
@@ -866,17 +866,17 @@ def streaming_with_insights(prompt):
     print("Response: ", end="", flush=True)
     for chunk in llm.generate(prompt, stream=True):
         chunks.append(chunk)
-        print(chunk.content, end="", flush=True)
+        print(chunk.content or "", end="", flush=True)
 
         # Optional real-time performance insights
         if len(chunks) % 10 == 0:
             current_time = time.time() - start_time
-            chars_generated = sum(len(c.content) for c in chunks)
+            chars_generated = sum(len(c.content or "") for c in chunks)
             print(f"\n[PROGRESS] {len(chunks)} chunks, {chars_generated} chars, {current_time:.1f}s")
 
     # Final performance summary
     total_time = time.time() - start_time
-    total_chars = sum(len(chunk.content) for chunk in chunks)
+    total_chars = sum(len(chunk.content or "") for chunk in chunks)
 
     print(f"\n\n[STATS] Streaming Performance:")
     print(f"- Total Chunks: {len(chunks)}")
@@ -924,7 +924,7 @@ weather_tool = {
     }
 }
 
-# Works identically across providers
+# Works similarly across providers (exact chunking depends on the backend)
 llm = create_llm("ollama", model="qwen3:4b-instruct")
 
 print("AI Assistant: ", end="", flush=True)
@@ -934,7 +934,7 @@ for chunk in llm.generate(
     stream=True
 ):
     # Real-time chunk processing and tool call detection
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or "", end="", flush=True)
 
     # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
@@ -942,11 +942,10 @@ for chunk in llm.generate(
 
 print("\n")  # Newline after streaming
 
-# Features:
+# Notes:
 # - Real-time tool call detection
-# - Zero buffering overhead
-# - Works with OpenAI, Anthropic, Ollama, MLX
-# - Consistent behavior across all providers
+# - Streams chunks as they arrive (minimal buffering)
+# - Works with OpenAI, Anthropic, Ollama, MLX (provider-dependent details)
 ```
 
 ### Performance-Optimized Streaming
@@ -973,10 +972,10 @@ def compare_providers(prompt):
             chunks = []
             for chunk in llm.generate(prompt, stream=True):
                 chunks.append(chunk)
-                print(chunk.content, end="", flush=True)
+                print(chunk.content or "", end="", flush=True)
 
             total_time = time.time() - start_time
-            total_chars = sum(len(chunk.content) for chunk in chunks)
+            total_chars = sum(len(chunk.content or "") for chunk in chunks)
 
             print(f"\n\n[PERF] {provider.upper()} Performance:")
             print(f"- Chunks: {len(chunks)}")

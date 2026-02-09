@@ -2,6 +2,8 @@
 
 Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.
 
+If you want a dedicated **single-model** `/v1` server (one provider/model per worker), see [Endpoint](endpoint.md).
+
 ## Interactive API docs (start here)
 
 Visit while the server is running:
@@ -63,15 +65,17 @@ print(response.choices[0].message.content)
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENROUTER_API_KEY="sk-or-..."
+export PORTKEY_API_KEY="pk_..."         # optional (Portkey)
+export PORTKEY_CONFIG="pcfg_..."        # required for Portkey routing
 
 # Local providers
 export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HOST)
 export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
 export VLLM_BASE_URL="http://localhost:8000/v1"
 
-# Default settings
-export ABSTRACTCORE_DEFAULT_PROVIDER=openai
-export ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
+# Server bind (only used by `python -m abstractcore.server.app`)
+export HOST="0.0.0.0"
+export PORT="8000"
 
 # Debug mode
 export ABSTRACTCORE_DEBUG=true
@@ -120,11 +124,12 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 ```
 
 **Key Parameters:**
-- `model` (required): Format `"provider/model-name"` (e.g., `"openai/gpt-4o-mini"`)
+- `model` (required): Prefer `"provider/model-name"` (e.g., `"openai/gpt-4o-mini"`). If you pass a bare model name (no `/`), the server will best-effort auto-detect a provider.
 - `messages` (required): Array of message objects
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
-- `api_key` (optional, AbstractCore extension): Provider API key for per-request authentication. Falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`)
+- `agent_format` (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (`"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"`). When omitted, the server auto-detects from user-agent + model heuristics.
+- `api_key` (optional, AbstractCore extension): Provider API key for per-request authentication. Falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `PORTKEY_API_KEY`)
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"` or `"low"|"medium"|"high"` when supported)
@@ -744,65 +749,54 @@ Server health check for monitoring.
 
 ---
 
-## Agentic CLI Integration
+## Agentic CLI integration
 
-Use AbstractCore server with agentic CLI tools like Codex, Crush, and Gemini CLI.
+AbstractCore Server is **OpenAI-compatible**. Most OpenAI-compatible CLIs/SDKs can be pointed at it by setting:
 
-### Codex CLI
+- `OPENAI_BASE_URL="http://localhost:8000/v1"` (or an equivalent flag)
+- `OPENAI_API_KEY="unused"` (many clients require a non-empty key even for local servers)
+
+### Tool calling interoperability
+
+- The server **does not execute tools** (it always returns tool calls; your host/runtime executes them).
+- It can emit tool calls either as structured `tool_calls` (OpenAI/Codex style) **or** as tagged content for clients that parse tool calls from assistant text.
+- Control the output format with `agent_format` (request body, AbstractCore extension), or rely on auto-detection (user-agent + model heuristics).
+
+Supported `agent_format` values: `auto`, `openai`, `codex`, `qwen3`, `llama3`, `gemma`, `xml`, `passthrough`.
+
+### Codex CLI (example)
 
 ```bash
-# Setup
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
-export ABSTRACTCORE_API_KEY="unused"
 
-# Use with any model
 codex --model "ollama/qwen3-coder:30b" "Write a factorial function"
 ```
 
-### Crush CLI (LLaMA3 format)
+### Forcing a format (curl)
 
 ```bash
-# Configure server
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Configure CLI
-export OPENAI_BASE_URL="http://localhost:8000/v1"
-export OPENAI_API_KEY="unused"
-
-# Use
-crush --model "anthropic/claude-haiku-4-5" "Explain this code"
-```
-
-### Gemini CLI (XML format)
-
-```bash
-# Configure server
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Configure CLI
-export OPENAI_BASE_URL="http://localhost:8000/v1"
-export OPENAI_API_KEY="unused"
-
-# Use
-gemini-cli --model "ollama/qwen3-coder:30b" "Review this project"
-```
-
-### Tool Call Format Configuration
-
-```bash
-# Set format for your CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=qwen3    # Codex CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3   # Crush CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml      # Gemini CLI
-
-# Control tool execution
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=true   # Server executes
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3:4b-instruct-2507-q4_K_M",
+    "messages": [{"role": "user", "content": "Use the tool."}],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get weather by city",
+          "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+          }
+        }
+      }
+    ],
+    "agent_format": "llama3"
+  }'
 ```
 
 ---
@@ -815,9 +809,6 @@ export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client
 FROM python:3.9-slim
 
 RUN pip install "abstractcore[server]"
-
-ENV ABSTRACTCORE_DEFAULT_PROVIDER=openai
-ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 
 EXPOSE 8000
 

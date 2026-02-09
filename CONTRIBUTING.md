@@ -69,8 +69,12 @@ Some provider-/network-/hardware-dependent tests are intentionally opt-in and ma
 
 If a change affects user-facing behavior, update the docs entry points:
 - `README.md`
+- `docs/README.md`
 - `docs/getting-started.md`
+- `docs/architecture.md`
+- `docs/api.md`
 - `docs/faq.md`
+- `docs/server.md` (if the HTTP gateway is affected)
 
 Keep language clear, user-oriented, and accurate to the code (the code is the source of truth).
 
@@ -94,4 +98,3 @@ For a release:
 ## Security
 
 If you believe you found a security vulnerability, please follow `SECURITY.md` for responsible disclosure.
-
