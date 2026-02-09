@@ -100,6 +100,8 @@ AbstractCore supports native tool calling (when the provider supports it) and pr
 
 By default, tool execution is pass-through (`execute_tools=False`): you get tool calls in `resp.tool_calls`, and your host/runtime decides how to execute them.
 
+In the AbstractFramework ecosystem, **AbstractRuntime** is the recommended runtime for executing tool calls durably (policy, retries, persistence). See [Architecture](architecture.md) and [Tool Calling](tool-calling.md).
+
 ```python
 from abstractcore import create_llm, tool
 
@@ -213,3 +215,4 @@ abstractcore-chat --provider openai --model gpt-4o-mini
 - [API Reference](api-reference.md) — complete function/class listing
 - [Troubleshooting](troubleshooting.md) — common errors and fixes
 - [Server](server.md) — OpenAI-compatible HTTP gateway
+- [Endpoint](endpoint.md) — single-model OpenAI-compatible endpoint (one provider/model per worker)

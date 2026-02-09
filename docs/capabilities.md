@@ -50,13 +50,13 @@ def ask_llm(provider_name, question):
     llm = create_llm(provider_name, model="default")
     return llm.generate(question)
 
-# All of these work identically
+# All of these use the same API surface
 ask_llm("openai", "What is Python?")
 ask_llm("anthropic", "What is Python?")
 ask_llm("ollama", "What is Python?")
 ```
 
-**Why this helps**: Provides consistent tool calling, streaming, and structured output across all providers.
+**Why this helps**: Provides consistent tool calling, streaming, and structured output across supported providers.
 
 ### 2. Production-Grade Reliability
 
@@ -71,7 +71,7 @@ ask_llm("ollama", "What is Python?")
 
 ### 3. Universal Tool Calling
 
-**What it does**: Tools work consistently across ALL providers, even those without native tool support.
+**What it does**: Tools work consistently across supported providers, even those without native tool support.
 
 ```python
 tools = [{"name": "get_weather", "description": "Get weather", ...}]
@@ -332,7 +332,7 @@ template = PromptTemplate("Translate '{text}' to {language}")  # Not provided
    - Local and cloud provider support
 
 3. **Universal Tool Calling**
-   - Tools that work across ALL providers
+   - Tools that work across supported providers
    - Consistent tool execution regardless of native support
    - Event-driven tool control and monitoring
 

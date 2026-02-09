@@ -263,7 +263,7 @@ summarizer_claude = BasicSummarizer(llm_claude)
 llm_ollama = create_llm("ollama", model="llama3.2")
 summarizer_local = BasicSummarizer(llm_ollama)
 
-# All work identically
+# Same API surface (results vary by model/provider)
 result = summarizer_openai.summarize(text)
 result = summarizer_claude.summarize(text)
 result = summarizer_local.summarize(text)

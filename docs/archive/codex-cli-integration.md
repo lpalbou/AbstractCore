@@ -1,5 +1,8 @@
 # Codex CLI Integration with AbstractCore
 
+> **Archived (historical)**: This document is kept for reference and may be outdated.
+> For current, supported instructions see **[Server](../server.md)** (agentic CLI integration) and **[Troubleshooting](../troubleshooting.md)**.
+
 ## Overview
 
 AbstractCore provides seamless integration with Codex CLI, enabling powerful AI-assisted coding across different local and cloud language models. This guide covers everything you need to know about setting up and using Codex CLI with AbstractCore.

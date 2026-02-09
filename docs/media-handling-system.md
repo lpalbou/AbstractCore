@@ -338,7 +338,7 @@ response = llm.generate(
 
 ### CLI Usage
 
-**All these examples work correctly in AbstractCore CLI:**
+These examples work in AbstractCore CLI when `abstractcore[media]` is installed and your selected provider/model supports the requested media (or you configured fallbacks):
 
 ```bash
 # PDF Analysis - Working
@@ -360,40 +360,41 @@ python -m abstractcore.utils.cli --prompt "What's in this image? @screenshot.png
 python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and explain trends"
 ```
 
-### Cross-Provider Consistency Verified
+### Cross-provider semantics (what’s consistent)
 
 ```python
-# Same media processing works identically across all providers
-media_files = ["report.pdf", "chart.png", "data.xlsx"]
-prompt = "Analyze these business documents and provide insights"
+# AbstractCore exposes a single `media=[...]` parameter across providers, but behavior
+# depends on provider/model capabilities and your media policies.
 
-# OpenAI - Verified
+# Documents (PDF/Office/text/CSV/TSV/...) are extracted to text/metadata and injected into the request.
+# This generally works across providers because the final payload is text.
+media_files = ["report.pdf", "data.xlsx"]
+prompt = "Analyze these documents and provide insights"
+
+# OpenAI
 openai_llm = create_llm("openai", model="gpt-4o")
 openai_response = openai_llm.generate(prompt, media=media_files)
 
-# Anthropic - Verified
-anthropic_llm = create_llm("anthropic", model="claude-3.5-sonnet")
+# Anthropic
+anthropic_llm = create_llm("anthropic", model="claude-haiku-4-5")
 anthropic_response = anthropic_llm.generate(prompt, media=media_files)
 
-# Local models - Verified
-lmstudio_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")
-lmstudio_response = lmstudio_llm.generate(prompt, media=media_files)
-
-# Result: All providers work identically with the same strong results!
+# Image/audio/video inputs are policy-driven and require native support or explicit fallbacks.
+# See: docs/vision-capabilities.md and docs/media-handling-system.md (policies + fallbacks).
 ```
 
 ### Streaming with Media
 
 ```python
 # Real-time streaming responses with media
-llm = create_llm("anthropic", model="claude-3.5-sonnet")
+llm = create_llm("openai", model="gpt-4o")  # requires: pip install "abstractcore[openai]"
 
 for chunk in llm.generate(
     "Describe this image in detail",
     media=["complex_diagram.png"],
     stream=True
 ):
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or "", end="", flush=True)
 ```
 
 ## Advanced Features

@@ -39,6 +39,20 @@ from abstractcore import create_llm
 llm = create_llm("openai", model="gpt-4o-mini")
 ```
 
+## How does AbstractCore relate to AbstractFramework / AbstractRuntime?
+
+AbstractCore is one of the core packages in the **AbstractFramework** ecosystem:
+
+- AbstractFramework (umbrella): https://github.com/lpalbou/AbstractFramework
+- AbstractCore (this package): unified LLM interface + cross-provider infrastructure
+- AbstractRuntime: durable tool/effect execution, workflows, and state persistence — https://github.com/lpalbou/abstractruntime
+
+AbstractCore is usable standalone. In the ecosystem, the common pattern is:
+- AbstractCore produces `resp.content` + `resp.tool_calls`
+- a runtime (for example AbstractRuntime) decides whether/how to execute tools (policy, sandboxing, retries, persistence)
+
+See [Architecture](architecture.md) and [Tool Calling](tool-calling.md).
+
 ## How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?
 
 Use the matching provider and set `base_url` (or the provider’s base-url env var).

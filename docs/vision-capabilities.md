@@ -77,7 +77,7 @@ Creating/editing images and videos is a **deterministic capability** that lives 
 2) **AbstractCore Server (HTTP interop)**: run the optional server and enable `/v1/images/*` endpoints delegated to `abstractvision`.  
    See: `docs/server.md`
 
-This separation keeps `abstractcore` dependency-light (ADR-0001 / ADR-0028).
+This separation keeps the default `abstractcore` install dependency-light: input handling lives in AbstractCore, and generative vision outputs live in `abstractvision`.
 
 ## Troubleshooting (common)
 
@@ -88,4 +88,5 @@ This separation keeps `abstractcore` dependency-light (ADR-0001 / ADR-0028).
 ## Related
 - Media pipeline overview: `docs/media-handling-system.md`
 - Server endpoints: `docs/server.md`
-- Framework-level guide (input vs capabilities): `docs/guide/capabilities.md` (monorepo)
+- Capability plugins (voice/audio/vision): `docs/capabilities.md`
+- Architecture overview: `docs/architecture.md`

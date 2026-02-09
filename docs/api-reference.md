@@ -160,30 +160,27 @@ tools = [{
 response = llm.generate("What's the weather in Paris?", tools=tools)
 ```
 
-**Streaming (Unified 2025 Implementation):**
+**Streaming:**
 ```python
-# Streaming works identically across ALL providers
 print("AI: ", end="")
 for chunk in llm.generate(
     "Create a Python function with a tool",
     stream=True,
-    tools=[code_analysis_tool]
+    tools=tools
 ):
     # Real-time chunk processing
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or "", end="", flush=True)
 
     # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
         print(f"\nTool calls: {chunk.tool_calls}")
 ```
 
-**Streaming Features**:
-- First chunk in <10ms
-- 🔧 Unified strategy across providers
-- 🛠️ Real-time tool call detection
-- 💨 Zero buffering overhead
-- Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
-- 🔒 Robust error handling for malformed responses
+**Streaming notes**:
+- Streaming uses a unified processor across providers; exact chunking behavior depends on the backend.
+- Tool calls are surfaced as structured dicts in `chunk.tool_calls`; execute them in your host/runtime (pass-through by default).
+- If you need tool-call markup preserved/re-written in `chunk.content`, pass `tool_call_tags=...` (see [Tool Call Syntax Rewriting](tool-syntax-rewriting.md)).
+- In streaming mode, AbstractCore records a best-effort TTFT metric in `chunk.metadata["_timing"]["ttft_ms"]` when available (for debugging/observability).
 
 #### agenerate()
 
@@ -366,11 +363,11 @@ class GenerateResponse:
 ```python
 response = llm.generate("Explain quantum computing")
 
-# Consistent access across ALL providers
-print(f"Input tokens: {response.input_tokens}")      # Always available
-print(f"Output tokens: {response.output_tokens}")    # Always available  
-print(f"Total tokens: {response.total_tokens}")      # Always available
-print(f"Generation time: {response.gen_time}ms")  # Always available
+# Best-effort access across supported providers (may be None depending on backend/config)
+print(f"Input tokens: {response.input_tokens}")      # None if usage isn't reported/estimated
+print(f"Output tokens: {response.output_tokens}")    # None if usage isn't reported/estimated
+print(f"Total tokens: {response.total_tokens}")      # None if usage isn't reported/estimated
+print(f"Generation time: {response.gen_time}ms")     # None if timing wasn't captured
 
 # Comprehensive summary
 print(f"Summary: {response.get_summary()}")  # Model | Tokens | Time | Tools
