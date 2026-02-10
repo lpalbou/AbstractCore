@@ -257,6 +257,67 @@ def _vision_backend_kind() -> str:
     return v
 
 
+_KNOWN_MODEL_PREFIXES: set[str] = {
+    # AbstractCore providers (model ids often look like provider/model or provider/org/model).
+    "openai",
+    "anthropic",
+    "openrouter",
+    "portkey",
+    "ollama",
+    "lmstudio",
+    "vllm",
+    "openai-compatible",
+    "openai_compatible",
+    "huggingface",
+    "hf",
+    "mlx",
+    # Vision backend families (AbstractVision).
+    "diffusers",
+    "sdcpp",
+}
+
+
+def _split_known_prefix(model: str) -> tuple[Optional[str], str]:
+    s = str(model or "").strip()
+    if not s or "/" not in s:
+        return None, s
+    head, tail = s.split("/", 1)
+    head_s = head.strip()
+    if head_s in _KNOWN_MODEL_PREFIXES:
+        return head_s, tail.strip()
+    return None, s
+
+
+def _normalize_request_model_for_backend(request_model: Any) -> Optional[str]:
+    """Normalize AbstractCore-style model ids into AbstractVision backend model ids.
+
+    This keeps `/v1/images/*` compatible with AbstractCore's multi-provider model naming:
+    - `huggingface/Qwen/Qwen-Image-2512` -> `Qwen/Qwen-Image-2512` (Diffusers)
+    - `mlx/Qwen/Qwen-Image-2512` -> `Qwen/Qwen-Image-2512` (Diffusers; device selection is env-driven)
+
+    For non-vision providers (e.g. `openai/gpt-4o-mini`), we intentionally drop the request model unless a
+    vision upstream proxy is configured. This enables a "vision default" behavior via env configuration.
+    """
+    model = str(request_model or "").strip()
+    if not model:
+        return None
+
+    prefix, rest = _split_known_prefix(model)
+    if prefix is None:
+        return model
+
+    # Local generation backends: strip prefix and pass through.
+    if prefix in {"huggingface", "hf", "mlx", "diffusers", "sdcpp"}:
+        return rest or None
+
+    # Other providers: only use the request model when proxying to an upstream images endpoint.
+    if _env("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL"):
+        return rest or None
+
+    # No upstream: treat as "no request model" so env-configured vision defaults apply.
+    return None
+
+
 def _looks_like_filesystem_path(model: str) -> bool:
     s = str(model or "").strip()
     if not s:
@@ -292,7 +353,7 @@ def _looks_like_hf_repo_id(model: str) -> bool:
 
 
 def _infer_backend_kind(request_model: Any) -> str:
-    model = str(request_model or "").strip()
+    model = str(_normalize_request_model_for_backend(request_model) or "").strip()
     if model:
         if _looks_like_filesystem_path(model):
             return "sdcpp"
@@ -585,8 +646,9 @@ def _coerce_float(v: Any) -> Optional[float]:
 
 
 def _resolve_backend(request_model: Any):
-    req_model = str(request_model or "").strip()
-    backend_kind = _effective_backend_kind(request_model)
+    normalized = _normalize_request_model_for_backend(request_model)
+    req_model = str(normalized or "").strip()
+    backend_kind = _effective_backend_kind(normalized)
 
     # Important: return "not configured" errors without requiring optional deps.
     if backend_kind == "auto_unconfigured":
@@ -594,7 +656,7 @@ def _resolve_backend(request_model: Any):
             status_code=501,
             detail=(
                 "Vision image endpoints are not configured. "
-                "Either pass `model` in the request (recommended), or set one of:\n"
+                "Either pass a vision-capable `model` in the request (recommended), or set one of:\n"
                 "- ABSTRACTCORE_VISION_MODEL_ID (Diffusers)\n"
                 "- ABSTRACTCORE_VISION_UPSTREAM_BASE_URL (OpenAI-compatible proxy)\n"
                 "- ABSTRACTCORE_VISION_SDCPP_MODEL / ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL (stable-diffusion.cpp)"
