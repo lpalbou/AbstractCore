@@ -1,0 +1,586 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "abstractcore"
+dynamic = ["version"]
+description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Laurent-Philippe Albou", email = "contact@abstractcore.ai"}
+]
+maintainers = [
+    {name = "Laurent-Philippe Albou", email = "contact@abstractcore.ai"}
+]
+keywords = [
+    "llm",
+    "openai",
+    "anthropic",
+    "ollama",
+    "lmstudio",
+    "huggingface",
+    "mlx",
+    "ai",
+    "machine-learning",
+    "natural-language-processing",
+    "tool-calling",
+    "streaming"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+]
+requires-python = ">=3.9"
+
+# Core dependencies - minimal set for basic functionality
+dependencies = [
+    "pydantic>=2.0.0,<3.0.0",
+    "httpx>=0.24.0,<1.0.0",
+    # Keep the default install small and import-safe. Optional features (tools/media/embeddings)
+    # provide their own dependencies via extras.
+]
+
+[project.urls]
+Homepage = "https://lpalbou.github.io/AbstractCore"
+Documentation = "https://github.com/lpalbou/AbstractCore#readme"
+Repository = "https://github.com/lpalbou/AbstractCore"
+"Bug Tracker" = "https://github.com/lpalbou/AbstractCore/issues"
+Changelog = "https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md"
+
+[project.scripts]
+# Configuration CLI (manage AbstractCore settings, API keys, models)
+abstractcore = "abstractcore.config.main:main"
+abstractcore-config = "abstractcore.config.main:main"
+
+# Interactive Chat CLI (REPL for LLM interaction)
+abstractcore-chat = "abstractcore.utils.cli:main"
+
+# Single-model OpenAI-compatible endpoint (local inference hosting)
+abstractcore-endpoint = "abstractcore.endpoint.app:main"
+
+# Built-in Applications
+summarizer = "abstractcore.apps.summarizer:main"
+abstractcore-summarizer = "abstractcore.apps.summarizer:main"
+extractor = "abstractcore.apps.extractor:main"
+abstractcore-extractor = "abstractcore.apps.extractor:main"
+judge = "abstractcore.apps.judge:main"
+abstractcore-judge = "abstractcore.apps.judge:main"
+intent = "abstractcore.apps.intent:main"
+abstractcore-intent = "abstractcore.apps.intent:main"
+deepsearch = "abstractcore.apps.deepsearch:main"
+abstractcore-deepsearch = "abstractcore.apps.deepsearch:main"
+
+[project.optional-dependencies]
+# Individual providers
+openai = [
+    "openai>=1.0.0,<2.0.0",
+]
+
+anthropic = [
+    "anthropic>=0.25.0,<1.0.0",
+]
+
+ollama = [
+    # No additional dependencies - uses core httpx
+]
+
+lmstudio = [
+    # No additional dependencies - uses core httpx
+]
+
+huggingface = [
+    # NOTE:
+    # - `mlx-lm` currently pins `transformers==5.0.0rc*` (and will likely move to 5.0.0+),
+    #   so the HuggingFace extra must not hard-block Transformers v5 if we want `abstractcore[all]`
+    #   (which includes both `huggingface` and `mlx`) to be installable on Apple Silicon.
+    "transformers>=4.57.1,<6.0.0",  # Required for GLM4V architecture support (Glyph, GLM-4.1V)
+    "torch>=2.6.0,<3.0.0",  # Required for EmbeddingGemma model support
+    "torchvision>=0.17.0",  # Compatible with torch>=2.6.0
+    "torchaudio>=2.1.0",  # Compatible with torch>=2.6.0
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",  # Optional native structured output support
+]
+
+mlx = [
+    # The benchmark script relies on `mlx_lm.generate.BatchGenerator` (continuous batching).
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
+    "outlines>=0.1.0",  # Optional native structured output support
+]
+
+mlx-bench = [
+    # Used by `examples/mlx_concurrency_benchmark.py` to generate the PNG graph.
+    "matplotlib>=3.8.0,<4.0.0",
+]
+
+vllm = [
+    "vllm>=0.6.0,<1.0.0",  # GPU-only (CUDA/ROCm) - not compatible with Apple Silicon
+]
+
+embeddings = [
+    "sentence-transformers>=5.1.0,<6.0.0",  # Required for EmbeddingGemma model support
+    "numpy>=1.20.0,<2.0.0",
+]
+
+tokens = [
+    # Precise token counting for OpenAI-compatible models (optional; falls back to heuristics without it).
+    "tiktoken>=0.5.0,<1.0.0",
+]
+
+tools = [
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    # Web search backend for `web_search` (preferred). ddgs requires Python>=3.10.
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    # Legacy backend kept for Python 3.9 compatibility.
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+]
+
+# Compatibility alias (common typo): `abstractcore[tool]` -> `abstractcore[tools]`
+tool = [
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+]
+
+media = [
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    # Enables `pymupdf.layout` (improves reading order / tables) and prevents PyMuPDF's startup recommendation print.
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    # NOTE: unstructured does not provide an "office" extra. Use the specific
+    # format extras so DOCX/XLSX/PPTX parsing works out-of-the-box when users
+    # install `abstractcore[media]`.
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+]
+
+compression = [
+    # Glyph visual-text compression renders text into images (PIL renderer).
+    "Pillow>=10.0.0,<12.0.0",
+]
+
+# Turnkey installs (end-user focused). Prefer these in docs.
+# Notes:
+# - `ollama` / `lmstudio` / `openai-compatible` / `openrouter` use only core deps.
+# - `all` includes both MLX (Apple Silicon) and vLLM (CUDA) and may not install everywhere.
+all = [
+    # Providers
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    # HuggingFace provider deps
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    # MLX provider deps
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
+    # vLLM provider deps
+    "vllm>=0.6.0,<1.0.0",
+    # Features
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # Server
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
+]
+
+all-apple = [
+    # Providers
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
+    # Features
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # Server
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
+]
+
+all-gpu = [
+    # Providers
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    "vllm>=0.6.0,<1.0.0",
+    # Features
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # Server
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
+]
+
+all-non-mlx = [
+    # Providers
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    # Features
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    # Server
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.5.0",
+    "ruff>=0.1.0",
+    "pre-commit>=3.0.0",
+]
+
+# Server dependencies
+server = [
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    # Install vision support by default for a "just works" server install.
+    "abstractvision>=0.2.0",
+]
+
+# Vision (optional) - delegates to AbstractVision.
+# Kept as a separate extra for installs that want vision without the HTTP server.
+vision = [
+    "abstractvision>=0.2.0",
+]
+
+vision-diffusers = [
+    "abstractvision[huggingface]>=0.2.0",
+]
+
+vision-sdcpp = [
+    "abstractvision[sdcpp]>=0.2.0",
+]
+
+vision-local = [
+    "abstractvision[local]>=0.2.0",
+]
+
+# Testing dependencies
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+    "pytest-cov>=4.0.0",
+    "responses>=0.23.0",
+    "httpx>=0.24.0",
+]
+
+# Documentation dependencies
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.22.0",
+    "mkdocs-autorefs>=0.4.0",
+]
+
+# Complete development environment
+full-dev = [
+    # A convenient superset for contributors (providers + optional features + tooling).
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "transformers>=4.57.1,<6.0.0",
+    "torch>=2.6.0,<3.0.0",
+    "torchvision>=0.17.0",
+    "torchaudio>=2.1.0",
+    "llama-cpp-python>=0.2.0,<1.0.0",
+    "outlines>=0.1.0",
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
+    "vllm>=0.6.0,<1.0.0",
+    "sentence-transformers>=5.1.0,<6.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "tiktoken>=0.5.0,<1.0.0",
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
+    "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
+    "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
+    "psutil>=5.9.0,<6.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
+    "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
+    "pandas>=1.0.0,<3.0.0",
+    "fastapi>=0.100.0,<1.0.0",
+    "uvicorn[standard]>=0.23.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "sse-starlette>=1.6.0,<2.0.0",
+    "abstractvision>=0.2.0",
+    # Tooling
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.10.0",
+    "pytest-cov>=4.0.0",
+    "responses>=0.23.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "mypy>=1.5.0",
+    "ruff>=0.1.0",
+    "pre-commit>=3.0.0",
+    # Docs
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.22.0",
+    "mkdocs-autorefs>=0.4.0",
+]
+
+
+[tool.setuptools]
+packages = [
+    "abstractcore",
+    "abstractcore.capabilities",
+    "abstractcore.core",
+    "abstractcore.providers",
+    "abstractcore.tools",
+    "abstractcore.structured",
+    "abstractcore.events",
+    "abstractcore.embeddings",
+    "abstractcore.architectures",
+    "abstractcore.utils",
+    "abstractcore.assets",
+    "abstractcore.mcp",
+    "abstractcore.server",
+    "abstractcore.endpoint",
+    "abstractcore.apps",
+    "abstractcore.processing",
+    "abstractcore.exceptions",
+    "abstractcore.media",
+    "abstractcore.media.processors",
+    "abstractcore.media.handlers",
+    "abstractcore.media.utils",
+    "abstractcore.compression",
+    "abstractcore.config"
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "abstractcore.utils.version.__version__"}
+
+[tool.setuptools.package-data]
+abstractcore = [
+    "assets/*.json",
+    "py.typed",
+]
+
+# Black configuration
+[tool.black]
+line-length = 100
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+# isort configuration
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+known_first_party = ["abstractcore"]
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "openai.*",
+    "anthropic.*",
+    "transformers.*",
+    "torch.*",
+    "mlx.*",
+    "mlx_lm.*",
+    "llama_cpp.*",
+    "outlines.*",
+    "vllm.*",
+]
+ignore_missing_imports = true
+
+# Ruff configuration
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "B904",  # Within an except clause, raise exceptions with raise ... from err
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*" = ["B011"]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -v --strict-markers --strict-config --tb=short"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "provider: marks tests that require specific providers",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["abstractcore"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

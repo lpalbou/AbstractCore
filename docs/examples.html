@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Practical Examples - AbstractCore</title>
-    <meta name="description" content="This guide shows real-world use cases for AbstractCore with complete, copy-paste examples. All examples work across any provider - just change the provider name.">
+    <meta name="description" content="This guide shows real-world use cases for AbstractCore with complete, copy-paste examples. All examples work across any provider - just change the provider…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -49,7 +49,6 @@
 
             <div class="doc-content">
 
-
 <h2 id="table-of-contents">Table of Contents</h2>
 <ul>
 <li><a href="#basic-usage">Basic Usage</a></li>
@@ -68,40 +67,40 @@
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Works with any provider
-llm = create_llm("openai", model="gpt-4o-mini")  # or "anthropic", "ollama"...
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # or &quot;anthropic&quot;, &quot;ollama&quot;...
 
-response = llm.generate("What is the difference between Python and JavaScript?")
+response = llm.generate(&quot;What is the difference between Python and JavaScript?&quot;)
 print(response.content)
 </code></pre></div>
 <h3 id="multiple-providers-comparison">Multiple Providers Comparison</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 providers = [
-    ("openai", "gpt-4o-mini"),
-    ("anthropic", "claude-haiku-4-5"),
-    ("ollama", "qwen3:4b-instruct")
+    (&quot;openai&quot;, &quot;gpt-4o-mini&quot;),
+    (&quot;anthropic&quot;, &quot;claude-haiku-4-5&quot;),
+    (&quot;ollama&quot;, &quot;qwen3:4b-instruct&quot;)
 ]
 
-question = "Explain Python list comprehensions with examples"
+question = &quot;Explain Python list comprehensions with examples&quot;
 
 for provider_name, model in providers:
     try:
         llm = create_llm(provider_name, model=model)
         response = llm.generate(question)
-        print(f"\n--- {provider_name.upper()} ---")
-        print(response.content[:200] + "...")
+        print(f&quot;\n--- {provider_name.upper()} ---&quot;)
+        print(response.content[:200] + &quot;...&quot;)
     except Exception as e:
-        print(f"{provider_name} failed: {e}")
+        print(f&quot;{provider_name} failed: {e}&quot;)
 </code></pre></div>
 <h3 id="provider-fallback">Provider Fallback</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 def generate_with_fallback(prompt, **kwargs):
-    """Try multiple providers until one works."""
+    &quot;&quot;&quot;Try multiple providers until one works.&quot;&quot;&quot;
     providers = [
-        ("openai", "gpt-4o-mini"),
-        ("anthropic", "claude-haiku-4-5"),
-        ("ollama", "qwen3:4b-instruct")
+        (&quot;openai&quot;, &quot;gpt-4o-mini&quot;),
+        (&quot;anthropic&quot;, &quot;claude-haiku-4-5&quot;),
+        (&quot;ollama&quot;, &quot;qwen3:4b-instruct&quot;)
     ]
 
     for provider_name, model in providers:
@@ -109,13 +108,13 @@ def generate_with_fallback(prompt, **kwargs):
             llm = create_llm(provider_name, model=model)
             return llm.generate(prompt, **kwargs)
         except Exception as e:
-            print(f"{provider_name} failed: {e}")
+            print(f&quot;{provider_name} failed: {e}&quot;)
             continue
 
-    raise Exception("All providers failed")
+    raise Exception(&quot;All providers failed&quot;)
 
 # Usage
-response = generate_with_fallback("What is machine learning?")
+response = generate_with_fallback(&quot;What is machine learning?&quot;)
 print(response.content)
 </code></pre></div>
 <h2 id="glyph-visual-text-compression">Glyph Visual-Text Compression</h2>
@@ -125,47 +124,47 @@ print(response.content)
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Use a vision-capable model - Glyph works automatically
-llm = create_llm("ollama", model="llama3.2-vision:11b")
+llm = create_llm(&quot;ollama&quot;, model=&quot;llama3.2-vision:11b&quot;)
 
 # Large documents are automatically compressed when beneficial
 response = llm.generate(
-    "What are the key findings and methodology in this research paper?",
-    media=["research_paper.pdf"]  # Automatically compressed if size &gt; threshold
+    &quot;What are the key findings and methodology in this research paper?&quot;,
+    media=[&quot;research_paper.pdf&quot;]  # Automatically compressed if size &gt; threshold
 )
 
-print(f"Analysis: {response.content}")
-print(f"Processing time: {response.gen_time}ms")
+print(f&quot;Analysis: {response.content}&quot;)
+print(f&quot;Processing time: {response.gen_time}ms&quot;)
 
 # Check if compression was used
 if response.metadata and response.metadata.get('compression_used'):
     stats = response.metadata.get('compression_stats', {})
-    print(f"✅ Glyph compression used!")
-    print(f"Compression ratio: {stats.get('compression_ratio', 'N/A')}x")
-    print(f"Original tokens: {stats.get('original_tokens', 'N/A')}")
-    print(f"Compressed tokens: {stats.get('compressed_tokens', 'N/A')}")
+    print(f&quot;✅ Glyph compression used!&quot;)
+    print(f&quot;Compression ratio: {stats.get('compression_ratio', 'N/A')}x&quot;)
+    print(f&quot;Original tokens: {stats.get('original_tokens', 'N/A')}&quot;)
+    print(f&quot;Compressed tokens: {stats.get('compressed_tokens', 'N/A')}&quot;)
 </code></pre></div>
 <h3 id="explicit-compression-control">Explicit Compression Control</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Force compression for testing
-llm = create_llm("ollama", model="qwen2.5vl:7b")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5vl:7b&quot;)
 
 # Always compress
 response = llm.generate(
-    "Summarize the main conclusions of this document",
-    media=["long_document.pdf"],
-    glyph_compression="always"  # Force compression
+    &quot;Summarize the main conclusions of this document&quot;,
+    media=[&quot;long_document.pdf&quot;],
+    glyph_compression=&quot;always&quot;  # Force compression
 )
 
 # Never compress (for comparison)
 response_no_compression = llm.generate(
-    "Summarize the main conclusions of this document", 
-    media=["long_document.pdf"],
-    glyph_compression="never"  # Disable compression
+    &quot;Summarize the main conclusions of this document&quot;, 
+    media=[&quot;long_document.pdf&quot;],
+    glyph_compression=&quot;never&quot;  # Disable compression
 )
 
-print(f"With compression: {response.gen_time}ms")
-print(f"Without compression: {response_no_compression.gen_time}ms")
+print(f&quot;With compression: {response.gen_time}ms&quot;)
+print(f&quot;Without compression: {response_no_compression.gen_time}ms&quot;)
 </code></pre></div>
 <h3 id="custom-configuration">Custom Configuration</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -174,160 +173,160 @@ from abstractcore.compression import GlyphConfig
 # Configure compression behavior
 glyph_config = GlyphConfig(
     enabled=True,
-    global_default="auto",           # "auto", "always", "never"
+    global_default=&quot;auto&quot;,           # &quot;auto&quot;, &quot;always&quot;, &quot;never&quot;
     quality_threshold=0.95,          # Minimum quality score (0-1)
     target_compression_ratio=3.0,    # Target compression ratio
     provider_optimization=True,      # Enable provider-specific optimization
     cache_enabled=True,             # Enable compression caching
     provider_profiles={
-        "ollama": {
-            "dpi": 150,              # Higher DPI for better quality
-            "font_size": 9,          # Smaller font for more content
-            "quality_threshold": 0.95
+        &quot;ollama&quot;: {
+            &quot;dpi&quot;: 150,              # Higher DPI for better quality
+            &quot;font_size&quot;: 9,          # Smaller font for more content
+            &quot;quality_threshold&quot;: 0.95
         }
     }
 )
 
-llm = create_llm("ollama", model="granite3.2-vision:latest", glyph_config=glyph_config)
+llm = create_llm(&quot;ollama&quot;, model=&quot;granite3.2-vision:latest&quot;, glyph_config=glyph_config)
 
 response = llm.generate(
-    "Analyze the figures and tables in this academic paper",
-    media=["academic_paper.pdf"]
+    &quot;Analyze the figures and tables in this academic paper&quot;,
+    media=[&quot;academic_paper.pdf&quot;]
 )
 </code></pre></div>
 <h3 id="performance-benchmarking">Performance Benchmarking</h3>
 <div class="code-block"><pre><code class="language-python">import time
 from abstractcore import create_llm
 
-def benchmark_glyph_compression(document_path, model_name="llama3.2-vision:11b"):
-    """Compare processing with and without Glyph compression"""
+def benchmark_glyph_compression(document_path, model_name=&quot;llama3.2-vision:11b&quot;):
+    &quot;&quot;&quot;Compare processing with and without Glyph compression&quot;&quot;&quot;
 
-    llm = create_llm("ollama", model=model_name)
+    llm = create_llm(&quot;ollama&quot;, model=model_name)
 
     # Test without compression
     start = time.time()
     response_no_glyph = llm.generate(
-        "Provide a detailed analysis of this document",
+        &quot;Provide a detailed analysis of this document&quot;,
         media=[document_path],
-        glyph_compression="never"
+        glyph_compression=&quot;never&quot;
     )
     time_no_glyph = time.time() - start
 
     # Test with compression
     start = time.time()
     response_glyph = llm.generate(
-        "Provide a detailed analysis of this document",
+        &quot;Provide a detailed analysis of this document&quot;,
         media=[document_path],
-        glyph_compression="always"
+        glyph_compression=&quot;always&quot;
     )
     time_glyph = time.time() - start
 
     # Compare results
-    print(f"📊 Glyph Compression Benchmark")
-    print(f"Document: {document_path}")
-    print(f"Model: {model_name}")
-    print(f"")
-    print(f"Without Glyph: {time_no_glyph:.2f}s")
-    print(f"With Glyph:    {time_glyph:.2f}s")
-    print(f"Speedup:       {time_no_glyph/time_glyph:.2f}x")
-    print(f"")
-    print(f"Response quality comparison:")
-    print(f"No Glyph length:  {len(response_no_glyph.content)} chars")
-    print(f"Glyph length:     {len(response_glyph.content)} chars")
+    print(f&quot;📊 Glyph Compression Benchmark&quot;)
+    print(f&quot;Document: {document_path}&quot;)
+    print(f&quot;Model: {model_name}&quot;)
+    print(f&quot;&quot;)
+    print(f&quot;Without Glyph: {time_no_glyph:.2f}s&quot;)
+    print(f&quot;With Glyph:    {time_glyph:.2f}s&quot;)
+    print(f&quot;Speedup:       {time_no_glyph/time_glyph:.2f}x&quot;)
+    print(f&quot;&quot;)
+    print(f&quot;Response quality comparison:&quot;)
+    print(f&quot;No Glyph length:  {len(response_no_glyph.content)} chars&quot;)
+    print(f&quot;Glyph length:     {len(response_glyph.content)} chars&quot;)
 
     return response_glyph, response_no_glyph
 
 # Run benchmark
-glyph_response, normal_response = benchmark_glyph_compression("large_document.pdf")
+glyph_response, normal_response = benchmark_glyph_compression(&quot;large_document.pdf&quot;)
 </code></pre></div>
 <h3 id="multi-provider-testing">Multi-Provider Testing</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Test Glyph across different providers and models
 models_to_test = [
-    ("ollama", "llama3.2-vision:11b"),
-    ("ollama", "qwen2.5vl:7b"),
-    ("ollama", "granite3.2-vision:latest"),
+    (&quot;ollama&quot;, &quot;llama3.2-vision:11b&quot;),
+    (&quot;ollama&quot;, &quot;qwen2.5vl:7b&quot;),
+    (&quot;ollama&quot;, &quot;granite3.2-vision:latest&quot;),
     # Add LMStudio if running
-    # ("lmstudio", "your-vision-model"),
+    # (&quot;lmstudio&quot;, &quot;your-vision-model&quot;),
 ]
 
-document = "research_paper.pdf"
-question = "What are the key innovations presented in this paper?"
+document = &quot;research_paper.pdf&quot;
+question = &quot;What are the key innovations presented in this paper?&quot;
 
 for provider, model in models_to_test:
     try:
-        print(f"\n🧪 Testing {provider} - {model}")
+        print(f&quot;\n🧪 Testing {provider} - {model}&quot;)
 
         llm = create_llm(provider, model=model)
 
         response = llm.generate(
             question,
             media=[document],
-            glyph_compression="auto"
+            glyph_compression=&quot;auto&quot;
         )
 
-        print(f"✅ Success - {response.gen_time}ms")
-        print(f"Response: {response.content[:100]}...")
+        print(f&quot;✅ Success - {response.gen_time}ms&quot;)
+        print(f&quot;Response: {response.content[:100]}...&quot;)
 
         # Check compression usage
         if response.metadata and response.metadata.get('compression_used'):
-            print(f"🎨 Glyph compression was used")
+            print(f&quot;🎨 Glyph compression was used&quot;)
         else:
-            print(f"📝 Standard processing was used")
+            print(f&quot;📝 Standard processing was used&quot;)
 
     except Exception as e:
-        print(f"❌ Failed: {e}")
+        print(f&quot;❌ Failed: {e}&quot;)
 </code></pre></div>
 <p><strong>Key Benefits Demonstrated:</strong>
 - <strong>Automatic optimization</strong>: Glyph decides when compression is beneficial
 - <strong>Transparent integration</strong>: Works with existing media handling code
 - <strong>Quality preservation</strong>: No loss of analytical accuracy
 - <strong>Provider flexibility</strong>: Works across Ollama, LMStudio, and other vision providers</p>
-<p><a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/glyphs.md">Learn more about Glyph configuration and advanced features</a></p>
+<p><a href="glyphs.html">Learn more about Glyph configuration and advanced features</a></p>
 <h2 id="tool-calling-examples">Tool Calling Examples</h2>
 <h3 id="weather-tool">Weather Tool</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 import requests
 
-def get_weather(city: str, units: str = "metric") -&gt; str:
-    """Get current weather for a city."""
+def get_weather(city: str, units: str = &quot;metric&quot;) -&gt; str:
+    &quot;&quot;&quot;Get current weather for a city.&quot;&quot;&quot;
     # In production, use a real weather API
     # This is a simulated implementation
     temperatures = {
-        "paris": "22°C, sunny",
-        "london": "15°C, cloudy",
-        "tokyo": "28°C, humid",
-        "new york": "18°C, windy"
+        &quot;paris&quot;: &quot;22°C, sunny&quot;,
+        &quot;london&quot;: &quot;15°C, cloudy&quot;,
+        &quot;tokyo&quot;: &quot;28°C, humid&quot;,
+        &quot;new york&quot;: &quot;18°C, windy&quot;
     }
-    return temperatures.get(city.lower(), f"Weather data not available for {city}")
+    return temperatures.get(city.lower(), f&quot;Weather data not available for {city}&quot;)
 
 # Tool definition
 weather_tool = {
-    "name": "get_weather",
-    "description": "Get current weather information for a city",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "city": {
-                "type": "string",
-                "description": "Name of the city"
+    &quot;name&quot;: &quot;get_weather&quot;,
+    &quot;description&quot;: &quot;Get current weather information for a city&quot;,
+    &quot;parameters&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {
+            &quot;city&quot;: {
+                &quot;type&quot;: &quot;string&quot;,
+                &quot;description&quot;: &quot;Name of the city&quot;
             },
-            "units": {
-                "type": "string",
-                "enum": ["metric", "imperial"],
-                "description": "Temperature units"
+            &quot;units&quot;: {
+                &quot;type&quot;: &quot;string&quot;,
+                &quot;enum&quot;: [&quot;metric&quot;, &quot;imperial&quot;],
+                &quot;description&quot;: &quot;Temperature units&quot;
             }
         },
-        "required": ["city"]
+        &quot;required&quot;: [&quot;city&quot;]
     }
 }
 
 # Works with any provider that supports tools
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
 response = llm.generate(
-    "What's the weather like in Paris and London?",
+    &quot;What's the weather like in Paris and London?&quot;,
     tools=[weather_tool]
 )
 
@@ -339,57 +338,57 @@ print(response.tool_calls)  # Structured tool call requests (host/runtime execut
 import math
 
 def calculate(expression: str) -&gt; str:
-    """Safely evaluate mathematical expressions."""
+    &quot;&quot;&quot;Safely evaluate mathematical expressions.&quot;&quot;&quot;
     try:
         # In production, use a proper expression parser
         # This is simplified for demo purposes
         allowed_chars = set('0123456789+-*/.() ')
         if not all(c in allowed_chars for c in expression):
-            return "Error: Invalid characters in expression"
+            return &quot;Error: Invalid characters in expression&quot;
 
         result = eval(expression)
-        return f"{expression} = {result}"
+        return f&quot;{expression} = {result}&quot;
     except Exception as e:
-        return f"Error calculating {expression}: {str(e)}"
+        return f&quot;Error calculating {expression}: {str(e)}&quot;
 
 def sqrt(number: float) -&gt; str:
-    """Calculate square root."""
+    &quot;&quot;&quot;Calculate square root.&quot;&quot;&quot;
     try:
         result = math.sqrt(number)
-        return f"√{number} = {result}"
+        return f&quot;√{number} = {result}&quot;
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f&quot;Error: {str(e)}&quot;
 
 # Tool definitions
 tools = [
     {
-        "name": "calculate",
-        "description": "Perform basic mathematical calculations",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "expression": {"type": "string", "description": "Mathematical expression"}
+        &quot;name&quot;: &quot;calculate&quot;,
+        &quot;description&quot;: &quot;Perform basic mathematical calculations&quot;,
+        &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {
+                &quot;expression&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Mathematical expression&quot;}
             },
-            "required": ["expression"]
+            &quot;required&quot;: [&quot;expression&quot;]
         }
     },
     {
-        "name": "sqrt",
-        "description": "Calculate square root of a number",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "number": {"type": "number", "description": "Number to calculate square root of"}
+        &quot;name&quot;: &quot;sqrt&quot;,
+        &quot;description&quot;: &quot;Calculate square root of a number&quot;,
+        &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {
+                &quot;number&quot;: {&quot;type&quot;: &quot;number&quot;, &quot;description&quot;: &quot;Number to calculate square root of&quot;}
             },
-            "required": ["number"]
+            &quot;required&quot;: [&quot;number&quot;]
         }
     }
 ]
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
 response = llm.generate(
-    "What is 25 * 4 + 12, and what's the square root of 144?",
+    &quot;What is 25 * 4 + 12, and what's the square root of 144?&quot;,
     tools=tools
 )
 
@@ -401,65 +400,65 @@ print(response.tool_calls)  # Structured tool call requests (host/runtime execut
 from pathlib import Path
 import os
 
-def list_files(directory: str = ".") -&gt; str:
-    """List files in a directory."""
+def list_files(directory: str = &quot;.&quot;) -&gt; str:
+    &quot;&quot;&quot;List files in a directory.&quot;&quot;&quot;
     try:
         path = Path(directory)
         if not path.exists():
-            return f"Directory {directory} does not exist"
+            return f&quot;Directory {directory} does not exist&quot;
 
         files = []
         for item in path.iterdir():
             if item.is_file():
-                files.append(f"FILE: {item.name}")
+                files.append(f&quot;FILE: {item.name}&quot;)
             elif item.is_dir():
-                files.append(f"DIR: {item.name}/")
+                files.append(f&quot;DIR: {item.name}/&quot;)
 
-        return f"Contents of {directory}:\n" + "\n".join(sorted(files))
+        return f&quot;Contents of {directory}:\n&quot; + &quot;\n&quot;.join(sorted(files))
     except Exception as e:
-        return f"Error listing files: {str(e)}"
+        return f&quot;Error listing files: {str(e)}&quot;
 
 def read_file(filename: str) -&gt; str:
-    """Read contents of a text file."""
+    &quot;&quot;&quot;Read contents of a text file.&quot;&quot;&quot;
     try:
         path = Path(filename)
         if not path.exists():
-            return f"File {filename} does not exist"
+            return f&quot;File {filename} does not exist&quot;
 
         content = path.read_text(encoding='utf-8')
-        return f"Contents of {filename}:\n{content}"
+        return f&quot;Contents of {filename}:\n{content}&quot;
     except Exception as e:
-        return f"Error reading file: {str(e)}"
+        return f&quot;Error reading file: {str(e)}&quot;
 
 # Tool definitions
 file_tools = [
     {
-        "name": "list_files",
-        "description": "List files and directories in a given path",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "directory": {"type": "string", "description": "Directory path to list"}
+        &quot;name&quot;: &quot;list_files&quot;,
+        &quot;description&quot;: &quot;List files and directories in a given path&quot;,
+        &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {
+                &quot;directory&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Directory path to list&quot;}
             }
         }
     },
     {
-        "name": "read_file",
-        "description": "Read the contents of a text file",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "filename": {"type": "string", "description": "Path to the file to read"}
+        &quot;name&quot;: &quot;read_file&quot;,
+        &quot;description&quot;: &quot;Read the contents of a text file&quot;,
+        &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {
+                &quot;filename&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Path to the file to read&quot;}
             },
-            "required": ["filename"]
+            &quot;required&quot;: [&quot;filename&quot;]
         }
     }
 ]
 
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 
 response = llm.generate(
-    "List the files in the current directory and read the README.md file if it exists",
+    &quot;List the files in the current directory and read the README.md file if it exists&quot;,
     tools=file_tools
 )
 
@@ -479,135 +478,135 @@ print(response.tool_calls)  # Structured tool call requests (host/runtime execut
 
 # Define tools (standard JSON format)
 weather_tool = {
-    "name": "get_weather",
-    "description": "Get current weather for a city",
-    "parameters": {
-        "type": "object",
-        "properties": {"city": {"type": "string"}},
-        "required": ["city"]
+    &quot;name&quot;: &quot;get_weather&quot;,
+    &quot;description&quot;: &quot;Get current weather for a city&quot;,
+    &quot;parameters&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {&quot;city&quot;: {&quot;type&quot;: &quot;string&quot;}},
+        &quot;required&quot;: [&quot;city&quot;]
     }
 }
 
 # Codex CLI expects qwen3-style tool-call tags in assistant content.
 # By default, AbstractCore strips tool-call markup from `response.content`;
 # pass `tool_call_tags` to preserve/emit the tags for downstream parsers.
-llm = create_llm("ollama", model="qwen3:4b-instruct")
-response = llm.generate("What's the weather in Tokyo?", tools=[weather_tool], tool_call_tags="qwen3")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+response = llm.generate(&quot;What's the weather in Tokyo?&quot;, tools=[weather_tool], tool_call_tags=&quot;qwen3&quot;)
 
 print(response.content)
 print(response.tool_calls)
-# Content includes: &lt;|tool_call|&gt;{"name": "get_weather", "arguments": {"city": "Tokyo"}}&lt;/|tool_call|&gt;
+# Content includes: &lt;|tool_call|&gt;{&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: {&quot;city&quot;: &quot;Tokyo&quot;}}&lt;/|tool_call|&gt;
 </code></pre></div>
 <h3 id="crush-cli-integration">Crush CLI Integration</h3>
 <div class="code-block"><pre><code class="language-python"># Crush CLI expects LLaMA3 format - just specify the format
-llm = create_llm("ollama", model="qwen3:4b-instruct")
-response = llm.generate("Get weather for London", tools=[weather_tool], tool_call_tags="llama3")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+response = llm.generate(&quot;Get weather for London&quot;, tools=[weather_tool], tool_call_tags=&quot;llama3&quot;)
 
 print(response.content)
-# Output includes: &lt;function_call&gt;{"name": "get_weather", "arguments": {"city": "London"}}&lt;/function_call&gt;
+# Output includes: &lt;function_call&gt;{&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: {&quot;city&quot;: &quot;London&quot;}}&lt;/function_call&gt;
 </code></pre></div>
 <h3 id="custom-cli-format">Custom CLI Format</h3>
 <div class="code-block"><pre><code class="language-python"># Your custom CLI expects: [TOOL]...JSON...[/TOOL]
-llm = create_llm("ollama", model="qwen3:4b-instruct")
-response = llm.generate("Check weather in Paris", tools=[weather_tool], tool_call_tags="[TOOL],[/TOOL]")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+response = llm.generate(&quot;Check weather in Paris&quot;, tools=[weather_tool], tool_call_tags=&quot;[TOOL],[/TOOL]&quot;)
 
 print(response.content)
-# Output includes: [TOOL]{"name": "get_weather", "arguments": {"city": "Paris"}}[/TOOL]
+# Output includes: [TOOL]{&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: {&quot;city&quot;: &quot;Paris&quot;}}[/TOOL]
 </code></pre></div>
 <h3 id="real-time-streaming-with-tag-rewriting">Real-Time Streaming with Tag Rewriting</h3>
 <div class="code-block"><pre><code class="language-python"># Streaming works seamlessly with any format
 calculator_tool = {
-    "name": "calculate",
-    "description": "Perform mathematical calculations",
-    "parameters": {
-        "type": "object",
-        "properties": {"expression": {"type": "string"}},
-        "required": ["expression"]
+    &quot;name&quot;: &quot;calculate&quot;,
+    &quot;description&quot;: &quot;Perform mathematical calculations&quot;,
+    &quot;parameters&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {&quot;expression&quot;: {&quot;type&quot;: &quot;string&quot;}},
+        &quot;required&quot;: [&quot;expression&quot;]
     }
 }
 
-llm = create_llm("ollama", model="qwen3-coder:30b")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3-coder:30b&quot;)
 
-print("AI: ", end="", flush=True)
+print(&quot;AI: &quot;, end=&quot;&quot;, flush=True)
 for chunk in llm.generate(
-    "Calculate 15 * 23 and explain the result",
+    &quot;Calculate 15 * 23 and explain the result&quot;,
     tools=[calculator_tool],
     stream=True,
-    tool_call_tags="llama3",
+    tool_call_tags=&quot;llama3&quot;,
 ):
-    print(chunk.content, end="", flush=True)
+    print(chunk.content, end=&quot;&quot;, flush=True)
 
     # Tool calls are surfaced in real-time (execution is host/runtime-owned)
     if chunk.tool_calls:
         for tool_call in chunk.tool_calls:
-            print(f"\n[TOOL CALL] {tool_call}")
+            print(f&quot;\n[TOOL CALL] {tool_call}&quot;)
 
-print("\n")
-# Shows: &lt;function_call&gt;{"name": "calculate", "arguments": {"expression": "15 * 23"}}&lt;/function_call&gt;
+print(&quot;\n&quot;)
+# Shows: &lt;function_call&gt;{&quot;name&quot;: &quot;calculate&quot;, &quot;arguments&quot;: {&quot;expression&quot;: &quot;15 * 23&quot;}}&lt;/function_call&gt;
 # Tool execution is owned by the host/runtime.
 </code></pre></div>
 <h3 id="multiple-tools-with-different-formats">Multiple Tools with Different Formats</h3>
 <div class="code-block"><pre><code class="language-python"># Define multiple tools
 tools = [
     {
-        "name": "get_weather",
-        "description": "Get weather information",
-        "parameters": {
-            "type": "object",
-            "properties": {"city": {"type": "string"}},
-            "required": ["city"]
+        &quot;name&quot;: &quot;get_weather&quot;,
+        &quot;description&quot;: &quot;Get weather information&quot;,
+        &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {&quot;city&quot;: {&quot;type&quot;: &quot;string&quot;}},
+            &quot;required&quot;: [&quot;city&quot;]
         }
     },
     {
-        "name": "calculate",
-        "description": "Perform calculations",
-        "parameters": {
-            "type": "object",
-            "properties": {"expression": {"type": "string"}},
-            "required": ["expression"]
+        &quot;name&quot;: &quot;calculate&quot;,
+        &quot;description&quot;: &quot;Perform calculations&quot;,
+        &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {&quot;expression&quot;: {&quot;type&quot;: &quot;string&quot;}},
+            &quot;required&quot;: [&quot;expression&quot;]
         }
     },
     {
-        "name": "list_files",
-        "description": "List files in a directory",
-        "parameters": {
-            "type": "object",
-            "properties": {"directory": {"type": "string"}},
-            "required": ["directory"]
+        &quot;name&quot;: &quot;list_files&quot;,
+        &quot;description&quot;: &quot;List files in a directory&quot;,
+        &quot;parameters&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {&quot;directory&quot;: {&quot;type&quot;: &quot;string&quot;}},
+            &quot;required&quot;: [&quot;directory&quot;]
         }
     }
 ]
 
 # Test with XML format for Gemini CLI
-llm = create_llm("ollama", model="qwen3:4b-instruct")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
 response = llm.generate(
-    "What's 2+2, weather in NYC, and files in current directory?",
+    &quot;What's 2+2, weather in NYC, and files in current directory?&quot;,
     tools=tools,
-    tool_call_tags="xml",
+    tool_call_tags=&quot;xml&quot;,
 )
 
 print(response.content)
 print(response.tool_calls)
-# All tool calls converted to: &lt;tool_call&gt;{"name": "...", "arguments": {...}}&lt;/tool_call&gt;
+# All tool calls converted to: &lt;tool_call&gt;{&quot;name&quot;: &quot;...&quot;, &quot;arguments&quot;: {...}}&lt;/tool_call&gt;
 </code></pre></div>
 <h3 id="session-based-format-configuration">Session-Based Format Configuration</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import BasicSession
 
 # Apply a consistent tool-call tag format across a session by reusing a variable
-tool_call_tags = "llama3"
+tool_call_tags = &quot;llama3&quot;
 
-llm = create_llm("ollama", model="qwen3:4b-instruct")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
 session = BasicSession(provider=llm)
 
-session.generate("Calculate 10 * 5", tools=[calculator_tool], tool_call_tags=tool_call_tags)
-session.generate("What's the weather like?", tools=[weather_tool], tool_call_tags=tool_call_tags)
-session.generate("List files in documents", tools=[{
-    "name": "list_files",
-    "description": "List directory contents",
-    "parameters": {
-        "type": "object",
-        "properties": {"path": {"type": "string"}},
-        "required": ["path"]
+session.generate(&quot;Calculate 10 * 5&quot;, tools=[calculator_tool], tool_call_tags=tool_call_tags)
+session.generate(&quot;What's the weather like?&quot;, tools=[weather_tool], tool_call_tags=tool_call_tags)
+session.generate(&quot;List files in documents&quot;, tools=[{
+    &quot;name&quot;: &quot;list_files&quot;,
+    &quot;description&quot;: &quot;List directory contents&quot;,
+    &quot;parameters&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {&quot;path&quot;: {&quot;type&quot;: &quot;string&quot;}},
+        &quot;required&quot;: [&quot;path&quot;]
     }
 }], tool_call_tags=tool_call_tags)
 
@@ -620,15 +619,15 @@ session.generate("List files in documents", tools=[{
 def log_tool_calls(event):
     # Tool execution events are emitted when tools are executed (e.g., via ToolRegistry
     # or when using `execute_tools=True` (deprecated)).
-    print(f"[TOOL EVENT] {event.type}: {event.data}")
+    print(f&quot;[TOOL EVENT] {event.type}: {event.data}&quot;)
 
 on_global(EventType.TOOL_COMPLETED, log_tool_calls)
 
 # Test with different formats
-for format_name in ["qwen3", "llama3", "xml"]:
-    llm = create_llm("ollama", model="qwen3:4b-instruct")
-    response = llm.generate("Calculate 5 * 5", tools=[calculator_tool], tool_call_tags=format_name)
-    print(f"{format_name} format result: {response.content[:100]}...")
+for format_name in [&quot;qwen3&quot;, &quot;llama3&quot;, &quot;xml&quot;]:
+    llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+    response = llm.generate(&quot;Calculate 5 * 5&quot;, tools=[calculator_tool], tool_call_tags=format_name)
+    print(f&quot;{format_name} format result: {response.content[:100]}...&quot;)
 </code></pre></div>
 <p><strong>Key Benefits</strong>:
 - Per-call configuration: pass <code>tool_call_tags=...</code> when you need tool-call markup preserved/rewritten in <code>response.content</code>
@@ -668,25 +667,25 @@ class UserProfile(BaseModel):
             raise ValueError('Invalid email format')
         return v
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
 # Text with user information
-user_text = """
+user_text = &quot;&quot;&quot;
 Hi, I'm Sarah Johnson, I'm 28 years old and work as a software engineer.
 My email is sarah.johnson@techcorp.com. I love hiking, photography, and cooking.
-"""
+&quot;&quot;&quot;
 
 # Extract structured data with automatic validation
 user = llm.generate(
-    f"Extract user profile from: {user_text}",
+    f&quot;Extract user profile from: {user_text}&quot;,
     response_model=UserProfile
 )
 
-print(f"Name: {user.name}")
-print(f"Age: {user.age}")
-print(f"Email: {user.email}")
-print(f"Occupation: {user.occupation}")
-print(f"Interests: {', '.join(user.interests)}")
+print(f&quot;Name: {user.name}&quot;)
+print(f&quot;Age: {user.age}&quot;)
+print(f&quot;Email: {user.email}&quot;)
+print(f&quot;Occupation: {user.occupation}&quot;)
+print(f&quot;Interests: {', '.join(user.interests)}&quot;)
 </code></pre></div>
 <h3 id="product-catalog-extraction">Product Catalog Extraction</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -695,11 +694,11 @@ from typing import List
 from enum import Enum
 
 class ProductCategory(str, Enum):
-    ELECTRONICS = "electronics"
-    CLOTHING = "clothing"
-    BOOKS = "books"
-    HOME = "home"
-    SPORTS = "sports"
+    ELECTRONICS = &quot;electronics&quot;
+    CLOTHING = &quot;clothing&quot;
+    BOOKS = &quot;books&quot;
+    HOME = &quot;home&quot;
+    SPORTS = &quot;sports&quot;
 
 class Product(BaseModel):
     name: str
@@ -727,25 +726,25 @@ class ProductCatalog(BaseModel):
             raise ValueError(f'Total count {v} does not match products length {len(products)}')
         return v
 
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 
-catalog_text = """
+catalog_text = &quot;&quot;&quot;
 Our store has these items:
 1. Gaming Laptop - $1299.99 - High-performance laptop for gaming and work
 2. Wireless Headphones - $199.99 - Noise-cancelling bluetooth headphones
 3. Python Programming Book - $49.99 - Complete guide to Python programming
 4. Coffee Maker - $89.99 - Automatic drip coffee maker, currently out of stock
-"""
+&quot;&quot;&quot;
 
 catalog = llm.generate(
-    f"Extract product catalog from: {catalog_text}",
+    f&quot;Extract product catalog from: {catalog_text}&quot;,
     response_model=ProductCatalog
 )
 
-print(f"Total products: {catalog.total_count}")
+print(f&quot;Total products: {catalog.total_count}&quot;)
 for product in catalog.products:
-    status = "In Stock" if product.in_stock else "Out of Stock"
-    print(f"- {product.name}: ${product.price} ({product.category}) - {status}")
+    status = &quot;In Stock&quot; if product.in_stock else &quot;Out of Stock&quot;
+    print(f&quot;- {product.name}: ${product.price} ({product.category}) - {status}&quot;)
 </code></pre></div>
 <h3 id="code-review-analysis">Code Review Analysis</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -754,10 +753,10 @@ from typing import List
 from enum import Enum
 
 class Severity(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+    LOW = &quot;low&quot;
+    MEDIUM = &quot;medium&quot;
+    HIGH = &quot;high&quot;
+    CRITICAL = &quot;critical&quot;
 
 class CodeIssue(BaseModel):
     line_number: int
@@ -772,7 +771,7 @@ class CodeReview(BaseModel):
     issues: List[CodeIssue]
     recommendations: List[str]
 
-llm = create_llm("ollama", model="qwen3:4b-instruct")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
 
 code_to_review = '''
 def calculate_average(numbers):
@@ -791,36 +790,36 @@ def process_data(data):
 '''
 
 review = llm.generate(
-    f"Review this Python code for issues:\n{code_to_review}",
+    f&quot;Review this Python code for issues:\n{code_to_review}&quot;,
     response_model=CodeReview
 )
 
-print(f"Language: {review.language}")
-print(f"Overall Quality: {review.overall_quality}")
-print(f"\nIssues Found ({len(review.issues)}):")
+print(f&quot;Language: {review.language}&quot;)
+print(f&quot;Overall Quality: {review.overall_quality}&quot;)
+print(f&quot;\nIssues Found ({len(review.issues)}):&quot;)
 for issue in review.issues:
-    print(f"  Line {issue.line_number}: [{issue.severity.upper()}] {issue.issue_type}")
-    print(f"    Problem: {issue.description}")
-    print(f"    Fix: {issue.suggestion}\n")
+    print(f&quot;  Line {issue.line_number}: [{issue.severity.upper()}] {issue.issue_type}&quot;)
+    print(f&quot;    Problem: {issue.description}&quot;)
+    print(f&quot;    Fix: {issue.suggestion}\n&quot;)
 
-print("Recommendations:")
+print(&quot;Recommendations:&quot;)
 for rec in review.recommendations:
-    print(f"  - {rec}")
+    print(f&quot;  - {rec}&quot;)
 </code></pre></div>
 <h2 id="streaming-examples">Streaming Examples</h2>
 <h3 id="basic-streaming-unified-2025">Basic Streaming (Unified 2025)</h3>
-<div class="code-block"><pre><code class="language-python"># Real-time streaming works identically across ALL providers
+<div class="code-block"><pre><code class="language-python"># Streaming uses a unified processor across providers (exact chunking depends on the backend)
 from abstractcore import create_llm
 
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 
-print("AI Story Generator: ", end="", flush=True)
+print(&quot;AI Story Generator: &quot;, end=&quot;&quot;, flush=True)
 for chunk in llm.generate(
-    "Write a short story about a programmer who discovers their code is alive",
+    &quot;Write a short story about a programmer who discovers their code is alive&quot;,
     stream=True
 ):
-    print(chunk.content, end="", flush=True)
-print("\n")
+    print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)
+print(&quot;\n&quot;)
 </code></pre></div>
 <h3 id="advanced-streaming-with-progress-and-performance-tracking">Advanced Streaming with Progress and Performance Tracking</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -828,133 +827,132 @@ import time
 
 def streaming_with_insights(prompt):
     # Supports any provider: OpenAI, Anthropic, Ollama, MLX
-    llm = create_llm("openai", model="gpt-4o-mini")
+    llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
-    print("Generating response...")
+    print(&quot;Generating response...&quot;)
 
     start_time = time.time()
     chunks = []
 
-    print("Response: ", end="", flush=True)
+    print(&quot;Response: &quot;, end=&quot;&quot;, flush=True)
     for chunk in llm.generate(prompt, stream=True):
         chunks.append(chunk)
-        print(chunk.content, end="", flush=True)
+        print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)
 
         # Optional real-time performance insights
         if len(chunks) % 10 == 0:
             current_time = time.time() - start_time
-            chars_generated = sum(len(c.content) for c in chunks)
-            print(f"\n[PROGRESS] {len(chunks)} chunks, {chars_generated} chars, {current_time:.1f}s")
+            chars_generated = sum(len(c.content or &quot;&quot;) for c in chunks)
+            print(f&quot;\n[PROGRESS] {len(chunks)} chunks, {chars_generated} chars, {current_time:.1f}s&quot;)
 
     # Final performance summary
     total_time = time.time() - start_time
-    total_chars = sum(len(chunk.content) for chunk in chunks)
+    total_chars = sum(len(chunk.content or &quot;&quot;) for chunk in chunks)
 
-    print(f"\n\n[STATS] Streaming Performance:")
-    print(f"- Total Chunks: {len(chunks)}")
-    print(f"- Total Characters: {total_chars}")
-    print(f"- Duration: {total_time:.2f}s")
-    print(f"- Speed: {total_chars/total_time:.0f} chars/sec")
+    print(f&quot;\n\n[STATS] Streaming Performance:&quot;)
+    print(f&quot;- Total Chunks: {len(chunks)}&quot;)
+    print(f&quot;- Total Characters: {total_chars}&quot;)
+    print(f&quot;- Duration: {total_time:.2f}s&quot;)
+    print(f&quot;- Speed: {total_chars/total_time:.0f} chars/sec&quot;)
 
 # Usage with various prompts
-streaming_with_insights("Explain quantum computing in simple terms")
+streaming_with_insights(&quot;Explain quantum computing in simple terms&quot;)
 </code></pre></div>
 <h3 id="real-time-streaming-with-tools-unified-implementation">Real-Time Streaming with Tools (Unified Implementation)</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 from datetime import datetime
 
 def get_current_time() -&gt; str:
-    """Get the current time."""
-    return datetime.now().strftime("%H:%M:%S")
+    &quot;&quot;&quot;Get the current time.&quot;&quot;&quot;
+    return datetime.now().strftime(&quot;%H:%M:%S&quot;)
 
 def get_weather(city: str) -&gt; str:
-    """Get current weather for a city."""
+    &quot;&quot;&quot;Get current weather for a city.&quot;&quot;&quot;
     weather_data = {
-        "New York": "Sunny, 22°C",
-        "London": "Cloudy, 15°C",
-        "Tokyo": "Partly cloudy, 25°C"
+        &quot;New York&quot;: &quot;Sunny, 22°C&quot;,
+        &quot;London&quot;: &quot;Cloudy, 15°C&quot;,
+        &quot;Tokyo&quot;: &quot;Partly cloudy, 25°C&quot;
     }
-    return weather_data.get(city, f"Weather data unavailable for {city}")
+    return weather_data.get(city, f&quot;Weather data unavailable for {city}&quot;)
 
 time_tool = {
-    "name": "get_current_time",
-    "description": "Get the current time",
-    "parameters": {"type": "object", "properties": {}}
+    &quot;name&quot;: &quot;get_current_time&quot;,
+    &quot;description&quot;: &quot;Get the current time&quot;,
+    &quot;parameters&quot;: {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {}}
 }
 
 weather_tool = {
-    "name": "get_weather",
-    "description": "Get current weather for a city",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "city": {"type": "string", "description": "Name of the city"}
+    &quot;name&quot;: &quot;get_weather&quot;,
+    &quot;description&quot;: &quot;Get current weather for a city&quot;,
+    &quot;parameters&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {
+            &quot;city&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Name of the city&quot;}
         }
     }
 }
 
-# Works identically across providers
-llm = create_llm("ollama", model="qwen3:4b-instruct")
+# Works similarly across providers (exact chunking depends on the backend)
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
 
-print("AI Assistant: ", end="", flush=True)
+print(&quot;AI Assistant: &quot;, end=&quot;&quot;, flush=True)
 for chunk in llm.generate(
-    "What time is it right now? And can you tell me the weather in New York?",
+    &quot;What time is it right now? And can you tell me the weather in New York?&quot;,
     tools=[time_tool, weather_tool],
     stream=True
 ):
     # Real-time chunk processing and tool call detection
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)
 
     # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
-        print(f"\n[TOOL] Tool calls: {chunk.tool_calls}")
+        print(f&quot;\n[TOOL] Tool calls: {chunk.tool_calls}&quot;)
 
-print("\n")  # Newline after streaming
+print(&quot;\n&quot;)  # Newline after streaming
 
-# Features:
+# Notes:
 # - Real-time tool call detection
-# - Zero buffering overhead
-# - Works with OpenAI, Anthropic, Ollama, MLX
-# - Consistent behavior across all providers
+# - Streams chunks as they arrive (minimal buffering)
+# - Works with OpenAI, Anthropic, Ollama, MLX (provider-dependent details)
 </code></pre></div>
 <h3 id="performance-optimized-streaming">Performance-Optimized Streaming</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 import time
 
 def compare_providers(prompt):
-    """Compare streaming performance across providers."""
+    &quot;&quot;&quot;Compare streaming performance across providers.&quot;&quot;&quot;
     providers = [
-        ("openai", "gpt-4o-mini"),
-        ("anthropic", "claude-haiku-4-5"),
-        ("ollama", "qwen3:4b-instruct")
+        (&quot;openai&quot;, &quot;gpt-4o-mini&quot;),
+        (&quot;anthropic&quot;, &quot;claude-haiku-4-5&quot;),
+        (&quot;ollama&quot;, &quot;qwen3:4b-instruct&quot;)
     ]
 
     for provider, model in providers:
         try:
             llm = create_llm(provider, model=model)
 
-            print(f"\n[TEST] {provider.upper()} - {model}")
+            print(f&quot;\n[TEST] {provider.upper()} - {model}&quot;)
             start_time = time.time()
 
             chunks = []
             for chunk in llm.generate(prompt, stream=True):
                 chunks.append(chunk)
-                print(chunk.content, end="", flush=True)
+                print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)
 
             total_time = time.time() - start_time
-            total_chars = sum(len(chunk.content) for chunk in chunks)
+            total_chars = sum(len(chunk.content or &quot;&quot;) for chunk in chunks)
 
-            print(f"\n\n[PERF] {provider.upper()} Performance:")
-            print(f"- Chunks: {len(chunks)}")
-            print(f"- Characters: {total_chars}")
-            print(f"- Duration: {total_time:.2f}s")
-            print(f"- Speed: {total_chars/total_time:.0f} chars/sec")
+            print(f&quot;\n\n[PERF] {provider.upper()} Performance:&quot;)
+            print(f&quot;- Chunks: {len(chunks)}&quot;)
+            print(f&quot;- Characters: {total_chars}&quot;)
+            print(f&quot;- Duration: {total_time:.2f}s&quot;)
+            print(f&quot;- Speed: {total_chars/total_time:.0f} chars/sec&quot;)
 
         except Exception as e:
-            print(f"[ERROR] {provider} failed: {e}")
+            print(f&quot;[ERROR] {provider} failed: {e}&quot;)
 
 # Compare streaming performance
-compare_providers("Write a creative short story about artificial intelligence")
+compare_providers(&quot;Write a creative short story about artificial intelligence&quot;)
 </code></pre></div>
 <p><strong>Streaming Features</strong>:
 - Time-to-first-token depends on provider/model/network
@@ -967,54 +965,54 @@ compare_providers("Write a creative short story about artificial intelligence")
 <h3 id="basic-conversation">Basic Conversation</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 session = BasicSession(
     provider=llm,
-    system_prompt="You are a helpful coding tutor. Always provide examples."
+    system_prompt=&quot;You are a helpful coding tutor. Always provide examples.&quot;
 )
 
 # Multi-turn conversation
-print("=== Conversation Start ===")
+print(&quot;=== Conversation Start ===&quot;)
 
-response1 = session.generate("Hi, I'm learning Python. What are decorators?")
-print("User: Hi, I'm learning Python. What are decorators?")
-print(f"AI: {response1.content}\n")
+response1 = session.generate(&quot;Hi, I'm learning Python. What are decorators?&quot;)
+print(&quot;User: Hi, I'm learning Python. What are decorators?&quot;)
+print(f&quot;AI: {response1.content}\n&quot;)
 
-response2 = session.generate("Can you show me a practical example?")
-print("User: Can you show me a practical example?")
-print(f"AI: {response2.content}\n")
+response2 = session.generate(&quot;Can you show me a practical example?&quot;)
+print(&quot;User: Can you show me a practical example?&quot;)
+print(f&quot;AI: {response2.content}\n&quot;)
 
-response3 = session.generate("What was my first question?")
-print("User: What was my first question?")
-print(f"AI: {response3.content}\n")
+response3 = session.generate(&quot;What was my first question?&quot;)
+print(&quot;User: What was my first question?&quot;)
+print(f&quot;AI: {response3.content}\n&quot;)
 
-print(f"Total messages in conversation: {len(session.messages)}")
+print(f&quot;Total messages in conversation: {len(session.messages)}&quot;)
 </code></pre></div>
 <h3 id="session-persistence">Session Persistence</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, BasicSession
 from pathlib import Path
 
 # Create and use session
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 session = BasicSession(
     provider=llm,
-    system_prompt="You are a travel advisor. Help plan trips."
+    system_prompt=&quot;You are a travel advisor. Help plan trips.&quot;
 )
 
 # Have a conversation
-session.generate("I want to plan a trip to Japan")
-session.generate("I'm interested in both modern cities and traditional culture")
-session.generate("My budget is around $3000 for 10 days")
+session.generate(&quot;I want to plan a trip to Japan&quot;)
+session.generate(&quot;I'm interested in both modern cities and traditional culture&quot;)
+session.generate(&quot;My budget is around $3000 for 10 days&quot;)
 
 # Save session
-session_file = Path("travel_planning_session.json")
+session_file = Path(&quot;travel_planning_session.json&quot;)
 session.save(session_file)
-print(f"Session saved to {session_file}")
+print(f&quot;Session saved to {session_file}&quot;)
 
 # Later: Load session and continue
 new_session = BasicSession.load(session_file, provider=llm)
-response = new_session.generate("What were we discussing?")
-print(f"AI remembers: {response.content}")
+response = new_session.generate(&quot;What were we discussing?&quot;)
+print(f&quot;AI remembers: {response.content}&quot;)
 
 # Clean up
 session_file.unlink()  # Delete the file
@@ -1023,16 +1021,16 @@ session_file.unlink()  # Delete the file
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
 def create_coding_assistant():
-    """Create a specialized coding assistant session."""
-    llm = create_llm("ollama", model="qwen3:4b-instruct")
+    &quot;&quot;&quot;Create a specialized coding assistant session.&quot;&quot;&quot;
+    llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
 
-    system_prompt = """
+    system_prompt = &quot;&quot;&quot;
     You are an expert Python coding assistant. For each request:
     1. Provide working code examples
     2. Explain the code clearly
     3. Mention potential issues or improvements
     4. Keep responses concise but complete
-    """
+    &quot;&quot;&quot;
 
     return BasicSession(provider=llm, system_prompt=system_prompt)
 
@@ -1040,15 +1038,15 @@ def create_coding_assistant():
 assistant = create_coding_assistant()
 
 # The assistant will remember the context throughout the conversation
-assistant.generate("I need a function to validate email addresses")
-assistant.generate("Now add logging to that function")
-assistant.generate("How would I test this function?")
+assistant.generate(&quot;I need a function to validate email addresses&quot;)
+assistant.generate(&quot;Now add logging to that function&quot;)
+assistant.generate(&quot;How would I test this function?&quot;)
 
-print(f"Conversation history: {len(assistant.messages)} messages")
+print(f&quot;Conversation history: {len(assistant.messages)} messages&quot;)
 
 # Clear history but keep system prompt
 assistant.clear_history()
-print(f"After clearing: {len(assistant.messages)} messages")  # Just system prompt remains
+print(f&quot;After clearing: {len(assistant.messages)} messages&quot;)  # Just system prompt remains
 </code></pre></div>
 <h2 id="interaction-tracing-observability">Interaction Tracing (Observability)</h2>
 <h3 id="basic-tracing">Basic Tracing</h3>
@@ -1065,7 +1063,7 @@ llm = create_llm(
 
 # Generate with custom metadata
 response = llm.generate(
-    "Explain quantum computing",
+    &quot;Explain quantum computing&quot;,
     temperature=0.7,
     trace_metadata={
         'user_id': 'user_123',
@@ -1078,13 +1076,13 @@ response = llm.generate(
 trace_id = response.metadata['trace_id']
 trace = llm.get_traces(trace_id=trace_id)
 
-print(f"Trace ID: {trace['trace_id']}")
-print(f"Timestamp: {trace['timestamp']}")
-print(f"Prompt: {trace['prompt']}")
-print(f"Response: {trace['response']['content'][:100]}...")
-print(f"Tokens: {trace['response']['usage']['total_tokens']}")
-print(f"Time: {trace['response']['generation_time_ms']:.2f}ms")
-print(f"Custom metadata: {trace['metadata']}")
+print(f&quot;Trace ID: {trace['trace_id']}&quot;)
+print(f&quot;Timestamp: {trace['timestamp']}&quot;)
+print(f&quot;Prompt: {trace['prompt']}&quot;)
+print(f&quot;Response: {trace['response']['content'][:100]}...&quot;)
+print(f&quot;Tokens: {trace['response']['usage']['total_tokens']}&quot;)
+print(f&quot;Time: {trace['response']['generation_time_ms']:.2f}ms&quot;)
+print(f&quot;Custom metadata: {trace['metadata']}&quot;)
 </code></pre></div>
 <h3 id="session-level-tracing">Session-Level Tracing</h3>
 <p>Automatically track all interactions in a session with correlation:</p>
@@ -1095,22 +1093,22 @@ llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
 session = BasicSession(provider=llm, enable_tracing=True)
 
 # All interactions automatically traced
-session.generate("What is Python?")
-session.generate("Give me an example")
-session.generate("Explain list comprehensions")
+session.generate(&quot;What is Python?&quot;)
+session.generate(&quot;Give me an example&quot;)
+session.generate(&quot;Explain list comprehensions&quot;)
 
 # Get all session traces
 traces = session.get_interaction_history()
 
-print(f"\nSession ID: {session.id}")
-print(f"Total interactions: {len(traces)}")
+print(f&quot;\nSession ID: {session.id}&quot;)
+print(f&quot;Total interactions: {len(traces)}&quot;)
 
 for i, trace in enumerate(traces, 1):
-    print(f"\nInteraction {i}:")
-    print(f"  Prompt: {trace['prompt']}")
-    print(f"  Tokens: {trace['response']['usage']['total_tokens']}")
-    print(f"  Time: {trace['response']['generation_time_ms']:.0f}ms")
-    print(f"  Session ID: {trace['metadata']['session_id']}")
+    print(f&quot;\nInteraction {i}:&quot;)
+    print(f&quot;  Prompt: {trace['prompt']}&quot;)
+    print(f&quot;  Tokens: {trace['response']['usage']['total_tokens']}&quot;)
+    print(f&quot;  Time: {trace['response']['generation_time_ms']:.0f}ms&quot;)
+    print(f&quot;  Session ID: {trace['metadata']['session_id']}&quot;)
 </code></pre></div>
 <h3 id="multi-step-workflow-with-retries">Multi-Step Workflow with Retries</h3>
 <p>Track code generation workflows with retry attempts:</p>
@@ -1122,8 +1120,8 @@ session = BasicSession(provider=llm, enable_tracing=True)
 
 # Step 1: Generate code
 response = session.generate(
-    "Write a Python function to calculate fibonacci numbers",
-    system_prompt="You are a Python code generator. Only output code.",
+    &quot;Write a Python function to calculate fibonacci numbers&quot;,
+    system_prompt=&quot;You are a Python code generator. Only output code.&quot;,
     step_type='code_generation',
     attempt_number=1,
     temperature=0
@@ -1141,7 +1139,7 @@ for attempt in range(1, 4):
     except Exception as e:
         # Retry with error context
         response = session.generate(
-            f"Previous code failed: {e}. Fix it.",
+            f&quot;Previous code failed: {e}. Fix it.&quot;,
             step_type='code_generation',
             attempt_number=attempt + 1,
             temperature=0
@@ -1151,15 +1149,15 @@ for attempt in range(1, 4):
 # Get workflow summary
 traces = session.get_interaction_history()
 
-print(f"\nWorkflow Summary:")
-print(f"Total attempts: {len(traces)}")
-print(f"Final status: {'Success' if success else 'Failed'}")
+print(f&quot;\nWorkflow Summary:&quot;)
+print(f&quot;Total attempts: {len(traces)}&quot;)
+print(f&quot;Final status: {'Success' if success else 'Failed'}&quot;)
 
 for trace in traces:
     step = trace['metadata']['step_type']
     attempt = trace['metadata']['attempt_number']
     tokens = trace['response']['usage']['total_tokens']
-    print(f"  {step} (Attempt {attempt}): {tokens} tokens")
+    print(f&quot;  {step} (Attempt {attempt}): {tokens} tokens&quot;)
 </code></pre></div>
 <h3 id="export-traces">Export Traces</h3>
 <p>Export traces to different formats for analysis:</p>
@@ -1170,7 +1168,7 @@ llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
 
 # Generate some interactions
 for i in range(5):
-    llm.generate(f"Question {i+1}", temperature=0)
+    llm.generate(f&quot;Question {i+1}&quot;, temperature=0)
 
 traces = llm.get_traces()
 
@@ -1185,14 +1183,14 @@ export_traces(traces, format='markdown', file_path='trace_report.md')
 
 # Get summary statistics
 summary = summarize_traces(traces)
-print(f"\nSummary:")
-print(f"  Total interactions: {summary['total_interactions']}")
-print(f"  Total tokens: {summary['total_tokens']}")
-print(f"  Average tokens: {summary['avg_tokens_per_interaction']:.0f}")
-print(f"  Total time: {summary['total_time_ms']:.2f}ms")
-print(f"  Average time: {summary['avg_time_ms']:.2f}ms")
-print(f"  Providers: {summary['providers']}")
-print(f"  Models: {summary['models']}")
+print(f&quot;\nSummary:&quot;)
+print(f&quot;  Total interactions: {summary['total_interactions']}&quot;)
+print(f&quot;  Total tokens: {summary['total_tokens']}&quot;)
+print(f&quot;  Average tokens: {summary['avg_tokens_per_interaction']:.0f}&quot;)
+print(f&quot;  Total time: {summary['total_time_ms']:.2f}ms&quot;)
+print(f&quot;  Average time: {summary['avg_time_ms']:.2f}ms&quot;)
+print(f&quot;  Providers: {summary['providers']}&quot;)
+print(f&quot;  Models: {summary['models']}&quot;)
 </code></pre></div>
 <h3 id="retrieve-specific-traces">Retrieve Specific Traces</h3>
 <p>Different ways to retrieve traces:</p>
@@ -1202,23 +1200,23 @@ llm = create_llm('openai', model='gpt-4o-mini', enable_tracing=True)
 
 # Generate some interactions
 for i in range(10):
-    llm.generate(f"Test {i}", temperature=0)
+    llm.generate(f&quot;Test {i}&quot;, temperature=0)
 
 # Get all traces
 all_traces = llm.get_traces()
-print(f"Total traces: {len(all_traces)}")
+print(f&quot;Total traces: {len(all_traces)}&quot;)
 
 # Get last 5 traces
 recent = llm.get_traces(last_n=5)
-print(f"Last 5 prompts: {[t['prompt'] for t in recent]}")
+print(f&quot;Last 5 prompts: {[t['prompt'] for t in recent]}&quot;)
 
 # Get specific trace by ID
-response = llm.generate("Specific query", temperature=0)
+response = llm.generate(&quot;Specific query&quot;, temperature=0)
 trace_id = response.metadata['trace_id']
 trace = llm.get_traces(trace_id=trace_id)
-print(f"Specific trace: {trace['prompt']}")
+print(f&quot;Specific trace: {trace['prompt']}&quot;)
 </code></pre></div>
-<p><a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/interaction-tracing.md">Learn more about Interaction Tracing</a></p>
+<p><a href="interaction-tracing.html">Learn more about Interaction Tracing</a></p>
 <h2 id="production-patterns">Production Patterns</h2>
 <h3 id="retry-and-error-handling">Retry and Error Handling</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -1231,7 +1229,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def create_production_llm():
-    """Create LLM with production-grade retry configuration."""
+    &quot;&quot;&quot;Create LLM with production-grade retry configuration.&quot;&quot;&quot;
     retry_config = RetryConfig(
         max_attempts=3,
         initial_delay=1.0,
@@ -1241,40 +1239,40 @@ def create_production_llm():
     )
 
     return create_llm(
-        "openai",
-        model="gpt-4o-mini",
+        &quot;openai&quot;,
+        model=&quot;gpt-4o-mini&quot;,
         retry_config=retry_config,
         timeout=30
     )
 
 def safe_generate(prompt, **kwargs):
-    """Generate with comprehensive error handling."""
+    &quot;&quot;&quot;Generate with comprehensive error handling.&quot;&quot;&quot;
     llm = create_production_llm()
 
     try:
-        logger.info(f"Generating response for prompt: {prompt[:50]}...")
+        logger.info(f&quot;Generating response for prompt: {prompt[:50]}...&quot;)
         response = llm.generate(prompt, **kwargs)
-        logger.info(f"Response generated successfully: {len(response.content)} chars")
+        logger.info(f&quot;Response generated successfully: {len(response.content)} chars&quot;)
         return response
 
     except RateLimitError as e:
-        logger.warning(f"Rate limited: {e}")
+        logger.warning(f&quot;Rate limited: {e}&quot;)
         raise
 
     except ProviderAPIError as e:
-        logger.error(f"API error: {e}")
+        logger.error(f&quot;API error: {e}&quot;)
         raise
 
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f&quot;Unexpected error: {e}&quot;)
         raise
 
 # Usage
 try:
-    response = safe_generate("What is machine learning?")
+    response = safe_generate(&quot;What is machine learning?&quot;)
     print(response.content)
 except Exception as e:
-    print(f"Generation failed: {e}")
+    print(f&quot;Generation failed: {e}&quot;)
 </code></pre></div>
 <h3 id="cost-monitoring">Cost Monitoring</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -1292,8 +1290,8 @@ class CostMonitor:
         on_global(EventType.GENERATION_COMPLETED, self.track_cost)
 
     def track_cost(self, event):
-        """Track costs from generation events."""
-        cost = event.data.get("cost_usd")
+        &quot;&quot;&quot;Track costs from generation events.&quot;&quot;&quot;
+        cost = event.data.get(&quot;cost_usd&quot;)
         if cost:
             # NOTE: `cost_usd` is a best-effort estimate based on token usage.
             cost_f = float(cost)
@@ -1307,13 +1305,13 @@ class CostMonitor:
                 'tokens_output': event.data.get('tokens_output')
             })
 
-            print(f"[COST] ${cost_f:.4f} | Total: ${self.total_cost:.4f}")
+            print(f&quot;[COST] ${cost_f:.4f} | Total: ${self.total_cost:.4f}&quot;)
 
             if self.total_cost &gt; self.budget_limit:
-                print(f"[WARN] BUDGET EXCEEDED: ${self.total_cost:.4f} &gt; ${self.budget_limit}")
+                print(f&quot;[WARN] BUDGET EXCEEDED: ${self.total_cost:.4f} &gt; ${self.budget_limit}&quot;)
 
     def get_report(self):
-        """Get cost report."""
+        &quot;&quot;&quot;Get cost report.&quot;&quot;&quot;
         return {
             'total_cost': self.total_cost,
             'budget_limit': self.budget_limit,
@@ -1325,19 +1323,19 @@ class CostMonitor:
 # Usage
 monitor = CostMonitor(budget_limit=1.0)  # $1 budget
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
 # Make some requests
 for i in range(3):
-    response = llm.generate(f"Tell me a fact about number {i+1}")
-    print(f"Fact {i+1}: {response.content[:100]}...\n")
+    response = llm.generate(f&quot;Tell me a fact about number {i+1}&quot;)
+    print(f&quot;Fact {i+1}: {response.content[:100]}...\n&quot;)
 
 # Get report
 report = monitor.get_report()
-print(f"\n[REPORT] Final Cost Summary:")
-print(f"Total cost: ${report['total_cost']:.4f}")
-print(f"Requests: {report['total_requests']}")
-print(f"Average per request: ${report['average_cost']:.4f}")
+print(f&quot;\n[REPORT] Final Cost Summary:&quot;)
+print(f&quot;Total cost: ${report['total_cost']:.4f}&quot;)
+print(f&quot;Requests: {report['total_requests']}&quot;)
+print(f&quot;Average per request: ${report['average_cost']:.4f}&quot;)
 </code></pre></div>
 <h3 id="load-balancing">Load Balancing</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -1347,7 +1345,7 @@ from typing import List, Tuple
 
 class LoadBalancer:
     def __init__(self, providers: List[Tuple[str, str]]):
-        """Initialize with list of (provider, model) tuples."""
+        &quot;&quot;&quot;Initialize with list of (provider, model) tuples.&quot;&quot;&quot;
         self.providers = []
         self.weights = []
 
@@ -1356,14 +1354,14 @@ class LoadBalancer:
                 llm = create_llm(provider_name, model=model)
                 self.providers.append((llm, provider_name, model))
                 self.weights.append(1.0)  # Equal weight initially
-                print(f"[OK] {provider_name} ({model}) ready")
+                print(f&quot;[OK] {provider_name} ({model}) ready&quot;)
             except Exception as e:
-                print(f"[FAIL] {provider_name} ({model}) failed: {e}")
+                print(f&quot;[FAIL] {provider_name} ({model}) failed: {e}&quot;)
 
     def generate(self, prompt, **kwargs):
-        """Generate using weighted random selection."""
+        &quot;&quot;&quot;Generate using weighted random selection.&quot;&quot;&quot;
         if not self.providers:
-            raise Exception("No providers available")
+            raise Exception(&quot;No providers available&quot;)
 
         # Weighted random selection
         provider_data = random.choices(
@@ -1379,11 +1377,11 @@ class LoadBalancer:
             response = llm.generate(prompt, **kwargs)
             duration = time.time() - start_time
 
-            print(f"[OK] {provider_name} responded in {duration:.2f}s")
+            print(f&quot;[OK] {provider_name} responded in {duration:.2f}s&quot;)
             return response
 
         except Exception as e:
-            print(f"[FAIL] {provider_name} failed: {e}")
+            print(f&quot;[FAIL] {provider_name} failed: {e}&quot;)
             # Remove failed provider temporarily
             idx = self.providers.index(provider_data)
             self.weights[idx] *= 0.1  # Reduce weight dramatically
@@ -1391,18 +1389,18 @@ class LoadBalancer:
 
 # Usage
 balancer = LoadBalancer([
-    ("openai", "gpt-4o-mini"),
-    ("anthropic", "claude-haiku-4-5"),
-    ("ollama", "qwen3:4b-instruct")
+    (&quot;openai&quot;, &quot;gpt-4o-mini&quot;),
+    (&quot;anthropic&quot;, &quot;claude-haiku-4-5&quot;),
+    (&quot;ollama&quot;, &quot;qwen3:4b-instruct&quot;)
 ])
 
 # Make requests - they'll be distributed across available providers
 for i in range(5):
     try:
-        response = balancer.generate(f"Tell me about topic number {i+1}")
-        print(f"Response {i+1}: {response.content[:50]}...\n")
+        response = balancer.generate(f&quot;Tell me about topic number {i+1}&quot;)
+        print(f&quot;Response {i+1}: {response.content[:50]}...\n&quot;)
     except Exception as e:
-        print(f"Request {i+1} failed: {e}\n")
+        print(f&quot;Request {i+1} failed: {e}\n&quot;)
 </code></pre></div>
 <h2 id="integration-examples">Integration Examples</h2>
 <h3 id="fastapi-integration">FastAPI Integration</h3>
@@ -1412,10 +1410,10 @@ from abstractcore import create_llm, BasicSession
 from typing import Optional
 import uuid
 
-app = FastAPI(title="AbstractCore API")
+app = FastAPI(title=&quot;AbstractCore API&quot;)
 
 # Global LLM instance
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
 # Store sessions in memory (use Redis in production)
 sessions = {}
@@ -1429,7 +1427,7 @@ class ChatResponse(BaseModel):
     response: str
     session_id: str
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post(&quot;/chat&quot;, response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
         # Get or create session
@@ -1439,7 +1437,7 @@ async def chat(request: ChatRequest):
             session_id = request.session_id or str(uuid.uuid4())
             session = BasicSession(
                 provider=llm,
-                system_prompt=request.system_prompt or "You are a helpful assistant."
+                system_prompt=request.system_prompt or &quot;You are a helpful assistant.&quot;
             )
             sessions[session_id] = session
 
@@ -1454,17 +1452,17 @@ async def chat(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/sessions/{session_id}")
+@app.delete(&quot;/sessions/{session_id}&quot;)
 async def clear_session(session_id: str):
     if session_id in sessions:
         del sessions[session_id]
-        return {"message": "Session cleared"}
-    raise HTTPException(status_code=404, detail="Session not found")
+        return {&quot;message&quot;: &quot;Session cleared&quot;}
+    raise HTTPException(status_code=404, detail=&quot;Session not found&quot;)
 
 # Run with: uvicorn main:app --reload
-if __name__ == "__main__":
+if __name__ == &quot;__main__&quot;:
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=&quot;0.0.0.0&quot;, port=8000)
 </code></pre></div>
 <h3 id="gradio-web-interface">Gradio Web Interface</h3>
 <div class="code-block"><pre><code class="language-python">import gradio as gr
@@ -1473,43 +1471,43 @@ from typing import List, Tuple
 
 class ChatInterface:
     def __init__(self):
-        self.llm = create_llm("anthropic", model="claude-haiku-4-5")
+        self.llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
         self.session = BasicSession(
             provider=self.llm,
-            system_prompt="You are a helpful AI assistant."
+            system_prompt=&quot;You are a helpful AI assistant.&quot;
         )
 
     def chat(self, message: str, history: List[Tuple[str, str]]) -&gt; Tuple[str, List[Tuple[str, str]]]:
-        """Handle chat interaction."""
+        &quot;&quot;&quot;Handle chat interaction.&quot;&quot;&quot;
         try:
             response = self.session.generate(message)
             history.append((message, response.content))
-            return "", history
+            return &quot;&quot;, history
         except Exception as e:
-            history.append((message, f"Error: {str(e)}"))
-            return "", history
+            history.append((message, f&quot;Error: {str(e)}&quot;))
+            return &quot;&quot;, history
 
     def clear(self) -&gt; Tuple[str, List]:
-        """Clear conversation history."""
+        &quot;&quot;&quot;Clear conversation history.&quot;&quot;&quot;
         self.session.clear_history()
-        return "", []
+        return &quot;&quot;, []
 
 # Create interface
 chat_interface = ChatInterface()
 
-with gr.Blocks(title="AbstractCore Chat") as demo:
-    gr.Markdown("# AbstractCore Chat Interface")
+with gr.Blocks(title=&quot;AbstractCore Chat&quot;) as demo:
+    gr.Markdown(&quot;# AbstractCore Chat Interface&quot;)
 
-    chatbot = gr.Chatbot(label="Conversation", height=400)
+    chatbot = gr.Chatbot(label=&quot;Conversation&quot;, height=400)
     msg = gr.Textbox(
-        label="Message",
-        placeholder="Type your message here...",
+        label=&quot;Message&quot;,
+        placeholder=&quot;Type your message here...&quot;,
         lines=2
     )
 
     with gr.Row():
-        submit = gr.Button("Send", variant="primary")
-        clear = gr.Button("Clear", variant="secondary")
+        submit = gr.Button(&quot;Send&quot;, variant=&quot;primary&quot;)
+        clear = gr.Button(&quot;Clear&quot;, variant=&quot;secondary&quot;)
 
     # Event handlers
     msg.submit(
@@ -1529,7 +1527,7 @@ with gr.Blocks(title="AbstractCore Chat") as demo:
         outputs=[msg, chatbot]
     )
 
-if __name__ == "__main__":
+if __name__ == &quot;__main__&quot;:
     demo.launch(share=True)
 </code></pre></div>
 <h3 id="jupyter-notebook-integration">Jupyter Notebook Integration</h3>
@@ -1539,23 +1537,23 @@ from IPython.display import display, Markdown, HTML
 import json
 
 # Create LLM instance
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
-def display_response(response, title="AI Response"):
-    """Pretty display for Jupyter notebooks."""
-    html = f"""
-    &lt;div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;"&gt;
-        &lt;h4 style="color: #333; margin-top: 0;"&gt;{title}&lt;/h4&gt;
-        &lt;p style="line-height: 1.6;"&gt;{response.content}&lt;/p&gt;
+def display_response(response, title=&quot;AI Response&quot;):
+    &quot;&quot;&quot;Pretty display for Jupyter notebooks.&quot;&quot;&quot;
+    html = f&quot;&quot;&quot;
+    &lt;div style=&quot;border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;&quot;&gt;
+        &lt;h4 style=&quot;color: #333; margin-top: 0;&quot;&gt;{title}&lt;/h4&gt;
+        &lt;p style=&quot;line-height: 1.6;&quot;&gt;{response.content}&lt;/p&gt;
     &lt;/div&gt;
-    """
+    &quot;&quot;&quot;
     display(HTML(html))
 
-print("AbstractCore setup complete!")
+print(&quot;AbstractCore setup complete!&quot;)
 
 # Cell 2: Basic Usage
-response = llm.generate("Explain quantum computing in simple terms")
-display_response(response, "Quantum Computing Explanation")
+response = llm.generate(&quot;Explain quantum computing in simple terms&quot;)
+display_response(response, &quot;Quantum Computing Explanation&quot;)
 
 # Cell 3: Structured Output
 from pydantic import BaseModel
@@ -1569,23 +1567,23 @@ class LearningPlan(BaseModel):
     learning_steps: List[str]
 
 plan = llm.generate(
-    "Create a learning plan for someone who wants to learn machine learning",
+    &quot;Create a learning plan for someone who wants to learn machine learning&quot;,
     response_model=LearningPlan
 )
 
 # Display as nice table
-display(HTML(f"""
-&lt;table style="border-collapse: collapse; width: 100%;"&gt;
+display(HTML(f&quot;&quot;&quot;
+&lt;table style=&quot;border-collapse: collapse; width: 100%;&quot;&gt;
     &lt;tr&gt;&lt;td&gt;&lt;strong&gt;Topic:&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;{plan.topic}&lt;/td&gt;&lt;/tr&gt;
     &lt;tr&gt;&lt;td&gt;&lt;strong&gt;Difficulty:&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;{plan.difficulty}&lt;/td&gt;&lt;/tr&gt;
     &lt;tr&gt;&lt;td&gt;&lt;strong&gt;Estimated Hours:&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;{plan.estimated_hours}&lt;/td&gt;&lt;/tr&gt;
     &lt;tr&gt;&lt;td&gt;&lt;strong&gt;Prerequisites:&lt;/strong&gt;&lt;/td&gt;&lt;td&gt;{', '.join(plan.prerequisites)}&lt;/td&gt;&lt;/tr&gt;
 &lt;/table&gt;
-"""))
+&quot;&quot;&quot;))
 
-display(Markdown("### Learning Steps:"))
+display(Markdown(&quot;### Learning Steps:&quot;))
 for i, step in enumerate(plan.learning_steps, 1):
-    display(Markdown(f"{i}. {step}"))
+    display(Markdown(f&quot;{i}. {step}&quot;))
 </code></pre></div>
 <h3 id="discord-bot-integration">Discord Bot Integration</h3>
 <div class="code-block"><pre><code class="language-python">import discord
@@ -1599,7 +1597,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # LLM setup
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 sessions = {}  # Store user sessions
 
 @bot.event
@@ -1608,14 +1606,14 @@ async def on_ready():
 
 @bot.command(name='ask')
 async def ask(ctx, *, question):
-    """Ask the AI a question."""
+    &quot;&quot;&quot;Ask the AI a question.&quot;&quot;&quot;
     user_id = ctx.author.id
 
     # Get or create session for user
     if user_id not in sessions:
         sessions[user_id] = BasicSession(
             provider=llm,
-            system_prompt="You are a helpful Discord bot assistant. Keep responses concise."
+            system_prompt=&quot;You are a helpful Discord bot assistant. Keep responses concise.&quot;
         )
 
     try:
@@ -1626,33 +1624,33 @@ async def ask(ctx, *, question):
         # Discord has a 2000 character limit
         content = response.content
         if len(content) &gt; 2000:
-            content = content[:1997] + "..."
+            content = content[:1997] + &quot;...&quot;
 
         await ctx.reply(content)
 
     except Exception as e:
-        await ctx.reply(f"Sorry, I encountered an error: {str(e)}")
+        await ctx.reply(f&quot;Sorry, I encountered an error: {str(e)}&quot;)
 
 @bot.command(name='clear')
 async def clear_session(ctx):
-    """Clear your conversation history."""
+    &quot;&quot;&quot;Clear your conversation history.&quot;&quot;&quot;
     user_id = ctx.author.id
     if user_id in sessions:
         sessions[user_id].clear_history()
-        await ctx.reply("Your conversation history has been cleared!")
+        await ctx.reply(&quot;Your conversation history has been cleared!&quot;)
     else:
-        await ctx.reply("You don't have an active session to clear.")
+        await ctx.reply(&quot;You don't have an active session to clear.&quot;)
 
 @bot.command(name='stats')
 async def stats(ctx):
-    """Show session statistics."""
+    &quot;&quot;&quot;Show session statistics.&quot;&quot;&quot;
     user_id = ctx.author.id
     if user_id in sessions:
         session = sessions[user_id]
         message_count = len(session.messages)
-        await ctx.reply(f"Your session has {message_count} messages.")
+        await ctx.reply(f&quot;Your session has {message_count} messages.&quot;)
     else:
-        await ctx.reply("You don't have an active session.")
+        await ctx.reply(&quot;You don't have an active session.&quot;)
 
 # Run bot (add your Discord bot token)
 # bot.run('YOUR_DISCORD_BOT_TOKEN')
@@ -1671,13 +1669,15 @@ async def stats(ctx):
 - <a href="capabilities.html">Capabilities</a> - What AbstractCore can do
 - <a href="prerequisites.html">Prerequisites</a> - Provider setup and configuration
 - <a href="api-reference.html">API Reference</a> - Complete API documentation</p>
-<hr/>
+<hr />
 <p><strong>Remember</strong>: All these examples work with any provider - just change the <code>create_llm()</code> call to switch between OpenAI, Anthropic, Ollama, MLX, and others!</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

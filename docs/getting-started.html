@@ -48,7 +48,6 @@
 
             <div class="doc-content">
 
-
 <h2 id="prerequisites">Prerequisites</h2>
 <ul>
 <li>Python 3.9+</li>
@@ -59,22 +58,22 @@
 pip install abstractcore
 
 # Providers (install only what you use)
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
-pip install "abstractcore[vllm]"         # GPU inference server integrations (heavy)
+pip install &quot;abstractcore[openai]&quot;       # OpenAI SDK
+pip install &quot;abstractcore[anthropic]&quot;    # Anthropic SDK
+pip install &quot;abstractcore[huggingface]&quot;  # Transformers / torch (heavy)
+pip install &quot;abstractcore[mlx]&quot;          # Apple Silicon local inference (heavy)
+pip install &quot;abstractcore[vllm]&quot;         # GPU inference server integrations (heavy)
 
 # Optional features
-pip install "abstractcore[tools]"        # built-in tools (web/file/command helpers)
-pip install "abstractcore[media]"        # images, PDFs, Office docs
-pip install "abstractcore[compression]"  # glyph visual-text compression (Pillow renderer)
-pip install "abstractcore[embeddings]"   # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"       # precise token counting (tiktoken)
-pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway
+pip install &quot;abstractcore[tools]&quot;        # built-in tools (web/file/command helpers)
+pip install &quot;abstractcore[media]&quot;        # images, PDFs, Office docs
+pip install &quot;abstractcore[compression]&quot;  # glyph visual-text compression (Pillow renderer)
+pip install &quot;abstractcore[embeddings]&quot;   # EmbeddingManager + local embedding models
+pip install &quot;abstractcore[tokens]&quot;       # precise token counting (tiktoken)
+pip install &quot;abstractcore[server]&quot;       # OpenAI-compatible HTTP gateway
 
 # Combine extras (zsh: keep quotes)
-pip install "abstractcore[openai,media,tools]"
+pip install &quot;abstractcore[openai,media,tools]&quot;
 </code></pre></div>
 <p>Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See <a href="prerequisites.html">Prerequisites</a> for provider setup.</p>
 <p>Optional capability plugins (deterministic multimodal outputs):</p>
@@ -86,47 +85,48 @@ pip install abstractvision  # enables llm.vision (generative vision; typically v
 <p>AbstractCore uses a provider ID plus a model name:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")
-# llm = create_llm("anthropic", model="claude-haiku-4-5")
-# llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
-# llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507")
-# llm = create_llm("openai-compatible", model="default", base_url="http://localhost:1234/v1")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+# llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
+# llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct-2507-q4_K_M&quot;)
+# llm = create_llm(&quot;lmstudio&quot;, model=&quot;qwen/qwen3-4b-2507&quot;)
+# llm = create_llm(&quot;openai-compatible&quot;, model=&quot;default&quot;, base_url=&quot;http://localhost:1234/v1&quot;)
 </code></pre></div>
 <p>Tip: you can omit <code>model=...</code>, but it’s usually better to pass an explicit model to avoid surprises when defaults change.</p>
 <p>Open-source-first: start with local providers (Ollama, LMStudio, MLX, HuggingFace), then add cloud or gateway providers as needed.</p>
 <p>Gateway providers (OpenRouter, Portkey) examples:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")
-llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY", config_id="pcfg_...")
+llm_openrouter = create_llm(&quot;openrouter&quot;, model=&quot;openai/gpt-4o-mini&quot;)
+llm_portkey = create_llm(&quot;portkey&quot;, model=&quot;gpt-5-mini&quot;, api_key=&quot;PORTKEY_API_KEY&quot;, config_id=&quot;pcfg_...&quot;)
 </code></pre></div>
 <p>Note: gateway providers only forward optional generation params (e.g. <code>temperature</code>, <code>top_p</code>, <code>max_output_tokens</code>) when you explicitly set them.</p>
 <h2 id="your-first-call">Your first call</h2>
 <p>OpenAI example (requires <code>pip install "abstractcore[openai]"</code>):</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")
-resp = llm.generate("What is the capital of France?")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+resp = llm.generate(&quot;What is the capital of France?&quot;)
 print(resp.content)
 </code></pre></div>
 <h2 id="streaming">Streaming</h2>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
-for chunk in llm.generate("Write a short poem about distributed systems.", stream=True):
-    print(chunk.content or "", end="", flush=True)
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct-2507-q4_K_M&quot;)
+for chunk in llm.generate(&quot;Write a short poem about distributed systems.&quot;, stream=True):
+    print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)
 </code></pre></div>
 <h2 id="tool-calling">Tool calling</h2>
 <p>AbstractCore supports native tool calling (when the provider supports it) and prompted tool syntax (when it doesn’t).</p>
 <p>By default, tool execution is pass-through (<code>execute_tools=False</code>): you get tool calls in <code>resp.tool_calls</code>, and your host/runtime decides how to execute them.</p>
+<p>In the AbstractFramework ecosystem, <strong>AbstractRuntime</strong> is the recommended runtime for executing tool calls durably (policy, retries, persistence). See <a href="architecture.html">Architecture</a> and <a href="tool-calling.html">Tool Calling</a>.</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -&gt; str:
-    return f"{city}: 22°C and sunny"
+    return f&quot;{city}: 22°C and sunny&quot;
 
-llm = create_llm("openai", model="gpt-4o-mini")
-resp = llm.generate("What's the weather in Paris? Use the tool.", tools=[get_weather])
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+resp = llm.generate(&quot;What's the weather in Paris? Use the tool.&quot;, tools=[get_weather])
 
 print(resp.content)
 print(resp.tool_calls)
@@ -134,7 +134,7 @@ print(resp.tool_calls)
 <p>See <a href="tool-calling.html">Tool Calling</a> and <a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a> (<code>tool_call_tags</code>, server <code>agent_format</code>).</p>
 <h3 id="built-in-tools-optional">Built-in tools (optional)</h3>
 <p>If you want a ready-made toolset for agentic scripts, install:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[tools]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[tools]&quot;
 </code></pre></div>
 <p>Then import from <code>abstractcore.tools.common_tools</code>:</p>
 <ul>
@@ -151,8 +151,8 @@ class Answer(BaseModel):
     title: str
     bullets: list[str]
 
-llm = create_llm("openai", model="gpt-4o-mini")
-answer = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+answer = llm.generate(&quot;Summarize HTTP/3 in 3 bullets.&quot;, response_model=Answer)
 print(answer.bullets)
 </code></pre></div>
 <p>See <a href="structured-output.html">Structured Output</a> for strategy details and limitations.</p>
@@ -160,8 +160,8 @@ print(answer.bullets)
 <p>Images and document extraction require <code>pip install "abstractcore[media]"</code> (Pillow + PDF/Office deps).</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("anthropic", model="claude-haiku-4-5")
-resp = llm.generate("Describe the image.", media=["./image.png"])
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
+resp = llm.generate(&quot;Describe the image.&quot;, media=[&quot;./image.png&quot;])
 print(resp.content)
 </code></pre></div>
 <p>Audio and video attachments are also supported, but they are <strong>policy-driven</strong> (no silent semantic changes):
@@ -174,14 +174,14 @@ print(resp.content)
 - <strong>Audio</strong>: either an audio-capable model <strong>or</strong> speech-to-text fallback via <code>abstractvoice</code> + <code>audio_policy="auto"</code>/<code>"speech_to_text"</code>.</p>
 <p>Defaults can be configured via the config CLI (<code>abstractcore --config</code>, <code>abstractcore --status</code>). See <a href="centralized-config.html">Centralized Config</a>.</p>
 <p>If your main model is text-only, you can configure vision fallback (two-stage captioning) so images are automatically described and injected as short observations. See <a href="media-handling-system.html">Media Handling</a>, <a href="vision-capabilities.html">Vision Capabilities</a>, and <a href="centralized-config.html">Centralized Config</a>.</p>
-<p>For long documents, AbstractCore can optionally apply Glyph visual-text compression. Install <code>pip install "abstractcore[compression]"</code> (and <code>pip install "abstractcore[media]"</code> for PDFs) and see <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/glyphs.md">Glyph Visual-Text Compression</a>.</p>
+<p>For long documents, AbstractCore can optionally apply Glyph visual-text compression. Install <code>pip install "abstractcore[compression]"</code> (and <code>pip install "abstractcore[media]"</code> for PDFs) and see <a href="glyphs.html">Glyph Visual-Text Compression</a>.</p>
 <h2 id="async">Async</h2>
 <div class="code-block"><pre><code class="language-python">import asyncio
 from abstractcore import create_llm
 
 async def main():
-    llm = create_llm("openai", model="gpt-4o-mini")
-    resp = await llm.agenerate("Give me 3 bullet points about HTTP caching.")
+    llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+    resp = await llm.agenerate(&quot;Give me 3 bullet points about HTTP caching.&quot;)
     print(resp.content)
 
 asyncio.run(main())
@@ -203,12 +203,15 @@ abstractcore-chat --provider openai --model gpt-4o-mini
 <li><a href="api-reference.html">API Reference</a> — complete function/class listing</li>
 <li><a href="troubleshooting.html">Troubleshooting</a> — common errors and fixes</li>
 <li><a href="server.html">Server</a> — OpenAI-compatible HTTP gateway</li>
+<li><a href="endpoint.html">Endpoint</a> — single-model OpenAI-compatible endpoint (one provider/model per worker)</li>
 </ul>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

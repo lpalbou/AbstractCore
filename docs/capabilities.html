@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AbstractCore Capabilities - AbstractCore</title>
-    <meta name="description" content="This document clearly explains what AbstractCore can and cannot do , helping you understand when to use it and when to look elsewhere.">
+    <meta name="description" content="This document clearly explains what AbstractCore can and cannot do, helping you understand when to use it and when to look elsewhere.">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -31,7 +31,7 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">AbstractCore Capabilities</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document clearly explains what AbstractCore can and cannot do , helping you understand when to use it and when to look elsewhere.</p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document clearly explains what AbstractCore can and cannot do, helping you understand when to use it and when to look elsewhere.</p>
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-abstractcore-is" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What AbstractCore IS</a>
@@ -45,7 +45,6 @@
 <a href="#next-steps" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Next Steps</a></div>
 
             <div class="doc-content">
-
 
 <h2 id="what-abstractcore-is">What AbstractCore IS</h2>
 <p>AbstractCore is <strong>production-ready LLM infrastructure</strong>. It provides a unified, reliable interface to language models with essential features built-in.</p>
@@ -67,30 +66,30 @@ pip install abstractvision
 </code></pre></div>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")  # example; pick a provider/model you have access to
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # example; pick a provider/model you have access to
 print(llm.capabilities.status())  # availability + selected backend ids + install hints
 
 # Voice/audio
-wav_bytes = llm.voice.tts("Hello", format="wav")
-text = llm.audio.transcribe("speech.wav")
+wav_bytes = llm.voice.tts(&quot;Hello&quot;, format=&quot;wav&quot;)
+text = llm.audio.transcribe(&quot;speech.wav&quot;)
 
 # Vision (requires vision_base_url / ABSTRACTVISION_BASE_URL)
-# png_bytes = llm.vision.t2i("a red square")
+# png_bytes = llm.vision.t2i(&quot;a red square&quot;)
 </code></pre></div>
 <h2 id="what-abstractcore-does-well">What AbstractCore Does Well</h2>
 <h3 id="1-universal-llm-provider-interface">1. Universal LLM Provider Interface</h3>
 <p><strong>What it does</strong>: Provides identical APIs across all major LLM providers.</p>
 <div class="code-block"><pre><code class="language-python"># Same code works with any provider
 def ask_llm(provider_name, question):
-    llm = create_llm(provider_name, model="default")
+    llm = create_llm(provider_name, model=&quot;default&quot;)
     return llm.generate(question)
 
-# All of these work identically
-ask_llm("openai", "What is Python?")
-ask_llm("anthropic", "What is Python?")
-ask_llm("ollama", "What is Python?")
+# All of these use the same API surface
+ask_llm(&quot;openai&quot;, &quot;What is Python?&quot;)
+ask_llm(&quot;anthropic&quot;, &quot;What is Python?&quot;)
+ask_llm(&quot;ollama&quot;, &quot;What is Python?&quot;)
 </code></pre></div>
-<p><strong>Why this helps</strong>: Provides consistent tool calling, streaming, and structured output across all providers.</p>
+<p><strong>Why this helps</strong>: Provides consistent tool calling, streaming, and structured output across supported providers.</p>
 <h3 id="2-production-grade-reliability">2. Production-Grade Reliability</h3>
 <p><strong>What it does</strong>: Handles failures gracefully with retry logic, circuit breakers, and comprehensive error handling.</p>
 <ul>
@@ -101,44 +100,44 @@ ask_llm("ollama", "What is Python?")
 </ul>
 <p><strong>Why this helps</strong>: Includes production reliability features like retry logic and error handling.</p>
 <h3 id="3-universal-tool-calling">3. Universal Tool Calling</h3>
-<p><strong>What it does</strong>: Tools work consistently across ALL providers, even those without native tool support.</p>
-<div class="code-block"><pre><code class="language-python">tools = [{"name": "get_weather", "description": "Get weather", ...}]
+<p><strong>What it does</strong>: Tools work consistently across supported providers, even those without native tool support.</p>
+<div class="code-block"><pre><code class="language-python">tools = [{&quot;name&quot;: &quot;get_weather&quot;, &quot;description&quot;: &quot;Get weather&quot;, ...}]
 
 # Works with providers that have native tool support
-openai_response = openai_llm.generate("Weather in Paris?", tools=tools)
+openai_response = openai_llm.generate(&quot;Weather in Paris?&quot;, tools=tools)
 
 # Also works with providers that don't (via intelligent prompting)
-ollama_response = ollama_llm.generate("Weather in Paris?", tools=tools)
+ollama_response = ollama_llm.generate(&quot;Weather in Paris?&quot;, tools=tools)
 </code></pre></div>
 <p><strong>Why this helps</strong>: Tools work with any provider, including those without native tool support.</p>
 <h3 id="4-tool-call-tag-rewriting-for-agentic-cli-compatibility">4. Tool Call Tag Rewriting for Agentic CLI Compatibility</h3>
 <p><strong>What it does</strong>: Automatically rewrites tool call tags to match different agentic CLI requirements in real-time.</p>
 <div class="code-block"><pre><code class="language-python"># Rewrite tool calls for different CLIs
 # Use a prompted-tools provider (tool-call markup lives in assistant content)
-llm = create_llm("ollama", model="qwen3:4b-instruct")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
 
 # For Codex CLI (Qwen3 format)
-response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="qwen3")
-# Output: &lt;|tool_call|&gt;{"name": "get_weather", "arguments": {"location": "Paris"}}&lt;/|tool_call|&gt;
+response = llm.generate(&quot;Weather in Paris?&quot;, tools=tools, tool_call_tags=&quot;qwen3&quot;)
+# Output: &lt;|tool_call|&gt;{&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: {&quot;location&quot;: &quot;Paris&quot;}}&lt;/|tool_call|&gt;
 
 # For Crush CLI (LLaMA3 format)  
-response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="llama3")
-# Output: &lt;function_call&gt;{"name": "get_weather", "arguments": {"location": "Paris"}}&lt;/function_call&gt;
+response = llm.generate(&quot;Weather in Paris?&quot;, tools=tools, tool_call_tags=&quot;llama3&quot;)
+# Output: &lt;function_call&gt;{&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: {&quot;location&quot;: &quot;Paris&quot;}}&lt;/function_call&gt;
 
 # For Gemini CLI (XML format)
-response = llm.generate("Weather in Paris?", tools=tools, tool_call_tags="xml")
-# Output: &lt;tool_call&gt;{"name": "get_weather", "arguments": {"location": "Paris"}}&lt;/tool_call&gt;
+response = llm.generate(&quot;Weather in Paris?&quot;, tools=tools, tool_call_tags=&quot;xml&quot;)
+# Output: &lt;tool_call&gt;{&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: {&quot;location&quot;: &quot;Paris&quot;}}&lt;/tool_call&gt;
 </code></pre></div>
 <p><strong>Why this helps</strong>: Works with different agentic CLIs without code changes.</p>
 <h3 id="5-tool-execution-control">5. Tool Execution Control</h3>
 <p><strong>What it does</strong>: Control whether AbstractCore executes tools automatically or lets the agent handle execution.</p>
 <div class="code-block"><pre><code class="language-python"># Default (recommended): passthrough mode (tools are *not* executed in AbstractCore)
-llm = create_llm("openai", model="gpt-4o-mini")
-response = llm.generate("Weather in Paris?", tools=tools)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+response = llm.generate(&quot;Weather in Paris?&quot;, tools=tools)
 # response.tool_calls contains structured tool call requests; host/runtime executes them
 
 # Optional (deprecated): direct execution in AbstractCore for simple scripts only
-# llm = create_llm("openai", model="gpt-4o-mini", execute_tools=True)
+# llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;, execute_tools=True)
 </code></pre></div>
 <p><strong>Why this helps</strong>: Allows flexible tool execution control for different deployment scenarios.</p>
 <h3 id="6-structured-output-with-automatic-retry">6. Structured Output with Automatic Retry</h3>
@@ -149,7 +148,7 @@ response = llm.generate("Weather in Paris?", tools=tools)
 
 # Automatically retries with error feedback if validation fails
 product = llm.generate(
-    "Extract: Gaming laptop for $1200",
+    &quot;Extract: Gaming laptop for $1200&quot;,
     response_model=Product
 )
 </code></pre></div>
@@ -160,8 +159,8 @@ product = llm.generate(
 <h3 id="5-streaming-with-tool-support">5. Streaming with Tool Support</h3>
 <p><strong>What it does</strong>: Real-time response streaming that properly handles tool calls.</p>
 <div class="code-block"><pre><code class="language-python"># Streams content in real-time, executes tools at the end
-for chunk in llm.generate("Tell me about Paris weather", tools=tools, stream=True):
-    print(chunk.content, end="", flush=True)
+for chunk in llm.generate(&quot;Tell me about Paris weather&quot;, tools=tools, stream=True):
+    print(chunk.content, end=&quot;&quot;, flush=True)
 </code></pre></div>
 <p><strong>Why this helps</strong>: Streaming works correctly with tool calls.</p>
 <h3 id="6-event-driven-observability">6. Event-Driven Observability</h3>
@@ -171,10 +170,10 @@ for chunk in llm.generate("Tell me about Paris weather", tools=tools, stream=Tru
 def cost_monitor(event):
     if event.type != EventType.GENERATION_COMPLETED:
         return
-    cost = event.data.get("cost_usd")
+    cost = event.data.get(&quot;cost_usd&quot;)
     if isinstance(cost, (int, float)) and cost &gt; 0.10:
         # NOTE: `cost_usd` is a best-effort estimate based on token usage.
-        alert(f"High estimated cost: ${cost:.2f}")
+        alert(f&quot;High estimated cost: ${cost:.2f}&quot;)
 
 on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 </code></pre></div>
@@ -183,15 +182,15 @@ on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 <p><strong>What it does</strong>: Provides ready-to-use command-line applications for common LLM tasks without any programming.</p>
 <div class="code-block"><pre><code class="language-bash"># Document summarization with multiple strategies
 summarizer document.pdf --style executive --length brief
-summarizer report.txt --focus "technical details" --output summary.txt
+summarizer report.txt --focus &quot;technical details&quot; --output summary.txt
 
 # Entity and relationship extraction
 extractor research_paper.pdf --format json-ld --focus technology
 extractor article.txt --entity-types person,organization,location
 
 # Text evaluation and scoring
-judge essay.txt --criteria clarity,accuracy,coherence --context "academic writing"
-judge code.py --context "code review" --format plain
+judge essay.txt --criteria clarity,accuracy,coherence --context &quot;academic writing&quot;
+judge code.py --context &quot;code review&quot; --format plain
 
 # Intent analysis and deception detection
 intent conversation.txt --focus-participant user --depth comprehensive
@@ -211,7 +210,7 @@ intent email.txt --format plain --context document --verbose
 <div class="code-block"><pre><code class="language-python"># AbstractCore gives you this
 from abstractcore.embeddings import EmbeddingManager
 embedder = EmbeddingManager()
-similarity = embedder.compute_similarity("query", "document")
+similarity = embedder.compute_similarity(&quot;query&quot;, &quot;document&quot;)
 
 # You need to build this yourself
 def rag_pipeline(query, documents):
@@ -228,7 +227,7 @@ def rag_pipeline(query, documents):
 <p><strong>What AbstractCore provides</strong>: Single LLM calls with tool execution
 <strong>What it doesn't provide</strong>: Multi-step agent reasoning, planning, memory persistence</p>
 <div class="code-block"><pre><code class="language-python"># AbstractCore is great for this
-response = llm.generate("What's 2+2?", tools=[calculator_tool])
+response = llm.generate(&quot;What's 2+2?&quot;, tools=[calculator_tool])
 
 # AbstractCore is NOT for this
 def complex_agent():
@@ -247,12 +246,12 @@ def complex_agent():
 <strong>What it doesn't provide</strong>: Semantic memory, long-term memory, knowledge graphs</p>
 <div class="code-block"><pre><code class="language-python"># AbstractCore provides basic sessions
 session = BasicSession(provider=llm)
-session.generate("My name is Alice")
-session.generate("What's my name?")  # Remembers within session
+session.generate(&quot;My name is Alice&quot;)
+session.generate(&quot;What's my name?&quot;)  # Remembers within session
 
 # For advanced memory, use specialized tools
 temporal_graph = AbstractMemory()  # Persistent, semantic memory
-temporal_graph.add_memory("Alice likes Python programming", context="conversation")
+temporal_graph.add_memory(&quot;Alice likes Python programming&quot;, context=&quot;conversation&quot;)
 </code></pre></div>
 <p><strong>Better alternatives</strong>:
 - <strong><a href="https://github.com/lpalbou/AbstractMemory">AbstractMemory</a></strong> - Temporal knowledge graphs
@@ -261,11 +260,11 @@ temporal_graph.add_memory("Alice likes Python programming", context="conversatio
 <p><strong>What AbstractCore provides</strong>: Direct prompt strings
 <strong>What it doesn't provide</strong>: Template engines, prompt optimization, A/B testing</p>
 <div class="code-block"><pre><code class="language-python"># AbstractCore expects you to handle prompts
-prompt = f"Translate '{text}' to {language}"
+prompt = f&quot;Translate '{text}' to {language}&quot;
 response = llm.generate(prompt)
 
 # For advanced templating, use other tools
-template = PromptTemplate("Translate '{text}' to {language}")  # Not provided
+template = PromptTemplate(&quot;Translate '{text}' to {language}&quot;)  # Not provided
 </code></pre></div>
 <p><strong>Better alternatives</strong>:
 - <strong><a href="https://jinja.palletsprojects.com/">Jinja2</a></strong> - Template engine
@@ -288,35 +287,41 @@ template = PromptTemplate("Translate '{text}' to {language}")  # Not provided
 <h2 id="when-to-choose-abstractcore">When to Choose AbstractCore</h2>
 <h3 id="choose-abstractcore-when-you-need">Choose AbstractCore When You Need:</h3>
 <ol>
+<li><strong>Reliable LLM Infrastructure</strong></li>
+<li>Production-ready error handling and retry logic</li>
+<li>Consistent interface across different providers</li>
 <li>
-<p><strong>Reliable LLM Infrastructure</strong>
-   - Production-ready error handling and retry logic
-   - Consistent interface across different providers
-   - Built-in monitoring and observability</p>
+<p>Built-in monitoring and observability</p>
 </li>
 <li>
-<p><strong>Provider Flexibility</strong>
-   - Easy switching between OpenAI, Anthropic, Ollama, etc.
-   - Provider-agnostic code that runs anywhere
-   - Local and cloud provider support</p>
+<p><strong>Provider Flexibility</strong></p>
+</li>
+<li>Easy switching between OpenAI, Anthropic, Ollama, etc.</li>
+<li>Provider-agnostic code that runs anywhere</li>
+<li>
+<p>Local and cloud provider support</p>
 </li>
 <li>
-<p><strong>Universal Tool Calling</strong>
-   - Tools that work across ALL providers
-   - Consistent tool execution regardless of native support
-   - Event-driven tool control and monitoring</p>
+<p><strong>Universal Tool Calling</strong></p>
+</li>
+<li>Tools that work across supported providers</li>
+<li>Consistent tool execution regardless of native support</li>
+<li>
+<p>Event-driven tool control and monitoring</p>
 </li>
 <li>
-<p><strong>Structured Output Reliability</strong>
-   - Type-safe responses with automatic validation
-   - Built-in retry logic for validation failures
-   - Production-grade error handling</p>
+<p><strong>Structured Output Reliability</strong></p>
+</li>
+<li>Type-safe responses with automatic validation</li>
+<li>Built-in retry logic for validation failures</li>
+<li>
+<p>Production-grade error handling</p>
 </li>
 <li>
-<p><strong>Streaming with Tools</strong>
-   - Real-time responses that handle tools correctly
-   - Proper streaming implementation across providers</p>
+<p><strong>Streaming with Tools</strong></p>
 </li>
+<li>Real-time responses that handle tools correctly</li>
+<li>Proper streaming implementation across providers</li>
 </ol>
 <h3 id="dont-choose-abstractcore-when-you-need">Don't Choose AbstractCore When You Need:</h3>
 <ol>
@@ -344,8 +349,8 @@ template = PromptTemplate("Translate '{text}' to {language}")  # Not provided
     E --&gt; I[MLX]
 
     style E fill:#e1f5fe
-    style A fill:#fff3e0
-</div>
+    style A fill:#fff3e0</div>
+
 <p><strong>AbstractCore</strong> = The reliable foundation
 <strong>AbstractAgent</strong> = Agent workflows and planning
 <strong>AbstractMemory</strong> = Advanced memory and knowledge graphs
@@ -437,18 +442,19 @@ template = PromptTemplate("Translate '{text}' to {language}")  # Not provided
 <li><strong>Start with AbstractCore</strong>: <a href="getting-started.html">Getting Started Guide</a></li>
 <li><strong>Need agents</strong>: Check out <a href="https://github.com/lpalbou/AbstractAgent">AbstractAgent</a></li>
 <li><strong>Need advanced memory</strong>: Check out <a href="https://github.com/lpalbou/AbstractMemory">AbstractMemory</a></li>
-<li><strong>Compare frameworks</strong>: Read <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/comparison.md">Framework Comparison</a></li>
+<li><strong>Compare frameworks</strong>: Read <a href="comparison.html">Framework Comparison</a></li>
 <li><strong>See real examples</strong>: Browse <a href="examples.html">Examples</a></li>
 </ul>
-<hr/>
+<hr />
 <p><strong>Remember</strong>: AbstractCore is infrastructure, not a full framework. It focuses on LLM provider abstraction and integrates with specialized tools for other needs.</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

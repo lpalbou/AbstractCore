@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AbstractCore Architecture - AbstractCore</title>
-    <meta name="description" content="AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works internally and why it&#x27;s…">
+    <meta name="description" content="AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -42,19 +42,27 @@
 <a href="#performance-characteristics" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Characteristics</a>
 <a href="#security-considerations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Security Considerations</a>
 <a href="#testing-strategy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Testing Strategy</a>
-<a href="#integration-with-abstract-framework" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration with Abstract Framework</a>
+<a href="#integration-with-abstractframework" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration with AbstractFramework</a>
 <a href="#summary" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Summary</a></div>
 
             <div class="doc-content">
 
-
+<p>If you're new to AbstractCore and want to start building quickly, read:
+- <code>docs/getting-started.md</code>
+- <code>docs/api.md</code></p>
 <p>Related docs (user-facing):
 - Media inputs (images/audio/video + documents): <code>docs/media-handling-system.md</code>
 - Vision input + fallback: <code>docs/vision-capabilities.md</code>
 - Capability plugins (voice/audio/vision): <code>docs/capabilities.md</code>
-- OpenAI-compatible server endpoints: <code>docs/server.md</code></p>
+- OpenAI-compatible gateway server: <code>docs/server.md</code>
+- Single-model OpenAI-compatible endpoint: <code>docs/endpoint.md</code>
+- Tool calling semantics (passthrough vs execution): <code>docs/tool-calling.md</code></p>
 <h2 id="system-overview">System Overview</h2>
-<p>AbstractCore operates as both a Python library and an optional HTTP server:</p>
+<p>AbstractCore operates as a Python library and can also be exposed via <strong>optional OpenAI-compatible HTTP servers</strong>:</p>
+<ul>
+<li><strong>Gateway server (multi-provider)</strong>: <code>abstractcore.server.app</code> (docs: <code>docs/server.md</code>)</li>
+<li><strong>Endpoint server (single-model)</strong>: <code>abstractcore.endpoint.app</code> (docs: <code>docs/endpoint.md</code>)</li>
+</ul>
 <div class="mermaid">graph TD
     A[Your Application] --&gt; B[AbstractCore API]
     AA[HTTP Clients] --&gt; BB[AbstractCore Server]
@@ -91,8 +99,8 @@
     style B fill:#e1f5fe
     style BB fill:#4caf50
     style C fill:#f3e5f5
-    style G fill:#fff3e0
-</div>
+    style G fill:#fff3e0</div>
+
 <h2 id="design-principles">Design Principles</h2>
 <h3 id="1-provider-abstraction">1. Provider Abstraction</h3>
 <p><strong>Goal</strong>: Same interface for all providers
@@ -110,7 +118,7 @@
 <p><strong>Goal</strong>: Flexible deployment as library or server
 <strong>Implementation</strong>: OpenAI-compatible REST API built on core library</p>
 <h2 id="core-components">Core Components</h2>
-<h3 id="1-factory-pattern-createllm">1. Factory Pattern (<code>create_llm</code>)</h3>
+<h3 id="1-factory-pattern-create_llm">1. Factory Pattern (<code>create_llm</code>)</h3>
 <p>The main entry point uses the factory pattern for clean provider instantiation:</p>
 <div class="mermaid">graph LR
     A[create_llm] --&gt; B{Provider Type}
@@ -125,32 +133,43 @@
     F --&gt; G
 
     style A fill:#4caf50
-    style G fill:#2196f3
-</div>
+    style G fill:#2196f3</div>
+
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Factory creates the right provider with proper configuration
-llm = create_llm("openai", model="gpt-4o-mini", temperature=0.7)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;, temperature=0.7)
 
 # OpenAI-compatible /v1 endpoints (LMStudio, vLLM, custom proxies)
-llm_local = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
-llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")  # requires OPENROUTER_API_KEY
-llm_portkey = create_llm("portkey", model="gpt-4o-mini", config_id="pcfg_...")  # requires PORTKEY_API_KEY + PORTKEY_CONFIG
+llm_local = create_llm(&quot;lmstudio&quot;, model=&quot;qwen/qwen3-4b-2507&quot;, base_url=&quot;http://localhost:1234/v1&quot;)
+llm_openrouter = create_llm(&quot;openrouter&quot;, model=&quot;openai/gpt-4o-mini&quot;)  # requires OPENROUTER_API_KEY
+llm_portkey = create_llm(&quot;portkey&quot;, model=&quot;gpt-4o-mini&quot;, config_id=&quot;pcfg_...&quot;)  # requires PORTKEY_API_KEY + PORTKEY_CONFIG
 </code></pre></div>
 <p>Gateway providers (OpenRouter/Portkey) route to external backends; AbstractCore forwards only <strong>explicit</strong> generation parameters to avoid sending defaults that strict backends reject.</p>
 <h3 id="2-provider-interface">2. Provider Interface</h3>
-<p>All providers implement <code>AbstractCoreInterface</code>:</p>
+<p>All providers implement <code>AbstractCoreInterface</code> (see <code>abstractcore/core/interface.py</code>):</p>
 <div class="code-block"><pre><code class="language-python">class AbstractCoreInterface(ABC):
     @abstractmethod
-    def generate(self, prompt: str, **kwargs) -&gt; GenerateResponse:
-        """Generate response from LLM"""
+    def generate(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List[Union[str, Dict[str, Any], &quot;MediaContent&quot;]]] = None,
+        stream: bool = False,
+        thinking: Optional[Union[bool, str]] = None,
+        **kwargs,
+    ) -&gt; Union[GenerateResponse, Iterator[GenerateResponse]]:
+        &quot;&quot;&quot;Generate a response (or a stream of chunks).&quot;&quot;&quot;
 
     @abstractmethod
     def get_capabilities(self) -&gt; List[str]:
-        """Get provider capabilities"""
+        &quot;&quot;&quot;Get provider capabilities&quot;&quot;&quot;
 
+    @abstractmethod
     def unload_model(self, model_name: str) -&gt; None:
-        """Unload/cleanup resources for a specific model (best-effort)"""
+        &quot;&quot;&quot;Unload/cleanup resources for a specific model (best-effort).&quot;&quot;&quot;
 </code></pre></div>
 <p>This ensures:
 - <strong>Consistency</strong>: Same methods across all providers
@@ -181,8 +200,8 @@ llm_portkey = create_llm("portkey", model="gpt-4o-mini", config_id="pcfg_...")  
 to call <code>llm.unload_model(model)</code> after the request completes. For providers that can unload shared server state (e.g. Ollama),
 this is disabled by default and must be explicitly enabled by the server operator.</p>
 <div class="code-block"><pre><code class="language-python"># Load model, use it, then free memory
-llm = create_llm("ollama", model="large-model")
-response = llm.generate("Hello")
+llm = create_llm(&quot;ollama&quot;, model=&quot;large-model&quot;)
+response = llm.generate(&quot;Hello&quot;)
 llm.unload_model(llm.model)  # Explicitly free memory
 del llm
 </code></pre></div>
@@ -218,8 +237,8 @@ del llm
 
     style D fill:#4caf50
     style J fill:#2196f3
-    style O fill:#ff9800
-</div>
+    style O fill:#ff9800</div>
+
 <h4 id="media-system-architecture">Media System Architecture</h4>
 <p><strong>Core Components:</strong>
 - <strong>MessagePreprocessor</strong>: Parses <code>@filename</code> syntax in CLI and extracts file references
@@ -235,46 +254,46 @@ del llm
 
 # OpenAI (JSON with image_url):
 {
-  "role": "user",
-  "content": [
-    {"type": "text", "text": "Analyze this"},
-    {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
+  &quot;role&quot;: &quot;user&quot;,
+  &quot;content&quot;: [
+    {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;Analyze this&quot;},
+    {&quot;type&quot;: &quot;image_url&quot;, &quot;image_url&quot;: {&quot;url&quot;: &quot;data:image/png;base64,...&quot;}}
   ]
 }
 
 # Anthropic (Messages API with source):
 {
-  "role": "user",
-  "content": [
-    {"type": "text", "text": "Analyze this"},
-    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "..."}}
+  &quot;role&quot;: &quot;user&quot;,
+  &quot;content&quot;: [
+    {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;Analyze this&quot;},
+    {&quot;type&quot;: &quot;image&quot;, &quot;source&quot;: {&quot;type&quot;: &quot;base64&quot;, &quot;media_type&quot;: &quot;image/png&quot;, &quot;data&quot;: &quot;...&quot;}}
   ]
 }
 
 # Local (Text embedding):
-"Analyze this\n\nImage description: A chart showing quarterly trends..."
+&quot;Analyze this\n\nImage description: A chart showing quarterly trends...&quot;
 </code></pre></div>
 <p><strong>Graceful Fallback Strategy:</strong>
 1. <strong>Advanced Processing</strong>: PyMuPDF4LLM, Unstructured libraries
 2. <strong>Basic Processing</strong>: Simple text extraction
 3. <strong>Metadata Fallback</strong>: File information and properties
 4. <strong>Degrades gracefully for documents</strong>: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
-5. <strong>Policy-driven for true multimodal inputs</strong>: for image/audio/video message parts, behavior is policy-driven; unsupported requests fail loudly unless an explicit enrichment fallback is configured (see ADR-0028).</p>
+5. <strong>Policy-driven for true multimodal inputs</strong>: for image/audio/video message parts, behavior is policy-driven; unsupported requests fail loudly unless an explicit enrichment fallback is configured (see <code>docs/media-handling-system.md</code> and <code>docs/vision-capabilities.md</code>).</p>
 <h4 id="unified-media-api">Unified Media API</h4>
 <p>The same <code>media=[]</code> parameter works across all providers:</p>
 <div class="code-block"><pre><code class="language-python"># Universal API - works with any provider
-llm = create_llm("openai", model="gpt-4o")  # or "anthropic", "ollama", etc.
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;)  # or &quot;anthropic&quot;, &quot;ollama&quot;, etc.
 response = llm.generate(
-    "Analyze these files",
-    media=["report.pdf", "chart.png", "data.xlsx"]
+    &quot;Analyze these files&quot;,
+    media=[&quot;report.pdf&quot;, &quot;chart.png&quot;, &quot;data.xlsx&quot;]
 )
 </code></pre></div>
 <p><strong>CLI Integration:</strong></p>
 <div class="code-block"><pre><code class="language-bash"># Simple @filename syntax works everywhere
-python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jpg"
+python -m abstractcore.utils.cli --prompt &quot;What's in @document.pdf and @image.jpg&quot;
 </code></pre></div>
 <h4 id="capability-plugins-voiceaudiovision">Capability plugins (voice/audio/vision)</h4>
-<p>To keep <code>abstractcore</code> dependency-light (ADR-0001) while still enabling “must work” deterministic modality APIs, AbstractCore supports optional <strong>capability plugins</strong> (ADR-0028):
+<p>To keep the default <code>abstractcore</code> install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional <strong>capability plugins</strong>:
 - <code>abstractvoice</code> provides <code>core.voice</code> + <code>core.audio</code> (TTS/STT).
 - <code>abstractvision</code> provides <code>core.vision</code> (T2I/I2I/T2V/I2V; backend-pluggable).</p>
 <p>Discovery:
@@ -289,7 +308,7 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
     participant Provider as LLM Provider
     participant Tools as Tool System
 
-    App-&gt;&gt;Core: generate("prompt", tools=tools)
+    App-&gt;&gt;Core: generate(&quot;prompt&quot;, tools=tools)
     Core-&gt;&gt;Events: emit(GENERATION_STARTED)
     Core-&gt;&gt;Retry: wrap_with_retry()
 
@@ -314,10 +333,11 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
     end
 
     Core-&gt;&gt;Events: emit(GENERATION_COMPLETED)
-    Core-&gt;&gt;App: GenerateResponse
-</div>
-<h3 id="4-tool-system-architecture">4. Tool System Architecture</h3>
-<p>The tool system provides universal tool execution across all providers:</p>
+    Core-&gt;&gt;App: GenerateResponse</div>
+
+<p>Note: in the Python API, <code>execute_tools</code> defaults to <code>False</code> (<strong>pass-through</strong>). Tool calls are returned in <code>GenerateResponse.tool_calls</code> for your host/runtime to execute. <code>execute_tools=True</code> exists for simple demos but is deprecated for most production use cases. The optional HTTP gateway server runs in pass-through mode.</p>
+<h3 id="5-tool-system-architecture">5. Tool System Architecture</h3>
+<p>The tool system provides universal tool-call detection (and optional local execution) across all providers:</p>
 <div class="mermaid">graph TD
     A[LLM Response] --&gt; B{Has Tool Calls?}
     B --&gt;|No| C[Return Response]
@@ -333,13 +353,13 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 
     style D fill:#ffeb3b
     style H fill:#4caf50
-    style E fill:#ff9800
-</div>
+    style E fill:#ff9800</div>
+
 <h4 id="tool-execution-flow">Tool Execution Flow</h4>
 <ol>
 <li><strong>Tool Detection</strong>: Parse tool calls from LLM response</li>
 <li><strong>Event Emission</strong>: Emit <code>TOOL_STARTED</code> (preventable)</li>
-<li><strong>Local Execution</strong>: Execute tools in AbstractCore (not by provider)</li>
+<li><strong>Optional local execution (deprecated)</strong>: execute tools inside AbstractCore when <code>execute_tools=True</code> (providers never execute arbitrary local tools)</li>
 <li><strong>Result Collection</strong>: Gather results and error information</li>
 <li><strong>Event Emission</strong>: Emit <code>TOOL_COMPLETED</code> with results</li>
 <li><strong>Response Integration</strong>: Append tool results to original response</li>
@@ -365,8 +385,8 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
     style A fill:#e1f5fe
     style H fill:#ff9800
     style I fill:#9c27b0
-    style K fill:#4caf50
-</div>
+    style K fill:#4caf50</div>
+
 <h4 id="tool-call-tag-rewriting-system">Tool Call Tag Rewriting System</h4>
 <p>AbstractCore includes a sophisticated tag rewriting system that enables compatibility with any agentic CLI:</p>
 <p><strong>Rewriting Pipeline</strong>:</p>
@@ -388,8 +408,8 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 
     style B fill:#2196f3
     style E fill:#ff9800
-    style I fill:#4caf50
-</div>
+    style I fill:#4caf50</div>
+
 <p><strong>Supported Formats</strong>:
 - <strong>Default (Qwen3)</strong>: <code>&lt;|tool_call|&gt;...JSON...&lt;/|tool_call|&gt;</code> - Compatible with Codex CLI
 - <strong>LLaMA3</strong>: <code>&lt;function_call&gt;...JSON...&lt;/function_call&gt;</code> - Compatible with Crush CLI
@@ -401,7 +421,7 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 - <strong>Zero Latency</strong>: No additional processing delays
 - <strong>Universal Detection</strong>: Automatically detects source format from any model
 - <strong>Graceful Fallback</strong>: Returns original content if rewriting fails</p>
-<h3 id="5-retry-and-reliability-system">5. Retry and Reliability System</h3>
+<h3 id="6-retry-and-reliability-system">6. Retry and Reliability System</h3>
 <p>Production-grade error handling with multiple layers:</p>
 <div class="mermaid">graph TD
     A[LLM Request] --&gt; B[Retry Manager]
@@ -425,8 +445,8 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 
     style D fill:#ff9800
     style I fill:#f44336
-    style L fill:#d32f2f
-</div>
+    style L fill:#d32f2f</div>
+
 <h4 id="retry-configuration">Retry Configuration</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 from abstractcore.core.retry import RetryConfig
@@ -440,9 +460,9 @@ config = RetryConfig(
     recovery_timeout=60.0     # Test recovery after 1 minute
 )
 
-llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;, retry_config=config)
 </code></pre></div>
-<h3 id="6-event-system">6. Event System</h3>
+<h3 id="7-event-system">7. Event System</h3>
 <p>Observability hooks through events:</p>
 <div class="mermaid">graph TD
     A[LLM Operation] --&gt; B[Event Emission]
@@ -463,8 +483,8 @@ llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
 
     style B fill:#9c27b0
     style C fill:#673ab7
-    style H fill:#f44336
-</div>
+    style H fill:#f44336</div>
+
 <h4 id="event-types-and-use-cases">Event Types and Use Cases</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
 
@@ -472,28 +492,28 @@ llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
 def monitor_costs(event):
     if event.type != EventType.GENERATION_COMPLETED:
         return
-    cost = event.data.get("cost_usd")
+    cost = event.data.get(&quot;cost_usd&quot;)
     if isinstance(cost, (int, float)) and cost &gt; 0.10:
-        alert(f"High estimated cost: ${cost:.2f}")
+        alert(f&quot;High estimated cost: ${cost:.2f}&quot;)
 
 # Tool monitoring
 def log_tools(event):
     if event.type == EventType.TOOL_COMPLETED:
-        log(f"Tool completed: {event.data.get('tool_name')}")
+        log(f&quot;Tool completed: {event.data.get('tool_name')}&quot;)
 
 # Performance tracking
 def track_performance(event):
     if event.type != EventType.GENERATION_COMPLETED:
         return
-    duration_ms = event.data.get("duration_ms")
+    duration_ms = event.data.get(&quot;duration_ms&quot;)
     if isinstance(duration_ms, (int, float)) and duration_ms &gt; 10_000:
-        log(f"Slow request: {float(duration_ms):.0f}ms")
+        log(f&quot;Slow request: {float(duration_ms):.0f}ms&quot;)
 
 on_global(EventType.GENERATION_COMPLETED, monitor_costs)
 on_global(EventType.TOOL_COMPLETED, log_tools)
 on_global(EventType.GENERATION_COMPLETED, track_performance)
 </code></pre></div>
-<h3 id="7-structured-output-system-with-streaming-integration">7. Structured Output System with Streaming Integration</h3>
+<h3 id="8-structured-output-system-with-streaming-integration">8. Structured Output System with Streaming Integration</h3>
 <p>Type-safe responses with automatic validation, retry, and unified streaming:</p>
 <div class="mermaid">graph TD
     A[LLM Generate] --&gt; B{Streaming Mode?}
@@ -522,16 +542,16 @@ on_global(EventType.GENERATION_COMPLETED, track_performance)
     style E fill:#2196f3
     style F fill:#ff9800
     style G fill:#9c27b0
-    style K fill:#f44336
-</div>
+    style K fill:#f44336</div>
+
 <h4 id="unified-streaming-architecture">Unified Streaming Architecture</h4>
-<p>AbstractCore's streaming system provides high-performance, character-by-character streaming with real-time tool detection:</p>
+<p>AbstractCore’s streaming system provides character-by-character streaming with incremental tool detection and optional tool-call syntax rewriting.</p>
 <p><strong>Architecture Components</strong>:</p>
 <div class="mermaid">graph TD
     A[Stream Input] --&gt; B[UnifiedStreamProcessor]
     B --&gt; C[IncrementalToolDetector]
     C --&gt; D[Tag Rewriter]
-    D --&gt; E[Tool Execution]
+    D --&gt; E[Tool Execution (optional)]
     E --&gt; F[Stream Output]
 
     B --&gt; G[Character-by-Character Handling]
@@ -541,70 +561,75 @@ on_global(EventType.GENERATION_COMPLETED, track_performance)
     style B fill:#4caf50
     style C fill:#2196f3
     style D fill:#ff9800
-    style E fill:#9c27b0
-</div>
+    style E fill:#9c27b0</div>
+
 <p><strong>Key Features</strong>:</p>
 <ol>
+<li><strong>Unified Streaming Strategy</strong></li>
+<li>Single consistent approach across all providers</li>
+<li>Best-effort time-to-first-token (TTFT) telemetry for debugging</li>
 <li>
-<p><strong>Unified Streaming Strategy</strong>
-   - Single consistent approach across all providers
-   - First chunk delivery in &lt;10ms
-   - Minimal code complexity</p>
+<p>Minimal buffering (incremental parsing)</p>
 </li>
 <li>
-<p><strong>Incremental Tool Detection</strong>
-   - Real-time tool call detection during streaming
-   - Emits <code>chunk.tool_calls</code> as soon as a full tool call is detected
-   - Handles partial tool calls across chunk boundaries</p>
+<p><strong>Incremental Tool Detection</strong></p>
+</li>
+<li>Real-time tool call detection during streaming</li>
+<li>Emits <code>chunk.tool_calls</code> as soon as a full tool call is detected</li>
+<li>
+<p>Handles partial tool calls across chunk boundaries</p>
 </li>
 <li>
-<p><strong>Character-by-Character Streaming</strong>
-   - Handles micro-chunking from providers (22+ tiny chunks per tool call)
-   - Intelligent buffering for partial tool calls
-   - Robust parsing with auto-repair for malformed JSON</p>
+<p><strong>Character-by-Character Streaming</strong></p>
+</li>
+<li>Handles micro-chunking from providers (very small deltas)</li>
+<li>Intelligent buffering for partial tool calls</li>
+<li>
+<p>Robust parsing with auto-repair for malformed JSON</p>
 </li>
 <li>
-<p><strong>Tool Call Tag Rewriting Integration</strong>
-   - Real-time format conversion during streaming
-   - Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)
-   - Zero buffering overhead for tag conversion</p>
+<p><strong>Tool Call Tag Rewriting Integration</strong></p>
 </li>
+<li>Real-time format conversion during streaming</li>
+<li>Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)</li>
+<li>Designed to avoid large buffering while keeping tool calls structured</li>
 </ol>
 <p><strong>Streaming with Tag Rewriting Example</strong>:</p>
-<div class="code-block"><pre><code class="language-python"># Real-time streaming with automatic tool call format conversion
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, tool
+
+@tool
+def analyze_code(code: str) -&gt; str:
+    &quot;&quot;&quot;Return a small, deterministic analysis.&quot;&quot;&quot;
+    return f&quot;chars={len(code)}&quot;
+
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)  # requires Ollama running (default: http://localhost:11434)
 for chunk in llm.generate(
-    "Create a Python function and analyze it",
+    &quot;Write a Python function, then call analyze_code on it.&quot;,
     stream=True,
-    tools=[code_analysis_tool],
-    tool_call_tags="llama3"  # Convert to Crush CLI format
+    tools=[analyze_code],
+    tool_call_tags=&quot;llama3&quot;,  # Emit &lt;function_call&gt;...&lt;/function_call&gt; style tags
 ):
-    # Immediate character-by-character output
-    print(chunk.content, end="", flush=True)
-
-    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
+    print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)
     if chunk.tool_calls:
-        print(f"\nTool calls: {chunk.tool_calls}")
+        print(f&quot;\nTool calls: {chunk.tool_calls}&quot;)
 
-# Output format: &lt;function_call&gt;{"name": "analyze_code"}...&lt;/function_call&gt;
+# Output format: &lt;function_call&gt;{&quot;name&quot;: &quot;analyze_code&quot;}...&lt;/function_call&gt;
 </code></pre></div>
-<p><strong>Performance Characteristics</strong>:
-- <strong>First Chunk Latency</strong>: &lt;10ms across all providers
-- <strong>Tool Detection Overhead</strong>: &lt;1ms per chunk
-- <strong>Memory Efficiency</strong>: Linear, bounded growth
-- <strong>Character-by-Character Support</strong>: Handles extreme micro-chunking
-- <strong>Tag Rewriting</strong>: Zero additional latency</p>
+<p>Implementation pointers (source of truth):
+- Unified streaming + tool detection: <code>abstractcore/providers/streaming.py</code>
+- Streaming wrapper + TTFT metadata: <code>abstractcore/providers/base.py</code></p>
 <h4 id="automatic-error-feedback">Automatic Error Feedback</h4>
 <p>When validation fails, AbstractCore provides detailed feedback to the LLM:</p>
 <div class="code-block"><pre><code class="language-python"># If LLM returns invalid data, AbstractCore automatically retries with:
-"""
+&quot;&quot;&quot;
 IMPORTANT: Your previous response had validation errors:
 • Field 'age': Age must be positive (got -25)
 • Field 'email': Invalid email format
 
 Please correct these errors and provide valid JSON.
-"""
+&quot;&quot;&quot;
 </code></pre></div>
-<h3 id="8-session-management">8. Session Management</h3>
+<h3 id="9-session-management">9. Session Management</h3>
 <p>Simple conversation memory without complexity:</p>
 <div class="mermaid">graph LR
     A[BasicSession] --&gt; B[Message History]
@@ -622,11 +647,11 @@ Please correct these errors and provide valid JSON.
     H --&gt; I[JSON Persistence]
 
     style A fill:#2196f3
-    style B fill:#4caf50
-</div>
-<h3 id="9-server-architecture-optional-component">9. Server Architecture (Optional Component)</h3>
+    style B fill:#4caf50</div>
+
+<h3 id="10-server-architecture-optional-component">10. Server Architecture (Optional Component)</h3>
 <p>The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:</p>
-<div class="mermaid">    graph TD
+<div class="mermaid">   graph TD
         A[HTTP Client] --&gt; B[FastAPI Server]
         B --&gt; C{Endpoint Router}
 
@@ -651,8 +676,8 @@ Please correct these errors and provide valid JSON.
 
     style B fill:#4caf50
     style J fill:#e1f5fe
-    style K fill:#f3e5f5
-</div>
+    style K fill:#f3e5f5</div>
+
 <p><strong>Architecture Layers</strong>:</p>
 <ol>
 <li><strong>HTTP Layer</strong>: FastAPI-based REST API with request validation</li>
@@ -688,8 +713,8 @@ Please correct these errors and provide valid JSON.
     Core-&gt;&gt;Core: Execute tools if needed
     Core-&gt;&gt;Server: GenerateResponse
     Server-&gt;&gt;Server: Convert to OpenAI format
-    Server-&gt;&gt;Client: HTTP Response (streaming or complete)
-</div>
+    Server-&gt;&gt;Client: HTTP Response (streaming or complete)</div>
+
 <p><strong>Server Features</strong>:</p>
 <ul>
 <li><strong>Automatic Retry</strong>: Built-in retry logic from core library</li>
@@ -704,7 +729,7 @@ Please correct these errors and provide valid JSON.
 <ul>
 <li><strong>Same code works everywhere</strong>: Switch providers by changing one line</li>
 <li><strong>No vendor lock-in</strong>: Easy migration between cloud and local providers</li>
-<li><strong>Consistent behavior</strong>: Tools, streaming, structured output work identically</li>
+<li><strong>Consistent semantics</strong>: tools, streaming, and structured output follow the same API surface (provider/model differences still apply)</li>
 </ul>
 <h3 id="2-production-ready">2. Production Ready</h3>
 <ul>
@@ -732,18 +757,18 @@ Please correct these errors and provide valid JSON.
 class MyProvider(BaseProvider):
     def generate(self, prompt: str, **kwargs) -&gt; GenerateResponse:
         # Implement provider-specific logic
-        return GenerateResponse(content="...")
+        return GenerateResponse(content=&quot;...&quot;)
 
     def get_capabilities(self) -&gt; List[str]:
-        return ["text_generation", "streaming"]
+        return [&quot;text_generation&quot;, &quot;streaming&quot;]
 </code></pre></div>
 <h3 id="adding-tools">Adding Tools</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import tool
 
 @tool
 def my_custom_tool(param: str) -&gt; str:
-    """Custom tool that does something useful."""
-    return f"Processed: {param}"
+    &quot;&quot;&quot;Custom tool that does something useful.&quot;&quot;&quot;
+    return f&quot;Processed: {param}&quot;
 </code></pre></div>
 <h2 id="performance-characteristics">Performance Characteristics</h2>
 <p>AbstractCore’s overhead is usually small compared to model inference and network latency. If performance matters, benchmark on your target provider/model/hardware.</p>
@@ -756,45 +781,40 @@ def my_custom_tool(param: str) -&gt; str:
 <h2 id="security-considerations">Security Considerations</h2>
 <h3 id="1-tool-execution-safety">1. Tool Execution Safety</h3>
 <ul>
-<li><strong>Local execution</strong>: Tools run in AbstractCore, not by providers</li>
+<li><strong>Local execution (optional)</strong>: tool execution is local (never executed by the provider); by default tool calls are returned for your host/runtime to execute</li>
 <li><strong>Event prevention</strong>: Stop dangerous tools before execution</li>
 <li><strong>Input validation</strong>: Validate tool parameters</li>
 </ul>
 <h3 id="2-api-key-management">2. API Key Management</h3>
 <ul>
 <li><strong>Environment variables</strong>: Secure key storage</li>
-<li><strong>No logging</strong>: Keys never appear in logs</li>
+<li><strong>Avoid logging</strong>: treat logs as sensitive; do not log secrets (AbstractCore tries to avoid printing keys in logs)</li>
 <li><strong>Provider isolation</strong>: Keys scoped to specific providers</li>
 </ul>
 <h3 id="3-data-privacy">3. Data Privacy</h3>
 <ul>
 <li><strong>Local options</strong>: Support for local providers (Ollama, MLX)</li>
-<li><strong>No data retention</strong>: AbstractCore doesn't store conversation data</li>
+<li><strong>No persistent storage by default</strong>: conversation state lives in memory (for example <code>BasicSession</code>) unless you explicitly save it or enable tracing/logging</li>
 <li><strong>Transparent processing</strong>: All operations are observable through events</li>
 </ul>
 <h2 id="testing-strategy">Testing Strategy</h2>
-<h3 id="1-no-mocking-philosophy">1. No Mocking Philosophy</h3>
+<p>The repo uses a mix of unit tests and integration tests. Some tests are provider-/network-/hardware-dependent and are opt-in.</p>
+<p>Quick pointers:
+- Run: <code>pytest -q</code>
+- Vision tests: <code>tests/README_VISION_TESTING.md</code>
+- Seed tests: <code>tests/README_SEED_TESTING.md</code>
+- Streaming/tool parsing tests: <code>tests/streaming/</code> and <code>tests/test_agentic_cli_compatibility.py</code>
+- Server/endpoint tests: <code>tests/server/</code> and <code>tests/test_abstractendpoint_singleton_provider.py</code></p>
+<h2 id="integration-with-abstractframework">Integration with AbstractFramework</h2>
+<p>AbstractCore is a core package in the <strong>AbstractFramework</strong> ecosystem:</p>
 <ul>
-<li><strong>Real implementations</strong>: Test against actual providers</li>
-<li><strong>Real models</strong>: Use actual LLM models in tests</li>
-<li><strong>Real scenarios</strong>: Test real-world usage patterns</li>
+<li>AbstractFramework (umbrella): https://github.com/lpalbou/AbstractFramework</li>
+<li>AbstractCore (this repo): https://github.com/lpalbou/AbstractCore</li>
+<li>AbstractRuntime: https://github.com/lpalbou/abstractruntime</li>
 </ul>
-<h3 id="2-provider-coverage">2. Provider Coverage</h3>
-<ul>
-<li><strong>All providers tested</strong>: Every provider has comprehensive tests</li>
-<li><strong>Cross-provider consistency</strong>: Same tests run across all providers</li>
-<li><strong>Feature parity</strong>: Ensure consistent behavior</li>
-</ul>
-<h3 id="3-reliability-testing">3. Reliability Testing</h3>
-<ul>
-<li><strong>Failure scenarios</strong>: Test retry logic and error handling</li>
-<li><strong>Performance tests</strong>: Measure latency and throughput</li>
-<li><strong>Integration tests</strong>: Test with real external dependencies</li>
-</ul>
-<h2 id="integration-with-abstract-framework">Integration with Abstract Framework</h2>
-<p>AbstractCore is the foundation layer for the Abstract Framework stack:</p>
+<p>In this ecosystem, AbstractCore focuses on <strong>LLM I/O + provider abstraction</strong>, while AbstractRuntime focuses on <strong>durable execution</strong> (effects/tools/workflows/state). AbstractCore remains usable standalone; when you need durability/policy/sandboxing around tools, plug it into a runtime (for example AbstractRuntime).</p>
 <div class="mermaid">graph TD
-    subgraph "UI Layer (peers)"
+    subgraph &quot;UI Layer (peers)&quot;
         A[AbstractCode&lt;br/&gt;Terminal CLI]
         B[AbstractFlow Visual Editor&lt;br/&gt;React + ReactFlow]
     end
@@ -813,8 +833,8 @@ def my_custom_tool(param: str) -&gt; str:
     style B fill:#fff3e0
     style F fill:#f3e5f5
     style C fill:#f3e5f5
-    style D fill:#f3e5f5
-</div>
+    style D fill:#f3e5f5</div>
+
 <h3 id="framework-layers">Framework Layers</h3>
 <ul>
 <li><strong>UI Layer</strong> (peers):</li>
@@ -836,13 +856,14 @@ def my_custom_tool(param: str) -&gt; str:
 <li><strong>Flexibility</strong> - Deploy as Python library or OpenAI-compatible HTTP server</li>
 </ol>
 <p>The result is a foundation that works reliably in production while remaining simple enough to learn quickly and flexible enough to build advanced applications on top of.</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "dark" });</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

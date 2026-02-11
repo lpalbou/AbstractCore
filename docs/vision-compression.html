@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vision Compression User Guide - AbstractCore</title>
+    <meta name="description" content="⚠️ EXPERIMENTAL FEATURE Vision compression and glyph compression are currently in experimental status. The API and behavior may change in future releases.…">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Vision Compression User Guide</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">⚠️ EXPERIMENTAL FEATURE Vision compression and glyph compression are currently in experimental status. The API and behavior may change in future releases. Vision Model Requirement: These features ONLY work with vision-capable models (e.g., gpt-4o, claude-3-5-sonnet, llama3.2-vision, gemini-1.5-pro). Attempting to use compression with non-vision models will raise UnsupportedFeatureError.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#table-of-contents" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Table of Contents</a>
+<a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#compression-methods" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Compression Methods</a>
+<a href="#provider-optimization" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider Optimization</a>
+<a href="#advanced-usage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Advanced Usage</a>
+<a href="#analytics-and-monitoring" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Analytics and Monitoring</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a>
+<a href="#api-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">API Reference</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#limitations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Limitations</a></div>
+
+            <div class="doc-content">
+
+<h2 id="overview">Overview</h2>
+<p>AbstractCore's Vision Compression system transforms long text documents into visual representations for vision-capable models. This can reduce token usage for long inputs, but compression ratios and quality vary significantly by content, model, and configuration.</p>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#quick-start">Quick Start</a></li>
+<li><a href="#compression-methods">Compression Methods</a></li>
+<li><a href="#provider-optimization">Provider Optimization</a></li>
+<li><a href="#advanced-usage">Advanced Usage</a></li>
+<li><a href="#analytics-and-monitoring">Analytics and Monitoring</a></li>
+<li><a href="#troubleshooting">Troubleshooting</a></li>
+<li><a href="#api-reference">API Reference</a></li>
+</ol>
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="installation">Installation</h3>
+<div class="code-block"><pre><code class="language-bash"># Glyph compression (Pillow renderer)
+pip install &quot;abstractcore[compression]&quot;
+</code></pre></div>
+<p>Optional (experimental): Direct PDF→image conversion requires <code>pdf2image</code> and its system dependencies (Poppler).</p>
+<h3 id="basic-glyph-compression">Basic Glyph Compression</h3>
+<p>The simplest way to compress text using vision-based compression:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression import GlyphProcessor
+from abstractcore.compression.config import GlyphConfig
+
+# Initialize processor
+config = GlyphConfig()
+config.enabled = True
+processor = GlyphProcessor(config=config)
+
+# Compress text
+text = &quot;Your long document text here...&quot;
+compressed = processor.process_text(
+    text,
+    provider=&quot;openai&quot;,
+    model=&quot;gpt-4o&quot;
+)
+
+# Use with LLM
+from abstractcore import create_llm
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;)
+response = llm.generate(
+    &quot;Summarize this document&quot;,
+    media=compressed
+)
+</code></pre></div>
+<p><strong>What to expect</strong>:
+- Compression ratio and quality depend heavily on content, model OCR behavior, and rendering settings.
+- Treat this as a tuning problem: higher DPI/font sizes typically improve fidelity but increase image tokens.</p>
+<h3 id="pdf-compression">PDF Compression</h3>
+<p>For PDF documents, you can use the (experimental) DirectPDFProcessor:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.media.processors.direct_pdf_processor import DirectPDFProcessor
+
+# Requires: `pip install pdf2image` (+ Poppler installed on your system)
+processor = DirectPDFProcessor(pages_per_image=2, dpi=150)
+result = processor.process_file(&quot;document.pdf&quot;)
+if not result.success:
+    raise RuntimeError(result.error_message)
+
+# MediaContent (base64 PNG) you can pass to a vision-capable model:
+media_image = result.media_content
+</code></pre></div>
+<h2 id="compression-methods">Compression Methods</h2>
+<h3 id="1-standard-glyph-compression-recommended">1. Standard Glyph Compression (Recommended)</h3>
+<p><strong>Use Case:</strong> General document compression with reliable quality</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression import GlyphProcessor
+
+processor = GlyphProcessor()
+compressed = processor.process_text(
+    text,
+    provider=&quot;openai&quot;,
+    model=&quot;gpt-4o&quot;,
+    user_preference=&quot;auto&quot;  # or &quot;always&quot; to force compression
+)
+</code></pre></div>
+<p><strong>Characteristics:</strong>
+- Compression/quality tradeoffs vary by content, model, and rendering settings
+- No external infrastructure beyond a vision-capable model
+- Latency depends on rendering + model inference</p>
+<h3 id="2-optimized-glyph-compression">2. Optimized Glyph Compression</h3>
+<p><strong>Use Case:</strong> Provider-specific optimization for better compression</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.optimizer import CompressionOptimizer
+from abstractcore.compression import GlyphProcessor
+
+# Get optimized configuration
+optimizer = CompressionOptimizer()
+config = optimizer.get_optimized_config(
+    provider=&quot;openai&quot;,
+    model=&quot;gpt-4o&quot;,
+    aggressive=False  # Set True for more compression
+)
+
+# Use optimized config
+processor = GlyphProcessor()
+compressed = processor.process_text(text, provider=&quot;openai&quot;, model=&quot;gpt-4o&quot;)
+</code></pre></div>
+<p><strong>Characteristics:</strong>
+- More aggressive provider-specific rendering defaults (when configured)
+- Compression/quality tradeoffs vary by content, model, and rendering settings</p>
+<h3 id="3-hybrid-compression-experimental">3. Hybrid Compression (Experimental)</h3>
+<p><strong>Use Case:</strong> Maximum compression for large documents</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.vision_compressor import HybridCompressionPipeline
+from abstractcore import create_llm
+
+# Initialize hybrid pipeline
+pipeline = HybridCompressionPipeline(
+    vision_provider=&quot;ollama&quot;,
+    vision_model=&quot;llama3.2-vision&quot;
+)
+
+# Compress with target ratio
+result = pipeline.compress(
+    text,
+    target_ratio=20.0,  # Target 20x compression
+    min_quality=0.90    # Minimum 90% quality
+)
+
+print(f&quot;Achieved: {result['total_compression_ratio']:.1f}x compression&quot;)
+print(f&quot;Quality: {result['total_quality_score']:.1%}&quot;)
+
+# Use the compressed images with an LLM
+llm = create_llm(&quot;ollama&quot;, model=&quot;llama3.2-vision&quot;)
+response = llm.generate(
+    &quot;Summarize this document&quot;,
+    media=result['media']  # Access the compressed images via result['media']
+)
+</code></pre></div>
+<p><strong>Characteristics:</strong>
+- Compression/quality tradeoffs vary by mode and model
+- Requires a vision-capable model
+- Latency depends on rendering + model inference</p>
+<h2 id="provider-optimization">Provider Optimization</h2>
+<h3 id="pre-configured-profiles">Pre-configured Profiles</h3>
+<p>AbstractCore includes provider/model rendering profiles as starting points. They are heuristics (not guarantees) and may need tuning for your content and target vision model.</p>
+<p>Examples:
+- OpenAI: gpt-4o, gpt-4o-mini
+- Anthropic: claude-3-5-sonnet, claude-haiku-4-5
+- Ollama: llama3.2-vision</p>
+<h3 id="using-provider-profiles">Using Provider Profiles</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.optimizer import create_optimized_config
+from abstractcore.compression import GlyphProcessor
+
+# Automatic provider optimization
+config = create_optimized_config(&quot;openai&quot;, &quot;gpt-4o&quot;)
+processor = GlyphProcessor()
+
+# Process with optimized settings
+compressed = processor.process_text(
+    text,
+    provider=&quot;openai&quot;,
+    model=&quot;gpt-4o&quot;
+)
+</code></pre></div>
+<h3 id="custom-profiles">Custom Profiles</h3>
+<p>Create custom optimization profiles:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.optimizer import OptimizationProfile
+
+custom_profile = OptimizationProfile(
+    provider=&quot;custom&quot;,
+    model=&quot;custom-model&quot;,
+    dpi=72,              # Lower = more compression
+    font_size=6,         # Smaller = more compression
+    line_height=7,       # Tighter = more compression
+    columns=6,           # More = more compression
+    margin_x=2,
+    margin_y=2,
+    target_compression=5.0,
+    quality_threshold=0.85,
+    notes=&quot;Ultra-aggressive compression&quot;
+)
+
+# Convert to rendering config
+config = custom_profile.to_rendering_config()
+</code></pre></div>
+<h2 id="advanced-usage">Advanced Usage</h2>
+<h3 id="adaptive-compression">Adaptive Compression</h3>
+<p>Automatically select compression level based on document characteristics:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.vision_compressor import VisionCompressor
+
+compressor = VisionCompressor()
+
+# Adaptive compression to meet targets
+result = compressor.adaptive_compress(
+    glyph_images=compressed_images,
+    original_tokens=25000,
+    target_ratio=20.0,   # Aim for 20x
+    min_quality=0.85     # But maintain 85% quality
+)
+
+print(f&quot;Selected mode: {result.metadata['mode']}&quot;)
+print(f&quot;Achieved: {result.compression_ratio:.1f}x at {result.quality_score:.1%} quality&quot;)
+</code></pre></div>
+<h3 id="quality-control">Quality Control</h3>
+<p>Configure quality thresholds and validation:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.config import GlyphConfig
+
+config = GlyphConfig()
+config.quality_threshold = 0.95  # Require 95% quality
+config.min_token_threshold = 1000  # Only compress if &gt;1000 tokens
+config.target_compression_ratio = 4.0  # Target 4x compression
+
+processor = GlyphProcessor(config=config)
+
+# Quality validation happens automatically
+try:
+    compressed = processor.process_text(text, provider=&quot;openai&quot;, model=&quot;gpt-4o&quot;)
+except CompressionQualityError as e:
+    print(f&quot;Quality too low: {e.quality_score:.1%}&quot;)
+    # Fall back to uncompressed text
+</code></pre></div>
+<h3 id="caching">Caching</h3>
+<p>Enable caching for repeated compressions:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.cache import CompressionCache
+
+# Cache is enabled by default in GlyphProcessor
+processor = GlyphProcessor()
+
+# First compression (slow)
+compressed1 = processor.process_text(text, provider=&quot;openai&quot;, model=&quot;gpt-4o&quot;)
+
+# Second compression (cached, instant)
+compressed2 = processor.process_text(text, provider=&quot;openai&quot;, model=&quot;gpt-4o&quot;)
+
+# Check cache statistics
+stats = processor.get_compression_stats()
+print(f&quot;Cache hits: {stats['cache_stats']['hits']}&quot;)
+</code></pre></div>
+<h2 id="analytics-and-monitoring">Analytics and Monitoring</h2>
+<h3 id="track-compression-performance">Track Compression Performance</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.analytics import get_analytics
+
+analytics = get_analytics()
+
+# Record compression operation
+analytics.record_compression(
+    provider=&quot;openai&quot;,
+    model=&quot;gpt-4o&quot;,
+    original_tokens=25000,
+    compressed_tokens=7500,
+    quality_score=0.92,
+    processing_time=1.5,
+    method=&quot;glyph&quot;
+)
+
+# Get provider statistics
+stats = analytics.get_provider_stats(&quot;openai&quot;)
+print(f&quot;Average compression: {stats['avg_compression_ratio']:.1f}x&quot;)
+print(f&quot;Average quality: {stats['avg_quality_score']:.1%}&quot;)
+
+# Generate report
+report = analytics.generate_report()
+print(report)
+</code></pre></div>
+<h3 id="monitor-trends">Monitor Trends</h3>
+<div class="code-block"><pre><code class="language-python"># Get compression trends
+trends = analytics.get_trends(hours=24)
+print(f&quot;Compression trend: {trends['ratio_trend']}&quot;)
+print(f&quot;Quality trend: {trends['quality_trend']}&quot;)
+
+# Get optimization suggestions
+suggestions = analytics.get_optimization_suggestions()
+for suggestion in suggestions:
+    print(f&quot;- {suggestion}&quot;)
+</code></pre></div>
+<h3 id="benchmark-configurations">Benchmark Configurations</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression.optimizer import CompressionOptimizer
+
+optimizer = CompressionOptimizer()
+test_text = &quot;Sample text for benchmarking...&quot;
+
+# Benchmark a profile
+profile = optimizer.profiles[&quot;openai/gpt-4o&quot;]
+results = optimizer.benchmark_profile(profile, test_text)
+
+print(f&quot;Compression: {results['compression_ratio']:.1f}x&quot;)
+print(f&quot;Quality: {results['quality_score']:.1%}&quot;)
+print(f&quot;Time: {results['processing_time']:.2f}s&quot;)
+print(f&quot;Meets target: {results['meets_target']}&quot;)
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues-and-solutions">Common Issues and Solutions</h3>
+<h4 id="1-low-compression-ratio">1. Low Compression Ratio</h4>
+<p><strong>Problem:</strong> Getting less than 2x compression</p>
+<p><strong>Solutions:</strong></p>
+<div class="code-block"><pre><code class="language-python"># Use aggressive mode
+config = create_optimized_config(provider, model, aggressive=True)
+
+# Lower quality threshold
+config.quality_threshold = 0.85
+
+# Increase columns and reduce font
+config.columns = 6
+config.font_size = 6
+</code></pre></div>
+<h4 id="2-quality-too-low">2. Quality Too Low</h4>
+<p><strong>Problem:</strong> Text becomes unreadable or quality score &lt;90%</p>
+<p><strong>Solutions:</strong></p>
+<div class="code-block"><pre><code class="language-python"># Use conservative settings
+config.dpi = 96  # Higher DPI
+config.font_size = 9  # Larger font
+config.columns = 3  # Fewer columns
+
+# Force higher quality threshold
+config.quality_threshold = 0.95
+</code></pre></div>
+<h4 id="3-processing-too-slow">3. Processing Too Slow</h4>
+<p><strong>Problem:</strong> Compression takes &gt;5 seconds</p>
+<p><strong>Solutions:</strong></p>
+<div class="code-block"><pre><code class="language-python"># Enable caching
+processor = GlyphProcessor()  # Cache enabled by default
+
+# Reduce image count
+config.pages_per_image = 3  # More pages per image
+
+# Use simpler renderer
+config.auto_crop = False  # Skip auto-cropping
+</code></pre></div>
+<h4 id="4-unsupportedfeatureerror-with-glyph_compression">4. UnsupportedFeatureError with glyph_compression</h4>
+<p><strong>Problem:</strong> <code>UnsupportedFeatureError: Glyph compression requires a vision-capable model</code></p>
+<p><strong>Cause:</strong> Attempting to use <code>glyph_compression="always"</code> with a non-vision model</p>
+<p><strong>Solution:</strong></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# WRONG: Non-vision model with forced compression
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4&quot;)  # No vision support
+response = llm.generate(
+    &quot;Summarize&quot;,
+    media=[&quot;doc.txt&quot;],
+    glyph_compression=&quot;always&quot;  # Raises UnsupportedFeatureError!
+)
+
+# RIGHT: Use a vision-capable model
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;)  # Has vision support ✓
+response = llm.generate(
+    &quot;Summarize&quot;,
+    media=[&quot;doc.txt&quot;],
+    glyph_compression=&quot;always&quot;  # Works!
+)
+
+# ALTERNATIVE: Use auto mode (graceful fallback)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4&quot;)
+response = llm.generate(
+    &quot;Summarize&quot;,
+    media=[&quot;doc.txt&quot;]
+    # glyph_compression=&quot;auto&quot; is default
+    # Logs warning and falls back to text processing
+)
+</code></pre></div>
+<p><strong>Vision-Capable Models:</strong>
+- OpenAI: <code>gpt-4o</code>, <code>gpt-4o-mini</code>, <code>gpt-4-turbo</code>, <code>gpt-4-vision-preview</code>
+- Anthropic: <code>claude-3-5-sonnet</code>, <code>claude-3-opus</code>, <code>claude-3-sonnet</code>, <code>claude-3-haiku</code>
+- Ollama: <code>llama3.2-vision</code>, <code>llava</code>, <code>bakllava</code>, <code>moondream</code>
+- Google: <code>gemini-1.5-pro</code>, <code>gemini-1.5-flash</code></p>
+<h4 id="5-provider-doesnt-support-vision">5. Provider Doesn't Support Vision</h4>
+<p><strong>Problem:</strong> Provider rejects compressed images</p>
+<p><strong>Solution:</strong></p>
+<div class="code-block"><pre><code class="language-python"># Check provider capabilities first
+from abstractcore.media.capabilities import get_model_capabilities
+
+capabilities = get_model_capabilities(provider, model)
+if capabilities.get('vision_support'):
+    # Safe to use compression
+    compressed = processor.process_text(text, provider, model)
+else:
+    # Use text directly
+    response = llm.generate(text)
+</code></pre></div>
+<h2 id="api-reference">API Reference</h2>
+<h3 id="glyphprocessor">GlyphProcessor</h3>
+<div class="code-block"><pre><code class="language-python">class GlyphProcessor:
+    def __init__(self, config: Optional[GlyphConfig] = None)
+
+    def process_text(
+        self,
+        content: str,
+        provider: str = None,
+        model: str = None,
+        user_preference: str = &quot;auto&quot;
+    ) -&gt; List[MediaContent]
+
+    def can_process(
+        self,
+        content: str,
+        provider: str,
+        model: str
+    ) -&gt; bool
+
+    def get_compression_stats(self) -&gt; Dict[str, Any]
+</code></pre></div>
+<h3 id="compressionoptimizer">CompressionOptimizer</h3>
+<div class="code-block"><pre><code class="language-python">class CompressionOptimizer:
+    def get_optimized_config(
+        self,
+        provider: str,
+        model: str,
+        aggressive: bool = False
+    ) -&gt; RenderingConfig
+
+    def analyze_compression_potential(
+        self,
+        text_length: int,
+        provider: str,
+        model: str
+    ) -&gt; Dict[str, Any]
+
+    def benchmark_profile(
+        self,
+        profile: OptimizationProfile,
+        test_text: str
+    ) -&gt; Dict[str, Any]
+</code></pre></div>
+<h3 id="hybridcompressionpipeline">HybridCompressionPipeline</h3>
+<div class="code-block"><pre><code class="language-python">class HybridCompressionPipeline:
+    def __init__(
+        self,
+        vision_provider: str = &quot;ollama&quot;,
+        vision_model: str = &quot;llama3.2-vision&quot;
+    )
+
+    def compress(
+        self,
+        text: str,
+        target_ratio: float = 30.0,
+        min_quality: float = 0.85
+    ) -&gt; Dict[str, Any]
+    # Returns dict with:
+    #   - media: List[MediaContent] - The compressed images to use with LLM
+    #   - total_compression_ratio: float - Achieved compression ratio
+    #   - total_quality_score: float - Quality score (0-1)
+    #   - original_tokens: int - Original token count
+    #   - final_tokens: int - Compressed token count
+</code></pre></div>
+<h3 id="compressionanalytics">CompressionAnalytics</h3>
+<div class="code-block"><pre><code class="language-python">class CompressionAnalytics:
+    def record_compression(...) -&gt; CompressionMetrics
+    def get_provider_stats(provider: str) -&gt; Dict[str, Any]
+    def get_trends(hours: int = 24) -&gt; Dict[str, Any]
+    def get_optimization_suggestions() -&gt; List[str]
+    def generate_report() -&gt; str
+</code></pre></div>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="1-choose-the-right-method">1. Choose the Right Method</h3>
+<ul>
+<li><strong>&lt; 1,000 tokens</strong>: Don’t compress (overhead often isn’t worth it)</li>
+<li><strong>1,000–10,000 tokens</strong>: Standard Glyph may help (measure on your workload)</li>
+<li><strong>10,000–100,000 tokens</strong>: Optimized Glyph may help (measure on your workload)</li>
+<li><strong>&gt; 100,000 tokens</strong>: Consider hybrid (experimental; validate quality carefully)</li>
+</ul>
+<h3 id="2-balance-quality-and-compression">2. Balance Quality and Compression</h3>
+<div class="code-block"><pre><code class="language-python"># For critical documents
+config.quality_threshold = 0.95
+config.target_compression_ratio = 3.0
+
+# For general use
+config.quality_threshold = 0.90
+config.target_compression_ratio = 4.0
+
+# For archives
+config.quality_threshold = 0.85
+config.target_compression_ratio = 5.0
+</code></pre></div>
+<h3 id="3-use-provider-specific-optimization">3. Use Provider-Specific Optimization</h3>
+<p>Always use the optimized profile for your provider:</p>
+<div class="code-block"><pre><code class="language-python"># Good
+config = create_optimized_config(&quot;openai&quot;, &quot;gpt-4o&quot;)
+
+# Better (for more compression)
+config = create_optimized_config(&quot;openai&quot;, &quot;gpt-4o&quot;, aggressive=True)
+</code></pre></div>
+<h3 id="4-monitor-and-improve">4. Monitor and Improve</h3>
+<div class="code-block"><pre><code class="language-python"># Track performance
+analytics = get_analytics()
+
+# Review weekly
+report = analytics.generate_report()
+
+# Apply suggestions
+suggestions = analytics.get_optimization_suggestions()
+</code></pre></div>
+<h3 id="5-handle-failures-gracefully">5. Handle Failures Gracefully</h3>
+<div class="code-block"><pre><code class="language-python">try:
+    compressed = processor.process_text(text, provider, model)
+    response = llm.generate(prompt, media=compressed)
+except CompressionQualityError:
+    # Fall back to uncompressed
+    response = llm.generate(prompt + &quot;\n\n&quot; + text)
+except Exception as e:
+    logger.error(f&quot;Compression failed: {e}&quot;)
+    # Use alternative approach
+</code></pre></div>
+<h2 id="limitations">Limitations</h2>
+<h3 id="realistic-expectations">Realistic Expectations</h3>
+<ul>
+<li><strong>Compression ratio</strong>: Varies widely by content, rendering settings, and the vision model’s OCR/tokenizer behavior</li>
+<li><strong>Overhead</strong>: Rendering + vision inference adds latency; caching can help for repeated runs</li>
+<li><strong>Quality tradeoff</strong>: Higher compression targets can reduce fidelity</li>
+<li><strong>Provider dependency</strong>: Requires vision-capable models</li>
+</ul>
+<h3 id="not-suitable-for">Not Suitable For</h3>
+<ul>
+<li>Real-time chat (latency too high)</li>
+<li>Short messages (&lt;1000 tokens)</li>
+<li>Mission-critical accuracy requirements</li>
+<li>Providers without vision support</li>
+</ul>
+<hr />
+<p><em>For technical details and research background, see <a href="reports/vision-compression-reality.md">Vision Compression Reality Report</a></em></p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

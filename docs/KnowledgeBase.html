@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KnowledgeBase - AbstractCore</title>
+    <meta name="description" content="This document collects durable, cross-cutting insights about AbstractCore’s design and operational behavior. It is intentionally brief and additive: we…">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">KnowledgeBase</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document collects durable, cross-cutting insights about AbstractCore’s design and operational behavior. It is intentionally brief and additive: we append new learnings, and deprecate by moving to a dedicated section.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#media-processing-no-silent-truncation-policy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Media processing: no silent truncation policy</a>
+<a href="#capabilities-database-embedding-models" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Capabilities database: embedding models</a>
+<a href="#portkey-gateway-explicit-parameter-forwarding" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Portkey gateway: explicit-parameter forwarding</a>
+<a href="#configuration-ux-provider-agnostic-prompts" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration UX: provider-agnostic prompts</a>
+<a href="#deprecated" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">DEPRECATED</a></div>
+
+            <div class="doc-content">
+
+<h2 id="media-processing-no-silent-truncation-policy">Media processing: no silent truncation policy</h2>
+<ul>
+<li><strong>Principle</strong>: Processors (TextProcessor, PDFProcessor, OfficeProcessor) output <strong>full content without truncation</strong>. Silent data loss is considered worse than context overflow errors.</li>
+<li><strong>Token estimation</strong>: All text-based processors add <code>estimated_tokens</code> and <code>content_length</code> to <code>MediaContent.metadata</code> using <code>TokenUtils.estimate_tokens()</code>.</li>
+<li><strong>Handler consolidation</strong>: <code>BaseProviderMediaHandler.estimate_tokens_for_media()</code> uses metadata's <code>estimated_tokens</code> when available; subclasses override <code>_estimate_image_tokens()</code> for provider-specific image calculations.</li>
+<li><strong>Caller responsibility</strong>: The caller (or higher layers) decides how to handle large content: error, summarize via <code>BasicSummarizer</code>, chunk, or proceed.</li>
+<li><strong>Rationale</strong>: Different models have different context limits (8K to 200K+). Truncating at the processor level would be wrong for at least one use case. The SOTA approach is to surface the problem and let the user decide.</li>
+</ul>
+<h2 id="capabilities-database-embedding-models">Capabilities database: embedding models</h2>
+<ul>
+<li><strong>Canonical signal</strong>: Embedding-only models should be marked with <code>model_type: "embedding"</code> in <code>abstractcore/assets/model_capabilities.json</code>.</li>
+<li><strong>Neutral generation fields</strong>: For embedding models, set <code>max_output_tokens: 0</code>, <code>tool_support: "none"</code>, and <code>structured_output: "none"</code> (they do not produce chat text and do not call tools).</li>
+<li><strong>Alias hygiene</strong>: Provider-specific identifiers (e.g. LMStudio quantization suffixes like <code>@q6_k</code>) should be added as aliases of the canonical model entry so architecture detection does not fall back to generative defaults.</li>
+</ul>
+<h2 id="portkey-gateway-explicit-parameter-forwarding">Portkey gateway: explicit-parameter forwarding</h2>
+<ul>
+<li><strong>Pass-through reality</strong>: Portkey routes requests to many backends (OpenAI, Anthropic, Gemini, Grok, etc.) and forwards payloads verbatim. Defaults injected by AbstractCore can break strict models.</li>
+<li><strong>Rule</strong>: Only forward optional generation parameters (<code>temperature</code>, <code>top_p</code>, token caps) when the user explicitly sets them.</li>
+<li><strong>Reasoning models</strong>: OpenAI reasoning families (gpt-5/o1) reject <code>temperature</code>/<code>top_p</code> and require <code>max_completion_tokens</code>; drop unsupported params with a warning.</li>
+<li><strong>Routing modes</strong>: Config ID, virtual key, and provider-direct headers are mutually exclusive — mixing them causes gateway errors.</li>
+</ul>
+<h2 id="configuration-ux-provider-agnostic-prompts">Configuration UX: provider-agnostic prompts</h2>
+<ul>
+<li><strong>Principle</strong>: CLI prompts and docs must not hard-code provider lists when the runtime accepts any provider/model pair.</li>
+<li><strong>Why</strong>: Restrictive prompts mislead users and silently constrain valid setups; examples should be illustrative, not exhaustive.</li>
+<li><strong>Practice</strong>: Collect provider/model as free-form input and include optional examples without validation gates.</li>
+</ul>
+<h2 id="deprecated">DEPRECATED</h2>
+<p>(none yet)</p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

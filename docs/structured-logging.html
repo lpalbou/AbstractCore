@@ -34,10 +34,11 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore uses Python logging throughout the library. You can control console verbosity and optional file logging via the centralized config CLI.</p>
             </div>
 
-            
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#configure-with-the-cli" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configure with the CLI</a>
+<a href="#verbatim-capture-promptsresponses" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Verbatim capture (prompts/responses)</a>
+<a href="#in-code-usage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">In-code usage</a></div>
 
             <div class="doc-content">
-
 
 <p>Default behavior (no overrides): <strong>console shows only ERROR and above</strong>.</p>
 <h2 id="configure-with-the-cli">Configure with the CLI</h2>
@@ -67,13 +68,15 @@ abstractcore --disable-console-logging
 <div class="code-block"><pre><code class="language-python">from abstractcore.utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
-logger.info("startup", component="my_app", version="1.0.0")
+logger.info(&quot;startup&quot;, component=&quot;my_app&quot;, version=&quot;1.0.0&quot;)
 </code></pre></div>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

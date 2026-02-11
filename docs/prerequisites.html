@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prerequisites &amp; Setup Guide - AbstractCore</title>
-    <meta name="description" content="This guide walks you through setting up AbstractCore with different LLM providers. Choose the provider(s) that are suitable for your needs — you can use multiple providers in…">
+    <meta name="description" content="This guide walks you through setting up AbstractCore with different LLM providers. Choose the provider(s) that are suitable for your needs — you can use…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -28,7 +28,7 @@
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Prerequisites &amp; Setup Guide</h1>
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">This guide walks you through setting up AbstractCore with different LLM providers. Choose the provider(s) that are suitable for your needs — you can use multiple providers in the same application.</p>
@@ -44,7 +44,6 @@
 
             <div class="doc-content">
 
-
 <h2 id="quick-decision-guide">Quick Decision Guide</h2>
 <p><strong>Want to get started immediately?</strong> → <a href="#openai-setup">OpenAI Setup</a> (requires API key)</p>
 <p><strong>Want free local models?</strong> → <a href="#ollama-setup">Ollama Setup</a> (free, runs on your machine)</p>
@@ -59,24 +58,24 @@
 pip install abstractcore
 
 # Providers (only if you use them)
-pip install "abstractcore[openai]"       # OpenAI SDK
-pip install "abstractcore[anthropic]"    # Anthropic SDK
-pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[mlx]"          # Apple Silicon only (heavy)
-pip install "abstractcore[vllm]"         # NVIDIA CUDA/ROCm only (heavy)
+pip install &quot;abstractcore[openai]&quot;       # OpenAI SDK
+pip install &quot;abstractcore[anthropic]&quot;    # Anthropic SDK
+pip install &quot;abstractcore[huggingface]&quot;  # Transformers / torch (heavy)
+pip install &quot;abstractcore[mlx]&quot;          # Apple Silicon only (heavy)
+pip install &quot;abstractcore[vllm]&quot;         # NVIDIA CUDA/ROCm only (heavy)
 
 # Optional features
-pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
-pip install "abstractcore[media]"       # images, PDFs, Office docs
-pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
-pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
-pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
-pip install "abstractcore[compression]" # Glyph visual-text compression (Pillow renderer)
+pip install &quot;abstractcore[tools]&quot;       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
+pip install &quot;abstractcore[media]&quot;       # images, PDFs, Office docs
+pip install &quot;abstractcore[embeddings]&quot;  # EmbeddingManager + local embedding models
+pip install &quot;abstractcore[tokens]&quot;      # precise token counting (tiktoken)
+pip install &quot;abstractcore[server]&quot;      # OpenAI-compatible HTTP gateway
+pip install &quot;abstractcore[compression]&quot; # Glyph visual-text compression (Pillow renderer)
 
-# Turnkey "everything" installs (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Turnkey &quot;everything&quot; installs (pick one)
+pip install &quot;abstractcore[all-apple]&quot;    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install &quot;abstractcore[all-non-mlx]&quot;  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install &quot;abstractcore[all-gpu]&quot;      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 </code></pre></div>
 <p><strong>Hardware Notes:</strong>
 - <code>[mlx]</code> - Only works on Apple Silicon (M1/M2/M3/M4)
@@ -96,10 +95,10 @@ pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excl
 </ol>
 <h4 id="2-set-environment-variable">2. Set Environment Variable</h4>
 <div class="code-block"><pre><code class="language-bash"># Option 1: Export in terminal (temporary)
-export OPENAI_API_KEY="sk-your-actual-api-key-here"
+export OPENAI_API_KEY=&quot;sk-your-actual-api-key-here&quot;
 
 # Option 2: Add to ~/.bashrc or ~/.zshrc (permanent)
-echo 'export OPENAI_API_KEY="sk-your-actual-api-key-here"' &gt;&gt; ~/.bashrc
+echo 'export OPENAI_API_KEY=&quot;sk-your-actual-api-key-here&quot;' &gt;&gt; ~/.bashrc
 source ~/.bashrc
 
 # Option 3: Create .env file in your project
@@ -109,9 +108,9 @@ echo 'OPENAI_API_KEY=sk-your-actual-api-key-here' &gt; .env
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Test with an example model (use any model available on your account)
-llm = create_llm("openai", model="gpt-4o-mini")
-response = llm.generate("Say hello in French")
-print(response.content)  # Should output: "Bonjour!"
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+response = llm.generate(&quot;Say hello in French&quot;)
+print(response.content)  # Should output: &quot;Bonjour!&quot;
 </code></pre></div>
 <p><strong>Model names</strong>: Use any model supported by your account (examples: <code>gpt-4o-mini</code>, <code>gpt-4o</code>).</p>
 <h3 id="anthropic-setup">Anthropic Setup</h3>
@@ -126,10 +125,10 @@ print(response.content)  # Should output: "Bonjour!"
 </ol>
 <h4 id="2-set-environment-variable_1">2. Set Environment Variable</h4>
 <div class="code-block"><pre><code class="language-bash"># Option 1: Export in terminal (temporary)
-export ANTHROPIC_API_KEY="sk-ant-your-actual-api-key-here"
+export ANTHROPIC_API_KEY=&quot;sk-ant-your-actual-api-key-here&quot;
 
 # Option 2: Add to shell profile (permanent)
-echo 'export ANTHROPIC_API_KEY="sk-ant-your-actual-api-key-here"' &gt;&gt; ~/.bashrc
+echo 'export ANTHROPIC_API_KEY=&quot;sk-ant-your-actual-api-key-here&quot;' &gt;&gt; ~/.bashrc
 source ~/.bashrc
 
 # Option 3: Create .env file
@@ -139,8 +138,8 @@ echo 'ANTHROPIC_API_KEY=sk-ant-your-actual-api-key-here' &gt; .env
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Test with an example model (use any model available on your account)
-llm = create_llm("anthropic", model="claude-haiku-4-5")
-response = llm.generate("Explain Python in one sentence")
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
+response = llm.generate(&quot;Explain Python in one sentence&quot;)
 print(response.content)
 </code></pre></div>
 <p><strong>Model names</strong>: Use any model supported by your account (examples: <code>claude-haiku-4-5</code>, <code>claude-sonnet-4-5</code>).</p>
@@ -152,43 +151,43 @@ print(response.content)
 <li>Create an API key: https://openrouter.ai/keys</li>
 <li>Set the environment variable:</li>
 </ol>
-<div class="code-block"><pre><code class="language-bash">export OPENROUTER_API_KEY="sk-or-..."
+<div class="code-block"><pre><code class="language-bash">export OPENROUTER_API_KEY=&quot;sk-or-...&quot;
 # Optional override (default: https://openrouter.ai/api/v1)
-export OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+export OPENROUTER_BASE_URL=&quot;https://openrouter.ai/api/v1&quot;
 </code></pre></div>
-<ol start="3">
+<ol>
 <li>Test:</li>
 </ol>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openrouter", model="openai/gpt-4o-mini")
-resp = llm.generate("Say hello in French")
+llm = create_llm(&quot;openrouter&quot;, model=&quot;openai/gpt-4o-mini&quot;)
+resp = llm.generate(&quot;Say hello in French&quot;)
 print(resp.content)
 </code></pre></div>
 <h4 id="portkey-setup">Portkey Setup</h4>
 <p>Portkey routes requests using a <strong>config id</strong> (commonly <code>pcfg_...</code>).</p>
 <ol>
+<li>Create an API key and config in Portkey, then copy:</li>
+<li><code>PORTKEY_API_KEY</code></li>
 <li>
-<p>Create an API key and config in Portkey, then copy:
-   - <code>PORTKEY_API_KEY</code>
-   - <code>PORTKEY_CONFIG</code> (config id)</p>
+<p><code>PORTKEY_CONFIG</code> (config id)</p>
 </li>
 <li>
 <p>Set environment variables:</p>
 </li>
 </ol>
-<div class="code-block"><pre><code class="language-bash">export PORTKEY_API_KEY="pk_..."
-export PORTKEY_CONFIG="pcfg_..."
+<div class="code-block"><pre><code class="language-bash">export PORTKEY_API_KEY=&quot;pk_...&quot;
+export PORTKEY_CONFIG=&quot;pcfg_...&quot;
 # Optional override (default: https://api.portkey.ai/v1)
-export PORTKEY_BASE_URL="https://api.portkey.ai/v1"
+export PORTKEY_BASE_URL=&quot;https://api.portkey.ai/v1&quot;
 </code></pre></div>
-<ol start="3">
+<ol>
 <li>Test:</li>
 </ol>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("portkey", model="gpt-4o-mini", config_id="pcfg_...")
-resp = llm.generate("Say hello in French")
+llm = create_llm(&quot;portkey&quot;, model=&quot;gpt-4o-mini&quot;, config_id=&quot;pcfg_...&quot;)
+resp = llm.generate(&quot;Say hello in French&quot;)
 print(resp.content)
 </code></pre></div>
 <h2 id="local-provider-setup">Local Provider Setup</h2>
@@ -220,8 +219,8 @@ ollama list
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Test with any model you installed via `ollama pull ...`
-llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
-response = llm.generate("What is Python?")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct-2507-q4_K_M&quot;)
+response = llm.generate(&quot;What is Python?&quot;)
 print(response.content)
 </code></pre></div>
 <h3 id="mlx-setup">MLX Setup</h3>
@@ -229,23 +228,23 @@ print(response.content)
 <p><strong>Requirements</strong>: Apple Silicon Mac (M1/M2/M3/M4)</p>
 <h4 id="1-install-mlx-dependencies">1. Install MLX Dependencies</h4>
 <div class="code-block"><pre><code class="language-bash"># MLX is automatically installed with AbstractCore
-pip install "abstractcore[mlx]"
+pip install &quot;abstractcore[mlx]&quot;
 </code></pre></div>
 <h4 id="2-download-models">2. Download Models</h4>
 <p>MLX models are automatically downloaded when first used. Popular options:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Models are auto-downloaded on first use
-llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")  # 4.2GB
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen2.5-Coder-7B-Instruct-4bit&quot;)  # 4.2GB
 # OR
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")      # 1.8GB
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Llama-3.2-3B-Instruct-4bit&quot;)      # 1.8GB
 </code></pre></div>
 <h4 id="3-test-setup_2">3. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Test with a good balance model
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
-response = llm.generate("Explain machine learning briefly")
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Llama-3.2-3B-Instruct-4bit&quot;)
+response = llm.generate(&quot;Explain machine learning briefly&quot;)
 print(response.content)
 </code></pre></div>
 <p><strong>Popular MLX Models</strong>:
@@ -265,10 +264,10 @@ print(response.content)
 <ol>
 <li>Open LMStudio</li>
 <li>Go to "Discover" tab</li>
-<li>Search for recommended models:
-   - <code>microsoft/Phi-3-mini-4k-instruct-gguf</code> (small, fast)
-   - <code>microsoft/Phi-3-medium-4k-instruct-gguf</code> (medium quality)
-   - <code>meta-llama/Llama-2-7b-chat-gguf</code> (good general purpose)</li>
+<li>Search for recommended models:</li>
+<li><code>microsoft/Phi-3-mini-4k-instruct-gguf</code> (small, fast)</li>
+<li><code>microsoft/Phi-3-medium-4k-instruct-gguf</code> (medium quality)</li>
+<li><code>meta-llama/Llama-2-7b-chat-gguf</code> (good general purpose)</li>
 <li>Click download for your preferred model</li>
 </ol>
 <h4 id="3-start-local-server">3. Start Local Server</h4>
@@ -282,16 +281,16 @@ print(response.content)
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # LM Studio exposes an OpenAI-compatible server (default: http://localhost:1234/v1).
-# Use the model ID shown in LM Studio (or try "local-model" if unsure).
-llm = create_llm("lmstudio", model="local-model", base_url="http://localhost:1234/v1")
-resp = llm.generate("Hello, how are you?")
+# Use the model ID shown in LM Studio (or try &quot;local-model&quot; if unsure).
+llm = create_llm(&quot;lmstudio&quot;, model=&quot;local-model&quot;, base_url=&quot;http://localhost:1234/v1&quot;)
+resp = llm.generate(&quot;Hello, how are you?&quot;)
 print(resp.content)
 </code></pre></div>
 <h3 id="huggingface-setup">HuggingFace Setup</h3>
 <p><strong>Best for</strong>: Latest research models, custom models, GGUF files</p>
 <p><strong>Requirements</strong>: 8GB+ RAM, Python environment</p>
 <h4 id="1-install-dependencies">1. Install Dependencies</h4>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[huggingface]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[huggingface]&quot;
 </code></pre></div>
 <h4 id="2-optional-get-huggingface-token">2. Optional: Get HuggingFace Token</h4>
 <p>For private models or higher rate limits:</p>
@@ -300,14 +299,14 @@ print(resp.content)
 <li>Create a "Read" token</li>
 <li>Set environment variable:</li>
 </ol>
-<div class="code-block"><pre><code class="language-bash">export HUGGINGFACE_TOKEN="hf_your-token-here"
+<div class="code-block"><pre><code class="language-bash">export HUGGINGFACE_TOKEN=&quot;hf_your-token-here&quot;
 </code></pre></div>
 <h4 id="3-test-setup_3">3. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Use a small model for testing (auto-downloads)
-llm = create_llm("huggingface", model="microsoft/DialoGPT-medium")
-response = llm.generate("Hello there!")
+llm = create_llm(&quot;huggingface&quot;, model=&quot;microsoft/DialoGPT-medium&quot;)
+response = llm.generate(&quot;Hello there!&quot;)
 print(response.content)
 </code></pre></div>
 <p><strong>Popular HuggingFace Models</strong>:
@@ -331,7 +330,7 @@ print(response.content)
 - ❌ CPU-only systems</p>
 <h4 id="1-install-vllm">1. Install vLLM</h4>
 <div class="code-block"><pre><code class="language-bash"># Install AbstractCore with vLLM support
-pip install "abstractcore[vllm]"
+pip install &quot;abstractcore[vllm]&quot;
 
 # This installs vLLM which requires NVIDIA CUDA
 # If you get CUDA errors, ensure CUDA 12.1+ is installed:
@@ -398,28 +397,28 @@ curl http://localhost:8000/v1/models
 
 # Test generation
 curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
+  -H &quot;Content-Type: application/json&quot; \
   -d '{
-    "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
-    "messages": [{"role": "user", "content": "Say hello"}],
-    "max_tokens": 50
+    &quot;model&quot;: &quot;Qwen/Qwen3-Coder-30B-A3B-Instruct&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Say hello&quot;}],
+    &quot;max_tokens&quot;: 50
   }'
 </code></pre></div>
 <h4 id="3-test-setup_4">3. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Basic generation
-llm = create_llm("vllm", model="Qwen/Qwen3-Coder-30B-A3B-Instruct")
-response = llm.generate("Write a Python function to sort a list")
+llm = create_llm(&quot;vllm&quot;, model=&quot;Qwen/Qwen3-Coder-30B-A3B-Instruct&quot;)
+response = llm.generate(&quot;Write a Python function to sort a list&quot;)
 print(response.content)
 
 # With guided JSON (vLLM-specific feature)
 response = llm.generate(
-    "List 3 programming languages",
+    &quot;List 3 programming languages&quot;,
     guided_json={
-        "type": "object",
-        "properties": {
-            "languages": {"type": "array", "items": {"type": "string"}}
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {
+            &quot;languages&quot;: {&quot;type&quot;: &quot;array&quot;, &quot;items&quot;: {&quot;type&quot;: &quot;string&quot;}}
         }
     }
 )
@@ -429,40 +428,40 @@ print(response.content)
 <p><strong>Guided Decoding</strong> (syntax-constrained generation):</p>
 <div class="code-block"><pre><code class="language-python"># Regex-constrained generation
 response = llm.generate(
-    "Write a Python function",
-    guided_regex=r"def \w+\([^)]*\):\n(?:\s{4}.*\n)+"
+    &quot;Write a Python function&quot;,
+    guided_regex=r&quot;def \w+\([^)]*\):\n(?:\s{4}.*\n)+&quot;
 )
 
 # JSON schema enforcement
 response = llm.generate(
-    "Extract person info",
-    guided_json={"type": "object", "properties": {...}}
+    &quot;Extract person info&quot;,
+    guided_json={&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {...}}
 )
 </code></pre></div>
 <p><strong>Multi-LoRA</strong> (1 base model → many specialized agents):</p>
 <div class="code-block"><pre><code class="language-python"># Load specialized adapters
-llm.load_adapter("sql-expert", "/models/adapters/sql-lora")
-llm.load_adapter("react-dev", "/models/adapters/react-lora")
+llm.load_adapter(&quot;sql-expert&quot;, &quot;/models/adapters/sql-lora&quot;)
+llm.load_adapter(&quot;react-dev&quot;, &quot;/models/adapters/react-lora&quot;)
 
 # Route to specialized adapter
-response = llm.generate("Write SQL query", model="sql-expert")
+response = llm.generate(&quot;Write SQL query&quot;, model=&quot;sql-expert&quot;)
 </code></pre></div>
 <p><strong>Beam Search</strong> (higher accuracy for complex tasks):</p>
 <div class="code-block"><pre><code class="language-python">response = llm.generate(
-    "Solve this complex algorithm problem...",
+    &quot;Solve this complex algorithm problem...&quot;,
     use_beam_search=True,
     best_of=5  # Generate 5 candidates, return best
 )
 </code></pre></div>
 <h4 id="environment-variables">Environment Variables</h4>
 <div class="code-block"><pre><code class="language-bash"># vLLM server URL (default: http://localhost:8000/v1)
-export VLLM_BASE_URL="http://192.168.1.100:8000/v1"
+export VLLM_BASE_URL=&quot;http://192.168.1.100:8000/v1&quot;
 
 # Optional API key (if server started with --api-key)
-export VLLM_API_KEY="your-api-key"
+export VLLM_API_KEY=&quot;your-api-key&quot;
 
 # HuggingFace cache (shared with HF/MLX providers)
-export HF_HOME="~/.cache/huggingface"
+export HF_HOME=&quot;~/.cache/huggingface&quot;
 </code></pre></div>
 <p><strong>Available Models</strong>:
 - <code>Qwen/Qwen3-Coder-30B-A3B-Instruct</code> (default) - Excellent for code
@@ -475,15 +474,15 @@ export HF_HOME="~/.cache/huggingface"
 <p>AbstractCore supports a generic OpenAI-compatible provider plus specific convenience providers (LM Studio, vLLM, OpenRouter, Portkey).</p>
 <h4 id="1-get-the-endpoint-base-url">1. Get the endpoint base URL</h4>
 <p>You must include <code>/v1</code> for OpenAI-compatible servers:</p>
-<div class="code-block"><pre><code class="language-bash">export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+<div class="code-block"><pre><code class="language-bash">export OPENAI_COMPATIBLE_BASE_URL=&quot;http://localhost:1234/v1&quot;
 # Optional (if your endpoint requires auth)
-export OPENAI_COMPATIBLE_API_KEY="your-api-key"
+export OPENAI_COMPATIBLE_API_KEY=&quot;your-api-key&quot;
 </code></pre></div>
 <h4 id="2-test-setup">2. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai-compatible", model="default", base_url="http://localhost:1234/v1")
-resp = llm.generate("Say hello in French")
+llm = create_llm(&quot;openai-compatible&quot;, model=&quot;default&quot;, base_url=&quot;http://localhost:1234/v1&quot;)
+resp = llm.generate(&quot;Say hello in French&quot;)
 print(resp.content)
 </code></pre></div>
 <h2 id="troubleshooting">Troubleshooting</h2>
@@ -497,7 +496,7 @@ pip install abstractcore
 echo $OPENAI_API_KEY
 
 # If empty, set it:
-export OPENAI_API_KEY="sk-your-key-here"
+export OPENAI_API_KEY=&quot;sk-your-key-here&quot;
 </code></pre></div>
 <h4 id="connection-error-to-ollama">"Connection error to Ollama"</h4>
 <div class="code-block"><pre><code class="language-bash"># Make sure Ollama is running
@@ -511,7 +510,7 @@ ollama pull gemma3:1b
 </code></pre></div>
 <h4 id="model-not-found-in-mlx">"Model not found in MLX"</h4>
 <div class="code-block"><pre><code class="language-python"># Use exact model names from HuggingFace MLX community
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Llama-3.2-3B-Instruct-4bit&quot;)
 </code></pre></div>
 <h4 id="lmstudio-connection-refused">"LMStudio connection refused"</h4>
 <div class="code-block"><pre><code class="language-bash"># Make sure LMStudio server is running on correct port
@@ -531,7 +530,7 @@ sudo swapon /swapfile
 </code></pre></div>
 <h4 id="mlx-models-too-slow">MLX models too slow</h4>
 <div class="code-block"><pre><code class="language-python"># Use 4-bit quantized models for faster inference
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Llama-3.2-3B-Instruct-4bit&quot;)
 </code></pre></div>
 <h3 id="api-key-issues">API Key Issues</h3>
 <h4 id="openai-billing-issues">OpenAI billing issues</h4>
@@ -550,75 +549,75 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 <h3 id="universal-test-script">Universal Test Script</h3>
 <p>Save this as <code>test_setup.py</code> and run it to test all your providers:</p>
 <div class="code-block"><pre><code class="language-python">#!/usr/bin/env python3
-"""Test script for AbstractCore providers"""
+&quot;&quot;&quot;Test script for AbstractCore providers&quot;&quot;&quot;
 
 import os
 from abstractcore import create_llm
 
 def test_provider(provider_name, model, **kwargs):
-    """Test a specific provider"""
+    &quot;&quot;&quot;Test a specific provider&quot;&quot;&quot;
     try:
-        print(f"\n🧪 Testing {provider_name} with {model}...")
+        print(f&quot;\n🧪 Testing {provider_name} with {model}...&quot;)
         llm = create_llm(provider_name, model=model, **kwargs)
-        response = llm.generate("Say 'Hello from AbstractCore!'")
-        print(f"[OK] {provider_name}: {response.content}")
+        response = llm.generate(&quot;Say 'Hello from AbstractCore!'&quot;)
+        print(f&quot;[OK] {provider_name}: {response.content}&quot;)
         return True
     except Exception as e:
-        print(f"[FAIL] {provider_name}: {e}")
+        print(f&quot;[FAIL] {provider_name}: {e}&quot;)
         return False
 
 def main():
-    print("AbstractCore Provider Test Suite")
-    print("=" * 40)
+    print(&quot;AbstractCore Provider Test Suite&quot;)
+    print(&quot;=&quot; * 40)
 
     results = {}
 
     # Test cloud providers (if API keys available)
-    if os.getenv("OPENAI_API_KEY"):
-        results["OpenAI"] = test_provider("openai", "gpt-4o-mini")
+    if os.getenv(&quot;OPENAI_API_KEY&quot;):
+        results[&quot;OpenAI&quot;] = test_provider(&quot;openai&quot;, &quot;gpt-4o-mini&quot;)
     else:
-        print("\n⚠️  Skipping OpenAI (no OPENAI_API_KEY)")
+        print(&quot;\n⚠️  Skipping OpenAI (no OPENAI_API_KEY)&quot;)
 
-    if os.getenv("ANTHROPIC_API_KEY"):
-        results["Anthropic"] = test_provider("anthropic", "claude-haiku-4-5")
+    if os.getenv(&quot;ANTHROPIC_API_KEY&quot;):
+        results[&quot;Anthropic&quot;] = test_provider(&quot;anthropic&quot;, &quot;claude-haiku-4-5&quot;)
     else:
-        print("\n⚠️  Skipping Anthropic (no ANTHROPIC_API_KEY)")
+        print(&quot;\n⚠️  Skipping Anthropic (no ANTHROPIC_API_KEY)&quot;)
 
-    if os.getenv("OPENROUTER_API_KEY"):
-        results["OpenRouter"] = test_provider("openrouter", "openai/gpt-4o-mini")
+    if os.getenv(&quot;OPENROUTER_API_KEY&quot;):
+        results[&quot;OpenRouter&quot;] = test_provider(&quot;openrouter&quot;, &quot;openai/gpt-4o-mini&quot;)
     else:
-        print("\n⚠️  Skipping OpenRouter (no OPENROUTER_API_KEY)")
+        print(&quot;\n⚠️  Skipping OpenRouter (no OPENROUTER_API_KEY)&quot;)
 
     # Test local providers
-    results["Ollama"] = test_provider("ollama", "gemma3:1b")
+    results[&quot;Ollama&quot;] = test_provider(&quot;ollama&quot;, &quot;gemma3:1b&quot;)
 
     try:
-        results["MLX"] = test_provider("mlx", "mlx-community/Llama-3.2-3B-Instruct-4bit")
+        results[&quot;MLX&quot;] = test_provider(&quot;mlx&quot;, &quot;mlx-community/Llama-3.2-3B-Instruct-4bit&quot;)
     except:
-        print("\n⚠️  Skipping MLX (not on Apple Silicon or model not available)")
+        print(&quot;\n⚠️  Skipping MLX (not on Apple Silicon or model not available)&quot;)
 
     try:
         # Note: OpenAI-compatible servers expect `/v1` in the base URL (LM Studio default is http://localhost:1234/v1)
-        results["LMStudio"] = test_provider("lmstudio", "qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
+        results[&quot;LMStudio&quot;] = test_provider(&quot;lmstudio&quot;, &quot;qwen/qwen3-4b-2507&quot;, base_url=&quot;http://localhost:1234/v1&quot;)
     except:
-        print("\n⚠️  Skipping LMStudio (server not running on localhost:1234)")
+        print(&quot;\n⚠️  Skipping LMStudio (server not running on localhost:1234)&quot;)
 
     # Summary
-    print("\n" + "=" * 40)
-    print("Test Results:")
+    print(&quot;\n&quot; + &quot;=&quot; * 40)
+    print(&quot;Test Results:&quot;)
     working = [name for name, success in results.items() if success]
     if working:
-        print(f"[OK] Working providers: {', '.join(working)}")
+        print(f&quot;[OK] Working providers: {', '.join(working)}&quot;)
     else:
-        print("[FAIL] No providers working")
+        print(&quot;[FAIL] No providers working&quot;)
 
-    print("\n[INFO] Next steps:")
-    print("- Add API keys for cloud providers")
-    print("- Install Ollama and download models")
-    print("- Start LMStudio local server")
-    print("- See docs/prerequisites.md for detailed setup")
+    print(&quot;\n[INFO] Next steps:&quot;)
+    print(&quot;- Add API keys for cloud providers&quot;)
+    print(&quot;- Install Ollama and download models&quot;)
+    print(&quot;- Start LMStudio local server&quot;)
+    print(&quot;- See docs/prerequisites.md for detailed setup&quot;)
 
-if __name__ == "__main__":
+if __name__ == &quot;__main__&quot;:
     main()
 </code></pre></div>
 <p>Run the test:</p>
@@ -628,7 +627,7 @@ if __name__ == "__main__":
 <p>Some tests are intentionally <strong>real network calls</strong> and are disabled by default. To enable them, set:
 - <code>ABSTRACTCORE_RUN_LIVE_API_TESTS=1</code></p>
 <p>Example (OpenRouter):</p>
-<div class="code-block"><pre><code class="language-bash">ABSTRACTCORE_RUN_LIVE_API_TESTS=1 OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
+<div class="code-block"><pre><code class="language-bash">ABSTRACTCORE_RUN_LIVE_API_TESTS=1 OPENROUTER_API_KEY=&quot;$OPENROUTER_API_KEY&quot; \
   python -m pytest -q tests/test_graceful_fallback.py::test_openrouter_generation_smoke
 </code></pre></div>
 <p>Local provider smoke tests use <code>ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1</code> (and <code>ABSTRACTCORE_RUN_MLX_TESTS=1</code> for MLX).</p>
@@ -654,11 +653,13 @@ if __name__ == "__main__":
 <li>Consider firewall rules for production deployments</li>
 </ul>
 <p>This setup guide should get you running with any AbstractCore provider. Choose what works well for your use case - you can always add more providers later!</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

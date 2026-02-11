@@ -28,7 +28,7 @@
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">API Reference</h1>
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">Complete reference for the AbstractCore API. All examples work across any provider.</p>
@@ -44,7 +44,6 @@
 <a href="#advanced-usage-patterns" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Advanced Usage Patterns</a></div>
 
             <div class="doc-content">
-
 
 <h2 id="table-of-contents">Table of Contents</h2>
 <ul>
@@ -66,7 +65,7 @@
 <li><a href="#exceptions">Exceptions</a></li>
 </ul>
 <h2 id="core-functions">Core Functions</h2>
-<h3 id="createllm">create_llm()</h3>
+<h3 id="create_llm">create_llm()</h3>
 <p>Creates an LLM provider instance.</p>
 <div class="code-block"><pre><code class="language-python">def create_llm(
     provider: str,
@@ -93,19 +92,19 @@
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 # Basic usage
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 
 # With configuration
 llm = create_llm(
-    "anthropic",
-    model="claude-haiku-4-5",
+    &quot;anthropic&quot;,
+    model=&quot;claude-haiku-4-5&quot;,
     temperature=0.7,
     max_tokens=1000,
     timeout=30
 )
 
 # Local provider
-llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:11434")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5-coder:7b&quot;, base_url=&quot;http://localhost:11434&quot;)
 </code></pre></div>
 <h2 id="classes">Classes</h2>
 <h3 id="abstractcoreinterface">AbstractCoreInterface</h3>
@@ -140,13 +139,13 @@ llm = create_llm("ollama", model="qwen2.5-coder:7b", base_url="http://localhost:
 - If <code>stream=True</code>: Iterator[GenerateResponse]</p>
 <p><strong>Examples:</strong></p>
 <p><strong>Basic Generation:</strong></p>
-<div class="code-block"><pre><code class="language-python">response = llm.generate("What is machine learning?")
+<div class="code-block"><pre><code class="language-python">response = llm.generate(&quot;What is machine learning?&quot;)
 print(response.content)
 </code></pre></div>
 <p><strong>With System Prompt:</strong></p>
 <div class="code-block"><pre><code class="language-python">response = llm.generate(
-    "Explain Python decorators",
-    system_prompt="You are a Python expert. Always provide code examples."
+    &quot;Explain Python decorators&quot;,
+    system_prompt=&quot;You are a Python expert. Always provide code examples.&quot;
 )
 </code></pre></div>
 <p><strong>Structured Output:</strong></p>
@@ -157,52 +156,49 @@ class Person(BaseModel):
     age: int
 
 person = llm.generate(
-    "Extract: John Doe is 25 years old",
+    &quot;Extract: John Doe is 25 years old&quot;,
     response_model=Person
 )
-print(f"{person.name}, age {person.age}")
+print(f&quot;{person.name}, age {person.age}&quot;)
 </code></pre></div>
 <blockquote>
 <p><strong>See</strong>: <a href="structured-output.html">Structured Output Guide</a> for comprehensive documentation</p>
 </blockquote>
 <p><strong>Tool Calling:</strong></p>
 <div class="code-block"><pre><code class="language-python">def get_weather(city: str) -&gt; str:
-    return f"Weather in {city}: sunny, 22°C"
+    return f&quot;Weather in {city}: sunny, 22°C&quot;
 
 tools = [{
-    "name": "get_weather",
-    "description": "Get weather for a city",
-    "parameters": {
-        "type": "object",
-        "properties": {"city": {"type": "string"}},
-        "required": ["city"]
+    &quot;name&quot;: &quot;get_weather&quot;,
+    &quot;description&quot;: &quot;Get weather for a city&quot;,
+    &quot;parameters&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {&quot;city&quot;: {&quot;type&quot;: &quot;string&quot;}},
+        &quot;required&quot;: [&quot;city&quot;]
     }
 }]
 
-response = llm.generate("What's the weather in Paris?", tools=tools)
+response = llm.generate(&quot;What's the weather in Paris?&quot;, tools=tools)
 </code></pre></div>
-<p><strong>Streaming (Unified 2025 Implementation):</strong></p>
-<div class="code-block"><pre><code class="language-python"># Streaming works identically across ALL providers
-print("AI: ", end="")
+<p><strong>Streaming:</strong></p>
+<div class="code-block"><pre><code class="language-python">print(&quot;AI: &quot;, end=&quot;&quot;)
 for chunk in llm.generate(
-    "Create a Python function with a tool",
+    &quot;Create a Python function with a tool&quot;,
     stream=True,
-    tools=[code_analysis_tool]
+    tools=tools
 ):
     # Real-time chunk processing
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or &quot;&quot;, end=&quot;&quot;, flush=True)
 
     # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
-        print(f"\nTool calls: {chunk.tool_calls}")
+        print(f&quot;\nTool calls: {chunk.tool_calls}&quot;)
 </code></pre></div>
-<p><strong>Streaming Features</strong>:
-- First chunk in &lt;10ms
-- 🔧 Unified strategy across providers
-- 🛠️ Real-time tool call detection
-- 💨 Zero buffering overhead
-- Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
-- 🔒 Robust error handling for malformed responses</p>
+<p><strong>Streaming notes</strong>:
+- Streaming uses a unified processor across providers; exact chunking behavior depends on the backend.
+- Tool calls are surfaced as structured dicts in <code>chunk.tool_calls</code>; execute them in your host/runtime (pass-through by default).
+- If you need tool-call markup preserved/re-written in <code>chunk.content</code>, pass <code>tool_call_tags=...</code> (see <a href="tool-syntax-rewriting.html">Tool Call Syntax Rewriting</a>).
+- In streaming mode, AbstractCore records a best-effort TTFT metric in <code>chunk.metadata["_timing"]["ttft_ms"]</code> when available (for debugging/observability).</p>
 <h4 id="agenerate">agenerate()</h4>
 <p>Async version of <code>generate()</code> for concurrent request execution.</p>
 <div class="code-block"><pre><code class="language-python">async def agenerate(
@@ -225,7 +221,7 @@ for chunk in llm.generate(
 <div class="code-block"><pre><code class="language-python">import asyncio
 
 async def main():
-    response = await llm.agenerate("What is quantum computing?")
+    response = await llm.agenerate(&quot;What is quantum computing?&quot;)
     print(response.content)
 
 asyncio.run(main())
@@ -233,9 +229,9 @@ asyncio.run(main())
 <p><strong>Concurrent Requests:</strong></p>
 <div class="code-block"><pre><code class="language-python">async def batch_process():
     tasks = [
-        llm.agenerate("Summarize Python"),
-        llm.agenerate("Summarize JavaScript"),
-        llm.agenerate("Summarize Rust")
+        llm.agenerate(&quot;Summarize Python&quot;),
+        llm.agenerate(&quot;Summarize JavaScript&quot;),
+        llm.agenerate(&quot;Summarize Rust&quot;)
     ]
     responses = await asyncio.gather(*tasks)
 
@@ -246,23 +242,23 @@ asyncio.run(batch_process())
 </code></pre></div>
 <p><strong>Async Streaming:</strong></p>
 <div class="code-block"><pre><code class="language-python">async def stream_response():
-    async for chunk in llm.agenerate("Tell me a story", stream=True):
+    async for chunk in llm.agenerate(&quot;Tell me a story&quot;, stream=True):
         print(chunk.content, end='', flush=True)
 
 asyncio.run(stream_response())
 </code></pre></div>
 <p><strong>Multi-Provider Comparison:</strong></p>
 <div class="code-block"><pre><code class="language-python">async def compare_providers():
-    openai = create_llm("openai", model="gpt-4o-mini")
-    claude = create_llm("anthropic", model="claude-haiku-4-5")
+    openai = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+    claude = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 
     responses = await asyncio.gather(
-        openai.agenerate("What is 2+2?"),
-        claude.agenerate("What is 2+2?")
+        openai.agenerate(&quot;What is 2+2?&quot;),
+        claude.agenerate(&quot;What is 2+2?&quot;)
     )
 
-    print(f"OpenAI: {responses[0].content}")
-    print(f"Claude: {responses[1].content}")
+    print(f&quot;OpenAI: {responses[0].content}&quot;)
+    print(f&quot;Claude: {responses[1].content}&quot;)
 
 asyncio.run(compare_providers())
 </code></pre></div>
@@ -272,7 +268,7 @@ asyncio.run(compare_providers())
 - Full streaming support with AsyncIterator
 - Compatible with FastAPI and async web frameworks
 - Zero breaking changes to sync API</p>
-<h4 id="getcapabilities">get_capabilities()</h4>
+<h4 id="get_capabilities">get_capabilities()</h4>
 <p>Get provider capabilities.</p>
 <div class="code-block"><pre><code class="language-python">def get_capabilities(self) -&gt; List[str]
 </code></pre></div>
@@ -281,7 +277,7 @@ asyncio.run(compare_providers())
 <div class="code-block"><pre><code class="language-python">capabilities = llm.get_capabilities()
 print(capabilities)  # ['text_generation', 'tool_calling', 'streaming', 'vision']
 </code></pre></div>
-<h4 id="unloadmodelmodelname">unload_model(model_name)</h4>
+<h4 id="unload_modelmodel_name">unload_model(model_name)</h4>
 <p>Unload/cleanup resources for a specific model (best-effort).</p>
 <div class="code-block"><pre><code class="language-python">def unload_model(self, model_name: str) -&gt; None
 </code></pre></div>
@@ -294,15 +290,15 @@ print(capabilities)  # ['text_generation', 'tool_calling', 'streaming', 'vision'
 - <strong>OpenAI/Anthropic</strong>: No-op (safe to call)</p>
 <p><strong>Example:</strong></p>
 <div class="code-block"><pre><code class="language-python"># Load and use a large model
-llm = create_llm("ollama", model="qwen3-coder:30b")
-response = llm.generate("Hello world")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3-coder:30b&quot;)
+response = llm.generate(&quot;Hello world&quot;)
 
 # Explicitly free memory when done
 llm.unload_model(llm.model)
 del llm
 
 # Now safe to load another large model
-llm2 = create_llm("mlx", model="mlx-community/Qwen3-30B-4bit")
+llm2 = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-30B-4bit&quot;)
 </code></pre></div>
 <p><strong>Use cases:</strong>
 - Test suites testing multiple models sequentially
@@ -324,15 +320,15 @@ class GenerateResponse:
     # Consistent token access properties
     @property
     def input_tokens(self) -&gt; Optional[int]:
-        """Get input tokens with consistent terminology."""
+        &quot;&quot;&quot;Get input tokens with consistent terminology.&quot;&quot;&quot;
 
     @property
     def output_tokens(self) -&gt; Optional[int]:
-        """Get output tokens with consistent terminology."""
+        &quot;&quot;&quot;Get output tokens with consistent terminology.&quot;&quot;&quot;
 
     @property
     def total_tokens(self) -&gt; Optional[int]:
-        """Get total tokens."""
+        &quot;&quot;&quot;Get total tokens.&quot;&quot;&quot;
 </code></pre></div>
 <p><strong>Attributes:</strong>
 - <code>content</code> (str): Generated text content
@@ -344,19 +340,19 @@ class GenerateResponse:
 - <code>metadata</code> (Dict): Additional metadata (notably <code>metadata["reasoning"]</code> when a provider/model exposes thinking/reasoning)
 - <code>gen_time</code> (float): Generation time in milliseconds, rounded to 1 decimal place</p>
 <p><strong>Token and Timing Access Examples:</strong></p>
-<div class="code-block"><pre><code class="language-python">response = llm.generate("Explain quantum computing")
+<div class="code-block"><pre><code class="language-python">response = llm.generate(&quot;Explain quantum computing&quot;)
 
-# Consistent access across ALL providers
-print(f"Input tokens: {response.input_tokens}")      # Always available
-print(f"Output tokens: {response.output_tokens}")    # Always available  
-print(f"Total tokens: {response.total_tokens}")      # Always available
-print(f"Generation time: {response.gen_time}ms")  # Always available
+# Best-effort access across supported providers (may be None depending on backend/config)
+print(f&quot;Input tokens: {response.input_tokens}&quot;)      # None if usage isn't reported/estimated
+print(f&quot;Output tokens: {response.output_tokens}&quot;)    # None if usage isn't reported/estimated
+print(f&quot;Total tokens: {response.total_tokens}&quot;)      # None if usage isn't reported/estimated
+print(f&quot;Generation time: {response.gen_time}ms&quot;)     # None if timing wasn't captured
 
 # Comprehensive summary
-print(f"Summary: {response.get_summary()}")  # Model | Tokens | Time | Tools
+print(f&quot;Summary: {response.get_summary()}&quot;)  # Model | Tokens | Time | Tools
 
 # Raw usage dictionary (provider-specific format)
-print(f"Usage details: {response.usage}")
+print(f&quot;Usage details: {response.usage}&quot;)
 </code></pre></div>
 <p><strong>Token Count Sources:</strong>
 - <strong>Provider APIs</strong>: OpenAI, Anthropic, LMStudio (native API token counts)
@@ -364,23 +360,23 @@ print(f"Usage details: {response.usage}")
 - <strong>Mixed Sources</strong>: Ollama (combination of provider and calculated tokens)</p>
 <p><strong>Backward Compatibility</strong>: Legacy <code>prompt_tokens</code> and <code>completion_tokens</code> keys remain available in <code>response.usage</code> dictionary.</p>
 <p><strong>Methods:</strong></p>
-<h4 id="hastoolcalls">has_tool_calls()</h4>
+<h4 id="has_tool_calls">has_tool_calls()</h4>
 <div class="code-block"><pre><code class="language-python">def has_tool_calls(self) -&gt; bool
 </code></pre></div>
 <p>Returns True if the response contains tool calls.</p>
-<h4 id="gettoolsexecuted">get_tools_executed()</h4>
+<h4 id="get_tools_executed">get_tools_executed()</h4>
 <div class="code-block"><pre><code class="language-python">def get_tools_executed(self) -&gt; List[str]
 </code></pre></div>
 <p>Returns list of tool names that were executed.</p>
 <p><strong>Example:</strong></p>
-<div class="code-block"><pre><code class="language-python">response = llm.generate("What's 2+2?", tools=[calculator_tool])
+<div class="code-block"><pre><code class="language-python">response = llm.generate(&quot;What's 2+2?&quot;, tools=[calculator_tool])
 
-print(f"Content: {response.content}")
-print(f"Model: {response.model}")
-print(f"Tokens: {response.usage}")
+print(f&quot;Content: {response.content}&quot;)
+print(f&quot;Model: {response.model}&quot;)
+print(f&quot;Tokens: {response.usage}&quot;)
 
 if response.has_tool_calls():
-    print(f"Tools used: {response.get_tools_executed()}")
+    print(f&quot;Tools used: {response.get_tools_executed()}&quot;)
 </code></pre></div>
 <h3 id="basicsession">BasicSession</h3>
 <p>Manages conversation context and history.</p>
@@ -426,18 +422,18 @@ async def chat():
     session = BasicSession(provider=llm)
 
     # Async conversation
-    response1 = await session.agenerate("My name is Alice")
-    response2 = await session.agenerate("What's my name?")
+    response1 = await session.agenerate(&quot;My name is Alice&quot;)
+    response2 = await session.agenerate(&quot;What's my name?&quot;)
 
     print(response2.content)  # References Alice
 
 asyncio.run(chat())
 </code></pre></div>
-<h4 id="addmessage">add_message()</h4>
+<h4 id="add_message">add_message()</h4>
 <div class="code-block"><pre><code class="language-python">def add_message(self, role: str, content: str, **metadata) -&gt; Message
 </code></pre></div>
 <p>Add message to conversation history.</p>
-<h4 id="clearhistory">clear_history()</h4>
+<h4 id="clear_history">clear_history()</h4>
 <div class="code-block"><pre><code class="language-python">def clear_history(self, keep_system: bool = True) -&gt; None
 </code></pre></div>
 <p>Clear conversation history, optionally keeping system prompt.</p>
@@ -447,31 +443,31 @@ asyncio.run(chat())
 <p>Save session to JSON file.</p>
 <h4 id="load">load()</h4>
 <div class="code-block"><pre><code class="language-python">@classmethod
-def load(cls, filepath: Path, provider: AbstractCoreInterface) -&gt; "BasicSession"
+def load(cls, filepath: Path, provider: AbstractCoreInterface) -&gt; &quot;BasicSession&quot;
 </code></pre></div>
 <p>Load session from JSON file.</p>
 <p><strong>Example:</strong></p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, BasicSession
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 session = BasicSession(
     provider=llm,
-    system_prompt="You are a helpful coding tutor.",
+    system_prompt=&quot;You are a helpful coding tutor.&quot;,
     temperature=0.3,  # Focused responses
     seed=42          # Consistent outputs
 )
 
 # Multi-turn conversation
-response1 = session.generate("What are Python decorators?")
-response2 = session.generate("Show me an example", temperature=0.7)  # Override for this call
+response1 = session.generate(&quot;What are Python decorators?&quot;)
+response2 = session.generate(&quot;Show me an example&quot;, temperature=0.7)  # Override for this call
 
-print(f"Conversation has {len(session.messages)} messages")
+print(f&quot;Conversation has {len(session.messages)} messages&quot;)
 
 # Save session
-session.save(Path("conversation.json"))
+session.save(Path(&quot;conversation.json&quot;))
 
 # Load later
-loaded_session = BasicSession.load(Path("conversation.json"), llm)
+loaded_session = BasicSession.load(Path(&quot;conversation.json&quot;), llm)
 </code></pre></div>
 <h3 id="message">Message</h3>
 <p>Represents a conversation message.</p>
@@ -484,13 +480,13 @@ class Message:
     metadata: Optional[Dict] = None
 </code></pre></div>
 <p><strong>Methods:</strong></p>
-<h4 id="todict">to_dict()</h4>
+<h4 id="to_dict">to_dict()</h4>
 <div class="code-block"><pre><code class="language-python">def to_dict(self) -&gt; Dict
 </code></pre></div>
 <p>Convert message to dictionary.</p>
-<h4 id="fromdict">from_dict()</h4>
+<h4 id="from_dict">from_dict()</h4>
 <div class="code-block"><pre><code class="language-python">@classmethod
-def from_dict(cls, data: Dict) -&gt; "Message"
+def from_dict(cls, data: Dict) -&gt; &quot;Message&quot;
 </code></pre></div>
 <p>Create message from dictionary.</p>
 <h2 id="event-system">Event System</h2>
@@ -498,35 +494,35 @@ def from_dict(cls, data: Dict) -&gt; "Message"
 <p>Available event types for monitoring.</p>
 <div class="code-block"><pre><code class="language-python">class EventType(Enum):
     # Generation events
-    GENERATION_STARTED = "generation_started"
-    GENERATION_COMPLETED = "generation_completed"
+    GENERATION_STARTED = &quot;generation_started&quot;
+    GENERATION_COMPLETED = &quot;generation_completed&quot;
 
     # Tool events
-    TOOL_STARTED = "tool_started"
-    TOOL_PROGRESS = "tool_progress"
-    TOOL_COMPLETED = "tool_completed"
+    TOOL_STARTED = &quot;tool_started&quot;
+    TOOL_PROGRESS = &quot;tool_progress&quot;
+    TOOL_COMPLETED = &quot;tool_completed&quot;
 
     # Error handling
-    ERROR = "error"
+    ERROR = &quot;error&quot;
 
     # Retry and resilience events
-    RETRY_ATTEMPTED = "retry_attempted"
-    RETRY_EXHAUSTED = "retry_exhausted"
+    RETRY_ATTEMPTED = &quot;retry_attempted&quot;
+    RETRY_EXHAUSTED = &quot;retry_exhausted&quot;
 
     # Useful events
-    VALIDATION_FAILED = "validation_failed"
-    SESSION_CREATED = "session_created"
-    SESSION_CLEARED = "session_cleared"
-    COMPACTION_STARTED = "compaction_started"
-    COMPACTION_COMPLETED = "compaction_completed"
+    VALIDATION_FAILED = &quot;validation_failed&quot;
+    SESSION_CREATED = &quot;session_created&quot;
+    SESSION_CLEARED = &quot;session_cleared&quot;
+    COMPACTION_STARTED = &quot;compaction_started&quot;
+    COMPACTION_COMPLETED = &quot;compaction_completed&quot;
 
     # Runtime/workflow events
-    WORKFLOW_STEP_STARTED = "workflow_step_started"
-    WORKFLOW_STEP_COMPLETED = "workflow_step_completed"
-    WORKFLOW_STEP_WAITING = "workflow_step_waiting"
-    WORKFLOW_STEP_FAILED = "workflow_step_failed"
+    WORKFLOW_STEP_STARTED = &quot;workflow_step_started&quot;
+    WORKFLOW_STEP_COMPLETED = &quot;workflow_step_completed&quot;
+    WORKFLOW_STEP_WAITING = &quot;workflow_step_waiting&quot;
+    WORKFLOW_STEP_FAILED = &quot;workflow_step_failed&quot;
 </code></pre></div>
-<h3 id="onglobal">on_global()</h3>
+<h3 id="on_global">on_global()</h3>
 <p>Register global event handler.</p>
 <div class="code-block"><pre><code class="language-python">def on_global(event_type: EventType, handler: Callable[[Event], None]) -&gt; None
 </code></pre></div>
@@ -537,30 +533,30 @@ def from_dict(cls, data: Dict) -&gt; "Message"
 <div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
 
 def cost_monitor(event):
-    cost = event.data.get("cost_usd")
+    cost = event.data.get(&quot;cost_usd&quot;)
     if cost:
         # NOTE: `cost_usd` is a best-effort estimate based on token usage.
-        print(f"Estimated cost: ${cost:.4f}")
+        print(f&quot;Estimated cost: ${cost:.4f}&quot;)
 
 def tool_monitor(event):
     # Tool event payload shape varies by emitter.
-    # - Single-tool execution: {"tool_name": ..., "success": ..., ...}
-    # - Batch execution: {"tool_results": [{"name": ..., "success": ...}, ...], ...}
-    tool_name = event.data.get("tool_name")
+    # - Single-tool execution: {&quot;tool_name&quot;: ..., &quot;success&quot;: ..., ...}
+    # - Batch execution: {&quot;tool_results&quot;: [{&quot;name&quot;: ..., &quot;success&quot;: ...}, ...], ...}
+    tool_name = event.data.get(&quot;tool_name&quot;)
     if tool_name:
-        print(f"Tool completed: {tool_name} success={event.data.get('success')}")
+        print(f&quot;Tool completed: {tool_name} success={event.data.get('success')}&quot;)
         return
 
-    for r in event.data.get("tool_results", []) or []:
-        print(f"Tool completed: {r.get('name')} success={r.get('success')} error={r.get('error')}")
+    for r in event.data.get(&quot;tool_results&quot;, []) or []:
+        print(f&quot;Tool completed: {r.get('name')} success={r.get('success')} error={r.get('error')}&quot;)
 
 # Register handlers
 on_global(EventType.GENERATION_COMPLETED, cost_monitor)
 on_global(EventType.TOOL_COMPLETED, tool_monitor)
 
 # Now all LLM operations will trigger these handlers
-llm = create_llm("openai", model="gpt-4o-mini")
-response = llm.generate("Hello world")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+response = llm.generate(&quot;Hello world&quot;)
 </code></pre></div>
 <h3 id="event">Event</h3>
 <p>Event object passed to handlers.</p>
@@ -605,7 +601,7 @@ config = RetryConfig(
     failure_threshold=3
 )
 
-llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;, retry_config=config)
 </code></pre></div>
 <h3 id="feedbackretry">FeedbackRetry</h3>
 <p>Retry strategy for structured output validation failures.</p>
@@ -624,7 +620,7 @@ class User(BaseModel):
 custom_retry = FeedbackRetry(max_attempts=5)
 
 user = llm.generate(
-    "Extract user: John Doe, 25",
+    &quot;Extract user: John Doe, 25&quot;,
     response_model=User,
     retry_strategy=custom_retry
 )
@@ -635,8 +631,8 @@ user = llm.generate(
 <div class="code-block"><pre><code class="language-python">class EmbeddingManager:
     def __init__(
         self,
-        model: str = "embeddinggemma",
-        backend: str = "auto",
+        model: str = &quot;embeddinggemma&quot;,
+        backend: str = &quot;auto&quot;,
         output_dims: Optional[int] = None,
         cache_size: int = 1000,
         cache_dir: Optional[str] = None
@@ -653,71 +649,71 @@ user = llm.generate(
 <div class="code-block"><pre><code class="language-python">def embed(self, text: str) -&gt; List[float]
 </code></pre></div>
 <p>Generate embedding for single text.</p>
-<h4 id="embedbatch">embed_batch()</h4>
+<h4 id="embed_batch">embed_batch()</h4>
 <div class="code-block"><pre><code class="language-python">def embed_batch(self, texts: List[str]) -&gt; List[List[float]]
 </code></pre></div>
 <p>Generate embeddings for multiple texts (more efficient).</p>
-<h4 id="computesimilarity">compute_similarity()</h4>
+<h4 id="compute_similarity">compute_similarity()</h4>
 <div class="code-block"><pre><code class="language-python">def compute_similarity(self, text1: str, text2: str) -&gt; float
 </code></pre></div>
 <p>Compute cosine similarity between two texts.</p>
 <p><strong>Example:</strong></p>
 <div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
 
-embedder = EmbeddingManager(model="embeddinggemma")
+embedder = EmbeddingManager(model=&quot;embeddinggemma&quot;)
 
 # Single embedding
-embedding = embedder.embed("Hello world")
-print(f"Embedding dimension: {len(embedding)}")
+embedding = embedder.embed(&quot;Hello world&quot;)
+print(f&quot;Embedding dimension: {len(embedding)}&quot;)
 
 # Batch embeddings
-embeddings = embedder.embed_batch(["Hello", "World", "AI"])
+embeddings = embedder.embed_batch([&quot;Hello&quot;, &quot;World&quot;, &quot;AI&quot;])
 
 # Similarity
-similarity = embedder.compute_similarity("cat", "kitten")
-print(f"Similarity: {similarity:.3f}")
+similarity = embedder.compute_similarity(&quot;cat&quot;, &quot;kitten&quot;)
+print(f&quot;Similarity: {similarity:.3f}&quot;)
 </code></pre></div>
 <h2 id="exceptions">Exceptions</h2>
 <h3 id="base-exceptions">Base Exceptions</h3>
 <h4 id="abstractcoreerror">AbstractCoreError</h4>
 <div class="code-block"><pre><code class="language-python">class AbstractCoreError(Exception):
-    """Base exception for AbstractCore."""
+    &quot;&quot;&quot;Base exception for AbstractCore.&quot;&quot;&quot;
 </code></pre></div>
 <h4 id="providerapierror">ProviderAPIError</h4>
 <div class="code-block"><pre><code class="language-python">class ProviderAPIError(AbstractCoreError):
-    """Provider API error."""
+    &quot;&quot;&quot;Provider API error.&quot;&quot;&quot;
 </code></pre></div>
 <h4 id="modelnotfounderror">ModelNotFoundError</h4>
 <div class="code-block"><pre><code class="language-python">class ModelNotFoundError(AbstractCoreError):
-    """Model not found error."""
+    &quot;&quot;&quot;Model not found error.&quot;&quot;&quot;
 </code></pre></div>
 <h4 id="authenticationerror">AuthenticationError</h4>
 <div class="code-block"><pre><code class="language-python">class AuthenticationError(ProviderAPIError):
-    """Authentication error."""
+    &quot;&quot;&quot;Authentication error.&quot;&quot;&quot;
 </code></pre></div>
 <h4 id="ratelimiterror">RateLimitError</h4>
 <div class="code-block"><pre><code class="language-python">class RateLimitError(ProviderAPIError):
-    """Rate limit error."""
+    &quot;&quot;&quot;Rate limit error.&quot;&quot;&quot;
 </code></pre></div>
 <h3 id="usage">Usage</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore.exceptions import ProviderAPIError, RateLimitError
 
 try:
-    response = llm.generate("Hello world")
+    response = llm.generate(&quot;Hello world&quot;)
 except RateLimitError:
-    print("Rate limited, wait and retry")
+    print(&quot;Rate limited, wait and retry&quot;)
 except ProviderAPIError as e:
-    print(f"API error: {e}")
+    print(f&quot;API error: {e}&quot;)
 except Exception as e:
-    print(f"Unexpected error: {e}")
+    print(f&quot;Unexpected error: {e}&quot;)
 </code></pre></div>
 <h2 id="advanced-usage-patterns">Advanced Usage Patterns</h2>
 <h3 id="custom-provider-configuration">Custom Provider Configuration</h3>
 <div class="code-block"><pre><code class="language-python"># Provider with all options
 llm = create_llm(
-    provider="openai",
-    model="gpt-4o-mini",
-    api_key="your-key",
+    provider=&quot;openai&quot;,
+    model=&quot;gpt-4o-mini&quot;,
+    api_key=&quot;your-key&quot;,
     temperature=0.7,
     max_tokens=1000,
     top_p=0.9,
@@ -727,21 +723,21 @@ llm = create_llm(
 </code></pre></div>
 <h3 id="multi-provider-setup">Multi-Provider Setup</h3>
 <div class="code-block"><pre><code class="language-python">providers = {
-    "fast": create_llm("openai", model="gpt-4o-mini"),
-    "smart": create_llm("openai", model="gpt-4o"),
-    "long_context": create_llm("anthropic", model="claude-haiku-4-5"),
-    "local": create_llm("ollama", model="qwen2.5-coder:7b")
+    &quot;fast&quot;: create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;),
+    &quot;smart&quot;: create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;),
+    &quot;long_context&quot;: create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;),
+    &quot;local&quot;: create_llm(&quot;ollama&quot;, model=&quot;qwen2.5-coder:7b&quot;)
 }
 
-def route_request(prompt, task_type="general"):
-    if task_type == "simple":
-        return providers["fast"].generate(prompt)
-    elif task_type == "complex":
-        return providers["smart"].generate(prompt)
+def route_request(prompt, task_type=&quot;general&quot;):
+    if task_type == &quot;simple&quot;:
+        return providers[&quot;fast&quot;].generate(prompt)
+    elif task_type == &quot;complex&quot;:
+        return providers[&quot;smart&quot;].generate(prompt)
     elif len(prompt) &gt; 50000:
-        return providers["long_context"].generate(prompt)
+        return providers[&quot;long_context&quot;].generate(prompt)
     else:
-        return providers["local"].generate(prompt)
+        return providers[&quot;local&quot;].generate(prompt)
 </code></pre></div>
 <h3 id="production-monitoring">Production Monitoring</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
@@ -758,37 +754,39 @@ def production_monitor(event):
     global total_cost
 
     if event.type == EventType.GENERATION_COMPLETED:
-        cost = event.data.get("cost_usd")
+        cost = event.data.get(&quot;cost_usd&quot;)
         if cost:
             # NOTE: `cost_usd` is a best-effort estimate based on token usage.
             total_cost += float(cost)
-            logger.info(f"Estimated cost: ${float(cost):.4f}, Total: ${total_cost:.4f}")
+            logger.info(f&quot;Estimated cost: ${float(cost):.4f}, Total: ${total_cost:.4f}&quot;)
 
-        duration_ms = event.data.get("duration_ms")
+        duration_ms = event.data.get(&quot;duration_ms&quot;)
         if isinstance(duration_ms, (int, float)) and duration_ms &gt; 10_000:
-            logger.warning(f"Slow request: {float(duration_ms):.0f}ms")
+            logger.warning(f&quot;Slow request: {float(duration_ms):.0f}ms&quot;)
 
     elif event.type == EventType.ERROR:
-        logger.error(f"Error: {event.data.get('error')}")
+        logger.error(f&quot;Error: {event.data.get('error')}&quot;)
 
     elif event.type == EventType.RETRY_ATTEMPTED:
-        logger.info(f"Retrying due to: {event.data.get('error_type')}")
+        logger.info(f&quot;Retrying due to: {event.data.get('error_type')}&quot;)
 
 on_global(EventType.GENERATION_COMPLETED, production_monitor)
 on_global(EventType.ERROR, production_monitor)
 on_global(EventType.RETRY_ATTEMPTED, production_monitor)
 </code></pre></div>
-<hr/>
+<hr />
 <p>For more examples and use cases, see:
 - <a href="getting-started.html">Getting Started</a> - Basic setup and usage
 - <a href="examples.html">Examples</a> - Practical use cases
 - <a href="prerequisites.html">Prerequisites</a> - Provider setup and configuration
 - <a href="capabilities.html">Capabilities</a> - What AbstractCore can do</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

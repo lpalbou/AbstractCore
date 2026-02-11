@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generation Parameters Architecture - AbstractCore</title>
+    <meta name="description" content="This document explains the design and implementation of unified generation parameters (temperature, seed, thinking/reasoning) across all AbstractCore providers.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Generation Parameters Architecture</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document explains the design and implementation of unified generation parameters (temperature, seed, thinking/reasoning) across all AbstractCore providers.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#design-principles" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Design Principles</a>
+<a href="#architecture-overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Architecture Overview</a>
+<a href="#parameter-hierarchy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Parameter Hierarchy</a>
+<a href="#provider-specific-implementation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Provider-Specific Implementation</a>
+<a href="#thinking-reasoning-control-unified" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Thinking / Reasoning Control (Unified)</a>
+<a href="#session-integration" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Session Integration</a>
+<a href="#code-quality-benefits" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Code Quality Benefits</a>
+<a href="#future-extensibility" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Future Extensibility</a>
+<a href="#testing-strategy" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Testing Strategy</a>
+<a href="#performance-considerations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Considerations</a>
+<a href="#backward-compatibility" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Backward Compatibility</a>
+<a href="#empirical-verification-best-effort" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Empirical Verification (Best-Effort)</a></div>
+
+            <div class="doc-content">
+
+<h2 id="design-principles">Design Principles</h2>
+<h3 id="1-interface-first-design">1. <strong>Interface-First Design</strong></h3>
+<p>Parameters are declared at the <code>AbstractCoreInterface</code> level, ensuring:
+- Consistent API contract across all providers
+- Type safety and documentation at the interface level
+- Automatic inheritance by all provider implementations</p>
+<h3 id="2-dry-dont-repeat-yourself">2. <strong>DRY (Don't Repeat Yourself)</strong></h3>
+<p>Common parameters are handled centrally to avoid:
+- Code duplication across 6 providers
+- Inconsistent parameter handling
+- Maintenance overhead for parameter changes</p>
+<h3 id="3-graceful-degradation">3. <strong>Graceful Degradation</strong></h3>
+<p>Providers that don't support certain parameters:
+- Accept the parameters without error
+- Issue appropriate warnings (e.g., Anthropic seed warning)
+- Maintain consistent API behavior
+- Provide fallback mechanisms where possible</p>
+<h2 id="architecture-overview">Architecture Overview</h2>
+<div class="code-block"><pre><code class="language-python">AbstractCoreInterface (interface.py)
+├── temperature: float = 0.7        # Interface-level default
+├── seed: Optional[int] = None       # Interface-level default
+├── thinking: Optional[bool|str] = None  # Unified thinking/reasoning control (best-effort)
+└── _validate_parameters()           # Validation logic
+
+BaseProvider (base.py)
+├── _prepare_generation_kwargs()     # Unified parameter processing
+├── _extract_generation_params()     # Parameter extraction helper
+├── _apply_thinking_request()        # Provider-agnostic + provider-specific thinking mapping
+└── Parameter fallback hierarchy     # kwargs → instance → defaults
+
+Individual Providers
+├── Provider-specific parameters only (top_p, frequency_penalty, etc.)
+├── Provider-specific parameter mapping
+└── Native API integration
+</code></pre></div>
+<h2 id="parameter-hierarchy">Parameter Hierarchy</h2>
+<p>Parameters follow a clear precedence order:</p>
+<ol>
+<li>
+<p><strong>Method-level kwargs</strong> (highest priority)
+   <code>python
+   llm.generate("Hello", temperature=0.9, seed=123)</code></p>
+</li>
+<li>
+<p><strong>Instance-level parameters</strong>
+   <code>python
+   llm = create_llm("openai", temperature=0.5, seed=42)</code></p>
+</li>
+<li>
+<p><strong>Interface defaults</strong> (lowest priority)
+   <code>python
+   # temperature=0.7, seed=None (from AbstractCoreInterface)</code></p>
+</li>
+</ol>
+<h2 id="provider-specific-implementation">Provider-Specific Implementation</h2>
+<h3 id="native-support-openai-ollama-lmstudio-huggingface">Native Support (OpenAI, Ollama, LMStudio, HuggingFace)</h3>
+<div class="code-block"><pre><code class="language-python"># Direct parameter mapping to provider API
+call_params[&quot;temperature&quot;] = params[&quot;temperature&quot;]
+if &quot;seed&quot; in params:
+    call_params[&quot;seed&quot;] = params[&quot;seed&quot;]
+</code></pre></div>
+<h3 id="graceful-fallback-anthropic-mlx">Graceful Fallback (Anthropic, MLX)</h3>
+<div class="code-block"><pre><code class="language-python"># Accept parameters but log limitation
+if &quot;seed&quot; in params:
+    self.logger.debug(f&quot;Seed {params['seed']} requested but not supported - logged for debugging&quot;)
+</code></pre></div>
+<h3 id="portkey-gateway-pass-through">Portkey gateway (pass-through)</h3>
+<p>Portkey is a routing gateway that forwards payloads to <strong>many</strong> backends (OpenAI, Anthropic, Gemini, Grok, etc.). To avoid sending defaults that strict models reject, the Portkey provider:</p>
+<ul>
+<li>Forwards optional generation parameters <strong>only when explicitly set</strong> by the user (constructor or <code>generate()</code> kwargs).</li>
+<li>Drops unsupported parameters for OpenAI reasoning families (gpt-5/o1), and uses <code>max_completion_tokens</code> instead of <code>max_tokens</code> for those models.</li>
+<li>Keeps legacy <code>max_tokens</code> for non-reasoning families to preserve compatibility with older backends.</li>
+</ul>
+<h2 id="thinking-reasoning-control-unified">Thinking / Reasoning Control (Unified)</h2>
+<p>Modern models may expose “thinking”/“reasoning effort” as either:
+- a <strong>request-side control</strong> (enable/disable or low/medium/high), and/or
+- a <strong>separate output channel</strong> (provider fields or inline tags).</p>
+<p>AbstractCore exposes a single best-effort parameter:</p>
+<div class="code-block"><pre><code class="language-python">response = llm.generate(&quot;Solve this&quot;, thinking=None)      # auto (provider/model default)
+response = llm.generate(&quot;Solve this&quot;, thinking=&quot;off&quot;)     # try to reduce/disable thinking
+response = llm.generate(&quot;Solve this&quot;, thinking=&quot;on&quot;)      # enable thinking
+response = llm.generate(&quot;Solve this&quot;, thinking=&quot;high&quot;)    # set reasoning effort (when supported)
+print(response.metadata.get(&quot;reasoning&quot;))
+</code></pre></div>
+<p><strong>Accepted values</strong>: <code>None|"auto"|"on"|"off"|True|False|"low"|"medium"|"high"</code>.</p>
+<p><strong>Best-effort mappings (as of Jan 2026):</strong>
+- <strong>vLLM</strong>: <code>extra_body.chat_template_kwargs.enable_thinking</code> (commonly used by Qwen3 templates)
+- <strong>Ollama</strong>: request field <code>think</code> (bool for most models; <code>"low"|"medium"|"high"</code> for GPT‑OSS)
+- <strong>GPT‑OSS (Harmony)</strong>: inject system line <code>Reasoning: low|medium|high</code> (traces can’t be fully disabled; <code>"off"</code> maps to <code>"low"</code> with a warning)
+- <strong>LMStudio</strong>: reasoning is typically exposed as response fields (e.g., <code>message.reasoning</code> for GPT‑OSS) but LM Studio’s OpenAI-style <strong>chat completions</strong> API does not consistently expose request-side “reasoning effort” knobs; use <code>/v1/responses</code> or model-level prompt controls when available.</p>
+<p><strong>Output semantics</strong>: when a provider/model exposes reasoning, AbstractCore normalizes it into <code>GenerateResponse.metadata["reasoning"]</code> and keeps <code>GenerateResponse.content</code> clean using <code>abstractcore/architectures/response_postprocessing.py</code> (asset-driven via <code>assets/model_capabilities.json</code> + <code>assets/architecture_formats.json</code>).</p>
+<p>When a requested thinking mode is not supported by a model/provider, AbstractCore emits a <code>RuntimeWarning</code> (request may be ignored).</p>
+<h2 id="session-integration">Session Integration</h2>
+<p>Sessions maintain persistent parameters across conversations:</p>
+<div class="code-block"><pre><code class="language-python">session = BasicSession(
+    provider=llm,
+    temperature=0.5,    # Default for all messages
+    seed=42            # Consistent across conversation
+)
+
+# Uses session defaults
+response1 = session.generate(&quot;Hello&quot;)
+
+# Override for specific message
+response2 = session.generate(&quot;Be creative!&quot;, temperature=0.9)
+</code></pre></div>
+<h2 id="code-quality-benefits">Code Quality Benefits</h2>
+<h3 id="before-duplicated-code">Before (Duplicated Code)</h3>
+<div class="code-block"><pre><code class="language-python"># In each of 6 providers:
+self.temperature = kwargs.get(&quot;temperature&quot;, 0.7)
+self.seed = kwargs.get(&quot;seed&quot;, None)
+# ... parameter extraction logic in each provider
+</code></pre></div>
+<h3 id="after-centralized">After (Centralized)</h3>
+<div class="code-block"><pre><code class="language-python"># In AbstractCoreInterface:
+def __init__(self, ..., temperature: float = 0.7, seed: Optional[int] = None):
+    self.temperature = temperature
+    self.seed = seed
+
+# In BaseProvider:
+def _extract_generation_params(self, **kwargs) -&gt; Dict[str, Any]:
+    return {
+        &quot;temperature&quot;: kwargs.get(&quot;temperature&quot;, self.temperature),
+        &quot;seed&quot;: kwargs.get(&quot;seed&quot;, self.seed) if self.seed is not None else None
+    }
+</code></pre></div>
+<h2 id="future-extensibility">Future Extensibility</h2>
+<p>Adding new parameters requires only:
+1. Declaration in <code>AbstractCoreInterface</code>
+2. Logic in <code>BaseProvider._extract_generation_params()</code>
+3. Provider-specific mapping where supported</p>
+<p>No changes needed in individual provider <code>__init__</code> methods.</p>
+<h2 id="testing-strategy">Testing Strategy</h2>
+<p>Parameters are tested at multiple levels:
+- <strong>Interface level</strong>: Parameter inheritance and defaults
+- <strong>Provider level</strong>: Native API integration and fallback behavior
+- <strong>Session level</strong>: Parameter persistence and override behavior
+- <strong>Integration level</strong>: End-to-end parameter flow</p>
+<h2 id="performance-considerations">Performance Considerations</h2>
+<ul>
+<li><strong>Minimal Overhead</strong>: Parameter extraction happens once per generation call</li>
+<li><strong>Memory Efficient</strong>: No parameter duplication across providers</li>
+<li><strong>CPU Efficient</strong>: Simple dictionary operations for parameter resolution</li>
+</ul>
+<h2 id="backward-compatibility">Backward Compatibility</h2>
+<p>All changes are fully backward compatible:
+- Existing code continues to work unchanged
+- New parameters are optional with sensible defaults
+- Provider behavior remains consistent for existing use cases</p>
+<h2 id="empirical-verification-best-effort">Empirical Verification (Best-Effort)</h2>
+<p>Determinism across LLM providers is <strong>not guaranteed</strong>. When supported, AbstractCore passes seed-like
+controls to providers/backends and recommends <code>temperature=0</code> to reduce randomness, but results can
+still vary with backend settings, hardware, and model/server updates.</p>
+<p>To verify determinism for your exact provider/model/backend, run:</p>
+<div class="code-block"><pre><code class="language-bash">python tests/manual_seed_verification.py
+</code></pre></div>
+<p><strong>Provider-Specific Implementations</strong>:
+- <strong>OpenAI</strong>: Native <code>seed</code> parameter in API
+- <strong>MLX</strong>: <code>mx.random.seed()</code> before generation<br />
+- <strong>Ollama</strong>: <code>seed</code> in options payload
+- <strong>HuggingFace</strong>: <code>torch.manual_seed()</code> + GGUF native seed
+- <strong>LMStudio</strong>: OpenAI-compatible <code>seed</code> parameter
+- <strong>Anthropic</strong>: Issues <code>UserWarning</code> when seed provided</p>
+<p><strong>Testing Commands</strong>:</p>
+<div class="code-block"><pre><code class="language-bash"># Verify determinism across providers
+python tests/manual_seed_verification.py
+
+# Test specific provider
+python tests/manual_seed_verification.py --provider openai
+</code></pre></div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

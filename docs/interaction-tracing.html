@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interaction Tracing for LLM Observability - AbstractCore</title>
+    <meta name="description" content="Interaction tracing provides programmatic access to complete LLM interaction history for debugging, observability, and compliance purposes.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Interaction Tracing for LLM Observability</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">Interaction tracing provides programmatic access to complete LLM interaction history for debugging, observability, and compliance purposes.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#trace-structure" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Trace Structure</a>
+<a href="#retrieving-traces" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Retrieving Traces</a>
+<a href="#exporting-traces" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Exporting Traces</a>
+<a href="#trace-summarization" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Trace Summarization</a>
+<a href="#use-case-multi-step-code-generation-with-retries" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Use Case: Multi-Step Code Generation with Retries</a>
+<a href="#memory-management" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Memory Management</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#performance-impact" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Impact</a>
+<a href="#comparison-with-existing-logging" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Comparison with Existing Logging</a>
+<a href="#example-debugging-failed-generation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Example: Debugging Failed Generation</a>
+<a href="#api-reference" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">API Reference</a>
+<a href="#related-documentation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related Documentation</a>
+<a href="#faq" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">FAQ</a></div>
+
+            <div class="doc-content">
+
+<h2 id="overview">Overview</h2>
+<p>AbstractCore's interaction tracing captures the complete context of every LLM interaction:
+- <strong>Input</strong>: Prompts, system prompts, messages, parameters
+- <strong>Output</strong>: Content, tool calls, usage metrics, timing
+- <strong>Metadata</strong>: Custom tags, session info, step types</p>
+<p>This is essential for:
+- <strong>Debugging</strong>: Understanding why generation succeeded or failed
+- <strong>Trust</strong>: Seeing the LLM's complete reasoning chain
+- <strong>Optimization</strong>: Identifying inefficient prompts or patterns
+- <strong>Compliance</strong>: Audit trails for AI-generated content</p>
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="provider-level-tracing">Provider-Level Tracing</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Enable tracing on provider
+llm = create_llm(
+    'ollama',
+    model='qwen3:4b',
+    enable_tracing=True,
+    max_traces=100  # Ring buffer size (default: 100)
+)
+
+# Generate with custom metadata
+response = llm.generate(
+    &quot;Write a Python function to add two numbers&quot;,
+    temperature=0,
+    trace_metadata={
+        'step': 'code_generation',
+        'attempt': 1,
+        'user_id': 'user_123'
+    }
+)
+
+# Access trace ID from response
+trace_id = response.metadata['trace_id']
+
+# Retrieve specific trace
+trace = llm.get_traces(trace_id=trace_id)
+
+print(f&quot;Prompt: {trace['prompt']}&quot;)
+print(f&quot;Response: {trace['response']['content']}&quot;)
+print(f&quot;Tokens: {trace['response']['usage']}&quot;)
+print(f&quot;Time: {trace['response']['generation_time_ms']}ms&quot;)
+print(f&quot;Custom metadata: {trace['metadata']}&quot;)
+</code></pre></div>
+<h3 id="session-level-tracing">Session-Level Tracing</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+
+# Create provider with tracing
+llm = create_llm('ollama', model='qwen3:4b', enable_tracing=True)
+
+# Create session with tracing
+session = BasicSession(provider=llm, enable_tracing=True)
+
+# Normal conversation
+response1 = session.generate(&quot;What is Python?&quot;)
+response2 = session.generate(&quot;Give me an example&quot;)
+
+# Get all interaction traces for this session
+traces = session.get_interaction_history()
+
+print(f&quot;Captured {len(traces)} interactions&quot;)
+for i, trace in enumerate(traces, 1):
+    print(f&quot;\nInteraction {i}:&quot;)
+    print(f&quot;  Session ID: {trace['metadata']['session_id']}&quot;)
+    print(f&quot;  Prompt: {trace['prompt']}&quot;)
+    print(f&quot;  Tokens: {trace['response']['usage']['total_tokens']}&quot;)
+</code></pre></div>
+<h2 id="trace-structure">Trace Structure</h2>
+<p>Each trace contains:</p>
+<div class="code-block"><pre><code class="language-python">{
+    'trace_id': 'uuid-string',
+    'timestamp': '2025-11-08T12:34:56.789',
+    'provider': 'OllamaProvider',
+    'model': 'qwen3:4b',
+
+    # Input
+    'system_prompt': 'You are a helpful assistant',
+    'prompt': 'What is Python?',
+    'messages': [...],  # Conversation history
+    'tools': [...],     # Available tools
+
+    # Parameters
+    'parameters': {
+        'temperature': 0.7,
+        'max_tokens': 8000,
+        'max_output_tokens': 2048,
+        'seed': 42,
+        'top_p': 0.9,
+        'top_k': 50
+    },
+
+    # Output
+    'response': {
+        'content': 'Python is...',
+        'raw_response': {...},  # If verbatim=True
+        'tool_calls': [...],
+        'finish_reason': 'stop',
+        'usage': {
+            'prompt_tokens': 10,
+            'completion_tokens': 50,
+            'total_tokens': 60
+        },
+        'generation_time_ms': 1234.56
+    },
+
+    # Custom metadata
+    'metadata': {
+        'session_id': 'uuid',
+        'step_type': 'chat',
+        'user_id': 'user_123',
+        # ... any custom fields
+    }
+}
+</code></pre></div>
+<h2 id="retrieving-traces">Retrieving Traces</h2>
+<h3 id="get-all-traces">Get All Traces</h3>
+<div class="code-block"><pre><code class="language-python"># Get all traces from provider
+all_traces = llm.get_traces()
+
+for trace in all_traces:
+    print(f&quot;{trace['timestamp']}: {trace['prompt'][:50]}...&quot;)
+</code></pre></div>
+<h3 id="get-specific-trace-by-id">Get Specific Trace by ID</h3>
+<div class="code-block"><pre><code class="language-python"># Generate and get trace ID
+response = llm.generate(&quot;Test&quot;, trace_metadata={'step': 'test'})
+trace_id = response.metadata['trace_id']
+
+# Retrieve specific trace
+trace = llm.get_traces(trace_id=trace_id)
+</code></pre></div>
+<h3 id="get-last-n-traces">Get Last N Traces</h3>
+<div class="code-block"><pre><code class="language-python"># Get most recent 10 traces
+recent_traces = llm.get_traces(last_n=10)
+
+for trace in recent_traces:
+    print(f&quot;Tokens: {trace['response']['usage']['total_tokens']}&quot;)
+</code></pre></div>
+<h2 id="exporting-traces">Exporting Traces</h2>
+<p>AbstractCore provides utilities to export traces to various formats:</p>
+<h3 id="jsonl-json-lines">JSONL (JSON Lines)</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.utils import export_traces
+
+traces = llm.get_traces()
+export_traces(traces, format='jsonl', file_path='traces.jsonl')
+</code></pre></div>
+<h3 id="json-pretty-printed">JSON (Pretty-Printed)</h3>
+<div class="code-block"><pre><code class="language-python">export_traces(traces, format='json', file_path='traces.json')
+</code></pre></div>
+<h3 id="markdown-report">Markdown Report</h3>
+<div class="code-block"><pre><code class="language-python"># Generate human-readable markdown report
+export_traces(traces, format='markdown', file_path='trace_report.md')
+</code></pre></div>
+<h3 id="export-as-string">Export as String</h3>
+<div class="code-block"><pre><code class="language-python"># Get formatted string without writing to file
+json_string = export_traces(traces, format='json')
+print(json_string)
+</code></pre></div>
+<h2 id="trace-summarization">Trace Summarization</h2>
+<p>Get summary statistics across multiple traces:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore.utils import summarize_traces
+
+traces = session.get_interaction_history()
+summary = summarize_traces(traces)
+
+print(f&quot;Total interactions: {summary['total_interactions']}&quot;)
+print(f&quot;Total tokens used: {summary['total_tokens']}&quot;)
+print(f&quot;Average tokens per interaction: {summary['avg_tokens_per_interaction']:.0f}&quot;)
+print(f&quot;Average generation time: {summary['avg_time_ms']:.2f}ms&quot;)
+print(f&quot;Providers used: {summary['providers']}&quot;)
+print(f&quot;Models used: {summary['models']}&quot;)
+print(f&quot;Date range: {summary['date_range']['first']} to {summary['date_range']['last']}&quot;)
+</code></pre></div>
+<h2 id="use-case-multi-step-code-generation-with-retries">Use Case: Multi-Step Code Generation with Retries</h2>
+<p>Perfect for debugging workflows like Digital Article's computational notebook:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.core.session import BasicSession
+
+llm = create_llm('ollama', model='qwen3:4b', enable_tracing=True)
+session = BasicSession(provider=llm, enable_tracing=True)
+
+# Step 1: Generate code
+response = session.generate(
+    &quot;Create a histogram of ages&quot;,
+    system_prompt=&quot;You are a Python code generator&quot;,
+    step_type='code_generation',
+    attempt_number=1
+)
+
+code = response.content
+
+# Step 2: Execute code (simulated)
+try:
+    exec(code)
+    success = True
+except Exception as e:
+    success = False
+    error = str(e)
+
+    # Retry with error context
+    for attempt in range(2, 4):
+        response = session.generate(
+            f&quot;Previous code failed with error: {error}. Fix the code.&quot;,
+            step_type='code_generation',
+            attempt_number=attempt
+        )
+        code = response.content
+        try:
+            exec(code)
+            success = True
+            break
+        except Exception as e:
+            error = str(e)
+
+# Step 3: Generate methodology text
+if success:
+    response = session.generate(
+        &quot;Generate scientific methodology text for the histogram analysis&quot;,
+        step_type='methodology_generation'
+    )
+
+# Complete observability
+traces = session.get_interaction_history()
+print(f&quot;\nWorkflow Summary:&quot;)
+print(f&quot;Total LLM calls: {len(traces)}&quot;)
+
+for trace in traces:
+    print(f&quot;\nStep: {trace['metadata']['step_type']}&quot;)
+    print(f&quot;Attempt: {trace['metadata']['attempt_number']}&quot;)
+    print(f&quot;Tokens: {trace['response']['usage']['total_tokens']}&quot;)
+    print(f&quot;Time: {trace['response']['generation_time_ms']}ms&quot;)
+
+# Export for analysis
+from abstractcore.utils import export_traces
+export_traces(traces, format='markdown', file_path='workflow_trace.md')
+</code></pre></div>
+<h2 id="memory-management">Memory Management</h2>
+<h3 id="ring-buffer">Ring Buffer</h3>
+<p>Traces are stored in a <strong>ring buffer</strong> (deque with max size) for memory efficiency:</p>
+<div class="code-block"><pre><code class="language-python">llm = create_llm(
+    'ollama',
+    model='qwen3:4b',
+    enable_tracing=True,
+    max_traces=50  # Keep only last 50 traces
+)
+
+# After 100 generations, only last 50 are kept
+for i in range(100):
+    llm.generate(f&quot;Test {i}&quot;)
+
+traces = llm.get_traces()
+assert len(traces) == 50  # Oldest 50 were dropped
+</code></pre></div>
+<h3 id="session-isolation">Session Isolation</h3>
+<p>Each session maintains its own trace list:</p>
+<div class="code-block"><pre><code class="language-python">llm = create_llm('ollama', model='qwen3:4b', enable_tracing=True)
+
+session1 = BasicSession(provider=llm, enable_tracing=True)
+session2 = BasicSession(provider=llm, enable_tracing=True)
+
+session1.generate(&quot;Question 1&quot;)
+session2.generate(&quot;Question 2&quot;)
+
+# Traces are isolated per session
+assert len(session1.get_interaction_history()) == 1
+assert len(session2.get_interaction_history()) == 1
+
+# Provider still has both traces
+assert len(llm.get_traces()) == 2
+</code></pre></div>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="1-enable-tracing-only-when-needed">1. Enable Tracing Only When Needed</h3>
+<div class="code-block"><pre><code class="language-python"># Development/debugging
+llm = create_llm('ollama', model='qwen3:4b', enable_tracing=True)
+
+# Production (default - no overhead)
+llm = create_llm('ollama', model='qwen3:4b')
+</code></pre></div>
+<h3 id="2-use-custom-metadata-for-context">2. Use Custom Metadata for Context</h3>
+<div class="code-block"><pre><code class="language-python">response = llm.generate(
+    prompt,
+    trace_metadata={
+        'user_id': user.id,
+        'workflow': 'code_generation',
+        'step': 'initial_generation',
+        'attempt': 1,
+        'environment': 'production'
+    }
+)
+</code></pre></div>
+<h3 id="3-export-regularly-for-long-sessions">3. Export Regularly for Long Sessions</h3>
+<div class="code-block"><pre><code class="language-python"># Export and clear every 100 interactions
+if len(session.interaction_traces) &gt;= 100:
+    export_traces(
+        session.get_interaction_history(),
+        format='jsonl',
+        file_path=f'traces_{datetime.now().isoformat()}.jsonl'
+    )
+    session.interaction_traces.clear()
+</code></pre></div>
+<h3 id="4-filter-raw-responses-for-privacy">4. Filter Raw Responses for Privacy</h3>
+<p>By default, <code>raw_response</code> is only included if <code>verbatim=True</code> on the provider. This prevents accidentally logging sensitive data.</p>
+<h2 id="performance-impact">Performance Impact</h2>
+<ul>
+<li><strong>When disabled (default)</strong>: Zero overhead</li>
+<li><strong>When enabled</strong>: Minimal overhead (~1-2% for typical workloads)</li>
+<li>Trace capture: &lt;1ms per interaction</li>
+<li>Memory: ~1-5KB per trace (depends on response size)</li>
+<li>Ring buffer: O(1) append, automatic eviction</li>
+</ul>
+<h2 id="comparison-with-existing-logging">Comparison with Existing Logging</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>VerbatimCapture</th>
+<th>Event System</th>
+<th>Interaction Tracing</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Access</strong></td>
+<td>File-only</td>
+<td>Event handlers</td>
+<td>Programmatic (in-memory)</td>
+</tr>
+<tr>
+<td><strong>Completeness</strong></td>
+<td>Prompt + response</td>
+<td>Metrics only</td>
+<td>Full interaction context</td>
+</tr>
+<tr>
+<td><strong>Retrieval</strong></td>
+<td>Parse files</td>
+<td>Listen to events</td>
+<td>Direct API (get_traces())</td>
+</tr>
+<tr>
+<td><strong>Filtering</strong></td>
+<td>N/A</td>
+<td>By event type</td>
+<td>By trace_id or last_n</td>
+</tr>
+<tr>
+<td><strong>Export</strong></td>
+<td>JSONL</td>
+<td>N/A</td>
+<td>JSONL/JSON/Markdown</td>
+</tr>
+<tr>
+<td><strong>Use Case</strong></td>
+<td>Audit logs</td>
+<td>Real-time monitoring</td>
+<td>Debugging, observability</td>
+</tr>
+</tbody>
+</table>
+<h2 id="example-debugging-failed-generation">Example: Debugging Failed Generation</h2>
+<div class="code-block"><pre><code class="language-python">llm = create_llm('ollama', model='qwen3:4b', enable_tracing=True)
+
+try:
+    response = llm.generate(
+        &quot;Complex prompt...&quot;,
+        temperature=0.7,
+        max_output_tokens=2000
+    )
+except Exception as e:
+    # Get trace even if generation failed
+    traces = llm.get_traces(last_n=1)
+    if traces:
+        trace = traces[0]
+        print(&quot;Failed generation details:&quot;)
+        print(f&quot;  Prompt: {trace['prompt']}&quot;)
+        print(f&quot;  Parameters: {trace['parameters']}&quot;)
+        print(f&quot;  Error: {e}&quot;)
+</code></pre></div>
+<h2 id="api-reference">API Reference</h2>
+<h3 id="provider-methods">Provider Methods</h3>
+<ul>
+<li><code>llm.get_traces()</code> → List[Dict]: Get all traces</li>
+<li><code>llm.get_traces(trace_id='...')</code> → Dict: Get specific trace</li>
+<li><code>llm.get_traces(last_n=10)</code> → List[Dict]: Get last N traces</li>
+</ul>
+<h3 id="session-methods">Session Methods</h3>
+<ul>
+<li><code>session.get_interaction_history()</code> → List[Dict]: Get all session traces</li>
+</ul>
+<h3 id="utility-functions">Utility Functions</h3>
+<ul>
+<li><code>export_traces(traces, format='jsonl|json|markdown', file_path=None)</code> → str</li>
+<li><code>summarize_traces(traces)</code> → Dict: Get summary statistics</li>
+</ul>
+<h2 id="related-documentation">Related Documentation</h2>
+<ul>
+<li><a href="./structured-logging.html">Structured Logging</a> - File-based logging</li>
+<li><a href="./events.html">Event System</a> - Real-time event monitoring</li>
+<li><a href="./session.html">Session Management</a> - BasicSession usage</li>
+</ul>
+<h2 id="faq">FAQ</h2>
+<p><strong>Q: Does tracing work with streaming?</strong>
+A: Currently, tracing is only supported for non-streaming responses. Streaming support is planned for a future release.</p>
+<p><strong>Q: Are traces thread-safe?</strong>
+A: Traces are stored per-provider-instance. If you share a provider across threads, use separate provider instances or add your own synchronization.</p>
+<p><strong>Q: Can I disable raw_response in traces?</strong>
+A: Yes, raw_response is only included if the provider has <code>verbatim=True</code>. By default, it's <code>None</code> to save memory and avoid logging sensitive data.</p>
+<p><strong>Q: What happens to traces when provider is garbage collected?</strong>
+A: Traces are stored in memory and will be lost when the provider is garbage collected. Export traces if you need persistence.</p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

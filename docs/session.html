@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Session Management and Serialization - AbstractCore</title>
-    <meta name="description" content="AbstractCore provides comprehensive session management with complete serialization capabilities, preserving every aspect of your conversations including metadata, tool…">
+    <meta name="description" content="AbstractCore provides comprehensive session management with complete serialization capabilities, preserving every aspect of your conversations including…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -45,7 +45,6 @@
 
             <div class="doc-content">
 
-
 <h2 id="overview">Overview</h2>
 <p>A <strong>BasicSession</strong> represents a complete conversation with an LLM, including:
 - All messages with timestamps and metadata
@@ -57,7 +56,7 @@
 <h3 id="generate-for-normal-conversations-recommended"><code>generate()</code> - For Normal Conversations (Recommended)</h3>
 <p>Use this for typical chat interactions where you want the LLM to respond:</p>
 <div class="code-block"><pre><code class="language-python"># Normal conversation flow
-response = session.generate("What is Python?", name="alice")
+response = session.generate(&quot;What is Python?&quot;, name=&quot;alice&quot;)
 # This automatically:
 # 1. Adds your message to history
 # 2. Calls the LLM provider
@@ -65,11 +64,11 @@ response = session.generate("What is Python?", name="alice")
 # 4. Returns a GenerateResponse object with full metadata
 
 # Access the response data
-print(f"Response: {response.content}")           # Generated text
-print(f"Tokens used: {response.total_tokens}")  # Token count
-print(f"Generation time: {response.gen_time}ms") # Performance metrics
+print(f&quot;Response: {response.content}&quot;)           # Generated text
+print(f&quot;Tokens used: {response.total_tokens}&quot;)  # Token count
+print(f&quot;Generation time: {response.gen_time}ms&quot;) # Performance metrics
 </code></pre></div>
-<h3 id="addmessage-for-manual-history-management"><code>add_message()</code> - For Manual History Management</h3>
+<h3 id="add_message-for-manual-history-management"><code>add_message()</code> - For Manual History Management</h3>
 <p>Use this when you need fine-grained control over conversation history:</p>
 <div class="code-block"><pre><code class="language-python"># Add system messages
 session.add_message('system', 'You are a helpful assistant.')
@@ -79,7 +78,7 @@ session.add_message('user', 'Hello!', name='alice')
 session.add_message('assistant', 'Hi there!')
 
 # Add tool messages
-session.add_message('tool', '{"result": "success"}')
+session.add_message('tool', '{&quot;result&quot;: &quot;success&quot;}')
 </code></pre></div>
 <p><strong>Key Difference</strong>: <code>generate()</code> triggers LLM response generation, <code>add_message()</code> only adds to history.</p>
 <p><strong>Parameter Consistency</strong>: Both methods use <code>name</code> parameter, which aligns with the <code>metadata.name</code> field in the serialization schema.</p>
@@ -94,20 +93,20 @@ session.add_message('tool', '{"result": "success"}')
 <h3 id="serialization-format">Serialization Format</h3>
 <p>Sessions are serialized as JSON with a versioned schema for future compatibility:</p>
 <div class="code-block"><pre><code class="language-json">{
-  "schema_version": "session-archive/v1",
-  "session": {
-    "id": "sess_01J8...",
-    "created_at": "2025-10-13T14:52:46Z",
-    "provider": "openai",
-    "model": "gpt-4o-mini",
-    "system_prompt": "You are a helpful AI assistant.",
-    "settings": { "auto_compact": true },
+  &quot;schema_version&quot;: &quot;session-archive/v1&quot;,
+  &quot;session&quot;: {
+    &quot;id&quot;: &quot;sess_01J8...&quot;,
+    &quot;created_at&quot;: &quot;2025-10-13T14:52:46Z&quot;,
+    &quot;provider&quot;: &quot;openai&quot;,
+    &quot;model&quot;: &quot;gpt-4o-mini&quot;,
+    &quot;system_prompt&quot;: &quot;You are a helpful AI assistant.&quot;,
+    &quot;settings&quot;: { &quot;auto_compact&quot;: true },
 
-    "summary": { /* optional */ },
-    "assessment": { /* optional */ },
-    "facts": { /* optional */ }
+    &quot;summary&quot;: { /* optional */ },
+    &quot;assessment&quot;: { /* optional */ },
+    &quot;facts&quot;: { /* optional */ }
   },
-  "messages": [ /* complete conversation history */ ]
+  &quot;messages&quot;: [ /* complete conversation history */ ]
 }
 </code></pre></div>
 <h3 id="field-descriptions">Field Descriptions</h3>
@@ -154,14 +153,14 @@ session.add_message('tool', '{"result": "success"}')
 <h4 id="message-structure">Message Structure</h4>
 <p>Each message preserves the complete conversational flow:</p>
 <div class="code-block"><pre><code class="language-json">{
-  "id": "msg_01J8...",
-  "role": "user|assistant|system|tool",
-  "timestamp": "2025-10-13T14:55:20.123Z",
-  "content": "Message content",
-  "metadata": {
-    "name": "alice",
-    "location": "London, UK",
-    "custom_field": "value"
+  &quot;id&quot;: &quot;msg_01J8...&quot;,
+  &quot;role&quot;: &quot;user|assistant|system|tool&quot;,
+  &quot;timestamp&quot;: &quot;2025-10-13T14:55:20.123Z&quot;,
+  &quot;content&quot;: &quot;Message content&quot;,
+  &quot;metadata&quot;: {
+    &quot;name&quot;: &quot;alice&quot;,
+    &quot;location&quot;: &quot;London, UK&quot;,
+    &quot;custom_field&quot;: &quot;value&quot;
   }
 }
 </code></pre></div>
@@ -178,28 +177,28 @@ session.add_message('tool', '{"result": "success"}')
 <p>Tool calls are preserved inline with the conversation to maintain sequence:</p>
 <div class="code-block"><pre><code class="language-json">[
   {
-    "role": "assistant",
-    "content": "Let me read that file for you.",
-    "metadata": {
-      "requested_tool_calls": [
+    &quot;role&quot;: &quot;assistant&quot;,
+    &quot;content&quot;: &quot;Let me read that file for you.&quot;,
+    &quot;metadata&quot;: {
+      &quot;requested_tool_calls&quot;: [
         {
-          "call_id": "tc_01K",
-          "name": "read_file",
-          "arguments": { "path": "README.md" }
+          &quot;call_id&quot;: &quot;tc_01K&quot;,
+          &quot;name&quot;: &quot;read_file&quot;,
+          &quot;arguments&quot;: { &quot;path&quot;: &quot;README.md&quot; }
         }
       ]
     }
   },
   {
-    "role": "tool",
-    "content": "File contents...",
-    "metadata": {
-      "call_id": "tc_01K",
-      "name": "read_file",
-      "arguments": { "path": "README.md" },
-      "status": "ok",
-      "duration_ms": 120,
-      "stderr": null
+    &quot;role&quot;: &quot;tool&quot;,
+    &quot;content&quot;: &quot;File contents...&quot;,
+    &quot;metadata&quot;: {
+      &quot;call_id&quot;: &quot;tc_01K&quot;,
+      &quot;name&quot;: &quot;read_file&quot;,
+      &quot;arguments&quot;: { &quot;path&quot;: &quot;README.md&quot; },
+      &quot;status&quot;: &quot;ok&quot;,
+      &quot;duration_ms&quot;: 120,
+      &quot;stderr&quot;: null
     }
   }
 ]
@@ -214,8 +213,8 @@ session.add_message('tool', '{"result": "success"}')
 <div class="code-block"><pre><code class="language-python">from abstractcore import BasicSession, create_llm
 
 # Create and use session
-provider = create_llm("openai", model="gpt-4o-mini")
-session = BasicSession(provider, system_prompt="You are a helpful assistant.")
+provider = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+session = BasicSession(provider, system_prompt=&quot;You are a helpful assistant.&quot;)
 
 session.add_message('user', 'Hello!', name='alice', location='Paris')
 response = session.generate('What is Python?')
@@ -228,8 +227,8 @@ loaded_session = BasicSession.load('conversation.json', provider=provider)
 </code></pre></div>
 <h3 id="session-with-analytics">Session with Analytics</h3>
 <div class="code-block"><pre><code class="language-python"># Generate optional analytics
-session.generate_summary(focus="technical discussion")
-session.generate_assessment(criteria=["clarity", "completeness"])
+session.generate_summary(focus=&quot;technical discussion&quot;)
+session.generate_assessment(criteria=[&quot;clarity&quot;, &quot;completeness&quot;])
 session.extract_facts()
 
 # Save with all analytics
@@ -241,8 +240,8 @@ recent_messages = session.get_window(last_n=10)
 
 # Get messages within time range
 today_messages = session.get_window(
-    since="2025-10-13T00:00:00Z",
-    until="2025-10-13T23:59:59Z"
+    since=&quot;2025-10-13T00:00:00Z&quot;,
+    until=&quot;2025-10-13T23:59:59Z&quot;
 )
 
 # Get messages with token budget
@@ -304,11 +303,13 @@ windowed = session.get_window(
 - Forward compatibility through graceful field handling
 - Safe evolution of the serialization format</p>
 <p>Legacy sessions are automatically migrated on load, preserving all available data while upgrading to the current schema.</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>
